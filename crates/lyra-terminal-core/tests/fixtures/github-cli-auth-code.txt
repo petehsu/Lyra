@@ -1,0 +1,8 @@
+# terminal-fixture-v1: GitHub CLI browser auth code entry workflow
+$ gh auth login
+? What account do you want to log into? GitHub.com
+? What is your preferred protocol for Git operations? HTTPS
+? Authenticate Git with your GitHub credentials? Yes
+! First copy your one-time code: XXXX-XXXX
+- Press Enter to open github.com in your browser...
+Authentication complete. Token was stored in the system keychain.

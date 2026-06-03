@@ -4,10 +4,11 @@ mod file;
 mod render;
 mod search;
 mod shell;
+mod terminal;
 mod todo;
 mod web;
 
-pub(crate) use self::{file::*, render::*, search::*, shell::*, todo::*, web::*};
+pub(crate) use self::{file::*, render::*, search::*, shell::*, terminal::*, todo::*, web::*};
 
 const MIN_TOOL_TIMEOUT_MS: u64 = 250;
 const DEFAULT_HOST_TOOL_TIMEOUT_MS: u64 = 15_000;
@@ -465,7 +466,8 @@ pub(crate) fn execute_model_tool(
                 return output;
             }
         };
-    let input = attach_runtime_cancellation(input, session_id, turn_id, &display_name, &action);
+    let input =
+        attach_runtime_cancellation(input, session_id, turn_id, &call.id, &display_name, &action);
     let (input, timeout_ms) = apply_tool_timeout_policy(input, &display_name, &action);
     record_tool_activity(
         session_id,
@@ -833,6 +835,7 @@ pub(crate) fn attach_runtime_cancellation(
     mut input: Value,
     session_id: &str,
     turn_id: &str,
+    tool_call_id: &str,
     display_name: &str,
     action: &str,
 ) -> Value {
@@ -843,6 +846,7 @@ pub(crate) fn attach_runtime_cancellation(
                 "kind": "lyra_runtime_turn",
                 "sessionId": session_id,
                 "turnId": turn_id,
+                "toolCallId": tool_call_id,
                 "cancellable": matches!(
                     (display_name, action),
                     ("lyra_lumen", _)
@@ -894,7 +898,7 @@ fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
         ("lyra_lumen", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
         ("software", "invoke_capability" | "read_state") => DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS,
         ("software", _) => DEFAULT_HOST_TOOL_TIMEOUT_MS,
-        ("terminal", "wait") => 35_000,
+        ("terminal", "wait" | "read_until") => 35_000,
         ("terminal", _) => DEFAULT_HOST_TOOL_TIMEOUT_MS,
         ("workbench", _) => 5_000,
         _ => DEFAULT_HOST_TOOL_TIMEOUT_MS,

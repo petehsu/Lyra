@@ -49,9 +49,39 @@ export type ToolDetails =
       command?: string;
       wrote?: string;
       reason?: "output" | "exit" | "timeout";
+      screen?: TerminalScreenSnapshot;
       running: boolean;
       exitCode: number | null;
       truncated: boolean;
+      memory?: {
+        eventLogPath?: string;
+        summaryPath?: string;
+        uiTimelinePath?: string;
+        outputTextPath?: string;
+        rawOutputPath?: string;
+        lineIndexPath?: string;
+        errorIndexPath?: string;
+        commandsPath?: string;
+        eventSeqRange?: { start: number; end: number } | null;
+        outputByteRange?: { start: number; end: number };
+        estimatedTokens?: number;
+        lineCount?: number;
+        errorCount?: number;
+        latestOutputPreview?: string;
+        truncatedByProjection?: boolean;
+      };
+      readHint?: {
+        message?: string;
+        outputTextPath?: string;
+        rawOutputPath?: string;
+        lineIndexPath?: string;
+        errorIndexPath?: string;
+        eventLogPath?: string;
+        summaryPath?: string;
+        uiTimelinePath?: string;
+        commandsPath?: string;
+      };
+      artifacts?: ToolActionTarget[];
     }
   | {
       type: "web";
@@ -131,6 +161,92 @@ export interface ToolPeek {
     src: string;
     alt: string;
   };
+}
+
+export interface TerminalScreenCursorPosition {
+  readonly row: number;
+  readonly col: number;
+  readonly visible: boolean;
+}
+
+export interface TerminalScreenVisibleRow {
+  readonly row: number;
+  readonly text: string;
+  readonly wrapped: boolean;
+}
+
+export interface TerminalScreenCell {
+  readonly row: number;
+  readonly col: number;
+  readonly text: string;
+  readonly width: number;
+  readonly styleId?: string | null;
+  readonly hyperlinkId?: string | null;
+}
+
+export interface TerminalScreenStyle {
+  readonly styleId: string;
+  readonly foreground: string;
+  readonly background: string;
+  readonly bold: boolean;
+  readonly dim: boolean;
+  readonly italic: boolean;
+  readonly underline: boolean;
+  readonly inverse: boolean;
+}
+
+export interface TerminalScreenLink {
+  readonly linkId: string;
+  readonly uri: string;
+  readonly rowStart: number;
+  readonly rowEnd: number;
+  readonly colStart: number;
+  readonly colEnd: number;
+}
+
+export interface TerminalScreenInputModes {
+  readonly applicationCursor: boolean;
+  readonly applicationKeypad: boolean;
+  readonly bracketedPaste: boolean;
+  readonly mouseReporting: string;
+  readonly mouseEncoding: string;
+  readonly lineWrap: boolean;
+}
+
+export interface TerminalScreenRegion {
+  readonly regionId: string;
+  readonly kind: string;
+  readonly text: string;
+  readonly rowStart: number;
+  readonly rowEnd: number;
+  readonly colStart: number;
+  readonly colEnd: number;
+  readonly confidence: number;
+  readonly suggestedActions: readonly string[];
+}
+
+export interface TerminalScreenSnapshot {
+  readonly cursor: string;
+  readonly screenVersion: number;
+  readonly rows: number;
+  readonly cols: number;
+  readonly mode: "normal" | "alternate" | "unknown";
+  readonly visibleText: string;
+  readonly visibleRows?: readonly TerminalScreenVisibleRow[];
+  readonly scrollbackText?: string | null;
+  readonly scrollbackCursor?: string;
+  readonly scrollbackRows?: readonly TerminalScreenVisibleRow[];
+  readonly cursorPosition: TerminalScreenCursorPosition;
+  readonly cells?: readonly TerminalScreenCell[];
+  readonly cellsTruncated?: boolean;
+  readonly styles?: readonly TerminalScreenStyle[];
+  readonly links?: readonly TerminalScreenLink[];
+  readonly inputModes?: TerminalScreenInputModes;
+  readonly selectedText?: string | null;
+  readonly activeCommand?: string | null;
+  readonly prompt?: string | null;
+  readonly regions: readonly TerminalScreenRegion[];
+  readonly truncated: boolean;
 }
 
 export interface SearchResult {

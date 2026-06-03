@@ -9,7 +9,6 @@ import {
   createSettingSplitOverflowPolicyOptions,
   createSettingSplitThreePaneLayoutOptions,
   createSettingSplitTriggerModeOptions,
-  createSettingTerminalThemeOptions,
   createSettingThemeOptions
 } from "./service";
 
@@ -20,11 +19,19 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
     () => ({
       terminal: {
         newTab: t("terminal.newTab"),
+        newTabWithProfile: t("terminal.newTabWithProfile"),
+        profile: t("terminal.profile"),
         splitHorizontal: t("terminal.splitHorizontal"),
         splitVertical: t("terminal.splitVertical"),
         moveTerminalToTop: t("panel.moveTerminalToTop"),
         moveTerminalToBottom: t("panel.moveTerminalToBottom"),
         closeTab: t("terminal.closeTab"),
+        renameTab: t("terminal.renameTab"),
+        pinTab: t("terminal.pinTab"),
+        unpinTab: t("terminal.unpinTab"),
+        favoriteTab: t("terminal.favoriteTab"),
+        unfavoriteTab: t("terminal.unfavoriteTab"),
+        exited: t("terminal.exited"),
         emptyDock: t("terminal.emptyDock"),
         unavailable: t("terminal.unavailable")
       },
@@ -32,7 +39,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         locale: createSettingLocaleOptions(t),
         theme: createSettingThemeOptions(t),
         uiStyle: createWorkbenchUiPackOptions(t),
-        terminalTheme: createSettingTerminalThemeOptions(t),
         splitTriggerMode: createSettingSplitTriggerModeOptions(t),
         splitThreePaneLayout: createSettingSplitThreePaneLayoutOptions(t),
         splitOverflowPolicy: createSettingSplitOverflowPolicyOptions(t),
@@ -135,7 +141,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         uiStyleLabel: t("settings.uiStyleLabel"),
         uiStyleExternalReloadRequired: t("settings.uiStyleExternalReloadRequired"),
         uiStyleExternalUntrusted: t("settings.uiStyleExternalUntrusted"),
-        terminalThemeLabel: t("settings.terminalThemeLabel"),
         splitTriggerModeLabel: t("settings.splitTriggerModeLabel"),
         splitThreePaneLayoutLabel: t("settings.splitThreePaneLayoutLabel"),
         splitOverflowPolicyLabel: t("settings.splitOverflowPolicyLabel"),

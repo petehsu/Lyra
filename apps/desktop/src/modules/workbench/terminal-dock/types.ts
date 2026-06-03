@@ -3,29 +3,39 @@ import type {
   TerminalCreateRequest,
   TerminalSessionSnapshot
 } from "../../../shared/desktop-bridge";
-import type { TerminalThemePresetId } from "../terminal-theme";
 import type {
   TerminalDockPaneState as TerminalDockPane,
   TerminalDockState,
   TerminalDockTabState as TerminalDockTab,
+  TerminalFollowMode,
   TerminalTabPlacement,
   TerminalSplitDirection
 } from "../shell/types";
+import type { TerminalProfile, TerminalProfilePaneOptions } from "../terminal-profiles";
 export type {
   TerminalDockPaneState as TerminalDockPane,
   TerminalDockState,
   TerminalDockTabState as TerminalDockTab,
+  TerminalFollowMode,
   TerminalTabPlacement,
   TerminalSplitDirection
 } from "../shell/types";
 
 export type TerminalDockLabels = {
   readonly newTab: string;
+  readonly newTabWithProfile: string;
+  readonly profile: string;
   readonly splitHorizontal: string;
   readonly splitVertical: string;
   readonly moveTerminalToTop: string;
   readonly moveTerminalToBottom: string;
   readonly closeTab: string;
+  readonly renameTab: string;
+  readonly pinTab: string;
+  readonly unpinTab: string;
+  readonly favoriteTab: string;
+  readonly unfavoriteTab: string;
+  readonly exited: string;
   readonly emptyDock: string;
   readonly unavailable: string;
 };
@@ -47,10 +57,23 @@ export type TerminalDockModel = {
     readonly placement?: TerminalTabPlacement;
     readonly title?: string;
     readonly cwd?: string;
+    readonly shell?: string;
+    readonly profileId?: string;
+    readonly env?: TerminalProfilePaneOptions["env"];
+    readonly startupCommand?: string;
+    readonly mode?: "command" | "shell";
+    readonly command?: string;
   }) => {
     readonly tab: TerminalDockTab;
     readonly pane: TerminalDockPane;
   };
+  readonly openTabWithProfile: (profile: TerminalProfile) => {
+    readonly tab: TerminalDockTab;
+    readonly pane: TerminalDockPane;
+  };
+  readonly renameTab: (tabId: string, title: string) => void;
+  readonly toggleTabPinned: (tabId: string) => void;
+  readonly toggleTabFavorite: (tabId: string) => void;
   readonly closeTab: (tabId: string) => void;
   readonly moveTabToWorkspace: (tabId: string) => void;
   readonly moveTabToDock: (tabId: string) => void;
@@ -58,6 +81,7 @@ export type TerminalDockModel = {
   readonly splitActivePane: (direction: TerminalSplitDirection) => void;
   readonly splitTab: (tabId: string, direction: TerminalSplitDirection) => void;
   readonly focusPane: (tabId: string, paneId: string) => void;
+  readonly setPaneFollowMode: (tabId: string, paneId: string, followMode: TerminalFollowMode) => void;
   readonly closePane: (tabId: string, paneId: string) => void;
   readonly syncRestoredSessions: (snapshots: readonly TerminalSessionSnapshot[]) => void;
 };
@@ -72,7 +96,6 @@ export type TerminalDockProps = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: TerminalDockLabels;
   readonly themeSignature: string;
-  readonly themePresetId: TerminalThemePresetId;
   readonly uiThemeId: string;
   readonly model: TerminalDockModel;
   readonly terminalPanelSide: "top" | "bottom";

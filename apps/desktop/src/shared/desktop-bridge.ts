@@ -562,9 +562,36 @@ export const LYRA_CHANNELS = {
   lspEvent: "lyra:lsp/event",
   terminalCreateSession: "lyra:terminal/create-session",
   terminalRestoreSessions: "lyra:terminal/restore-sessions",
+  terminalConnectDataPort: "lyra:terminal/connect-data-port",
+  terminalDataPort: "lyra:terminal/data-port",
+  terminalAttachRenderer: "lyra:terminal/attach-renderer",
+  terminalDetachRenderer: "lyra:terminal/detach-renderer",
+  terminalAckData: "lyra:terminal/ack-data",
   terminalReloadPrompt: "lyra:terminal/reload-prompt",
   terminalWriteSession: "lyra:terminal/write-session",
   terminalReadSession: "lyra:terminal/read-session",
+  terminalReadMemoryTimeline: "lyra:terminal/read-memory-timeline",
+  terminalReadEvents: "lyra:terminal/read-events",
+  terminalReadCommands: "lyra:terminal/read-commands",
+  terminalReadOutputRange: "lyra:terminal/read-output-range",
+  terminalListArtifacts: "lyra:terminal/list-artifacts",
+  terminalReadScreen: "lyra:terminal/read-screen",
+  terminalWaitUntil: "lyra:terminal/wait-until",
+  terminalInputExecute: "lyra:terminal/input-execute",
+  terminalPermissionsEvaluate: "lyra:terminal/permissions/evaluate",
+  terminalPermissionsRespond: "lyra:terminal/permissions/respond",
+  terminalProcessesRead: "lyra:terminal/processes/read",
+  terminalProcessesSignal: "lyra:terminal/processes/signal",
+  terminalCommandStatus: "lyra:terminal/command/status",
+  terminalCommandWait: "lyra:terminal/command/wait",
+  terminalCommandReadOutput: "lyra:terminal/command/read-output",
+  terminalMapRead: "lyra:terminal/map/read",
+  terminalActExecute: "lyra:terminal/act/execute",
+  terminalAttachmentsAttach: "lyra:terminal/attachments/attach",
+  terminalAttachmentsDetach: "lyra:terminal/attachments/detach",
+  terminalAttachmentsList: "lyra:terminal/attachments/list",
+  terminalAttachmentsPause: "lyra:terminal/attachments/pause",
+  terminalAttachmentsResume: "lyra:terminal/attachments/resume",
   terminalResizeSession: "lyra:terminal/resize-session",
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
@@ -1248,8 +1275,713 @@ export type SearchDeepExpandResponse = {
 
 export type TerminalSessionId = string;
 
-export type TerminalCommandSource = "user";
+export type TerminalCommandSource = "user" | "agent" | "system";
 export type TerminalSessionMode = "command" | "shell";
+
+export type TerminalMemoryActor = {
+  readonly kind:
+    | "human_user"
+    | "agent"
+    | "subagent"
+    | "terminal_kernel"
+    | "process"
+    | "system"
+    | "permission";
+  readonly displayName?: string | null;
+  readonly agentSessionId?: string | null;
+  readonly runtimeTurnId?: string | null;
+  readonly toolCallId?: string | null;
+  readonly processId?: number | null;
+  readonly processName?: string | null;
+};
+
+export type TerminalMemoryCorrelation = {
+  readonly agentSessionId?: string | null;
+  readonly runtimeTurnId?: string | null;
+  readonly parentRuntimeTurnId?: string | null;
+  readonly toolCallId?: string | null;
+  readonly terminalToolName?: string | null;
+  readonly commandId?: string | null;
+  readonly inputId?: string | null;
+  readonly outputArtifactId?: string | null;
+  readonly permissionId?: string | null;
+  readonly uiWindowId?: string | null;
+  readonly terminalTabId?: string | null;
+  readonly paneId?: string | null;
+  readonly workbenchTabId?: string | null;
+  readonly projectRoot?: string | null;
+  readonly cwd?: string | null;
+};
+
+export type TerminalMemoryMetadata = {
+  readonly sessionRootPath?: string;
+  readonly eventLogPath: string;
+  readonly summaryPath: string;
+  readonly uiTimelinePath: string;
+  readonly outputTextPath: string;
+  readonly rawOutputPath: string;
+  readonly outputSummaryPath?: string;
+  readonly lineIndexPath: string;
+  readonly errorIndexPath: string;
+  readonly commandsPath: string;
+  readonly commandArtifactsRootPath?: string;
+  readonly permissionsPath?: string;
+  readonly processesPath?: string;
+  readonly attachmentsPath?: string;
+  readonly screenDiffsPath?: string;
+  readonly retentionManifestPath?: string;
+  readonly repairLogPath?: string;
+  readonly indexManifestPath?: string;
+  readonly terminalSessionsIndexPath?: string;
+  readonly terminalEventsIndexPath?: string;
+  readonly terminalCommandsIndexPath?: string;
+  readonly terminalOutputArtifactsIndexPath?: string;
+  readonly terminalPermissionsIndexPath?: string;
+  readonly agentTerminalLinksIndexPath?: string;
+  readonly outputCompactionPath?: string;
+  readonly outputRedactionsPath?: string;
+  readonly restoration?: {
+    readonly metadataRestorable: boolean;
+    readonly historyReadable: boolean;
+    readonly screenReplayable: boolean;
+    readonly ptyRestorable: boolean;
+    readonly ptyRecreatable?: boolean;
+    readonly liveProcessRestorable?: boolean;
+    readonly liveProcessReconnectable?: boolean;
+    readonly reconnectRequiresLivePtyHost?: boolean;
+    readonly reason?: string;
+  };
+  readonly eventSeqRange?: {
+    readonly start: number;
+    readonly end: number;
+  } | null;
+  readonly outputByteRange: {
+    readonly start: number;
+    readonly end: number;
+  };
+  readonly estimatedTokens: number;
+  readonly projectionRecommendation?: "inline" | "cache" | "summary" | string;
+  readonly lineCount?: number;
+  readonly errorCount?: number;
+  readonly latestOutputPreview?: string;
+  readonly truncatedByProjection: boolean;
+  readonly searchHints?: Readonly<Record<string, unknown>>;
+};
+
+export type TerminalMemoryTimelineArtifact = {
+  readonly artifactId?: string;
+  readonly label: string;
+  readonly path: string;
+  readonly kind?: string;
+  readonly mediaType?: string;
+  readonly role?: string;
+  readonly byteLength?: number;
+  readonly exists?: boolean;
+};
+
+export type TerminalMemoryTimelineItem = {
+  readonly itemId: string;
+  readonly terminalSessionId: TerminalSessionId;
+  readonly seq: number;
+  readonly kind: string;
+  readonly actorKind: TerminalMemoryActor["kind"] | string;
+  readonly actorLabel: string;
+  readonly createdAt: string;
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly preview?: string;
+  readonly commandId?: string;
+  readonly agentSessionId?: string;
+  readonly runtimeTurnId?: string;
+  readonly toolCallId?: string;
+  readonly terminalToolName?: string;
+  readonly permissionId?: string;
+  readonly actor?: TerminalMemoryActor | Readonly<Record<string, unknown>>;
+  readonly correlation?: TerminalMemoryCorrelation | Readonly<Record<string, unknown>>;
+  readonly audit?: {
+    readonly actor?: TerminalMemoryActor | Readonly<Record<string, unknown>>;
+    readonly correlation?: TerminalMemoryCorrelation | Readonly<Record<string, unknown>>;
+    readonly permissionChain?: readonly Readonly<Record<string, unknown>>[];
+    readonly latestPermission?: Readonly<Record<string, unknown>> | null;
+    readonly answer?: string | null;
+  };
+  readonly artifacts?: readonly TerminalMemoryTimelineArtifact[];
+};
+
+export type TerminalMemoryTimelineSummary = {
+  readonly terminalSessionId: TerminalSessionId;
+  readonly itemCount: number;
+  readonly eventCount: number;
+  readonly lineCount: number;
+  readonly errorCount: number;
+  readonly estimatedTokens: number;
+  readonly updatedAt?: string;
+  readonly latestEventKind?: string | null;
+  readonly latestItemPreview?: string;
+};
+
+export type TerminalMemoryTimelineReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  /** Timeline event seq cursor token returned by nextCursor for older-page reads. */
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly kinds?: readonly string[];
+  readonly actors?: readonly string[];
+  readonly commandId?: string;
+  readonly toolCallId?: string;
+  readonly agentSessionId?: string;
+  readonly seqStart?: number;
+  readonly seqEnd?: number;
+  readonly timeStartMs?: number;
+  readonly timeEndMs?: number;
+  readonly audit?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalMemoryTimelineReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor: string | null;
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly summary: TerminalMemoryTimelineSummary;
+  readonly memory: TerminalMemoryMetadata;
+  readonly items: readonly TerminalMemoryTimelineItem[];
+};
+
+export type TerminalMemoryEventItem = {
+  readonly eventId?: string;
+  readonly terminalSessionId: TerminalSessionId;
+  readonly seq: number;
+  readonly kind: string;
+  readonly actor: TerminalMemoryActor | Readonly<Record<string, unknown>>;
+  readonly payload: Readonly<Record<string, unknown>>;
+  readonly createdAt?: string;
+  readonly createdAtMs?: number;
+  readonly correlation?: TerminalMemoryCorrelation | Readonly<Record<string, unknown>>;
+  readonly visibility?: string;
+  readonly modelContextPolicy?: string;
+  readonly uiPolicy?: string;
+  readonly auditPolicy?: string;
+};
+
+export type TerminalEventsReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  /** Last consumed event seq encoded as a string cursor token. */
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly kinds?: readonly string[];
+  readonly actors?: readonly string[];
+  readonly audit?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalEventsReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor: string;
+  readonly nextCursor: string;
+  readonly hasMore: boolean;
+  readonly memory: TerminalMemoryMetadata;
+  readonly items: readonly TerminalMemoryEventItem[];
+};
+
+export type TerminalCommandJournalItem = {
+  readonly commandSeq: number;
+  readonly commandId: string;
+  readonly terminalSessionId: TerminalSessionId;
+  readonly commandText?: string;
+  readonly normalizedCommandText?: string;
+  readonly actor?: TerminalMemoryActor | Readonly<Record<string, unknown>>;
+  readonly status?: "running" | "completed" | "failed" | string;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly correlation?: TerminalMemoryCorrelation | Readonly<Record<string, unknown>>;
+  readonly artifactRootPath?: string;
+  readonly commandMetaPath?: string;
+  readonly commandOutputTextPath?: string;
+  readonly commandRawOutputPath?: string;
+  readonly commandEventsPath?: string;
+  readonly commandSummaryPath?: string;
+  readonly confidence?: number;
+  readonly recordedAt?: string;
+};
+
+export type TerminalCommandsReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  /** Last consumed command journal seq encoded as a string cursor token. */
+  readonly cursor?: string;
+  readonly limit?: number;
+  readonly status?: "running" | "completed" | "failed" | "all" | string;
+  readonly audit?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalCommandsReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor: string;
+  readonly nextCursor: string;
+  readonly hasMore: boolean;
+  readonly memory: TerminalMemoryMetadata;
+  readonly items: readonly TerminalCommandJournalItem[];
+};
+
+export type TerminalOutputRangeReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly start: number;
+  readonly end: number;
+  readonly raw?: boolean;
+  readonly audit?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalOutputRangeReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly raw: boolean;
+  readonly encoding: "utf8" | "utf8-lossy" | string;
+  readonly requestedRange: {
+    readonly start: number;
+    readonly end: number;
+  };
+  readonly range: {
+    readonly start: number;
+    readonly end: number;
+  };
+  readonly nextStart: number;
+  readonly byteLength: number;
+  readonly totalBytes: number;
+  readonly output: string;
+  readonly rawBytesHex?: string | null;
+  readonly sha256?: string;
+  readonly truncated: boolean;
+  readonly memory: TerminalMemoryMetadata;
+};
+
+export type TerminalArtifactsListRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly audit?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalArtifactsListResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly memory: TerminalMemoryMetadata;
+  readonly items: readonly TerminalMemoryTimelineArtifact[];
+};
+
+export type TerminalPermissionRisk =
+  | "none"
+  | "low"
+  | "shell"
+  | "dangerous"
+  | "sensitive"
+  | string;
+
+export type TerminalPermissionDecision =
+  | "allow"
+  | "deny"
+  | "needsApproval"
+  | "expired"
+  | "revoked"
+  | string;
+
+export type TerminalPermissionScope = {
+  readonly kind:
+    | "oneShot"
+    | "session"
+    | "commandPattern"
+    | "cwd"
+    | "toolCall"
+    | "agentSession"
+    | "timeLimited"
+    | string;
+  readonly summary?: string;
+  readonly expiresAt?: string | null;
+  readonly commandPattern?: string | null;
+  readonly cwd?: string | null;
+  readonly agentSessionId?: string | null;
+  readonly runtimeTurnId?: string | null;
+  readonly toolCallId?: string | null;
+};
+
+export type TerminalContractEventRef = {
+  readonly eventId?: string;
+  readonly kind: string;
+  readonly seq?: number;
+};
+
+export type TerminalWaitUntilRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly target: "output" | "screen" | "prompt" | "command" | "event";
+  readonly text?: string;
+  readonly regex?: string;
+  readonly commandId?: string;
+  readonly status?: string;
+  readonly cursor?: string;
+  readonly screenCursor?: string;
+  readonly timeoutMs?: number;
+  readonly maxBytes?: number;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalWaitUntilResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly matched: boolean;
+  readonly reason: "output" | "screen" | "prompt" | "command" | "event" | "exit" | "timeout";
+  readonly cursor?: string | null;
+  readonly screenCursor?: string | null;
+  readonly commandId?: string | null;
+  readonly output?: string;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalSemanticInputAction =
+  | "runCommand"
+  | "submitInput"
+  | "pasteText"
+  | "pressKeys"
+  | "selectRegion"
+  | "sendSignal"
+  | "resize"
+  | "attachAgent"
+  | "detachAgent"
+  | string;
+
+export type TerminalInputExecuteRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly action: TerminalSemanticInputAction;
+  readonly command?: string;
+  readonly text?: string;
+  readonly keys?: readonly string[];
+  readonly appendNewline?: boolean;
+  readonly bracketedPaste?: boolean;
+  readonly sensitiveRefs?: readonly string[];
+  readonly regionId?: string;
+  readonly screenCursor?: string;
+  readonly signal?: string;
+  readonly cols?: number;
+  readonly rows?: number;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalInputExecuteResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly inputId: string;
+  readonly action: TerminalSemanticInputAction;
+  readonly status: "executed" | "needsApproval" | "denied" | "cancelled" | "notImplemented" | string;
+  readonly permissionId?: string | null;
+  readonly events: readonly TerminalContractEventRef[];
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalPermissionEvaluateRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly action: TerminalSemanticInputAction;
+  readonly inputId?: string;
+  readonly commandId?: string;
+  readonly risk?: TerminalPermissionRisk;
+  readonly title?: string;
+  readonly summary?: string;
+  readonly detail?: string;
+  readonly redactedPreview?: string;
+  readonly scope?: TerminalPermissionScope;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalPermissionEvaluateResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly permissionId: string;
+  readonly decision: TerminalPermissionDecision;
+  readonly risk: TerminalPermissionRisk;
+  readonly scope?: TerminalPermissionScope;
+  readonly reason?: string;
+  readonly expiresAt?: string | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalPermissionRespondRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly permissionId: string;
+  readonly decision: "allow" | "deny";
+  readonly scope?: TerminalPermissionScope;
+  readonly reason?: string;
+  readonly expiresAt?: string | null;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalPermissionRespondResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly permissionId: string;
+  readonly decision: TerminalPermissionDecision;
+  readonly scope?: TerminalPermissionScope;
+  readonly expiresAt?: string | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalProcessSnapshot = {
+  readonly pid: number;
+  readonly parentPid?: number | null;
+  readonly foreground?: boolean;
+  readonly commandId?: string | null;
+  readonly name?: string | null;
+  readonly commandLine?: string | null;
+  readonly cwd?: string | null;
+  readonly running: boolean;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly children?: readonly TerminalProcessSnapshot[];
+};
+
+export type TerminalProcessesReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly pid?: number;
+  readonly includeTree?: boolean;
+  readonly includeCommand?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalProcessesReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly pid?: number | null;
+  readonly foregroundPid?: number | null;
+  readonly running: boolean;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly limited?: boolean;
+  readonly processes: readonly TerminalProcessSnapshot[];
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalProcessSignalRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly pid?: number;
+  readonly signal: string;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalProcessSignalResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly pid?: number | null;
+  readonly signal: string;
+  readonly status: "sent" | "needsApproval" | "denied" | "notImplemented" | string;
+  readonly inputId?: string | null;
+  readonly permissionId?: string | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalCommandSnapshot = {
+  readonly commandId: string;
+  readonly sessionId: TerminalSessionId;
+  readonly commandText?: string;
+  readonly normalizedCommandText?: string;
+  readonly status: "pending" | "running" | "completed" | "failed" | "cancelled" | "unknown" | string;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly submittedAt?: string | null;
+  readonly startedAt?: string | null;
+  readonly completedAt?: string | null;
+  readonly durationMs?: number | null;
+  readonly cwdBefore?: string | null;
+  readonly cwdAfter?: string | null;
+  readonly outputRange?: { readonly start: number; readonly end: number } | null;
+  readonly rawOutputRange?: { readonly start: number; readonly end: number } | null;
+  readonly screenVersionRange?: { readonly start: number; readonly end: number } | null;
+  readonly artifactRootPath?: string | null;
+  readonly commandMetaPath?: string | null;
+  readonly commandOutputTextPath?: string | null;
+  readonly commandRawOutputPath?: string | null;
+  readonly commandEventsPath?: string | null;
+  readonly commandSummaryPath?: string | null;
+  readonly confidence?: number;
+};
+
+export type TerminalCommandStatusRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly commandId?: string;
+  readonly includeOutputSummary?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalCommandStatusResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly commandId?: string | null;
+  readonly command?: TerminalCommandSnapshot | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalCommandWaitRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly commandId?: string;
+  readonly status?: "completed" | "failed" | "cancelled" | "notRunning" | "any" | string;
+  readonly timeoutMs?: number;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalCommandWaitResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly commandId?: string | null;
+  readonly status: "completed" | "failed" | "cancelled" | "running" | "timeout" | "unknown" | string;
+  readonly reason: "status" | "exit" | "signal" | "timeout" | "notFound" | string;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalCommandOutputReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly commandId: string;
+  readonly start?: number;
+  readonly end?: number;
+  readonly maxBytes?: number;
+  readonly raw?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalCommandOutputReadResponse = TerminalOutputRangeReadResponse & {
+  readonly commandId: string;
+};
+
+export type TerminalMapReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly screenCursor?: string;
+  readonly maxRegions?: number;
+  readonly includeText?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalMapReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly screen: TerminalScreenReadResponse;
+  readonly regions: readonly TerminalScreenRegion[];
+  readonly stale?: boolean;
+  readonly warning?: string;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalActExecuteRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly action: "select" | "confirm" | "cancel" | "toggle" | "type" | "focus" | "scroll" | "read" | string;
+  readonly regionId?: string;
+  readonly screenCursor?: string;
+  readonly text?: string;
+  readonly direction?: "up" | "down" | "left" | "right" | "pageUp" | "pageDown" | string;
+  readonly amount?: number;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalActExecuteResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly actId: string;
+  readonly status: "executed" | "needsApproval" | "denied" | "staleTarget" | "notImplemented" | string;
+  readonly inputId?: string | null;
+  readonly permissionId?: string | null;
+  readonly screenCursor?: string | null;
+  readonly map?: TerminalMapReadResponse;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalAttachmentMode = "observe" | "control" | "takeover" | "delegated" | string;
+export type TerminalAttachmentStatus = "active" | "paused" | "detached" | "revoked" | string;
+
+export type TerminalAttachmentSnapshot = {
+  readonly attachmentId: string;
+  readonly terminalSessionId: TerminalSessionId;
+  readonly agentSessionId: string;
+  readonly runtimeTurnId?: string | null;
+  readonly toolCallId?: string | null;
+  readonly mode: TerminalAttachmentMode;
+  readonly status: TerminalAttachmentStatus;
+  readonly permissionId?: string | null;
+  readonly attachedAt?: string | null;
+  readonly detachedAt?: string | null;
+  readonly pausedAt?: string | null;
+  readonly reason?: string | null;
+};
+
+export type TerminalAttachmentAttachRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly agentSessionId: string;
+  readonly runtimeTurnId?: string;
+  readonly toolCallId?: string;
+  readonly mode: TerminalAttachmentMode;
+  readonly reason?: string;
+  readonly ttlMs?: number;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalAttachmentAttachResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly attachment: TerminalAttachmentSnapshot;
+  readonly permissionId?: string | null;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalAttachmentDetachRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly attachmentId: string;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalAttachmentDetachResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly attachmentId: string;
+  readonly status: TerminalAttachmentStatus;
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalAttachmentListRequest = {
+  readonly sessionId?: TerminalSessionId;
+  readonly agentSessionId?: string;
+  readonly includeDetached?: boolean;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalAttachmentListResponse = {
+  readonly sessionId?: TerminalSessionId;
+  readonly items: readonly TerminalAttachmentSnapshot[];
+  readonly memory?: TerminalMemoryMetadata;
+};
+
+export type TerminalAttachmentPauseRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly attachmentId: string;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalAttachmentPauseResponse = TerminalAttachmentDetachResponse;
+
+export type TerminalAttachmentResumeRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly attachmentId: string;
+  readonly reason?: string;
+  readonly actor: TerminalMemoryActor;
+  readonly correlation: TerminalMemoryCorrelation;
+};
+
+export type TerminalAttachmentResumeResponse = TerminalAttachmentDetachResponse;
 
 export type TerminalCreateRequest = {
   readonly sessionId?: TerminalSessionId;
@@ -1264,6 +1996,26 @@ export type TerminalCreateRequest = {
   readonly cols: number;
   readonly rows: number;
   readonly source: TerminalCommandSource;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalShellLaunchEnvPair = {
+  readonly key: string;
+  readonly value: string;
+};
+
+export type TerminalShellLaunchPlanRequest = {
+  readonly shell: string;
+};
+
+export type TerminalShellLaunchPlanResponse = {
+  readonly shell: string;
+  readonly args: readonly string[];
+  readonly env: readonly TerminalShellLaunchEnvPair[];
+  readonly integrationEnabled: boolean;
+  readonly integrationFamily?: string | null;
+  readonly integrationScriptAsset?: string | null;
 };
 
 export type TerminalSessionSnapshot = {
@@ -1286,27 +2038,16 @@ export type TerminalWriteRequest = {
   readonly sessionId: TerminalSessionId;
   readonly data?: string;
   readonly text?: string;
-  readonly keys?: readonly (
-    | "enter"
-    | "escape"
-    | "tab"
-    | "ctrl_c"
-    | "ctrl_d"
-    | "up"
-    | "down"
-    | "left"
-    | "right"
-    | "page_up"
-    | "page_down"
-    | "home"
-    | "end"
-  )[];
+  readonly keys?: readonly string[];
   readonly appendNewline?: boolean;
   readonly source: TerminalCommandSource;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
 };
 
 export type TerminalReadRequest = {
   readonly sessionId: TerminalSessionId;
+  /** UTF-8 byte offset into session-output.txt encoded as a string cursor token. */
   readonly cursor?: string;
   readonly maxBytes?: number;
   readonly waitMs?: number;
@@ -1321,16 +2062,144 @@ export type TerminalReadResponse = {
   readonly truncated: boolean;
   readonly source: TerminalCommandSource;
   readonly mode: TerminalSessionMode;
+  readonly memory?: TerminalMemoryMetadata;
+  readonly reason?: "output" | "exit" | "timeout";
+};
+
+export type TerminalScreenCursorPosition = {
+  readonly row: number;
+  readonly col: number;
+  readonly visible: boolean;
+};
+
+export type TerminalScreenVisibleRow = {
+  readonly row: number;
+  readonly text: string;
+  readonly wrapped: boolean;
+};
+
+export type TerminalScreenCell = {
+  readonly row: number;
+  readonly col: number;
+  readonly text: string;
+  readonly width: number;
+  readonly styleId?: string | null;
+  readonly hyperlinkId?: string | null;
+};
+
+export type TerminalScreenStyle = {
+  readonly styleId: string;
+  readonly foreground: string;
+  readonly background: string;
+  readonly bold: boolean;
+  readonly dim: boolean;
+  readonly italic: boolean;
+  readonly underline: boolean;
+  readonly inverse: boolean;
+};
+
+export type TerminalScreenLink = {
+  readonly linkId: string;
+  readonly uri: string;
+  readonly rowStart: number;
+  readonly rowEnd: number;
+  readonly colStart: number;
+  readonly colEnd: number;
+};
+
+export type TerminalScreenInputModes = {
+  readonly applicationCursor: boolean;
+  readonly applicationKeypad: boolean;
+  readonly bracketedPaste: boolean;
+  readonly mouseReporting: "none" | "press" | "pressRelease" | "buttonMotion" | "anyMotion" | string;
+  readonly mouseEncoding: "default" | "utf8" | "sgr" | string;
+  readonly lineWrap: boolean;
+};
+
+export type TerminalScreenRegion = {
+  readonly regionId: string;
+  readonly kind: string;
+  readonly text: string;
+  readonly rowStart: number;
+  readonly rowEnd: number;
+  readonly colStart: number;
+  readonly colEnd: number;
+  readonly confidence: number;
+  readonly suggestedActions: readonly string[];
+};
+
+export type TerminalScreenReadRequest = {
+  readonly sessionId: TerminalSessionId;
+  /**
+   * Screen version encoded as a string cursor token. This cursor is independent
+   * from TerminalReadResponse.cursor, which is a UTF-8 output byte offset.
+   */
+  readonly cursor?: string;
+  readonly includeScrollback?: boolean;
+  readonly maxRows?: number;
+  readonly maxBytes?: number;
+  readonly selectedText?: string | null;
+};
+
+export type TerminalScreenReadResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly cursor: string;
+  readonly screenVersion: number;
+  readonly rows: number;
+  readonly cols: number;
+  readonly mode: "normal" | "alternate" | "unknown";
+  readonly visibleText: string;
+  readonly visibleRows: readonly TerminalScreenVisibleRow[];
+  readonly scrollbackText?: string | null;
+  readonly scrollbackCursor: string;
+  readonly scrollbackRows: readonly TerminalScreenVisibleRow[];
+  readonly cursorPosition: TerminalScreenCursorPosition;
+  readonly cells: readonly TerminalScreenCell[];
+  readonly cellsTruncated: boolean;
+  readonly styles: readonly TerminalScreenStyle[];
+  readonly links: readonly TerminalScreenLink[];
+  readonly inputModes: TerminalScreenInputModes;
+  readonly selectedText?: string | null;
+  readonly activeCommand?: string | null;
+  readonly prompt?: string | null;
+  readonly regions: readonly TerminalScreenRegion[];
+  readonly running: boolean;
+  readonly exitCode: number | null;
+  readonly truncated: boolean;
+  readonly memory?: TerminalMemoryMetadata;
 };
 
 export type TerminalResizeRequest = {
   readonly sessionId: TerminalSessionId;
   readonly cols: number;
   readonly rows: number;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
 };
 
 export type TerminalCloseRequest = {
   readonly sessionId: TerminalSessionId;
+  readonly actor?: TerminalMemoryActor;
+  readonly correlation?: TerminalMemoryCorrelation;
+};
+
+export type TerminalRendererAttachRequest = {
+  readonly sessionId: TerminalSessionId;
+};
+
+export type TerminalRendererAttachResponse = {
+  readonly sessionId: TerminalSessionId;
+  readonly attached: boolean;
+};
+
+export type TerminalRendererDetachRequest = {
+  readonly sessionId: TerminalSessionId;
+};
+
+export type TerminalDataAckRequest = {
+  readonly sessionId: TerminalSessionId;
+  readonly dataSeq: number;
+  readonly byteLength: number;
 };
 
 export type TerminalRestoreRequest = {
@@ -1354,6 +2223,8 @@ export type TerminalDataEvent = {
   readonly kind: "data";
   readonly sessionId: TerminalSessionId;
   readonly data: string;
+  readonly dataSeq?: number;
+  readonly byteLength?: number;
 };
 
 export type TerminalExitEvent = {
@@ -1368,7 +2239,39 @@ export type TerminalErrorEvent = {
   readonly error: string;
 };
 
-export type TerminalEvent = TerminalDataEvent | TerminalExitEvent | TerminalErrorEvent;
+export type TerminalCommandCompletedRuntimeEvent = {
+  readonly kind: "commandCompleted";
+  readonly sessionId: TerminalSessionId;
+  readonly commandId: string;
+  readonly exitCode?: number | null;
+  readonly source?: TerminalCommandSource;
+  readonly mode?: TerminalSessionMode;
+  readonly command: {
+    readonly terminalSessionId: TerminalSessionId;
+    readonly commandId: string;
+    readonly commandText?: string | null;
+    readonly status: "completed" | "failed" | "cancelled" | string;
+    readonly exitCode?: number | null;
+    readonly signal?: string | null;
+    readonly actor?: TerminalMemoryActor | Readonly<Record<string, unknown>>;
+    readonly correlation?: TerminalMemoryCorrelation | Readonly<Record<string, unknown>>;
+    readonly outputTextRange?: { readonly start: number; readonly end: number };
+    readonly rawOutputRange?: { readonly start: number; readonly end: number };
+    readonly artifactRootPath?: string;
+    readonly commandMetaPath?: string;
+    readonly commandOutputTextPath?: string;
+    readonly commandRawOutputPath?: string;
+    readonly commandEventsPath?: string;
+    readonly commandSummaryPath?: string;
+    readonly completedAt?: string;
+  };
+};
+
+export type TerminalEvent =
+  | TerminalDataEvent
+  | TerminalExitEvent
+  | TerminalErrorEvent
+  | TerminalCommandCompletedRuntimeEvent;
 
 export type LspLanguageId = "typescript" | "javascript" | "rust" | "python";
 
@@ -1599,9 +2502,71 @@ export type WorkbenchBrowserApi = {
 export type TerminalApi = {
   readonly createSession: (request: TerminalCreateRequest) => Promise<TerminalSessionSnapshot>;
   readonly restoreSessions: (request: TerminalRestoreRequest) => Promise<readonly TerminalSessionSnapshot[]>;
+  readonly attachRenderer?: (request: TerminalRendererAttachRequest) => Promise<TerminalRendererAttachResponse>;
+  readonly detachRenderer?: (request: TerminalRendererDetachRequest) => Promise<void>;
+  readonly ackData?: (request: TerminalDataAckRequest) => Promise<void>;
   readonly reloadPrompt: (request: TerminalReloadPromptRequest) => Promise<TerminalReloadPromptResult>;
+  readonly writeFast?: (request: TerminalWriteRequest) => boolean;
   readonly write: (request: TerminalWriteRequest) => Promise<void>;
   readonly read: (request: TerminalReadRequest) => Promise<TerminalReadResponse>;
+  readonly readScreen: (request: TerminalScreenReadRequest) => Promise<TerminalScreenReadResponse>;
+  readonly readEvents: (request: TerminalEventsReadRequest) => Promise<TerminalEventsReadResponse>;
+  readonly readCommands: (
+    request: TerminalCommandsReadRequest
+  ) => Promise<TerminalCommandsReadResponse>;
+  readonly readOutputRange: (
+    request: TerminalOutputRangeReadRequest
+  ) => Promise<TerminalOutputRangeReadResponse>;
+  readonly listArtifacts: (
+    request: TerminalArtifactsListRequest
+  ) => Promise<TerminalArtifactsListResponse>;
+  readonly readMemoryTimeline: (
+    request: TerminalMemoryTimelineReadRequest
+  ) => Promise<TerminalMemoryTimelineReadResponse>;
+  readonly waitUntil?: (request: TerminalWaitUntilRequest) => Promise<TerminalWaitUntilResponse>;
+  readonly executeInput?: (
+    request: TerminalInputExecuteRequest
+  ) => Promise<TerminalInputExecuteResponse>;
+  readonly evaluatePermission?: (
+    request: TerminalPermissionEvaluateRequest
+  ) => Promise<TerminalPermissionEvaluateResponse>;
+  readonly respondPermission?: (
+    request: TerminalPermissionRespondRequest
+  ) => Promise<TerminalPermissionRespondResponse>;
+  readonly readProcesses?: (
+    request: TerminalProcessesReadRequest
+  ) => Promise<TerminalProcessesReadResponse>;
+  readonly signalProcess?: (
+    request: TerminalProcessSignalRequest
+  ) => Promise<TerminalProcessSignalResponse>;
+  readonly readCommandStatus?: (
+    request: TerminalCommandStatusRequest
+  ) => Promise<TerminalCommandStatusResponse>;
+  readonly waitCommand?: (
+    request: TerminalCommandWaitRequest
+  ) => Promise<TerminalCommandWaitResponse>;
+  readonly readCommandOutput?: (
+    request: TerminalCommandOutputReadRequest
+  ) => Promise<TerminalCommandOutputReadResponse>;
+  readonly readMap?: (request: TerminalMapReadRequest) => Promise<TerminalMapReadResponse>;
+  readonly executeAct?: (
+    request: TerminalActExecuteRequest
+  ) => Promise<TerminalActExecuteResponse>;
+  readonly attachAgent?: (
+    request: TerminalAttachmentAttachRequest
+  ) => Promise<TerminalAttachmentAttachResponse>;
+  readonly detachAgent?: (
+    request: TerminalAttachmentDetachRequest
+  ) => Promise<TerminalAttachmentDetachResponse>;
+  readonly listAttachments?: (
+    request: TerminalAttachmentListRequest
+  ) => Promise<TerminalAttachmentListResponse>;
+  readonly pauseAttachment?: (
+    request: TerminalAttachmentPauseRequest
+  ) => Promise<TerminalAttachmentPauseResponse>;
+  readonly resumeAttachment?: (
+    request: TerminalAttachmentResumeRequest
+  ) => Promise<TerminalAttachmentResumeResponse>;
   readonly resize: (request: TerminalResizeRequest) => Promise<void>;
   readonly closeSession: (request: TerminalCloseRequest) => Promise<void>;
   readonly onData: (listener: (event: TerminalDataEvent) => void) => () => void;

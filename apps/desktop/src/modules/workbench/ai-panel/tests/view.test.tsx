@@ -213,6 +213,58 @@ const createDesktopApi = () => {
       enabled: browserFollowModeEnabled
     };
   });
+  const readTerminalMemoryTimeline = vi.fn(async (request: { readonly sessionId: string }) => ({
+    sessionId: request.sessionId,
+    cursor: null,
+    nextCursor: null,
+    hasMore: false,
+    summary: {
+      terminalSessionId: request.sessionId,
+      itemCount: 2,
+      eventCount: 2,
+      lineCount: 1,
+      errorCount: 0,
+      estimatedTokens: 4,
+      latestItemPreview: "ready"
+    },
+    memory: {
+      eventLogPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/events.jsonl`,
+      summaryPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/summary.json`,
+      uiTimelinePath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/ui-timeline.jsonl`,
+      outputTextPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.txt`,
+      rawOutputPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.raw`,
+      lineIndexPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.lines.jsonl`,
+      errorIndexPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.errors.jsonl`,
+      commandsPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/commands.jsonl`,
+      outputByteRange: { start: 0, end: 5 },
+      estimatedTokens: 2,
+      truncatedByProjection: false
+    },
+    items: [
+      {
+        itemId: "terminal-session-1:1",
+        terminalSessionId: request.sessionId,
+        seq: 1,
+        kind: "session_created",
+        actorKind: "human_user",
+        actorLabel: "User",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        title: "Session created",
+        preview: "Terminal"
+      },
+      {
+        itemId: "terminal-session-1:2",
+        terminalSessionId: request.sessionId,
+        seq: 2,
+        kind: "output_chunk",
+        actorKind: "terminal_kernel",
+        actorLabel: "Kernel",
+        createdAt: "2026-06-01T00:00:01.000Z",
+        title: "Output",
+        preview: "ready"
+      }
+    ]
+  }));
   const api = {
     agent: {
       createSession,
@@ -253,6 +305,9 @@ const createDesktopApi = () => {
     },
     sensitiveValues: {
       revealToUser: revealSensitiveValue
+    },
+    terminal: {
+      readMemoryTimeline: readTerminalMemoryTimeline
     }
   } as unknown as LyraDesktopApi;
   return {
@@ -268,6 +323,7 @@ const createDesktopApi = () => {
     revealSensitiveValue,
     readBrowserFollowMode,
     updateBrowserFollowMode,
+    readTerminalMemoryTimeline,
     emit: (event: AgentRuntimeEvent) => {
       listener?.(event);
     },
@@ -359,7 +415,7 @@ describe("AiPanelSurface", () => {
     renderPanel(api, undefined, undefined, "zh-CN");
 
     await screen.findByText("新会话");
-    expect(screen.getByPlaceholderText("给 Agent 发送消息")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("给Lyra发送消息")).toBeInTheDocument();
     expect(screen.getByLabelText("更多")).toBeInTheDocument();
     expect(await screen.findByLabelText("模型控制")).toBeInTheDocument();
     expect(screen.queryByLabelText("刷新模型列表")).not.toBeInTheDocument();
@@ -391,7 +447,7 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.readSession).toHaveBeenCalled();
     });
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Build the slice" }
     });
     fireEvent.click(screen.getByLabelText("Send"));
@@ -589,7 +645,7 @@ describe("AiPanelSurface", () => {
       expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Queue this while running" }
     });
     expect(screen.queryByLabelText("Pause")).not.toBeInTheDocument();
@@ -610,7 +666,7 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.readSession).toHaveBeenCalled();
     });
-    fireEvent.change(screen.getByPlaceholderText("Send a message to Agent"), {
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Use the configured model" }
     });
     fireEvent.click(screen.getByLabelText("Send"));
@@ -1186,7 +1242,7 @@ describe("AiPanelSurface", () => {
     );
   });
 
-  test("renders structured Render Surface tool output inline in the Agent timeline", async () => {
+  test("surfaces structured Render Surface output without embedding it inside tool details", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
@@ -1229,23 +1285,20 @@ describe("AiPanelSurface", () => {
     });
     const { container } = renderPanel(api);
 
-    fireEvent.click(await screen.findByText("Agent activity"));
-    expect(container.querySelector(".render-surface-frame")).toBeNull();
-    fireEvent.click((await screen.findAllByText("Release Radar"))[0]!);
-
+    await screen.findByText("Agent activity");
     expect(await screen.findByText("Interactive release dashboard for this turn.")).toBeInTheDocument();
     expect(screen.getByText("html")).toBeInTheDocument();
     expect(screen.getByText("release-radar")).toBeInTheDocument();
     expect(screen.getByText("Interactive sandbox")).toBeInTheDocument();
     expect(screen.getByText("No Node")).toBeInTheDocument();
-    const frame = container.querySelector<HTMLIFrameElement>(".render-surface-frame");
-    expect(frame).not.toBeNull();
-    expect(frame).toHaveAttribute("sandbox", expect.stringContaining("allow-scripts"));
-    expect(frame?.getAttribute("srcdoc")).toContain("window.lyraSurface");
-    expect(frame?.style.height).toBe("240px");
+    expect(container.querySelector(".render-surface-frame")).toBeNull();
+
+    fireEvent.click(screen.getByText("Agent activity"));
+    fireEvent.click((await screen.findAllByText("Release Radar"))[0]!);
+    expect(container.querySelector(".render-surface-frame")).toBeNull();
   });
 
-  test("renders structured Render Surface tables without parsing tool text", async () => {
+  test("summarizes structured Render Surface tables without embedding table previews", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
@@ -1284,16 +1337,18 @@ describe("AiPanelSurface", () => {
     });
     const { container } = renderPanel(api);
 
-    fireEvent.click(await screen.findByText("Agent activity"));
-    expect(container.querySelector(".render-surface-table")).toBeNull();
-    fireEvent.click((await screen.findAllByText("Decision Matrix"))[0]!);
-
+    await screen.findByText("Agent activity");
     expect(await screen.findByText("Comparison table generated by Agent.")).toBeInTheDocument();
-    expect(screen.getByText("Option")).toBeInTheDocument();
-    expect(screen.getByText("Risk")).toBeInTheDocument();
-    expect(screen.getByText("Inline surface")).toBeInTheDocument();
-    expect(screen.getByText("Medium")).toBeInTheDocument();
+    expect(screen.getByText("table")).toBeInTheDocument();
+    expect(screen.getByText("decision-matrix")).toBeInTheDocument();
     expect(screen.getByText("Static surface")).toBeInTheDocument();
+    expect(container.querySelector(".render-surface-table")).toBeNull();
+
+    fireEvent.click(screen.getByText("Agent activity"));
+    fireEvent.click((await screen.findAllByText("Decision Matrix"))[0]!);
+    expect(container.querySelector(".render-surface-table")).toBeNull();
+    expect(screen.queryByText("Option")).not.toBeInTheDocument();
+    expect(screen.queryByText("Inline surface")).not.toBeInTheDocument();
   });
 
   test("renders software open targets only when tool output provides explicit targets", async () => {
@@ -1366,6 +1421,96 @@ describe("AiPanelSurface", () => {
 
     fireEvent.click((await screen.findAllByText("terminal.readVisibleBuffer"))[0]!);
     expect(screen.queryByRole("button", { name: /not-a-button/u })).not.toBeInTheDocument();
+  });
+
+  test("keeps terminal memory artifacts out of terminal tool details", async () => {
+    const { api, setReadSnapshot, readTerminalMemoryTimeline } = createDesktopApi();
+    const onOpenFile = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      tools: [{
+        id: "terminal-read",
+        name: "terminal_read",
+        label: "Read terminal",
+        status: "completed",
+        input: { action: "read", sessionId: "terminal-session-1" },
+        output: {
+          content: [
+            "private terminal terminal-session-1: running=true exitCode=null",
+            "fullOutputPath=/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
+            "projected output"
+          ].join("\n"),
+          raw: {
+            target: {
+              type: "private",
+              sessionId: "terminal-session-1"
+            },
+            sessionId: "terminal-session-1",
+            cursor: "20000",
+            output: "projected output",
+            running: true,
+            exitCode: null,
+            truncated: true,
+            memory: {
+              eventLogPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/events.jsonl",
+              summaryPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/summary.json",
+              uiTimelinePath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/ui-timeline.jsonl",
+              outputTextPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
+              rawOutputPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.raw",
+              lineIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.lines.jsonl",
+              errorIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.errors.jsonl",
+              commandsPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/commands.jsonl",
+              eventSeqRange: { start: 1, end: 5 },
+              outputByteRange: { start: 0, end: 20_000 },
+              estimatedTokens: 6_667,
+              lineCount: 120,
+              errorCount: 2,
+              truncatedByProjection: true
+            },
+            readHint: {
+              message: "Full terminal output is cached on disk.",
+              outputTextPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
+              rawOutputPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.raw",
+              lineIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.lines.jsonl",
+              errorIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.errors.jsonl",
+              eventLogPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/events.jsonl",
+              summaryPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/summary.json",
+              uiTimelinePath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/ui-timeline.jsonl",
+              commandsPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/commands.jsonl"
+            }
+          },
+          error: null
+        },
+        startedAt: "2026-05-13T00:00:02.000Z",
+        finishedAt: "2026-05-13T00:00:02.500Z"
+      }]
+    });
+    renderPanel(
+      api,
+      undefined,
+      undefined,
+      "en-US",
+      undefined,
+      undefined,
+      onOpenFile
+    );
+
+    fireEvent.click(await screen.findByText("Agent activity"));
+    fireEvent.click(await screen.findByText("Read terminal"));
+
+    expect(screen.getByText("lines 120 - errors 2 - projected")).toBeInTheDocument();
+    expect(screen.queryByText("Full terminal output is cached on disk.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "session-output.txt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "summary.json" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "session-output.lines.jsonl" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "session-output.errors.jsonl" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "events.jsonl" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ui-timeline.jsonl" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "commands.jsonl" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Timeline" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Timeline" })).not.toBeInTheDocument();
+    expect(readTerminalMemoryTimeline).not.toHaveBeenCalled();
+    expect(onOpenFile).not.toHaveBeenCalled();
   });
 
   test("renders sensitive value refs as user-owned buttons without exposing plaintext to Agent text", async () => {
@@ -2009,7 +2154,7 @@ describe("AiPanelSurface", () => {
 
     expect(await screen.findByText(/公司\/产品名称是什么/u)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Answer the question above first")).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Send a message to Agent")).not.toBeDisabled();
+    expect(screen.getByPlaceholderText("Send a message to Lyra")).not.toBeDisabled();
     expect(api.agent?.respondClarification).not.toHaveBeenCalled();
   });
 

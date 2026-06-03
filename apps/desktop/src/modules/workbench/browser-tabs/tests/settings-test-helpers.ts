@@ -14,7 +14,6 @@ export const createBrowserSettingsSurfaceProps = (
   uiStyleLabel: "UI style",
   uiStyleExternalReloadRequired: "Reload required",
   uiStyleExternalUntrusted: "Untrusted",
-  terminalThemeLabel: "Terminal theme",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
   splitOverflowPolicyLabel: "Split overflow",
@@ -97,7 +96,6 @@ export const createBrowserSettingsSurfaceProps = (
   localeValue: "en-US",
   themeValue: "lyra-light",
   uiStyleValue: "classic",
-  terminalThemeValue: "follow-app",
   splitTriggerModeValue: "ctrl_left_drag",
   splitThreePaneLayoutValue: "adaptive",
   splitOverflowPolicyValue: "block_with_notice",
@@ -139,10 +137,6 @@ export const createBrowserSettingsSurfaceProps = (
     { value: "lyra-dark", label: "Dark" }
   ],
   uiStyleOptions: [{ value: "classic", label: "Classic" }],
-  terminalThemeOptions: [
-    { value: "follow-app", label: "Follow app" },
-    { value: "lyra-standard", label: "Standard" }
-  ],
   splitTriggerModeOptions: [
     { value: "ctrl_left_drag", label: "Ctrl left drag" },
     { value: "right_drag", label: "Right drag" }
@@ -197,7 +191,6 @@ export const createBrowserSettingsSurfaceProps = (
   onLocaleChange: noop,
   onThemeChange: noop,
   onUiStyleChange: noop,
-  onTerminalThemeChange: noop,
   onSplitTriggerModeChange: noop,
   onSplitThreePaneLayoutChange: noop,
   onSplitOverflowPolicyChange: noop,

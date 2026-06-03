@@ -5,7 +5,10 @@ import type {
   AgentRuntimeEvent,
   AgentSessionSnapshot
 } from "../../../shared/agent";
-import type { LyraDesktopApi, LyraSensitiveValueRef } from "../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  LyraSensitiveValueRef
+} from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
 import { APP_CONFIG } from "./agent-chat-demo/core/config";
 import type {
@@ -57,6 +60,12 @@ const resolveSessionRelativePath = (filePath: string, workingDir: string | null 
     parts.push(part);
   }
   return `/${parts.join("/")}`;
+};
+
+const inferHomePathFromWorkingDir = (workingDir: string | null | undefined): string | null => {
+  const normalized = (workingDir ?? "").trim().replaceAll("\\", "/");
+  const match = normalized.match(/^\/(?:Users|home)\/[^/]+(?=\/|$)/u);
+  return match?.[0] ?? null;
 };
 
 const isOpenableImageSource = (source: string | null | undefined): source is string => {
@@ -277,6 +286,11 @@ export const useLyraAgentDataProvider = (
     readonly title?: string;
   }) => Promise<void> | void,
   onOpenFile?: (filePath: string, location?: FileRevealLocation) => void,
+  onOpenTerminalLiveSession?: (request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }) => Promise<void> | void,
   locale?: Locale
 ): {
   readonly data: ReturnType<typeof createDataProviderValue>;
@@ -741,6 +755,12 @@ export const useLyraAgentDataProvider = (
     } else if (cleanedPath.startsWith("file://")) {
       cleanedPath = "/" + cleanedPath.slice(7);
     }
+    if (cleanedPath.startsWith("~/")) {
+      const homePath = inferHomePathFromWorkingDir(state.session?.workingDir);
+      if (homePath !== null) {
+        cleanedPath = `${homePath}${cleanedPath.slice(1)}`;
+      }
+    }
 
     let line: number | undefined;
     let endLine: number | undefined;
@@ -770,6 +790,14 @@ export const useLyraAgentDataProvider = (
       onOpenFile(cleanedPath, location);
     }
   }, [onOpenFile, state.session?.workingDir]);
+
+  const openTerminalLiveSession = useCallback(async (request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }): Promise<void> => {
+    await onOpenTerminalLiveSession?.(request);
+  }, [onOpenTerminalLiveSession]);
 
   const canOpenImageInWorkbench = useCallback((image: AgentImageAttachment): boolean => {
     if (isOpenableImageSource(image.source)) {
@@ -1072,6 +1100,7 @@ export const useLyraAgentDataProvider = (
       setBrowserFollowMode,
       openUrlInWorkbench,
       openFileInWorkbench,
+      openTerminalLiveSession,
       openImageInWorkbench,
       canOpenImageInWorkbench,
       revealSensitiveValueToUser,
@@ -1123,6 +1152,7 @@ export const useLyraAgentDataProvider = (
     openModelSettings,
     openUrlInWorkbench,
     openFileInWorkbench,
+    openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,
     revealSensitiveValueToUser,

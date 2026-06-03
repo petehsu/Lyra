@@ -395,6 +395,104 @@ fn model_tool_execution_records_workbench_activity() {
 }
 
 #[test]
+fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Terminal Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let captured_payload = Arc::new(Mutex::new(None::<Value>));
+    let captured_for_dispatch = captured_payload.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        assert_eq!(method, "terminal.read");
+        let payload_value: Value = serde_json::from_str(&payload).expect("host payload json");
+        *captured_for_dispatch.lock().expect("captured payload lock") = Some(payload_value);
+        Ok(serde_json::to_string(&json!({
+            "target": { "type": "private", "sessionId": "terminal-session-1" },
+            "sessionId": "terminal-session-1",
+            "cursor": "1",
+            "output": "",
+            "running": true,
+            "exitCode": null,
+            "truncated": false
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-terminal-read".to_string(),
+            name: "terminal_read".to_string(),
+            arguments: json!({ "sessionId": "terminal-session-1" }),
+        },
+    );
+
+    assert!(
+        output["content"]
+            .as_str()
+            .expect("content")
+            .contains("terminal-session-1")
+    );
+    let captured = captured_payload
+        .lock()
+        .expect("captured payload lock")
+        .clone()
+        .expect("captured payload");
+    assert_eq!(
+        captured
+            .pointer("/runtimeCancellation/sessionId")
+            .and_then(Value::as_str),
+        Some(session_id.as_str())
+    );
+    assert_eq!(
+        captured
+            .pointer("/runtimeCancellation/turnId")
+            .and_then(Value::as_str),
+        Some(turn_id.as_str())
+    );
+    assert_eq!(
+        captured
+            .pointer("/runtimeCancellation/toolCallId")
+            .and_then(Value::as_str),
+        Some("tool-terminal-read")
+    );
+}
+
+#[test]
+fn terminal_activity_summary_includes_full_output_path_for_projected_memory() {
+    let summary = format_terminal_output(
+        "read",
+        &json!({
+            "target": { "type": "private", "sessionId": "terminal-session-1" },
+            "sessionId": "terminal-session-1",
+            "cursor": "20000",
+            "output": "projected output",
+            "running": true,
+            "exitCode": null,
+            "truncated": true,
+            "memory": {
+                "outputTextPath": "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
+                "truncatedByProjection": true
+            }
+        }),
+    );
+
+    assert!(summary.contains("private terminal terminal-session-1"));
+    assert!(summary.contains(
+        "fullOutputPath=/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt"
+    ));
+    assert!(summary.contains("projected output"));
+}
+
+#[test]
 fn host_tool_ok_false_records_failed_activity() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -647,6 +745,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "terminal_list",
         "terminal_create",
         "terminal_read",
+        "terminal_screen",
         "terminal_wait",
         "terminal_write",
         "terminal_close",
@@ -940,6 +1039,36 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .as_str()
             .unwrap()
             .contains("will be attached to the next provider request")
+    );
+
+    let modules_root = agent_root.parent().expect("modules root");
+    let terminal_memory_dir = modules_root
+        .join("terminal")
+        .join("terminal-memory")
+        .join("sessions")
+        .join("terminal-session-1")
+        .join("outputs");
+    fs::create_dir_all(&terminal_memory_dir).expect("create terminal memory dir");
+    let terminal_output_path = terminal_memory_dir.join("session-output.txt");
+    fs::write(&terminal_output_path, "terminal artifact output").expect("write terminal output");
+    let terminal_artifact = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-terminal-artifact".to_string(),
+            name: "file_read".to_string(),
+            arguments: json!({ "path": terminal_output_path.display().to_string() }),
+        },
+    );
+    assert_eq!(terminal_artifact["raw"]["kind"], "lyra_artifact_read");
+    assert_eq!(terminal_artifact["raw"]["artifactKind"], "terminal_memory");
+    assert!(
+        terminal_artifact["content"]
+            .as_str()
+            .unwrap()
+            .contains("terminal artifact output")
     );
 }
 
@@ -1496,6 +1625,10 @@ fn terminal_host_tools_apply_read_and_write_permission_policy() {
     assert_eq!(permission_risk("terminal", "list", &json!({})), None);
     assert_eq!(
         permission_risk("terminal", "read", &json!({ "sessionId": "terminal-1" })),
+        None
+    );
+    assert_eq!(
+        permission_risk("terminal", "screen", &json!({ "sessionId": "terminal-1" })),
         None
     );
     assert_eq!(

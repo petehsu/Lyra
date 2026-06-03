@@ -11,7 +11,6 @@ import type {
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import { isWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
-import { resolveTerminalThemePresetId } from "../terminal-theme";
 import { resolveWorkbenchUiPackId } from "../ui-platform";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
@@ -94,7 +93,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly theme?: unknown;
       readonly uiPackId?: unknown;
       readonly uiStyleId?: unknown;
-      readonly terminalThemePreset?: unknown;
       readonly splitTriggerMode?: unknown;
       readonly splitThreePaneLayout?: unknown;
       readonly splitOverflowPolicy?: unknown;
@@ -136,10 +134,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         : isUiPackId(parsed.uiStyleId)
           ? parsed.uiStyleId
           : defaults.uiPackId,
-      terminalThemePreset:
-        parsed.terminalThemePreset === undefined
-          ? defaults.terminalThemePreset
-          : resolveTerminalThemePresetId(parsed.terminalThemePreset),
       splitTriggerMode: isSplitTriggerMode(parsed.splitTriggerMode)
         ? parsed.splitTriggerMode
         : defaults.splitTriggerMode,
@@ -262,12 +256,6 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         uiPackId
-      }));
-    },
-    setTerminalThemePreset: (terminalThemePreset) => {
-      commit((current) => ({
-        ...current,
-        terminalThemePreset
       }));
     },
     setSplitTriggerMode: (splitTriggerMode) => {

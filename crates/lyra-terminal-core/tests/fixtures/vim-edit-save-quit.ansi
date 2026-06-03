@@ -1,0 +1,2 @@
+# terminal-fixture-v1: ansi-escaped vim open/edit/save/quit
+\x1b[?1049h\x1b[H\x1b[2Jsrc/main.rs\r\nfn main() {\r\n    println!("hello lyra");\r\n}\r\n\x1b[24;1H-- INSERT --\x1b[24;1H:wq\r\n\x1b[?1049l

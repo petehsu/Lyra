@@ -59,6 +59,7 @@ type UseTitlebarNavigationModelOptions = {
   readonly onReload: () => void;
   readonly onOpenFilePath: (path: string) => string | null;
   readonly onOpenDirectoryPath: (path: string) => Promise<void> | void;
+  readonly onRunTerminalCommand?: (command: string) => Promise<void> | void;
 };
 
 type TitlebarNavigationModel = {
@@ -133,7 +134,8 @@ export const useTitlebarNavigationModel = ({
   reloadLabel,
   onReload,
   onOpenFilePath,
-  onOpenDirectoryPath
+  onOpenDirectoryPath,
+  onRunTerminalCommand
 }: UseTitlebarNavigationModelOptions): TitlebarNavigationModel => {
   const [draftByTabId, setDraftByTabId] = useState<Readonly<Record<string, string>>>({});
 
@@ -257,6 +259,10 @@ export const useTitlebarNavigationModel = ({
         case "empty":
           tabsModel.navigateResolvedInput({ kind: "home" }, { target: "active-tab" });
           return;
+        case "command":
+          await onRunTerminalCommand?.(resolution.command);
+          setSessionHistory(curr => [...new Set([...curr, `> ${resolution.command}`])]);
+          return;
         case "url":
           tabsModel.navigateResolvedInput(
             { kind: "page", address: resolution.address },
@@ -281,6 +287,11 @@ export const useTitlebarNavigationModel = ({
 
     switch (resolution.kind) {
       case "empty":
+        clearDraft(activeTabId);
+        return;
+      case "command":
+        await onRunTerminalCommand?.(resolution.command);
+        setSessionHistory(curr => [...new Set([...curr, `> ${resolution.command}`])]);
         clearDraft(activeTabId);
         return;
       case "url":
@@ -324,6 +335,7 @@ export const useTitlebarNavigationModel = ({
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,
+    onRunTerminalCommand,
     tabsModel
   ]);
 

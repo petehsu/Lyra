@@ -30,6 +30,11 @@ export interface CreateDataProviderValueInput {
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
+  openTerminalLiveSession?: (request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }) => Promise<void>;
   openImageInWorkbench?: (image: AgentImageAttachment) => Promise<void>;
   canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
   revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
@@ -94,6 +99,7 @@ export function createDataProviderValue({
   setBrowserFollowMode = () => resolved,
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
+  openTerminalLiveSession = () => resolved,
   openImageInWorkbench = () => resolved,
   canOpenImageInWorkbench = () => false,
   revealSensitiveValueToUser = async () => {
@@ -154,6 +160,7 @@ export function createDataProviderValue({
     setBrowserFollowMode,
     openUrlInWorkbench,
     openFileInWorkbench,
+    openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,
     revealSensitiveValueToUser,

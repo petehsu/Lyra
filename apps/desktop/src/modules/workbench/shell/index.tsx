@@ -107,13 +107,10 @@ export const WorkbenchShell = () => {
   const contextMenuModel = useContextMenuModel();
   const panelLayoutModel = usePanelLayoutModel();
   const {
-    themeVars,
-    resolvedThemeId,
-    terminalThemeVars,
-    terminalThemeSignature
+themeVars,
+resolvedThemeId,
   } = useWorkbenchThemeRuntime(
     preferencesModel.preferences.theme,
-    preferencesModel.preferences.terminalThemePreset
   );
   const workbenchChromeLabels = useMemo(
     () => createWorkbenchChromeLabels(t),
@@ -411,6 +408,49 @@ export const WorkbenchShell = () => {
   }): void => {
     tabsModel.openPageInNewTab(request.url, request.title ?? request.url);
   }, [tabsModel]);
+  const onRunTerminalCommand = useCallback((command: string): void => {
+    const trimmed = command.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    const { tab } = terminalModel.openTabWithPlacement({
+      placement: "workspace",
+      title: trimmed,
+      mode: "command",
+      command: trimmed
+    });
+    tabsModel.openTerminalTab(tab.id, tab.title);
+  }, [tabsModel, terminalModel]);
+  const onOpenTerminalLiveSession = useCallback((request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }): void => {
+    const normalizedSessionId = request.sessionId?.trim();
+    const normalizedTabId = request.terminalTabId?.trim();
+    const normalizedPaneId = request.paneId?.trim();
+    const targetTab =
+      (normalizedTabId === undefined || normalizedTabId.length === 0
+        ? null
+        : terminalModel.findTab(normalizedTabId))
+      ?? terminalModel.state.tabs.find((tab) =>
+        terminalModel.getTabPanes(tab.id).some((pane) =>
+          (normalizedSessionId === undefined || normalizedSessionId.length === 0 || pane.sessionId === normalizedSessionId)
+          && (normalizedPaneId === undefined || normalizedPaneId.length === 0 || pane.id === normalizedPaneId)
+        )
+      )
+      ?? null;
+    if (targetTab === null) {
+      return;
+    }
+    const targetPane = normalizedPaneId === undefined || normalizedPaneId.length === 0
+      ? terminalModel.getTabPanes(targetTab.id)[0]
+      : terminalModel.getTabPanes(targetTab.id).find((pane) => pane.id === normalizedPaneId);
+    if (targetPane !== undefined) {
+      terminalModel.focusPane(targetTab.id, targetPane.id);
+    }
+    terminalWorkspaceActions.openTerminalTabInWorkspace(targetTab.id);
+  }, [terminalModel, terminalWorkspaceActions]);
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -426,6 +466,7 @@ export const WorkbenchShell = () => {
     onOpenOvernightLab: onOpenAgentOvernightLab,
     onOpenModelSettings: onOpenAgentModelSettings,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
+    onOpenTerminalLiveSession,
     onOpenFile: onOpenFileFromManager,
     t
   });
@@ -453,23 +494,21 @@ export const WorkbenchShell = () => {
     () =>
       ({
         ...themeVars,
-        ...terminalThemeVars,
         ...uiRuntime.vars,
         ...panelLayoutModel.cssVars
       }) as CSSProperties,
-    [panelLayoutModel.cssVars, terminalThemeVars, themeVars, uiRuntime.vars]
+    [panelLayoutModel.cssVars, themeVars, uiRuntime.vars]
   );
 
   useEffect(() => {
     syncCssVarsToDocumentRoot({
       ...themeVars,
-      ...terminalThemeVars,
       ...uiRuntime.vars
     } as Record<`--${string}`, string>);
     document.documentElement.dataset.lyraThemeTone = resolvedThemeId.endsWith("-dark")
       ? "dark"
       : "light";
-  }, [resolvedThemeId, terminalThemeVars, themeVars, uiRuntime.vars]);
+  }, [resolvedThemeId, themeVars, uiRuntime.vars]);
 
   useWorkbenchAppRestoration({
     activeTab,
@@ -510,7 +549,8 @@ export const WorkbenchShell = () => {
     reloadLabel: t("navigation.reloadAction"),
     onReload,
     onOpenFilePath: (path) => onOpenFileFromManager(path),
-    onOpenDirectoryPath: openDirectoryFromNavigation
+    onOpenDirectoryPath: openDirectoryFromNavigation,
+    onRunTerminalCommand
   });
   const titlebarElementPicker = useTitlebarElementPickerModel({
     desktopApi,
@@ -579,7 +619,6 @@ export const WorkbenchShell = () => {
     onPageHostChange: registerPageHost,
     terminalModel,
     desktopApi,
-    terminalThemeSignature,
     resolvedThemeId,
     fileManagerModel,
     resolveFileManagerChooser,
@@ -730,8 +769,7 @@ export const WorkbenchShell = () => {
       <TerminalDockAdapter
         desktopApi={desktopApi}
         labels={labels.terminal}
-        themeSignature={terminalThemeSignature}
-        themePresetId={preferencesModel.preferences.terminalThemePreset}
+        themeSignature={preferencesModel.preferences.theme}
         uiThemeId={resolvedThemeId}
         model={terminalModel}
         terminalPanelSide={panelLayoutModel.terminalPanelSide}

@@ -13,6 +13,7 @@ export const AiPanelSurface = ({
   onOpenOvernightLab,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
+  onOpenTerminalLiveSession,
   onOpenFile,
   locale,
   title
@@ -29,6 +30,7 @@ export const AiPanelSurface = ({
     onOpenModelSettings,
     onOpenUrlInWorkbench,
     onOpenFile,
+    onOpenTerminalLiveSession,
     locale
   );
 

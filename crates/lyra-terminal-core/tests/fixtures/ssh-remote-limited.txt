@@ -1,0 +1,8 @@
+# terminal-fixture-v1: SSH session marked remote/limited
+$ ssh deploy@example.internal
+Welcome to example.internal
+lyra-remote$ uname -a
+Linux example.internal 6.8.0 x86_64 GNU/Linux
+[lyra-terminal] process model: remote session, local process tree unavailable, limited=true
+lyra-remote$ rm -rf ./build
+[lyra-terminal] risk: remote destructive action requires elevated approval

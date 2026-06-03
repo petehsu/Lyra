@@ -22,6 +22,12 @@ export type ShellMetric = {
 
 export type TerminalSplitDirection = "horizontal" | "vertical";
 export type TerminalTabPlacement = "dock" | "workspace";
+export type TerminalFollowMode = "observe" | "control" | "takeover";
+
+export type TerminalEnvironmentVariable = {
+  readonly key: string;
+  readonly value: string;
+};
 
 export type TerminalDockPaneState = {
   readonly id: string;
@@ -29,6 +35,10 @@ export type TerminalDockPaneState = {
   readonly title: string;
   readonly cwd?: string;
   readonly shell?: string;
+  readonly env?: readonly TerminalEnvironmentVariable[];
+  readonly profileId?: string;
+  readonly startupCommand?: string;
+  readonly followMode?: TerminalFollowMode;
   readonly mode?: "command" | "shell";
   readonly command?: string;
 };
@@ -40,6 +50,9 @@ export type TerminalDockTabState = {
   readonly paneIds: readonly string[];
   readonly activePaneId: string;
   readonly placement: TerminalTabPlacement;
+  readonly pinned?: boolean;
+  readonly favorite?: boolean;
+  readonly profileId?: string;
 };
 
 export type TerminalDockState = {

@@ -5,10 +5,15 @@ import {
   createDefaultTerminalDockState,
   moveTerminalTabToDockState,
   moveTerminalTabToWorkspaceState,
+  openTerminalTabWithProfileState,
   openTerminalTabState,
+  renameTerminalTabState,
   reorderDockTerminalTabState,
+  setTerminalPaneFollowModeState,
   splitActivePaneState,
-  syncTerminalSnapshotsState
+  syncTerminalSnapshotsState,
+  toggleTerminalTabFavoriteState,
+  toggleTerminalTabPinnedState
 } from "../service";
 
 describe("terminal dock service", () => {
@@ -89,5 +94,57 @@ describe("terminal dock service", () => {
       "dock",
       "dock"
     ]);
+  });
+
+  test("creates a terminal tab from profile metadata", () => {
+    const state = createDefaultTerminalDockState();
+    const result = openTerminalTabWithProfileState(state, {
+      id: "developer",
+      name: "Developer",
+      shell: "zsh",
+      cwd: "/workspace",
+      env: [{ key: "NODE_ENV", value: "test" }],
+      startupCommand: "npm test",
+      mode: "command"
+    });
+
+    expect(result.tab.profileId).toBe("developer");
+    expect(result.pane).toMatchObject({
+      profileId: "developer",
+      title: "Developer",
+      shell: "zsh",
+      cwd: "/workspace",
+      command: "npm test",
+      startupCommand: "npm test",
+      mode: "command"
+    });
+    expect(result.pane.env).toEqual([{ key: "NODE_ENV", value: "test" }]);
+  });
+
+  test("renames tab and active pane together", () => {
+    const state = createDefaultTerminalDockState();
+    const tab = state.tabs[0]!;
+    const next = renameTerminalTabState(state, tab.id, "Build Shell");
+
+    expect(next.tabs[0]?.title).toBe("Build Shell");
+    expect(next.panes[tab.activePaneId]?.title).toBe("Build Shell");
+  });
+
+  test("stores pane follow mode", () => {
+    const state = createDefaultTerminalDockState();
+    const tab = state.tabs[0]!;
+    const next = setTerminalPaneFollowModeState(state, tab.id, tab.activePaneId, "takeover");
+
+    expect(next.panes[tab.activePaneId]?.followMode).toBe("takeover");
+  });
+
+  test("toggles pinned and favorite tab metadata", () => {
+    const state = createDefaultTerminalDockState();
+    const tab = state.tabs[0]!;
+    const pinned = toggleTerminalTabPinnedState(state, tab.id);
+    const favorite = toggleTerminalTabFavoriteState(pinned, tab.id);
+
+    expect(favorite.tabs[0]?.pinned).toBe(true);
+    expect(favorite.tabs[0]?.favorite).toBe(true);
   });
 });

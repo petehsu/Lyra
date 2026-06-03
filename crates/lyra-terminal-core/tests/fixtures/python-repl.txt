@@ -1,0 +1,7 @@
+# terminal-fixture-v1: Python REPL
+$ python3
+Python 3.12.0 (main, Jan 1 2026, 00:00:00) [Clang] on darwin
+>>> answer = 21 * 2
+>>> answer
+42
+>>> exit()

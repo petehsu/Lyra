@@ -148,7 +148,7 @@ export const buildAgentCursorOverlayScript = ({
       aura.style.height = "90px";
       aura.style.borderRadius = "999px";
       aura.style.background = "radial-gradient(circle, rgba(68, 210, 255, 0.36) 0%, rgba(85, 130, 255, 0.18) 38%, rgba(85, 130, 255, 0) 72%)";
-      aura.style.filter = "blur(2px)";
+      aura.style.filter = "none";
       wrap.appendChild(aura);
     }
 
@@ -162,8 +162,7 @@ export const buildAgentCursorOverlayScript = ({
       svg.style.left = "0px";
       svg.style.top = "0px";
       svg.style.overflow = "visible";
-      svg.style.filter =
-        "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.72)) drop-shadow(0 0 12px rgba(57, 201, 255, 0.72))";
+      svg.style.filter = "none";
 
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", payload.path);
@@ -179,20 +178,11 @@ export const buildAgentCursorOverlayScript = ({
       root.appendChild(wrap);
     }
 
-    if (isNewWrap && typeof aura.animate === "function") {
-      aura.animate(
-        [
-          { transform: "scale(0.86)", opacity: "0.58" },
-          { transform: "scale(1.08)", opacity: "1" }
-        ],
-        { duration: 860, easing: "ease-in-out", iterations: Infinity, direction: "alternate" }
-      );
-    }
 
     if (typeof window.__lyraAgentCursorTimer === "number") {
       window.clearTimeout(window.__lyraAgentCursorTimer);
     }
-    const safetyDurationMs = Math.max(90_000, Math.min(300_000, payload.durationMs * 12));
+    const safetyDurationMs = Math.max(3_000, Math.min(10_000, payload.durationMs * 2));
     window.__lyraAgentCursorTimer = window.setTimeout(() => {
       const remove = () => {
         if (host.parentNode) {

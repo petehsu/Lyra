@@ -33,6 +33,14 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
   createSession: vi.fn(),
   write: vi.fn(),
   readObservation: vi.fn(),
+  readScreen: vi.fn(),
+  readEvents: vi.fn(),
+  readCommands: vi.fn(),
+  readCommandStatus: vi.fn(async () => ({ command: null })),
+  waitCommand: vi.fn(),
+  readCommandOutput: vi.fn(),
+  readOutputRange: vi.fn(),
+  listArtifacts: vi.fn(),
   closeSession: vi.fn(),
   dispose: vi.fn(),
   ...overrides
@@ -346,6 +354,66 @@ describe("Agent IPC bridge", () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
+  test("pokes Agent runtime when an Agent-owned terminal command completes", async () => {
+    let runtimeListener: RuntimeListener | null = null;
+    const request = vi.fn(async (method: string, payload: unknown) => ({ method, payload }));
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request,
+        subscribe: vi.fn((listener) => {
+          runtimeListener = listener;
+          return vi.fn();
+        }),
+        registerRequestHandler: vi.fn(),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    expect(runtimeListener).not.toBeNull();
+    const listener = runtimeListener as unknown as RuntimeListener;
+    listener("terminal.runtime", {
+      kind: "commandCompleted",
+      sessionId: "terminal-1",
+      commandId: "command-1",
+      exitCode: 0,
+      command: {
+        terminalSessionId: "terminal-1",
+        commandId: "command-1",
+        commandText: "npm test",
+        status: "completed",
+        exitCode: 0,
+        correlation: {
+          agentSessionId: "agent-1",
+          runtimeTurnId: "turn-1",
+          toolCallId: "tool-1"
+        },
+        commandSummaryPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/summary.json",
+        commandOutputTextPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/output.txt"
+      }
+    });
+    await Promise.resolve();
+
+    expect(request).toHaveBeenCalledWith("agent.action.poke", {
+      sessionId: "agent-1",
+      reason: "terminal_command_completed",
+      terminal: {
+        sessionId: "terminal-1",
+        commandId: "command-1",
+        status: "completed",
+        exitCode: 0,
+        commandSummaryPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/summary.json",
+        commandOutputTextPath: "/tmp/terminal-memory/sessions/terminal-1/commands/command-1/output.txt"
+      }
+    });
+
+    bridge.dispose();
+  });
+
   test("registers Workbench observation host capability handlers", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const tabs = {
@@ -537,28 +605,47 @@ describe("Agent IPC bridge", () => {
 
   test("terminal host tools create private sessions when follow is off", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
-    const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({
+    const createSession = vi.fn(async (request: {
+      readonly sessionId?: string;
+      readonly source?: string;
+    }) => ({
       sessionId: request.sessionId ?? "private-terminal-1",
       title: "Agent Terminal",
       shell: "/bin/zsh",
       cols: 80,
       rows: 24,
       createdAt: "1000",
-      source: "user",
+      source: request.source ?? "user",
       mode: "shell",
       persist: false,
       running: true,
       exitCode: null
     }));
-    const readObservation = vi.fn(async () => ({
-      sessionId: "private-terminal-1",
+    const readObservation = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
       cursor: "12",
       output: "ready",
       running: true,
       exitCode: null,
       truncated: false,
       source: "user",
-      mode: "shell"
+      mode: "shell",
+      memory: {
+        eventLogPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/events.jsonl",
+        summaryPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/summary.json",
+        uiTimelinePath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/ui-timeline.jsonl",
+        outputTextPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.txt",
+        rawOutputPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.raw",
+        lineIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.lines.jsonl",
+        errorIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.errors.jsonl",
+        commandsPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/commands.jsonl",
+        eventSeqRange: { start: 1, end: 1 },
+        outputByteRange: { start: 0, end: 5 },
+        estimatedTokens: 2,
+        lineCount: 1,
+        errorCount: 0,
+        truncatedByProjection: false
+      }
     }));
     const terminalBridge = createTerminalBridgeMock({
       createSession,
@@ -585,15 +672,157 @@ describe("Agent IPC bridge", () => {
 
     await expect(
       registered.get("terminal.create")?.({
-        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-1" }
       })
     ).resolves.toMatchObject({
       target: { type: "private" },
       output: "ready",
-      running: true
+      running: true,
+      memory: {
+        outputTextPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.txt"
+      }
     });
     expect(createSession).toHaveBeenCalledOnce();
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
+      source: "agent",
+      actor: expect.objectContaining({
+        kind: "agent",
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-1",
+        toolCallId: "tool-1"
+      }),
+      correlation: expect.objectContaining({
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-1",
+        toolCallId: "tool-1",
+        terminalToolName: "terminal.create"
+      })
+    }));
     expect(openTerminalPane).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
+
+  test("terminal_screen returns Rust screen snapshots for private terminals", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const createSession = vi.fn(async () => ({
+      sessionId: "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "agent",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    }));
+    const readObservation = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
+      cursor: "0",
+      output: "",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "agent",
+      mode: "shell"
+    }));
+    const readScreen = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
+      cursor: "7",
+      screenVersion: 7,
+      rows: 24,
+      cols: 80,
+      mode: "normal",
+      visibleText: "ready\n$",
+      visibleRows: [
+        { row: 0, text: "ready", wrapped: false },
+        { row: 1, text: "$", wrapped: false }
+      ],
+      scrollbackText: null,
+      scrollbackCursor: "0",
+      scrollbackRows: [],
+      cursorPosition: { row: 1, col: 1, visible: true },
+      cells: [],
+      cellsTruncated: false,
+      styles: [],
+      links: [],
+      inputModes: {
+        applicationCursor: false,
+        applicationKeypad: false,
+        bracketedPaste: false,
+        mouseReporting: "none",
+        mouseEncoding: "default",
+        lineWrap: true
+      },
+      selectedText: null,
+      activeCommand: null,
+      prompt: null,
+      regions: [],
+      running: true,
+      exitCode: null,
+      truncated: false,
+      memory: {
+        outputTextPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.txt",
+        rawOutputPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.raw",
+        eventLogPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/events.jsonl",
+        summaryPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/summary.json",
+        uiTimelinePath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/ui-timeline.jsonl",
+        lineIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.lines.jsonl",
+        errorIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.errors.jsonl",
+        commandsPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/commands.jsonl",
+        eventSeqRange: { start: 1, end: 3 },
+        outputByteRange: { start: 0, end: 8 },
+        estimatedTokens: 3,
+        lineCount: 1,
+        errorCount: 0,
+        truncatedByProjection: false
+      }
+    }));
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock({
+        createSession,
+        readObservation,
+        readScreen
+      }) as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    await registered.get("terminal.create")?.({
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-1" }
+    });
+    await expect(
+      registered.get("terminal.screen")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-2" },
+        maxRows: 10
+      })
+    ).resolves.toMatchObject({
+      target: { type: "private", sessionId: "private-terminal-1" },
+      output: "ready\n$",
+      screen: {
+        screenVersion: 7,
+        mode: "normal",
+        visibleText: "ready\n$",
+        cursorPosition: { row: 1, col: 1, visible: true }
+      },
+      running: true
+    });
+    expect(readScreen).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "private-terminal-1",
+      maxRows: 10
+    }));
 
     bridge.dispose();
   });
@@ -645,7 +874,8 @@ describe("Agent IPC bridge", () => {
     electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true });
     await expect(
       registered.get("terminal.create")?.({
-        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" }
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-2" },
+        command: "echo ui"
       })
     ).resolves.toMatchObject({
       target: {
@@ -657,6 +887,103 @@ describe("Agent IPC bridge", () => {
     });
     expect(observationService.openTerminalPane).toHaveBeenCalledOnce();
     expect(terminalBridge.createSession).not.toHaveBeenCalled();
+    expect(terminalBridge.write).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "ui-terminal-1",
+      text: "echo ui",
+      appendNewline: true,
+      source: "agent",
+      actor: expect.objectContaining({
+        kind: "agent",
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-1",
+        toolCallId: "tool-2"
+      }),
+      correlation: expect.objectContaining({
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-1",
+        toolCallId: "tool-2",
+        terminalToolName: "terminal.create",
+        terminalTabId: "terminal-tab-1",
+        paneId: "pane-1"
+      })
+    }));
+
+    bridge.dispose();
+  });
+
+  test("terminal host tools return memory hints when output is projected", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const longOutput = "x".repeat(20_000);
+    const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({
+      sessionId: request.sessionId ?? "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "agent",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    }));
+    const readObservation = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
+      cursor: "20000",
+      output: longOutput,
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "agent",
+      mode: "shell",
+      memory: {
+        eventLogPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/events.jsonl",
+        summaryPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/summary.json",
+        uiTimelinePath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/ui-timeline.jsonl",
+        outputTextPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.txt",
+        rawOutputPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.raw",
+        lineIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.lines.jsonl",
+        errorIndexPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.errors.jsonl",
+        commandsPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/commands.jsonl",
+        eventSeqRange: { start: 1, end: 2 },
+        outputByteRange: { start: 0, end: 20_000 },
+        estimatedTokens: 6_667,
+        lineCount: 200,
+        errorCount: 0,
+        truncatedByProjection: false
+      }
+    }));
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock({ createSession, readObservation }) as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    const result = await registered.get("terminal.create")?.({
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-long" }
+    }) as {
+      readonly output: string;
+      readonly truncated: boolean;
+      readonly memory: { readonly truncatedByProjection: boolean };
+      readonly readHint: { readonly outputTextPath: string };
+    };
+
+    expect(result.output.length).toBeLessThan(longOutput.length);
+    expect(result.truncated).toBe(true);
+    expect(result.memory.truncatedByProjection).toBe(true);
+    expect(result.readHint.outputTextPath).toBe(
+      "/tmp/lyra-agent-test/terminal-memory/sessions/private/outputs/session-output.txt"
+    );
 
     bridge.dispose();
   });
@@ -729,7 +1056,7 @@ describe("Agent IPC bridge", () => {
 
     await expect(
       registered.get("terminal.write")?.({
-        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1" },
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-3" },
         sessionId: "private-terminal-1",
         text: "echo visible",
         appendNewline: true
@@ -743,8 +1070,106 @@ describe("Agent IPC bridge", () => {
       }
     });
     expect(terminalBridge.write).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sessionId: "ui-terminal-1" })
+      expect.objectContaining({
+        sessionId: "ui-terminal-1",
+        source: "agent",
+        actor: expect.objectContaining({
+          kind: "agent",
+          agentSessionId: "agent-1",
+          runtimeTurnId: "turn-1",
+          toolCallId: "tool-3"
+        }),
+        correlation: expect.objectContaining({
+          agentSessionId: "agent-1",
+          runtimeTurnId: "turn-1",
+          toolCallId: "tool-3",
+          terminalToolName: "terminal.write",
+          commandId: expect.any(String),
+          inputId: expect.any(String),
+          terminalTabId: "terminal-tab-1",
+          paneId: "pane-1"
+        })
+      })
     );
+
+    bridge.dispose();
+  });
+
+  test("terminal close passes Agent actor and correlation to terminal bridge", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const createSession = vi.fn(async (request: { readonly sessionId?: string }) => ({
+      sessionId: request.sessionId ?? "private-terminal-1",
+      title: "Agent Terminal",
+      shell: "/bin/zsh",
+      cols: 80,
+      rows: 24,
+      createdAt: "1000",
+      source: "agent",
+      mode: "shell",
+      persist: false,
+      running: true,
+      exitCode: null
+    }));
+    const closeSession = vi.fn(async () => undefined);
+    const readObservation = vi.fn(async (request: { readonly sessionId: string }) => ({
+      sessionId: request.sessionId,
+      cursor: "0",
+      output: "",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "agent",
+      mode: "shell"
+    }));
+    const terminalBridge = createTerminalBridgeMock({
+      createSession,
+      closeSession,
+      readObservation
+    });
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null
+    });
+
+    const created = await registered.get("terminal.create")?.({
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-create" }
+    }) as { readonly sessionId: string };
+    await expect(
+      registered.get("terminal.close")?.({
+        runtimeCancellation: { sessionId: "agent-1", turnId: "turn-2", toolCallId: "tool-close" },
+        sessionId: created.sessionId
+      })
+    ).resolves.toMatchObject({
+      target: { type: "private", sessionId: created.sessionId },
+      output: "Terminal closed."
+    });
+
+    expect(closeSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: created.sessionId,
+      actor: expect.objectContaining({
+        kind: "agent",
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-2",
+        toolCallId: "tool-close"
+      }),
+      correlation: expect.objectContaining({
+        agentSessionId: "agent-1",
+        runtimeTurnId: "turn-2",
+        toolCallId: "tool-close",
+        terminalToolName: "terminal.close"
+      })
+    }));
 
     bridge.dispose();
   });
@@ -784,7 +1209,8 @@ describe("Agent IPC bridge", () => {
         exitCode: 0,
         truncated: false,
         source: "user",
-        mode: "shell"
+        mode: "shell",
+        reason: "exit"
       });
     const terminalBridge = createTerminalBridgeMock({
       createSession,

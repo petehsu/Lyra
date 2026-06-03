@@ -37,6 +37,11 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     readonly url: string;
     readonly title?: string;
   }) => Promise<void> | void;
+  readonly onOpenTerminalLiveSession: (request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }) => Promise<void> | void;
   readonly onOpenFile?: ((
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }
@@ -56,6 +61,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onOpenOvernightLab,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
+  onOpenTerminalLiveSession,
   onOpenFile,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
@@ -74,6 +80,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenOvernightLab,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
+      onOpenTerminalLiveSession,
       onOpenFile,
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
@@ -90,6 +97,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenOvernightLab,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
+      onOpenTerminalLiveSession,
       onOpenFile,
       preferences.locale,
       t,

@@ -6,7 +6,7 @@ import {
 } from "./settings-schema";
 import type { BrowserSettingsSurfaceProps, SettingsOption } from "./settings-surface-types";
 
-export type SettingsPreviewKind = "theme" | "terminal-theme" | "split-layout";
+export type SettingsPreviewKind = "theme" | "split-layout";
 
 export type SettingsChoiceControlDescriptor = {
   readonly kind: "choice";
@@ -353,21 +353,6 @@ const createSectionControl = (
             options: props.uiStyleOptions,
             value: props.uiStyleValue,
             onChange: props.onUiStyleChange
-          })
-        ]
-      });
-    case "terminalTheme":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.terminalThemeLabel,
-        controls: [
-          createChoiceControl({
-            label: props.terminalThemeLabel,
-            options: props.terminalThemeOptions,
-            value: props.terminalThemeValue,
-            onChange: props.onTerminalThemeChange,
-            gridClassName: "lyra-settings-choice-grid lyra-settings-choice-grid-themes",
-            previewKind: "terminal-theme"
           })
         ]
       });

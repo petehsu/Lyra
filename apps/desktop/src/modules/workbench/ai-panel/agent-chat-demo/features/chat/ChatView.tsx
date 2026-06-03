@@ -246,7 +246,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
               className="chat-thread-anchor-button"
               onClick={scrollToStickyMessage}
               aria-label={t("scroll.jumpToPreviousMessage")}
-              title={t("scroll.jumpToPreviousMessage")}
+              title={`${t("scroll.jumpToPreviousMessage")}: ${stickyMessagePreview}`}
             >
               <CornerUpLeft size={13} strokeWidth={2.1} aria-hidden="true" />
               <span className="chat-thread-anchor-label">{t("scroll.previousMessage")}</span>

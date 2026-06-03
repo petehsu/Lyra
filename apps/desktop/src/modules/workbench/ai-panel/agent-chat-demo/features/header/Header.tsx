@@ -278,7 +278,7 @@ export function Header() {
 
   return (
     <header className="app-header">
-      <div className="app-header-title">{session.title}</div>
+      <div className="app-header-title" title={session.title}>{session.title}</div>
       <div className="app-header-right">
         <div className="app-header-project-controls">
           <button

@@ -1,0 +1,16 @@
+# terminal-fixture-v1: npm test failure with stack trace
+$ npm test -- --runInBand
+> lyra-app@0.1.0 test
+> vitest run --runInBand
+
+FAIL src/terminal/session.test.ts
+  TerminalSession
+    x records command completion
+
+  AssertionError: expected 'running' to equal 'completed'
+    at src/terminal/session.test.ts:42:24
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+Test Files 1 failed, 17 passed
+Tests 1 failed, 92 passed
+Duration 3.42s

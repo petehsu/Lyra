@@ -446,6 +446,30 @@ export const createLyraRuntimeClient = (
     });
   };
 
+  const connectRuntimeDaemon = async (): Promise<void> => {
+    const connected = await createSocket(socketPath);
+    try {
+      attachSocket(connected);
+      const handshake = await sendRequestUnsafe<{ readonly protocolVersion: number }>(
+        HANDSHAKE_METHOD,
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          clientName: `desktop-${os.hostname()}`
+        }
+      );
+      if (handshake.protocolVersion !== PROTOCOL_VERSION) {
+        throw new Error(
+          `Lyra runtime protocol mismatch: expected ${PROTOCOL_VERSION}, got ${handshake.protocolVersion}`
+        );
+      }
+      console.info(`[lyra-runtime] runtime daemon connected socket=${socketPath}`);
+    } catch (error) {
+      socket?.destroy();
+      socket = null;
+      throw error;
+    }
+  };
+
   const ensureStarted = async (): Promise<void> => {
     if (disposed) {
       throw new Error("Lyra runtime client already disposed");
@@ -459,26 +483,25 @@ export const createLyraRuntimeClient = (
     }
 
     startPromise = (async () => {
+      let lastError: unknown = null;
+      try {
+        await connectRuntimeDaemon();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (
+          error instanceof Error &&
+          error.message.includes("Lyra runtime protocol mismatch")
+        ) {
+          throw error;
+        }
+      }
+
       spawnDaemon();
 
-      let lastError: unknown = null;
       for (let attempt = 0; attempt < 40; attempt += 1) {
         try {
-          const connected = await createSocket(socketPath);
-          attachSocket(connected);
-          const handshake = await sendRequestUnsafe<{ readonly protocolVersion: number }>(
-            HANDSHAKE_METHOD,
-            {
-              protocolVersion: PROTOCOL_VERSION,
-              clientName: `desktop-${os.hostname()}`
-            }
-          );
-          if (handshake.protocolVersion !== PROTOCOL_VERSION) {
-            throw new Error(
-              `Lyra runtime protocol mismatch: expected ${PROTOCOL_VERSION}, got ${handshake.protocolVersion}`
-            );
-          }
-          console.info(`[lyra-runtime] runtime daemon connected socket=${socketPath}`);
+          await connectRuntimeDaemon();
           return;
         } catch (error) {
           lastError = error;

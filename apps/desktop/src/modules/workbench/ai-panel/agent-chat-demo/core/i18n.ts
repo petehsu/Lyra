@@ -8,7 +8,7 @@ const ZH_MESSAGES = {
   "app.title": "Lyra Agent UI",
   "app.tagline": "Agent 交互体验演示",
 
-  "composer.placeholder": "给 Agent 发送消息",
+  "composer.placeholder": "给Lyra发送消息",
   "composer.send": "发送",
   "composer.pause": "暂停",
   "composer.followAgent": "跟随 Agent",
@@ -122,7 +122,7 @@ const ZH_MESSAGES = {
 
   "tool.ask.prefix": "已询问：",
   "tool.collapseGroup": "收起工具组",
-  "tool.collapseCall": "收起工具调用",
+    "tool.collapseCall": "收起工具调用",
   "tool.collapseEditDetails": "收起编辑详情",
   "tool.agentActivity": "Agent 活动",
   "tool.events": "{count} 个工具事件",
@@ -136,7 +136,7 @@ const EN_MESSAGES: Messages = {
   "app.title": "Lyra Agent UI",
   "app.tagline": "Agent interaction demo",
 
-  "composer.placeholder": "Send a message to Agent",
+  "composer.placeholder": "Send a message to Lyra",
   "composer.send": "Send",
   "composer.pause": "Pause",
   "composer.followAgent": "Follow Agent",

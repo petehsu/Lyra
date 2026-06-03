@@ -971,6 +971,26 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-terminal",
+                "terminal_screen",
+                "Read the current Rust terminal screen snapshot, including visible text, cursor position, and screen mode.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "cursor": { "type": "string" },
+                        "includeScrollback": { "type": "boolean", "default": false },
+                        "maxRows": { "type": "number", "default": 200 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.screen"),
+            ),
+            capability(
+                "lyra-terminal",
                 "terminal_wait",
                 "Wait until terminal output advances, the process exits, or the timeout expires.",
                 "read",
@@ -1024,6 +1044,290 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     }
                 }),
                 Some("terminal.close"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_events",
+                "Read terminal memory events by journal cursor without blocking on terminal output.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "cursor": { "type": "string" },
+                        "limit": { "type": "number", "default": 100 },
+                        "kinds": { "type": "array", "items": { "type": "string" } },
+                        "actors": { "type": "array", "items": { "type": "string" } }
+                    }
+                }),
+                Some("terminal.events.read"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_read_until",
+                "Wait until terminal output, screen text, prompt, command status, or event journal matches a condition.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "until": { "type": "string", "enum": ["output", "screen", "prompt", "command", "event"], "default": "output" },
+                        "text": { "type": "string" },
+                        "regex": { "type": "string" },
+                        "commandId": { "type": "string" },
+                        "status": { "type": "string" },
+                        "cursor": { "type": "string" },
+                        "screenCursor": { "type": "string" },
+                        "timeoutMs": { "type": "number", "default": 30000, "maximum": 120000 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    }
+                }),
+                Some("terminal.waitUntil"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_run",
+                "Run one semantic command in a persistent terminal and return a budgeted output projection with command correlation.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "command": { "type": "string" },
+                        "cwd": { "type": "string" },
+                        "timeoutMs": { "type": "number", "default": 30000, "maximum": 120000 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    },
+                    "required": ["command"]
+                }),
+                Some("terminal.input.execute"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_input",
+                "Submit semantic input or paste text into a terminal without exposing raw bytes in the permission summary.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "text": { "type": "string" },
+                        "appendNewline": { "type": "boolean", "default": false },
+                        "bracketedPaste": { "type": "boolean", "default": false },
+                        "sensitiveRefs": { "type": "array", "items": { "type": "string" } },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    },
+                    "required": ["text"]
+                }),
+                Some("terminal.input.execute"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_keys",
+                "Press one or more semantic terminal keys such as enter, escape, tab, ctrl_c, arrows, page keys, home, or end.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "keys": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["enter", "escape", "tab", "ctrl_c", "ctrl_d", "up", "down", "left", "right", "page_up", "page_down", "home", "end"]
+                            }
+                        },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    },
+                    "required": ["keys"]
+                }),
+                Some("terminal.input.execute"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_resize",
+                "Resize a terminal session and return the current screen projection after the resize.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "cols": { "type": "number" },
+                        "rows": { "type": "number" },
+                        "maxRows": { "type": "number", "default": 200 },
+                        "maxBytes": { "type": "number", "default": 16000 }
+                    },
+                    "required": ["cols", "rows"]
+                }),
+                Some("terminal.resize"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_signal",
+                "Send a semantic signal to a terminal process, defaulting to the foreground process when pid is omitted.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "pid": { "type": "number" },
+                        "signal": { "type": "string", "default": "SIGTERM" },
+                        "reason": { "type": "string" }
+                    },
+                    "required": ["signal"]
+                }),
+                Some("terminal.processes.signal"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_processes",
+                "Read the terminal foreground process and optional process tree.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "pid": { "type": "number" },
+                        "includeTree": { "type": "boolean", "default": true },
+                        "includeCommand": { "type": "boolean", "default": true }
+                    }
+                }),
+                Some("terminal.processes.read"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_command_status",
+                "Read terminal command tracker status and output ranges for a command.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "commandId": { "type": "string" },
+                        "includeOutputSummary": { "type": "boolean", "default": true }
+                    }
+                }),
+                Some("terminal.command.status"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_map",
+                "Map the current TUI screen into stable region ids and suggested actions.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "screenCursor": { "type": "string" },
+                        "maxRegions": { "type": "number", "default": 80 },
+                        "includeText": { "type": "boolean", "default": true }
+                    }
+                }),
+                Some("terminal.map.read"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_act",
+                "Act on a mapped TUI screen region by stable region id.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "operation": { "type": "string", "enum": ["select", "confirm", "cancel", "toggle", "type", "focus", "scroll", "read"], "default": "confirm" },
+                        "regionId": { "type": "string" },
+                        "screenCursor": { "type": "string" },
+                        "text": { "type": "string" },
+                        "direction": { "type": "string", "enum": ["up", "down", "left", "right", "pageUp", "pageDown"] },
+                        "amount": { "type": "number" },
+                        "reason": { "type": "string" }
+                    }
+                }),
+                Some("terminal.act.execute"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_attach_agent",
+                "Attach this Agent turn to a terminal for observe, control, takeover, or delegated terminal-agent mode.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "mode": { "type": "string", "enum": ["observe", "control", "takeover", "delegated"], "default": "observe" },
+                        "reason": { "type": "string" },
+                        "ttlMs": { "type": "number" }
+                    }
+                }),
+                Some("terminal.attachments.attach"),
+            ),
+            capability(
+                "lyra-terminal",
+                "terminal_detach_agent",
+                "Detach an Agent terminal attachment by attachment id.",
+                "command",
+                "runtimePolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "target": { "type": "string", "enum": ["auto", "private", "ui"], "default": "auto" },
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "attachmentId": { "type": "string" },
+                        "reason": { "type": "string" }
+                    },
+                    "required": ["attachmentId"]
+                }),
+                Some("terminal.attachments.detach"),
             ),
             capability(
                 "lyra-search",
@@ -1453,6 +1757,7 @@ mod tests {
         assert!(names.contains(&"software_list_capabilities"));
         assert!(names.contains(&"lyra_lumen_map"));
         assert!(names.contains(&"terminal_wait"));
+        assert!(names.contains(&"terminal_screen"));
     }
 
     #[test]
@@ -1467,6 +1772,7 @@ mod tests {
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"shell_run"));
         assert!(names.contains(&"terminal_read"));
+        assert!(names.contains(&"terminal_screen"));
         assert!(names.contains(&"web_fetch"));
         assert!(service.can_dispatch_model_tool("todo_write"));
         assert!(!service.can_dispatch_model_tool("missing_tool"));

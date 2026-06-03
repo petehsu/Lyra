@@ -27,6 +27,11 @@ export type AiPanelSurfaceProps = {
     readonly url: string;
     readonly title?: string;
   }) => Promise<void> | void;
+  readonly onOpenTerminalLiveSession?: (request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }) => Promise<void> | void;
   readonly onOpenFile?: ((
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }

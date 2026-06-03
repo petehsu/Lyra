@@ -36,7 +36,6 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly onPageHostChange: (tabId: string, element: HTMLElement | null) => void;
   readonly terminalModel: TerminalDockModel;
   readonly desktopApi: LyraDesktopApi | null;
-  readonly terminalThemeSignature: string;
   readonly resolvedThemeId: string;
   readonly fileManagerModel: FileManagerModel;
   readonly resolveFileManagerChooser: (instanceId: string) => FileManagerChooserMode | null;
@@ -82,8 +81,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   onPageHostChange,
   terminalModel,
   desktopApi,
-  terminalThemeSignature,
-  resolvedThemeId,
+    resolvedThemeId,
   fileManagerModel,
   resolveFileManagerChooser,
   fileEditorModel,
@@ -123,8 +121,6 @@ export const useWorkspaceSurfaceRouterProps = ({
     terminalModel,
     desktopApi,
     terminalLabels: labels.terminal,
-    terminalThemeSignature,
-    terminalThemePreset: preferences.terminalThemePreset,
     resolvedThemeId,
     fileManagerModel,
     fileManagerLabels: labels.fileManager,

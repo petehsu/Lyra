@@ -46,7 +46,8 @@ const renderModel = ({
   activeTab,
   activePageRuntimeState = null,
   tabsModel = createTabsModel(),
-  onReload = vi.fn()
+  onReload = vi.fn(),
+  onRunTerminalCommand
 }: {
   readonly activeTab: WorkspaceTab;
   readonly activePageRuntimeState?: WorkbenchBrowserPageRuntimeState | null;
@@ -55,6 +56,7 @@ const renderModel = ({
     "navigateResolvedInput" | "updateActiveInput"
   >;
   readonly onReload?: () => void;
+  readonly onRunTerminalCommand?: (command: string) => void;
 }) => renderHook(() =>
   useTitlebarNavigationModel({
     desktopApi: null,
@@ -70,7 +72,8 @@ const renderModel = ({
     reloadLabel: "Reload page",
     onReload,
     onOpenFilePath: vi.fn(() => null),
-    onOpenDirectoryPath: vi.fn()
+    onOpenDirectoryPath: vi.fn(),
+    ...(onRunTerminalCommand ? { onRunTerminalCommand } : {})
   })
 );
 
@@ -162,5 +165,24 @@ describe("useTitlebarNavigationModel", () => {
 
     expect(result.current.value).toBe("/tmp/example.txt");
     expect(result.current.primaryActionKind).toBe("submit");
+  });
+
+  test("runs prefixed commands in a terminal task from the titlebar", async () => {
+    const tabsModel = createTabsModel();
+    const onRunTerminalCommand = vi.fn();
+    const { result } = renderModel({
+      activeTab: createPageTab({
+        inputValue: "> npm test"
+      }),
+      tabsModel,
+      onRunTerminalCommand
+    });
+
+    await act(async () => {
+      await result.current.onSubmit();
+    });
+
+    expect(onRunTerminalCommand).toHaveBeenCalledWith("npm test");
+    expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
   });
 });

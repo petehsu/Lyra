@@ -1,0 +1,13 @@
+# terminal-fixture-v1: CLI wizard with one-time approval
+$ npm create vite@latest
+? Project name: lyra-terminal-demo
+? Select a framework: React
+? Select a variant: TypeScript
+Scaffolding project in /workspaces/lyra-terminal-demo...
+? Agent requests one-time approval to run: npm install
+> Allow once
+  Deny
+Done. Now run:
+  cd lyra-terminal-demo
+  npm install
+  npm run dev

@@ -5,7 +5,13 @@ import type {
   TerminalSessionSnapshot
 } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
+import {
+  createTerminalProfilePaneOptions,
+  type TerminalProfile,
+  type TerminalProfilePaneOptions
+} from "../terminal-profiles";
 import type {
+  TerminalFollowMode,
   TerminalDockModel,
   TerminalDockPane,
   TerminalDockState,
@@ -29,6 +35,13 @@ type CreateTerminalTabOptions = {
   readonly placement?: TerminalTabPlacement;
   readonly title?: string;
   readonly cwd?: string;
+  readonly shell?: string;
+  readonly env?: TerminalProfilePaneOptions["env"];
+  readonly profileId?: string;
+  readonly startupCommand?: string;
+  readonly followMode?: TerminalFollowMode;
+  readonly mode?: "command" | "shell";
+  readonly command?: string;
 };
 
 const normalizeTitle = (value: string | undefined, fallback: string): string => {
@@ -38,6 +51,44 @@ const normalizeTitle = (value: string | undefined, fallback: string): string => 
   return fallback;
 };
 
+const normalizeOptionalString = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const normalizeFollowMode = (value: unknown): TerminalFollowMode | undefined => {
+  if (value === "observe" || value === "control" || value === "takeover") {
+    return value;
+  }
+  return undefined;
+};
+
+const normalizeEnv = (
+  value: unknown
+): TerminalProfilePaneOptions["env"] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = value
+    .map((entry) => {
+      if (typeof entry !== "object" || entry === null) {
+        return null;
+      }
+      const raw = entry as Record<string, unknown>;
+      const key = typeof raw.key === "string" ? raw.key.trim() : "";
+      const envValue = typeof raw.value === "string" ? raw.value : "";
+      if (key.length === 0) {
+        return null;
+      }
+      return { key, value: envValue };
+    })
+    .filter((entry): entry is { readonly key: string; readonly value: string } => entry !== null);
+  return entries.length > 0 ? entries : undefined;
+};
+
 const createPane = (index: number, options?: CreateTerminalTabOptions): TerminalDockPane => {
   const paneId = createId("pane");
   const title = normalizeTitle(options?.title, `Terminal ${index}`);
@@ -45,9 +96,20 @@ const createPane = (index: number, options?: CreateTerminalTabOptions): Terminal
     id: paneId,
     sessionId: `session-${paneId}`,
     title,
-    ...(options?.cwd !== undefined && options.cwd.trim().length > 0
-      ? { cwd: options.cwd.trim() }
-      : {})
+    ...(normalizeOptionalString(options?.cwd) === undefined ? {} : { cwd: normalizeOptionalString(options?.cwd)! }),
+    ...(normalizeOptionalString(options?.shell) === undefined ? {} : { shell: normalizeOptionalString(options?.shell)! }),
+    ...(options?.env === undefined || options.env.length === 0 ? {} : { env: options.env }),
+    ...(normalizeOptionalString(options?.profileId) === undefined
+      ? {}
+      : { profileId: normalizeOptionalString(options?.profileId)! }),
+    ...(normalizeOptionalString(options?.startupCommand) === undefined
+      ? {}
+      : { startupCommand: normalizeOptionalString(options?.startupCommand)! }),
+    ...(normalizeFollowMode(options?.followMode) === undefined
+      ? {}
+      : { followMode: normalizeFollowMode(options?.followMode)! }),
+    ...(options?.mode === "command" || options?.mode === "shell" ? { mode: options.mode } : {}),
+    ...(normalizeOptionalString(options?.command) === undefined ? {} : { command: normalizeOptionalString(options?.command)! })
   };
 };
 
@@ -67,7 +129,10 @@ const createTab = (
       orientation: "horizontal",
       paneIds: [pane.id],
       activePaneId: pane.id,
-      placement: options?.placement ?? "dock"
+      placement: options?.placement ?? "dock",
+      ...(normalizeOptionalString(options?.profileId) === undefined
+        ? {}
+        : { profileId: normalizeOptionalString(options?.profileId)! })
     },
     pane
   };
@@ -134,11 +199,26 @@ const sanitizePane = (value: unknown): TerminalDockPane | null => {
     return null;
   }
   const cwd = typeof raw.cwd === "string" && raw.cwd.trim().length > 0 ? raw.cwd.trim() : undefined;
+  const shell = typeof raw.shell === "string" && raw.shell.trim().length > 0 ? raw.shell.trim() : undefined;
+  const env = normalizeEnv(raw.env);
+  const profileId = typeof raw.profileId === "string" && raw.profileId.trim().length > 0
+    ? raw.profileId.trim()
+    : undefined;
+  const startupCommand =
+    typeof raw.startupCommand === "string" && raw.startupCommand.trim().length > 0
+      ? raw.startupCommand.trim()
+      : undefined;
+  const followMode = normalizeFollowMode(raw.followMode);
   return {
     id,
     sessionId,
     title,
     ...(cwd !== undefined ? { cwd } : {}),
+    ...(shell !== undefined ? { shell } : {}),
+    ...(env !== undefined ? { env } : {}),
+    ...(profileId !== undefined ? { profileId } : {}),
+    ...(startupCommand !== undefined ? { startupCommand } : {}),
+    ...(followMode !== undefined ? { followMode } : {}),
     ...(raw.mode === "command" || raw.mode === "shell" ? { mode: raw.mode } : {}),
     ...(typeof raw.command === "string" && raw.command.trim().length > 0
       ? { command: raw.command.trim() }
@@ -175,7 +255,12 @@ const sanitizeTab = (value: unknown): TerminalDockTab | null => {
     orientation,
     paneIds,
     activePaneId,
-    placement
+    placement,
+    ...(typeof raw.pinned === "boolean" ? { pinned: raw.pinned } : {}),
+    ...(typeof raw.favorite === "boolean" ? { favorite: raw.favorite } : {}),
+    ...(typeof raw.profileId === "string" && raw.profileId.trim().length > 0
+      ? { profileId: raw.profileId.trim() }
+      : {})
   };
 };
 
@@ -299,6 +384,63 @@ export const openTerminalTabWithPlacementState = (
   };
 };
 
+export const openTerminalTabWithProfileState = (
+  state: TerminalDockState,
+  profile: TerminalProfile
+): {
+  readonly state: TerminalDockState;
+  readonly tab: TerminalDockTab;
+  readonly pane: TerminalDockPane;
+} => openTerminalTabWithPlacementState(
+  state,
+  createTerminalProfilePaneOptions(profile, state.tabs.length + 1)
+);
+
+export const renameTerminalTabState = (
+  state: TerminalDockState,
+  tabId: string,
+  title: string
+): TerminalDockState => {
+  const normalizedTitle = normalizeOptionalString(title);
+  const tab = findTabById(state, tabId);
+  if (tab === null || normalizedTitle === undefined) {
+    return state;
+  }
+
+  const activePane = state.panes[tab.activePaneId];
+  return {
+    ...withTabUpdate(state, tabId, (item) => ({
+      ...item,
+      title: normalizedTitle
+    })),
+    panes: activePane === undefined
+      ? state.panes
+      : {
+          ...state.panes,
+          [activePane.id]: {
+            ...activePane,
+            title: normalizedTitle
+          }
+        }
+  };
+};
+
+export const toggleTerminalTabPinnedState = (
+  state: TerminalDockState,
+  tabId: string
+): TerminalDockState => withTabUpdate(state, tabId, (tab) => ({
+  ...tab,
+  pinned: !tab.pinned
+}));
+
+export const toggleTerminalTabFavoriteState = (
+  state: TerminalDockState,
+  tabId: string
+): TerminalDockState => withTabUpdate(state, tabId, (tab) => ({
+  ...tab,
+  favorite: !tab.favorite
+}));
+
 export const closeTerminalTabState = (state: TerminalDockState, tabId: string): TerminalDockState => {
   const tab = findTabById(state, tabId);
   if (tab === null) {
@@ -415,7 +557,26 @@ export const splitTerminalTabState = (
     return state;
   }
 
-  const pane = createPane(Object.keys(state.panes).length + 1);
+  const activePane = state.panes[tab.activePaneId];
+  const splitPaneOptions: CreateTerminalTabOptions | undefined =
+    activePane === undefined
+      ? undefined
+      : {
+          ...(activePane.cwd === undefined ? {} : { cwd: activePane.cwd }),
+          ...(activePane.shell === undefined ? {} : { shell: activePane.shell }),
+          ...(activePane.env === undefined ? {} : { env: activePane.env }),
+          ...(activePane.profileId === undefined && tab.profileId === undefined
+            ? {}
+            : { profileId: activePane.profileId ?? tab.profileId }),
+          ...(activePane.startupCommand === undefined ? {} : { startupCommand: activePane.startupCommand }),
+          ...(activePane.followMode === undefined ? {} : { followMode: activePane.followMode }),
+          ...(activePane.mode === undefined ? {} : { mode: activePane.mode }),
+          ...(activePane.command === undefined ? {} : { command: activePane.command })
+        };
+  const pane = createPane(
+    Object.keys(state.panes).length + 1,
+    splitPaneOptions
+  );
   const activePaneIndex = tab.paneIds.findIndex((paneId) => paneId === tab.activePaneId);
   const insertIndex = activePaneIndex < 0 ? tab.paneIds.length : activePaneIndex + 1;
   const nextPaneIds = [...tab.paneIds];
@@ -471,6 +632,32 @@ export const focusTerminalPaneState = (state: TerminalDockState, paneId: string)
     return state;
   }
   return focusTerminalPaneForTabState(state, activeDockTab.id, paneId);
+};
+
+export const setTerminalPaneFollowModeState = (
+  state: TerminalDockState,
+  tabId: string,
+  paneId: string,
+  followMode: TerminalFollowMode
+): TerminalDockState => {
+  const tab = findTabById(state, tabId);
+  if (tab === null || tab.paneIds.includes(paneId) === false) {
+    return state;
+  }
+  const pane = state.panes[paneId];
+  if (pane === undefined) {
+    return state;
+  }
+  return {
+    ...state,
+    panes: {
+      ...state.panes,
+      [paneId]: {
+        ...pane,
+        followMode
+      }
+    }
+  };
 };
 
 export const closeTerminalPaneForTabState = (
@@ -532,7 +719,10 @@ export const syncTerminalSnapshotsState = (
     nextPanes[pane.id] = {
       ...pane,
       title: snapshot.title,
-      ...(snapshot.cwd !== undefined ? { cwd: snapshot.cwd } : {})
+      ...(snapshot.cwd !== undefined ? { cwd: snapshot.cwd } : {}),
+      ...(snapshot.shell !== undefined ? { shell: snapshot.shell } : {}),
+      ...(snapshot.mode !== undefined ? { mode: snapshot.mode } : {}),
+      ...(snapshot.command !== undefined ? { command: snapshot.command } : {})
     };
   }
 
@@ -547,6 +737,9 @@ const toRestoreRequest = (state: TerminalDockState): { readonly sessions: readon
     sessionId: pane.sessionId,
     title: pane.title,
     ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
+    ...(pane.shell !== undefined ? { shell: pane.shell } : {}),
+    ...(pane.mode !== undefined ? { mode: pane.mode } : {}),
+    ...(pane.command !== undefined ? { command: pane.command } : {}),
     cols: RESTORE_COLS,
     rows: RESTORE_ROWS,
     source: "user" as const
@@ -621,6 +814,24 @@ export const useTerminalDockModel = (): TerminalDockModel => {
         pane: result.pane
       };
     },
+    openTabWithProfile: (profile) => {
+      const result = openTerminalTabWithProfileState(state, profile);
+      persistState(result.state);
+      setState(result.state);
+      return {
+        tab: result.tab,
+        pane: result.pane
+      };
+    },
+    renameTab: (tabId: string, title: string) => {
+      commit((current) => renameTerminalTabState(current, tabId, title));
+    },
+    toggleTabPinned: (tabId: string) => {
+      commit((current) => toggleTerminalTabPinnedState(current, tabId));
+    },
+    toggleTabFavorite: (tabId: string) => {
+      commit((current) => toggleTerminalTabFavoriteState(current, tabId));
+    },
     closeTab: (tabId: string) => {
       commit((current) => closeTerminalTabState(current, tabId));
     },
@@ -641,6 +852,9 @@ export const useTerminalDockModel = (): TerminalDockModel => {
     },
     focusPane: (tabId: string, paneId: string) => {
       commit((current) => focusTerminalPaneForTabState(current, tabId, paneId));
+    },
+    setPaneFollowMode: (tabId: string, paneId: string, followMode: TerminalFollowMode) => {
+      commit((current) => setTerminalPaneFollowModeState(current, tabId, paneId, followMode));
     },
     closePane: (tabId: string, paneId: string) => {
       commit((current) => closeTerminalPaneForTabState(current, tabId, paneId));

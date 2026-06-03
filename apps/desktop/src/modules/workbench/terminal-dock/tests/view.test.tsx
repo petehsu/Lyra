@@ -23,11 +23,18 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     moveTerminalToTop: "move-top",
     moveTerminalToBottom: "move-bottom",
     closeTab: "close",
+    newTabWithProfile: "new-profile",
+    profile: "profile",
+    renameTab: "rename",
+    pinTab: "pin",
+    unpinTab: "unpin",
+    favoriteTab: "favorite",
+    unfavoriteTab: "unfavorite",
+    exited: "exited",
     emptyDock: "empty",
     unavailable: "unavailable"
   },
-  themeSignature: "lyra-dark:dark:follow-app",
-  themePresetId: "follow-app",
+  themeSignature: "lyra-dark:dark",
   uiThemeId: "lyra-dark",
   terminalPanelSide: "top",
   model: {
@@ -82,6 +89,23 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     getTabPanes: vi.fn(() => []),
     setActiveTab: vi.fn(),
     openTab: vi.fn(),
+    openTabWithProfile: vi.fn(() => ({
+      tab: {
+        id: "tab-profile",
+        title: "Developer",
+        orientation: "horizontal" as const,
+        paneIds: ["pane-profile"],
+        activePaneId: "pane-profile",
+        placement: "dock" as const,
+        profileId: "developer"
+      },
+      pane: {
+        id: "pane-profile",
+        sessionId: "session-profile",
+        title: "Developer",
+        profileId: "developer"
+      }
+    })),
     openTabWithPlacement: vi.fn(() => ({
       tab: {
         id: "tab-2",
@@ -97,6 +121,9 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
         title: "Terminal 2"
       }
     })),
+    renameTab: vi.fn(),
+    toggleTabPinned: vi.fn(),
+    toggleTabFavorite: vi.fn(),
     closeTab: vi.fn(),
     moveTabToWorkspace: vi.fn(),
     moveTabToDock: vi.fn(),
@@ -104,6 +131,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     splitActivePane: vi.fn(),
     splitTab: vi.fn(),
     focusPane: vi.fn(),
+    setPaneFollowMode: vi.fn(),
     closePane: vi.fn(),
     syncRestoredSessions: vi.fn()
   },
@@ -114,7 +142,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
 });
 
 describe("terminal dock view", () => {
-  test("does not reload existing sessions when terminal theme changes", () => {
+  test("does not reload existing sessions when app theme changes", () => {
     const reloadPrompt = vi.fn(async () => ({ applied: true, deferred: false }));
     const props = createProps(reloadPrompt);
     const { rerender } = render(<TerminalDock {...props} />);
@@ -124,8 +152,7 @@ describe("terminal dock view", () => {
     rerender(
       <TerminalDock
         {...props}
-        themeSignature="lyra-dark:dark:lyra-rich"
-        themePresetId="lyra-rich"
+        themeSignature="lyra-light:light"
         uiThemeId="lyra-dark"
       />
     );
@@ -140,5 +167,19 @@ describe("terminal dock view", () => {
     fireEvent.click(screen.getByRole("button", { name: "move-bottom" }));
 
     expect(props.onToggleTerminalPanelSide).toHaveBeenCalledTimes(1);
+  });
+
+  test("opens a new terminal from the selected profile", () => {
+    const props = createProps();
+    render(<TerminalDock {...props} />);
+
+    fireEvent.change(screen.getByLabelText("profile"), {
+      target: { value: "developer" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "new-profile" }));
+
+    expect(props.model.openTabWithProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "developer" })
+    );
   });
 });

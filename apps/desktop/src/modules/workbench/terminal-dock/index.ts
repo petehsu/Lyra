@@ -9,6 +9,7 @@ export type {
   TerminalDockPane,
   TerminalDockState,
   TerminalDockTab,
+  TerminalFollowMode,
   TerminalSplitDirection,
   TerminalTabContextMenuRequest
 } from "./types";

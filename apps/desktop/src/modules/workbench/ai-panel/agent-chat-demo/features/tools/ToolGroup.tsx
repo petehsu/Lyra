@@ -6,10 +6,14 @@ import {
   ErrorCircleIcon,
   ToolIcon,
 } from "../../components/Icons";
-import { ToolDetails } from "./ToolDetails";
+import { RenderSurfaceCard, ToolDetails } from "./ToolDetails";
 import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
+
+type RenderToolCall = ToolCall & {
+  readonly details: Extract<NonNullable<ToolCall["details"]>, { type: "render" }>;
+};
 
 /**
  * If the tool call is an edit, return its current +/- counts; otherwise null.
@@ -41,6 +45,9 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
       ? group.calls.find((c) => c.id === group.currentCallId)
       : undefined;
   const counts = editCounts(currentCall);
+  const renderCalls = group.calls.filter((call): call is RenderToolCall =>
+    call.details?.type === "render"
+  );
 
   const mode = isRunning ? "running" : hasError ? "error" : "done";
 
@@ -87,6 +94,14 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
         )}
       </button>
 
+      {renderCalls.length > 0 ? (
+        <div className="tool-group-render-surfaces">
+          {renderCalls.map((call) => (
+            <RenderSurfaceCard key={call.id} details={call.details} />
+          ))}
+        </div>
+      ) : null}
+
       {open && !anchorVisible && (
         <button
           type="button"
@@ -119,7 +134,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const hasDetails = !!call.details;
+  const hasDetails = !!call.details && call.details.type !== "render";
   const counts = editCounts(call);
 
   return (

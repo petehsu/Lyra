@@ -1,0 +1,2 @@
+# terminal-fixture-v1: ansi-escaped less read/search/quit
+\x1b[?1049h\x1b[H\x1b[2JREADME.md\r\nLyra Terminal Release Gate\r\n\x1b[7m/permission\x1b[0m\r\nPermission ledger and audit timeline\r\n:\x1b[?1049l

@@ -1,0 +1,10 @@
+# terminal-fixture-v1: npm run dev long-running server
+$ npm run dev
+> lyra-app@0.1.0 dev
+> vite --host 127.0.0.1
+
+  VITE v5.4.10 ready in 642 ms
+  Local:   http://127.0.0.1:5173/
+  Network: use --host to expose
+watching for file changes...
+[hmr] connected

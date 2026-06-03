@@ -17,7 +17,6 @@ import type {
   WorkbenchSplitTriggerMode
 } from "../preferences";
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
-import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
@@ -52,7 +51,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly uiStyleLabel: string;
   readonly uiStyleExternalReloadRequired: string;
   readonly uiStyleExternalUntrusted: string;
-  readonly terminalThemeLabel: string;
   readonly splitTriggerModeLabel: string;
   readonly splitThreePaneLayoutLabel: string;
   readonly splitOverflowPolicyLabel: string;
@@ -135,7 +133,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly uiStyleValue: WorkbenchUiPackId;
-  readonly terminalThemeValue: TerminalThemeMode;
   readonly splitTriggerModeValue: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayoutValue: WorkbenchSplitThreePaneLayout;
   readonly splitOverflowPolicyValue: WorkbenchSplitOverflowPolicy;
@@ -171,7 +168,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly localeOptions: readonly SettingsOption<WorkbenchLocale>[];
   readonly themeOptions: readonly SettingsOption<WorkbenchThemeId>[];
   readonly uiStyleOptions: readonly SettingsOption<WorkbenchUiPackId>[];
-  readonly terminalThemeOptions: readonly SettingsOption<TerminalThemeMode>[];
   readonly splitTriggerModeOptions: readonly SettingsOption<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly SettingsOption<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly SettingsOption<WorkbenchSplitOverflowPolicy>[];
@@ -189,7 +185,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;
   readonly onUiStyleChange: (value: WorkbenchUiPackId) => void;
-  readonly onTerminalThemeChange: (value: TerminalThemeMode) => void;
   readonly onSplitTriggerModeChange: (value: WorkbenchSplitTriggerMode) => void;
   readonly onSplitThreePaneLayoutChange: (value: WorkbenchSplitThreePaneLayout) => void;
   readonly onSplitOverflowPolicyChange: (value: WorkbenchSplitOverflowPolicy) => void;

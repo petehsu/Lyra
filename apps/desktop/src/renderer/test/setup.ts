@@ -88,6 +88,17 @@ vi.mock("xterm", () => {
     options: Record<string, unknown> = {};
     element: HTMLElement | undefined;
     helperTextarea: HTMLTextAreaElement | undefined;
+    lines: string[] = [""];
+    writeCalls: string[] = [];
+    buffer = {
+      active: {
+        viewportY: 0,
+        baseY: 0,
+        getLine: (index: number) => ({
+          translateToString: () => this.lines[index] ?? ""
+        })
+      }
+    };
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = { ...options };
@@ -122,8 +133,22 @@ vi.mock("xterm", () => {
       this.helperTextarea = undefined;
     }
     refresh(): void {}
-    write(): void {}
-    writeln(): void {}
+    write(data = "", callback?: () => void): void {
+      this.writeCalls.push(String(data));
+      const parts = String(data).replace(/\r/gu, "").split("\n");
+      const first = parts.shift() ?? "";
+      this.lines[this.lines.length - 1] = `${this.lines[this.lines.length - 1] ?? ""}${first}`;
+      for (const part of parts) {
+        this.lines.push(part);
+      }
+      const overflow = Math.max(0, this.lines.length - this.rows);
+      this.buffer.active.baseY = overflow;
+      this.buffer.active.viewportY = overflow;
+      callback?.();
+    }
+    writeln(data = ""): void {
+      this.write(`${data}\n`);
+    }
 
     onData(): { dispose: () => void } {
       return { dispose: () => undefined };

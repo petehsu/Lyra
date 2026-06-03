@@ -117,3 +117,4 @@ fn serve_http_once(status_line: &str, content_type: &str, body: &str) -> String 
 mod foundation;
 mod memory;
 mod provider_loop;
+mod terminal_tools;

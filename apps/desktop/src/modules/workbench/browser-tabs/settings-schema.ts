@@ -19,7 +19,6 @@ export type SettingsFieldId =
   | "preventSleep"
   | "theme"
   | "uiStyle"
-  | "terminalTheme"
   | "forceWebPageTheming"
   | "splitTriggerMode"
   | "splitThreePaneLayout"
@@ -82,7 +81,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "languageLabel"
   | "themeLabel"
   | "uiStyleLabel"
-  | "terminalThemeLabel"
   | "splitTriggerModeLabel"
   | "splitThreePaneLayoutLabel"
   | "splitOverflowPolicyLabel"
@@ -135,7 +133,6 @@ export const createWorkbenchSettingsSchema = (
     createField("preventSleep", "general", props.preventSleepLabel, "boolean-choice"),
     createField("theme", "appearance", props.themeLabel, "choice"),
     createField("uiStyle", "appearance", props.uiStyleLabel, "choice", props.uiStyleOptions.length > 1),
-    createField("terminalTheme", "appearance", props.terminalThemeLabel, "choice"),
     createField("forceWebPageTheming", "appearance", props.forceWebPageThemingLabel, "boolean-choice"),
     createField("splitTriggerMode", "workspace", props.splitTriggerModeLabel, "choice"),
     createField("splitThreePaneLayout", "workspace", props.splitThreePaneLayoutLabel, "choice"),

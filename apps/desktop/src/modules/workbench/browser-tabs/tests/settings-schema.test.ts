@@ -11,7 +11,6 @@ const createSchemaInput = (
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
   linuxCategoryLabel: "Linux",
-  terminalThemeLabel: "Terminal theme",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
   splitOverflowPolicyLabel: "Split overflow",

@@ -29,7 +29,6 @@ import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../softwar
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
-import type { TerminalThemeMode } from "../terminal-theme";
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
@@ -146,8 +145,6 @@ export type WorkspaceSurfaceRouterProps = {
   readonly terminalModel: TerminalDockModel;
   readonly desktopApi: LyraDesktopApi | null;
   readonly terminalLabels: TerminalDockLabels;
-  readonly terminalThemeSignature: string;
-  readonly terminalThemePreset: TerminalThemeMode;
   readonly resolvedThemeId: string;
   readonly fileManagerModel: FileManagerModel;
   readonly fileManagerLabels: FileManagerSurfaceLabels;

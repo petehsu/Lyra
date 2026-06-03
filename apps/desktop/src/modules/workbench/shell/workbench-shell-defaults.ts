@@ -9,7 +9,6 @@ export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   locale: WORKBENCH_CONFIG.locale,
   theme: WORKBENCH_CONFIG.theme,
   uiPackId: WORKBENCH_CONFIG.uiPackId,
-  terminalThemePreset: WORKBENCH_CONFIG.terminalThemePreset,
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
   splitOverflowPolicy: "block_with_notice",

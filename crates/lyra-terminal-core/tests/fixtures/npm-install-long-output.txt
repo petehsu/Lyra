@@ -1,0 +1,14 @@
+# terminal-fixture-v1: npm install long output
+$ npm install
+npm WARN deprecated request@2.88.2: request has been deprecated
+npm WARN deprecated uuid@3.4.0: Please upgrade to version 7 or higher
+added 1543 packages, and audited 1544 packages in 48s
+273 packages are looking for funding
+found 0 vulnerabilities
+> esbuild@0.23.1 postinstall
+> node install.js
+[1/4] resolving packages
+[2/4] fetching packages
+[3/4] linking dependencies
+[4/4] building fresh packages
+Done in 48.22s.

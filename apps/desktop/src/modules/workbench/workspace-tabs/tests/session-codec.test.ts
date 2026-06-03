@@ -133,6 +133,36 @@ describe("workspace browser session codec", () => {
     expect(JSON.stringify(restored)).not.toContain("secret");
   });
 
+  test("drops legacy terminal memory app tabs", () => {
+    writeWorkbenchStateSync("workspace-tabs", JSON.stringify({
+      tabs: [
+        {
+          id: "app-tab-1",
+          title: "Terminal Memory",
+          pageKind: "app",
+          inputValue: "",
+          displayAddress: "lyra://app/terminal-memory/terminal-memory-session-1",
+          faviconUrl: undefined,
+          query: undefined,
+          appId: "terminal-memory",
+          appInstanceId: "terminal-memory-session-1",
+          appIconKey: "terminal-memory-default",
+          fileSessionId: "terminal-session-1"
+        }
+      ],
+      activeTabId: "app-tab-1",
+      splitGroupTabIds: [],
+      focusedSplitTabId: null
+    }));
+
+    const restored = readPersistedState(config);
+    expect(restored.tabs[0]).toMatchObject({
+      pageKind: "search",
+      title: "Home"
+    });
+    expect(JSON.stringify(restored)).not.toContain("terminal-memory");
+  });
+
   test("migrates legacy browser session snapshots to the schema-versioned model", () => {
     const migrated = sanitizeBrowserSessionSnapshot({
       schemaVersion: 0,

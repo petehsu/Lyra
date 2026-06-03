@@ -139,4 +139,16 @@ describe("resolveWorkbenchNavigationInput", () => {
 
     expect(result).toEqual({ kind: "empty" });
   });
+
+  test("resolves prefixed terminal commands before search fallback", async () => {
+    const result = await resolveWorkbenchNavigationInput(
+      "> pnpm test",
+      createDesktopApi(vi.fn())
+    );
+
+    expect(result).toEqual({
+      kind: "command",
+      command: "pnpm test"
+    });
+  });
 });

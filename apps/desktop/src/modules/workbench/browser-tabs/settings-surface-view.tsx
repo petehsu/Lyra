@@ -25,9 +25,6 @@ type SettingsSurfaceViewProps = {
 const buildThemePreviewClassName = (value: string): string =>
   `lyra-settings-theme-preview-${value}`;
 
-const buildTerminalThemePreviewClassName = (value: string): string =>
-  `lyra-settings-terminal-preview-${value}`;
-
 const buildSplitLayoutPreviewClassName = (value: string): string =>
   `lyra-settings-split-layout-preview-${value}`;
 
@@ -83,71 +80,6 @@ const renderThemePreview = (value: string): ReactNode => (
   </span>
 );
 
-const renderTerminalThemePreview = (value: string): ReactNode => (
-  <span
-    className={`lyra-settings-terminal-preview ${buildTerminalThemePreviewClassName(value)}`}
-    aria-hidden="true"
-  >
-    {value === "follow-app" ? (
-      <>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-1">petehsu</span>
-          <span className="lyra-term-seg-2">~/Documents/Lyra</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
-          <span className="lyra-term-seg-3">❯</span>
-          <span className="lyra-term-seg-4">npm run build</span>
-        </div>
-      </>
-    ) : value === "lyra-minimal" ? (
-      <div className="lyra-settings-terminal-preview-line">
-        <span className="lyra-term-seg-1">~/Lyra</span>
-        <span className="lyra-term-seg-2">❯</span>
-      </div>
-    ) : value === "lyra-standard" ? (
-      <>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-1">petehsu</span>
-          <span className="lyra-term-seg-2"> ~/Lyra</span>
-          <span className="lyra-term-seg-3"> main</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
-          <span className="lyra-term-seg-4">❯</span>
-        </div>
-      </>
-    ) : value === "lyra-rich" ? (
-      <>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-1">petehsu</span>
-          <span className="lyra-term-seg-2"> ~/Lyra</span>
-          <span className="lyra-term-seg-3"> main</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
-          <span className="lyra-term-seg-4"> 10:26:03</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-2">❯</span>
-        </div>
-      </>
-    ) : (
-      <>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-1">petehsu</span>
-          <span className="lyra-term-seg-2"> ~/Lyra</span>
-          <span className="lyra-term-seg-3"> main</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line lyra-settings-terminal-preview-line-secondary">
-          <span className="lyra-term-seg-4"> 10:26:03</span>
-          <span className="lyra-term-seg-1">[code:0 dur:0s]</span>
-        </div>
-        <div className="lyra-settings-terminal-preview-line">
-          <span className="lyra-term-seg-2">❯</span>
-        </div>
-      </>
-    )}
-  </span>
-);
-
 const renderSplitLayoutPreview = (value: string): ReactNode => (
   <span
     className={`lyra-settings-split-layout-preview ${buildSplitLayoutPreviewClassName(value)}`}
@@ -163,8 +95,6 @@ const renderPreview = (control: SettingsChoiceControlDescriptor, value: string):
   switch (control.previewKind) {
     case "theme":
       return renderThemePreview(value);
-    case "terminal-theme":
-      return renderTerminalThemePreview(value);
     case "split-layout":
       return renderSplitLayoutPreview(value);
     default:

@@ -2,13 +2,17 @@ import { useCallback } from "react";
 import {
   PanelBottomOpen,
   PanelTopOpen,
+  Pencil,
+  Pin,
   SplitSquareHorizontal,
   SplitSquareVertical,
+  Star,
   X
 } from "lucide-react";
 
 import type { I18nKey } from "../i18n";
 import type { ContextMenuModel, ContextMenuItem } from "../context-menu";
+import { disposeTerminalRendererForSession } from "../terminal-dock/pane-surface";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs/types";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
@@ -80,6 +84,9 @@ export const useTerminalWorkspaceActions = ({
         desktopApi.terminal.closeSession({ sessionId }).catch((_error: unknown) => undefined)
       )
     );
+    for (const sessionId of sessionIds) {
+      disposeTerminalRendererForSession(sessionId);
+    }
   }, [desktopApi]);
 
   const closeTerminalTabEverywhere = useCallback((terminalTabId: string): void => {
@@ -99,6 +106,33 @@ export const useTerminalWorkspaceActions = ({
     }
 
     const items: readonly ContextMenuItem[] = [
+      {
+        id: "rename-terminal",
+        label: t("terminal.renameTab"),
+        icon: <Pencil size={13} />,
+        onSelect: () => {
+          const nextTitle = window.prompt(t("terminal.renameTab"), targetTab.title);
+          if (nextTitle !== null) {
+            terminalModel.renameTab(tabId, nextTitle);
+          }
+        }
+      },
+      {
+        id: "pin-terminal",
+        label: targetTab.pinned ? t("terminal.unpinTab") : t("terminal.pinTab"),
+        icon: <Pin size={13} />,
+        onSelect: () => {
+          terminalModel.toggleTabPinned(tabId);
+        }
+      },
+      {
+        id: "favorite-terminal",
+        label: targetTab.favorite ? t("terminal.unfavoriteTab") : t("terminal.favoriteTab"),
+        icon: <Star size={13} />,
+        onSelect: () => {
+          terminalModel.toggleTabFavorite(tabId);
+        }
+      },
       {
         id: "open-in-workspace",
         label: t("menu.openInWorkspace"),
@@ -140,7 +174,13 @@ export const useTerminalWorkspaceActions = ({
       anchorY,
       items
     });
-  }, [closeTerminalTabEverywhere, contextMenuModel, openTerminalTabInWorkspace, t, terminalModel]);
+  }, [
+    closeTerminalTabEverywhere,
+    contextMenuModel,
+    openTerminalTabInWorkspace,
+    t,
+    terminalModel
+  ]);
 
   const onWorkspaceTabContextMenu = useCallback((browserTabId: string, anchorX: number, anchorY: number): void => {
     const tab = tabsModel.tabs.find((entry) => entry.id === browserTabId);
@@ -179,7 +219,14 @@ export const useTerminalWorkspaceActions = ({
       anchorY,
       items
     });
-  }, [closeTerminalTabEverywhere, contextMenuModel, openTerminalTabInDock, t, tabsModel, terminalModel]);
+  }, [
+    closeTerminalTabEverywhere,
+    contextMenuModel,
+    openTerminalTabInDock,
+    t,
+    tabsModel,
+    terminalModel
+  ]);
 
   const onBrowserTabClose = useCallback((tabId: string): void => {
     const tab = tabsModel.tabs.find((entry) => entry.id === tabId);

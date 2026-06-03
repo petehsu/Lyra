@@ -79,6 +79,13 @@ export interface DataProviderValue {
   /** Open a local file path in the center Workbench area. */
   openFileInWorkbench(filePath: string): Promise<void>;
 
+  /** Open the live Workbench terminal pane for a terminal session when it exists. */
+  openTerminalLiveSession(request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }): Promise<void>;
+
   /** Open an inline or attached image in the center Workbench image viewer. */
   openImageInWorkbench(image: AgentImageAttachment): Promise<void>;
 

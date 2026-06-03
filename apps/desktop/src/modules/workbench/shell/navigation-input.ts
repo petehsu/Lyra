@@ -10,6 +10,10 @@ export type WorkbenchNavigationResolution =
       readonly kind: "empty";
     }
   | {
+      readonly kind: "command";
+      readonly command: string;
+    }
+  | {
       readonly kind: "url";
       readonly address: string;
     }
@@ -118,6 +122,10 @@ export const resolveWorkbenchNavigationInput = async (
   const value = rawValue.trim();
   if (value.length === 0) {
     return { kind: "empty" };
+  }
+  if (value.startsWith(">")) {
+    const command = value.slice(1).trim();
+    return command.length === 0 ? { kind: "empty" } : { kind: "command", command };
   }
 
   const fileUrlPath = fromFileUrl(value);

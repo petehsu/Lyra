@@ -1,10 +1,12 @@
 import {
   PanelBottom,
   PanelTop,
+  Pin,
   Plus,
   SplitSquareHorizontal,
   SplitSquareVertical,
   SquareTerminal,
+  Star,
   X
 } from "lucide-react";
 import {
@@ -29,12 +31,16 @@ import {
   ChromeToolbar,
   cx
 } from "../ui-primitives";
+import {
+  DEFAULT_TERMINAL_PROFILE_ID,
+  DEFAULT_TERMINAL_PROFILES,
+  resolveTerminalProfile
+} from "../terminal-profiles";
 
 export const TerminalDock = ({
   desktopApi,
   labels,
   themeSignature,
-  themePresetId,
   uiThemeId,
   model,
   terminalPanelSide,
@@ -46,6 +52,8 @@ export const TerminalDock = ({
   const activeDockTab = model.activeDockTab;
   const [isWorkspaceDropActive, setIsWorkspaceDropActive] = useState(false);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<string>(DEFAULT_TERMINAL_PROFILE_ID);
+  const selectedProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, selectedProfileId);
 
   const clearDragUiState = useCallback((): void => {
     setIsWorkspaceDropActive(false);
@@ -241,6 +249,7 @@ export const TerminalDock = ({
                 className="lyra-terminal-tab-main"
                 allowWebDrag
                 draggable
+                aria-label={tab.title}
                 onDragStart={(event: ReactDragEvent<HTMLButtonElement>) => {
                   onDockTabDragStart(event, tab.id);
                 }}
@@ -251,11 +260,27 @@ export const TerminalDock = ({
                 onClick={() => {
                   model.setActiveTab(tab.id);
                 }}
+                onDoubleClick={() => {
+                  const nextTitle = window.prompt(labels.renameTab, tab.title);
+                  if (nextTitle !== null) {
+                    model.renameTab(tab.id, nextTitle);
+                  }
+                }}
               >
                 <span className="lyra-terminal-tab-icon" aria-hidden="true">
                   <SquareTerminal size={13} />
                 </span>
                 <span className="lyra-terminal-tab-title">{tab.title}</span>
+                {tab.pinned ? (
+                  <span className="lyra-terminal-tab-badge" title={labels.unpinTab} aria-hidden="true">
+                    <Pin size={10} />
+                  </span>
+                ) : null}
+                {tab.favorite ? (
+                  <span className="lyra-terminal-tab-badge" title={labels.unfavoriteTab} aria-hidden="true">
+                    <Star size={10} />
+                  </span>
+                ) : null}
               </ChromeTabButton>
               <ChromeIconButton
                 className="lyra-terminal-tab-close"
@@ -270,7 +295,25 @@ export const TerminalDock = ({
           ))}
         </nav>
         <ChromeToolbar className="lyra-terminal-toolbar-actions">
-          <ChromeIconButton aria-label={labels.newTab} onClick={model.openTab}>
+          <select
+            className="lyra-terminal-profile-select"
+            aria-label={labels.profile}
+            value={selectedProfile.id}
+            onChange={(event) => {
+              setSelectedProfileId(event.currentTarget.value);
+            }}
+          >
+            {DEFAULT_TERMINAL_PROFILES.map((profile) => (
+              <option key={profile.id} value={profile.id}>{profile.name}</option>
+            ))}
+          </select>
+          <ChromeIconButton
+            aria-label={labels.newTabWithProfile}
+            title={labels.newTabWithProfile}
+            onClick={() => {
+              model.openTabWithProfile(selectedProfile);
+            }}
+          >
             <Plus size={14} />
           </ChromeIconButton>
           <ChromeIconButton
@@ -329,7 +372,6 @@ export const TerminalDock = ({
                 desktopApi={desktopApi}
                 labels={labels}
                 themeSignature={themeSignature}
-                themePresetId={themePresetId}
                 uiThemeId={uiThemeId}
                 onFocus={() => {
                   model.focusPane(activeDockTab.id, pane.id);

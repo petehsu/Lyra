@@ -1,0 +1,14 @@
+# terminal-fixture-v1: cargo test failure
+$ cargo test -p lyra-terminal-core
+running 38 tests
+test tui_act::tests::stale_cursor_rejected ... FAILED
+
+failures:
+---- tui_act::tests::stale_cursor_rejected stdout ----
+thread 'tui_act::tests::stale_cursor_rejected' panicked at crates/lyra-terminal-core/src/tui_act.rs:188:5:
+expected stale cursor warning
+
+failures:
+    tui_act::tests::stale_cursor_rejected
+
+test result: FAILED. 37 passed; 1 failed; finished in 1.92s

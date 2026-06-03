@@ -4,11 +4,15 @@
   overflow: hidden;
 }
 
-.lyra-terminal-dock {
-  --lyra-terminal-stage-bg: color-mix(in srgb, var(--lyra-bg-editor) 74%, var(--lyra-terminal-bg) 26%);
-  --lyra-terminal-tabstrip-bg: color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-terminal-bg) 18%);
+.lyra-terminal-dock,
+.lyra-terminal-workspace-surface {
+  --lyra-terminal-stage-bg: color-mix(in srgb, var(--lyra-bg-editor) 82%, var(--lyra-bg-surface) 18%);
+  --lyra-terminal-tabstrip-bg: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
   --lyra-terminal-tabstrip-line: color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
-  --lyra-terminal-tabstrip-hover-bg: color-mix(in srgb, var(--lyra-bg-surface) 70%, var(--lyra-terminal-bg) 30%);
+  --lyra-terminal-tabstrip-hover-bg: color-mix(in srgb, var(--lyra-bg-hover) 76%, var(--lyra-bg-editor) 24%);
+}
+
+.lyra-terminal-dock {
   min-height: 0;
   height: 100%;
   display: grid;
@@ -129,6 +133,16 @@
   text-overflow: ellipsis;
 }
 
+.lyra-terminal-tab-badge {
+  width: var(--lyra-unit-14);
+  height: var(--lyra-unit-14);
+  flex: 0 0 var(--lyra-unit-14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-tertiary);
+}
+
 .lyra-terminal-tab-close {
   align-self: stretch;
   justify-self: center;
@@ -185,12 +199,22 @@
 
 .lyra-terminal-toolbar-actions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) repeat(4, var(--lyra-size-icon-button-w));
   align-items: center;
   gap: var(--lyra-unit-4);
   padding: var(--lyra-unit-6);
   border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 76%, transparent);
   background: transparent;
+}
+
+.lyra-terminal-profile-select {
+  min-width: 0;
+  height: var(--lyra-size-icon-button-h);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 76%, transparent);
+  border-radius: var(--lyra-unit-4);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-terminal-bg) 18%);
+  color: var(--lyra-text-secondary);
+  font: 500 var(--lyra-text-size-micro) / 1.2 var(--lyra-font-sans);
 }
 
 .lyra-terminal-toolbar-actions button {
@@ -268,6 +292,9 @@
   flex: 1 1 auto;
   display: block;
   border-right: var(--lyra-unit-0-5) solid var(--lyra-line-variant);
+  position: relative;
+  height: 100%;
+  background: var(--lyra-terminal-bg);
 }
 
 .lyra-terminal-panes-horizontal .lyra-terminal-pane {
@@ -281,33 +308,33 @@
 .lyra-terminal-pane-body {
   min-height: 0;
   min-width: 0;
-  position: relative;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
+  background: var(--lyra-terminal-bg);
 }
 
 .lyra-terminal-host {
-  width: 100%;
-  height: 100%;
-  padding: var(--lyra-unit-6) var(--lyra-unit-6) var(--lyra-unit-6);
-  position: relative;
-  opacity: 0;
-  transition: opacity 100ms ease;
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 0;
+  background: var(--lyra-terminal-bg);
 }
 
-.lyra-terminal-host-ready {
-  opacity: 1;
-}
-
-.lyra-terminal-host .xterm,
-.lyra-terminal-host .xterm-screen {
+.lyra-terminal-host .xterm {
   width: 100% !important;
   height: 100% !important;
 }
 
 .lyra-terminal-host .xterm,
-.lyra-terminal-host .xterm-viewport {
+.lyra-terminal-host .xterm-viewport,
+.lyra-terminal-host .xterm-rows {
   background-color: var(--lyra-terminal-bg) !important;
+}
+
+.lyra-terminal-host .xterm .xterm-scroll-area {
+  background: transparent !important;
 }
 
 .lyra-terminal-status {
@@ -318,4 +345,10 @@
   background: color-mix(in srgb, var(--lyra-bg-surface) 88%, var(--lyra-window-close-hover-bg) 12%);
   padding: var(--lyra-unit-6) var(--lyra-unit-8);
   color: var(--lyra-text-primary);
+}
+
+@media (max-width: 760px) {
+  .lyra-terminal-dock {
+    grid-template-columns: var(--lyra-unit-120) minmax(0, 1fr);
+  }
 }

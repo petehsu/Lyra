@@ -4,6 +4,9 @@ pub(crate) fn host_tool_mapping(
     name: &str,
     arguments: Value,
 ) -> Option<(String, String, String, Value)> {
+    if let Some(mapping) = terminal_host_tool_mapping(name, arguments.clone()) {
+        return Some(mapping);
+    }
     let mut input = arguments.as_object().cloned().unwrap_or_default();
     let mapping = match name {
         "workbench_list_tabs" => ("workbench.listTabs", "workbench", "list_tabs"),
@@ -13,6 +16,7 @@ pub(crate) fn host_tool_mapping(
         "terminal_list" => ("terminal.list", "terminal", "list"),
         "terminal_create" => ("terminal.create", "terminal", "create"),
         "terminal_read" => ("terminal.read", "terminal", "read"),
+        "terminal_screen" => ("terminal.screen", "terminal", "screen"),
         "terminal_wait" => ("terminal.wait", "terminal", "wait"),
         "terminal_write" => ("terminal.write", "terminal", "write"),
         "terminal_close" => ("terminal.close", "terminal", "close"),
@@ -269,9 +273,23 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("terminal", "list") => "Listed terminals",
         ("terminal", "create") => "Opened terminal",
         ("terminal", "read") => "Read terminal",
+        ("terminal", "screen") => "Read terminal screen",
         ("terminal", "wait") => "Waited for terminal",
         ("terminal", "write") => "Wrote terminal input",
         ("terminal", "close") => "Closed terminal",
+        ("terminal", "events") => "Read terminal events",
+        ("terminal", "read_until") => "Waited for terminal condition",
+        ("terminal", "run") => "Ran terminal command",
+        ("terminal", "input") => "Sent terminal input",
+        ("terminal", "keys") => "Pressed terminal keys",
+        ("terminal", "resize") => "Resized terminal",
+        ("terminal", "signal") => "Signaled terminal process",
+        ("terminal", "processes") => "Read terminal processes",
+        ("terminal", "command_status") => "Read terminal command status",
+        ("terminal", "map") => "Mapped terminal screen",
+        ("terminal", "act") => "Acted on terminal screen",
+        ("terminal", "attach_agent") => "Attached Agent to terminal",
+        ("terminal", "detach_agent") => "Detached Agent from terminal",
         ("memory", "remember") => "Updated memory",
         ("memory", "search") => "Searched memory",
         ("artifact", "read") => "Read Lyra artifact",
@@ -373,7 +391,18 @@ pub(crate) fn format_terminal_output(action: &str, value: &Value) -> String {
         .unwrap_or(false);
     let exit_code = value.get("exitCode").and_then(Value::as_i64);
     let reason = value.get("reason").and_then(Value::as_str);
-    let output = value.get("output").and_then(Value::as_str).unwrap_or("");
+    let output = value
+        .get("output")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/screen/visibleText").and_then(Value::as_str))
+        .unwrap_or("");
+    let memory_output_path = value
+        .pointer("/memory/outputTextPath")
+        .and_then(Value::as_str);
+    let memory_truncated = value
+        .pointer("/memory/truncatedByProjection")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let mut lines = vec![format!(
         "{target_type} terminal {session_id}: running={running} exitCode={}",
         exit_code
@@ -382,6 +411,55 @@ pub(crate) fn format_terminal_output(action: &str, value: &Value) -> String {
     )];
     if let Some(reason) = reason {
         lines.push(format!("reason={reason}"));
+    }
+    if action == "screen" {
+        let mode = value
+            .pointer("/screen/mode")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let version = value
+            .pointer("/screen/screenVersion")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        lines.push(format!("screenVersion={version} mode={mode}"));
+    }
+    if let Some(command_id) = value
+        .get("commandId")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/command/commandId").and_then(Value::as_str))
+    {
+        lines.push(format!("commandId={command_id}"));
+    }
+    if let Some(input_id) = value.get("inputId").and_then(Value::as_str) {
+        lines.push(format!("inputId={input_id}"));
+    }
+    if let Some(screen_version) = value
+        .pointer("/map/screen/screenVersion")
+        .or_else(|| value.pointer("/screen/screenVersion"))
+        .and_then(Value::as_u64)
+        && matches!(action, "map" | "act")
+    {
+        lines.push(format!("screenVersion={screen_version}"));
+    }
+    if let Some(regions) = value
+        .get("regions")
+        .or_else(|| value.pointer("/map/regions"))
+        .and_then(Value::as_array)
+        && matches!(action, "map" | "act")
+    {
+        let ids = regions
+            .iter()
+            .take(12)
+            .filter_map(|region| region.get("regionId").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            lines.push(format!("regions={}", ids.join(",")));
+        }
+    }
+    if memory_truncated {
+        if let Some(path) = memory_output_path {
+            lines.push(format!("fullOutputPath={path}"));
+        }
     }
     if !output.trim().is_empty() {
         lines.push(output.to_string());

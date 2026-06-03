@@ -78,6 +78,18 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
     {
         return Some("shell".to_string());
     }
+    if display_name == "terminal" && terminal_action_is_read_only(action) {
+        return None;
+    }
+    if display_name == "terminal" && terminal_action_requires_policy(action) {
+        return Some(
+            match action {
+                "run" | "write" | "close" => "shell",
+                _ => "dangerous",
+            }
+            .to_string(),
+        );
+    }
     if matches!(
         (display_name, action),
         ("file", "read")
@@ -89,10 +101,6 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("code", "graph_expand")
             | ("lsp", "query")
             | ("todo", "read")
-            | ("terminal", "list")
-            | ("terminal", "read")
-            | ("terminal", "wait")
-            | ("terminal", "create")
             | ("workbench", "list_tabs")
             | ("workbench", "read_workspace")
             | ("workbench", "read_tab")
@@ -148,6 +156,9 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
 }
 
 pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value) -> String {
+    if display_name == "terminal" {
+        return terminal_permission_summary(action, input);
+    }
     let mut detail = format!("{display_name}.{action}");
     for key in [
         "path",
@@ -170,6 +181,52 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
             && !value.trim().is_empty()
         {
             detail.push_str(&format!(" {key}={value}"));
+        }
+    }
+    detail
+}
+
+fn terminal_permission_summary(action: &str, input: &Value) -> String {
+    let mut detail = format!("terminal.{action}");
+    for key in [
+        "sessionId",
+        "terminalTabId",
+        "paneId",
+        "target",
+        "mode",
+        "command",
+        "semanticAction",
+        "operation",
+        "signal",
+        "pid",
+        "regionId",
+        "attachmentId",
+        "cols",
+        "rows",
+        "reason",
+    ] {
+        if let Some(value) = input.get(key) {
+            if let Some(text) = value.as_str().filter(|value| !value.trim().is_empty()) {
+                detail.push_str(&format!(" {key}={text}"));
+            } else if value.is_number() || value.is_boolean() {
+                detail.push_str(&format!(" {key}={value}"));
+            }
+        }
+    }
+    if let Some(text) = input.get("text").and_then(Value::as_str) {
+        detail.push_str(&format!(" textBytes={}", text.len()));
+    }
+    if let Some(data) = input.get("data").and_then(Value::as_str) {
+        detail.push_str(&format!(" dataBytes={}", data.len()));
+    }
+    if let Some(keys) = input.get("keys").and_then(Value::as_array) {
+        let labels = keys
+            .iter()
+            .filter_map(Value::as_str)
+            .take(16)
+            .collect::<Vec<_>>();
+        if !labels.is_empty() {
+            detail.push_str(&format!(" keys={}", labels.join(",")));
         }
     }
     detail

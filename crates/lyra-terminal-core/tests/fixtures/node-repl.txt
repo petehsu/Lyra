@@ -1,0 +1,9 @@
+# terminal-fixture-v1: Node REPL
+$ node
+Welcome to Node.js v22.10.0.
+Type ".help" for more information.
+> const answer = 21 * 2
+undefined
+> answer
+42
+> .exit

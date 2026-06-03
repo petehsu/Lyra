@@ -6,10 +6,6 @@ import {
   type WorkbenchResolvedThemeId,
   type WorkbenchThemeId
 } from "../theme";
-import {
-  WORKBENCH_TERMINAL_THEME_PRESET_IDS,
-  type TerminalThemeMode
-} from "../terminal-theme";
 import type {
   WorkbenchSplitOverflowPolicy,
   WorkbenchSplitThreePaneLayout,
@@ -250,15 +246,6 @@ export const createSettingThemeOptions = (
   WORKBENCH_THEME_IDS.map((themeId) => ({
     value: themeId,
     label: t(`settings.theme.${themeId}` as I18nKey)
-  }));
-
-export const createSettingTerminalThemeOptions = (
-  t: (key: I18nKey) => string
-): readonly Option<TerminalThemeMode>[] =>
-  WORKBENCH_TERMINAL_THEME_PRESET_IDS.map((presetId) => ({
-    value: presetId,
-    label: t(`settings.terminalTheme.${presetId}` as I18nKey),
-    description: t(`settings.terminalThemeDescription.${presetId}` as I18nKey)
   }));
 
 const WORKBENCH_SPLIT_TRIGGER_MODES = [

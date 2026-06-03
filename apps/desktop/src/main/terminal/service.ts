@@ -1,20 +1,76 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import {
+  ipcMain,
+  MessageChannelMain,
+  type BrowserWindow,
+  type IpcMainInvokeEvent,
+  type MessagePortMain
+} from "electron";
 import {
   LYRA_CHANNELS,
+  type TerminalActExecuteRequest,
+  type TerminalActExecuteResponse,
+  type TerminalAttachmentAttachRequest,
+  type TerminalAttachmentAttachResponse,
+  type TerminalAttachmentDetachRequest,
+  type TerminalAttachmentDetachResponse,
+  type TerminalAttachmentListRequest,
+  type TerminalAttachmentListResponse,
+  type TerminalAttachmentPauseRequest,
+  type TerminalAttachmentPauseResponse,
+  type TerminalAttachmentResumeRequest,
+  type TerminalAttachmentResumeResponse,
+  type TerminalArtifactsListRequest,
+  type TerminalArtifactsListResponse,
   type TerminalCloseRequest,
+  type TerminalCommandOutputReadRequest,
+  type TerminalCommandOutputReadResponse,
+  type TerminalCommandStatusRequest,
+  type TerminalCommandStatusResponse,
+  type TerminalCommandWaitRequest,
+  type TerminalCommandWaitResponse,
+  type TerminalCommandsReadRequest,
+  type TerminalCommandsReadResponse,
   type TerminalCreateRequest,
+  type TerminalDataAckRequest,
+  type TerminalDataEvent,
   type TerminalEvent,
+  type TerminalEventsReadRequest,
+  type TerminalEventsReadResponse,
+  type TerminalInputExecuteRequest,
+  type TerminalInputExecuteResponse,
+  type TerminalMapReadRequest,
+  type TerminalMapReadResponse,
+  type TerminalMemoryTimelineReadRequest,
+  type TerminalMemoryTimelineReadResponse,
   type TerminalReadRequest,
   type TerminalReadResponse,
   type TerminalReloadPromptRequest,
   type TerminalReloadPromptResult,
+  type TerminalRendererAttachRequest,
+  type TerminalRendererAttachResponse,
+  type TerminalRendererDetachRequest,
   type TerminalResizeRequest,
+  type TerminalScreenReadRequest,
+  type TerminalScreenReadResponse,
   type TerminalRestoreRequest,
   type TerminalSessionSnapshot,
-  type TerminalWriteRequest
+  type TerminalWriteRequest,
+  type TerminalCommandSource,
+  type TerminalOutputRangeReadRequest,
+  type TerminalOutputRangeReadResponse,
+  type TerminalPermissionEvaluateRequest,
+  type TerminalPermissionEvaluateResponse,
+  type TerminalPermissionRespondRequest,
+  type TerminalPermissionRespondResponse,
+  type TerminalProcessesReadRequest,
+  type TerminalProcessesReadResponse,
+  type TerminalProcessSignalRequest,
+  type TerminalProcessSignalResponse,
+  type TerminalWaitUntilRequest,
+  type TerminalWaitUntilResponse
 } from "../../shared/desktop-bridge";
 import {
   normalizeTerminalThemeMode,
@@ -80,7 +136,9 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(normalizedShell !== undefined ? { shell: normalizedShell } : {}),
     ...(request.mode !== undefined ? { mode: request.mode } : {}),
     ...(request.command !== undefined ? { command: request.command } : {}),
-    ...(typeof request.persist === "boolean" ? { persist: request.persist } : {})
+    ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
+    ...(request.actor !== undefined ? { actor: request.actor } : {}),
+    ...(request.correlation !== undefined ? { correlation: request.correlation } : {})
   };
 };
 
@@ -94,7 +152,9 @@ const normalizeWriteRequest = (request: TerminalWriteRequest): TerminalWriteRequ
   ...(typeof request.data === "string" ? { data: request.data } : {}),
   ...(typeof request.text === "string" ? { text: request.text } : {}),
   ...(Array.isArray(request.keys) ? { keys: request.keys } : {}),
-  ...(typeof request.appendNewline === "boolean" ? { appendNewline: request.appendNewline } : {})
+  ...(typeof request.appendNewline === "boolean" ? { appendNewline: request.appendNewline } : {}),
+  ...(request.actor !== undefined ? { actor: request.actor } : {}),
+  ...(request.correlation !== undefined ? { correlation: request.correlation } : {})
 });
 
 const normalizeResizeRequest = (request: TerminalResizeRequest): TerminalResizeRequest => ({
@@ -127,6 +187,33 @@ const createAppliedResult = (): TerminalReloadPromptResult => ({
 });
 
 const TERMINAL_PROMPT_SCRIPT_DIR = "prompt-scripts";
+const TERMINAL_RENDERER_HIGH_WATERMARK_BYTES = 512 * 1024;
+const TERMINAL_RENDERER_LOW_WATERMARK_BYTES = 128 * 1024;
+const TERMINAL_RENDERER_BATCH_FLUSH_MS = 8;
+const TERMINAL_RENDERER_MAX_BATCH_BYTES = 128 * 1024;
+const TERMINAL_RENDERER_INTERACTIVE_DIRECT_BYTES = 4 * 1024;
+const TERMINAL_INPUT_BATCH_FLUSH_MS = 8;
+const TERMINAL_INPUT_MAX_BATCH_BYTES = 16 * 1024;
+
+type TerminalDataFlowState = {
+  rendererCount: number;
+  nextSeq: number;
+  unackedBytes: number;
+  queue: TerminalDataEvent[];
+  flushTimer: ReturnType<typeof setTimeout> | null;
+};
+
+type TerminalInputFlowState = {
+  data: string;
+  source: TerminalCommandSource;
+  flushTimer: ReturnType<typeof setTimeout> | null;
+  inFlight: boolean;
+};
+
+type TerminalDataPortInputMessage = {
+  readonly kind: "input";
+  readonly request: TerminalWriteRequest;
+};
 
 const quotePosixShellLiteral = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
 
@@ -157,10 +244,23 @@ export const createTerminalIpcBridge = (
     {
       readonly terminalThemePreset: TerminalThemeMode;
       readonly uiThemeId: string;
-      readonly source: "user";
+      readonly source: TerminalCommandSource;
     }
   >();
+  const terminalDataFlowBySession = new Map<string, TerminalDataFlowState>();
+  const terminalInputFlowBySession = new Map<string, TerminalInputFlowState>();
   const promptScriptRoot = join(storageRoot, TERMINAL_PROMPT_SCRIPT_DIR);
+  let terminalDataPort: MessagePortMain | null = null;
+  const withStorageRoot = <T extends object>(payload: T): T & {
+    readonly storageRoot: string;
+  } => ({
+    ...payload,
+    storageRoot
+  });
+
+  const withSessionStorageRoot = (request: TerminalRestoreRequest): TerminalRestoreRequest => ({
+    sessions: request.sessions.map((session) => withStorageRoot(session))
+  });
 
   const ensurePromptStreamState = (sessionId: string): PromptStreamState => {
     const existing = sessionPromptStreamById.get(sessionId);
@@ -196,7 +296,7 @@ export const createTerminalIpcBridge = (
     readonly shell: string;
     readonly terminalThemePreset: TerminalThemeMode;
     readonly uiThemeId: string;
-    readonly source: "user";
+    readonly source: TerminalCommandSource;
     readonly resetInteractiveState?: boolean;
   }): Promise<TerminalReloadPromptResult> => {
     const shellFamily = resolvePromptShellFamily(input.shell);
@@ -220,7 +320,10 @@ export const createTerminalIpcBridge = (
       await requestRuntime<void>("terminal.sessions.write", {
         sessionId: input.sessionId,
         data: `${input.resetInteractiveState === true ? "\u0003\r" : ""}${sourceCommand}\n`,
-        source: input.source
+        source: input.source,
+        actor: { kind: "terminal_kernel" },
+        correlation: { terminalToolName: "terminal.reloadPrompt" },
+        storageRoot
       });
       sessionPromptModeById.set(input.sessionId, input.terminalThemePreset);
       return createAppliedResult();
@@ -240,6 +343,319 @@ export const createTerminalIpcBridge = (
     window.webContents.send(LYRA_CHANNELS.terminalEvent, event);
   };
 
+  const closeTerminalDataPort = (): void => {
+    if (terminalDataPort === null) {
+      return;
+    }
+    try {
+      terminalDataPort.close();
+    } catch (_error) {
+      // A renderer reload can close the port first.
+    }
+    terminalDataPort = null;
+  };
+
+  const isTerminalDataPortInputMessage = (
+    value: unknown
+  ): value is TerminalDataPortInputMessage => {
+    if (value === null || typeof value !== "object") {
+      return false;
+    }
+    const record = value as Record<string, unknown>;
+    return record.kind === "input" && record.request !== null && typeof record.request === "object";
+  };
+
+  const flushQueuedTerminalInput = (sessionId: string): void => {
+    const state = terminalInputFlowBySession.get(sessionId);
+    if (state === undefined) {
+      return;
+    }
+    if (state.flushTimer !== null) {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = null;
+    }
+    if (state.inFlight) {
+      return;
+    }
+    const data = state.data;
+    const source = state.source;
+    state.data = "";
+    if (data.length === 0) {
+      terminalInputFlowBySession.delete(sessionId);
+      return;
+    }
+    state.inFlight = true;
+    void writeSession({
+      sessionId,
+      data,
+      source
+    })
+      .catch((_error) => {
+        // Input may race with terminal close; the renderer will recover through normal session state.
+      })
+      .finally(() => {
+        const current = terminalInputFlowBySession.get(sessionId);
+        if (current === undefined) {
+          return;
+        }
+        current.inFlight = false;
+        if (current.data.length === 0) {
+          terminalInputFlowBySession.delete(sessionId);
+          return;
+        }
+        flushQueuedTerminalInput(sessionId);
+      });
+  };
+
+  const shouldFlushTerminalInputImmediately = (data: string): boolean =>
+    data.length >= TERMINAL_INPUT_MAX_BATCH_BYTES ||
+    data.includes("\r") ||
+    data.includes("\n") ||
+    data.includes("\u0003") ||
+    data.startsWith("\u001b");
+
+  const queueTerminalInput = (request: TerminalWriteRequest): void => {
+    const normalized = normalizeWriteRequest(request);
+    if (
+      typeof normalized.data !== "string" ||
+      normalized.text !== undefined ||
+      normalized.keys !== undefined ||
+      normalized.appendNewline === true ||
+      normalized.actor !== undefined ||
+      normalized.correlation !== undefined
+    ) {
+      void writeSession(normalized).catch((_error) => undefined);
+      return;
+    }
+    const existing = terminalInputFlowBySession.get(normalized.sessionId);
+    const state = existing ?? {
+      data: "",
+      source: normalized.source,
+      flushTimer: null,
+      inFlight: false
+    };
+    state.data += normalized.data;
+    state.source = normalized.source;
+    terminalInputFlowBySession.set(normalized.sessionId, state);
+    if (shouldFlushTerminalInputImmediately(state.data)) {
+      flushQueuedTerminalInput(normalized.sessionId);
+      return;
+    }
+    if (state.flushTimer === null && !state.inFlight) {
+      state.flushTimer = setTimeout(() => {
+        flushQueuedTerminalInput(normalized.sessionId);
+      }, TERMINAL_INPUT_BATCH_FLUSH_MS);
+    }
+  };
+
+  const handleTerminalDataPortMessage = (payload: unknown): void => {
+    if (!isTerminalDataPortInputMessage(payload)) {
+      return;
+    }
+    queueTerminalInput(payload.request);
+  };
+
+  const connectTerminalDataPort = (): void => {
+    const window = getWindow();
+    if (window === null || window.isDestroyed()) {
+      return;
+    }
+    closeTerminalDataPort();
+    const channel = new MessageChannelMain();
+    terminalDataPort = channel.port1;
+    terminalDataPort.on("close", () => {
+      if (terminalDataPort === channel.port1) {
+        terminalDataPort = null;
+      }
+    });
+    terminalDataPort.on("message", (event) => {
+      handleTerminalDataPortMessage((event as { data?: unknown }).data);
+    });
+    terminalDataPort.start();
+    window.webContents.postMessage(
+      LYRA_CHANNELS.terminalDataPort,
+      { version: 1 },
+      [channel.port2]
+    );
+  };
+
+  const publishTerminalDataEvent = (event: TerminalDataEvent): void => {
+    if (terminalDataPort === null) {
+      publishEvent(event);
+      return;
+    }
+    try {
+      terminalDataPort.postMessage(event);
+    } catch (_error) {
+      terminalDataPort = null;
+      publishEvent(event);
+    }
+  };
+
+  const getDataFlowState = (sessionId: string): TerminalDataFlowState => {
+    const existing = terminalDataFlowBySession.get(sessionId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created: TerminalDataFlowState = {
+      rendererCount: 0,
+      nextSeq: 1,
+      unackedBytes: 0,
+      queue: [],
+      flushTimer: null
+    };
+    terminalDataFlowBySession.set(sessionId, created);
+    return created;
+  };
+
+  const clearDataFlushTimer = (state: TerminalDataFlowState): void => {
+    if (state.flushTimer === null) {
+      return;
+    }
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  };
+
+  const scheduleTerminalDataFlush = (sessionId: string): void => {
+    const state = terminalDataFlowBySession.get(sessionId);
+    if (state === undefined || state.flushTimer !== null) {
+      return;
+    }
+    state.flushTimer = setTimeout(() => {
+      state.flushTimer = null;
+      flushQueuedTerminalData(sessionId);
+    }, TERMINAL_RENDERER_BATCH_FLUSH_MS);
+  };
+
+  const publishTerminalDataBatch = (
+    sessionId: string,
+    events: readonly TerminalDataEvent[]
+  ): void => {
+    if (events.length === 0) {
+      return;
+    }
+    const first = events[0];
+    if (first === undefined) {
+      return;
+    }
+    if (events.length === 1) {
+      publishTerminalDataEvent(first);
+      return;
+    }
+    publishTerminalDataEvent({
+      ...first,
+      sessionId,
+      data: events.map((event) => event.data).join(""),
+      byteLength: events.reduce(
+        (total, event) => total + (event.byteLength ?? Buffer.byteLength(event.data, "utf8")),
+        0
+      )
+    });
+  };
+
+  const flushQueuedTerminalData = (sessionId: string): void => {
+    const state = terminalDataFlowBySession.get(sessionId);
+    if (state === undefined) {
+      return;
+    }
+    if (state.rendererCount <= 0) {
+      state.queue.length = 0;
+      state.unackedBytes = 0;
+      return;
+    }
+    if (state.unackedBytes >= TERMINAL_RENDERER_HIGH_WATERMARK_BYTES) {
+      return;
+    }
+    while (
+      state.queue.length > 0 &&
+      state.unackedBytes < TERMINAL_RENDERER_HIGH_WATERMARK_BYTES
+    ) {
+      const batch: TerminalDataEvent[] = [];
+      let batchBytes = 0;
+      while (state.queue.length > 0 && batchBytes < TERMINAL_RENDERER_MAX_BATCH_BYTES) {
+        const next = state.queue.shift();
+        if (next === undefined) {
+          break;
+        }
+        const nextBytes = next.byteLength ?? Buffer.byteLength(next.data, "utf8");
+        if (
+          batch.length > 0 &&
+          batchBytes + nextBytes > TERMINAL_RENDERER_MAX_BATCH_BYTES
+        ) {
+          state.queue.unshift(next);
+          break;
+        }
+        batch.push(next);
+        batchBytes += nextBytes;
+      }
+      if (batch.length === 0) {
+        break;
+      }
+      state.unackedBytes += batchBytes;
+      publishTerminalDataBatch(sessionId, batch);
+    }
+    if (state.unackedBytes >= TERMINAL_RENDERER_HIGH_WATERMARK_BYTES) {
+      return;
+    }
+    if (state.queue.length > 0 && state.unackedBytes < TERMINAL_RENDERER_HIGH_WATERMARK_BYTES) {
+      scheduleTerminalDataFlush(sessionId);
+    }
+  };
+
+  const publishTerminalData = (event: TerminalDataEvent): void => {
+    const state = getDataFlowState(event.sessionId);
+    const byteLength = Buffer.byteLength(event.data, "utf8");
+    const eventWithFlow: TerminalDataEvent = {
+      ...event,
+      dataSeq: state.nextSeq,
+      byteLength
+    };
+    state.nextSeq += 1;
+    if (state.rendererCount <= 0) {
+      publishTerminalDataEvent(eventWithFlow);
+      return;
+    }
+    if (
+      state.queue.length === 0 &&
+      byteLength <= TERMINAL_RENDERER_INTERACTIVE_DIRECT_BYTES &&
+      state.unackedBytes < TERMINAL_RENDERER_LOW_WATERMARK_BYTES
+    ) {
+      state.unackedBytes += byteLength;
+      publishTerminalDataEvent(eventWithFlow);
+      return;
+    }
+    state.queue.push(eventWithFlow);
+    scheduleTerminalDataFlush(event.sessionId);
+  };
+
+  const attachRenderer = async (
+    request: TerminalRendererAttachRequest
+  ): Promise<TerminalRendererAttachResponse> => {
+    const state = getDataFlowState(request.sessionId);
+    state.rendererCount += 1;
+    flushQueuedTerminalData(request.sessionId);
+    return {
+      sessionId: request.sessionId,
+      attached: true
+    };
+  };
+
+  const detachRenderer = async (request: TerminalRendererDetachRequest): Promise<void> => {
+    const state = getDataFlowState(request.sessionId);
+    state.rendererCount = Math.max(0, state.rendererCount - 1);
+    if (state.rendererCount === 0) {
+      state.unackedBytes = 0;
+      state.queue.length = 0;
+      clearDataFlushTimer(state);
+    }
+  };
+
+  const ackData = async (request: TerminalDataAckRequest): Promise<void> => {
+    const state = getDataFlowState(request.sessionId);
+    state.unackedBytes = Math.max(0, state.unackedBytes - Math.max(0, request.byteLength));
+    flushQueuedTerminalData(request.sessionId);
+  };
+
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
     if (eventName !== "terminal.runtime") {
       return;
@@ -248,31 +664,10 @@ export const createTerminalIpcBridge = (
     if (event.kind === "data") {
       const streamState = ensurePromptStreamState(event.sessionId);
       const filteredData = filterPromptRuntimeData(streamState, event.data);
-      if (streamState.atPrompt) {
-        const pendingReload = sessionPendingReloadById.get(event.sessionId);
-        if (pendingReload !== undefined) {
-          sessionPendingReloadById.delete(event.sessionId);
-          const shell = sessionShellById.get(event.sessionId);
-          if (shell !== undefined) {
-            void applyPromptToSession({
-              sessionId: event.sessionId,
-              shell,
-              terminalThemePreset: pendingReload.terminalThemePreset,
-              uiThemeId: pendingReload.uiThemeId,
-              source: pendingReload.source
-            }).catch((error) => {
-              console.warn(
-                `[lyra-terminal] deferred prompt apply failed for session ${event.sessionId}:`,
-                error
-              );
-            });
-          }
-        }
-      }
       if (filteredData.length === 0) {
         return;
       }
-      publishEvent({
+      publishTerminalData({
         ...event,
         data: filteredData
       });
@@ -287,7 +682,7 @@ export const createTerminalIpcBridge = (
     const normalized = normalizeCreateRequest(request);
     const snapshot = await requestRuntime<TerminalSessionSnapshot>(
       "terminal.sessions.create",
-      normalized
+      withStorageRoot(normalized)
     );
     sessionShellById.set(snapshot.sessionId, snapshot.shell);
     sessionPromptModeById.set(snapshot.sessionId, "follow-app");
@@ -298,44 +693,131 @@ export const createTerminalIpcBridge = (
   const writeSession = async (request: TerminalWriteRequest): Promise<void> => {
     const normalized = normalizeWriteRequest(request);
     notePromptUserInput(ensurePromptStreamState(normalized.sessionId));
-    await requestRuntime<void>("terminal.sessions.write", normalized);
+    await requestRuntime<void>("terminal.sessions.write", withStorageRoot(normalized));
   };
 
   const closeSession = async (request: TerminalCloseRequest): Promise<void> => {
     try {
-      await requestRuntime<void>("terminal.sessions.close", request);
+      await requestRuntime<void>("terminal.sessions.close", withStorageRoot(request));
     } finally {
       sessionShellById.delete(request.sessionId);
       sessionPromptModeById.delete(request.sessionId);
       sessionPromptStreamById.delete(request.sessionId);
       sessionPendingReloadById.delete(request.sessionId);
+      const flowState = terminalDataFlowBySession.get(request.sessionId);
+      if (flowState !== undefined) {
+        clearDataFlushTimer(flowState);
+        terminalDataFlowBySession.delete(request.sessionId);
+      }
+      const inputFlowState = terminalInputFlowBySession.get(request.sessionId);
+      if (inputFlowState !== undefined) {
+        if (inputFlowState.flushTimer !== null) {
+          clearTimeout(inputFlowState.flushTimer);
+        }
+        terminalInputFlowBySession.delete(request.sessionId);
+      }
     }
+  };
+
+  const restoreSessions = async (
+    request: TerminalRestoreRequest
+  ): Promise<readonly TerminalSessionSnapshot[]> => {
+    const normalized = normalizeRestoreRequest(request);
+    const snapshots = [...await requestRuntime<readonly TerminalSessionSnapshot[]>(
+      "terminal.sessions.restore",
+      withSessionStorageRoot(normalized)
+    )];
+    for (const snapshot of snapshots) {
+      sessionShellById.set(snapshot.sessionId, snapshot.shell);
+      sessionPromptModeById.set(snapshot.sessionId, "follow-app");
+      sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
+    }
+    return snapshots;
+  };
+
+  const reloadPrompt = async (
+    request: TerminalReloadPromptRequest
+  ): Promise<TerminalReloadPromptResult> => {
+    const normalized = normalizeReloadPromptRequest(request);
+    const shell = sessionShellById.get(normalized.sessionId);
+    if (shell === undefined) {
+      return createDeferredResult("session shell metadata unavailable");
+    }
+    const streamState = ensurePromptStreamState(normalized.sessionId);
+    if (!streamState.atPrompt) {
+      sessionPendingReloadById.set(normalized.sessionId, {
+        terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
+        uiThemeId: normalized.uiThemeId ?? "lyra-dark",
+        source: "system"
+      });
+      return createDeferredResult("session is busy; prompt reload deferred until next prompt");
+    }
+    return await applyPromptToSession({
+      sessionId: normalized.sessionId,
+      shell,
+      terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
+      uiThemeId: normalized.uiThemeId ?? "lyra-dark",
+      source: "system"
+    });
+  };
+
+  const readSessionObservation = async (
+    request: TerminalReadRequest
+  ): Promise<TerminalReadResponse> => {
+    return await requestRuntime<TerminalReadResponse>(
+      "terminal.sessions.read",
+      withStorageRoot(request)
+    );
+  };
+
+  const readTerminalScreenSnapshot = async (
+    request: TerminalScreenReadRequest
+  ): Promise<TerminalScreenReadResponse> => {
+    return await requestRuntime<TerminalScreenReadResponse>(
+      "terminal.screen.read",
+      withStorageRoot(request)
+    );
+  };
+
+  const waitTerminalUntil = async (
+    request: TerminalWaitUntilRequest
+  ): Promise<TerminalWaitUntilResponse> => {
+    return await requestRuntime<TerminalWaitUntilResponse>(
+      "terminal.waitUntil",
+      withStorageRoot(request)
+    );
+  };
+
+  const readProcesses = async (
+    request: TerminalProcessesReadRequest
+  ): Promise<TerminalProcessesReadResponse> => {
+    return await requestRuntime<TerminalProcessesReadResponse>(
+      "terminal.processes.read",
+      withStorageRoot(request)
+    );
+  };
+
+  const signalProcess = async (
+    request: TerminalProcessSignalRequest
+  ): Promise<TerminalProcessSignalResponse> => {
+    return await requestRuntime<TerminalProcessSignalResponse>(
+      "terminal.processes.signal",
+      withStorageRoot(request)
+    );
   };
 
   const handlers: Array<
     readonly [string, (event: IpcMainInvokeEvent, payload: unknown) => unknown]
   > = [
     [
+      LYRA_CHANNELS.terminalConnectDataPort,
+      () => connectTerminalDataPort()
+    ],
+    [
       LYRA_CHANNELS.terminalCreateSession,
       async (_event, payload) => {
         const normalized = normalizeCreateRequest(payload as TerminalCreateRequest);
         const snapshot = await createSession(normalized);
-        if (snapshot.mode !== "command") {
-          try {
-            await applyPromptToSession({
-              sessionId: snapshot.sessionId,
-              shell: snapshot.shell,
-              terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-              uiThemeId: normalized.uiThemeId ?? "lyra-dark",
-              source: normalized.source
-            });
-          } catch (error) {
-            console.warn(
-              `[lyra-terminal] prompt apply failed for session ${snapshot.sessionId}:`,
-              error
-            );
-          }
-        }
         console.info(
           `[lyra-terminal] session ready id=${snapshot.sessionId} shell=${snapshot.shell} cols=${snapshot.cols} rows=${snapshot.rows}`
         );
@@ -344,67 +826,23 @@ export const createTerminalIpcBridge = (
     ],
     [
       LYRA_CHANNELS.terminalRestoreSessions,
-      async (_event, payload) => {
-        const normalized = normalizeRestoreRequest(payload as TerminalRestoreRequest);
-        const snapshots = await requestRuntime<readonly TerminalSessionSnapshot[]>(
-          "terminal.sessions.restore",
-          normalized
-        );
-        await Promise.all(
-          snapshots.map(async (snapshot, index) => {
-            sessionShellById.set(snapshot.sessionId, snapshot.shell);
-            sessionPromptModeById.set(snapshot.sessionId, "follow-app");
-            sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
-            if (snapshot.mode === "command") {
-              return;
-            }
-            const requestedSession = normalized.sessions[index];
-            try {
-              await applyPromptToSession({
-                sessionId: snapshot.sessionId,
-                shell: snapshot.shell,
-                terminalThemePreset: normalizeTerminalThemeMode(
-                  requestedSession?.terminalThemePreset
-                ),
-                uiThemeId: requestedSession?.uiThemeId ?? "lyra-dark",
-                source: requestedSession?.source ?? "user"
-              });
-            } catch (error) {
-              console.warn(
-                `[lyra-terminal] prompt restore apply failed for session ${snapshot.sessionId}:`,
-                error
-              );
-            }
-          })
-        );
-        return snapshots;
-      }
+      (_event, payload) => restoreSessions(payload as TerminalRestoreRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachRenderer,
+      (_event, payload) => attachRenderer(payload as TerminalRendererAttachRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalDetachRenderer,
+      (_event, payload) => detachRenderer(payload as TerminalRendererDetachRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalAckData,
+      (_event, payload) => ackData(payload as TerminalDataAckRequest)
     ],
     [
       LYRA_CHANNELS.terminalReloadPrompt,
-      async (_event, payload) => {
-        const normalized = normalizeReloadPromptRequest(payload as TerminalReloadPromptRequest);
-        const shell = sessionShellById.get(normalized.sessionId);
-        if (shell === undefined) {
-          return createDeferredResult("session shell metadata unavailable");
-        }
-        const streamState = ensurePromptStreamState(normalized.sessionId);
-        if (!streamState.atPrompt) {
-          sessionPendingReloadById.set(normalized.sessionId, {
-            terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-            uiThemeId: normalized.uiThemeId ?? "lyra-dark",
-            source: normalized.source
-          });
-          return createDeferredResult("session is busy; prompt reload deferred until next prompt");
-        }
-        return await applyPromptToSession({
-          sessionId: normalized.sessionId,
-          shell,
-          terminalThemePreset: normalizeTerminalThemeMode(normalized.terminalThemePreset),
-          uiThemeId: normalized.uiThemeId ?? "lyra-dark",
-          source: normalized.source
-        });
-      }
+      (_event, payload) => reloadPrompt(payload as TerminalReloadPromptRequest)
     ],
     [
       LYRA_CHANNELS.terminalWriteSession,
@@ -422,10 +860,166 @@ export const createTerminalIpcBridge = (
     ],
     [
       LYRA_CHANNELS.terminalReadSession,
+      (_event, payload) => readSessionObservation(payload as TerminalReadRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalReadMemoryTimeline,
       (_event, payload) =>
-        requestRuntime<TerminalReadResponse>(
-          "terminal.sessions.read",
-          payload as TerminalReadRequest
+        requestRuntime(
+          "terminal.memory.readTimeline",
+          withStorageRoot(payload as TerminalMemoryTimelineReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalReadEvents,
+      (_event, payload) =>
+        requestRuntime<TerminalEventsReadResponse>(
+          "terminal.events.read",
+          withStorageRoot(payload as TerminalEventsReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalReadCommands,
+      (_event, payload) =>
+        requestRuntime<TerminalCommandsReadResponse>(
+          "terminal.commands.read",
+          withStorageRoot(payload as TerminalCommandsReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalReadOutputRange,
+      (_event, payload) =>
+        requestRuntime<TerminalOutputRangeReadResponse>(
+          "terminal.output.readRange",
+          withStorageRoot(payload as TerminalOutputRangeReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalListArtifacts,
+      (_event, payload) =>
+        requestRuntime<TerminalArtifactsListResponse>(
+          "terminal.artifacts.list",
+          withStorageRoot(payload as TerminalArtifactsListRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalReadScreen,
+      (_event, payload) => readTerminalScreenSnapshot(payload as TerminalScreenReadRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalWaitUntil,
+      (_event, payload) => waitTerminalUntil(payload as TerminalWaitUntilRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalInputExecute,
+      (_event, payload) =>
+        requestRuntime<TerminalInputExecuteResponse>(
+          "terminal.input.execute",
+          withStorageRoot(payload as TerminalInputExecuteRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalPermissionsEvaluate,
+      (_event, payload) =>
+        requestRuntime<TerminalPermissionEvaluateResponse>(
+          "terminal.permissions.evaluate",
+          withStorageRoot(payload as TerminalPermissionEvaluateRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalPermissionsRespond,
+      (_event, payload) =>
+        requestRuntime<TerminalPermissionRespondResponse>(
+          "terminal.permissions.respond",
+          withStorageRoot(payload as TerminalPermissionRespondRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalProcessesRead,
+      (_event, payload) => readProcesses(payload as TerminalProcessesReadRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalProcessesSignal,
+      (_event, payload) => signalProcess(payload as TerminalProcessSignalRequest)
+    ],
+    [
+      LYRA_CHANNELS.terminalCommandStatus,
+      (_event, payload) =>
+        requestRuntime<TerminalCommandStatusResponse>(
+          "terminal.command.status",
+          withStorageRoot(payload as TerminalCommandStatusRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalCommandWait,
+      (_event, payload) =>
+        requestRuntime<TerminalCommandWaitResponse>(
+          "terminal.command.wait",
+          withStorageRoot(payload as TerminalCommandWaitRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalCommandReadOutput,
+      (_event, payload) =>
+        requestRuntime<TerminalCommandOutputReadResponse>(
+          "terminal.command.readOutput",
+          withStorageRoot(payload as TerminalCommandOutputReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalMapRead,
+      (_event, payload) =>
+        requestRuntime<TerminalMapReadResponse>(
+          "terminal.map.read",
+          withStorageRoot(payload as TerminalMapReadRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalActExecute,
+      (_event, payload) =>
+        requestRuntime<TerminalActExecuteResponse>(
+          "terminal.act.execute",
+          withStorageRoot(payload as TerminalActExecuteRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachmentsAttach,
+      (_event, payload) =>
+        requestRuntime<TerminalAttachmentAttachResponse>(
+          "terminal.attachments.attach",
+          withStorageRoot(payload as TerminalAttachmentAttachRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachmentsDetach,
+      (_event, payload) =>
+        requestRuntime<TerminalAttachmentDetachResponse>(
+          "terminal.attachments.detach",
+          withStorageRoot(payload as TerminalAttachmentDetachRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachmentsList,
+      (_event, payload) =>
+        requestRuntime<TerminalAttachmentListResponse>(
+          "terminal.attachments.list",
+          withStorageRoot(payload as TerminalAttachmentListRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachmentsPause,
+      (_event, payload) =>
+        requestRuntime<TerminalAttachmentPauseResponse>(
+          "terminal.attachments.pause",
+          withStorageRoot(payload as TerminalAttachmentPauseRequest)
+        )
+    ],
+    [
+      LYRA_CHANNELS.terminalAttachmentsResume,
+      (_event, payload) =>
+        requestRuntime<TerminalAttachmentResumeResponse>(
+          "terminal.attachments.resume",
+          withStorageRoot(payload as TerminalAttachmentResumeRequest)
         )
     ],
     [
@@ -433,9 +1027,10 @@ export const createTerminalIpcBridge = (
       (_event, payload) =>
         (async () => {
           try {
+            const normalized = normalizeResizeRequest(payload as TerminalResizeRequest);
             await requestRuntime<void>(
               "terminal.sessions.resize",
-              normalizeResizeRequest(payload as TerminalResizeRequest)
+              withStorageRoot(normalized)
             );
           } catch (error) {
             if (error instanceof Error && /session not found/i.test(error.message)) {
@@ -472,22 +1067,196 @@ export const createTerminalIpcBridge = (
 
   const readObservation = (
     request: TerminalReadRequest
-  ): Promise<TerminalReadResponse> =>
-    requestRuntime<TerminalReadResponse>("terminal.sessions.read", request);
+  ): Promise<TerminalReadResponse> => readSessionObservation(request);
+  const readScreen = (
+    request: TerminalScreenReadRequest
+  ): Promise<TerminalScreenReadResponse> => readTerminalScreenSnapshot(request);
+  const readEvents = (
+    request: TerminalEventsReadRequest
+  ): Promise<TerminalEventsReadResponse> =>
+    requestRuntime<TerminalEventsReadResponse>(
+      "terminal.events.read",
+      withStorageRoot(request)
+    );
+  const readCommands = (
+    request: TerminalCommandsReadRequest
+  ): Promise<TerminalCommandsReadResponse> =>
+    requestRuntime<TerminalCommandsReadResponse>(
+      "terminal.commands.read",
+      withStorageRoot(request)
+    );
+  const readOutputRange = (
+    request: TerminalOutputRangeReadRequest
+  ): Promise<TerminalOutputRangeReadResponse> =>
+    requestRuntime<TerminalOutputRangeReadResponse>(
+      "terminal.output.readRange",
+      withStorageRoot(request)
+    );
+  const listArtifacts = (
+    request: TerminalArtifactsListRequest
+  ): Promise<TerminalArtifactsListResponse> =>
+    requestRuntime<TerminalArtifactsListResponse>(
+      "terminal.artifacts.list",
+      withStorageRoot(request)
+    );
+  const readMemoryTimeline = (
+    request: TerminalMemoryTimelineReadRequest
+  ): Promise<TerminalMemoryTimelineReadResponse> =>
+    requestRuntime<TerminalMemoryTimelineReadResponse>(
+      "terminal.memory.readTimeline",
+      withStorageRoot(request)
+    );
+  const waitUntil = (
+    request: TerminalWaitUntilRequest
+  ): Promise<TerminalWaitUntilResponse> => waitTerminalUntil(request);
+  const executeInput = (
+    request: TerminalInputExecuteRequest
+  ): Promise<TerminalInputExecuteResponse> =>
+    requestRuntime<TerminalInputExecuteResponse>(
+      "terminal.input.execute",
+      withStorageRoot(request)
+    );
+  const evaluatePermission = (
+    request: TerminalPermissionEvaluateRequest
+  ): Promise<TerminalPermissionEvaluateResponse> =>
+    requestRuntime<TerminalPermissionEvaluateResponse>(
+      "terminal.permissions.evaluate",
+      withStorageRoot(request)
+    );
+  const respondPermission = (
+    request: TerminalPermissionRespondRequest
+  ): Promise<TerminalPermissionRespondResponse> =>
+    requestRuntime<TerminalPermissionRespondResponse>(
+      "terminal.permissions.respond",
+      withStorageRoot(request)
+    );
+  const readCommandStatus = (
+    request: TerminalCommandStatusRequest
+  ): Promise<TerminalCommandStatusResponse> =>
+    requestRuntime<TerminalCommandStatusResponse>(
+      "terminal.command.status",
+      withStorageRoot(request)
+    );
+  const waitCommand = (
+    request: TerminalCommandWaitRequest
+  ): Promise<TerminalCommandWaitResponse> =>
+    requestRuntime<TerminalCommandWaitResponse>(
+      "terminal.command.wait",
+      withStorageRoot(request)
+    );
+  const readCommandOutput = (
+    request: TerminalCommandOutputReadRequest
+  ): Promise<TerminalCommandOutputReadResponse> =>
+    requestRuntime<TerminalCommandOutputReadResponse>(
+      "terminal.command.readOutput",
+      withStorageRoot(request)
+    );
+  const readMap = (
+    request: TerminalMapReadRequest
+  ): Promise<TerminalMapReadResponse> =>
+    requestRuntime<TerminalMapReadResponse>(
+      "terminal.map.read",
+      withStorageRoot(request)
+    );
+  const executeAct = (
+    request: TerminalActExecuteRequest
+  ): Promise<TerminalActExecuteResponse> =>
+    requestRuntime<TerminalActExecuteResponse>(
+      "terminal.act.execute",
+      withStorageRoot(request)
+    );
+  const attachAgent = (
+    request: TerminalAttachmentAttachRequest
+  ): Promise<TerminalAttachmentAttachResponse> =>
+    requestRuntime<TerminalAttachmentAttachResponse>(
+      "terminal.attachments.attach",
+      withStorageRoot(request)
+    );
+  const detachAgent = (
+    request: TerminalAttachmentDetachRequest
+  ): Promise<TerminalAttachmentDetachResponse> =>
+    requestRuntime<TerminalAttachmentDetachResponse>(
+      "terminal.attachments.detach",
+      withStorageRoot(request)
+    );
+  const listAttachments = (
+    request: TerminalAttachmentListRequest
+  ): Promise<TerminalAttachmentListResponse> =>
+    requestRuntime<TerminalAttachmentListResponse>(
+      "terminal.attachments.list",
+      withStorageRoot(request)
+    );
+  const pauseAttachment = (
+    request: TerminalAttachmentPauseRequest
+  ): Promise<TerminalAttachmentPauseResponse> =>
+    requestRuntime<TerminalAttachmentPauseResponse>(
+      "terminal.attachments.pause",
+      withStorageRoot(request)
+    );
+  const resumeAttachment = (
+    request: TerminalAttachmentResumeRequest
+  ): Promise<TerminalAttachmentResumeResponse> =>
+    requestRuntime<TerminalAttachmentResumeResponse>(
+      "terminal.attachments.resume",
+      withStorageRoot(request)
+    );
+  const resize = (request: TerminalResizeRequest): Promise<void> =>
+    (async () => {
+      const normalized = normalizeResizeRequest(request);
+      await requestRuntime<void>(
+        "terminal.sessions.resize",
+        withStorageRoot(normalized)
+      );
+    })();
 
   return {
     loadResult: {
       loadedFrom: "lyrad"
     },
     createSession,
+    restoreSessions,
+    attachRenderer,
+    detachRenderer,
+    ackData,
+    reloadPrompt,
     write: writeSession,
     readObservation,
+    readScreen,
+    readEvents,
+    readCommands,
+    readOutputRange,
+    listArtifacts,
+    readMemoryTimeline,
+    waitUntil,
+    executeInput,
+    evaluatePermission,
+    respondPermission,
+    readProcesses,
+    signalProcess,
+    readCommandStatus,
+    waitCommand,
+    readCommandOutput,
+    readMap,
+    executeAct,
+    attachAgent,
+    detachAgent,
+    listAttachments,
+    pauseAttachment,
+    resumeAttachment,
+    resize,
     closeSession,
     dispose: () => {
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }
       unsubscribeRuntimeEvents();
+      closeTerminalDataPort();
+      for (const state of terminalInputFlowBySession.values()) {
+        if (state.flushTimer !== null) {
+          clearTimeout(state.flushTimer);
+        }
+      }
+      terminalInputFlowBySession.clear();
     }
   };
 };

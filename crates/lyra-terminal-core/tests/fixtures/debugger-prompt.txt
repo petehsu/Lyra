@@ -1,0 +1,12 @@
+# terminal-fixture-v1: debugger prompt
+$ node inspect dist/server.js
+< Debugger listening on ws://127.0.0.1:9229/debug
+debug> cont
+break in dist/server.js:14
+ 12 const server = createServer(app)
+ 13 server.listen(3000)
+>14 throw new Error("port unavailable")
+debug> repl
+press Ctrl+C to leave debug repl
+> process.pid
+4242

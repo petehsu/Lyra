@@ -92,9 +92,12 @@ import type {
 } from "../../shared/agent";
 import type {
   TerminalCreateRequest,
+  TerminalMemoryActor,
+  TerminalMemoryCorrelation,
+  TerminalEvent,
   TerminalReadResponse,
-  TerminalSessionSnapshot,
-  TerminalWriteRequest
+  TerminalScreenReadResponse,
+  TerminalSessionSnapshot
 } from "../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { TerminalIpcBridge } from "../terminal/types";
@@ -105,6 +108,11 @@ import {
   type WorkbenchBrowserAgentTargetMode
 } from "../workbench-browser/types";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
+import {
+  terminalAgentToolNameForAction,
+  terminalSemanticInputActionForToolAction,
+  terminalWaitTargetFromPayload
+} from "./terminal-tools";
 import type {
   WorkbenchObservedTabDescriptor,
   WorkbenchTerminalPaneDescriptor,
@@ -118,6 +126,7 @@ export type AgentIpcBridge = {
 };
 
 const AGENT_RUNTIME_EVENT_NAME = "agent.runtime";
+const TERMINAL_RUNTIME_EVENT_NAME = "terminal.runtime";
 
 type PendingSoftwareCapabilityRequest = {
   readonly resolve: (value: unknown) => void;
@@ -353,8 +362,58 @@ export const createAgentIpcBridge = ({
   };
   const privateTerminalsByAgentSession = new Map<string, Map<string, PrivateTerminalEntry>>();
   const cursorByTerminalSessionId = new Map<string, string>();
+  const screenCursorByTerminalSessionId = new Map<string, string>();
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+
+  const readTerminalRuntimeCorrelationString = (
+    event: TerminalEvent,
+    key: keyof TerminalMemoryCorrelation
+  ): string | undefined => {
+    if (event.kind !== "commandCompleted") {
+      return undefined;
+    }
+    const correlation = event.command.correlation;
+    if (!isRecord(correlation)) {
+      return undefined;
+    }
+    const value = correlation[key];
+    return typeof value === "string" && value.trim().length > 0
+      ? value.trim()
+      : undefined;
+  };
+
+  const handleTerminalRuntimeEvent = (payload: unknown): void => {
+    const event = payload as TerminalEvent;
+    if (event.kind !== "commandCompleted") {
+      return;
+    }
+    const agentSessionId = readTerminalRuntimeCorrelationString(event, "agentSessionId");
+    if (agentSessionId === undefined) {
+      return;
+    }
+    void requestRuntime<AgentPokeResponse>("agent.action.poke", {
+      sessionId: agentSessionId,
+      reason: "terminal_command_completed",
+      terminal: {
+        sessionId: event.sessionId,
+        commandId: event.commandId,
+        status: event.command.status,
+        exitCode: event.command.exitCode ?? null,
+        commandSummaryPath: event.command.commandSummaryPath,
+        commandOutputTextPath: event.command.commandOutputTextPath
+      }
+    }).catch((error) => {
+      console.warn("[lyra-agent] terminal command completion poke failed:", error);
+    });
+  };
 
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
+    if (eventName === TERMINAL_RUNTIME_EVENT_NAME) {
+      handleTerminalRuntimeEvent(payload);
+      return;
+    }
     if (eventName !== AGENT_RUNTIME_EVENT_NAME) {
       return;
     }
@@ -387,9 +446,6 @@ export const createAgentIpcBridge = ({
     }
     window.webContents.send(LYRA_CHANNELS.agentEvent, event);
   });
-
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === "object" && !Array.isArray(value);
 
   const normalizePayload = (payload: unknown): Record<string, unknown> =>
     isRecord(payload) ? payload : {};
@@ -670,6 +726,26 @@ export const createAgentIpcBridge = ({
     return readStringField(payload, fieldName);
   };
 
+  const readOptionalStringArrayField = (
+    payload: Record<string, unknown>,
+    fieldName: string
+  ): readonly string[] | undefined => {
+    const value = payload[fieldName];
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(value)) {
+      throw new Error(`${fieldName} must be an array of strings`);
+    }
+    const items = value
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => item.trim());
+    if (items.length === 0) {
+      throw new Error(`${fieldName} must include at least one string`);
+    }
+    return items;
+  };
+
   const readLumenAuditSeverity = (
     payload: Record<string, unknown>
   ): "info" | "warning" | "error" | readonly ("info" | "warning" | "error")[] | undefined => {
@@ -747,6 +823,10 @@ export const createAgentIpcBridge = ({
   };
 
   const readRuntimeTurnId = (payload: Record<string, unknown>): string | undefined => {
+    const directTurnId = payload.runtimeTurnId ?? payload.turnId;
+    if (typeof directTurnId === "string" && directTurnId.trim().length > 0) {
+      return directTurnId.trim();
+    }
     const runtimeCancellation = payload.runtimeCancellation;
     if (runtimeCancellation === null || typeof runtimeCancellation !== "object") {
       return undefined;
@@ -754,6 +834,22 @@ export const createAgentIpcBridge = ({
     const turnId = (runtimeCancellation as Record<string, unknown>).turnId;
     return typeof turnId === "string" && turnId.trim().length > 0
       ? turnId.trim()
+      : undefined;
+  };
+
+  const readRuntimeToolCallId = (payload: Record<string, unknown>): string | undefined => {
+    const directToolCallId = payload.toolCallId ?? payload.tool_call_id;
+    if (typeof directToolCallId === "string" && directToolCallId.trim().length > 0) {
+      return directToolCallId.trim();
+    }
+    const runtimeCancellation = payload.runtimeCancellation;
+    if (runtimeCancellation === null || typeof runtimeCancellation !== "object") {
+      return undefined;
+    }
+    const toolCallId = (runtimeCancellation as Record<string, unknown>).toolCallId
+      ?? (runtimeCancellation as Record<string, unknown>).tool_call_id;
+    return typeof toolCallId === "string" && toolCallId.trim().length > 0
+      ? toolCallId.trim()
       : undefined;
   };
 
@@ -770,6 +866,46 @@ export const createAgentIpcBridge = ({
       return directSessionId.trim();
     }
     return "agent-session-default";
+  };
+
+  const createAgentTerminalMemoryContext = (
+    payload: Record<string, unknown>,
+    agentSessionId: string,
+    terminalToolName: string,
+    options: {
+      readonly target?: TerminalToolTarget;
+      readonly cwd?: string;
+      readonly commandId?: string;
+      readonly inputId?: string;
+    } = {}
+  ): {
+    readonly actor: TerminalMemoryActor;
+    readonly correlation: TerminalMemoryCorrelation;
+  } => {
+    const runtimeTurnId = readRuntimeTurnId(payload);
+    const toolCallId = readRuntimeToolCallId(payload);
+    const cwd = options.cwd ?? options.target?.cwd;
+    return {
+      actor: {
+        kind: "agent",
+        agentSessionId,
+        ...(runtimeTurnId === undefined ? {} : { runtimeTurnId }),
+        ...(toolCallId === undefined ? {} : { toolCallId })
+      },
+      correlation: {
+        agentSessionId,
+        ...(runtimeTurnId === undefined ? {} : { runtimeTurnId }),
+        ...(toolCallId === undefined ? {} : { toolCallId }),
+        terminalToolName,
+        ...(options.commandId === undefined ? {} : { commandId: options.commandId }),
+        ...(options.inputId === undefined ? {} : { inputId: options.inputId }),
+        ...(options.target?.terminalTabId === undefined
+          ? {}
+          : { terminalTabId: options.target.terminalTabId }),
+        ...(options.target?.paneId === undefined ? {} : { paneId: options.target.paneId }),
+        ...(cwd === undefined ? {} : { cwd })
+      }
+    };
   };
 
   const readTerminalTargetPreference = (
@@ -938,14 +1074,21 @@ export const createAgentIpcBridge = ({
       ?? (command === undefined ? "Agent Terminal" : command.slice(0, 80));
     const cwd = readOptionalStringField(payload, "cwd");
     const sessionId = `agent-terminal-${agentSessionId}-${randomUUID()}`;
+    const commandId = command === undefined ? undefined : `terminal-command-${randomUUID()}`;
+    const memoryContext = createAgentTerminalMemoryContext(payload, agentSessionId, "terminal.create", {
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(commandId === undefined ? {} : { commandId })
+    });
     const request: TerminalCreateRequest = {
       sessionId,
       title,
       cols,
       rows,
-      source: "user",
+      source: "agent",
       mode,
       persist: false,
+      actor: memoryContext.actor,
+      correlation: memoryContext.correlation,
       ...(cwd === undefined ? {} : { cwd }),
       ...(command === undefined ? {} : { command })
     };
@@ -1073,7 +1216,7 @@ export const createAgentIpcBridge = ({
           preference === "auto" && browserFollowModeEnabled && !hasUiRef
       });
     }
-    if (requestedSessionId !== undefined && preference !== "ui") {
+    if (requestedSessionId !== undefined) {
       const privateEntry = findPrivateTerminalEntry(requestedSessionId, agentSessionId);
       if (privateEntry !== null) {
         privateEntry.lastUsedAt = new Date().toISOString();
@@ -1087,19 +1230,39 @@ export const createAgentIpcBridge = ({
     );
   };
 
-  const terminalReason = (
-    requestedCursor: string | undefined,
+  const terminalInlineOutputByteLimit = 16_000;
+
+  const truncateUtf8 = (value: string, maxBytes: number): string => {
+    let bytes = 0;
+    let result = "";
+    for (const char of value) {
+      const charBytes = Buffer.byteLength(char, "utf8");
+      if (bytes + charBytes > maxBytes) {
+        break;
+      }
+      bytes += charBytes;
+      result += char;
+    }
+    return result;
+  };
+
+  const projectTerminalOutput = (
     response: TerminalReadResponse
-  ): "output" | "exit" | "timeout" => {
-    const before = Number.parseInt(requestedCursor ?? "0", 10);
-    const after = Number.parseInt(response.cursor, 10);
-    if (Number.isFinite(before) && Number.isFinite(after) && after > before) {
-      return "output";
+  ): {
+    readonly output: string;
+    readonly truncated: boolean;
+  } => {
+    if (Buffer.byteLength(response.output, "utf8") <= terminalInlineOutputByteLimit) {
+      return { output: response.output, truncated: false };
     }
-    if (!response.running && response.exitCode !== null) {
-      return "exit";
-    }
-    return "timeout";
+    const outputPath = response.memory?.outputTextPath;
+    const suffix = outputPath === undefined
+      ? "\n\n[Terminal output projected for model context; read the terminal memory artifact for the full output.]"
+      : `\n\n[Terminal output projected for model context; full output is cached at ${outputPath}.]`;
+    return {
+      output: `${truncateUtf8(response.output, terminalInlineOutputByteLimit)}${suffix}`,
+      truncated: true
+    };
   };
 
   const terminalToolResult = (
@@ -1108,17 +1271,149 @@ export const createAgentIpcBridge = ({
     extra: Record<string, unknown> = {}
   ) => {
     rememberTerminalCursor(target, response.cursor);
+    const projected = projectTerminalOutput(response);
+    const memory = response.memory === undefined
+      ? undefined
+      : {
+          ...response.memory,
+          truncatedByProjection: response.memory.truncatedByProjection || projected.truncated
+        };
+    const readHint = terminalReadHintFromMemory(memory);
     return {
       target,
       sessionId: target.sessionId,
       ...(target.terminalTabId === undefined ? {} : { terminalTabId: target.terminalTabId }),
       ...(target.paneId === undefined ? {} : { paneId: target.paneId }),
       cursor: response.cursor,
-      output: response.output,
+      output: projected.output,
       running: response.running,
       exitCode: response.exitCode,
-      truncated: response.truncated,
+      truncated: response.truncated || projected.truncated,
+      ...(memory === undefined ? {} : { memory }),
+      ...(readHint === undefined ? {} : { readHint }),
       ...extra
+    };
+  };
+
+  const terminalScreenToolResult = (
+    target: TerminalToolTarget,
+    response: TerminalScreenReadResponse
+  ) => {
+    screenCursorByTerminalSessionId.set(target.sessionId, response.cursor);
+    const visibleProjection =
+      Buffer.byteLength(response.visibleText, "utf8") <= terminalInlineOutputByteLimit
+        ? { visibleText: response.visibleText, truncated: false }
+        : {
+            visibleText: `${truncateUtf8(
+              response.visibleText,
+              terminalInlineOutputByteLimit
+            )}\n\n[Terminal screen projected for model context; full output history is cached in terminal memory artifacts.]`,
+            truncated: true
+          };
+    const memory = response.memory === undefined
+      ? undefined
+      : {
+          ...response.memory,
+          truncatedByProjection:
+            response.memory.truncatedByProjection || response.truncated || visibleProjection.truncated
+        };
+    const readHint = memory?.truncatedByProjection === true
+      ? {
+          message:
+            "Terminal screen was projected for model context. Use terminal_screen again for the live view, or file_read/code_search_text on outputTextPath for full output history.",
+          outputTextPath: memory.outputTextPath,
+          rawOutputPath: memory.rawOutputPath,
+          lineIndexPath: memory.lineIndexPath,
+          errorIndexPath: memory.errorIndexPath,
+          eventLogPath: memory.eventLogPath,
+          summaryPath: memory.summaryPath,
+          uiTimelinePath: memory.uiTimelinePath,
+          commandsPath: memory.commandsPath
+        }
+      : undefined;
+    return {
+      target,
+      sessionId: target.sessionId,
+      ...(target.terminalTabId === undefined ? {} : { terminalTabId: target.terminalTabId }),
+      ...(target.paneId === undefined ? {} : { paneId: target.paneId }),
+      cursor: response.cursor,
+      output: visibleProjection.visibleText,
+      screen: {
+        cursor: response.cursor,
+        screenVersion: response.screenVersion,
+        rows: response.rows,
+        cols: response.cols,
+        mode: response.mode,
+        visibleText: visibleProjection.visibleText,
+        visibleRows: response.visibleRows,
+        scrollbackText: response.scrollbackText,
+        scrollbackCursor: response.scrollbackCursor,
+        scrollbackRows: response.scrollbackRows,
+        cursorPosition: response.cursorPosition,
+        cells: response.cells,
+        cellsTruncated: response.cellsTruncated,
+        styles: response.styles,
+        links: response.links,
+        inputModes: response.inputModes,
+        selectedText: response.selectedText,
+        activeCommand: response.activeCommand,
+        prompt: response.prompt,
+        regions: response.regions,
+        truncated: response.truncated || visibleProjection.truncated
+      },
+      running: response.running,
+      exitCode: response.exitCode,
+      truncated: response.truncated || visibleProjection.truncated,
+      ...(memory === undefined ? {} : { memory }),
+      ...(readHint === undefined ? {} : { readHint })
+    };
+  };
+
+  const terminalTargetEnvelope = (target: TerminalToolTarget) => ({
+    target,
+    sessionId: target.sessionId,
+    ...(target.terminalTabId === undefined ? {} : { terminalTabId: target.terminalTabId }),
+    ...(target.paneId === undefined ? {} : { paneId: target.paneId })
+  });
+
+  const terminalReadHintFromMemory = (memory: TerminalReadResponse["memory"] | undefined) => {
+    if (memory === undefined) {
+      return undefined;
+    }
+    return {
+      message:
+        "Full terminal artifacts are cached on disk. Use file_read on the listed paths, or code_search_text for focused retrieval.",
+      outputTextPath: memory.outputTextPath,
+      rawOutputPath: memory.rawOutputPath,
+      outputSummaryPath: memory.outputSummaryPath,
+      lineIndexPath: memory.lineIndexPath,
+      errorIndexPath: memory.errorIndexPath,
+      eventLogPath: memory.eventLogPath,
+      summaryPath: memory.summaryPath,
+      uiTimelinePath: memory.uiTimelinePath,
+      commandsPath: memory.commandsPath,
+      processesPath: memory.processesPath,
+      attachmentsPath: memory.attachmentsPath,
+      screenDiffsPath: memory.screenDiffsPath,
+      artifactListMethod: "terminal.artifacts.list",
+      readRangeMethod: "terminal.output.readRange"
+    };
+  };
+
+  const projectTerminalText = (
+    output: string,
+    artifactPath: string | undefined,
+    label: string
+  ) => {
+    if (Buffer.byteLength(output, "utf8") <= terminalInlineOutputByteLimit) {
+      return { output, truncated: false };
+    }
+    const suffix = artifactPath === undefined
+      ? `\n\n[${label} projected for model context; read terminal memory artifacts for the full text.]`
+      : `\n\n[${label} projected for model context; full text is cached at ${artifactPath}.]`;
+    return {
+      output: `${truncateUtf8(output, terminalInlineOutputByteLimit)}${suffix}`,
+      truncated: true
     };
   };
 
@@ -1138,6 +1433,20 @@ export const createAgentIpcBridge = ({
     });
   };
 
+  const readTerminalEofCursor = async (sessionId: string): Promise<string | undefined> => {
+    try {
+      const response = await terminalBridge.readObservation({
+        sessionId,
+        cursor: String(Number.MAX_SAFE_INTEGER),
+        maxBytes: 1,
+        waitMs: 0
+      });
+      return response.cursor;
+    } catch {
+      return undefined;
+    }
+  };
+
   const closePrivateTerminalsForSession = async (agentSessionId: string): Promise<void> => {
     const terminals = privateTerminalsByAgentSession.get(agentSessionId);
     if (terminals === undefined) {
@@ -1147,8 +1456,16 @@ export const createAgentIpcBridge = ({
     await Promise.all(
       [...terminals.keys()].map(async (sessionId) => {
         cursorByTerminalSessionId.delete(sessionId);
+        screenCursorByTerminalSessionId.delete(sessionId);
         try {
-          await terminalBridge.closeSession({ sessionId });
+          await terminalBridge.closeSession({
+            sessionId,
+            actor: { kind: "system" },
+            correlation: {
+              agentSessionId,
+              terminalToolName: "terminal.closePrivateSession"
+            }
+          });
         } catch (error) {
           if (!isSessionNotFoundError(error)) {
             console.warn(`[lyra-agent] failed to close private terminal ${sessionId}:`, error);
@@ -2119,12 +2436,27 @@ export const createAgentIpcBridge = ({
       if (useUi) {
         const target = await resolveUiTerminal(request, true);
         await waitForTerminalSessionReady(target.sessionId);
+        const commandStartCursor = command === undefined
+          ? undefined
+          : await readTerminalEofCursor(target.sessionId);
+        if (commandStartCursor !== undefined) {
+          cursorByTerminalSessionId.set(target.sessionId, commandStartCursor);
+        }
         if (command !== undefined) {
+          const commandId = `terminal-command-${randomUUID()}`;
+          const memoryContext = createAgentTerminalMemoryContext(
+            request,
+            agentSessionId,
+            "terminal.create",
+            { target, commandId }
+          );
           await terminalBridge.write({
             sessionId: target.sessionId,
             text: command,
             appendNewline: true,
-            source: "user"
+            source: "agent",
+            actor: memoryContext.actor,
+            correlation: memoryContext.correlation
           });
         }
         const response = await readTerminalOutput(target, request, command === undefined ? 0 : 500);
@@ -2155,16 +2487,91 @@ export const createAgentIpcBridge = ({
       const response = await readTerminalOutput(target, request, 0);
       return terminalToolResult(target, response);
     },
+    "terminal.screen": async (payload) => {
+      const request = normalizePayload(payload);
+      const target = await resolveTerminalTarget(readRuntimeSessionId(request), request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const cursor =
+        readOptionalStringField(request, "cursor")
+        ?? screenCursorByTerminalSessionId.get(target.sessionId);
+      const response = await terminalBridge.readScreen({
+        sessionId: target.sessionId,
+        ...(cursor === undefined ? {} : { cursor }),
+        includeScrollback: request.includeScrollback === true,
+        maxRows: readClampedOptionalNumber(request, "maxRows", 200, 1, 2_000),
+        maxBytes: readClampedOptionalNumber(request, "maxBytes", 16_000, 1, 262_144)
+      });
+      return terminalScreenToolResult(target, response);
+    },
     "terminal.wait": async (payload) => {
       const request = normalizePayload(payload);
       const target = await resolveTerminalTarget(readRuntimeSessionId(request), request, {
         privateCreateIfMissing: false,
         uiOpenIfMissing: false
       });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        readRuntimeSessionId(request),
+        "terminal.wait",
+        { target }
+      );
       const requestedCursor =
         readOptionalStringField(request, "cursor")
         ?? cursorByTerminalSessionId.get(target.sessionId);
       const waitMs = readClampedOptionalNumber(request, "waitMs", 1_000, 0, 30_000);
+      const explicitCommandId = readOptionalStringField(request, "commandId");
+      const commandStatus = await terminalBridge.readCommandStatus({
+        sessionId: target.sessionId,
+        ...(explicitCommandId === undefined ? {} : { commandId: explicitCommandId }),
+        includeOutputSummary: false,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      }).catch(() => undefined);
+      const command = commandStatus?.command ?? null;
+      const commandIsTerminal =
+        command?.status === "completed"
+        || command?.status === "failed"
+        || command?.status === "cancelled";
+      const commandMayBeActive =
+        explicitCommandId !== undefined
+        || command?.status === "pending"
+        || command?.status === "running";
+      if (command !== null && (commandIsTerminal || commandMayBeActive)) {
+        const waited = commandIsTerminal
+          ? {
+              sessionId: target.sessionId,
+              commandId: command.commandId,
+              status: command.status,
+              reason: "status",
+              exitCode: command.exitCode ?? null,
+              signal: command.signal ?? null,
+              memory: commandStatus?.memory
+            }
+          : await terminalBridge.waitCommand({
+              sessionId: target.sessionId,
+              commandId: command.commandId,
+              status: readOptionalStringField(request, "status") ?? "any",
+              timeoutMs: waitMs,
+              actor: memoryContext.actor,
+              correlation: memoryContext.correlation
+            }).catch(() => undefined);
+        if (waited !== undefined && waited.reason !== "timeout" && waited.reason !== "notFound") {
+          const response = await terminalBridge.readObservation({
+            sessionId: target.sessionId,
+            ...(requestedCursor === undefined ? {} : { cursor: requestedCursor }),
+            maxBytes: readClampedOptionalNumber(request, "maxBytes", 16_000, 1, 262_144),
+            waitMs: 0
+          });
+          return terminalToolResult(target, response, {
+            reason: `command:${waited.status}`,
+            commandId: waited.commandId ?? command.commandId,
+            running: false,
+            exitCode: waited.exitCode ?? response.exitCode
+          });
+        }
+      }
       const response = await terminalBridge.readObservation({
         sessionId: target.sessionId,
         ...(requestedCursor === undefined ? {} : { cursor: requestedCursor }),
@@ -2172,7 +2579,7 @@ export const createAgentIpcBridge = ({
         waitMs
       });
       return terminalToolResult(target, response, {
-        reason: terminalReason(requestedCursor, response)
+        reason: response.reason ?? "timeout"
       });
     },
     "terminal.write": async (payload) => {
@@ -2184,34 +2591,39 @@ export const createAgentIpcBridge = ({
       });
       const data = typeof request.data === "string" ? request.data : undefined;
       const text = typeof request.text === "string" ? request.text : undefined;
-      type TerminalWriteKey = NonNullable<TerminalWriteRequest["keys"]>[number];
-      const allowedKeys = new Set<TerminalWriteKey>([
-        "enter",
-        "escape",
-        "tab",
-        "ctrl_c",
-        "ctrl_d",
-        "up",
-        "down",
-        "left",
-        "right",
-        "page_up",
-        "page_down",
-        "home",
-        "end"
-      ]);
       const keys = Array.isArray(request.keys)
-        ? request.keys.filter(
-            (key): key is TerminalWriteKey =>
-              typeof key === "string" && allowedKeys.has(key as TerminalWriteKey)
-          )
+        ? request.keys.filter((key): key is string => typeof key === "string")
         : undefined;
       if (data === undefined && text === undefined && (keys === undefined || keys.length === 0)) {
         throw new Error("terminal_write requires data, text, or keys");
       }
+      const commandText = request.appendNewline === true && keys === undefined
+        ? text ?? data
+        : undefined;
+      const commandId = commandText !== undefined && commandText.trim().length > 0
+        ? `terminal-command-${randomUUID()}`
+        : undefined;
+      const commandStartCursor = commandId === undefined
+        ? undefined
+        : await readTerminalEofCursor(target.sessionId);
+      if (commandStartCursor !== undefined) {
+        cursorByTerminalSessionId.set(target.sessionId, commandStartCursor);
+      }
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        readRuntimeSessionId(request),
+        "terminal.write",
+        {
+          target,
+          inputId: `terminal-input-${randomUUID()}`,
+          ...(commandId === undefined ? {} : { commandId })
+        }
+      );
       await terminalBridge.write({
         sessionId: target.sessionId,
-        source: "user",
+        source: "agent",
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation,
         ...(data === undefined ? {} : { data }),
         ...(text === undefined ? {} : { text }),
         ...(keys === undefined ? {} : { keys }),
@@ -2219,7 +2631,7 @@ export const createAgentIpcBridge = ({
           ? { appendNewline: request.appendNewline }
           : {})
       });
-      const cursor = cursorByTerminalSessionId.get(target.sessionId);
+      const cursor = commandStartCursor ?? cursorByTerminalSessionId.get(target.sessionId);
       const response = await terminalBridge.readObservation({
         sessionId: target.sessionId,
         ...(cursor === undefined ? {} : { cursor }),
@@ -2242,14 +2654,25 @@ export const createAgentIpcBridge = ({
         privateCreateIfMissing: false,
         uiOpenIfMissing: false
       });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal.close",
+        { target }
+      );
       try {
-        await terminalBridge.closeSession({ sessionId: target.sessionId });
+        await terminalBridge.closeSession({
+          sessionId: target.sessionId,
+          actor: memoryContext.actor,
+          correlation: memoryContext.correlation
+        });
       } catch (error) {
         if (!isSessionNotFoundError(error)) {
           throw error;
         }
       }
       cursorByTerminalSessionId.delete(target.sessionId);
+      screenCursorByTerminalSessionId.delete(target.sessionId);
       if (target.type === "private") {
         privateTerminalsByAgentSession.get(agentSessionId)?.delete(target.sessionId);
       } else {
@@ -2264,6 +2687,489 @@ export const createAgentIpcBridge = ({
         sessionId: target.sessionId,
         cursor: "",
         output: "Terminal closed.",
+        running: false,
+        exitCode: null,
+        truncated: false
+      };
+    },
+    "terminal.events.read": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_events",
+        { target }
+      );
+      const cursor = readOptionalStringField(request, "cursor");
+      const kinds = readOptionalStringArrayField(request, "kinds");
+      const actors = readOptionalStringArrayField(request, "actors");
+      const response = await terminalBridge.readEvents({
+        sessionId: target.sessionId,
+        ...(cursor === undefined ? {} : { cursor }),
+        limit: readClampedOptionalNumber(request, "limit", 100, 1, 1000),
+        ...(kinds === undefined ? {} : { kinds }),
+        ...(actors === undefined ? {} : { actors }),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      return {
+        ...terminalTargetEnvelope(target),
+        cursor: response.cursor,
+        nextCursor: response.nextCursor,
+        hasMore: response.hasMore,
+        items: response.items,
+        events: response.items,
+        memory: response.memory,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output:
+          response.items.length === 0
+            ? "No terminal events after the requested cursor."
+            : `Read ${response.items.length} terminal events.`,
+        running: false,
+        exitCode: null,
+        truncated: false
+      };
+    },
+    "terminal.waitUntil": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_read_until",
+        { target }
+      );
+      const text = readOptionalStringField(request, "text");
+      const regex = readOptionalStringField(request, "regex");
+      const commandId = readOptionalStringField(request, "commandId");
+      const status = readOptionalStringField(request, "status");
+      const waitTarget = terminalWaitTargetFromPayload(request);
+      const cursor = readOptionalStringField(request, "cursor")
+        ?? (waitTarget === "output" ? cursorByTerminalSessionId.get(target.sessionId) : undefined);
+      const screenCursor = readOptionalStringField(request, "screenCursor");
+      const response = await terminalBridge.waitUntil({
+        sessionId: target.sessionId,
+        target: waitTarget,
+        ...(text === undefined ? {} : { text }),
+        ...(regex === undefined ? {} : { regex }),
+        ...(commandId === undefined ? {} : { commandId }),
+        ...(status === undefined ? {} : { status }),
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(screenCursor === undefined ? {} : { screenCursor }),
+        timeoutMs: readClampedOptionalNumber(request, "timeoutMs", 30_000, 1, 120_000),
+        maxBytes: readClampedOptionalNumber(request, "maxBytes", 16_000, 1, 262_144),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      if (typeof response.cursor === "string") {
+        cursorByTerminalSessionId.set(target.sessionId, response.cursor);
+      }
+      if (typeof response.screenCursor === "string") {
+        screenCursorByTerminalSessionId.set(target.sessionId, response.screenCursor);
+      }
+      const projected = projectTerminalText(
+        response.output ?? "",
+        response.memory?.outputTextPath,
+        "Terminal wait output"
+      );
+      return {
+        ...terminalTargetEnvelope(target),
+        matched: response.matched,
+        reason: response.reason,
+        cursor: response.cursor ?? null,
+        screenCursor: response.screenCursor ?? null,
+        commandId: response.commandId ?? null,
+        output: projected.output,
+        memory: response.memory,
+        readHint: terminalReadHintFromMemory(response.memory),
+        running: false,
+        exitCode: null,
+        truncated: projected.truncated
+      };
+    },
+    "terminal.input.execute": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const targetPreference = readTerminalTargetPreference(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: targetPreference !== "ui" && !browserFollowModeEnabled,
+        uiOpenIfMissing: false
+      });
+      const toolAction = readOptionalStringField(request, "action") ?? "input";
+      const semanticAction = terminalSemanticInputActionForToolAction(toolAction, request);
+      const terminalToolName = terminalAgentToolNameForAction(toolAction) ?? "terminal_input";
+      const command = semanticAction === "runCommand"
+        ? readStringField(request, "command")
+        : undefined;
+      const text = semanticAction === "submitInput" || semanticAction === "pasteText"
+        ? readStringField(request, "text")
+        : undefined;
+      const keys = semanticAction === "pressKeys"
+        ? readOptionalStringArrayField(request, "keys")
+        : undefined;
+      const sensitiveRefs = readOptionalStringArrayField(request, "sensitiveRefs");
+      if (semanticAction === "pressKeys" && keys === undefined) {
+        throw new Error("terminal_keys requires keys");
+      }
+      const commandId = command === undefined ? undefined : `terminal-command-${randomUUID()}`;
+      const inputId = `terminal-input-${randomUUID()}`;
+      const commandStartCursor = commandId === undefined
+        ? undefined
+        : await readTerminalEofCursor(target.sessionId);
+      if (commandStartCursor !== undefined) {
+        cursorByTerminalSessionId.set(target.sessionId, commandStartCursor);
+      }
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        terminalToolName,
+        {
+          target,
+          inputId,
+          ...(commandId === undefined ? {} : { commandId })
+        }
+      );
+      const inputResponse = await terminalBridge.executeInput({
+        sessionId: target.sessionId,
+        action: semanticAction,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation,
+        ...(command === undefined ? {} : { command }),
+        ...(text === undefined ? {} : { text }),
+        ...(keys === undefined ? {} : { keys }),
+        ...(typeof request.appendNewline === "boolean"
+          ? { appendNewline: request.appendNewline }
+          : {}),
+        ...(typeof request.bracketedPaste === "boolean"
+          ? { bracketedPaste: request.bracketedPaste }
+          : {}),
+        ...(sensitiveRefs === undefined ? {} : { sensitiveRefs })
+      });
+      const cursor = commandStartCursor ?? cursorByTerminalSessionId.get(target.sessionId);
+      const response = await terminalBridge.readObservation({
+        sessionId: target.sessionId,
+        ...(cursor === undefined ? {} : { cursor }),
+        maxBytes: readClampedOptionalNumber(request, "maxBytes", 16_000, 1, 262_144),
+        waitMs: 250
+      });
+      return terminalToolResult(target, response, {
+        semanticAction,
+        commandId,
+        command,
+        inputId: inputResponse.inputId ?? inputId,
+        inputStatus: inputResponse.status,
+        permissionId: inputResponse.permissionId ?? null,
+        events: inputResponse.events,
+        inputMemory: inputResponse.memory,
+        wrote:
+          command !== undefined
+            ? command
+            : text !== undefined
+              ? `${text.length} chars`
+              : keys?.join(", ")
+      });
+    },
+    "terminal.resize": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const cols = readClampedOptionalNumber(request, "cols", 80, 1, 300);
+      const rows = readClampedOptionalNumber(request, "rows", 24, 1, 300);
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_resize",
+        { target }
+      );
+      await terminalBridge.resize({
+        sessionId: target.sessionId,
+        cols,
+        rows,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      const response = await terminalBridge.readScreen({
+        sessionId: target.sessionId,
+        maxRows: readClampedOptionalNumber(request, "maxRows", 200, 1, 2_000),
+        maxBytes: readClampedOptionalNumber(request, "maxBytes", 16_000, 1, 262_144)
+      });
+      return {
+        ...terminalScreenToolResult(target, response),
+        action: "resize",
+        cols,
+        rows
+      };
+    },
+    "terminal.processes.read": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_processes",
+        { target }
+      );
+      const pid = readOptionalNumberField(request, "pid");
+      const response = await terminalBridge.readProcesses({
+        sessionId: target.sessionId,
+        ...(pid === undefined ? {} : { pid }),
+        includeTree: request.includeTree === true,
+        includeCommand: request.includeCommand !== false,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      return {
+        ...terminalTargetEnvelope(target),
+        ...response,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output: `Read ${response.processes.length} terminal processes.`,
+        truncated: response.limited === true
+      };
+    },
+    "terminal.processes.signal": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_signal",
+        { target, inputId: `terminal-input-${randomUUID()}` }
+      );
+      const pid = readOptionalNumberField(request, "pid");
+      const reason = readOptionalStringField(request, "reason");
+      const response = await terminalBridge.signalProcess({
+        sessionId: target.sessionId,
+        signal: readStringField(request, "signal"),
+        ...(pid === undefined ? {} : { pid }),
+        ...(reason === undefined ? {} : { reason }),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      return {
+        ...terminalTargetEnvelope(target),
+        ...response,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output: `Terminal signal ${response.signal} status=${response.status}.`,
+        running: false,
+        exitCode: null,
+        truncated: false
+      };
+    },
+    "terminal.command.status": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_command_status",
+        { target }
+      );
+      const requestedCommandId = readOptionalStringField(request, "commandId");
+      const response = await terminalBridge.readCommandStatus({
+        sessionId: target.sessionId,
+        ...(requestedCommandId === undefined ? {} : { commandId: requestedCommandId }),
+        includeOutputSummary: request.includeOutputSummary !== false,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      const commandId = response.commandId ?? response.command?.commandId ?? null;
+      return {
+        ...terminalTargetEnvelope(target),
+        ...response,
+        commandId,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output:
+          response.command === null || response.command === undefined
+            ? "No terminal command status is available."
+            : `Command ${response.command.commandId} status=${response.command.status}.`,
+        running: response.command?.status === "running",
+        exitCode: response.command?.exitCode ?? null,
+        truncated: false
+      };
+    },
+    "terminal.map.read": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_map",
+        { target }
+      );
+      const screenCursor = readOptionalStringField(request, "screenCursor");
+      const response = await terminalBridge.readMap({
+        sessionId: target.sessionId,
+        ...(screenCursor === undefined ? {} : { screenCursor }),
+        maxRegions: readClampedOptionalNumber(request, "maxRegions", 80, 1, 500),
+        includeText: request.includeText !== false,
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      const screenResult = terminalScreenToolResult(target, response.screen);
+      return {
+        ...terminalTargetEnvelope(target),
+        screen: screenResult.screen,
+        regions: response.regions,
+        stale: response.stale === true,
+        warning: response.warning,
+        memory: response.memory ?? response.screen.memory,
+        readHint: terminalReadHintFromMemory(response.memory ?? response.screen.memory),
+        output: `Mapped ${response.regions.length} terminal regions.`,
+        running: response.screen.running,
+        exitCode: response.screen.exitCode,
+        truncated: response.screen.truncated
+      };
+    },
+    "terminal.act.execute": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_act",
+        { target, inputId: `terminal-input-${randomUUID()}` }
+      );
+      const regionId = readOptionalStringField(request, "regionId");
+      const screenCursor = readOptionalStringField(request, "screenCursor");
+      const text = readOptionalStringField(request, "text");
+      const direction = readOptionalStringField(request, "direction");
+      const amount = readOptionalNumberField(request, "amount");
+      const reason = readOptionalStringField(request, "reason");
+      const response = await terminalBridge.executeAct({
+        sessionId: target.sessionId,
+        action: readOptionalStringField(request, "operation") ?? "confirm",
+        ...(regionId === undefined ? {} : { regionId }),
+        ...(screenCursor === undefined ? {} : { screenCursor }),
+        ...(text === undefined ? {} : { text }),
+        ...(direction === undefined ? {} : { direction }),
+        ...(amount === undefined ? {} : { amount }),
+        ...(reason === undefined ? {} : { reason }),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      const screenResult = response.map?.screen === undefined
+        ? null
+        : terminalScreenToolResult(target, response.map.screen);
+      return {
+        ...terminalTargetEnvelope(target),
+        actId: response.actId,
+        status: response.status,
+        inputId: response.inputId ?? null,
+        permissionId: response.permissionId ?? null,
+        screenCursor: response.screenCursor ?? null,
+        map: response.map === undefined
+          ? undefined
+          : {
+              regions: response.map.regions,
+              stale: response.map.stale,
+              warning: response.map.warning,
+              screen: screenResult?.screen
+            },
+        regions: response.map?.regions,
+        memory: response.memory ?? response.map?.memory,
+        readHint: terminalReadHintFromMemory(response.memory ?? response.map?.memory),
+        output: `Terminal act ${response.actId} status=${response.status}.`,
+        running: screenResult?.running ?? false,
+        exitCode: screenResult?.exitCode ?? null,
+        truncated: screenResult?.truncated ?? false
+      };
+    },
+    "terminal.attachments.attach": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_attach_agent",
+        { target }
+      );
+      const runtimeTurnId = readRuntimeTurnId(request);
+      const toolCallId = readRuntimeToolCallId(request);
+      const reason = readOptionalStringField(request, "reason");
+      const ttlMs = readOptionalNumberField(request, "ttlMs");
+      const response = await terminalBridge.attachAgent({
+        sessionId: target.sessionId,
+        agentSessionId,
+        ...(runtimeTurnId === undefined ? {} : { runtimeTurnId }),
+        ...(toolCallId === undefined ? {} : { toolCallId }),
+        mode: readOptionalStringField(request, "mode") ?? "observe",
+        ...(reason === undefined ? {} : { reason }),
+        ...(ttlMs === undefined ? {} : { ttlMs }),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      return {
+        ...terminalTargetEnvelope(target),
+        ...response,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output: `Attached Agent to terminal as ${response.attachment.mode}.`,
+        running: false,
+        exitCode: null,
+        truncated: false
+      };
+    },
+    "terminal.attachments.detach": async (payload) => {
+      const request = normalizePayload(payload);
+      const agentSessionId = readRuntimeSessionId(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
+        privateCreateIfMissing: false,
+        uiOpenIfMissing: false
+      });
+      const memoryContext = createAgentTerminalMemoryContext(
+        request,
+        agentSessionId,
+        "terminal_detach_agent",
+        { target }
+      );
+      const reason = readOptionalStringField(request, "reason");
+      const response = await terminalBridge.detachAgent({
+        sessionId: target.sessionId,
+        attachmentId: readStringField(request, "attachmentId"),
+        ...(reason === undefined ? {} : { reason }),
+        actor: memoryContext.actor,
+        correlation: memoryContext.correlation
+      });
+      return {
+        ...terminalTargetEnvelope(target),
+        ...response,
+        readHint: terminalReadHintFromMemory(response.memory),
+        output: `Detached Agent terminal attachment ${response.attachmentId}.`,
         running: false,
         exitCode: null,
         truncated: false

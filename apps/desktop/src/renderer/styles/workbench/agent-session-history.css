@@ -308,7 +308,10 @@
 }
 
 .lyra-agent-history-row-title strong {
+  display: inline-block;
+  flex: 0 1 6em;
   min-width: 0;
+  max-width: 6em;
   overflow: hidden;
   font-size: var(--lyra-text-size-13);
   line-height: var(--lyra-text-line-18);

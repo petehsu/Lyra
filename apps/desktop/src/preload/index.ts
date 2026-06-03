@@ -103,18 +103,66 @@ import {
   type LspDocumentRequest,
   type LspRuntimeEvent,
   type TerminalCloseRequest,
+  type TerminalActExecuteRequest,
+  type TerminalActExecuteResponse,
+  type TerminalAttachmentAttachRequest,
+  type TerminalAttachmentAttachResponse,
+  type TerminalAttachmentDetachRequest,
+  type TerminalAttachmentDetachResponse,
+  type TerminalAttachmentListRequest,
+  type TerminalAttachmentListResponse,
+  type TerminalAttachmentPauseRequest,
+  type TerminalAttachmentPauseResponse,
+  type TerminalAttachmentResumeRequest,
+  type TerminalAttachmentResumeResponse,
+  type TerminalArtifactsListRequest,
+  type TerminalArtifactsListResponse,
+  type TerminalCommandOutputReadRequest,
+  type TerminalCommandOutputReadResponse,
+  type TerminalCommandStatusRequest,
+  type TerminalCommandStatusResponse,
+  type TerminalCommandWaitRequest,
+  type TerminalCommandWaitResponse,
+  type TerminalCommandsReadRequest,
+  type TerminalCommandsReadResponse,
   type TerminalCreateRequest,
   type TerminalDataEvent,
   type TerminalErrorEvent,
+  type TerminalEventsReadRequest,
+  type TerminalEventsReadResponse,
   type TerminalEvent,
   type TerminalExitEvent,
+  type TerminalInputExecuteRequest,
+  type TerminalInputExecuteResponse,
+  type TerminalMapReadRequest,
+  type TerminalMapReadResponse,
+  type TerminalMemoryTimelineReadRequest,
+  type TerminalMemoryTimelineReadResponse,
+  type TerminalOutputRangeReadRequest,
+  type TerminalOutputRangeReadResponse,
+  type TerminalPermissionEvaluateRequest,
+  type TerminalPermissionEvaluateResponse,
+  type TerminalPermissionRespondRequest,
+  type TerminalPermissionRespondResponse,
+  type TerminalProcessesReadRequest,
+  type TerminalProcessesReadResponse,
+  type TerminalProcessSignalRequest,
+  type TerminalProcessSignalResponse,
+  type TerminalDataAckRequest,
   type TerminalReadRequest,
   type TerminalReadResponse,
   type TerminalReloadPromptRequest,
   type TerminalReloadPromptResult,
+  type TerminalRendererAttachRequest,
+  type TerminalRendererAttachResponse,
+  type TerminalRendererDetachRequest,
   type TerminalResizeRequest,
+  type TerminalScreenReadRequest,
+  type TerminalScreenReadResponse,
   type TerminalRestoreRequest,
   type TerminalSessionSnapshot,
+  type TerminalWaitUntilRequest,
+  type TerminalWaitUntilResponse,
   type TerminalWriteRequest,
   type SearchAggregateRequest,
   type SearchDeepExpandRequest,
@@ -275,6 +323,8 @@ const terminalDataListeners = new Set<(event: TerminalDataEvent) => void>();
 const terminalExitListeners = new Set<(event: TerminalExitEvent) => void>();
 const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
 let terminalEventBridgeReady = false;
+let terminalDataPortRequested = false;
+let terminalDataPort: MessagePort | null = null;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
 const loginManagerEventListeners = new Set<(event: LoginManagerEvent) => void>();
@@ -313,6 +363,28 @@ const ensureTerminalEventBridge = (): void => {
   terminalEventBridgeReady = true;
 
   ipcRenderer.on(
+    LYRA_CHANNELS.terminalDataPort,
+    (event: Electron.IpcRendererEvent): void => {
+      const port = event.ports[0];
+      if (port === undefined) {
+        return;
+      }
+      terminalDataPort?.close();
+      terminalDataPort = port;
+      terminalDataPort.onmessage = (messageEvent: MessageEvent<TerminalDataEvent>) => {
+        const payload = messageEvent.data;
+        if (payload === null || typeof payload !== "object" || payload.kind !== "data") {
+          return;
+        }
+        for (const listener of terminalDataListeners) {
+          listener(payload);
+        }
+      };
+      terminalDataPort.start();
+    }
+  );
+
+  ipcRenderer.on(
     LYRA_CHANNELS.terminalEvent,
     (_event: Electron.IpcRendererEvent, payload: TerminalEvent): void => {
       if (payload === null || typeof payload !== "object" || !("kind" in payload)) {
@@ -340,6 +412,33 @@ const ensureTerminalEventBridge = (): void => {
       }
     }
   );
+};
+
+const ensureTerminalDataPort = (): void => {
+  ensureTerminalEventBridge();
+  if (terminalDataPortRequested) {
+    return;
+  }
+  terminalDataPortRequested = true;
+  void ipcRenderer.invoke(LYRA_CHANNELS.terminalConnectDataPort).catch((_error) => {
+    terminalDataPortRequested = false;
+  });
+};
+
+const writeTerminalFast = (request: TerminalWriteRequest): boolean => {
+  ensureTerminalDataPort();
+  if (terminalDataPort === null) {
+    return false;
+  }
+  try {
+    terminalDataPort.postMessage({
+      kind: "input",
+      request
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
 };
 
 const ensureAgentEventBridge = (): void => {
@@ -1002,18 +1101,103 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.terminalRestoreSessions, request) as Promise<
         readonly TerminalSessionSnapshot[]
       >,
+    attachRenderer: (request: TerminalRendererAttachRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachRenderer, request) as Promise<TerminalRendererAttachResponse>,
+    detachRenderer: (request: TerminalRendererDetachRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalDetachRenderer, request) as Promise<void>,
+    ackData: (request: TerminalDataAckRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAckData, request) as Promise<void>,
     reloadPrompt: (request: TerminalReloadPromptRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalReloadPrompt, request) as Promise<TerminalReloadPromptResult>,
+    writeFast: (request: TerminalWriteRequest) => writeTerminalFast(request),
     write: (request: TerminalWriteRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalWriteSession, request) as Promise<void>,
     read: (request: TerminalReadRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalReadSession, request) as Promise<TerminalReadResponse>,
+    readScreen: (request: TerminalScreenReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadScreen, request) as Promise<TerminalScreenReadResponse>,
+    readEvents: (request: TerminalEventsReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadEvents, request) as Promise<TerminalEventsReadResponse>,
+    readCommands: (request: TerminalCommandsReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadCommands, request) as Promise<TerminalCommandsReadResponse>,
+    readOutputRange: (request: TerminalOutputRangeReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadOutputRange, request) as Promise<
+        TerminalOutputRangeReadResponse
+      >,
+    listArtifacts: (request: TerminalArtifactsListRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalListArtifacts, request) as Promise<
+        TerminalArtifactsListResponse
+      >,
+    readMemoryTimeline: (request: TerminalMemoryTimelineReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalReadMemoryTimeline, request) as Promise<
+        TerminalMemoryTimelineReadResponse
+      >,
+    waitUntil: (request: TerminalWaitUntilRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalWaitUntil, request) as Promise<TerminalWaitUntilResponse>,
+    executeInput: (request: TerminalInputExecuteRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalInputExecute, request) as Promise<
+        TerminalInputExecuteResponse
+      >,
+    evaluatePermission: (request: TerminalPermissionEvaluateRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalPermissionsEvaluate, request) as Promise<
+        TerminalPermissionEvaluateResponse
+      >,
+    respondPermission: (request: TerminalPermissionRespondRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalPermissionsRespond, request) as Promise<
+        TerminalPermissionRespondResponse
+      >,
+    readProcesses: (request: TerminalProcessesReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalProcessesRead, request) as Promise<
+        TerminalProcessesReadResponse
+      >,
+    signalProcess: (request: TerminalProcessSignalRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalProcessesSignal, request) as Promise<
+        TerminalProcessSignalResponse
+      >,
+    readCommandStatus: (request: TerminalCommandStatusRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalCommandStatus, request) as Promise<
+        TerminalCommandStatusResponse
+      >,
+    waitCommand: (request: TerminalCommandWaitRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalCommandWait, request) as Promise<
+        TerminalCommandWaitResponse
+      >,
+    readCommandOutput: (request: TerminalCommandOutputReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalCommandReadOutput, request) as Promise<
+        TerminalCommandOutputReadResponse
+      >,
+    readMap: (request: TerminalMapReadRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalMapRead, request) as Promise<TerminalMapReadResponse>,
+    executeAct: (request: TerminalActExecuteRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalActExecute, request) as Promise<
+        TerminalActExecuteResponse
+      >,
+    attachAgent: (request: TerminalAttachmentAttachRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachmentsAttach, request) as Promise<
+        TerminalAttachmentAttachResponse
+      >,
+    detachAgent: (request: TerminalAttachmentDetachRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachmentsDetach, request) as Promise<
+        TerminalAttachmentDetachResponse
+      >,
+    listAttachments: (request: TerminalAttachmentListRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachmentsList, request) as Promise<
+        TerminalAttachmentListResponse
+      >,
+    pauseAttachment: (request: TerminalAttachmentPauseRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachmentsPause, request) as Promise<
+        TerminalAttachmentPauseResponse
+      >,
+    resumeAttachment: (request: TerminalAttachmentResumeRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.terminalAttachmentsResume, request) as Promise<
+        TerminalAttachmentResumeResponse
+      >,
     resize: (request: TerminalResizeRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalResizeSession, request) as Promise<void>,
     closeSession: (request: TerminalCloseRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.terminalCloseSession, request) as Promise<void>,
     onData: (listener: (event: TerminalDataEvent) => void) => {
-      ensureTerminalEventBridge();
+      ensureTerminalDataPort();
       terminalDataListeners.add(listener);
       return () => {
         terminalDataListeners.delete(listener);

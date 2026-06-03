@@ -826,10 +826,26 @@ fn lyra_artifact_roots() -> Result<Vec<(PathBuf, &'static str)>, NativeToolFailu
     let agent_root = root.parent().map(Path::to_path_buf);
     let mut candidates = vec![(root.join("artifacts"), "tool_output")];
     if let Some(agent_root) = agent_root {
+        let modules_root = agent_root.parent().map(Path::to_path_buf);
         candidates.extend([
             (agent_root.join("lumen-evidence"), "lumen_evidence"),
             (agent_root.join("message-images"), "message_image"),
         ]);
+        if let Some(modules_root) = modules_root {
+            candidates.extend([
+                (
+                    modules_root.join("terminal").join("terminal-memory"),
+                    "terminal_memory",
+                ),
+                (
+                    modules_root
+                        .join("terminal")
+                        .join("terminal-memory")
+                        .join("sessions"),
+                    "terminal_memory",
+                ),
+            ]);
+        }
     }
     Ok(candidates
         .into_iter()
@@ -915,6 +931,7 @@ fn media_type_for_artifact_path(path: &Path) -> String {
         "avif" => "image/avif",
         "txt" | "log" | "md" => "text/plain; charset=utf-8",
         "json" => "application/json",
+        "jsonl" | "ndjson" => "application/x-ndjson",
         _ => "application/octet-stream",
     }
     .to_string()

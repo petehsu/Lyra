@@ -69,8 +69,7 @@ export const createTerminalWorkspaceModel = (
     props: {
       desktopApi: context.desktopApi,
       labels: context.terminalLabels,
-      themeSignature: context.terminalThemeSignature,
-      themePresetId: context.terminalThemePreset,
+      themeSignature: context.resolvedThemeId,
       uiThemeId: context.resolvedThemeId,
       tab: terminalTab,
       panes: context.terminalModel.getTabPanes(terminalTab.id),

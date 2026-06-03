@@ -12,11 +12,12 @@ type TextSegment =
 const URL_PATTERN = "(?:https?:\\/\\/|www\\.|localhost(?::\\d+)?(?:\\/|(?=[\\s),.;!?，。；！？]|$)))[^\\s<>\"'`]*";
 const FILE_URL_PATTERN = "file:\\/\\/[^\\s<>\"'`]+";
 const ABSOLUTE_PATH_PATTERN = "\\/(?:Users|Volumes|tmp|var|private|opt|etc|home|Applications)\\/[^\\s<>\"'`]+";
+const HOME_PATH_PATTERN = "~\\/[^\\s<>\"'`]+";
 const PROJECT_PATH_PATTERN = "(?:(?:\\.{1,2}\\/)|(?:apps|crates|web|scripts|packages|vendor|docs|target|参考)\\/)[^\\s<>\"'`]+";
 const BARE_FILE_PATTERN = "(?:README\\.md|Cargo\\.toml|package\\.json|pnpm-lock\\.yaml|tsconfig\\.json|vite\\.config\\.[cm]?[jt]s|[A-Za-z0-9_.-]+\\.(?:ts|tsx|js|jsx|json|rs|md|mdx|css|scss|html|png|jpe?g|gif|webp|svg|avif|heic|toml|yaml|yml|lock))(?:[:#][^\\s<>\"'`]+)?";
 
 const ACTION_TOKEN_PATTERN = new RegExp(
-  [URL_PATTERN, FILE_URL_PATTERN, ABSOLUTE_PATH_PATTERN, PROJECT_PATH_PATTERN, BARE_FILE_PATTERN].join("|"),
+  [URL_PATTERN, FILE_URL_PATTERN, ABSOLUTE_PATH_PATTERN, HOME_PATH_PATTERN, PROJECT_PATH_PATTERN, BARE_FILE_PATTERN].join("|"),
   "giu"
 );
 
@@ -51,9 +52,22 @@ const pathWithoutLocation = (value: string): string =>
     .replace(/#L\d+(?:-L\d+)?$/iu, "")
     .replace(/:\d+(?::\d+)?$/u, "");
 
+export const isProbablyTruncatedFileReference = (value: string): boolean => {
+  const candidate = stripOuterPunctuation(value);
+  return (
+    candidate.startsWith(".../")
+    || candidate.startsWith("…/")
+    || candidate.includes("/.../")
+    || candidate.includes("/…/")
+  );
+};
+
 export const isLocalFileReference = (value: string): boolean => {
   const candidate = stripOuterPunctuation(value);
   if (candidate.length === 0) {
+    return false;
+  }
+  if (isProbablyTruncatedFileReference(candidate)) {
     return false;
   }
   if (/^https?:\/\//iu.test(candidate) || /^www\./iu.test(candidate)) {
@@ -96,6 +110,15 @@ export const classifyActionTarget = (value: string): ActionTarget | null => {
   }
   return null;
 };
+
+const isMatchInsideEllipsisPath = (
+  source: string,
+  matchIndex: number,
+  raw: string
+): boolean =>
+  raw.startsWith("../")
+  && matchIndex > 0
+  && source[matchIndex - 1] === ".";
 
 export const isImageFileReference = (value: string): boolean => {
   const target = classifyActionTarget(value);
@@ -226,7 +249,9 @@ export const splitActionText = (text: string): readonly TextSegment[] => {
     if (index > lastIndex) {
       segments.push({ kind: "text", text: text.slice(lastIndex, index) });
     }
-    const target = classifyActionTarget(raw);
+    const target = isMatchInsideEllipsisPath(text, index, raw)
+      ? null
+      : classifyActionTarget(raw);
     if (target === null) {
       segments.push({ kind: "text", text: raw });
     } else {

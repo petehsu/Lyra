@@ -5,7 +5,6 @@ import { Terminal } from "xterm";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { TerminalDockLabels, TerminalDockPane } from "./types";
 import { resolveTerminalTheme } from "./theme";
-import type { TerminalThemePresetId } from "../terminal-theme";
 
 export type TerminalPaneSurfaceProps = {
   readonly pane: TerminalDockPane;
@@ -13,7 +12,6 @@ export type TerminalPaneSurfaceProps = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: TerminalDockLabels;
   readonly themeSignature: string;
-  readonly themePresetId: TerminalThemePresetId;
   readonly uiThemeId: string;
   readonly onFocus: () => void;
 };
@@ -24,10 +22,267 @@ const readCssNumber = (element: HTMLElement, name: `--${string}`, fallback: numb
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+type TerminalRendererCallbacks = {
+  readonly onError: (error: string) => void;
+  readonly onExit: (exitCode: number | null) => void;
+};
+
+type TerminalDataAckPayload = {
+  readonly sessionId: string;
+  readonly dataSeq: number;
+  readonly byteLength: number;
+};
+
+type TerminalRendererHandle = {
+  readonly sessionId: string;
+  readonly terminal: Terminal;
+  readonly fitAddon: FitAddon;
+  readonly disposeInput: { readonly dispose: () => void };
+  readonly disposeRuntimeData: () => void;
+  readonly disposeRuntimeExit: () => void;
+  readonly disposeRuntimeError: () => void;
+  activeToken: symbol | null;
+  callbacks: TerminalRendererCallbacks | null;
+  inputHandler: ((data: string) => void) | null;
+  outputBuffer: string;
+  outputAcks: TerminalDataAckPayload[];
+  outputFlushFrameId: number | null;
+  outputWriteInFlight: boolean;
+  readonly acknowledgeOutput: (acks: readonly TerminalDataAckPayload[]) => void;
+  readonly disposeRendererAttachment: () => void;
+};
+
+const terminalRenderersBySession = new Map<string, TerminalRendererHandle>();
+
+export const clearTerminalRendererStateForTests = (): void => {
+  for (const renderer of terminalRenderersBySession.values()) {
+    disposeTerminalRenderer(renderer);
+  }
+  terminalRenderersBySession.clear();
+};
+
+export const disposeTerminalRendererForSession = (sessionId: string): void => {
+  const renderer = terminalRenderersBySession.get(sessionId);
+  if (renderer === undefined) {
+    return;
+  }
+  terminalRenderersBySession.delete(sessionId);
+  disposeTerminalRenderer(renderer);
+};
+
+const scheduleTerminalOutputFlush = (handle: TerminalRendererHandle): void => {
+  if (handle.outputFlushFrameId !== null || handle.outputWriteInFlight) {
+    return;
+  }
+  handle.outputFlushFrameId = window.requestAnimationFrame(() => {
+    handle.outputFlushFrameId = null;
+    flushTerminalOutput(handle);
+  });
+};
+
+const flushTerminalOutput = (handle: TerminalRendererHandle): void => {
+  if (handle.outputWriteInFlight || handle.outputBuffer.length === 0) {
+    return;
+  }
+  const data = handle.outputBuffer;
+  const acks = handle.outputAcks;
+  handle.outputBuffer = "";
+  handle.outputAcks = [];
+  handle.outputWriteInFlight = true;
+  const finish = (): void => {
+    handle.outputWriteInFlight = false;
+    handle.acknowledgeOutput(acks);
+    if (handle.outputBuffer.length > 0) {
+      scheduleTerminalOutputFlush(handle);
+    }
+  };
+  try {
+    handle.terminal.write(data, finish);
+  } catch (_error) {
+    // xterm may be between DOM hosts during a dock/workspace move.
+    finish();
+  }
+};
+
+const queueTerminalOutput = (
+  handle: TerminalRendererHandle,
+  event: {
+    readonly sessionId: string;
+    readonly data: string;
+    readonly dataSeq?: number;
+    readonly byteLength?: number;
+  }
+): void => {
+  handle.outputBuffer += event.data;
+  if (typeof event.dataSeq === "number" && typeof event.byteLength === "number") {
+    handle.outputAcks.push({
+      sessionId: event.sessionId,
+      dataSeq: event.dataSeq,
+      byteLength: event.byteLength
+    });
+  }
+  scheduleTerminalOutputFlush(handle);
+};
+
+const getOrCreateTerminalRenderer = ({
+  desktopApi,
+  host,
+  sessionId,
+  terminalFontSize,
+  terminalLineHeight
+}: {
+  readonly desktopApi: LyraDesktopApi;
+  readonly host: HTMLElement;
+  readonly sessionId: string;
+  readonly terminalFontSize: number;
+  readonly terminalLineHeight: number;
+}): TerminalRendererHandle => {
+  const existing = terminalRenderersBySession.get(sessionId);
+  if (existing !== undefined) {
+    attachTerminalToHost(existing.terminal, host);
+    applyTerminalRendererOptions(existing.terminal, host, terminalFontSize, terminalLineHeight);
+    return existing;
+  }
+
+  const terminal = new Terminal({
+    allowTransparency: false,
+    cursorBlink: true,
+    cursorInactiveStyle: "bar",
+    cursorStyle: "bar",
+    cursorWidth: 1,
+    convertEol: false,
+    fontFamily: "var(--lyra-font-mono)",
+    fontSize: terminalFontSize,
+    lineHeight: terminalLineHeight,
+    scrollback: 10_000,
+    theme: resolveTerminalTheme(host)
+  });
+  const fitAddon = new FitAddon();
+  terminal.loadAddon(fitAddon);
+  terminal.open(host);
+  const handle: TerminalRendererHandle = {
+    sessionId,
+    terminal,
+    fitAddon,
+    activeToken: null,
+    callbacks: null,
+    inputHandler: null,
+    outputBuffer: "",
+    outputAcks: [],
+    outputFlushFrameId: null,
+    outputWriteInFlight: false,
+    acknowledgeOutput: (acks) => {
+      for (const ack of acks) {
+        void desktopApi.terminal.ackData?.(ack).catch((_error) => {
+          // Runtime may already be gone while xterm drains queued writes.
+        });
+      }
+    },
+    disposeRendererAttachment: () => {
+      void desktopApi.terminal.detachRenderer?.({ sessionId }).catch((_error) => {
+        // The renderer can outlive the bridge during app shutdown.
+      });
+    },
+    disposeInput: terminal.onData((data) => {
+      handle.inputHandler?.(data);
+    }),
+    disposeRuntimeData: desktopApi.terminal.onData((event) => {
+      if (event.sessionId !== handle.sessionId) {
+        return;
+      }
+      queueTerminalOutput(handle, event);
+    }),
+    disposeRuntimeExit: desktopApi.terminal.onExit((event) => {
+      if (event.sessionId !== handle.sessionId) {
+        return;
+      }
+      try {
+        handle.terminal.writeln(`\r\n[process exited: ${event.exitCode}]`);
+        handle.callbacks?.onExit(event.exitCode);
+      } catch (_error) {
+        // xterm may still flush a final repaint after a host move.
+      }
+    }),
+    disposeRuntimeError: desktopApi.terminal.onError((event) => {
+      if (event.sessionId !== handle.sessionId) {
+        return;
+      }
+      handle.callbacks?.onError(event.error);
+    })
+  };
+  terminalRenderersBySession.set(sessionId, handle);
+  void desktopApi.terminal.attachRenderer?.({ sessionId }).catch((_error) => undefined);
+  return handle;
+};
+
+const disposeTerminalRenderer = (renderer: TerminalRendererHandle): void => {
+  renderer.callbacks = null;
+  renderer.inputHandler = null;
+  if (renderer.outputFlushFrameId !== null) {
+    window.cancelAnimationFrame(renderer.outputFlushFrameId);
+    renderer.outputFlushFrameId = null;
+  }
+  if (renderer.outputAcks.length > 0) {
+    renderer.acknowledgeOutput(renderer.outputAcks);
+    renderer.outputAcks = [];
+  }
+  renderer.outputBuffer = "";
+  renderer.disposeInput.dispose();
+  renderer.disposeRuntimeData();
+  renderer.disposeRuntimeExit();
+  renderer.disposeRuntimeError();
+  renderer.disposeRendererAttachment();
+  renderer.terminal.dispose();
+};
+
+const attachTerminalToHost = (terminal: Terminal, host: HTMLElement): void => {
+  const terminalElement = (terminal as Terminal & { element?: HTMLElement }).element;
+  if (terminalElement === undefined) {
+    terminal.open(host);
+    return;
+  }
+  if (terminalElement.parentElement !== host) {
+    host.append(terminalElement);
+  }
+};
+
+const applyTerminalRendererOptions = (
+  terminal: Terminal,
+  host: HTMLElement,
+  terminalFontSize: number,
+  terminalLineHeight: number
+): void => {
+  terminal.options.fontFamily = "var(--lyra-font-mono)";
+  terminal.options.fontSize = terminalFontSize;
+  terminal.options.lineHeight = terminalLineHeight;
+  terminal.options.theme = resolveTerminalTheme(host);
+};
+
 const TERMINAL_RESIZE_SETTLE_MS = 140;
+const TERMINAL_HORIZONTAL_RESIZE_DEBOUNCE_MS = 100;
+const TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD = 200;
+const TERMINAL_INITIAL_RESIZE_RETRY_MS: readonly number[] = [32, 120, 320];
 const TERMINAL_MIN_FIT_COLS = 10;
 const TERMINAL_MIN_FIT_ROWS = 3;
 type TerminalResizeMode = "immediate" | "settled";
+
+const readTerminalBufferLength = (terminal: Terminal): number => {
+  const candidate = terminal as Terminal & {
+    readonly buffer?: {
+      readonly normal?: { readonly length?: number };
+      readonly active?: { readonly length?: number };
+    };
+  };
+  const normalLength = candidate.buffer?.normal?.length;
+  if (typeof normalLength === "number" && Number.isFinite(normalLength)) {
+    return normalLength;
+  }
+  const activeLength = candidate.buffer?.active?.length;
+  if (typeof activeLength === "number" && Number.isFinite(activeLength)) {
+    return activeLength;
+  }
+  return 0;
+};
 
 export const TerminalPaneSurface = ({
   pane,
@@ -35,21 +290,15 @@ export const TerminalPaneSurface = ({
   desktopApi,
   labels,
   themeSignature,
-  themePresetId,
   uiThemeId,
   onFocus
 }: TerminalPaneSurfaceProps) => {
-  const paneBodyRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const sessionReadyRef = useRef(false);
   const sessionDisposedRef = useRef(false);
-  const initialThemePresetRef = useRef(themePresetId);
-  const appliedPromptSignatureRef = useRef(`${themePresetId}:${uiThemeId}`);
   const unavailableMessageRef = useRef(labels.unavailable);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [readyToPaint, setReadyToPaint] = useState(false);
-  const [promptSessionReady, setPromptSessionReady] = useState(false);
 
   const applyTheme = useCallback((): void => {
     if (sessionDisposedRef.current) {
@@ -75,11 +324,10 @@ export const TerminalPaneSurface = ({
   useEffect(() => {
     sessionReadyRef.current = false;
     sessionDisposedRef.current = false;
-    setReadyToPaint(false);
-    setPromptSessionReady(false);
     let frameId: number | null = null;
     let resizeFrameId: number | null = null;
     let resizeSettleTimerId: number | null = null;
+    const initialResizeTimerIds: number[] = [];
     let lastSyncedCols = -1;
     let lastSyncedRows = -1;
 
@@ -96,28 +344,21 @@ export const TerminalPaneSurface = ({
     const terminalFontSize = readCssNumber(host, "--lyra-text-size-meta", 12);
     const terminalLineHeight =
       readCssNumber(host, "--lyra-text-line-body", 20) / Math.max(terminalFontSize, 1);
-
-    const terminal = new Terminal({
-      allowTransparency: false,
-      cursorBlink: true,
-      cursorInactiveStyle: "bar",
-      cursorStyle: "bar",
-      cursorWidth: 1,
-      convertEol: true,
-      fontFamily: "var(--lyra-font-mono)",
-      fontSize: terminalFontSize,
-      lineHeight: terminalLineHeight,
-      scrollback: 10_000,
-      theme: resolveTerminalTheme(host)
+    const renderer = getOrCreateTerminalRenderer({
+      desktopApi,
+      host,
+      sessionId: pane.sessionId,
+      terminalFontSize,
+      terminalLineHeight
     });
+    const rendererToken = Symbol(pane.sessionId);
+    renderer.activeToken = rendererToken;
+    const terminal = renderer.terminal;
+    const fitAddon = renderer.fitAddon;
     terminalRef.current = terminal;
-
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(host);
     const terminalWithElement = terminal as Terminal & { element?: HTMLElement };
 
-    const fitToContainer = (): boolean => {
+    const fitToContainer = (options?: { readonly deferColumns?: boolean }): boolean => {
       if (sessionDisposedRef.current) {
         return false;
       }
@@ -148,8 +389,17 @@ export const TerminalPaneSurface = ({
       if (terminal.cols === dimensions.cols && terminal.rows === dimensions.rows) {
         return true;
       }
+      const shouldDeferColumns =
+        options?.deferColumns === true &&
+        terminal.cols !== dimensions.cols &&
+        readTerminalBufferLength(terminal) >= TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD;
+      const nextCols = shouldDeferColumns ? terminal.cols : dimensions.cols;
+      const nextRows = dimensions.rows;
+      if (terminal.cols === nextCols && terminal.rows === nextRows) {
+        return true;
+      }
       try {
-        fitAddon.fit();
+        terminal.resize(nextCols, nextRows);
         return true;
       } catch (_error) {
         // xterm can throw during very early/late lifecycle ticks; safe to ignore.
@@ -157,8 +407,8 @@ export const TerminalPaneSurface = ({
       }
     };
 
-    const resizeAndSync = (): void => {
-      if (fitToContainer() === false) {
+    const resizeAndSync = (options?: { readonly deferColumns?: boolean }): void => {
+      if (fitToContainer(options) === false) {
         return;
       }
       if (sessionReadyRef.current === false) {
@@ -186,7 +436,16 @@ export const TerminalPaneSurface = ({
       resizeSettleTimerId = null;
     };
 
-    const scheduleResizeFrame = (): void => {
+    const cancelInitialResizeTimers = (): void => {
+      while (initialResizeTimerIds.length > 0) {
+        const timerId = initialResizeTimerIds.pop();
+        if (timerId !== undefined) {
+          window.clearTimeout(timerId);
+        }
+      }
+    };
+
+    const scheduleResizeFrame = (options?: { readonly deferColumns?: boolean }): void => {
       if (sessionDisposedRef.current) {
         return;
       }
@@ -195,7 +454,7 @@ export const TerminalPaneSurface = ({
       }
       resizeFrameId = requestAnimationFrame(() => {
         resizeFrameId = null;
-        resizeAndSync();
+        resizeAndSync(options);
       });
     };
 
@@ -204,12 +463,16 @@ export const TerminalPaneSurface = ({
         return;
       }
       // Panel animations produce transient terminal sizes; only user drag needs frame-level fitting.
-      if (
-        mode === "immediate" ||
-        host.ownerDocument.body.classList.contains("lyra-layout-resizing")
-      ) {
+      const isLayoutResizing = host.ownerDocument.body.classList.contains("lyra-layout-resizing");
+      if (mode === "immediate" || isLayoutResizing) {
         cancelResizeSettleTimer();
-        scheduleResizeFrame();
+        scheduleResizeFrame({ deferColumns: isLayoutResizing });
+        if (isLayoutResizing) {
+          resizeSettleTimerId = window.setTimeout(() => {
+            resizeSettleTimerId = null;
+            scheduleResizeFrame();
+          }, TERMINAL_HORIZONTAL_RESIZE_DEBOUNCE_MS);
+        }
         return;
       }
 
@@ -220,13 +483,26 @@ export const TerminalPaneSurface = ({
       }, TERMINAL_RESIZE_SETTLE_MS);
     };
 
+    const scheduleInitialResizeRetries = (): void => {
+      cancelInitialResizeTimers();
+      for (const delayMs of TERMINAL_INITIAL_RESIZE_RETRY_MS) {
+        const timerId = window.setTimeout(() => {
+          const index = initialResizeTimerIds.indexOf(timerId);
+          if (index >= 0) {
+            initialResizeTimerIds.splice(index, 1);
+          }
+          scheduleResizeAndSync("immediate");
+        }, delayMs);
+        initialResizeTimerIds.push(timerId);
+      }
+    };
+
     applyTheme();
     frameId = requestAnimationFrame(() => {
       if (sessionDisposedRef.current) {
         return;
       }
       resizeAndSync();
-      setReadyToPaint(true);
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -237,59 +513,29 @@ export const TerminalPaneSurface = ({
     });
     resizeObserver.observe(host);
 
-    const disposeData = terminal.onData((data) => {
+    renderer.inputHandler = (data) => {
       if (sessionReadyRef.current === false) {
         return;
       }
-      void desktopApi.terminal.write({
+      const request = {
         sessionId: pane.sessionId,
         data,
         source: "user"
-      }).catch((_error) => {
-        // may happen during transient create/close races; ignored on purpose.
-      });
-    });
-
-    const unlistenData =
-      desktopApi.terminal.onData((event) => {
-        if (sessionDisposedRef.current) {
-          return;
-        }
-        if (event.sessionId !== pane.sessionId) {
-          return;
-        }
-        try {
-          terminal.write(event.data);
-        } catch (_error) {
-          // xterm may still emit late writes during teardown or hidden-layout transitions.
-        }
-      });
-
-    const unlistenExit =
-      desktopApi.terminal.onExit((event) => {
-        if (sessionDisposedRef.current) {
-          return;
-        }
-        if (event.sessionId !== pane.sessionId) {
-          return;
-        }
-        try {
-          terminal.writeln(`\r\n[process exited: ${event.exitCode}]`);
-        } catch (_error) {
-          // xterm may still flush a final repaint after disposal.
-        }
-      });
-
-    const unlistenError =
-      desktopApi.terminal.onError((event) => {
-        if (sessionDisposedRef.current) {
-          return;
-        }
-        if (event.sessionId !== pane.sessionId) {
-          return;
-        }
-        setStatusMessage(event.error);
-      });
+      } as const;
+      if (desktopApi.terminal.writeFast?.(request) === true) {
+        return;
+      }
+      void desktopApi.terminal.write(request)
+        .catch((_error) => {
+          // may happen during transient create/close races; ignored on purpose.
+        });
+    };
+    renderer.callbacks = {
+      onError: (error) => {
+        setStatusMessage(error);
+      },
+      onExit: () => undefined
+    };
 
     setStatusMessage(null);
     fitToContainer();
@@ -298,9 +544,9 @@ export const TerminalPaneSurface = ({
         sessionId: pane.sessionId,
         title: pane.title,
         ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
+        ...(pane.shell !== undefined ? { shell: pane.shell } : {}),
         ...(pane.mode !== undefined ? { mode: pane.mode } : {}),
         ...(pane.command !== undefined ? { command: pane.command } : {}),
-        terminalThemePreset: initialThemePresetRef.current,
         uiThemeId,
         cols: terminal.cols,
         rows: terminal.rows,
@@ -308,21 +554,16 @@ export const TerminalPaneSurface = ({
       })
       .then(() => {
         if (sessionDisposedRef.current) {
-          void desktopApi.terminal.closeSession({ sessionId: pane.sessionId }).catch((_error) => {
-            // best effort cleanup for racey create-then-dispose
-          });
           return;
         }
         sessionReadyRef.current = true;
-        setPromptSessionReady(true);
-        appliedPromptSignatureRef.current = `${initialThemePresetRef.current}:${uiThemeId}`;
         lastSyncedCols = -1;
         lastSyncedRows = -1;
         scheduleResizeAndSync("immediate");
+        scheduleInitialResizeRetries();
       })
       .catch((error: unknown) => {
         sessionReadyRef.current = false;
-        setPromptSessionReady(false);
         setStatusMessage(error instanceof Error ? error.message : unavailableMessageRef.current);
       });
 
@@ -336,14 +577,14 @@ export const TerminalPaneSurface = ({
         cancelAnimationFrame(resizeFrameId);
       }
       cancelResizeSettleTimer();
-      disposeData.dispose();
-      unlistenData();
-      unlistenExit();
-      unlistenError();
+      cancelInitialResizeTimers();
       resizeObserver.disconnect();
+      if (renderer.activeToken === rendererToken) {
+        renderer.activeToken = null;
+        renderer.callbacks = null;
+        renderer.inputHandler = null;
+      }
       terminalRef.current = null;
-      terminal.dispose();
-      setReadyToPaint(false);
     };
   }, [
     applyTheme,
@@ -361,36 +602,13 @@ export const TerminalPaneSurface = ({
     };
   }, [applyTheme, themeSignature]);
 
-  useEffect(() => {
-    const nextPromptSignature = `${themePresetId}:${uiThemeId}`;
-    if (active === false) {
-      return;
-    }
-    if (desktopApi === null || sessionReadyRef.current === false) {
-      return;
-    }
-    if (appliedPromptSignatureRef.current === nextPromptSignature) {
-      return;
-    }
-
-    appliedPromptSignatureRef.current = nextPromptSignature;
-    void desktopApi.terminal.reloadPrompt({
-      sessionId: pane.sessionId,
-      terminalThemePreset: themePresetId,
-      uiThemeId,
-      source: "user"
-    }).catch((_error) => {
-      // prompt refresh is best-effort; xterm theme still updates locally.
-    });
-  }, [active, desktopApi, pane.sessionId, promptSessionReady, themePresetId, uiThemeId]);
-
   return (
     <section
       className={active ? "lyra-terminal-pane lyra-terminal-pane-active" : "lyra-terminal-pane"}
       onMouseDown={onFocus}
     >
-      <div className="lyra-terminal-pane-body" ref={paneBodyRef}>
-        <div className={readyToPaint ? "lyra-terminal-host lyra-terminal-host-ready" : "lyra-terminal-host"} ref={hostRef} />
+      <div className="lyra-terminal-pane-body">
+        <div className="lyra-terminal-host" ref={hostRef} />
         {statusMessage === null ? null : <div className="lyra-terminal-status">{statusMessage}</div>}
       </div>
     </section>

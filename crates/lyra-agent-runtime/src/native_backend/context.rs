@@ -42,28 +42,10 @@ fn compact_browser_storage_state(snapshot: &Value) -> Value {
     })
 }
 
-fn compact_browser_tab(tab: &Value) -> Value {
+fn compact_recovery_browser_tab_ref(tab: &Value) -> Value {
     let restore = tab.get("restoreState").unwrap_or(&Value::Null);
-    let history = restore.get("history").unwrap_or(&Value::Null);
-    let history_entries = history
-        .get("entries")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let current_index = history
-        .get("currentIndex")
-        .and_then(Value::as_i64)
-        .unwrap_or(-1);
-    let current_entry = usize::try_from(current_index)
-        .ok()
-        .and_then(|index| history_entries.get(index))
-        .cloned()
-        .unwrap_or(Value::Null);
-
     json!({
         "tabId": tab.get("tabId").cloned().unwrap_or(Value::Null),
-        "address": tab.get("address").cloned().unwrap_or(Value::Null),
-        "title": tab.get("title").cloned().unwrap_or(Value::Null),
         "profilePartition": tab.get("profilePartition").cloned().unwrap_or(Value::Null),
         "lifecycleState": tab.get("lifecycleState").cloned().unwrap_or(Value::Null),
         "recoveryFailure": tab.get("recoveryFailure").cloned().unwrap_or(Value::Null),
@@ -72,19 +54,42 @@ fn compact_browser_tab(tab: &Value) -> Value {
             "scrollY": restore.get("scrollY").cloned().unwrap_or(Value::Null),
             "viewport": restore.get("viewport").cloned().unwrap_or(Value::Null),
             "loadState": restore.get("loadState").cloned().unwrap_or(Value::Null),
-            "activeElement": restore.get("activeElement").cloned().unwrap_or(Value::Null),
-            "formDraft": restore.get("formDraft").cloned().unwrap_or(Value::Null),
-            "targetRegistry": restore.get("targetRegistry").cloned().unwrap_or(Value::Null),
-            "storage": restore.get("storage").cloned().unwrap_or(Value::Null),
             "textHash": restore.get("textHash").cloned().unwrap_or(Value::Null),
-            "capturedAt": restore.get("capturedAt").cloned().unwrap_or(Value::Null),
-            "history": {
-                "currentIndex": current_index,
-                "entryCount": history_entries.len(),
-                "currentEntry": current_entry,
-                "canGoBack": tab.get("canGoBack").cloned().unwrap_or(Value::Null),
-                "canGoForward": tab.get("canGoForward").cloned().unwrap_or(Value::Null)
-            }
+            "capturedAt": restore.get("capturedAt").cloned().unwrap_or(Value::Null)
+        }
+    })
+}
+
+fn compact_browser_recovery_anchor(snapshot: &Value) -> Value {
+    let Some(anchor) = snapshot
+        .get("recoveryAnchor")
+        .filter(|value| value.is_object())
+    else {
+        return Value::Null;
+    };
+    let storage_state_ref = anchor
+        .get("storageStateRef")
+        .filter(|value| value.is_object())
+        .map(|storage| {
+            json!({
+                "profilePartition": storage.get("profilePartition").cloned().unwrap_or(Value::Null),
+                "siteOrigin": storage.get("siteOrigin").cloned().unwrap_or(Value::Null)
+            })
+        })
+        .unwrap_or(Value::Null);
+    json!({
+        "schemaVersion": anchor.get("schemaVersion").cloned().unwrap_or(Value::Null),
+        "tabId": anchor.get("tabId").cloned().unwrap_or(Value::Null),
+        "targetRef": anchor.get("targetRef").cloned().unwrap_or(Value::Null),
+        "textHash": anchor.get("textHash").cloned().unwrap_or(Value::Null),
+        "storageStateRef": storage_state_ref,
+        "authState": anchor.get("authState").cloned().unwrap_or(Value::Null),
+        "capturedAt": anchor.get("capturedAt").cloned().unwrap_or(Value::Null),
+        "redaction": {
+            "address": "not_in_runtime_context",
+            "title": "not_in_runtime_context",
+            "historyEntry": "not_in_runtime_context",
+            "reason": "browser recovery data is not current-page evidence"
         }
     })
 }
@@ -99,8 +104,6 @@ fn browser_recovery_failures(snapshot: &Value) -> Vec<Value> {
             let failure = tab.get("recoveryFailure")?.clone();
             Some(json!({
                 "tabId": tab.get("tabId").cloned().unwrap_or(Value::Null),
-                "address": tab.get("address").cloned().unwrap_or(Value::Null),
-                "title": tab.get("title").cloned().unwrap_or(Value::Null),
                 "failure": failure
             }))
         })
@@ -115,18 +118,22 @@ fn compact_browser_recovery_context(snapshot: Value) -> Value {
             "message": "No BrowserSessionSnapshot has been captured yet."
         });
     }
-    let active_tab = browser_snapshot_active_tab(&snapshot)
-        .map(compact_browser_tab)
+    let prior_active_tab = browser_snapshot_active_tab(&snapshot)
+        .map(compact_recovery_browser_tab_ref)
         .unwrap_or(Value::Null);
     json!({
         "hostCapabilityAvailable": true,
         "snapshotAvailable": true,
+        "recoverySnapshotOnly": true,
+        "currentPageEvidence": "none_from_browser_recovery",
+        "modelInstruction": "Do not describe browserRecovery as the user's current visible page. Use workbench.listTabs, workbench.readTab, or Lumen/browser tool results for current browser claims.",
         "schemaVersion": snapshot.get("schemaVersion").cloned().unwrap_or(Value::Null),
         "snapshotId": snapshot.get("snapshotId").cloned().unwrap_or(Value::Null),
         "capturedAt": snapshot.get("capturedAt").cloned().unwrap_or(Value::Null),
         "activeTabId": snapshot.get("activeTabId").cloned().unwrap_or(Value::Null),
-        "activeTab": active_tab,
-        "recoveryAnchor": snapshot.get("recoveryAnchor").cloned().unwrap_or(Value::Null),
+        "activeTab": Value::Null,
+        "priorActiveTab": prior_active_tab,
+        "recoveryAnchor": compact_browser_recovery_anchor(&snapshot),
         "storageState": compact_browser_storage_state(&snapshot),
         "recoveryFailures": browser_recovery_failures(&snapshot),
         "privacy": {
@@ -553,6 +560,22 @@ pub(crate) fn model_tools(design_research_required: bool) -> Vec<Value> {
                     "terminalTabId": { "type": "string" },
                     "paneId": { "type": "string" },
                     "cursor": { "type": "string" },
+                    "maxBytes": { "type": "number", "default": 16000 }
+                }
+            }),
+        ),
+        function_tool(
+            "terminal_screen",
+            "Read the current Rust terminal screen snapshot, including visible text, cursor position, and screen mode.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "terminalTabId": { "type": "string" },
+                    "paneId": { "type": "string" },
+                    "cursor": { "type": "string" },
+                    "includeScrollback": { "type": "boolean", "default": false },
+                    "maxRows": { "type": "number", "default": 200 },
                     "maxBytes": { "type": "number", "default": 16000 }
                 }
             }),
@@ -1085,11 +1108,25 @@ mod tests {
             Some(&json!("not_exposed"))
         );
         assert_eq!(
-            runtime_context.pointer("/browserRecovery/activeTab/restoreState/scrollY"),
+            runtime_context.pointer("/browserRecovery/recoverySnapshotOnly"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            runtime_context.pointer("/browserRecovery/currentPageEvidence"),
+            Some(&json!("none_from_browser_recovery"))
+        );
+        assert_eq!(
+            runtime_context.pointer("/browserRecovery/activeTab"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            runtime_context.pointer("/browserRecovery/priorActiveTab/restoreState/scrollY"),
             Some(&json!(240))
         );
         let rendered = serde_json::to_string(&runtime_context).expect("context json");
         assert!(!rendered.contains("secret-cookie-value"));
+        assert!(!rendered.contains("Example App"));
+        assert!(!rendered.contains("https://example.com/app"));
     }
 }
 
@@ -1215,6 +1252,7 @@ pub(crate) fn model_tool_names(design_research_required: bool) -> Vec<String> {
         "terminal_list",
         "terminal_create",
         "terminal_read",
+        "terminal_screen",
         "terminal_wait",
         "terminal_write",
         "terminal_close",

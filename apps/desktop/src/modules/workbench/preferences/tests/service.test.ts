@@ -16,7 +16,6 @@ const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
   uiPackId: "classic",
-  terminalThemePreset: "follow-app",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
   splitOverflowPolicy: "block_with_notice",
@@ -59,7 +58,6 @@ describe("workbench preferences", () => {
       locale: "en-US",
       theme: "lyra-dark",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -72,7 +70,6 @@ describe("workbench preferences", () => {
       locale: "en-US",
       theme: "lyra-dark",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-rich",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -87,7 +84,6 @@ describe("workbench preferences", () => {
       locale: "zh-CN",
       theme: "terra-system",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
       splitOverflowPolicy: "replace_oldest",
@@ -99,21 +95,11 @@ describe("workbench preferences", () => {
       locale: "zh-CN",
       theme: "terra-system",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-standard",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
       splitOverflowPolicy: "replace_oldest",
       aiRichRenderingEnabled: true
     });
-  });
-
-  test("migrates legacy terminal preset values to lyra-rich", () => {
-    writeWorkbenchPreferences({
-      ...defaults,
-      terminalThemePreset: "ocean-matrix" as unknown as WorkbenchPreferences["terminalThemePreset"]
-    });
-
-    expect(readWorkbenchPreferences(defaults).terminalThemePreset).toBe("lyra-rich");
   });
 
   test("falls back to classic when stored UI pack is unknown", () => {
@@ -160,7 +146,6 @@ describe("workbench preferences", () => {
       result.current.setLocale("en-US");
       result.current.setTheme("lyra-dark");
       result.current.setUiPackId("classic");
-      result.current.setTerminalThemePreset("lyra-developer");
       result.current.setSplitTriggerMode("right_drag");
       result.current.setSplitThreePaneLayout("left_two_right_one");
       result.current.setSplitOverflowPolicy("replace_target");
@@ -177,7 +162,6 @@ describe("workbench preferences", () => {
       locale: "en-US",
       theme: "lyra-dark",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -194,7 +178,6 @@ describe("workbench preferences", () => {
       locale: "en-US",
       theme: "lyra-dark",
       uiPackId: "classic",
-      terminalThemePreset: "lyra-developer",
       splitTriggerMode: "right_drag",
       splitThreePaneLayout: "left_two_right_one",
       splitOverflowPolicy: "replace_target",
@@ -222,8 +205,9 @@ describe("workbench preferences", () => {
       result.current.setDeepSearchDefaultBudget("high");
       result.current.setDeepSearchRestoreViewport(true);
       result.current.setDeepSearchLocalOpenBehavior("reveal_in_manager");
-      result.current.setSearchResultsSourceFilter("local");
-      result.current.setOmniboxNonBrowserSubmitTarget("replace_active_tab");
+      result.current.setDeepSearchSiteExpansionEnabled(false);
+      result.current.setDeepSearchProactiveDomainGuessingEnabled(false);
+      result.current.setDeepSearchCrawlPolicy("accessibility_only");
     });
 
     expect(result.current.preferences).toEqual({
@@ -239,24 +223,26 @@ describe("workbench preferences", () => {
       deepSearchDefaultBudget: "high",
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
-      searchResultsSourceFilter: "local",
-      omniboxNonBrowserSubmitTarget: "replace_active_tab"
+      deepSearchSiteExpansionEnabled: false,
+      deepSearchProactiveDomainGuessingEnabled: false,
+      deepSearchCrawlPolicy: "accessibility_only"
     });
-    expect(readWorkbenchPreferences(defaults)).toEqual({
-      ...defaults,
-      searchScopePreset: "custom",
-      searchCustomRoots: ["/Users/petehsu/Documents", "/tmp"],
-      searchEnableFuzzy: false,
-      searchEnableContent: false,
-      searchIncludeHidden: true,
-      searchWebEngineIds: ["bing", "searxng"],
-      searchSearxngEndpoint: "https://searx.example/search",
-      searchAutoIndexEnabled: false,
-      deepSearchDefaultBudget: "high",
-      deepSearchRestoreViewport: true,
-      deepSearchLocalOpenBehavior: "reveal_in_manager",
-      searchResultsSourceFilter: "local",
-      omniboxNonBrowserSubmitTarget: "replace_active_tab"
+  });
+
+  test("reset restores defaults", () => {
+    const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
+
+    act(() => {
+      result.current.setLocale("en-US");
+      result.current.setTheme("lyra-dark");
     });
+
+    expect(result.current.preferences.locale).toBe("en-US");
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.preferences).toEqual(defaults);
   });
 });
