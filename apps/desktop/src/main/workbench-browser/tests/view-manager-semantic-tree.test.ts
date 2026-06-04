@@ -474,6 +474,38 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect((input as HTMLInputElement).value).toBe("Ada");
   });
 
+  test("uses a lightweight interactive-only map without frame graph or AX debugger", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/quick",
+      html: "<!doctype html><title>Quick</title><button>Save</button><input aria-label=\"Name\" />"
+    });
+    const button = mainFrame.window.document.querySelector("button");
+    const input = mainFrame.window.document.querySelector("input");
+    expect(button).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    expect(input).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(button as Element, { x: 24, y: 40, width: 96, height: 32 });
+    setRect(input as Element, { x: 24, y: 88, width: 160, height: 32 });
+
+    const { manager, webContents } = createManager(mainFrame);
+    mainFrame.executeJavaScript.mockClear();
+
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+
+    expect(observation).toMatchObject({
+      strategy: "interactiveOnly",
+      title: "Quick"
+    });
+    expect(observation.elements.map((element) => element.label)).toEqual(["Save", "Name"]);
+    expect(mainFrame.executeJavaScript).toHaveBeenCalledTimes(1);
+    expect(mainFrame.executeJavaScript.mock.calls[0]?.[0]).toContain("const INCLUDE_CHILD_FRAMES = true");
+    expect(webContents.debugger.attach).not.toHaveBeenCalled();
+    expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith("Accessibility.getFullAXTree");
+  });
+
   test("maps same-origin iframe controls and clicks by child frame bounds", async () => {
     const mainFrame = createFrame({
       id: 1,
@@ -530,6 +562,56 @@ describe("Workbench browser semantic tree fixtures", () => {
         })
       ])
     );
+  });
+
+  test("uses fast action verification by default and full verification only when requested", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/fast-action",
+      html: "<!doctype html><title>Fast</title><button>Save</button>"
+    });
+    const button = mainFrame.window.document.querySelector("button");
+    expect(button).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    setRect(button as Element, { x: 32, y: 48, width: 100, height: 30 });
+
+    const { manager, webContents } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+    const saveTarget = findByLabel(observation.elements, "Save");
+
+    mainFrame.executeJavaScript.mockClear();
+    webContents.executeJavaScript.mockClear();
+
+    const fastResult = await manager.actOnAgentElement("tab-1", {
+      targetMode: "live",
+      targetRef: saveTarget.targetRef,
+      interaction: "click"
+    });
+
+    expect(fastResult).toMatchObject({
+      ok: true,
+      targetRef: saveTarget.targetRef,
+      verification: "none"
+    });
+    expect(fastResult.afterObservationId).toBeUndefined();
+    expect(mainFrame.executeJavaScript).not.toHaveBeenCalled();
+    expect(webContents.executeJavaScript).not.toHaveBeenCalled();
+
+    const fullResult = await manager.actOnAgentElement("tab-1", {
+      targetMode: "live",
+      targetRef: saveTarget.targetRef,
+      interaction: "click",
+      verification: "full"
+    });
+
+    expect(fullResult).toMatchObject({
+      ok: true,
+      targetRef: saveTarget.targetRef,
+      verification: "full"
+    });
+    expect(fullResult.afterObservationId).toBeTruthy();
   });
 
   test("splits full verification codes across segmented one-character inputs", async () => {
@@ -612,6 +694,56 @@ describe("Workbench browser semantic tree fixtures", () => {
       targetRef: codeInput.targetRef
     });
     expect(input?.value).toBe("2514-091A");
+  });
+
+  test("returns the final input value and avoids duplicating an already matching value", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://ip112.cn/",
+      html: `
+        <!doctype html>
+        <title>IP availability</title>
+        <label>
+          IP地址或域名
+          <input aria-label="IP地址或域名" />
+        </label>
+      `
+    });
+    const input = mainFrame.window.document.querySelector("input");
+    expect(input).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(input as Element, { x: 40, y: 80, width: 260, height: 36 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+    const ipInput = findByLabel(observation.elements, "IP地址或域名");
+
+    const firstResult = await manager.typeIntoAgentElement("tab-1", {
+      targetMode: "live",
+      targetRef: ipInput.targetRef,
+      text: "64.186.233.226",
+      clear: true
+    });
+    expect(firstResult).toMatchObject({
+      ok: true,
+      inputValuePreview: "64.186.233.226",
+      inputTextChanged: true
+    });
+
+    const secondResult = await manager.typeIntoAgentElement("tab-1", {
+      targetMode: "live",
+      targetRef: ipInput.targetRef,
+      text: "64.186.233.226"
+    });
+    expect(secondResult).toMatchObject({
+      ok: true,
+      inputValuePreview: "64.186.233.226",
+      inputTextChanged: false,
+      inputAlreadyMatched: true
+    });
+    expect(input?.value).toBe("64.186.233.226");
   });
 
   test("returns blocked regions and visual fallback target for cross-origin iframe", async () => {

@@ -1,6 +1,11 @@
+import type {
+  AgentSessionCreateRequest,
+  AgentSessionSnapshot
+} from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
 import type { SettingsAiModel } from "../settings-ai";
+import type { AiPanelSessionTab } from "./session-tabs";
 
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
 export type AiPanelSide = "left" | "right";
@@ -11,6 +16,13 @@ export type AiPanelSurfaceProps = {
   readonly settingsAiModel?: SettingsAiModel;
   readonly activeSessionId?: string | null;
   readonly onActiveSessionChange?: (sessionId: string) => void;
+  readonly sessionTabs?: readonly AiPanelSessionTab[];
+  readonly onActivateSessionTab?: (sessionId: string) => void;
+  readonly onCloseSessionTab?: (sessionId: string) => void;
+  readonly onCreateSessionTab?: (
+    request: AgentSessionCreateRequest
+  ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot;
+  readonly onSessionSnapshotChange?: (snapshot: AgentSessionSnapshot) => void;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
   readonly onOpenProjectTree?: (request: {
     readonly sessionId: string;

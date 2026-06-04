@@ -42,6 +42,7 @@ import type {
   WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentPoint,
   WorkbenchBrowserAgentTargetMode,
+  WorkbenchBrowserAgentVerification,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserFrameDescriptor,
   WorkbenchBrowserFrameDomProbeResult,
@@ -152,6 +153,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly actOnAgentPoint: (
@@ -161,6 +163,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly focusAgentPage: (
@@ -182,6 +185,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly clear?: boolean;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly pressAgentKey: (
@@ -192,6 +196,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly targetRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly navigateAgentPage: WorkbenchBrowserViewManager["navigateAgentPage"];

@@ -13,7 +13,11 @@
   cursor: pointer;
   outline: none;
   transition: all 0.2s ease;
-  border-radius: var(--lyra-control-radius-pill) 0 0 var(--lyra-control-radius-pill);
+  border-radius:
+    calc(var(--lyra-titlebar-navigation-radius, var(--lyra-unit-14)) - var(--lyra-unit-1))
+    0
+    0
+    calc(var(--lyra-titlebar-navigation-radius, var(--lyra-unit-14)) - var(--lyra-unit-1));
 }
 
 .lyra-titlebar-navigation-security-btn:hover {
@@ -164,34 +168,29 @@
 
 /* Floating Autocomplete Suggestions Panel */
 .lyra-omnibox-suggestions {
-  position: fixed;
   box-sizing: border-box;
-  background: var(--lyra-bg-surface-elevated, var(--lyra-bg-surface));
-  border: var(--lyra-unit-1) solid var(--lyra-line-default);
-  border-radius: var(--lyra-unit-10);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
-  z-index: 999;
-  max-height: var(--lyra-unit-280);
+  width: 100%;
+  flex: 1 1 auto;
+  max-height: var(--lyra-unit-240);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
-  padding: var(--lyra-unit-4) 0;
+  padding: var(--lyra-unit-6) 0 var(--lyra-unit-3);
   list-style: none;
   margin: 0;
   text-align: left;
-  animation: omnibox-slide-down 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.lyra-omnibox-suggestions[data-placement="top"] {
-  animation-name: omnibox-slide-up;
+  border-bottom: var(--lyra-stroke-hairline) solid
+    color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
+  background: transparent;
+  animation: omnibox-suggestions-reveal 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .lyra-suggestion-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--lyra-unit-12);
-  padding: var(--lyra-unit-8) var(--lyra-unit-12);
+  gap: var(--lyra-unit-10);
+  padding: var(--lyra-unit-7) var(--lyra-unit-12);
   cursor: pointer;
   transition: all 0.15s ease;
   min-width: 0;
@@ -237,6 +236,7 @@
   color: var(--lyra-text-muted);
   letter-spacing: 0.04em;
   opacity: 0.68;
+  flex: 0 0 auto;
 }
 
 .lyra-suggestion-item:hover .lyra-suggestion-type-badge,
@@ -260,6 +260,18 @@
     opacity: 0;
     transform: translateY(var(--lyra-unit-4));
   }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes omnibox-suggestions-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--lyra-unit-4));
+  }
+
   to {
     opacity: 1;
     transform: translateY(0);

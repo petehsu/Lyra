@@ -252,6 +252,7 @@ export type WorkbenchBrowserDebuggerSession = {
 };
 
 export type WorkbenchBrowserAgentObserveStrategy =
+  | "interactiveOnly"
   | "picker"
   | "focus"
   | "hybrid"
@@ -383,6 +384,10 @@ export type WorkbenchBrowserAgentInteraction =
   | "doubleClick"
   | "rightClick";
 
+export type WorkbenchBrowserAgentVerification =
+  | "none"
+  | "full";
+
 export type WorkbenchBrowserAgentPoint = {
   readonly x: number;
   readonly y: number;
@@ -440,6 +445,11 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly pageChanged?: boolean;
   readonly focusChanged?: boolean;
   readonly navigationStarted?: boolean;
+  readonly verification?: WorkbenchBrowserAgentVerification;
+  readonly inputValuePreview?: string;
+  readonly inputTextChanged?: boolean;
+  readonly inputAlreadyMatched?: boolean;
+  readonly inputInsertionMethod?: string;
   readonly staleElement?: boolean;
   readonly staleTarget?: WorkbenchLumenStaleTarget;
   readonly nearestCandidates?: readonly WorkbenchBrowserAgentElement[];
@@ -538,6 +548,7 @@ export type WorkbenchBrowserViewManager = {
       readonly targetRef?: string;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly actOnAgentPoint: (
@@ -546,6 +557,7 @@ export type WorkbenchBrowserViewManager = {
       readonly point: WorkbenchBrowserAgentPoint;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly focusAgentPage: (
@@ -565,6 +577,7 @@ export type WorkbenchBrowserViewManager = {
       readonly text: string;
       readonly clear?: boolean;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly pressAgentKey: (
@@ -574,6 +587,7 @@ export type WorkbenchBrowserViewManager = {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly navigateAgentPage: (

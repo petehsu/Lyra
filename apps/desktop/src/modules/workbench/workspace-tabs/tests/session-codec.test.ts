@@ -1,3 +1,4 @@
+import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import {
@@ -13,6 +14,7 @@ import {
   readPersistedState,
   writePersistedState
 } from "../session-codec";
+import { useWorkspaceTabsModel } from "../service";
 import type { WorkspaceTabsConfig } from "../types";
 
 const config: WorkspaceTabsConfig = {
@@ -161,6 +163,76 @@ describe("workspace browser session codec", () => {
       title: "Home"
     });
     expect(JSON.stringify(restored)).not.toContain("terminal-memory");
+  });
+
+  test("deduplicates restored workspace tabs by id", () => {
+    writeWorkbenchStateSync("workspace-tabs", JSON.stringify({
+      tabs: [
+        {
+          id: "browser-tab-35",
+          title: "First page",
+          pageKind: "page",
+          inputValue: "https://example.com/first",
+          displayAddress: "https://example.com/first"
+        },
+        {
+          id: "browser-tab-35",
+          title: "Duplicate page",
+          pageKind: "page",
+          inputValue: "https://example.com/duplicate",
+          displayAddress: "https://example.com/duplicate"
+        },
+        {
+          id: "browser-tab-36",
+          title: "Second page",
+          pageKind: "page",
+          inputValue: "https://example.com/second",
+          displayAddress: "https://example.com/second"
+        }
+      ],
+      activeTabId: "browser-tab-35",
+      splitGroupTabIds: ["browser-tab-35", "browser-tab-35", "browser-tab-36"],
+      focusedSplitTabId: "browser-tab-35"
+    }));
+
+    const restored = readPersistedState(config);
+    expect(restored.tabs.map((tab) => tab.id)).toEqual([
+      "browser-tab-35",
+      "browser-tab-36"
+    ]);
+    expect(restored.tabs[0]?.title).toBe("First page");
+    expect(restored.splitGroupTabIds).toEqual(["browser-tab-35", "browser-tab-36"]);
+  });
+
+  test("reuses an existing explicit browser tab id instead of appending duplicates", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(config));
+
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/first",
+        "First page",
+        { tabId: "browser-tab-35" }
+      );
+    });
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/updated",
+        "Updated page",
+        { tabId: "browser-tab-35" }
+      );
+    });
+
+    expect(result.current.tabs.map((tab) => tab.id)).toEqual([
+      "browser-tab-1",
+      "browser-tab-35"
+    ]);
+    expect(result.current.activeTabId).toBe("browser-tab-35");
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      title: "Updated page",
+      inputValue: "https://example.com/updated",
+      displayAddress: "https://example.com/updated"
+    });
   });
 
   test("migrates legacy browser session snapshots to the schema-versioned model", () => {

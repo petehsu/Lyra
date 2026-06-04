@@ -40,7 +40,7 @@ export interface MessageWindowState {
 }
 
 export interface DataProviderValue {
-  /** Session-level metadata (title, project, total diff). */
+  /** Session-level metadata (id, title, project, total diff). */
   session: SessionMeta;
 
   /** Chat messages in chronological order. */

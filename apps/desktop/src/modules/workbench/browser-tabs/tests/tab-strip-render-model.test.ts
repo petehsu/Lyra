@@ -91,6 +91,29 @@ describe("browser tab strip render model", () => {
     expect(model.stripClassName).toContain("lyra-browser-tab-strip-density-smaller");
   });
 
+  test("ignores responsive density classes in stacked mode", () => {
+    const model = createBrowserTabStripRenderModel({
+      tabs: [
+        createTab("a", "A"),
+        createTab("b", "B")
+      ],
+      activeTabId: "a",
+      splitGroupTabIds: [],
+      stackedMode: true,
+      closeTabLabel: "Close",
+      isTerminalDropActive: false,
+      dropIndicatorX: null,
+      isSplitDropActive: false,
+      splitDropTargetTabId: null,
+      workspaceDragTabId: null,
+      rightDragPreview: null,
+      density: "mini"
+    });
+
+    expect(model.stripClassName).toContain("lyra-browser-tab-strip-stacked");
+    expect(model.stripClassName).not.toContain("lyra-browser-tab-strip-density-mini");
+  });
+
   test("marks close lock width on the strip", () => {
     const model = createBrowserTabStripRenderModel({
       tabs: [

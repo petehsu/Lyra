@@ -1372,7 +1372,7 @@ describe("Agent IPC bridge", () => {
         tabId: "page-1",
         targetMode: request.targetMode ?? "live",
         observationId: "obs-1",
-        strategy: "picker",
+        strategy: "interactiveOnly",
         url: "https://example.com",
         title: "Example",
         elements: [] as Array<Record<string, unknown>>,
@@ -1614,7 +1614,7 @@ describe("Agent IPC bridge", () => {
       includeUnsupported: true
     });
     expect(browserBridge.observeAgentPage).toHaveBeenCalledWith("page-1", {
-      strategy: "picker",
+      strategy: "interactiveOnly",
       targetMode: "live"
     });
 
@@ -1633,7 +1633,7 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenMap"
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
-      strategy: "picker",
+      strategy: "interactiveOnly",
       targetMode: "live",
       visibleFollow: true
     });
@@ -1642,7 +1642,7 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenMap"
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
-      strategy: "picker",
+      strategy: "interactiveOnly",
       targetMode: "isolated"
     });
     browserBridge.actOnAgentElement.mockClear();
@@ -1679,7 +1679,7 @@ describe("Agent IPC bridge", () => {
       targetMode: "isolated"
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
-      strategy: "picker",
+      strategy: "interactiveOnly",
       targetMode: "isolated",
       authState: "borrowLiveLogin",
       useLiveLoginState: true
@@ -2157,7 +2157,7 @@ describe("Agent IPC bridge", () => {
         tabId: WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
         targetMode: "isolated",
         observationId: "obs-standalone",
-        strategy: "picker",
+        strategy: "interactiveOnly",
         url: "about:blank",
         title: "Lyra Lumen",
         elements: [] as Array<Record<string, unknown>>,
@@ -2191,7 +2191,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenCalledWith(
       WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
       {
-        strategy: "picker",
+        strategy: "interactiveOnly",
         targetMode: "isolated"
       }
     );

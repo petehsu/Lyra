@@ -27,6 +27,21 @@ const resolveRestoredWidthTabsTotal = (tabCount: number): number => {
   );
 };
 
+const resolveAvailableTabListWidth = (host: HTMLElement): number => {
+  const strip = host.querySelector<HTMLElement>(".lyra-browser-tab-strip");
+  const list = host.querySelector<HTMLElement>(".lyra-browser-tab-list");
+  if (strip === null) {
+    return list?.getBoundingClientRect().width ?? 0;
+  }
+  const addButton = strip.querySelector<HTMLElement>(".lyra-browser-tab-add");
+  const stripWidth = strip.getBoundingClientRect().width;
+  const addButtonWidth = addButton?.getBoundingClientRect().width ?? 0;
+  if (stripWidth <= 0) {
+    return list?.getBoundingClientRect().width ?? 0;
+  }
+  return Math.max(0, stripWidth - addButtonWidth);
+};
+
 export const useBrowserTabStripCloseLock = ({
   tabCount,
   navRef,
@@ -64,13 +79,15 @@ export const useBrowserTabStripCloseLock = ({
     }
 
     const host = navRef.current;
-    const list = host?.querySelector<HTMLElement>(".lyra-browser-tab-list") ?? null;
-    if (list === null) {
+    if (host === null) {
       return;
     }
+    const strip = host.querySelector<HTMLElement>(".lyra-browser-tab-strip");
+    const list = host.querySelector<HTMLElement>(".lyra-browser-tab-list");
+    const addButton = host.querySelector<HTMLElement>(".lyra-browser-tab-add");
 
     const clearWhenTabsFit = (): void => {
-      const listWidth = list.getBoundingClientRect().width;
+      const listWidth = resolveAvailableTabListWidth(host);
       if (resolveRestoredWidthTabsTotal(tabCount) <= listWidth) {
         setCloseLockedTabWidth(null);
       }
@@ -82,7 +99,15 @@ export const useBrowserTabStripCloseLock = ({
     }
 
     const observer = new ResizeObserver(clearWhenTabsFit);
-    observer.observe(list);
+    if (strip !== null) {
+      observer.observe(strip);
+    }
+    if (list !== null) {
+      observer.observe(list);
+    }
+    if (addButton !== null) {
+      observer.observe(addButton);
+    }
     return () => {
       observer.disconnect();
     };

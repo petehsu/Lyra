@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 import type {
@@ -7,6 +8,7 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../../settings-ai";
+import type { AiPanelSessionTab } from "../session-tabs";
 import { AiPanelSurface } from "../view";
 
 const snapshot: AgentSessionSnapshot = {
@@ -444,9 +446,7 @@ describe("AiPanelSurface", () => {
     const { api } = createDesktopApi();
     renderPanel(api);
 
-    await waitFor(() => {
-      expect(api.agent?.readSession).toHaveBeenCalled();
-    });
+    await screen.findByText("新会话");
     fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Build the slice" }
     });
@@ -637,9 +637,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    await waitFor(() => {
-      expect(api.agent?.readSession).toHaveBeenCalled();
-    });
+    await screen.findByText("新会话");
     fireEvent.click(await screen.findByLabelText("Pause"));
     await waitFor(() => {
       expect(api.agent?.cancelTurn).toHaveBeenCalledWith({ sessionId: "session-1" });
@@ -663,9 +661,7 @@ describe("AiPanelSurface", () => {
     const { api } = createDesktopApi();
     renderPanelWithSettings(api);
 
-    await waitFor(() => {
-      expect(api.agent?.readSession).toHaveBeenCalled();
-    });
+    await screen.findByText("新会话");
     fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Use the configured model" }
     });
@@ -1999,17 +1995,17 @@ describe("AiPanelSurface", () => {
 
   test("creates a new Lyra Agent session from the panel header", async () => {
     const { api, createSession, setReadSnapshot } = createDesktopApi();
-    createSession.mockResolvedValueOnce({
-      ...snapshot,
-      id: "session-2",
-      title: "Fresh Lyra Agent",
-      updatedAt: "2026-05-13T00:01:00.000Z"
-    });
     setReadSnapshot(snapshotWithConversation);
     renderPanel(api);
 
     await waitFor(() => {
       expect(screen.getByText("新会话")).toBeInTheDocument();
+    });
+    createSession.mockResolvedValueOnce({
+      ...snapshot,
+      id: "session-2",
+      title: "Fresh Lyra Agent",
+      updatedAt: "2026-05-13T00:01:00.000Z"
     });
     fireEvent.click(screen.getByLabelText("New session"));
 
@@ -2019,14 +2015,178 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("Fresh Lyra Agent")).toBeInTheDocument();
   });
 
-  test("hides the new session button while the current session is already empty", async () => {
+  test("renders multiple session tabs and switches without cancelling background work", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const onActivateSessionTab = vi.fn();
+    const onCloseSessionTab = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      title: "Primary Chat"
+    });
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("session-1");
+      return (
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          activeSessionId={activeSessionId}
+          sessionTabs={[
+            {
+              sessionId: "session-1",
+              title: "Primary Chat",
+              lastKnownStatus: "idle"
+            },
+            {
+              sessionId: "session-2",
+              title: "Background plan",
+              lastKnownStatus: "running"
+            }
+          ]}
+          onActivateSessionTab={(sessionId) => {
+            onActivateSessionTab(sessionId);
+            setActiveSessionId(sessionId);
+          }}
+          onCloseSessionTab={onCloseSessionTab}
+          title="Agent"
+          emptyThreadLabel="No messages"
+          locale="en-US"
+        />
+      );
+    }
+
+    const { container } = render(<Harness />);
+
+    expect(await screen.findByRole("tab", { name: "Primary Chat" }))
+      .toHaveAttribute("aria-selected", "true");
+    const backgroundTab = screen.getByRole("tab", { name: "Background plan" });
+    expect(backgroundTab.closest(".ai-session-tab-item"))
+      .toHaveClass("ai-session-tab-item-running");
+
+    fireEvent.click(backgroundTab);
+
+    await waitFor(() => {
+      expect(onActivateSessionTab).toHaveBeenCalledWith("session-2");
+      expect(api.agent?.readSession).toHaveBeenCalledWith({ sessionId: "session-2" });
+    });
+    expect(api.agent?.cancelTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Background plan" }))
+      .toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByLabelText("Close session tab: Background plan"));
+    expect(onCloseSessionTab).toHaveBeenCalledWith("session-2");
+    expect(api.agent?.cancelTurn).not.toHaveBeenCalled();
+    expect(container.querySelector(".ai-session-tab-title")).not.toBeNull();
+  });
+
+  test("creates a session through the tab button and inherits the current project", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const onCreateSessionTab = vi.fn(async (request) => ({
+      ...snapshot,
+      id: "session-2",
+      title: "Bound follow-up",
+      workingDir: request.workingDir ?? "/",
+      projectBound: typeof request.workingDir === "string",
+      updatedAt: "2026-05-13T00:01:00.000Z"
+    }));
+    setReadSnapshot({
+      ...snapshot,
+      title: "Bound project chat",
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true
+    });
+
+    function Harness() {
+      const [activeSessionId, setActiveSessionId] = useState("session-1");
+      const [tabs, setTabs] = useState<AiPanelSessionTab[]>([
+        {
+          sessionId: "session-1",
+          title: "Bound project chat",
+          lastKnownStatus: "idle"
+        }
+      ]);
+      return (
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          activeSessionId={activeSessionId}
+          sessionTabs={tabs}
+          onCreateSessionTab={async (request) => {
+            const next = await onCreateSessionTab(request);
+            setTabs((current) => [
+              ...current,
+              {
+                sessionId: next.id,
+                title: next.title,
+                lastKnownStatus: next.turnStatus
+              }
+            ]);
+            setActiveSessionId(next.id);
+            return next;
+          }}
+          title="Agent"
+          emptyThreadLabel="No messages"
+          locale="en-US"
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    await screen.findByText("Lyra");
+    fireEvent.click(screen.getByLabelText("New session"));
+
+    await waitFor(() => {
+      expect(onCreateSessionTab).toHaveBeenCalledWith({
+        title: "新会话",
+        workingDir: "/Users/petehsu/Documents/Lyra"
+      });
+    });
+    expect(await screen.findByRole("tab", { name: "Bound follow-up" }))
+      .toHaveAttribute("aria-selected", "true");
+  });
+
+  test("keeps long session tab titles isolated from tab controls", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const longTitle = "A very long investigation title that should stay inside the tab label and never collide with controls";
+    setReadSnapshot({
+      ...snapshot,
+      title: longTitle
+    });
+
+    render(
+      <AiPanelSurface
+        variant="sidebar"
+        desktopApi={api}
+        activeSessionId="session-1"
+        sessionTabs={[
+          {
+            sessionId: "session-1",
+            title: longTitle,
+            lastKnownStatus: "idle"
+          }
+        ]}
+        title="Agent"
+        emptyThreadLabel="No messages"
+        locale="en-US"
+      />
+    );
+
+    const tab = await screen.findByRole("tab", { name: longTitle });
+    expect(tab).toHaveAttribute("title", longTitle);
+    expect(tab.querySelector(".ai-session-tab-title")).not.toBeNull();
+    expect(screen.getByLabelText(`Close session tab: ${longTitle}`)).toBeInTheDocument();
+    expect(screen.getByLabelText("New session")).toBeInTheDocument();
+  });
+
+  test("keeps the new session tab button available while the current session is empty", async () => {
     const { api } = createDesktopApi();
     renderPanel(api);
 
     await waitFor(() => {
       expect(screen.getByText("新会话")).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText("New session")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("New session")).toBeInTheDocument();
   });
 
   test("renders streaming messages, tool activity, and pause", async () => {

@@ -2588,6 +2588,7 @@ export type WorkbenchStateKey =
   | "preferences"
   | "workspace-tabs"
   | "browser-session"
+  | "browser-history"
   | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"

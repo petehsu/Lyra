@@ -2195,6 +2195,7 @@ export const agentSessionToSessionMeta = (
   const workingDir = normalizeSessionWorkingDir(session?.workingDir);
   const projectBound = session?.projectBound ?? false;
   return {
+    id: session?.id ?? null,
     title: session?.title ?? "Lyra Agent",
     project: projectBound ? projectNameFromWorkingDir(workingDir) : "",
     workingDir,

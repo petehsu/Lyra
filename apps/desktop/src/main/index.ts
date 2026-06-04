@@ -23,6 +23,7 @@ import {
   resolveLyraAppIconPath,
   type LyraAppIconVariant
 } from "./app-identity";
+import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createAgentIpcBridge } from "./agent";
 import { createFilesIpcBridge } from "./files";
@@ -128,6 +129,7 @@ const linuxCompatBridge = createLinuxCompatBridge({
 
 linuxCompatBridge.applyToProcessEnv();
 linuxCompatBridge.applyToElectronApp(app);
+configureBrowserIdentityCompatibility(app);
 
 if (linuxCompatBridge.status.enabled) {
   const status = linuxCompatBridge.status;

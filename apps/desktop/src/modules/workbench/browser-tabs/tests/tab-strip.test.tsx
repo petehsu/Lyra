@@ -133,6 +133,27 @@ describe("BrowserTabStrip", () => {
     );
   });
 
+  test("marks only the Agent target tab for title scanning", () => {
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          activeTabId: "home",
+          agentActiveTabId: "docs"
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("browser-tabs");
+    const homeTab = nav.querySelector('[data-lyra-tab-id="home"]');
+    const docsTab = nav.querySelector('[data-lyra-tab-id="docs"]');
+
+    expect(homeTab).toHaveAttribute("data-agent-active", "false");
+    expect(homeTab).not.toHaveClass("lyra-browser-tab-item-agent-active");
+    expect(docsTab).toHaveAttribute("data-agent-active", "true");
+    expect(docsTab).toHaveClass("lyra-browser-tab-item-agent-active");
+    expect(docsTab?.querySelector(".lyra-browser-tab-title")).toHaveTextContent("Docs");
+  });
+
   test("falls back to the default icon when a favicon fails to load", () => {
     render(
       <BrowserTabStrip

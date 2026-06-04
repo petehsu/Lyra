@@ -118,6 +118,7 @@ import type {
   WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentPoint,
   WorkbenchBrowserAgentTargetMode,
+  WorkbenchBrowserAgentVerification,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserElementPickerController,
   WorkbenchBrowserFrameGlobalBounds,
@@ -929,6 +930,11 @@ const normalizeExecuteScriptTimeoutMs = (value: unknown, fallback = 8_000): numb
   }
   return Math.max(250, Math.min(30_000, Math.round(value)));
 };
+
+const normalizeAgentVerification = (
+  value: WorkbenchBrowserAgentVerification | undefined
+): WorkbenchBrowserAgentVerification =>
+  value === "full" ? "full" : "none";
 
 const runFrameScriptWithTimeout = async <T>(
   execute: () => Promise<T>,
@@ -2922,7 +2928,7 @@ export const createWorkbenchBrowserViewManager = ({
       cursor,
       durationMs: interaction === "hover" ? 2_400 : 2_800
     });
-    await delay(180);
+    await delay(20);
 
     target.webContents.focus();
     sendAgentInputEvent(target, { type: "mouseMove", x, y, button: "left", clickCount: 1 });
@@ -2938,7 +2944,7 @@ export const createWorkbenchBrowserViewManager = ({
         cursor,
         durationMs: 2_400
       });
-      await delay(90);
+      await delay(40);
       return;
     }
 
@@ -2954,7 +2960,7 @@ export const createWorkbenchBrowserViewManager = ({
       durationMs: 2_400
     });
     sendAgentInputEvent(target, { type: "mouseDown", x, y, button, clickCount });
-    await delay(80);
+    await delay(20);
 
     publishBrowserAgentActivity({
       tabId,
@@ -2968,7 +2974,7 @@ export const createWorkbenchBrowserViewManager = ({
       durationMs: 2_400
     });
     sendAgentInputEvent(target, { type: "mouseUp", x, y, button, clickCount });
-    await delay(110);
+    await delay(30);
 
     publishBrowserAgentActivity({
       tabId,
@@ -4073,7 +4079,8 @@ export const createWorkbenchBrowserViewManager = ({
     strategy: WorkbenchBrowserAgentObserveStrategy | undefined
   ): WorkbenchBrowserAgentObserveStrategy => {
     if (
-      strategy === "picker"
+      strategy === "interactiveOnly"
+      || strategy === "picker"
       || strategy === "focus"
       || strategy === "hybrid"
       || strategy === "domFallback"
@@ -4081,8 +4088,13 @@ export const createWorkbenchBrowserViewManager = ({
     ) {
       return strategy;
     }
-    return "hybrid";
+    return "interactiveOnly";
   };
+
+  const isLightweightAgentObserveStrategy = (
+    strategy: WorkbenchBrowserAgentObserveStrategy
+  ): boolean =>
+    strategy === "interactiveOnly" || strategy === "picker" || strategy === "focus";
 
   const createBrowserAgentObservationId = (tabId: string): string =>
     `lyra-lumen-${tabId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -4675,6 +4687,10 @@ export const createWorkbenchBrowserViewManager = ({
       const FRAME_BOUNDS = ${JSON.stringify(frameBounds)};
       const STRATEGY = ${JSON.stringify(strategy)};
       const INCLUDE_CHILD_FRAMES = ${JSON.stringify(includeChildFrames)};
+      const LIGHTWEIGHT_STRATEGY = STRATEGY === "interactiveOnly" || STRATEGY === "picker" || STRATEGY === "focus";
+      const MAX_LIGHTWEIGHT_SCAN_NODES = 3000;
+      const MAX_LIGHTWEIGHT_CANDIDATES = 220;
+      const MAX_LIGHTWEIGHT_SHADOW_HOSTS = 180;
       const warnings = [];
       const blockedRegions = [];
 
@@ -4842,6 +4858,52 @@ export const createWorkbenchBrowserViewManager = ({
         return label || "(no label)";
       };
 
+      const collectLimitedElements = (root, limit, warning) => {
+        const ownerDocument = root.ownerDocument || (root.nodeType === 9 ? root : document);
+        const win = ownerDocument.defaultView || window;
+        const walker = ownerDocument.createTreeWalker(root, win.NodeFilter.SHOW_ELEMENT);
+        const elements = [];
+        let visited = 0;
+        let node = root instanceof win.Element ? root : walker.nextNode();
+        while (node) {
+          if (node instanceof win.Element) {
+            elements.push(node);
+          }
+          visited += 1;
+          if (visited >= limit) {
+            warnings.push(warning);
+            break;
+          }
+          node = walker.nextNode();
+        }
+        return elements;
+      };
+
+      const collectInteractiveCandidates = (root, selector, scope, hostChain) => {
+        if (!LIGHTWEIGHT_STRATEGY) {
+          return Array.from(root.querySelectorAll(selector))
+            .map((element) => ({ element, scope, hostChain }));
+        }
+        const collected = [];
+        for (const element of collectLimitedElements(root, MAX_LIGHTWEIGHT_SCAN_NODES, "interactive_scan_limited")) {
+          if (element.matches?.(selector)) {
+            collected.push({ element, scope, hostChain });
+            if (collected.length >= MAX_LIGHTWEIGHT_CANDIDATES) {
+              warnings.push("interactive_candidate_limit");
+              break;
+            }
+          }
+        }
+        return collected;
+      };
+
+      const collectShadowHosts = (root) => {
+        if (!LIGHTWEIGHT_STRATEGY) {
+          return Array.from(root.querySelectorAll("*"));
+        }
+        return collectLimitedElements(root, MAX_LIGHTWEIGHT_SHADOW_HOSTS, "shadow_host_scan_limited");
+      };
+
       const detectAuthChallengeSignals = (doc, win, frameUrl = "") => {
         const signals = [];
         const pushSignal = (signal) => {
@@ -4979,9 +5041,8 @@ export const createWorkbenchBrowserViewManager = ({
           "[role='menuitem']"
         ].join(",");
         const collectCandidates = (root, scope = "document", hostChain = []) => {
-          const collected = Array.from(root.querySelectorAll(selector))
-            .map((element) => ({ element, scope, hostChain }));
-          const descendants = Array.from(root.querySelectorAll("*"));
+          const collected = collectInteractiveCandidates(root, selector, scope, hostChain);
+          const descendants = collectShadowHosts(root);
           for (const element of descendants) {
             if (element.shadowRoot) {
               collected.push(...collectCandidates(
@@ -5156,56 +5217,116 @@ export const createWorkbenchBrowserViewManager = ({
     const target = await resolveBrowserAgentTarget(tabId, request, request?.timeoutMs);
     const strategy = normalizeAgentObserveStrategy(request?.strategy);
     const timeoutMs = normalizeExecuteScriptTimeoutMs(request?.timeoutMs, 8_000);
+    const lightweightObservation = isLightweightAgentObserveStrategy(strategy);
     if (request?.suppressActivity !== true) {
       publishBrowserAgentActivity({
         tabId,
         targetMode: target.targetMode,
         action: "observe",
         visibleFollow: target.browserMode.visibleFollow,
-        durationMs: Math.max(1_250, Math.min(3_200, timeoutMs))
+        durationMs: lightweightObservation
+          ? Math.max(650, Math.min(1_600, timeoutMs))
+          : Math.max(1_250, Math.min(3_200, timeoutMs))
       });
     }
-    const frameGraph = await buildBrowserAgentSemanticFrameGraph(target, timeoutMs);
     const frameObservations: BrowserAgentRawFrameObservation[] = [];
-    const graphWarnings = [...frameGraph.warnings];
-    const graphBlockedRegions = [...frameGraph.blockedRegions];
-    for (const semanticFrame of frameGraph.frames.slice(0, 48)) {
-      const frame = findFrameInWebContents(target.webContents, semanticFrame.frameTreeNodeId);
-      if (frame === null) {
-        graphWarnings.push(`frame_missing:${semanticFrame.frameTreeNodeId}`);
-        continue;
-      }
+    let frameGraph: BrowserAgentSemanticFrameGraph;
+    let graphWarnings: string[] = [];
+    let graphBlockedRegions: WorkbenchBrowserSemanticBlockedRegion[] = [];
+    if (lightweightObservation) {
+      const mainFrame = target.webContents.mainFrame;
+      const mainFrameBounds = { x: 0, y: 0, width: 1_280, height: 720 };
+      const mainSemanticFrame: WorkbenchBrowserSemanticFrame = {
+        frameRef: createBrowserAgentFrameRef(mainFrame.frameTreeNodeId, mainFrame.url),
+        frameTreeNodeId: mainFrame.frameTreeNodeId,
+        isMainFrame: true,
+        url: mainFrame.url,
+        origin: mainFrame.origin,
+        name: mainFrame.name,
+        bounds: mainFrameBounds,
+        domAccess: "direct",
+        accessibilityStatus: "unknown"
+      };
+      frameGraph = {
+        frames: [mainSemanticFrame],
+        framesByTreeNodeId: new Map([[mainSemanticFrame.frameTreeNodeId, mainSemanticFrame]]),
+        warnings: [],
+        blockedRegions: []
+      };
       try {
         const rawFrame = await runFrameScriptWithTimeout(
-          () => frame.executeJavaScript(
+          () => mainFrame.executeJavaScript(
             buildBrowserAgentObservationScript({
-              frameTreeNodeId: semanticFrame.frameTreeNodeId,
-              frameRef: semanticFrame.frameRef,
-              frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 },
+              frameTreeNodeId: mainSemanticFrame.frameTreeNodeId,
+              frameRef: mainSemanticFrame.frameRef,
+              frameBounds: mainFrameBounds,
               strategy,
-              includeChildFrames: false
+              includeChildFrames: true
             }),
             true
           ),
-          Math.max(500, Math.min(3_000, timeoutMs))
+          Math.max(350, Math.min(1_500, timeoutMs))
         );
         frameObservations.push({
-          frame: semanticFrame,
+          frame: mainSemanticFrame,
           raw: rawFrame !== null && typeof rawFrame === "object" ? rawFrame as Record<string, unknown> : {}
         });
       } catch (error) {
-        graphWarnings.push(`frame_observe_failed:${semanticFrame.frameTreeNodeId}`);
+        graphWarnings.push(`frame_observe_failed:${mainSemanticFrame.frameTreeNodeId}`);
         graphBlockedRegions.push({
-          id: `frame-observe-${semanticFrame.frameTreeNodeId}`,
-          kind: semanticFrame.domAccess === "cdp" ? "cross-origin" : "frame-unavailable",
-          frameRef: semanticFrame.frameRef,
-          frameTreeNodeId: semanticFrame.frameTreeNodeId,
-          ...(semanticFrame.bounds === undefined ? {} : { bounds: semanticFrame.bounds }),
+          id: `frame-observe-${mainSemanticFrame.frameTreeNodeId}`,
+          kind: "frame-unavailable",
+          frameRef: mainSemanticFrame.frameRef,
+          frameTreeNodeId: mainSemanticFrame.frameTreeNodeId,
+          bounds: mainFrameBounds,
           reason: error instanceof Error ? error.message : String(error),
-          ...(semanticFrame.url.length > 0 ? { url: semanticFrame.url } : {}),
+          ...(mainSemanticFrame.url.length > 0 ? { url: mainSemanticFrame.url } : {}),
           fallback: "visual",
-          confidence: semanticFrame.domAccess === "cdp" ? "high" : "medium"
+          confidence: "medium"
         });
+      }
+    } else {
+      frameGraph = await buildBrowserAgentSemanticFrameGraph(target, timeoutMs);
+      graphWarnings = [...frameGraph.warnings];
+      graphBlockedRegions = [...frameGraph.blockedRegions];
+      for (const semanticFrame of frameGraph.frames.slice(0, 48)) {
+        const frame = findFrameInWebContents(target.webContents, semanticFrame.frameTreeNodeId);
+        if (frame === null) {
+          graphWarnings.push(`frame_missing:${semanticFrame.frameTreeNodeId}`);
+          continue;
+        }
+        try {
+          const rawFrame = await runFrameScriptWithTimeout(
+            () => frame.executeJavaScript(
+              buildBrowserAgentObservationScript({
+                frameTreeNodeId: semanticFrame.frameTreeNodeId,
+                frameRef: semanticFrame.frameRef,
+                frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 },
+                strategy,
+                includeChildFrames: false
+              }),
+              true
+            ),
+            Math.max(500, Math.min(3_000, timeoutMs))
+          );
+          frameObservations.push({
+            frame: semanticFrame,
+            raw: rawFrame !== null && typeof rawFrame === "object" ? rawFrame as Record<string, unknown> : {}
+          });
+        } catch (error) {
+          graphWarnings.push(`frame_observe_failed:${semanticFrame.frameTreeNodeId}`);
+          graphBlockedRegions.push({
+            id: `frame-observe-${semanticFrame.frameTreeNodeId}`,
+            kind: semanticFrame.domAccess === "cdp" ? "cross-origin" : "frame-unavailable",
+            frameRef: semanticFrame.frameRef,
+            frameTreeNodeId: semanticFrame.frameTreeNodeId,
+            ...(semanticFrame.bounds === undefined ? {} : { bounds: semanticFrame.bounds }),
+            reason: error instanceof Error ? error.message : String(error),
+            ...(semanticFrame.url.length > 0 ? { url: semanticFrame.url } : {}),
+            fallback: "visual",
+            confidence: semanticFrame.domAccess === "cdp" ? "high" : "medium"
+          });
+        }
       }
     }
 
@@ -5364,20 +5485,22 @@ export const createWorkbenchBrowserViewManager = ({
         return element;
       })
       .filter((item): item is WorkbenchBrowserAgentElement => item !== null);
-    const axElements = await readBrowserAgentAxOnlyElements({
-      tabId,
-      target,
-      rawUrl,
-      frameGraph,
-      mapEpoch,
-      observedAt,
-      existingElements: domElements,
-      startingElementId: nextElementId
-    });
+    const axElements = lightweightObservation
+      ? []
+      : await readBrowserAgentAxOnlyElements({
+          tabId,
+          target,
+          rawUrl,
+          frameGraph,
+          mapEpoch,
+          observedAt,
+          existingElements: domElements,
+          startingElementId: nextElementId
+        });
     let elements: readonly WorkbenchBrowserAgentElement[] = axElements.length > 0
       ? [...domElements, ...axElements]
       : domElements;
-    const visualFallbackFrames = graphBlockedRegions
+    const visualFallbackFrames = lightweightObservation ? [] : graphBlockedRegions
       .filter((region) =>
         (region.kind === "cross-origin" || region.kind === "frame-unavailable")
         && region.fallback === "visual"
@@ -5416,7 +5539,7 @@ export const createWorkbenchBrowserViewManager = ({
       });
       elements = [...elements, ...visualElements];
     }
-    if (elements.length === 0) {
+    if (!lightweightObservation && elements.length === 0) {
       const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
       if (mainFrame !== undefined) {
         elements = [
@@ -5625,7 +5748,7 @@ export const createWorkbenchBrowserViewManager = ({
       return;
     }
     void observeAgentPage(entry.tabId, {
-      strategy: "hybrid",
+      strategy: "interactiveOnly",
       targetMode: "live",
       timeoutMs: 2_500,
       suppressActivity: true
@@ -5681,7 +5804,7 @@ export const createWorkbenchBrowserViewManager = ({
         };
       }
       const observed = await observeAgentPage(tabId, {
-        strategy: "hybrid",
+        strategy: "interactiveOnly",
         targetMode,
         suppressActivity: true,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
@@ -5754,6 +5877,22 @@ export const createWorkbenchBrowserViewManager = ({
     x: element.bounds.x + Math.round(element.bounds.width / 2),
     y: element.bounds.y + Math.round(element.bounds.height / 2)
   });
+
+  const nextRecommendedActionAfterAgentAction = ({
+    navigationStarted,
+    pageChanged
+  }: {
+    readonly navigationStarted: boolean;
+    readonly pageChanged: boolean;
+  }): string => {
+    if (navigationStarted) {
+      return "lyra_lumen.wait";
+    }
+    if (pageChanged) {
+      return "lyra_lumen.map";
+    }
+    return "continue_with_cached_targets";
+  };
 
   const staleElementResult = (
     tabId: string,
@@ -6107,6 +6246,17 @@ export const createWorkbenchBrowserViewManager = ({
         : target.textContent || "";
       let method = "dom";
       try {
+        if (!CLEAR && before === TEXT) {
+          return {
+            ok: true,
+            method: "alreadyMatched",
+            tagName: String(target.tagName || "element").toLowerCase(),
+            role: normalizeText(target.getAttribute?.("role") || "", 40),
+            textChanged: false,
+            textPreview: normalizeText(before, 120),
+            alreadyMatched: true
+          };
+        }
         const segmented = maybeInsertSegmentedText(target);
         if (segmented !== null) {
           return segmented;
@@ -6179,6 +6329,8 @@ export const createWorkbenchBrowserViewManager = ({
     readonly ok: boolean;
     readonly method?: string;
     readonly textChanged?: boolean;
+    readonly textPreview?: string;
+    readonly alreadyMatched?: boolean;
     readonly errorKind?: string;
     readonly message?: string;
   }> => {
@@ -6216,6 +6368,8 @@ export const createWorkbenchBrowserViewManager = ({
       ...(typeof record.method === "string" ? { method: record.method } : {}),
       ...(typeof record.errorKind === "string" ? { errorKind: record.errorKind } : {}),
       ...(typeof record.message === "string" ? { message: record.message } : {}),
+      ...(typeof record.textPreview === "string" ? { textPreview: record.textPreview } : {}),
+      ...(typeof record.alreadyMatched === "boolean" ? { alreadyMatched: record.alreadyMatched } : {}),
       ...(typeof record.textChanged === "boolean" ? { textChanged: record.textChanged } : {})
     };
   };
@@ -6423,9 +6577,11 @@ export const createWorkbenchBrowserViewManager = ({
       readonly targetRef?: string;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const verification = normalizeAgentVerification(request.verification);
     const { element, observationId, staleTarget } = await findAgentElement(
       tabId,
       {
@@ -6473,7 +6629,9 @@ export const createWorkbenchBrowserViewManager = ({
     }
 
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const beforeFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
     const { x, y } = centerOfAgentElement(element);
     const interaction = request.interaction;
     await performAgentPointerInteraction({
@@ -6483,9 +6641,11 @@ export const createWorkbenchBrowserViewManager = ({
       y,
       interaction,
     });
-    await delay(interaction === "hover" ? 80 : 120);
+    await delay(interaction === "hover" ? 40 : 30);
 
-    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const after = verification === "full"
+      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
+      : null;
     if (isAgentEditableElement(element)) {
       cacheBrowserAgentInputTarget(
         tabId,
@@ -6495,7 +6655,11 @@ export const createWorkbenchBrowserViewManager = ({
         after?.observationId ?? observationId
       );
     }
-    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const afterFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
+    const pageChanged = beforeUrl !== agentTargetAddress(target);
+    const navigationStarted = agentTargetIsLoading(target);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -6507,13 +6671,14 @@ export const createWorkbenchBrowserViewManager = ({
       targetRef: element.targetRef,
       x,
       y,
+      verification,
       ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
-      pageChanged: beforeUrl !== agentTargetAddress(target),
-      focusChanged: beforeFocus !== afterFocus,
-      navigationStarted: agentTargetIsLoading(target),
+      pageChanged,
+      ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
+      navigationStarted,
       message: `${interaction} sent to element ${element.id} (${element.targetRef}) with Chromium virtual input.`,
-      nextRecommendedAction: "lyra_lumen.map"
+      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };
 
@@ -6523,11 +6688,15 @@ export const createWorkbenchBrowserViewManager = ({
       readonly point: WorkbenchBrowserAgentPoint;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const verification = normalizeAgentVerification(request.verification);
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const beforeFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
     const x = Math.max(0, Math.round(request.point.x));
     const y = Math.max(0, Math.round(request.point.y));
     const interaction = request.interaction;
@@ -6538,9 +6707,11 @@ export const createWorkbenchBrowserViewManager = ({
       y,
       interaction,
     });
-    await delay(interaction === "hover" ? 80 : 120);
+    await delay(interaction === "hover" ? 40 : 30);
 
-    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    const after = verification === "full"
+      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
+      : null;
     const activeEditableElement = after === null ? null : activeEditableElementFromObservation(after);
     if (activeEditableElement !== null) {
       cacheBrowserAgentInputTarget(
@@ -6551,7 +6722,11 @@ export const createWorkbenchBrowserViewManager = ({
         after?.observationId
       );
     }
-    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const afterFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
+    const pageChanged = beforeUrl !== agentTargetAddress(target);
+    const navigationStarted = agentTargetIsLoading(target);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -6561,14 +6736,15 @@ export const createWorkbenchBrowserViewManager = ({
       browserMode: target.browserMode,
       x,
       y,
+      verification,
       ...(after === null ? {} : { afterObservationId: after.observationId }),
-      pageChanged: beforeUrl !== agentTargetAddress(target),
-      focusChanged: beforeFocus !== afterFocus,
-      navigationStarted: agentTargetIsLoading(target),
+      pageChanged,
+      ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
+      navigationStarted,
       message:
         `${interaction} sent to visual fallback point (${x}, ${y})` +
         (request.point.reason === undefined ? "." : `: ${request.point.reason}`),
-      nextRecommendedAction: "lyra_lumen.map"
+      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };
 
@@ -6580,9 +6756,11 @@ export const createWorkbenchBrowserViewManager = ({
       readonly text: string;
       readonly clear?: boolean;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const verification = normalizeAgentVerification(request.verification);
     const currentUrl = agentTargetAddress(target);
     let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
     let element: WorkbenchBrowserAgentElement | null = null;
@@ -6612,7 +6790,7 @@ export const createWorkbenchBrowserViewManager = ({
       element = found.element;
     } else {
       const observed = await observeAgentPage(tabId, {
-        strategy: "hybrid",
+        strategy: "interactiveOnly",
         targetMode: target.targetMode,
         suppressActivity: true,
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
@@ -6630,7 +6808,9 @@ export const createWorkbenchBrowserViewManager = ({
 
     const { x, y } = centerOfAgentElement(element);
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const beforeFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
     await performAgentPointerInteraction({
       tabId,
       target,
@@ -6708,16 +6888,23 @@ export const createWorkbenchBrowserViewManager = ({
       };
     }
 
-    await delay(80);
-    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
+    await delay(30);
+    const after = verification === "full"
+      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
+      : null;
     cacheBrowserAgentInputTarget(
       tabId,
       target.targetMode,
       element,
-      after?.url ?? agentTargetAddress(target),
+      after?.url ?? currentUrl,
       after?.observationId ?? beforeObservationId
     );
-    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const afterFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
+    const pageChanged = beforeUrl !== agentTargetAddress(target);
+    const navigationStarted = agentTargetIsLoading(target);
+    const inputValuePreview = insertion.textPreview;
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -6729,15 +6916,22 @@ export const createWorkbenchBrowserViewManager = ({
       targetRef: element.targetRef,
       x,
       y,
+      verification,
+      ...(inputValuePreview === undefined ? {} : { inputValuePreview }),
+      ...(typeof insertion.textChanged === "boolean" ? { inputTextChanged: insertion.textChanged } : {}),
+      ...(insertion.alreadyMatched === true ? { inputAlreadyMatched: true } : {}),
+      ...(insertion.method === undefined ? {} : { inputInsertionMethod: insertion.method }),
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
-      pageChanged: beforeUrl !== agentTargetAddress(target),
-      focusChanged: beforeFocus !== afterFocus,
-      navigationStarted: agentTargetIsLoading(target),
+      pageChanged,
+      ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
+      navigationStarted,
       message:
-        `Typed into editable element ${element.id}` +
-        (insertion.method === undefined ? "." : ` via ${insertion.method}.`),
-      nextRecommendedAction: "lyra_lumen.map"
+        insertion.alreadyMatched === true
+          ? `Editable element ${element.id} already contained the requested text.`
+          : `Typed into editable element ${element.id}` +
+            (insertion.method === undefined ? "." : ` via ${insertion.method}.`),
+      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };
 
@@ -6748,9 +6942,11 @@ export const createWorkbenchBrowserViewManager = ({
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const verification = normalizeAgentVerification(request.verification);
     let beforeObservationId = browserAgentCache.get(browserAgentCacheKey(tabId, target.targetMode))?.observationId;
     let elementId = request.elementId;
     let targetRef = request.targetRef;
@@ -6765,6 +6961,7 @@ export const createWorkbenchBrowserViewManager = ({
         visibleFollow: target.browserMode.visibleFollow,
         authState: target.browserMode.authState === "borrowedLiveLogin" ? "borrowLiveLogin" : "none",
         useLiveLoginState: target.browserMode.authState === "borrowedLiveLogin",
+        verification: "none",
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
       });
       if (focused.ok === false) {
@@ -6791,16 +6988,24 @@ export const createWorkbenchBrowserViewManager = ({
       durationMs: 1_550
     });
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    const beforeFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
     target.webContents.focus();
     sendAgentInputEvent(target, { type: "keyDown", keyCode: request.key });
     if (request.key.length === 1) {
       sendAgentInputEvent(target, { type: "char", keyCode: request.key });
     }
     sendAgentInputEvent(target, { type: "keyUp", keyCode: request.key });
-    await delay(80);
-    const after = await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs);
-    const afterFocus = await readFocusedElementSignature(target, request.timeoutMs);
+    await delay(30);
+    const after = verification === "full"
+      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
+      : null;
+    const afterFocus = verification === "full"
+      ? await readFocusedElementSignature(target, request.timeoutMs)
+      : "";
+    const pageChanged = beforeUrl !== agentTargetAddress(target);
+    const navigationStarted = agentTargetIsLoading(target);
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -6812,13 +7017,14 @@ export const createWorkbenchBrowserViewManager = ({
       ...(targetRef === undefined ? {} : { targetRef }),
       ...(x === undefined ? {} : { x }),
       ...(y === undefined ? {} : { y }),
+      verification,
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
-      pageChanged: beforeUrl !== agentTargetAddress(target),
-      focusChanged: beforeFocus !== afterFocus,
-      navigationStarted: agentTargetIsLoading(target),
+      pageChanged,
+      ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
+      navigationStarted,
       message: `Pressed ${request.key} with Chromium virtual keyboard.`,
-      nextRecommendedAction: "lyra_lumen.map"
+      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };
 

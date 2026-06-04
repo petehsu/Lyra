@@ -1,44 +1,108 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 
-import type { LyraDesktopApi, WorkbenchBrowserPageRuntimeState } from "../../../shared/desktop-bridge";
+import type {
+  AgentSessionSummary,
+  LyraDesktopApi,
+  WorkbenchBrowserPageRuntimeState
+} from "../../../shared/desktop-bridge";
+import type {
+  AgentSessionHistoryCategory,
+  AgentSessionHistoryLocateRequest
+} from "../agent-session-history";
 import type { FileEditorAppState } from "../file-editor";
 import type { FileManagerAppState } from "../file-manager";
 import type { WorkbenchOmniboxNonBrowserSubmitTarget } from "../preferences";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
+import { filterBrowserHistoryEntries, readBrowserHistoryEntries } from "../browser-history/service";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
 import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
 
 export type OmniboxSuggestion = {
   readonly value: string;
-  readonly type: "preset" | "search" | "history";
+  readonly type: "search" | "history";
   readonly label?: string;
+  readonly historyTarget?: AgentSessionHistoryLocateRequest["target"];
 };
 
-const DEVELOPER_PRESETS: readonly OmniboxSuggestion[] = [
-  { value: "github.com", type: "preset", label: "GitHub" },
-  { value: "google.com", type: "preset", label: "Google" },
-  { value: "vercel.com", type: "preset", label: "Vercel" },
-  { value: "npmjs.com", type: "preset", label: "NPM Registry" },
-  { value: "aws.amazon.com", type: "preset", label: "AWS Console" },
-  { value: "claude.ai", type: "preset", label: "Anthropic Claude" },
-  { value: "chatgpt.com", type: "preset", label: "OpenAI ChatGPT" },
-  { value: "gemini.google.com", type: "preset", label: "Google Gemini" },
-  { value: "stackoverflow.com", type: "preset", label: "Stack Overflow" }
+type OpenSearchSuggestionProvider = {
+  readonly id: string;
+  readonly label: string;
+  readonly suggestionUrl: string;
+};
+
+const DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS: readonly OpenSearchSuggestionProvider[] = [
+  {
+    id: "google-opensearch",
+    label: "Google",
+    suggestionUrl:
+      "https://suggestqueries.google.com/complete/search?client=firefox&q={searchTerms}"
+  }
 ];
 
-const fetchSearchSuggestions = async (query: string): Promise<string[]> => {
+const MEDIAWIKI_OPENSEARCH_PROVIDER: OpenSearchSuggestionProvider = {
+  id: "wikipedia-opensearch",
+  label: "Wikipedia",
+  suggestionUrl:
+    "https://en.wikipedia.org/w/api.php?action=opensearch&search={searchTerms}&limit=5&namespace=0&format=json&origin=*"
+};
+
+const resolveOpenSearchSuggestionUrl = (
+  template: string,
+  query: string
+): string => {
+  const encoded = encodeURIComponent(query);
+  if (template.includes("{searchTerms}")) {
+    return template.replaceAll("{searchTerms}", encoded);
+  }
+  const separator = template.includes("?") ? "&" : "?";
+  return `${template}${separator}q=${encoded}`;
+};
+
+export const parseOpenSearchSuggestionPayload = (
+  payload: unknown
+): readonly string[] => {
+  if (!Array.isArray(payload) || payload.length < 2 || !Array.isArray(payload[1])) {
+    return [];
+  }
+  return payload[1]
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+};
+
+const fetchOpenSearchSuggestions = async (
+  query: string,
+  provider: OpenSearchSuggestionProvider
+): Promise<readonly OmniboxSuggestion[]> => {
   if (query.trim().length === 0) return [];
   try {
-    const res = await fetch(`https://suggestqueries.google.com/complete/search?client=chrome&q=${encodeURIComponent(query)}`);
+    const res = await fetch(resolveOpenSearchSuggestionUrl(provider.suggestionUrl, query));
     if (!res.ok) return [];
-    const data = await res.json();
-    if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1])) {
-      return data[1].map(s => String(s));
-    }
+    const suggestions = parseOpenSearchSuggestionPayload(await res.json());
+    return suggestions.map((suggestion) => ({
+      value: suggestion,
+      type: "search" as const,
+      label: provider.label
+    }));
   } catch (err) {
-    console.error("Failed to fetch suggestions:", err);
+    console.error(`Failed to fetch ${provider.label} suggestions:`, err);
   }
   return [];
+};
+
+const fetchSearchSuggestions = async (
+  query: string
+): Promise<readonly OmniboxSuggestion[]> => {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length === 0) return [];
+
+  const providers = [
+    ...DEFAULT_OPENSEARCH_SUGGESTION_PROVIDERS,
+    MEDIAWIKI_OPENSEARCH_PROVIDER
+  ];
+  const batches = await Promise.all(
+    providers.map((provider) => fetchOpenSearchSuggestions(trimmedQuery, provider))
+  );
+  return batches.flat();
 };
 
 type UseTitlebarNavigationModelOptions = {
@@ -57,6 +121,17 @@ type UseTitlebarNavigationModelOptions = {
   readonly submitLabel: string;
   readonly reloadLabel: string;
   readonly onReload: () => void;
+  readonly historyAppPlaceholder?: string;
+  readonly onHistoryAppReload?: () => void;
+  readonly historyAppSuggestionLabels?: {
+    readonly sessions: string;
+    readonly projectSessions: string;
+    readonly archivedSessions: string;
+    readonly browserHistory: string;
+  };
+  readonly onHistoryAppSuggestionSelect?: (
+    target: AgentSessionHistoryLocateRequest["target"]
+  ) => void;
   readonly onOpenFilePath: (path: string) => string | null;
   readonly onOpenDirectoryPath: (path: string) => Promise<void> | void;
   readonly onRunTerminalCommand?: (command: string) => Promise<void> | void;
@@ -86,6 +161,95 @@ type TitlebarNavigationModel = {
 const isBrowserLikeTab = (tab: WorkspaceTab | undefined): tab is WorkspaceTab =>
   tab !== undefined &&
   (tab.pageKind === "page" || tab.pageKind === "search" || tab.pageKind === "results");
+
+type HistoryAppWorkspaceTab = WorkspaceTab & {
+  readonly pageKind: "app";
+  readonly appId: "agent-session-history";
+};
+
+const isHistoryAppTab = (tab: WorkspaceTab | undefined): tab is HistoryAppWorkspaceTab =>
+  tab?.pageKind === "app" && tab.appId === "agent-session-history";
+
+const hasProjectBinding = (session: AgentSessionSummary): boolean =>
+  (session.workingDir ?? "").trim().length > 0;
+
+const getSessionHistoryCategory = (
+  session: AgentSessionSummary
+): Exclude<AgentSessionHistoryCategory, "browser-history"> => {
+  if (session.archived) {
+    return "archived-sessions";
+  }
+  return hasProjectBinding(session) ? "project-sessions" : "sessions";
+};
+
+const getHistoryCategoryLabel = (
+  category: AgentSessionHistoryCategory,
+  labels: NonNullable<UseTitlebarNavigationModelOptions["historyAppSuggestionLabels"]>
+): string => {
+  switch (category) {
+    case "sessions":
+      return labels.sessions;
+    case "project-sessions":
+      return labels.projectSessions;
+    case "archived-sessions":
+      return labels.archivedSessions;
+    case "browser-history":
+      return labels.browserHistory;
+  }
+};
+
+const historySessionSearchText = (session: AgentSessionSummary): string =>
+  [
+    session.title,
+    session.customTitle,
+    session.saveLabel,
+    session.shortName
+  ].filter(Boolean).join(" ").toLocaleLowerCase();
+
+const fetchHistoryAppSuggestions = async (
+  query: string,
+  desktopApi: LyraDesktopApi | null,
+  labels: NonNullable<UseTitlebarNavigationModelOptions["historyAppSuggestionLabels"]>
+): Promise<readonly OmniboxSuggestion[]> => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (normalizedQuery.length === 0) {
+    return [];
+  }
+
+  const sessionSuggestions =
+    desktopApi?.agent === undefined
+      ? []
+      : (await desktopApi.agent.listSessions({ limit: 500 })).sessions
+        .filter((session) => historySessionSearchText(session).includes(normalizedQuery))
+        .map((session) => {
+          const category = getSessionHistoryCategory(session);
+          return {
+            value: session.title,
+            type: "history" as const,
+            label: getHistoryCategoryLabel(category, labels),
+            historyTarget: {
+              kind: "session" as const,
+              sessionId: session.id,
+              category
+            }
+          };
+        });
+
+  const browserHistorySuggestions = filterBrowserHistoryEntries(
+    readBrowserHistoryEntries(),
+    query
+  ).map((entry) => ({
+    value: entry.title,
+    type: "history" as const,
+    label: labels.browserHistory,
+    historyTarget: {
+      kind: "browser-history" as const,
+      entryId: entry.id
+    }
+  }));
+
+  return [...sessionSuggestions, ...browserHistorySuggestions].slice(0, 7);
+};
 
 const getContextualValue = (params: {
   readonly activeTab: WorkspaceTab | undefined;
@@ -133,6 +297,10 @@ export const useTitlebarNavigationModel = ({
   submitLabel,
   reloadLabel,
   onReload,
+  historyAppPlaceholder,
+  onHistoryAppReload,
+  historyAppSuggestionLabels,
+  onHistoryAppSuggestionSelect,
   onOpenFilePath,
   onOpenDirectoryPath,
   onRunTerminalCommand
@@ -158,7 +326,8 @@ export const useTitlebarNavigationModel = ({
 
   const currentDraft = activeTab === undefined ? undefined : draftByTabId[activeTab.id];
   const activeTabId = activeTab?.id ?? null;
-  const value = isBrowserLikeTab(activeTab)
+  const activeTabIsHistoryApp = isHistoryAppTab(activeTab);
+  const value = isBrowserLikeTab(activeTab) || activeTabIsHistoryApp
     ? activeTab.inputValue
     : currentDraft ?? contextualValue;
   const activePageAddress =
@@ -166,47 +335,83 @@ export const useTitlebarNavigationModel = ({
       ? activePageRuntimeState?.address ?? activeTab.displayAddress
       : "";
   const primaryActionKind: TitlebarNavigationPrimaryActionKind =
-    activeTab?.pageKind === "page" &&
-    activePageAddress.length > 0 &&
-    value.trim() === activePageAddress
+    activeTabIsHistoryApp
       ? "reload"
-      : "submit";
+      : (
+        activeTab?.pageKind === "page" &&
+        activePageAddress.length > 0 &&
+        value.trim() === activePageAddress
+      )
+        ? "reload"
+        : "submit";
   const isContextualAddress =
     isBrowserLikeTab(activeTab) === false &&
+    activeTabIsHistoryApp === false &&
     currentDraft === undefined &&
     contextualValue.trim().length > 0;
+  const resolvedPlaceholder =
+    activeTabIsHistoryApp && historyAppPlaceholder !== undefined
+      ? historyAppPlaceholder
+      : placeholder;
 
   // Search Autocomplete Suggestion Fetching & Debouncing
   useEffect(() => {
-    if (value.trim().length === 0) {
-      setSuggestions([]);
-      setSelectedIndex(-1);
+    if (
+      !showSuggestions
+      || (!isBrowserLikeTab(activeTab) && !activeTabIsHistoryApp)
+      || value.trim().length === 0
+    ) {
+      setSuggestions((current) => current.length === 0 ? current : []);
+      setSelectedIndex((current) => current === -1 ? current : -1);
       return;
     }
 
+    let cancelled = false;
     const timer = setTimeout(async () => {
-      const searchSuggs = await fetchSearchSuggestions(value);
+      if (activeTabIsHistoryApp) {
+        const nextHistorySuggestions =
+          historyAppSuggestionLabels === undefined
+            ? []
+            : await fetchHistoryAppSuggestions(
+              value,
+              desktopApi,
+              historyAppSuggestionLabels
+            ).catch(() => []);
+        if (cancelled) {
+          return;
+        }
+        setSuggestions(nextHistorySuggestions);
+        setSelectedIndex(-1);
+        return;
+      }
 
-      const matchedPresets = DEVELOPER_PRESETS.filter(
-        p => p.value.toLowerCase().includes(value.toLowerCase()) ||
-          (p.label && p.label.toLowerCase().includes(value.toLowerCase()))
-      );
+      const searchSuggestions = await fetchSearchSuggestions(value);
+      if (cancelled) {
+        return;
+      }
 
-      const matchedHistory = sessionHistory
-        .filter(h => h.toLowerCase().includes(value.toLowerCase()))
-        .map(h => ({ value: h, type: "history" as const }));
-
-      const formattedSearchSuggs = searchSuggs.map(s => ({
-        value: s,
-        type: "search" as const
+      const matchedSessionHistory = sessionHistory
+        .filter((entry) => entry.toLocaleLowerCase().includes(value.toLocaleLowerCase()))
+        .map((entry) => ({
+          value: entry,
+          type: "history" as const
+        }));
+      const matchedBrowserHistory = filterBrowserHistoryEntries(
+        readBrowserHistoryEntries(),
+        value
+      ).map((entry) => ({
+        value: entry.url,
+        type: "history" as const,
+        label: entry.title
       }));
 
-      const combined = [...matchedPresets, ...matchedHistory, ...formattedSearchSuggs];
+      const combined = [...matchedSessionHistory, ...matchedBrowserHistory, ...searchSuggestions];
 
       const seen = new Set<string>();
       const unique = combined.filter(item => {
-        if (seen.has(item.value)) return false;
-        seen.add(item.value);
+        const key = item.value.trim().toLowerCase();
+        if (key.length === 0 || seen.has(key)) return false;
+        seen.add(key);
         return true;
       }).slice(0, 7);
 
@@ -214,8 +419,19 @@ export const useTitlebarNavigationModel = ({
       setSelectedIndex(-1);
     }, 150);
 
-    return () => clearTimeout(timer);
-  }, [value, sessionHistory]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    activeTab,
+    activeTabIsHistoryApp,
+    desktopApi,
+    historyAppSuggestionLabels,
+    sessionHistory,
+    showSuggestions,
+    value
+  ]);
 
   const clearDraft = useCallback((tabId: string): void => {
     setDraftByTabId((current) => {
@@ -233,7 +449,7 @@ export const useTitlebarNavigationModel = ({
       return;
     }
 
-    if (isBrowserLikeTab(activeTab)) {
+    if (isBrowserLikeTab(activeTab) || isHistoryAppTab(activeTab)) {
       tabsModel.updateActiveInput(nextValue);
       return;
     }
@@ -345,6 +561,10 @@ export const useTitlebarNavigationModel = ({
     }
 
     if (primaryActionKind === "reload") {
+      if (activeTabIsHistoryApp) {
+        onHistoryAppReload?.();
+        return;
+      }
       onReload();
       return;
     }
@@ -355,19 +575,31 @@ export const useTitlebarNavigationModel = ({
   }, [
     activeTab,
     activeTabId,
+    activeTabIsHistoryApp,
     desktopApi,
     executeResolution,
+    onHistoryAppReload,
     primaryActionKind,
     onReload,
     value
   ]);
 
-  const onSuggestionClick = useCallback(async (sug: OmniboxSuggestion) => {
+  const selectSuggestion = useCallback(async (sug: OmniboxSuggestion) => {
     onChange(sug.value);
     setShowSuggestions(false);
+    if (activeTabIsHistoryApp && sug.historyTarget !== undefined) {
+      onHistoryAppSuggestionSelect?.(sug.historyTarget);
+      return;
+    }
     const resolution = await resolveWorkbenchNavigationInput(sug.value, desktopApi);
     await executeResolution(resolution);
-  }, [onChange, desktopApi, executeResolution]);
+  }, [
+    activeTabIsHistoryApp,
+    desktopApi,
+    executeResolution,
+    onChange,
+    onHistoryAppSuggestionSelect
+  ]);
 
   const onKeyDown = useCallback(
     async (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -388,15 +620,12 @@ export const useTitlebarNavigationModel = ({
           event.preventDefault();
           const selected = suggestions[selectedIndex];
           if (selected !== undefined) {
-            onChange(selected.value);
-            setShowSuggestions(false);
-            const resolution = await resolveWorkbenchNavigationInput(selected.value, desktopApi);
-            await executeResolution(resolution);
+            await selectSuggestion(selected);
           }
         }
       }
     },
-    [showSuggestions, suggestions, selectedIndex, onChange, executeResolution, desktopApi]
+    [showSuggestions, suggestions, selectedIndex, selectSuggestion]
   );
 
   const onBlur = useCallback((): void => {
@@ -415,7 +644,7 @@ export const useTitlebarNavigationModel = ({
 
   return {
     value,
-    placeholder,
+    placeholder: resolvedPlaceholder,
     ariaLabel,
     submitLabel,
     reloadLabel,
@@ -431,6 +660,6 @@ export const useTitlebarNavigationModel = ({
     selectedIndex,
     showSuggestions,
     onKeyDown,
-    onSuggestionClick
+    onSuggestionClick: selectSuggestion
   };
 };

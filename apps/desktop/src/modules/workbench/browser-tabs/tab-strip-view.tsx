@@ -248,6 +248,7 @@ export const BrowserTabStripView = ({
                   && "lyra-browser-tab-item-new"
               )}
               data-lyra-tab-id={tabModel.tab.id}
+              data-agent-active={tabModel.isAgentActive ? "true" : "false"}
               allowWebDrag
               draggable
               onMouseDown={(event) => {

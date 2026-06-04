@@ -26,7 +26,13 @@ import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { useBrowserSearchModel } from "../browser-search";
+import { readBrowserHistoryEntries } from "../browser-history/service";
+import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
+import type {
+  AgentSessionHistoryBrowserPreviewPage,
+  AgentSessionHistoryLocateRequest
+} from "../agent-session-history";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
@@ -52,14 +58,11 @@ import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridg
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
+import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
-import { createAgentProjectTreeAppRequest } from "../agent-project-tree";
-import { createAgentGitAppRequest } from "../agent-git";
-import { createAgentSelfDevAppRequest } from "../agent-selfdev";
-import { createAgentOvernightAppRequest } from "../agent-overnight";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
 import {
   useWorkbenchSystemNotificationActivation,
@@ -75,6 +78,7 @@ import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } f
 
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 16;
+const AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID = "lyra-agent-history-browser-preview";
 
 export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
@@ -85,7 +89,15 @@ export const WorkbenchShell = () => {
 
   const [isMaximized, setIsMaximized] = useState(false);
   const [stackedBrowserTabs, setStackedBrowserTabs] = useState(false);
-  const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | null>(null);
+  const aiSessionTabsModel = useWorkbenchAiSessionTabs(desktopApi);
+  const [agentHistoryRefreshRequestKey, setAgentHistoryRefreshRequestKey] = useState(0);
+  const [agentHistoryLocateRequest, setAgentHistoryLocateRequest] =
+    useState<AgentSessionHistoryLocateRequest | null>(null);
+  const [agentHistoryBrowserPreviewPage, setAgentHistoryBrowserPreviewPage] =
+    useState<AgentSessionHistoryBrowserPreviewPage | null>(null);
+  const [browserHistoryEntries, setBrowserHistoryEntries] = useState(() =>
+    readBrowserHistoryEntries()
+  );
 
   const t = useMemo(
     () => createTranslator(preferencesModel.preferences.locale),
@@ -116,6 +128,27 @@ resolvedThemeId,
     () => createWorkbenchChromeLabels(t),
     [t]
   );
+  const historyAppSuggestionLabels = useMemo(() => ({
+    sessions: labels.agentSessionHistory.categorySessions,
+    projectSessions: labels.agentSessionHistory.categoryProjectSessions,
+    archivedSessions: labels.agentSessionHistory.categoryArchivedSessions,
+    browserHistory: labels.agentSessionHistory.categoryBrowserHistory
+  }), [labels.agentSessionHistory]);
+  const refreshBrowserHistoryEntries = useCallback((): void => {
+    setBrowserHistoryEntries(readBrowserHistoryEntries());
+  }, []);
+  const embeddedBrowserPages = useMemo(
+    () => agentHistoryBrowserPreviewPage === null
+      ? []
+      : [
+          {
+            tabId: agentHistoryBrowserPreviewPage.tabId,
+            address: agentHistoryBrowserPreviewPage.url,
+            titleHint: agentHistoryBrowserPreviewPage.title
+          }
+        ],
+    [agentHistoryBrowserPreviewPage]
+  );
   const {
     activePageRuntimeState,
     browserAgentVisualState,
@@ -131,9 +164,11 @@ resolvedThemeId,
     activeBrowserTabId,
     activePageTabId,
     visibleWorkspaceLayout,
+    embeddedBrowserPages,
     themeVars,
     forceWebPageThemingEnabled:
-      preferencesModel.preferences.forceWebPageThemingEnabled
+      preferencesModel.preferences.forceWebPageThemingEnabled,
+    onBrowserHistoryChange: refreshBrowserHistoryEntries
   });
   const beginBrowserLayoutAnimationSync = useBrowserLayoutAnimationSync({
     panelLayoutModel,
@@ -293,108 +328,17 @@ resolvedThemeId,
       tabsModel,
       confirmLabel: t("ai.bindProjectConfirm")
     });
-  const onOpenAgentProjectTree = useCallback((request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-  }): void => {
-    const sessionId = request.sessionId.trim();
-    const workingDir = request.workingDir.trim();
-    if (sessionId.length === 0 || workingDir.length === 0) {
-      return;
-    }
-    const nextApp = createAgentProjectTreeAppRequest(sessionId, workingDir);
-    agentProjectTreeModel.ensureInstance(nextApp.appInstanceId, {
-      agentSessionId: sessionId,
-      rootPath: workingDir,
-      title: nextApp.title
-    });
-    const existingTab = tabsModel.tabs.find(
-      (tab) =>
-        tab.pageKind === "app" &&
-        tab.appId === nextApp.appId &&
-        tab.appInstanceId === nextApp.appInstanceId
-    );
-    if (existingTab !== undefined) {
-      tabsModel.updateAppTabMeta(nextApp);
-      tabsModel.setActiveTab(existingTab.id);
-      return;
-    }
-    tabsModel.openAppTab(nextApp);
-  }, [
+  const {
+    onOpenAgentProjectTree,
+    onOpenAgentGit,
+    onOpenAgentSelfDevLab,
+    onOpenAgentOvernightLab
+  } = useWorkbenchAgentAppOpeners({
+    tabsModel,
     agentProjectTreeModel,
-    tabsModel
-  ]);
-  const onOpenAgentGit = useCallback((request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-  }): void => {
-    const sessionId = request.sessionId.trim();
-    const workingDir = request.workingDir.trim();
-    if (sessionId.length === 0 || workingDir.length === 0) {
-      return;
-    }
-    const nextApp = createAgentGitAppRequest(sessionId, workingDir);
-    const existingTab = tabsModel.tabs.find(
-      (tab) =>
-        tab.pageKind === "app" &&
-        tab.appId === nextApp.appId &&
-        tab.appInstanceId === nextApp.appInstanceId
-    );
-    if (existingTab !== undefined) {
-      tabsModel.updateAppTabMeta(nextApp);
-      tabsModel.setActiveTab(existingTab.id);
-      return;
-    }
-    tabsModel.openAppTab(nextApp);
-  }, [tabsModel]);
-  const onOpenAgentSelfDevLab = useCallback((request: {
-    readonly parentSessionId: string | null;
-  }): void => {
-    const parentSessionId = request.parentSessionId?.trim() || null;
-    const nextApp = createAgentSelfDevAppRequest(
-      labels.agentSelfDev.title,
-      parentSessionId
-    );
-    const existingTab = tabsModel.tabs.find(
-      (tab) =>
-        tab.pageKind === "app" &&
-        tab.appId === nextApp.appId &&
-        tab.appInstanceId === nextApp.appInstanceId
-    );
-    if (existingTab !== undefined) {
-      tabsModel.updateAppTabMeta(nextApp);
-      tabsModel.setActiveTab(existingTab.id);
-      return;
-    }
-    tabsModel.openAppTab(nextApp);
-  }, [
-    labels.agentSelfDev.title,
-    tabsModel
-  ]);
-  const onOpenAgentOvernightLab = useCallback((request: {
-    readonly parentSessionId: string | null;
-  }): void => {
-    const parentSessionId = request.parentSessionId?.trim() || null;
-    const nextApp = createAgentOvernightAppRequest(
-      labels.agentOvernight.title,
-      parentSessionId
-    );
-    const existingTab = tabsModel.tabs.find(
-      (tab) =>
-        tab.pageKind === "app" &&
-        tab.appId === nextApp.appId &&
-        tab.appInstanceId === nextApp.appInstanceId
-    );
-    if (existingTab !== undefined) {
-      tabsModel.updateAppTabMeta(nextApp);
-      tabsModel.setActiveTab(existingTab.id);
-      return;
-    }
-    tabsModel.openAppTab(nextApp);
-  }, [
-    labels.agentOvernight.title,
-    tabsModel
-  ]);
+    agentSelfDevTitle: labels.agentSelfDev.title,
+    agentOvernightTitle: labels.agentOvernight.title
+  });
   const onOpenAgentModelSettings = useCallback((): void => {
     setSettingsFocusRequest((current) => ({
       categoryId: "ai",
@@ -548,6 +492,18 @@ resolvedThemeId,
     submitLabel: t("navigation.submitAction"),
     reloadLabel: t("navigation.reloadAction"),
     onReload,
+    historyAppPlaceholder: labels.agentSessionHistory.searchPlaceholder,
+    historyAppSuggestionLabels,
+    onHistoryAppReload: () => {
+      refreshBrowserHistoryEntries();
+      setAgentHistoryRefreshRequestKey((current) => current + 1);
+    },
+    onHistoryAppSuggestionSelect: (target) => {
+      setAgentHistoryLocateRequest((current) => ({
+        requestKey: (current?.requestKey ?? 0) + 1,
+        target
+      }));
+    },
     onOpenFilePath: (path) => onOpenFileFromManager(path),
     onOpenDirectoryPath: openDirectoryFromNavigation,
     onRunTerminalCommand
@@ -566,8 +522,13 @@ resolvedThemeId,
 
   const sidebarAiSurfacePropsWithFileOpen = {
     ...sidebarAiSurfaceProps,
-    activeSessionId: activeAgentSessionId,
-    onActiveSessionChange: setActiveAgentSessionId
+    activeSessionId: aiSessionTabsModel.activeSessionId,
+    onActiveSessionChange: aiSessionTabsModel.activateSession,
+    sessionTabs: aiSessionTabsModel.tabs,
+    onActivateSessionTab: aiSessionTabsModel.activateSession,
+    onCloseSessionTab: aiSessionTabsModel.closeSession,
+    onCreateSessionTab: aiSessionTabsModel.createSession,
+    onSessionSnapshotChange: aiSessionTabsModel.upsertSnapshot
   };
   useWorkbenchEmptyAppTabGuards({
     tabsModel,
@@ -600,12 +561,13 @@ resolvedThemeId,
     if (trimmedSessionId.length === 0) {
       return;
     }
-    setActiveAgentSessionId(trimmedSessionId);
+    aiSessionTabsModel.openSession(trimmedSessionId);
     if (!panelLayoutModel.isLeftPanelVisible) {
       beginBrowserLayoutAnimationSync();
       panelLayoutModel.toggleLeftPanel();
     }
   }, [
+    aiSessionTabsModel,
     beginBrowserLayoutAnimationSync,
     panelLayoutModel.isLeftPanelVisible,
     panelLayoutModel.toggleLeftPanel
@@ -646,9 +608,21 @@ resolvedThemeId,
     onOpenAgentGit,
     agentSessionHistory: {
       labels: labels.agentSessionHistory,
-      activeSessionId: activeAgentSessionId,
+      activeSessionId: aiSessionTabsModel.activeSessionId,
       onOpenSession: onOpenAgentSession,
       openDialog: globalDialogModel.openDialog,
+      query: activeTab?.pageKind === "app" && activeTab.appId === "agent-session-history"
+        ? activeTab.inputValue
+        : "",
+      refreshRequestKey: agentHistoryRefreshRequestKey,
+      locateRequest: agentHistoryLocateRequest,
+      browserHistory: browserHistoryEntries,
+      browserHistoryPreviewPageId: AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID,
+      onBrowserHistoryPreviewChange: setAgentHistoryBrowserPreviewPage,
+      onBrowserHistoryPreviewHostChange: registerPageHost,
+      onOpenBrowserHistoryEntry: (entry) => {
+        tabsModel.openPageInNewTab(entry.url, entry.title);
+      },
       locale: preferencesModel.preferences.locale
     }
   });
@@ -737,13 +711,13 @@ resolvedThemeId,
         />
         <AgentBrowserActivityOverlay
           state={browserAgentVisualState}
-          recoveryFailure={activePageRuntimeState?.recoveryFailure}
         />
       </>
     ),
     browserTabs: (
       <WorkspaceTabsAdapter
         {...workspaceTabsProps}
+        agentActiveTabId={browserAgentVisualState.active ? browserAgentVisualState.tabId : null}
         toolbarContextControl={<WorkbenchTitlebarContextSlot />}
         navigationControl={
           <TitlebarNavigation

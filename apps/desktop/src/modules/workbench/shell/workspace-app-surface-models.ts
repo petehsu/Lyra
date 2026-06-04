@@ -232,6 +232,22 @@ export const createAppSurfaceRenderModel = (
         activeSessionId: context.agentSessionHistory.activeSessionId,
         onOpenSession: context.agentSessionHistory.onOpenSession,
         openDialog: context.agentSessionHistory.openDialog,
+        query: context.agentSessionHistory.query ?? "",
+        refreshRequestKey: context.agentSessionHistory.refreshRequestKey ?? 0,
+        locateRequest: context.agentSessionHistory.locateRequest ?? null,
+        browserHistory: context.agentSessionHistory.browserHistory ?? [],
+        ...(context.agentSessionHistory.browserHistoryPreviewPageId === undefined
+          ? {}
+          : { browserHistoryPreviewPageId: context.agentSessionHistory.browserHistoryPreviewPageId }),
+        ...(context.agentSessionHistory.onBrowserHistoryPreviewChange === undefined
+          ? {}
+          : { onBrowserHistoryPreviewChange: context.agentSessionHistory.onBrowserHistoryPreviewChange }),
+        ...(context.agentSessionHistory.onBrowserHistoryPreviewHostChange === undefined
+          ? {}
+          : { onBrowserHistoryPreviewHostChange: context.agentSessionHistory.onBrowserHistoryPreviewHostChange }),
+        ...(context.agentSessionHistory.onOpenBrowserHistoryEntry === undefined
+          ? {}
+          : { onOpenBrowserHistoryEntry: context.agentSessionHistory.onOpenBrowserHistoryEntry }),
         ...(context.agentSessionHistory.locale === undefined
           ? {}
           : { locale: context.agentSessionHistory.locale })

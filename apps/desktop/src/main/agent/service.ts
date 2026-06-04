@@ -1487,10 +1487,11 @@ export const createAgentIpcBridge = ({
 
   const readLumenStrategy = (
     payload: Record<string, unknown>,
-    fallback: "picker" | "focus" | "hybrid" | "domFallback" = "picker"
+    fallback: "interactiveOnly" | "picker" | "focus" | "hybrid" | "domFallback" = "interactiveOnly"
   ) => {
     const value = payload.strategy;
-    return value === "picker"
+    return value === "interactiveOnly"
+      || value === "picker"
       || value === "focus"
       || value === "hybrid"
       || value === "domFallback"
@@ -1518,6 +1519,26 @@ export const createAgentIpcBridge = ({
       || value === "textContains"
       ? value
       : "textStable";
+  };
+
+  const readLumenVerification = (payload: Record<string, unknown>) => {
+    const value = payload.verification ?? payload.verify;
+    return value === "full" ? "full" as const : "none" as const;
+  };
+
+  const nextRecommendedActionAfterFastLumenAction = (
+    result: Record<string, unknown>
+  ): string => {
+    if (result.ok === false) {
+      return "lyra_lumen_audit";
+    }
+    if (result.navigationStarted === true) {
+      return "lyra_lumen.wait";
+    }
+    if (result.pageChanged === true) {
+      return "lyra_lumen.map";
+    }
+    return "continue_with_cached_targets";
   };
 
   const readLumenTargetMode = (payload: Record<string, unknown>): WorkbenchBrowserAgentTargetMode => {
@@ -1885,7 +1906,7 @@ export const createAgentIpcBridge = ({
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const observation = await browser.observeAgentPage(tabId, {
-        strategy: readLumenStrategy(payload, "picker"),
+        strategy: readLumenStrategy(payload, "interactiveOnly"),
         ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
@@ -1920,11 +1941,13 @@ export const createAgentIpcBridge = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
+      const verification = readLumenVerification(payload);
       const result = elementId === undefined && targetRef === undefined
         ? await browser.actOnAgentPoint(tabId, {
             point: readLumenPoint(payload),
             interaction: readLumenInteraction(payload),
             ...readLumenModeRequest(payload, targetMode),
+            ...(verification === "full" ? { verification } : {}),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           })
         : await browser.actOnAgentElement(tabId, {
@@ -1932,13 +1955,14 @@ export const createAgentIpcBridge = ({
             ...(targetRef === undefined ? {} : { targetRef }),
             interaction: readLumenInteraction(payload),
             ...readLumenModeRequest(payload, targetMode),
+            ...(verification === "full" ? { verification } : {}),
             ...(timeoutMs === undefined ? {} : { timeoutMs })
           });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
         ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
       }, tabId, elementId);
     }),
     "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
@@ -2021,19 +2045,21 @@ export const createAgentIpcBridge = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const verification = readLumenVerification(payload);
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         text: readStringField(payload, "text"),
         clear: payload.clear === true,
         ...readLumenModeRequest(payload, targetMode),
+        ...(verification === "full" ? { verification } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
         ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
       }, tabId, elementId);
     }),
     "lyraLumen.press": withLyraLumenResult("lyraLumen.press", async (payload) => {
@@ -2044,18 +2070,20 @@ export const createAgentIpcBridge = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const verification = readLumenVerification(payload);
       const result = await browser.pressAgentKey(tabId, {
         key: readStringField(payload, "key"),
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         ...readLumenModeRequest(payload, targetMode),
+        ...(verification === "full" ? { verification } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
         ...enriched,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.map"
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
       }, tabId, elementId);
     }),
     "lyraLumen.submit": withLyraLumenResult("lyraLumen.submit", async (payload) => {
@@ -2066,11 +2094,13 @@ export const createAgentIpcBridge = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const verification = readLumenVerification(payload);
       const result = await browser.pressAgentKey(tabId, {
         key: readOptionalStringField(payload, "key") ?? "Enter",
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         ...readLumenModeRequest(payload, targetMode),
+        ...(verification === "full" ? { verification } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);

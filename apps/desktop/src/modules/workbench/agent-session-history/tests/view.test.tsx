@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type {
@@ -9,15 +9,31 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import { AgentSessionHistorySurface } from "../view";
 import type { AgentSessionHistoryLabels } from "../types";
+import type { BrowserHistoryEntry } from "../../browser-history/service";
 import { GlobalDialogHost, useGlobalDialogModel } from "../../global-dialog";
+import {
+  WorkbenchTitlebarContextProvider,
+  WorkbenchTitlebarContextSlot,
+  WorkbenchTitlebarScopeProvider
+} from "../../shell/titlebar-context";
 
 const labels: AgentSessionHistoryLabels = {
-  title: "Agent History",
-  searchPlaceholder: "Search sessions",
+  title: "History",
+  searchPlaceholder: "Search history",
   refresh: "Refresh",
-  loading: "Loading sessions",
-  emptyTitle: "No sessions",
-  emptyDescription: "No saved sessions yet",
+  categoryFilter: "History categories",
+  categorySessions: "Sessions",
+  categoryProjectSessions: "Project sessions",
+  categoryArchivedSessions: "Archived sessions",
+  categoryBrowserHistory: "Web history",
+  loading: "Loading history",
+  emptyTitle: "No history",
+  emptyDescription: "No matching sessions",
+  browserHistoryEmptyTitle: "No web history",
+  browserHistoryEmptyDescription: "Visited pages appear here",
+  openBrowserHistoryEntry: "Open web history entry",
+  visited: "Visited",
+  visits: "visits",
   errorTitle: "Load failed",
   openSession: "Open session",
   openInAiPanel: "Open in AI Panel",
@@ -84,14 +100,14 @@ const baseSessions: AgentSessionSummary[] = [
     saved: false,
     saveLabel: null,
     archived: false,
-    workingDir: "/Users/petehsu/Documents/Lyra/apps/desktop"
+    workingDir: null
   },
   {
     id: "session-3",
     title: "Archived plan",
     customTitle: "Archived plan",
     shortName: "archive",
-    status: "idle",
+    status: "finished",
     providerKey: "openai",
     providerLabel: "OpenAI",
     model: "gpt-5",
@@ -106,13 +122,16 @@ const baseSessions: AgentSessionSummary[] = [
   }
 ];
 
-const sessionWithProviderIdOnly: AgentSessionSummary = {
-  ...baseSessions[0]!,
-  id: "session-provider-id-only",
-  title: "Provider id should not display",
-  providerKey: "mimo-token-plan",
-  providerLabel: null
-};
+const browserHistory: BrowserHistoryEntry[] = [
+  {
+    id: "https://example.com/docs",
+    url: "https://example.com/docs",
+    title: "Example Docs",
+    faviconUrl: "https://example.com/favicon.ico",
+    visitedAt: "2026-05-15T03:10:00Z",
+    visitCount: 2
+  }
+];
 
 const createDesktopApi = (initialSessions: readonly AgentSessionSummary[] = baseSessions) => {
   let sessions = [...initialSessions];
@@ -120,7 +139,7 @@ const createDesktopApi = (initialSessions: readonly AgentSessionSummary[] = base
   const readSession = vi.fn(async ({ sessionId }: { readonly sessionId: string }) => ({
     id: sessionId,
     title: sessions.find((session) => session.id === sessionId)?.title ?? "Restored",
-    workingDir: sessions.find((session) => session.id === sessionId)?.workingDir ?? "/",
+    workingDir: sessions.find((session) => session.id === sessionId)?.workingDir ?? null,
     projectBound: true,
     messages: [
       {
@@ -244,17 +263,20 @@ const renderAgentHistory = (props: AgentHistoryTestProps) => {
   const AgentHistoryWithGlobalDialog = () => {
     const globalDialogModel = useGlobalDialogModel();
     return (
-      <>
-        <AgentSessionHistorySurface
-          {...props}
-          openDialog={globalDialogModel.openDialog}
-        />
+      <WorkbenchTitlebarContextProvider activeScopeId="history-scope">
+        <WorkbenchTitlebarScopeProvider scopeId="history-scope">
+          <AgentSessionHistorySurface
+            {...props}
+            openDialog={globalDialogModel.openDialog}
+          />
+        </WorkbenchTitlebarScopeProvider>
+        <WorkbenchTitlebarContextSlot />
         <GlobalDialogHost
           state={globalDialogModel.state}
           onClose={globalDialogModel.closeDialog}
           onSelectAction={globalDialogModel.selectAction}
         />
-      </>
+      </WorkbenchTitlebarContextProvider>
     );
   };
 
@@ -262,50 +284,207 @@ const renderAgentHistory = (props: AgentHistoryTestProps) => {
 };
 
 describe("AgentSessionHistorySurface", () => {
-  test("loads, groups, and filters Lyra Agent sessions", async () => {
+  test("loads unified history categories without the old in-page chrome", async () => {
     const { api, listSessions } = createDesktopApi();
 
-    renderAgentHistory({
+    const { container } = renderAgentHistory({
       desktopApi: api,
       labels,
       activeSessionId: null,
-      onOpenSession: vi.fn()
+      browserHistory,
+      onOpenSession: vi.fn(),
+      onOpenBrowserHistoryEntry: vi.fn()
     });
 
     await waitFor(() => {
       expect(listSessions).toHaveBeenCalledWith({ limit: 500 });
     });
-    expect(screen.getByRole("heading", { name: "Saved sessions 1" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent sessions 1" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Archived sessions 1" })).toBeInTheDocument();
-    expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
-    expect(screen.getByText("Review UI polish")).toBeInTheDocument();
-    expect(screen.getByText("Archived plan")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText("Search sessions"), {
-      target: { value: "gpt-5" }
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sessions 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Project sessions 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Archived sessions 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Web history 1" })).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
     expect(screen.getByText("Review UI polish")).toBeInTheDocument();
-    expect(screen.getByText("Archived plan")).toBeInTheDocument();
+    expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search history")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
+    expect(screen.queryByText("idle")).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenAI / gpt-5")).not.toBeInTheDocument();
+    expect(screen.queryByText("/Users/petehsu/Documents/Lyra")).not.toBeInTheDocument();
+    expect(container.querySelector(".lyra-agent-history-session-row > .lyra-agent-history-row-icon")).toBeNull();
   });
 
-  test("uses providerLabel for display instead of providerKey", async () => {
-    const { api } = createDesktopApi([sessionWithProviderIdOnly]);
+  test("switches between session, project, archived, and web history categories", async () => {
+    const { api } = createDesktopApi();
+    const onOpenBrowserHistoryEntry = vi.fn();
+    const onBrowserHistoryPreviewChange = vi.fn();
+    const onBrowserHistoryPreviewHostChange = vi.fn();
+
+    const { container } = renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      browserHistory,
+      browserHistoryPreviewPageId: "history-web-preview",
+      onBrowserHistoryPreviewChange,
+      onBrowserHistoryPreviewHostChange,
+      onOpenSession: vi.fn(),
+      onOpenBrowserHistoryEntry
+    });
+
+    await screen.findByText("Review UI polish");
+    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 1" }));
+    expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
+    expect(screen.queryByText("Review UI polish")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archived sessions 1" }));
+    expect(screen.getByText("Archived plan")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Web history 1" }));
+    const webPreview = await screen.findByRole("complementary", { name: "Web history" });
+    expect(within(webPreview).queryByRole("heading", { name: "Example Docs" })).not.toBeInTheDocument();
+    const pageHost = within(webPreview).getByLabelText("Example Docs");
+    expect(pageHost).toHaveAttribute("data-browser-page-host", "true");
+    expect(pageHost).toHaveAttribute("data-tab-id", "history-web-preview");
+    expect(container.querySelector(".lyra-agent-history-site-favicon")).toHaveAttribute(
+      "src",
+      "https://example.com/favicon.ico"
+    );
+    await waitFor(() => {
+      expect(onBrowserHistoryPreviewChange).toHaveBeenLastCalledWith({
+        tabId: "history-web-preview",
+        url: "https://example.com/docs",
+        title: "Example Docs"
+      });
+    });
+    expect(onBrowserHistoryPreviewHostChange).toHaveBeenLastCalledWith(
+      "history-web-preview",
+      pageHost
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Web history: Example Docs" }));
+    expect(onOpenBrowserHistoryEntry).not.toHaveBeenCalled();
+    expect(within(webPreview).queryByRole("heading", { name: "Example Docs" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open web history entry: https://example.com/docs" }));
+    expect(onOpenBrowserHistoryEntry).toHaveBeenCalledWith(browserHistory[0]);
+  });
+
+  test("groups project sessions by project folder with collapsible sections", async () => {
+    const { api } = createDesktopApi([
+      ...baseSessions,
+      {
+        ...baseSessions[0]!,
+        id: "session-4",
+        title: "Refactor project index",
+        shortName: "index",
+        workingDir: "/Users/petehsu/Documents/Lyra",
+        saved: false,
+        saveLabel: null
+      },
+      {
+        ...baseSessions[0]!,
+        id: "session-5",
+        title: "Prepare launch notes",
+        shortName: "launch",
+        workingDir: "/Users/petehsu/Documents/Launch"
+      }
+    ]);
 
     renderAgentHistory({
       desktopApi: api,
       labels,
       activeSessionId: null,
+      browserHistory,
+      onOpenSession: vi.fn(),
+      onOpenBrowserHistoryEntry: vi.fn()
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 3" }));
+    expect(screen.getByRole("button", { name: "Lyra 2" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Launch 1" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
+    expect(screen.getByText("Refactor project index")).toBeInTheDocument();
+    expect(screen.getByText("Prepare launch notes")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lyra 2" }));
+    expect(screen.getByRole("button", { name: "Lyra 2" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Refactor project index")).not.toBeInTheDocument();
+    expect(screen.getByText("Prepare launch notes")).toBeInTheDocument();
+  });
+
+  test("locates address-bar history suggestions in the matching category and preview pane", async () => {
+    const { api, readSession } = createDesktopApi();
+
+    const { rerender } = renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      browserHistory,
+      onOpenSession: vi.fn(),
+      locateRequest: {
+        requestKey: 1,
+        target: {
+          kind: "session",
+          sessionId: "session-1",
+          category: "project-sessions"
+        }
+      }
+    });
+
+    await waitFor(() => {
+      expect(readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    });
+    expect(screen.getByRole("button", { name: "Session preview: Fix agent storage" })).toBeInTheDocument();
+    expect(await screen.findByText("Preview answer for session-1")).toBeInTheDocument();
+
+    rerender(
+      <WorkbenchTitlebarContextProvider activeScopeId="history-scope">
+        <WorkbenchTitlebarScopeProvider scopeId="history-scope">
+          <AgentSessionHistorySurface
+            desktopApi={api}
+            labels={labels}
+            activeSessionId={null}
+            browserHistory={browserHistory}
+            onOpenSession={vi.fn()}
+            openDialog={vi.fn()}
+            locateRequest={{
+              requestKey: 2,
+              target: {
+                kind: "browser-history",
+                entryId: "https://example.com/docs"
+              }
+            }}
+          />
+        </WorkbenchTitlebarScopeProvider>
+        <WorkbenchTitlebarContextSlot />
+      </WorkbenchTitlebarContextProvider>
+    );
+
+    const webPreview = await screen.findByRole("complementary", { name: "Web history" });
+    expect(within(webPreview).queryByRole("heading", { name: "Example Docs" })).not.toBeInTheDocument();
+    expect(within(webPreview).getByLabelText("Example Docs")).toHaveAttribute("data-browser-page-host", "true");
+  });
+
+  test("filters with the address-bar query prop instead of an internal input", async () => {
+    const { api } = createDesktopApi();
+
+    renderAgentHistory({
+      desktopApi: api,
+      labels,
+      activeSessionId: null,
+      query: "missing",
       onOpenSession: vi.fn()
     });
 
-    await screen.findByText("Provider id should not display");
-    expect(screen.getByText(`Default provider / ${sessionWithProviderIdOnly.model}`))
-      .toBeInTheDocument();
-    expect(screen.queryByText(`mimo-token-plan / ${sessionWithProviderIdOnly.model}`))
-      .not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("No history")).toBeInTheDocument();
+    });
+    expect(screen.queryByPlaceholderText("Search history")).not.toBeInTheDocument();
   });
 
   test("previews the selected session without opening the AI panel", async () => {
@@ -319,13 +498,17 @@ describe("AgentSessionHistorySurface", () => {
       onOpenSession
     });
 
-    await screen.findByText("Fix agent storage");
+    await screen.findByText("Review UI polish");
     fireEvent.click(screen.getByRole("button", { name: "Session preview: Review UI polish" }));
 
     await waitFor(() => {
       expect(readSession).toHaveBeenCalledWith({ sessionId: "session-2" });
     });
     expect(screen.getByText("Preview answer for session-2")).toBeInTheDocument();
+    const previewPane = screen.getByRole("complementary", { name: "Session preview" });
+    expect(within(previewPane).queryByRole("heading", { name: "Review UI polish" })).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenAI / gpt-5")).not.toBeInTheDocument();
+    expect(screen.queryByText("idle")).not.toBeInTheDocument();
     expect(onOpenSession).not.toHaveBeenCalled();
   });
 
@@ -340,7 +523,7 @@ describe("AgentSessionHistorySurface", () => {
       onOpenSession
     });
 
-    await screen.findByText("Fix agent storage");
+    await screen.findByText("Review UI polish");
     fireEvent.click(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }));
 
     expect(onOpenSession).toHaveBeenCalledWith("session-2");
@@ -380,7 +563,7 @@ describe("AgentSessionHistorySurface", () => {
     expect(screen.queryByText(/ignored/u)).not.toBeInTheDocument();
   });
 
-  test("routes favorite, archive, rename, and delete actions through Lyra Agent APIs", async () => {
+  test("routes favorite, rename, archive, and delete actions through Lyra Agent APIs", async () => {
     const {
       api,
       saveSession,
@@ -402,11 +585,6 @@ describe("AgentSessionHistorySurface", () => {
       expect(saveSession).toHaveBeenCalledWith({ sessionId: "session-2", label: null });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Archive: Review UI polish" }));
-    await waitFor(() => {
-      expect(archiveSession).toHaveBeenCalledWith({ sessionId: "session-2", archived: true });
-    });
-
     fireEvent.click(screen.getByRole("button", { name: "Rename: Review UI polish" }));
     fireEvent.change(screen.getByPlaceholderText("Enter a session name"), {
       target: { value: "Renamed session" }
@@ -419,6 +597,12 @@ describe("AgentSessionHistorySurface", () => {
       });
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Archive: Renamed session" }));
+    await waitFor(() => {
+      expect(archiveSession).toHaveBeenCalledWith({ sessionId: "session-2", archived: true });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archived sessions 2" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete: Renamed session" }));
     expect(screen.getByRole("dialog", { name: "Delete session permanently?" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Delete permanently/u }));
@@ -438,7 +622,7 @@ describe("AgentSessionHistorySurface", () => {
       onOpenSession
     });
 
-    await screen.findByText("Fix agent storage");
+    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete: Fix agent storage" }));
     fireEvent.click(screen.getByRole("button", { name: /Delete permanently/u }));
 

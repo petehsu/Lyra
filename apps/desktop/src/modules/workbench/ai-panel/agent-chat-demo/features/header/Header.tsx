@@ -26,6 +26,20 @@ import { t } from "../../core/i18n";
 import type { AgentGoalItem } from "../../core/types";
 
 export function Header() {
+  const { session } = useData();
+  return (
+    <header className="app-header">
+      <div className="app-header-title" title={session.title}>{session.title}</div>
+      <HeaderControls />
+    </header>
+  );
+}
+
+export function HeaderControls({
+  showNewSessionButton = true
+}: {
+  readonly showNewSessionButton?: boolean;
+}) {
   const {
     session,
     messages,
@@ -88,7 +102,7 @@ export function Header() {
     : t("header.bindProject");
   const hasBoundProject =
     session.projectBound && session.workingDir !== null && projectName.length > 0;
-  const showNewSessionButton = messages.length > 0;
+  const shouldShowNewSessionButton = showNewSessionButton && messages.length > 0;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -277,8 +291,7 @@ export function Header() {
   const actionDisabled = isTurnRunning || actionBusy !== null;
 
   return (
-    <header className="app-header">
-      <div className="app-header-title" title={session.title}>{session.title}</div>
+    <>
       <div className="app-header-right">
         <div className="app-header-project-controls">
           <button
@@ -307,7 +320,7 @@ export function Header() {
             </button>
           ) : null}
         </div>
-        {showNewSessionButton ? (
+        {shouldShowNewSessionButton ? (
           <button
             className="app-header-action app-header-new-session"
             type="button"
@@ -642,6 +655,6 @@ export function Header() {
           ) : null}
         </div>
       ) : null}
-    </header>
+    </>
   );
 }

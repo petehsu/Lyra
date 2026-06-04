@@ -113,6 +113,19 @@ export const uniqueTabIds = (tabIds: readonly string[]): readonly string[] => {
   return next;
 };
 
+const uniqueTabsById = (tabs: readonly WorkspaceTab[]): readonly WorkspaceTab[] => {
+  const seen = new Set<string>();
+  const next: WorkspaceTab[] = [];
+  for (const tab of tabs) {
+    if (seen.has(tab.id)) {
+      continue;
+    }
+    seen.add(tab.id);
+    next.push(tab);
+  }
+  return next;
+};
+
 export const resolveSplitState = (
   tabs: readonly WorkspaceTab[],
   splitGroupTabIds: readonly string[],
@@ -144,7 +157,8 @@ export const resolveRuntimeState = (
   state: WorkspaceTabsRuntimeState,
   config: WorkspaceTabsConfig
 ): WorkspaceTabsRuntimeState => {
-  if (state.tabs.length === 0) {
+  const tabs = uniqueTabsById(state.tabs);
+  if (tabs.length === 0) {
     const fallback = createSearchTab(1, config);
     return {
       tabs: [fallback],
@@ -155,11 +169,11 @@ export const resolveRuntimeState = (
   }
 
   const split = resolveSplitState(
-    state.tabs,
+    tabs,
     state.splitGroupTabIds,
     state.focusedSplitTabId
   );
-  const normalizedTabs = keepSplitGroupContiguous(state.tabs, split.splitGroupTabIds);
+  const normalizedTabs = keepSplitGroupContiguous(tabs, split.splitGroupTabIds);
   const activeTabId = normalizedTabs.some((tab) => tab.id === state.activeTabId)
     ? state.activeTabId
     : normalizedTabs[0]!.id;

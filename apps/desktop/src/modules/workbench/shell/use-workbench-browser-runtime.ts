@@ -17,6 +17,10 @@ import type {
   WorkspaceTabsModel,
   WorkspaceVisibleLayout
 } from "../workspace-tabs";
+import {
+  recordBrowserHistoryVisit,
+  toRecordableBrowserHistoryUrl
+} from "../browser-history/service";
 import { useWorkbenchBrowserLayoutSync } from "./browser-layout-sync";
 
 export type PageNavigationState = {
@@ -28,6 +32,12 @@ type BrowserPageHostDescriptor = {
   readonly tabId: string;
   readonly zIndex: number;
   readonly isFocusedPane: boolean;
+};
+
+export type EmbeddedBrowserPageDescriptor = {
+  readonly tabId: string;
+  readonly address: string;
+  readonly titleHint?: string;
 };
 
 export type BrowserAgentVisualState = {
@@ -52,8 +62,10 @@ type UseWorkbenchBrowserRuntimeParams = {
   readonly activeBrowserTabId: string | null;
   readonly activePageTabId: string;
   readonly visibleWorkspaceLayout: WorkspaceVisibleLayout;
+  readonly embeddedBrowserPages?: readonly EmbeddedBrowserPageDescriptor[];
   readonly themeVars: WorkbenchThemeVars;
   readonly forceWebPageThemingEnabled: boolean;
+  readonly onBrowserHistoryChange?: () => void;
 };
 
 type WorkbenchBrowserRuntimeModel = {
@@ -92,6 +104,8 @@ const IDLE_BROWSER_AGENT_VISUAL_STATE: BrowserAgentVisualState = {
   cursor: null
 };
 
+const EMPTY_EMBEDDED_BROWSER_PAGES: readonly EmbeddedBrowserPageDescriptor[] = [];
+
 const arePageRuntimeStatesEquivalent = (
   first: WorkbenchBrowserPageRuntimeState,
   second: WorkbenchBrowserPageRuntimeState
@@ -110,8 +124,7 @@ const arePageRuntimeStatesEquivalent = (
   && first.canGoBack === second.canGoBack
   && first.canGoForward === second.canGoForward
   && first.isHtmlFullscreen === second.isHtmlFullscreen
-  && browserPageRestoreStateEquals(first.restoreState, second.restoreState)
-  && JSON.stringify(first.recoveryFailure ?? null) === JSON.stringify(second.recoveryFailure ?? null);
+  && browserPageRestoreStateEquals(first.restoreState, second.restoreState);
 
 export const resolveBrowserAgentCursorViewportPoint = (
   hostRect: Pick<DOMRectReadOnly, "left" | "top" | "width" | "height">,
@@ -126,11 +139,25 @@ export const resolveBrowserAgentCursorViewportPoint = (
   };
 };
 
+export const shouldShowBrowserAgentActivityChrome = (
+  event: Pick<
+    WorkbenchBrowserAgentActivityEvent,
+    "inputActive" | "sharedControlState"
+  >
+): boolean =>
+  event.inputActive
+  || event.sharedControlState === "locked_input"
+  || event.sharedControlState === "user_interrupted"
+  || event.sharedControlState === "awaiting_user_decision"
+  || event.sharedControlState === "resuming";
+
 export const resolveVisibleBrowserPageDescriptors = (
   tabs: WorkspaceTabsModel["tabs"],
-  visibleWorkspaceLayout: WorkspaceVisibleLayout
+  visibleWorkspaceLayout: WorkspaceVisibleLayout,
+  embeddedBrowserPages: readonly EmbeddedBrowserPageDescriptor[] = EMPTY_EMBEDDED_BROWSER_PAGES
 ): readonly BrowserPageHostDescriptor[] =>
-  visibleWorkspaceLayout.visibleTabIds
+  [
+    ...visibleWorkspaceLayout.visibleTabIds
     .map((tabId, index) => {
       const tab = tabs.find((candidate) => candidate.id === tabId);
       if (tab?.pageKind !== "page") {
@@ -145,7 +172,13 @@ export const resolveVisibleBrowserPageDescriptors = (
             : visibleWorkspaceLayout.activeTabId === tabId
       };
     })
-    .filter((value): value is BrowserPageHostDescriptor => value !== null);
+    .filter((value): value is BrowserPageHostDescriptor => value !== null),
+    ...embeddedBrowserPages.map((page, index) => ({
+      tabId: page.tabId,
+      zIndex: visibleWorkspaceLayout.visibleTabIds.length + index,
+      isFocusedPane: false
+    }))
+  ];
 
 export const useWorkbenchBrowserRuntime = ({
   desktopApi,
@@ -153,8 +186,10 @@ export const useWorkbenchBrowserRuntime = ({
   activeBrowserTabId,
   activePageTabId,
   visibleWorkspaceLayout,
+  embeddedBrowserPages = EMPTY_EMBEDDED_BROWSER_PAGES,
   themeVars,
-  forceWebPageThemingEnabled
+  forceWebPageThemingEnabled,
+  onBrowserHistoryChange
 }: UseWorkbenchBrowserRuntimeParams): WorkbenchBrowserRuntimeModel => {
   const [pageNavigationState, setPageNavigationState] =
     useState<PageNavigationState>(DEFAULT_PAGE_NAVIGATION_STATE);
@@ -164,6 +199,9 @@ export const useWorkbenchBrowserRuntime = ({
   const [browserAgentVisualState, setBrowserAgentVisualState] =
     useState<BrowserAgentVisualState>(IDLE_BROWSER_AGENT_VISUAL_STATE);
   const pageHostByTabIdRef = useRef(new Map<string, HTMLElement>());
+  const lastHistoryRecordByTabIdRef = useRef(
+    new Map<string, { readonly url: string; readonly title: string; readonly faviconUrl?: string }>()
+  );
   const browserAgentVisualTimerRef = useRef<number | null>(null);
   const browserAgentCursorSafetyTimerRef = useRef<number | null>(null);
 
@@ -173,8 +211,16 @@ export const useWorkbenchBrowserRuntime = ({
       : (pageRuntimeStateByTabId[activeBrowserTabId] ?? null);
 
   const visibleBrowserPageDescriptors = useMemo(
-    () => resolveVisibleBrowserPageDescriptors(tabsModel.tabs, visibleWorkspaceLayout),
-    [tabsModel.tabs, visibleWorkspaceLayout]
+    () => resolveVisibleBrowserPageDescriptors(
+      tabsModel.tabs,
+      visibleWorkspaceLayout,
+      embeddedBrowserPages
+    ),
+    [embeddedBrowserPages, tabsModel.tabs, visibleWorkspaceLayout]
+  );
+  const embeddedBrowserPageIds = useMemo(
+    () => new Set(embeddedBrowserPages.map((page) => page.tabId)),
+    [embeddedBrowserPages]
   );
 
   const {
@@ -203,7 +249,7 @@ export const useWorkbenchBrowserRuntime = ({
       return;
     }
 
-    const pages = tabsModel.tabs
+    const tabPages = tabsModel.tabs
       .filter((tab) => tab.pageKind === "page")
       .map((tab) => ({
         tabId: tab.id,
@@ -214,11 +260,17 @@ export const useWorkbenchBrowserRuntime = ({
           : { restoreState: tab.browserRestoreState }),
         isActive: tab.id === activeBrowserTabId
       }));
+    const embeddedPages = embeddedBrowserPages.map((page) => ({
+      tabId: page.tabId,
+      address: page.address,
+      ...(page.titleHint === undefined ? {} : { titleHint: page.titleHint }),
+      isActive: false
+    }));
     void desktopApi.workbenchBrowser.syncTopology({
       activeTabId: activeBrowserTabId,
-      pages
+      pages: [...tabPages, ...embeddedPages]
     });
-  }, [activeBrowserTabId, desktopApi, tabsModel.tabs]);
+  }, [activeBrowserTabId, desktopApi, embeddedBrowserPages, tabsModel.tabs]);
 
   const webThemeSnapshotRef = useRef(DEFAULT_WEB_THEME_SNAPSHOT);
   useEffect(() => {
@@ -280,6 +332,10 @@ export const useWorkbenchBrowserRuntime = ({
     const unsubscribeAgent = desktopApi.agent?.onEvent(handleAgentRuntimeEvent) ?? (() => undefined);
     const unsubscribeBrowser = desktopApi.workbenchBrowser.onEvent((event) => {
       if (event.kind === "lumen-browser-activity" || event.kind === "agent-browser-activity") {
+        const showActivityChrome = shouldShowBrowserAgentActivityChrome(event);
+        if (!showActivityChrome && event.cursor === undefined) {
+          return;
+        }
         const host = pageHostByTabIdRef.current.get(event.tabId) ?? null;
         const nextCursor = host === null
           ? null
@@ -292,17 +348,20 @@ export const useWorkbenchBrowserRuntime = ({
         }
         scheduleCursorSafetyHide();
         setBrowserAgentVisualState((current) => {
+          const sharedControlState = event.sharedControlState ?? (
+            event.inputActive ? "locked_input" : "idle"
+          );
           const retainedCursor =
-            nextCursor
-            ?? (current.cursorVisible && current.tabId === event.tabId ? current.cursor : null);
+            showActivityChrome
+              ? nextCursor
+                ?? (current.cursorVisible && current.tabId === event.tabId ? current.cursor : null)
+              : nextCursor;
           return {
-            active: true,
+            active: showActivityChrome,
             inputActive: event.inputActive,
             cursorVisible: retainedCursor !== null,
             cursorPhase: event.cursorPhase ?? "idle",
-            sharedControlState: event.sharedControlState ?? (
-              event.inputActive ? "locked_input" : "agent_active"
-            ),
+            sharedControlState,
             action: event.action,
             interaction: event.interaction ?? null,
             tabId: event.tabId,
@@ -366,6 +425,39 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "page-runtime-state") {
+        const recordableUrl = toRecordableBrowserHistoryUrl(event.page.address);
+        if (
+          recordableUrl !== null
+          && event.page.isTombstoned !== true
+          && embeddedBrowserPageIds.has(event.page.tabId) === false
+        ) {
+          const previousRecord = lastHistoryRecordByTabIdRef.current.get(event.page.tabId);
+          const nextRecord = {
+            url: recordableUrl,
+            title: event.page.title,
+            ...(event.page.faviconUrl === undefined ? {} : { faviconUrl: event.page.faviconUrl })
+          };
+          const countVisit = previousRecord?.url !== recordableUrl;
+          const metadataChanged =
+            previousRecord !== undefined
+            && previousRecord.url === recordableUrl
+            && (previousRecord.title !== event.page.title
+              || previousRecord.faviconUrl !== event.page.faviconUrl);
+
+          if (countVisit || metadataChanged) {
+            const recorded = recordBrowserHistoryVisit({
+              url: recordableUrl,
+              title: event.page.title,
+              faviconUrl: event.page.faviconUrl ?? null,
+              countVisit
+            });
+            if (recorded !== null) {
+              lastHistoryRecordByTabIdRef.current.set(event.page.tabId, nextRecord);
+              onBrowserHistoryChange?.();
+            }
+          }
+        }
+
         setPageRuntimeStateByTabId((current) => {
           const existing = current[event.page.tabId];
           if (
@@ -408,6 +500,7 @@ export const useWorkbenchBrowserRuntime = ({
       }
 
       if (event.kind === "page-closed") {
+        lastHistoryRecordByTabIdRef.current.delete(event.tabId);
         setPageRuntimeStateByTabId((current) => {
           const next = { ...current };
           delete next[event.tabId];
@@ -429,7 +522,7 @@ export const useWorkbenchBrowserRuntime = ({
       unsubscribeAgent();
       unsubscribeBrowser();
     };
-  }, [desktopApi, tabsModel]);
+  }, [desktopApi, embeddedBrowserPageIds, onBrowserHistoryChange, tabsModel]);
 
   useEffect(
     () => () => {
@@ -465,7 +558,10 @@ export const useWorkbenchBrowserRuntime = ({
 
   useEffect(() => {
     const validPageTabIds = new Set(
-      tabsModel.tabs.filter((tab) => tab.pageKind === "page").map((tab) => tab.id)
+      [
+        ...tabsModel.tabs.filter((tab) => tab.pageKind === "page").map((tab) => tab.id),
+        ...embeddedBrowserPages.map((page) => page.tabId)
+      ]
     );
     setPageRuntimeStateByTabId((current) => {
       const nextEntries = Object.entries(current).filter(([tabId]) =>
@@ -476,7 +572,7 @@ export const useWorkbenchBrowserRuntime = ({
       }
       return Object.fromEntries(nextEntries);
     });
-  }, [tabsModel.tabs]);
+  }, [embeddedBrowserPages, tabsModel.tabs]);
 
   const onGoBack = useCallback(() => {
     if (desktopApi === null || activePageTabId.length === 0) {

@@ -9,6 +9,9 @@ export { AgentSessionHistorySurface } from "./view";
 export type {
   AgentSessionHistoryAppIconKey,
   AgentSessionHistoryAppId,
+  AgentSessionHistoryBrowserPreviewPage,
+  AgentSessionHistoryCategory,
+  AgentSessionHistoryLocateRequest,
   AgentSessionHistoryLabels,
   AgentSessionHistorySurfaceProps
 } from "./types";

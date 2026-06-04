@@ -1,10 +1,4 @@
 /* Browser tab strip and tab item styles */
-@property --lyra-agent-browser-tab-beam-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
 .lyra-browser-tabs {
   --lyra-browser-toolbar-bg:
     color-mix(in srgb, var(--lyra-bg-surface) 72%, var(--lyra-bg-editor) 28%);
@@ -45,6 +39,7 @@
   min-height: calc(var(--lyra-size-browser-tab-h) + var(--lyra-browser-tabs-toolbar-h));
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--lyra-browser-tabs-toolbar-h) var(--lyra-size-browser-tab-h);
+  overflow: visible;
 }
 
 .lyra-browser-tabs::before {
@@ -143,7 +138,7 @@
   display: grid;
   grid-template-columns:
     auto
-    clamp(var(--lyra-unit-220), 22vw, var(--lyra-unit-420))
+    clamp(var(--lyra-unit-120), 18vw, var(--lyra-unit-220))
     minmax(0, 1fr);
   align-items: center;
   gap: var(--lyra-unit-8);
@@ -171,8 +166,7 @@
 
 .lyra-browser-tab-strip {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--lyra-size-browser-nav-slot);
+  display: flex;
   align-items: stretch;
   grid-column: 4;
   padding-left: var(--lyra-unit-3);
@@ -183,33 +177,11 @@
   z-index: 2;
 }
 
-.lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-strip::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(var(--lyra-unit-0-5) * -1);
-  height: var(--lyra-unit-0-5);
-  pointer-events: none;
-  z-index: 10;
-  background:
-    linear-gradient(
-      90deg,
-      transparent 0%,
-      color-mix(in srgb, var(--lyra-text-accent) 18%, transparent) 22%,
-      color-mix(in srgb, var(--lyra-text-accent) 82%, var(--lyra-text-primary) 18%) 50%,
-      color-mix(in srgb, var(--lyra-bg-editor) 52%, var(--lyra-text-accent) 48%) 62%,
-      transparent 100%
-    );
-  box-shadow:
-    0 0 var(--lyra-unit-4) color-mix(in srgb, var(--lyra-text-accent) 44%, transparent),
-    0 0 var(--lyra-unit-10) color-mix(in srgb, var(--lyra-text-accent) 20%, transparent);
-  transform: translateX(-100%);
-  animation: lyra-agent-browser-tab-strip-run 1.55s linear infinite;
-}
-
 .lyra-browser-tab-list {
   min-width: 0;
+  width: max-content;
+  max-width: calc(100% - var(--lyra-size-browser-nav-slot));
+  flex: 0 1 auto;
   display: flex;
   align-items: stretch;
   overflow: hidden;
@@ -244,12 +216,12 @@
   align-self: center;
   justify-self: stretch;
   position: relative;
-  z-index: 3;
+  z-index: 20;
 }
 
 .lyra-browser-tabs-navigation .lyra-titlebar-navigation {
   width: 100%;
-  max-width: var(--lyra-unit-420);
+  max-width: var(--lyra-unit-220);
 }
 
 .lyra-browser-tabs-toolbar-context {
@@ -331,13 +303,14 @@
 .lyra-browser-tab-strip-stacked .lyra-browser-tab-item-active {
   min-width: var(--lyra-browser-tab-active-w);
   max-width: min(var(--lyra-tab-active-max-w), 36vw);
-  flex: 0 1 var(--lyra-browser-tab-active-w);
+  width: var(--lyra-browser-tab-active-w);
+  flex: 0 0 var(--lyra-browser-tab-active-w);
 }
 
 .lyra-browser-tab-strip:not(.lyra-browser-tab-strip-stacked) .lyra-browser-tab-item {
   min-width: var(--lyra-unit-42);
   max-width: var(--lyra-tab-active-max-w);
-  flex: 1 1 var(--lyra-tab-max-w);
+  flex: 0 1 var(--lyra-tab-max-w);
 }
 
 .lyra-browser-tab-strip-close-lock:not(.lyra-browser-tab-strip-stacked) .lyra-browser-tab-item {
@@ -442,40 +415,6 @@
   margin-top: 0;
 }
 
-.lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-item-active::after,
-.lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-item-split-group-active::after {
-  content: "";
-  position: absolute;
-  inset: var(--lyra-unit-1) var(--lyra-unit-2) var(--lyra-unit-1) var(--lyra-unit-2);
-  border-radius: var(--lyra-unit-10) var(--lyra-unit-10) var(--lyra-unit-5) var(--lyra-unit-5);
-  padding: var(--lyra-unit-0-5);
-  pointer-events: none;
-  z-index: 7;
-  background:
-    conic-gradient(
-      from var(--lyra-agent-browser-tab-beam-angle, 0deg),
-      transparent 0deg,
-      transparent 42deg,
-      color-mix(in srgb, var(--lyra-text-accent) 26%, transparent) 58deg,
-      color-mix(in srgb, var(--lyra-text-accent) 92%, var(--lyra-text-primary) 8%) 76deg,
-      color-mix(in srgb, var(--lyra-bg-editor) 60%, var(--lyra-text-accent) 40%) 88deg,
-      transparent 108deg,
-      transparent 360deg
-    );
-  -webkit-mask:
-    linear-gradient(black, black) content-box,
-    linear-gradient(black, black);
-  mask:
-    linear-gradient(black, black) content-box,
-    linear-gradient(black, black);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  filter:
-    drop-shadow(0 0 var(--lyra-unit-3) color-mix(in srgb, var(--lyra-text-accent) 36%, transparent))
-    drop-shadow(0 0 var(--lyra-unit-9) color-mix(in srgb, var(--lyra-text-accent) 18%, transparent));
-  animation: lyra-agent-browser-tab-border-run 1.7s linear infinite;
-}
-
 .lyra-browser-tab-list > .lyra-browser-tab-item + .lyra-browser-tab-item {
   margin-left: calc(var(--lyra-tab-overlap) * -1);
 }
@@ -496,41 +435,21 @@
   }
 }
 
-@keyframes lyra-agent-browser-tab-strip-run {
+@keyframes lyra-browser-agent-tab-title-scan {
   0% {
-    transform: translateX(-100%);
-    opacity: 0;
+    background-position: 130% 0;
   }
 
-  10% {
-    opacity: 1;
-  }
-
-  84% {
-    opacity: 1;
-  }
-
+  48%,
   100% {
-    transform: translateX(112%);
-    opacity: 0;
-  }
-}
-
-@keyframes lyra-agent-browser-tab-border-run {
-  from {
-    --lyra-agent-browser-tab-beam-angle: 0deg;
-  }
-
-  to {
-    --lyra-agent-browser-tab-beam-angle: 360deg;
+    background-position: -130% 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-strip::after,
-  .lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-item-active::after,
-  .lyra-workspace:has(> .lyra-agent-browser-activity-overlay[data-active="true"]) > .lyra-browser-tabs .lyra-browser-tab-item-split-group-active::after {
+  .lyra-browser-tab-item-agent-active .lyra-browser-tab-title {
     animation: none;
+    background-position: 50% 0;
   }
 }
 
@@ -709,6 +628,28 @@
   transition: color var(--lyra-transition-fast);
 }
 
+.lyra-browser-tab-item-agent-active .lyra-browser-tab-title {
+  color:
+    color-mix(in srgb, var(--lyra-text-primary) 78%, var(--lyra-text-accent) 22%);
+  background:
+    linear-gradient(
+      110deg,
+      currentColor 0%,
+      currentColor 32%,
+      color-mix(in srgb, var(--lyra-text-primary) 92%, var(--lyra-text-accent) 8%) 44%,
+      color-mix(in srgb, var(--lyra-text-accent) 96%, var(--lyra-text-primary) 4%) 50%,
+      color-mix(in srgb, var(--lyra-text-primary) 92%, var(--lyra-text-accent) 8%) 56%,
+      currentColor 68%,
+      currentColor 100%
+    );
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: lyra-browser-agent-tab-title-scan 1.7s ease-in-out infinite;
+}
+
 .lyra-browser-tab-item:hover .lyra-browser-tab-title,
 .lyra-browser-tab-item:focus-within .lyra-browser-tab-title {
   color: var(--lyra-text-primary);
@@ -737,7 +678,14 @@
 
 .lyra-browser-tab-item-active .lyra-browser-tab-close,
 .lyra-browser-tab-item-split-group-active .lyra-browser-tab-close {
-  opacity: 0.72;
+  opacity: 0;
+}
+
+.lyra-browser-tab-item-active:hover .lyra-browser-tab-close,
+.lyra-browser-tab-item-active:focus-within .lyra-browser-tab-close,
+.lyra-browser-tab-item-split-group-active:hover .lyra-browser-tab-close,
+.lyra-browser-tab-item-split-group-active:focus-within .lyra-browser-tab-close {
+  opacity: 1;
 }
 
 .lyra-browser-tab-close:hover {
@@ -873,7 +821,7 @@
 .lyra-browser-tab-add {
   box-sizing: border-box;
   align-self: start;
-  justify-self: center;
+  flex: 0 0 var(--lyra-size-browser-nav-slot);
   width: var(--lyra-size-browser-nav-slot);
   min-width: var(--lyra-size-browser-nav-slot);
   height: var(--lyra-browser-tab-control-h);

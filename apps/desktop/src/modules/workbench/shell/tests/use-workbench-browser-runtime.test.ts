@@ -5,13 +5,10 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import type { WorkspaceTab, WorkspaceVisibleLayout } from "../../workspace-tabs";
 import {
-  browserAgentVisualStateLabel,
-  browserRecoveryFailureLabel
-} from "../agent-browser-activity-overlay";
-import {
   arePageRuntimeStatesEquivalentForTests,
   resolveBrowserAgentCursorViewportPoint,
-  resolveVisibleBrowserPageDescriptors
+  resolveVisibleBrowserPageDescriptors,
+  shouldShowBrowserAgentActivityChrome
 } from "../use-workbench-browser-runtime";
 
 const createPageTab = (id: string): WorkspaceTab => ({
@@ -78,6 +75,36 @@ describe("resolveVisibleBrowserPageDescriptors", () => {
       }
     ]);
   });
+
+  test("adds embedded browser pages after visible workspace pages", () => {
+    const tabs = [
+      createPageTab("page-1"),
+      createSearchTab("search-1")
+    ];
+    const layout: WorkspaceVisibleLayout = {
+      mode: "single",
+      activeTabId: "search-1",
+      visibleTabIds: ["search-1"],
+      splitGroupTabIds: [],
+      focusedSplitTabId: null
+    };
+
+    expect(
+      resolveVisibleBrowserPageDescriptors(tabs, layout, [
+        {
+          tabId: "history-web-preview",
+          address: "https://example.com/docs",
+          titleHint: "Example Docs"
+        }
+      ])
+    ).toEqual([
+      {
+        tabId: "history-web-preview",
+        zIndex: 1,
+        isFocusedPane: false
+      }
+    ]);
+  });
 });
 
 describe("arePageRuntimeStatesEquivalentForTests", () => {
@@ -86,6 +113,21 @@ describe("arePageRuntimeStatesEquivalentForTests", () => {
       arePageRuntimeStatesEquivalentForTests(
         createRuntimeState({ updatedAt: 100 }),
         createRuntimeState({ updatedAt: 200 })
+      )
+    ).toBe(true);
+  });
+
+  test("ignores recovery-only changes because recovery is not rendered as Agent chrome", () => {
+    expect(
+      arePageRuntimeStatesEquivalentForTests(
+        createRuntimeState({
+          recoveryFailure: {
+            reason: "target_stale",
+            message: "target changed",
+            at: 100
+          }
+        }),
+        createRuntimeState()
       )
     ).toBe(true);
   });
@@ -120,38 +162,26 @@ describe("resolveBrowserAgentCursorViewportPoint", () => {
   });
 });
 
-describe("browserAgentVisualStateLabel", () => {
-  test("names visible Agent activity states for hover click typing focus and wait", () => {
-    expect(browserAgentVisualStateLabel({ action: "act", interaction: "hover" })).toBe("Hover");
-    expect(browserAgentVisualStateLabel({ action: "act", interaction: "click" })).toBe("Click");
-    expect(browserAgentVisualStateLabel({ action: "type", interaction: null })).toBe("Typing");
-    expect(browserAgentVisualStateLabel({ action: "focus", interaction: null })).toBe("Focus");
-    expect(browserAgentVisualStateLabel({ action: "wait", interaction: null })).toBe("Wait");
+describe("shouldShowBrowserAgentActivityChrome", () => {
+  test("keeps passive browser reads from showing the Agent operation chrome", () => {
+    expect(
+      shouldShowBrowserAgentActivityChrome({
+        inputActive: false
+      })
+    ).toBe(false);
   });
-});
 
-describe("browserRecoveryFailureLabel", () => {
-  test("names structured browser recovery failures for the UI cue", () => {
+  test("shows the Agent operation chrome for input and shared-control states", () => {
     expect(
-      browserRecoveryFailureLabel({
-        reason: "navigation_failed",
-        message: "load failed",
-        at: 100
+      shouldShowBrowserAgentActivityChrome({
+        inputActive: true
       })
-    ).toBe("Restore issue");
+    ).toBe(true);
     expect(
-      browserRecoveryFailureLabel({
-        reason: "target_stale",
-        message: "target changed",
-        at: 100
+      shouldShowBrowserAgentActivityChrome({
+        inputActive: false,
+        sharedControlState: "awaiting_user_decision"
       })
-    ).toBe("Target changed");
-    expect(
-      browserRecoveryFailureLabel({
-        reason: "storage_unavailable",
-        message: "storage unavailable",
-        at: 100
-      })
-    ).toBe("Storage unavailable");
+    ).toBe(true);
   });
 });

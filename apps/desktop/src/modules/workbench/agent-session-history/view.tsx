@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
-  Bot,
+  ChevronDown,
+  ChevronRight,
   Clock3,
-  Folder,
+  ExternalLink,
   History,
   MessageSquare,
   PanelLeftOpen,
   Pencil,
-  RefreshCw,
-  Search,
   Star,
   StarOff,
   Trash2
@@ -30,7 +29,13 @@ import type {
   AgentSessionSnapshot,
   AgentSessionSummary
 } from "../../../shared/desktop-bridge";
+import {
+  filterBrowserHistoryEntries,
+  type BrowserHistoryEntry
+} from "../browser-history/service";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type {
+  AgentSessionHistoryCategory,
   AgentSessionHistoryPreviewState,
   AgentSessionHistoryState,
   AgentSessionHistorySurfaceProps
@@ -65,17 +70,56 @@ const formatSessionTime = (value?: string | null): string => {
   }).format(parsed);
 };
 
+const hasProjectBinding = (session: AgentSessionSummary): boolean =>
+  (session.workingDir ?? "").trim().length > 0;
+
+type ProjectSessionGroup = {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly sessions: readonly AgentSessionSummary[];
+};
+
+const projectFolderNameFromPath = (value: string): string => {
+  const normalized = value.trim().replace(/[\\/]+$/u, "");
+  if (normalized.length === 0) {
+    return value;
+  }
+  const parts = normalized.split(/[\\/]+/u);
+  return parts[parts.length - 1] ?? normalized;
+};
+
+const groupProjectSessions = (
+  sessions: readonly AgentSessionSummary[]
+): readonly ProjectSessionGroup[] => {
+  const groups = new Map<string, AgentSessionSummary[]>();
+  sessions.forEach((session) => {
+    const workingDir = session.workingDir?.trim();
+    if (workingDir === undefined || workingDir.length === 0) {
+      return;
+    }
+    const group = groups.get(workingDir);
+    if (group === undefined) {
+      groups.set(workingDir, [session]);
+    } else {
+      group.push(session);
+    }
+  });
+
+  return Array.from(groups.entries()).map(([path, groupSessions]) => ({
+    id: path,
+    name: projectFolderNameFromPath(path),
+    path,
+    sessions: groupSessions
+  }));
+};
+
 const sessionSearchText = (session: AgentSessionSummary): string =>
   normalize([
     session.title,
     session.customTitle,
     session.saveLabel,
-    session.shortName,
-    session.status,
-    session.providerLabel,
-    session.providerKey,
-    session.model,
-    session.workingDir
+    session.shortName
   ].filter(Boolean).join(" "));
 
 const filterSessions = (
@@ -89,17 +133,55 @@ const filterSessions = (
   return sessions.filter((session) => sessionSearchText(session).includes(normalizedQuery));
 };
 
-type SessionGroups = {
-  readonly saved: readonly AgentSessionSummary[];
-  readonly recent: readonly AgentSessionSummary[];
-  readonly archived: readonly AgentSessionSummary[];
+const hostnameFromUrl = (value: string): string => {
+  try {
+    return new URL(value).hostname.replace(/^www\./u, "");
+  } catch (_error) {
+    return value;
+  }
 };
 
-const groupSessions = (sessions: readonly AgentSessionSummary[]): SessionGroups => ({
-  saved: sessions.filter((session) => session.saved && !session.archived),
-  recent: sessions.filter((session) => !session.saved && !session.archived),
-  archived: sessions.filter((session) => session.archived)
-});
+const fallbackFaviconUrlFromEntry = (entry: BrowserHistoryEntry): string | undefined => {
+  try {
+    return new URL("/favicon.ico", entry.url).href;
+  } catch (_error) {
+    return undefined;
+  }
+};
+
+const faviconFallbackLabel = (entry: BrowserHistoryEntry): string => {
+  const label = hostnameFromUrl(entry.url).trim();
+  return (label[0] ?? "?").toLocaleUpperCase();
+};
+
+const BrowserHistoryFavicon = ({ entry }: { readonly entry: BrowserHistoryEntry }) => {
+  const [failed, setFailed] = useState(false);
+  const faviconUrl = entry.faviconUrl?.trim() || fallbackFaviconUrlFromEntry(entry);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [faviconUrl]);
+
+  if (faviconUrl !== undefined && faviconUrl.length > 0 && !failed) {
+    return (
+      <img
+        src={faviconUrl}
+        alt=""
+        aria-hidden="true"
+        className="lyra-agent-history-site-favicon"
+        loading="eager"
+        decoding="async"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <span className="lyra-agent-history-site-favicon-fallback" aria-hidden="true">
+      {faviconFallbackLabel(entry)}
+    </span>
+  );
+};
 
 const SessionRow = ({
   session,
@@ -129,9 +211,6 @@ const SessionRow = ({
   readonly onDelete: (session: AgentSessionSummary) => void;
 }) => {
   const updatedAt = formatSessionTime(session.lastActiveAt ?? session.updatedAt);
-  const modelLabel = session.model ?? labels.modelFallback;
-  const providerLabel = session.providerLabel ?? labels.statusFallback;
-  const workingDir = session.workingDir ?? "";
   const disabled = opening || busy;
 
   return (
@@ -139,14 +218,12 @@ const SessionRow = ({
       className={
         [
           "lyra-agent-history-row",
+          "lyra-agent-history-session-row",
           active ? "lyra-agent-history-row-active" : "",
           selected ? "lyra-agent-history-row-selected" : ""
         ].filter(Boolean).join(" ")
       }
     >
-      <span className="lyra-agent-history-row-icon" aria-hidden="true">
-        {session.saved ? <Star size={14} /> : session.archived ? <Archive size={14} /> : <History size={14} />}
-      </span>
       <button
         type="button"
         className="lyra-agent-history-row-open"
@@ -157,13 +234,6 @@ const SessionRow = ({
         <span className="lyra-agent-history-row-main">
           <span className="lyra-agent-history-row-title">
             <strong title={session.title}>{session.title}</strong>
-            <span className="lyra-agent-history-row-status">
-              {session.archived ? labels.groupArchived : session.saved ? labels.saved : session.status}
-            </span>
-          </span>
-          <span className="lyra-agent-history-row-model" title={`${providerLabel} / ${modelLabel}`}>
-            <Bot size={12} aria-hidden="true" />
-            <span>{providerLabel} / {modelLabel}</span>
           </span>
           <span className="lyra-agent-history-row-facts">
             <span title={`${session.messageCount} ${labels.messages}`}>
@@ -177,12 +247,6 @@ const SessionRow = ({
               </span>
             )}
           </span>
-          {workingDir.length === 0 ? null : (
-            <span className="lyra-agent-history-row-path" title={`${labels.workingDir}: ${workingDir}`}>
-              <Folder size={12} aria-hidden="true" />
-              <span>{workingDir}</span>
-            </span>
-          )}
         </span>
       </button>
       <span className="lyra-agent-history-row-actions">
@@ -241,14 +305,123 @@ const SessionRow = ({
   );
 };
 
+const BrowserHistoryRow = ({
+  entry,
+  labels,
+  selected,
+  onPreview,
+  onOpen
+}: {
+  readonly entry: BrowserHistoryEntry;
+  readonly labels: AgentSessionHistorySurfaceProps["labels"];
+  readonly selected: boolean;
+  readonly onPreview: (entry: BrowserHistoryEntry) => void;
+  readonly onOpen: (entry: BrowserHistoryEntry) => void;
+}) => {
+  const visitedAt = formatSessionTime(entry.visitedAt);
+  return (
+    <article
+      className={
+        [
+          "lyra-agent-history-row",
+          "lyra-agent-history-web-row",
+          selected ? "lyra-agent-history-row-selected" : ""
+        ].filter(Boolean).join(" ")
+      }
+    >
+      <span className="lyra-agent-history-row-icon" aria-hidden="true">
+        <BrowserHistoryFavicon entry={entry} />
+      </span>
+      <button
+        type="button"
+        className="lyra-agent-history-row-open"
+        aria-label={`${labels.categoryBrowserHistory}: ${entry.title}`}
+        onClick={() => onPreview(entry)}
+      >
+        <span className="lyra-agent-history-row-main">
+          <span className="lyra-agent-history-row-title">
+            <strong title={entry.title}>{entry.title}</strong>
+          </span>
+          <span className="lyra-agent-history-row-url" title={entry.url}>
+            {entry.url}
+          </span>
+          <span className="lyra-agent-history-row-facts">
+            {visitedAt.length === 0 ? null : (
+              <span title={`${labels.visited} ${visitedAt}`}>
+                <Clock3 size={12} aria-hidden="true" />
+                <span>{visitedAt}</span>
+              </span>
+            )}
+            <span>
+              <History size={12} aria-hidden="true" />
+              <span>{entry.visitCount} {labels.visits}</span>
+            </span>
+          </span>
+        </span>
+      </button>
+      <span className="lyra-agent-history-row-actions">
+        <button
+          type="button"
+          className="lyra-agent-history-row-action"
+          aria-label={`${labels.openBrowserHistoryEntry}: ${entry.url}`}
+          title={labels.openBrowserHistoryEntry}
+          onClick={() => onOpen(entry)}
+        >
+          <ExternalLink size={14} aria-hidden="true" />
+        </button>
+      </span>
+    </article>
+  );
+};
+
+const BrowserHistoryPreviewPane = ({
+  entry,
+  labels,
+  previewPageId,
+  onPreviewHostChange
+}: {
+  readonly entry: BrowserHistoryEntry | null;
+  readonly labels: AgentSessionHistorySurfaceProps["labels"];
+  readonly previewPageId?: string;
+  readonly onPreviewHostChange?: (tabId: string, element: HTMLElement | null) => void;
+}) => {
+  const handlePreviewHostRef = useCallback((element: HTMLElement | null): void => {
+    if (previewPageId === undefined) {
+      return;
+    }
+    onPreviewHostChange?.(previewPageId, element);
+  }, [onPreviewHostChange, previewPageId]);
+
+  if (entry === null) {
+    return (
+      <aside className="lyra-agent-history-preview" aria-label={labels.categoryBrowserHistory}>
+        <div className="lyra-agent-history-preview-empty">
+          <strong>{labels.browserHistoryEmptyTitle}</strong>
+          <span>{labels.browserHistoryEmptyDescription}</span>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="lyra-agent-history-preview" aria-label={labels.categoryBrowserHistory}>
+      <div
+        ref={handlePreviewHostRef}
+        className="lyra-agent-history-web-page-host"
+        aria-label={entry.title}
+        data-browser-page-host="true"
+        data-tab-id={previewPageId}
+      />
+    </aside>
+  );
+};
+
 const AgentSessionPreviewPane = ({
   snapshot,
-  summary,
   labels,
   loading
 }: {
   readonly snapshot: AgentSessionSnapshot | null;
-  readonly summary: AgentSessionSummary | null;
   readonly labels: AgentSessionHistorySurfaceProps["labels"];
   readonly loading: boolean;
 }) => {
@@ -272,10 +445,6 @@ const AgentSessionPreviewPane = ({
     );
   }
 
-  const updatedAt = formatSessionTime(summary?.lastActiveAt ?? summary?.updatedAt ?? snapshot.updatedAt);
-  const modelLabel = summary?.model ?? labels.modelFallback;
-  const providerLabel = summary?.providerLabel ?? labels.statusFallback;
-  const workingDir = summary?.workingDir ?? "";
   const messages = agentSessionToChatMessages(snapshot);
   const previewData = createDataProviderValue({
     session: agentSessionToSessionMeta(snapshot),
@@ -286,37 +455,6 @@ const AgentSessionPreviewPane = ({
 
   return (
     <aside className="lyra-agent-history-preview" aria-label={labels.previewTitle}>
-      <header className="lyra-agent-history-preview-header">
-        <div>
-          <span className="lyra-agent-history-preview-kicker">{labels.previewTitle}</span>
-          <h3>{snapshot.title}</h3>
-        </div>
-        <span className="lyra-agent-history-preview-status">
-          {summary?.archived ? labels.groupArchived : summary?.saved ? labels.saved : snapshot.turnStatus}
-        </span>
-      </header>
-      <div className="lyra-agent-history-preview-meta">
-        <span>
-          <Bot size={12} aria-hidden="true" />
-          {providerLabel} / {modelLabel}
-        </span>
-        <span>
-          <MessageSquare size={12} aria-hidden="true" />
-          {summary?.messageCount ?? snapshot.messages.length} {labels.messages}
-        </span>
-        {updatedAt.length === 0 ? null : (
-          <span>
-            <Clock3 size={12} aria-hidden="true" />
-            {labels.updated} {updatedAt}
-          </span>
-        )}
-        {workingDir.length === 0 ? null : (
-          <span className="lyra-agent-history-preview-path">
-            <Folder size={12} aria-hidden="true" />
-            {workingDir}
-          </span>
-        )}
-      </div>
       <div className="lyra-agent-history-preview-chat" role="log">
         {messages.length === 0 ? (
           <div className="lyra-agent-history-preview-empty lyra-agent-history-preview-empty-inline">
@@ -339,7 +477,15 @@ export const AgentSessionHistorySurface = ({
   desktopApi,
   labels,
   activeSessionId = null,
+  query = "",
+  refreshRequestKey = 0,
+  locateRequest = null,
+  browserHistory = [],
+  browserHistoryPreviewPageId,
+  onBrowserHistoryPreviewChange,
+  onBrowserHistoryPreviewHostChange,
   onOpenSession,
+  onOpenBrowserHistoryEntry,
   openDialog,
   locale
 }: AgentSessionHistorySurfaceProps) => {
@@ -348,12 +494,16 @@ export const AgentSessionHistorySurface = ({
   }
 
   const [state, setState] = useState<AgentSessionHistoryState>(EMPTY_STATE);
-  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<AgentSessionHistoryCategory>("sessions");
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<AgentSessionHistoryPreviewState>(EMPTY_PREVIEW_STATE);
+  const [selectedBrowserHistoryEntryId, setSelectedBrowserHistoryEntryId] = useState<string | null>(null);
+  const [collapsedProjectGroupIds, setCollapsedProjectGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const [operationSessionId, setOperationSessionId] = useState<string | null>(null);
+  const refreshRequestKeyRef = useRef(refreshRequestKey);
+  const locateRequestKeyRef = useRef(0);
 
   const loadSessions = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -383,6 +533,14 @@ export const AgentSessionHistorySurface = ({
   }, [loadSessions]);
 
   useEffect(() => {
+    if (refreshRequestKeyRef.current === refreshRequestKey) {
+      return;
+    }
+    refreshRequestKeyRef.current = refreshRequestKey;
+    void loadSessions();
+  }, [loadSessions, refreshRequestKey]);
+
+  useEffect(() => {
     const agentApi = desktopApi?.agent;
     if (agentApi === undefined) return undefined;
     return agentApi.onEvent((event) => {
@@ -406,14 +564,122 @@ export const AgentSessionHistorySurface = ({
     });
   }, [desktopApi]);
 
+  const categorySessions = useMemo(() => ({
+    sessions: state.sessions.filter((session) => !session.archived && !hasProjectBinding(session)),
+    "project-sessions": state.sessions.filter((session) => !session.archived && hasProjectBinding(session)),
+    "archived-sessions": state.sessions.filter((session) => session.archived)
+  }), [state.sessions]);
+  const selectedSessions = category === "browser-history"
+    ? []
+    : categorySessions[category];
   const filteredSessions = useMemo(
-    () => filterSessions(state.sessions, query),
-    [query, state.sessions]
+    () => filterSessions(selectedSessions, query),
+    [query, selectedSessions]
   );
-  const groupedSessions = useMemo(
-    () => groupSessions(filteredSessions),
+  const filteredBrowserHistory = useMemo(
+    () => filterBrowserHistoryEntries(browserHistory, query),
+    [browserHistory, query]
+  );
+  const projectSessionGroups = useMemo(
+    () => groupProjectSessions(filteredSessions),
     [filteredSessions]
   );
+
+  useEffect(() => {
+    if (category !== "browser-history") {
+      return;
+    }
+    setSelectedBrowserHistoryEntryId((current) => {
+      if (current !== null && filteredBrowserHistory.some((entry) => entry.id === current)) {
+        return current;
+      }
+      return filteredBrowserHistory[0]?.id ?? null;
+    });
+  }, [category, filteredBrowserHistory]);
+
+  useEffect(() => {
+    if (selectedBrowserHistoryEntryId === null) {
+      return;
+    }
+    if (browserHistory.some((entry) => entry.id === selectedBrowserHistoryEntryId)) {
+      return;
+    }
+    setSelectedBrowserHistoryEntryId(null);
+  }, [browserHistory, selectedBrowserHistoryEntryId]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+    setPreview((current) => {
+      if (current.sessionId === null) {
+        return current;
+      }
+      if (category === "browser-history") {
+        return EMPTY_PREVIEW_STATE;
+      }
+      return selectedSessions.some((session) => session.id === current.sessionId)
+        ? current
+        : EMPTY_PREVIEW_STATE;
+    });
+  }, [category, loading, selectedSessions]);
+
+  const categoryOptions = useMemo(() => [
+    {
+      id: "sessions" as const,
+      label: labels.categorySessions,
+      count: categorySessions.sessions.length
+    },
+    {
+      id: "project-sessions" as const,
+      label: labels.categoryProjectSessions,
+      count: categorySessions["project-sessions"].length
+    },
+    {
+      id: "archived-sessions" as const,
+      label: labels.categoryArchivedSessions,
+      count: categorySessions["archived-sessions"].length
+    },
+    {
+      id: "browser-history" as const,
+      label: labels.categoryBrowserHistory,
+      count: browserHistory.length
+    }
+  ], [
+    browserHistory.length,
+    categorySessions,
+    labels.categoryArchivedSessions,
+    labels.categoryBrowserHistory,
+    labels.categoryProjectSessions,
+    labels.categorySessions
+  ]);
+
+  useWorkbenchTitlebarContribution(useMemo(() => ({
+    ariaLabel: labels.categoryFilter,
+    controls: (
+      <div
+        className="lyra-titlebar-context-group lyra-history-titlebar-categories"
+        aria-label={labels.categoryFilter}
+      >
+        {categoryOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={
+              category === option.id
+                ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active lyra-history-titlebar-category"
+                : "lyra-titlebar-context-text-button lyra-history-titlebar-category"
+            }
+            aria-pressed={category === option.id}
+            onClick={() => setCategory(option.id)}
+          >
+            <span>{option.label}</span>
+            <span className="lyra-history-titlebar-category-count">{option.count}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }), [category, categoryOptions, labels.categoryFilter]));
 
   const previewSession = useCallback(async (sessionId: string): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -440,9 +706,35 @@ export const AgentSessionHistorySurface = ({
     }
   }, [desktopApi, labels.runtimeUnavailable]);
 
+  useEffect(() => {
+    if (locateRequest === null || locateRequest.requestKey === locateRequestKeyRef.current) {
+      return;
+    }
+    locateRequestKeyRef.current = locateRequest.requestKey;
+    if (locateRequest.target.kind === "session") {
+      setCategory(locateRequest.target.category);
+      void previewSession(locateRequest.target.sessionId);
+      return;
+    }
+    setCategory("browser-history");
+    setSelectedBrowserHistoryEntryId(locateRequest.target.entryId);
+  }, [locateRequest, previewSession]);
+
   const openInAiPanel = useCallback(async (sessionId: string): Promise<void> => {
     await onOpenSession(sessionId);
   }, [onOpenSession]);
+
+  const toggleProjectGroup = useCallback((groupId: string): void => {
+    setCollapsedProjectGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
 
   const refreshAfterMutation = useCallback(async (): Promise<void> => {
     await loadSessions();
@@ -618,76 +910,76 @@ export const AgentSessionHistorySurface = ({
     openDialog
   ]);
 
-  const renderGroup = (
-    id: keyof SessionGroups,
-    title: string,
-    sessions: readonly AgentSessionSummary[]
-  ) => {
-    if (sessions.length === 0) return null;
-    return (
-      <section className="lyra-agent-history-group" aria-labelledby={`agent-history-${id}`}>
-        <h3 id={`agent-history-${id}`}>
-          <span>{title}</span>
-          <span>{sessions.length}</span>
-        </h3>
-        <div className="lyra-agent-history-group-list">
-          {sessions.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              labels={labels}
-              active={activeSessionId === session.id}
-              selected={preview.sessionId === session.id}
-              opening={openingSessionId === session.id}
-              busy={operationSessionId === session.id}
-              onPreview={(sessionId) => {
-                void previewSession(sessionId);
-              }}
-              onOpenInAiPanel={(sessionId) => {
-                void openInAiPanel(sessionId);
-              }}
-              onToggleSaved={toggleSaved}
-              onToggleArchived={toggleArchived}
-              onRename={openRenameDialog}
-              onDelete={openDeleteDialog}
-            />
-          ))}
-        </div>
-      </section>
-    );
-  };
+  const openBrowserHistoryEntry = useCallback((entry: BrowserHistoryEntry): void => {
+    void onOpenBrowserHistoryEntry?.(entry);
+  }, [onOpenBrowserHistoryEntry]);
 
-  const previewSummary = preview.sessionId === null
-    ? null
-    : state.sessions.find((session) => session.id === preview.sessionId) ?? null;
+  const isBrowserHistoryCategory = category === "browser-history";
+  const selectedBrowserHistoryEntry =
+    selectedBrowserHistoryEntryId === null
+      ? null
+      : filteredBrowserHistory.find((entry) => entry.id === selectedBrowserHistoryEntryId) ?? null;
+
+  const renderSessionRow = (session: AgentSessionSummary) => (
+    <SessionRow
+      key={session.id}
+      session={session}
+      labels={labels}
+      active={activeSessionId === session.id}
+      selected={preview.sessionId === session.id}
+      opening={openingSessionId === session.id}
+      busy={operationSessionId === session.id}
+      onPreview={(sessionId) => {
+        void previewSession(sessionId);
+      }}
+      onOpenInAiPanel={(sessionId) => {
+        void openInAiPanel(sessionId);
+      }}
+      onToggleSaved={toggleSaved}
+      onToggleArchived={toggleArchived}
+      onRename={openRenameDialog}
+      onDelete={openDeleteDialog}
+    />
+  );
+
+  useEffect(() => () => {
+    onBrowserHistoryPreviewChange?.(null);
+  }, [onBrowserHistoryPreviewChange]);
+
+  useEffect(() => {
+    if (
+      browserHistoryPreviewPageId === undefined
+      || isBrowserHistoryCategory === false
+      || selectedBrowserHistoryEntry === null
+    ) {
+      onBrowserHistoryPreviewChange?.(null);
+      return;
+    }
+    onBrowserHistoryPreviewChange?.({
+      tabId: browserHistoryPreviewPageId,
+      url: selectedBrowserHistoryEntry.url,
+      title: selectedBrowserHistoryEntry.title
+    });
+  }, [
+    browserHistoryPreviewPageId,
+    isBrowserHistoryCategory,
+    onBrowserHistoryPreviewChange,
+    selectedBrowserHistoryEntry
+  ]);
+
+  const isLoading = !isBrowserHistoryCategory && loading;
+  const hasRows = isBrowserHistoryCategory
+    ? filteredBrowserHistory.length > 0
+    : filteredSessions.length > 0;
+  const emptyTitle = isBrowserHistoryCategory
+    ? labels.browserHistoryEmptyTitle
+    : labels.emptyTitle;
+  const emptyDescription = isBrowserHistoryCategory
+    ? labels.browserHistoryEmptyDescription
+    : labels.emptyDescription;
 
   return (
     <section className="lyra-agent-history" aria-label={labels.title}>
-      <header className="lyra-agent-history-header">
-        <div className="lyra-agent-history-heading">
-          <span className="lyra-agent-history-heading-icon" aria-hidden="true">
-            <History size={16} />
-          </span>
-          <div>
-            <h2>{labels.title}</h2>
-            {state.sessionsDir === null ? null : (
-              <p>{state.sessionsDir}</p>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="lyra-agent-history-refresh"
-          disabled={loading}
-          onClick={() => {
-            void loadSessions();
-          }}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-          <span>{labels.refresh}</span>
-        </button>
-      </header>
-
       {errorMessage === null ? null : (
         <div className="lyra-agent-history-error" role="status">
           <strong>{labels.errorTitle}</strong>
@@ -696,45 +988,87 @@ export const AgentSessionHistorySurface = ({
       )}
 
       <section className="lyra-agent-history-split">
-        <section className="lyra-agent-history-list" aria-busy={loading}>
-          <div className="lyra-agent-history-list-controls">
-            <label className="lyra-agent-history-search">
-              <Search size={14} aria-hidden="true" />
-              <input
-                value={query}
-                placeholder={labels.searchPlaceholder}
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-            </label>
-            <span className="lyra-agent-history-count">
-              {filteredSessions.length} / {state.sessions.length}
-            </span>
-          </div>
+        <section className="lyra-agent-history-list" aria-busy={isLoading}>
           <div className="lyra-agent-history-list-content">
-            {loading ? (
+            {isLoading ? (
               <div className="lyra-agent-history-state">{labels.loading}</div>
-            ) : filteredSessions.length === 0 ? (
+            ) : hasRows === false ? (
               <div className="lyra-agent-history-state">
-                <strong>{labels.emptyTitle}</strong>
-                <span>{labels.emptyDescription}</span>
+                <strong>{emptyTitle}</strong>
+                <span>{emptyDescription}</span>
+              </div>
+            ) : isBrowserHistoryCategory ? (
+              <div className="lyra-agent-history-group-list">
+                {filteredBrowserHistory.map((entry) => (
+                  <BrowserHistoryRow
+                    key={entry.id}
+                    entry={entry}
+                    labels={labels}
+                    selected={selectedBrowserHistoryEntryId === entry.id}
+                    onPreview={(nextEntry) => setSelectedBrowserHistoryEntryId(nextEntry.id)}
+                    onOpen={openBrowserHistoryEntry}
+                  />
+                ))}
+              </div>
+            ) : category === "project-sessions" ? (
+              <div className="lyra-agent-history-group-list">
+                {projectSessionGroups.map((group) => {
+                  const collapsed = collapsedProjectGroupIds.has(group.id);
+                  return (
+                    <section
+                      key={group.id}
+                      className="lyra-agent-history-project-group"
+                    >
+                      <button
+                        type="button"
+                        className="lyra-agent-history-project-group-toggle"
+                        aria-expanded={!collapsed}
+                        title={group.path}
+                        onClick={() => toggleProjectGroup(group.id)}
+                      >
+                        {collapsed ? (
+                          <ChevronRight size={13} aria-hidden="true" />
+                        ) : (
+                          <ChevronDown size={13} aria-hidden="true" />
+                        )}
+                        <span className="lyra-agent-history-project-group-name">{group.name}</span>
+                        <span className="lyra-agent-history-project-group-count">{group.sessions.length}</span>
+                      </button>
+                      {collapsed ? null : (
+                        <div className="lyra-agent-history-project-group-sessions">
+                          {group.sessions.map(renderSessionRow)}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             ) : (
-              <>
-                {renderGroup("saved", labels.groupSaved, groupedSessions.saved)}
-                {renderGroup("recent", labels.groupRecent, groupedSessions.recent)}
-                {renderGroup("archived", labels.groupArchived, groupedSessions.archived)}
-              </>
+              <div className="lyra-agent-history-group-list">
+                {filteredSessions.map(renderSessionRow)}
+              </div>
             )}
           </div>
         </section>
-        <AgentSessionPreviewPane
-          snapshot={preview.snapshot}
-          summary={previewSummary}
-          labels={labels}
-          loading={openingSessionId !== null && preview.sessionId === openingSessionId}
-        />
+        {isBrowserHistoryCategory ? (
+          <BrowserHistoryPreviewPane
+            entry={selectedBrowserHistoryEntry}
+            labels={labels}
+            {...(browserHistoryPreviewPageId === undefined
+              ? {}
+              : { previewPageId: browserHistoryPreviewPageId })}
+            {...(onBrowserHistoryPreviewHostChange === undefined
+              ? {}
+              : { onPreviewHostChange: onBrowserHistoryPreviewHostChange })}
+          />
+        ) : (
+          <AgentSessionPreviewPane
+            snapshot={preview.snapshot}
+            labels={labels}
+            loading={openingSessionId !== null && preview.sessionId === openingSessionId}
+          />
+        )}
       </section>
-
     </section>
   );
 };

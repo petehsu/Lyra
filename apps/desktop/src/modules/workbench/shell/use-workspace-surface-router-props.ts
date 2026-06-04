@@ -69,6 +69,14 @@ type UseWorkspaceSurfaceRouterPropsParams = {
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
     readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
+    readonly query: AgentSessionHistorySurfaceProps["query"];
+    readonly refreshRequestKey: AgentSessionHistorySurfaceProps["refreshRequestKey"];
+    readonly locateRequest: AgentSessionHistorySurfaceProps["locateRequest"];
+    readonly browserHistory: AgentSessionHistorySurfaceProps["browserHistory"];
+    readonly browserHistoryPreviewPageId: AgentSessionHistorySurfaceProps["browserHistoryPreviewPageId"];
+    readonly onBrowserHistoryPreviewChange: AgentSessionHistorySurfaceProps["onBrowserHistoryPreviewChange"];
+    readonly onBrowserHistoryPreviewHostChange: AgentSessionHistorySurfaceProps["onBrowserHistoryPreviewHostChange"];
+    readonly onOpenBrowserHistoryEntry: AgentSessionHistorySurfaceProps["onOpenBrowserHistoryEntry"];
     readonly locale?: AgentSessionHistorySurfaceProps["locale"];
   };
 };

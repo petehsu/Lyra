@@ -8,8 +8,10 @@
  */
 
 .lyra-ai-panel-agent-chat {
+  --lyra-ai-session-content-bg:
+    color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-bg-editor) 18%);
   /* Legacy aliases — forward to canonical tokens defined in tokens.css */
-  --bg: var(--color-bg);
+  --bg: var(--lyra-ai-session-content-bg);
   --text: var(--color-text);
   --text-dim: var(--color-text-dim);
   --text-dimmer: var(--color-text-dimmer);
@@ -123,6 +125,115 @@
   border-top: 0;
   border-radius: 0 0 14px 14px;
   box-shadow: none;
+}
+
+.ai-session-tabs-header {
+  --lyra-tabstrip-bg:
+    color-mix(in srgb, var(--lyra-bg-app) 50%, var(--lyra-bg-surface) 50%);
+  --lyra-tabstrip-active-bg: var(--lyra-ai-session-content-bg);
+  --lyra-tabstrip-hover-bg:
+    color-mix(in srgb, var(--lyra-tabstrip-active-bg) 54%, var(--lyra-tabstrip-bg) 46%);
+  --lyra-tabstrip-line:
+    color-mix(in srgb, var(--lyra-line-default) 42%, transparent);
+  --lyra-tab-shape-fill: var(--lyra-tabstrip-hover-bg);
+  --lyra-tab-shape-active-fill: var(--lyra-tabstrip-active-bg);
+  --lyra-tab-divider-color: color-mix(in srgb, var(--lyra-tabstrip-line) 76%, transparent);
+  --lyra-tab-overlap: var(--lyra-unit-10);
+  --lyra-tab-content-margin: var(--lyra-unit-7);
+  --lyra-tab-divider-inset: var(--lyra-tab-content-margin);
+  --lyra-browser-tab-control-h: calc(var(--lyra-size-browser-tab-h) - var(--lyra-unit-6));
+  --lyra-browser-tab-active-control-h: var(--lyra-size-browser-tab-h);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--lyra-unit-8);
+  height: var(--lyra-size-browser-tab-h);
+  padding: 0 var(--lyra-unit-8) 0 var(--lyra-unit-4);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: var(--lyra-tabstrip-bg);
+  overflow: visible;
+}
+
+.ai-session-tabs-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--lyra-unit-4);
+  background: var(--lyra-tabstrip-active-bg);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ai-session-tabs-header .ai-session-tab-item-active::before {
+  display: none;
+}
+
+.ai-session-tab-strip {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.ai-session-tab-list {
+  min-width: 0;
+  max-width: calc(100% - var(--lyra-size-browser-nav-slot));
+  flex: 0 1 auto;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.ai-session-tab-list > .ai-session-tab-item + .ai-session-tab-item {
+  margin-left: calc(var(--lyra-tab-overlap) * -1);
+}
+
+.ai-session-tab-item {
+  min-width: var(--lyra-unit-42);
+  max-width: var(--lyra-tab-active-max-w);
+  flex: 1 1 var(--lyra-tab-max-w);
+}
+
+.ai-session-tab-item-active {
+  height: var(--lyra-browser-tab-active-control-h);
+  margin-top: 0;
+}
+
+.ai-session-tab-main {
+  overflow: hidden;
+}
+
+.ai-session-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-session-tab-add {
+  align-self: center;
+  flex: 0 0 var(--lyra-size-browser-nav-slot);
+}
+
+.ai-session-tabs-header .ai-session-tab-close {
+  opacity: 0;
+}
+
+.ai-session-tabs-header .ai-session-tab-item:hover .ai-session-tab-close,
+.ai-session-tabs-header .ai-session-tab-item:focus-within .ai-session-tab-close {
+  opacity: 1;
+}
+
+.ai-session-tabs-header .app-header-right {
+  min-width: 0;
+  flex: none;
+  gap: var(--lyra-unit-6);
 }
 
 .app-header-title {

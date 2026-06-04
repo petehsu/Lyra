@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import "./App.css";
 import "./styles/tokens.css";
 
@@ -20,12 +20,14 @@ export interface AgentChatShellProps {
   showDebugPanel?: boolean;
   locale?: Locale;
   showHeader?: boolean;
+  headerSlot?: ReactNode;
 }
 
 export function AgentChatShell({
   showDebugPanel = false,
   locale,
   showHeader = true,
+  headerSlot,
 }: AgentChatShellProps) {
   if (locale !== undefined) {
     setLocale(locale);
@@ -42,7 +44,7 @@ export function AgentChatShell({
 
   return (
     <div className="app">
-      {showHeader ? <Header /> : null}
+      {headerSlot ?? (showHeader ? <Header /> : null)}
       <PillsRail />
       {sidePanel !== null && sidePanel !== undefined && sidePanel.pages.length > 0 ? (
         <AgentSidePanelPreview />
@@ -124,6 +126,7 @@ export interface AgentChatAppProps {
   showDebugPanel?: boolean;
   locale?: Locale;
   showHeader?: boolean;
+  headerSlot?: ReactNode;
 }
 
 export function AgentChatApp({
@@ -131,12 +134,14 @@ export function AgentChatApp({
   showDebugPanel = false,
   locale,
   showHeader = true,
+  headerSlot,
 }: AgentChatAppProps) {
   return (
     <DataContextProvider value={data}>
       <AgentChatShell
         showDebugPanel={showDebugPanel}
         showHeader={showHeader}
+        headerSlot={headerSlot}
         {...(locale === undefined ? {} : { locale })}
       />
     </DataContextProvider>

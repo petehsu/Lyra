@@ -13,6 +13,7 @@ export type BrowserTabStripProps = {
   readonly tabs: readonly WorkspaceTab[];
   readonly splitGroupTabIds?: readonly string[];
   readonly activeTabId: string;
+  readonly agentActiveTabId?: string | null;
   readonly goBackLabel: string;
   readonly goForwardLabel: string;
   readonly toggleTabStackLabel: string;

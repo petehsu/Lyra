@@ -428,6 +428,7 @@ export interface PermissionRequest {
 }
 
 export interface SessionMeta {
+  id?: string | null;
   title: string;
   project: string;
   workingDir: string | null;

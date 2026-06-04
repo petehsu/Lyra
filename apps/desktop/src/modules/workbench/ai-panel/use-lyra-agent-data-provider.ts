@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type {
   AgentModelCatalogSnapshot,
   AgentRuntimeEvent,
+  AgentSessionCreateRequest,
   AgentSessionSnapshot
 } from "../../../shared/agent";
 import type {
@@ -119,8 +120,6 @@ type Action =
   | { readonly type: "event"; readonly event: AgentRuntimeEvent }
   | { readonly type: "error"; readonly message: string };
 
-let lastAgentSessionId: string | null = null;
-
 const initialState: State = {
   session: null,
   error: null,
@@ -135,7 +134,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
     if (state.session !== null && event.snapshot.id !== state.session.id) {
       return state;
     }
-    lastAgentSessionId = event.snapshot.id;
     return {
       ...state,
       session: event.snapshot,
@@ -206,7 +204,6 @@ function isCustomOptionLabel(label: string): boolean {
 const reducer = (state: State, action: Action): State => {
   if (action.type === "loading") return { ...state, loading: true, error: null, turnError: null };
   if (action.type === "snapshot") {
-    lastAgentSessionId = action.snapshot.id;
     return {
       ...state,
       session: action.snapshot,
@@ -269,6 +266,10 @@ export const useLyraAgentDataProvider = (
   settingsAiModel?: SettingsAiModel,
   activeSessionId?: string | null,
   onActiveSessionChange?: (sessionId: string) => void,
+  onSessionSnapshotChange?: (snapshot: AgentSessionSnapshot) => void,
+  onCreateSessionTab?: (
+    request: AgentSessionCreateRequest
+  ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot,
   onRequestProjectBind?: (currentPath?: string) => Promise<string | null>,
   onOpenProjectTree?: (request: {
     readonly sessionId: string;
@@ -312,8 +313,8 @@ export const useLyraAgentDataProvider = (
   const [visibleMessageLimit, setVisibleMessageLimit] = useState<number>(
     APP_CONFIG.messageWindow.initialCount
   );
-  const currentSessionIdRef = useRef<string | null>(lastAgentSessionId);
-  const previousSessionIdRef = useRef<string | null>(lastAgentSessionId);
+  const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+  const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousMessageWindowRef = useRef<{
     readonly sessionId: string | null;
     readonly messageCount: number;
@@ -374,7 +375,7 @@ export const useLyraAgentDataProvider = (
     let disposed = false;
     dispatch({ type: "loading" });
     const agentApi = desktopApi.agent;
-    const requestedSessionId = activeSessionId ?? lastAgentSessionId;
+    const requestedSessionId = activeSessionId ?? null;
     currentSessionIdRef.current = requestedSessionId;
     const unsubscribe = agentApi.onEvent((event) => {
       const eventSessionId = runtimeEventSessionId(event);
@@ -502,7 +503,10 @@ export const useLyraAgentDataProvider = (
   useEffect(() => {
     if (state.session === null) return;
     onActiveSessionChange?.(state.session.id);
-  }, [onActiveSessionChange, state.session?.id]);
+    onSessionSnapshotChange?.(state.session);
+  }, [onActiveSessionChange, onSessionSnapshotChange, state.session]);
+
+  const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
   const sendMessage = useCallback(async (
     text: string,
@@ -512,7 +516,7 @@ export const useLyraAgentDataProvider = (
     const trimmed = text.trim();
     if (trimmed.length === 0 && images.length === 0) return;
     await desktopApi.agent.sendTurn({
-      sessionId: state.session?.id ?? lastAgentSessionId,
+      sessionId: resolvedSessionId,
       text: trimmed,
       ...(images.length === 0
         ? {}
@@ -527,7 +531,7 @@ export const useLyraAgentDataProvider = (
             }))
           })
     });
-  }, [desktopApi, state.session?.id]);
+  }, [desktopApi, resolvedSessionId]);
 
   const captureBrowserScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
@@ -559,10 +563,10 @@ export const useLyraAgentDataProvider = (
 
   const cancel = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const sessionId = state.session?.id ?? lastAgentSessionId;
+    const sessionId = resolvedSessionId;
     if (sessionId === null) return;
     await desktopApi.agent.cancelTurn({ sessionId });
-  }, [desktopApi, state.session?.id]);
+  }, [desktopApi, resolvedSessionId]);
 
   const setBrowserFollowMode = useCallback(async (enabled: boolean): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
@@ -606,12 +610,16 @@ export const useLyraAgentDataProvider = (
         state.session?.projectBound === true && typeof state.session.workingDir === "string"
           ? { title: "新会话", workingDir: state.session.workingDir }
           : { title: "新会话" };
-      const snapshot = await desktopApi.agent.createSession(request);
+      const snapshot = await (
+        onCreateSessionTab === undefined
+          ? desktopApi.agent.createSession(request)
+          : onCreateSessionTab(request)
+      );
       dispatch({ type: "snapshot", snapshot });
     } catch (error: unknown) {
       dispatch({ type: "error", message: toErrorMessage(error) });
     }
-  }, [desktopApi, state.session?.projectBound, state.session?.workingDir]);
+  }, [desktopApi, onCreateSessionTab, state.session?.projectBound, state.session?.workingDir]);
 
   const bindProject = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;
@@ -622,14 +630,14 @@ export const useLyraAgentDataProvider = (
     const selectedPath = await onRequestProjectBind(currentPath);
     if (selectedPath === null) return;
     const snapshot = await desktopApi.agent.bindProject({
-      sessionId: state.session?.id ?? lastAgentSessionId,
+      sessionId: resolvedSessionId,
       workingDir: selectedPath
     });
     dispatch({ type: "snapshot", snapshot });
   }, [
     desktopApi,
     onRequestProjectBind,
-    state.session?.id,
+    resolvedSessionId,
     state.session?.projectBound,
     state.session?.workingDir
   ]);
@@ -655,15 +663,15 @@ export const useLyraAgentDataProvider = (
 
   const openSelfDevLab = useCallback(async (): Promise<void> => {
     await onOpenSelfDevLab?.({
-      parentSessionId: state.session?.id ?? lastAgentSessionId
+      parentSessionId: resolvedSessionId
     });
-  }, [onOpenSelfDevLab, state.session?.id]);
+  }, [onOpenSelfDevLab, resolvedSessionId]);
 
   const openOvernightLab = useCallback(async (): Promise<void> => {
     await onOpenOvernightLab?.({
-      parentSessionId: state.session?.id ?? lastAgentSessionId
+      parentSessionId: resolvedSessionId
     });
-  }, [onOpenOvernightLab, state.session?.id]);
+  }, [onOpenOvernightLab, resolvedSessionId]);
 
   const submitDecisions = useCallback(async (answers: Record<string, string>) => {
     if (desktopApi?.agent === undefined || state.session === null) return;
@@ -705,7 +713,7 @@ export const useLyraAgentDataProvider = (
     setPendingPermissions((items) => items.filter((item) => item.id !== id));
   }, [desktopApi, state.session]);
 
-  const currentSessionId = state.session?.id ?? lastAgentSessionId;
+  const currentSessionId = resolvedSessionId;
 
   const switchModel = useCallback(async (modelId: string): Promise<void> => {
     if (desktopApi?.agent === undefined) return;

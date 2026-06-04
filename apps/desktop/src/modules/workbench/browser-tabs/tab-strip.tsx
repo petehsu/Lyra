@@ -15,6 +15,7 @@ export const BrowserTabStrip = ({
   tabs,
   splitGroupTabIds = [],
   activeTabId,
+  agentActiveTabId = null,
   goBackLabel,
   goForwardLabel,
   toggleTabStackLabel,
@@ -52,7 +53,11 @@ export const BrowserTabStrip = ({
     onDetachTabFromSplit
   });
   const animationState = useBrowserTabStripAnimationState(tabs);
-  const layoutState = useBrowserTabStripLayoutState(tabs.length, runtime.navRef);
+  const layoutState = useBrowserTabStripLayoutState(
+    tabs.length,
+    runtime.navRef,
+    stackedMode
+  );
   const closeLock = useBrowserTabStripCloseLock({
     tabCount: tabs.length,
     navRef: runtime.navRef,
@@ -62,6 +67,7 @@ export const BrowserTabStrip = ({
     () => createBrowserTabStripRenderModel({
       tabs,
       activeTabId,
+      agentActiveTabId,
       splitGroupTabIds,
       stackedMode,
       closeTabLabel,
@@ -77,6 +83,7 @@ export const BrowserTabStrip = ({
     }),
     [
       activeTabId,
+      agentActiveTabId,
       closeTabLabel,
       closeLock.closeLockedTabWidth,
       layoutState.density,

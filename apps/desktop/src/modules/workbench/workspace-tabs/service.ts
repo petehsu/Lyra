@@ -17,7 +17,7 @@ import {
   toSnapshot,
   writePersistedState
 } from "./session-codec";
-import { createVisibleWorkspaceLayout } from "./split-model";
+import { createVisibleWorkspaceLayout, resolveRuntimeState } from "./split-model";
 import {
   createAppTab,
   createPageTab,
@@ -46,6 +46,17 @@ const DEFAULT_OPTIONS: WorkspaceTabsOptions = {
   splitOverflowPolicy: "block_with_notice"
 };
 
+const hasDuplicateTabIds = (tabs: readonly { readonly id: string }[]): boolean => {
+  const seen = new Set<string>();
+  for (const tab of tabs) {
+    if (seen.has(tab.id)) {
+      return true;
+    }
+    seen.add(tab.id);
+  }
+  return false;
+};
+
 export const useWorkspaceTabsModel = (
   config: WorkspaceTabsConfig,
   options: WorkspaceTabsOptions = DEFAULT_OPTIONS
@@ -61,6 +72,15 @@ export const useWorkspaceTabsModel = (
   useEffect(() => {
     nextTabSerialRef.current = resolveNextSerial(state.tabs);
   }, [state.tabs]);
+
+  useEffect(() => {
+    if (hasDuplicateTabIds(state.tabs) === false) {
+      return;
+    }
+    setState((current) =>
+      hasDuplicateTabIds(current.tabs) ? resolveRuntimeState(current, config) : current
+    );
+  }, [config, state.tabs]);
 
   const activeTab = useMemo(
     () => state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0],

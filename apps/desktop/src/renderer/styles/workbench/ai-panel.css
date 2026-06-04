@@ -1,11 +1,13 @@
 .lyra-ai-panel-shell {
+  --lyra-ai-session-content-bg:
+    color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-bg-editor) 18%);
   min-width: 0;
   min-height: 0;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--lyra-bg-surface);
+  background: var(--lyra-ai-session-content-bg);
   color: var(--lyra-text-primary);
 }
 
@@ -14,6 +16,7 @@
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  background: var(--lyra-ai-session-content-bg);
   container-type: inline-size;
 }
 

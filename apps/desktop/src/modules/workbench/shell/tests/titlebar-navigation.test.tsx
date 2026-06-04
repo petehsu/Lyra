@@ -74,6 +74,32 @@ describe("TitlebarNavigation", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
+  test("renders omnibox suggestions inside the navigation shell so the input stretches upward", () => {
+    const onSuggestionClick = vi.fn();
+    renderNavigation({
+      showSuggestions: true,
+      selectedIndex: 1,
+      onSuggestionClick,
+      suggestions: [
+        { type: "search", value: "github", label: "Google" },
+        { type: "search", value: "github actions", label: "Wikipedia" }
+      ]
+    });
+
+    const listbox = screen.getByRole("listbox", { name: "地址建议" });
+    const shell = listbox.closest(".lyra-titlebar-navigation-shell");
+
+    expect(listbox.closest("form")).not.toBeNull();
+    expect(shell).not.toBeNull();
+    expect(shell).toHaveAttribute("data-suggestions-open", "true");
+    expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.mouseDown(screen.getByText("github actions (Wikipedia)"));
+    expect(onSuggestionClick).toHaveBeenCalledWith(
+      expect.objectContaining({ value: "github actions" })
+    );
+  });
+
   test("ports security details and flips them away from the viewport edge", () => {
     Object.defineProperty(window, "innerWidth", {
       configurable: true,

@@ -87,6 +87,7 @@ export const TitlebarNavigation = ({
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const suggestionsRef = useRef<HTMLUListElement | null>(null);
   const nativeSecurityPopoverTabIdRef = useRef<string | null>(null);
+  const suggestionPanelOpen = showSuggestions && suggestions.length > 0;
   const securityPopoverPosition = useAnchoredOverlayPosition({
     open: showSecurityPopover,
     anchorRef: securityButtonRef,
@@ -97,16 +98,6 @@ export const TitlebarNavigation = ({
     maxWidth: 300,
     maxHeight: 520,
     offset: 6
-  });
-  const suggestionsPosition = useAnchoredOverlayPosition({
-    open: showSuggestions && suggestions.length > 0,
-    anchorRef: navigationRef,
-    overlayRef: suggestionsRef,
-    boundarySelector: ".lyra-browser-tabs, .lyra-titlebar, .lyra-workspace",
-    matchAnchorWidth: true,
-    minWidth: 220,
-    maxHeight: 280,
-    offset: 4
   });
 
   // Get security level: "secure" | "insecure" | "system"
@@ -350,12 +341,14 @@ export const TitlebarNavigation = ({
     <ul
       ref={suggestionsRef}
       className="lyra-omnibox-suggestions"
-      data-placement={suggestionsPosition.placement}
-      style={suggestionsPosition.style}
+      role="listbox"
+      aria-label="地址建议"
     >
       {suggestions.map((suggestion, index) => (
         <li
           key={`${suggestion.value}-${index}`}
+          role="option"
+          aria-selected={index === selectedIndex}
           className={`lyra-suggestion-item ${
             index === selectedIndex ? "is-selected" : ""
           }`}
@@ -366,7 +359,6 @@ export const TitlebarNavigation = ({
           }}
         >
           <div className="lyra-suggestion-left">
-            {suggestion.type === "preset" && <Globe size={13} />}
             {suggestion.type === "history" && <Globe size={13} />}
             {suggestion.type === "search" && <Search size={13} />}
             <span className="lyra-suggestion-text">
@@ -374,7 +366,7 @@ export const TitlebarNavigation = ({
             </span>
           </div>
           <span className="lyra-suggestion-type-badge">
-            {suggestion.type === "preset" ? "预设" : suggestion.type === "history" ? "历史" : "联想词"}
+            {suggestion.type === "history" ? "历史" : "搜索建议"}
           </span>
         </li>
       ))}
@@ -392,77 +384,78 @@ export const TitlebarNavigation = ({
           }
           data-has-value={hasValue ? "true" : "false"}
           data-has-trailing-control={hasTrailingControl ? "true" : "false"}
+          data-suggestions-open={suggestionPanelOpen ? "true" : "false"}
         >
-          <button
-            type="button"
-            ref={securityButtonRef}
-            className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
-            onClick={() => {
-              if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
-                setShowSecurityPopover(false);
-                hideNativeSecurityPopover();
-                return;
-              }
-              if (canUseNativeSecurityPopover && showNativeSecurityPopover()) {
-                setShowSecurityPopover(true);
-                return;
-              }
-              setShowSecurityPopover(true);
-            }}
-            title="点击查看连接安全与证书信息"
-          >
-            {renderSecurityIcon()}
-          </button>
-
-          <input
-            className="lyra-titlebar-navigation-input"
-            type="text"
-            value={value}
-            placeholder={placeholder}
-            aria-label={ariaLabel}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-            onChange={handleChange}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onKeyDown={onKeyDown}
-          />
-          <span className="lyra-titlebar-navigation-actions">
-            {trailingControl}
-            {hasValue ? (
-              <button
-                type="button"
-                className="lyra-titlebar-navigation-action"
-                aria-label={`Clear ${ariaLabel}`}
-                title={`Clear ${ariaLabel}`}
-                onClick={() => {
-                  onChange("");
-                }}
-              >
-                <X size={14} />
-              </button>
-            ) : null}
+          {suggestionPanelOpen ? suggestionsList : null}
+          <div className="lyra-titlebar-navigation-row">
             <button
-              type="submit"
-              className="lyra-titlebar-navigation-action"
-              aria-label={primaryActionLabel}
-              title={primaryActionLabel}
+              type="button"
+              ref={securityButtonRef}
+              className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
+              onClick={() => {
+                if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
+                  setShowSecurityPopover(false);
+                  hideNativeSecurityPopover();
+                  return;
+                }
+                if (canUseNativeSecurityPopover && showNativeSecurityPopover()) {
+                  setShowSecurityPopover(true);
+                  return;
+                }
+                setShowSecurityPopover(true);
+              }}
+              title="点击查看连接安全与证书信息"
             >
-              {primaryActionKind === "reload" ? (
-                <RefreshCw size={14} />
-              ) : (
-                <ArrowRight size={14} />
-              )}
+              {renderSecurityIcon()}
             </button>
-          </span>
+
+            <input
+              className="lyra-titlebar-navigation-input"
+              type="text"
+              value={value}
+              placeholder={placeholder}
+              aria-label={ariaLabel}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={handleChange}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onKeyDown={onKeyDown}
+            />
+            <span className="lyra-titlebar-navigation-actions">
+              {trailingControl}
+              {hasValue ? (
+                <button
+                  type="button"
+                  className="lyra-titlebar-navigation-action"
+                  aria-label={`Clear ${ariaLabel}`}
+                  title={`Clear ${ariaLabel}`}
+                  onClick={() => {
+                    onChange("");
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                className="lyra-titlebar-navigation-action"
+                aria-label={primaryActionLabel}
+                title={primaryActionLabel}
+              >
+                {primaryActionKind === "reload" ? (
+                  <RefreshCw size={14} />
+                ) : (
+                  <ArrowRight size={14} />
+                )}
+              </button>
+            </span>
+          </div>
         </div>
       </form>
       {showSecurityPopover && nativeSecurityPopoverTabIdRef.current === null
         ? createPortal(securityPopover, document.body)
-        : null}
-      {showSuggestions && suggestions.length > 0
-        ? createPortal(suggestionsList, document.body)
         : null}
     </>
   );

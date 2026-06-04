@@ -9,6 +9,7 @@ export type BrowserTabStripDensity = "regular" | "small" | "smaller" | "mini";
 export type BrowserTabStripTabModel = {
   readonly tab: WorkspaceTab;
   readonly isCollapsed: boolean;
+  readonly isAgentActive: boolean;
   readonly tabClassName: string;
   readonly tabMainClassName: string;
   readonly closeLabel: string;
@@ -34,6 +35,7 @@ export type BrowserTabStripRenderModel = {
 type CreateBrowserTabStripRenderModelInput = {
   readonly tabs: readonly WorkspaceTab[];
   readonly activeTabId: string;
+  readonly agentActiveTabId?: string | null;
   readonly splitGroupTabIds: readonly string[];
   readonly stackedMode: boolean;
   readonly closeTabLabel: string;
@@ -51,6 +53,7 @@ type CreateBrowserTabStripRenderModelInput = {
 export const createBrowserTabStripRenderModel = ({
   tabs,
   activeTabId,
+  agentActiveTabId = null,
   splitGroupTabIds,
   stackedMode,
   closeTabLabel,
@@ -71,6 +74,7 @@ export const createBrowserTabStripRenderModel = ({
 
   const tabModels = tabs.map((tab, index): BrowserTabStripTabModel => {
     const isActive = tab.id === activeTabId;
+    const isAgentActive = tab.id === agentActiveTabId;
     const isCollapsed = stackedMode && !isActive;
     const nextTab = tabs[index + 1];
     const isCurrentTabInSplit =
@@ -85,12 +89,14 @@ export const createBrowserTabStripRenderModel = ({
     return {
       tab,
       isCollapsed,
+      isAgentActive,
       closeLabel: `${closeTabLabel}-${tab.title}`,
       tabClassName: cx(
         "lyra-browser-tab-item",
         "lyra-browser-tab-item-drag-enabled",
         "lyra-allow-web-drag",
         isActive && "lyra-browser-tab-item-active",
+        isAgentActive && "lyra-browser-tab-item-agent-active",
         isCollapsed && "lyra-browser-tab-item-collapsed",
         splitDropTargetTabId === tab.id && "lyra-browser-tab-item-split-target",
         isCurrentTabInSplit && isSplitGroupActive
@@ -149,7 +155,7 @@ export const createBrowserTabStripRenderModel = ({
     stripClassName: cx(
       "lyra-browser-tab-strip",
       stackedMode && "lyra-browser-tab-strip-stacked",
-      density !== "regular" && `lyra-browser-tab-strip-density-${density}`,
+      !stackedMode && density !== "regular" && `lyra-browser-tab-strip-density-${density}`,
       closeLockedTabWidth !== null && "lyra-browser-tab-strip-close-lock"
     ),
     tabs: tabModels,

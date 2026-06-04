@@ -449,7 +449,25 @@ export const reduceWorkspaceTabsState = (
       return changed(closeTabById(state, target.id, context.config));
     }
 
-    case "open-page-in-new-tab":
+    case "open-page-in-new-tab": {
+      const existing = state.tabs.find((tab) => tab.id === action.tab.id);
+      if (existing !== undefined) {
+        return changed(
+          {
+            ...state,
+            tabs: state.tabs.map((tab) =>
+              tab.id === action.tab.id && tab.pageKind === "page" ? action.tab : tab
+            ),
+            activeTabId: action.tab.id,
+            focusedSplitTabId: state.splitGroupTabIds.includes(action.tab.id)
+              ? action.tab.id
+              : state.focusedSplitTabId
+          },
+          {
+            latestInputValue: action.tab.inputValue
+          }
+        );
+      }
       return changed(
         {
           ...state,
@@ -461,6 +479,7 @@ export const reduceWorkspaceTabsState = (
           latestInputValue: action.tab.inputValue
         }
       );
+    }
 
     case "update-page-meta": {
       if (toNonEmptyTrimmed(action.tabId) === null) {
