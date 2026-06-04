@@ -11,6 +11,28 @@ describe("terminal profiles service", () => {
     expect(resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "missing").id).toBe("default");
   });
 
+  test("default profile starts the Lyra Agent CLI and keeps shell escape hatch", () => {
+    const defaultProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "default");
+    const shellProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "shell");
+
+    expect(defaultProfile).toMatchObject({
+      id: "default",
+      name: "Lyra",
+      startupCommand: "__lyra_agent_cli__",
+      mode: "command"
+    });
+    expect(createTerminalProfilePaneOptions(defaultProfile, 1)).toMatchObject({
+      profileId: "default",
+      command: "__lyra_agent_cli__",
+      mode: "command"
+    });
+    expect(shellProfile).toMatchObject({
+      id: "shell",
+      name: "Shell"
+    });
+    expect(createTerminalProfilePaneOptions(shellProfile, 2)).not.toHaveProperty("command");
+  });
+
   test("creates pane options from startup command profile", () => {
     const profile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "task");
     const options = createTerminalProfilePaneOptions(profile, 3);

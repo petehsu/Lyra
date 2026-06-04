@@ -56,6 +56,7 @@ export const TerminalWorkspaceSurface = ({
           <TerminalPaneSurface
             key={pane.id}
             pane={pane}
+            terminalTabId={tab.id}
             active={pane.id === tab.activePaneId}
             desktopApi={desktopApi}
             labels={labels}

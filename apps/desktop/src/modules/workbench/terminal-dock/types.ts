@@ -80,6 +80,23 @@ export type TerminalDockModel = {
   readonly reorderDockTab: (tabId: string, targetIndex: number) => void;
   readonly splitActivePane: (direction: TerminalSplitDirection) => void;
   readonly splitTab: (tabId: string, direction: TerminalSplitDirection) => void;
+  readonly splitTabWithOptions: (
+    tabId: string,
+    direction: TerminalSplitDirection,
+    options: {
+      readonly title?: string;
+      readonly cwd?: string;
+      readonly shell?: string;
+      readonly profileId?: string;
+      readonly env?: TerminalProfilePaneOptions["env"];
+      readonly startupCommand?: string;
+      readonly mode?: "command" | "shell";
+      readonly command?: string;
+    }
+  ) => {
+    readonly tab: TerminalDockTab;
+    readonly pane: TerminalDockPane;
+  } | null;
   readonly focusPane: (tabId: string, paneId: string) => void;
   readonly setPaneFollowMode: (tabId: string, paneId: string, followMode: TerminalFollowMode) => void;
   readonly closePane: (tabId: string, paneId: string) => void;

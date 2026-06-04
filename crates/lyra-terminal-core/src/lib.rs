@@ -11,7 +11,7 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use once_cell::sync::Lazy;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shell::{
     configure_shell_command, configure_shell_environment, make_shell_candidates, shell_exists,
@@ -102,7 +102,7 @@ type RustEventCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 type SessionStateHandle = Arc<(Mutex<SessionOutputState>, Condvar)>;
 
 #[cfg_attr(not(feature = "node-api"), allow(dead_code))]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeCommandCompletionEvent {
     terminal_session_id: String,
@@ -125,7 +125,7 @@ struct NativeCommandCompletionEvent {
 }
 
 #[cfg_attr(not(feature = "node-api"), allow(dead_code))]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeEvent {
     kind: String,
@@ -187,8 +187,69 @@ struct SessionOutputState {
     text_buffer: Vec<u8>,
     text_retained_start: u64,
     total_text_bytes: u64,
+    text_decoder: Utf8StreamDecoder,
     running: bool,
     exit_code: Option<i32>,
+}
+
+#[derive(Default)]
+struct Utf8StreamDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8StreamDecoder {
+    fn decode(&mut self, chunk: &[u8]) -> String {
+        if self.pending.is_empty() {
+            return decode_utf8_prefix(chunk, &mut self.pending);
+        }
+        let mut bytes = Vec::with_capacity(self.pending.len() + chunk.len());
+        bytes.extend_from_slice(&self.pending);
+        bytes.extend_from_slice(chunk);
+        self.pending.clear();
+        decode_utf8_prefix(&bytes, &mut self.pending)
+    }
+
+    fn finish(&mut self) -> String {
+        if self.pending.is_empty() {
+            return String::new();
+        }
+        let text = String::from_utf8_lossy(&self.pending).to_string();
+        self.pending.clear();
+        text
+    }
+}
+
+fn decode_utf8_prefix(bytes: &[u8], pending: &mut Vec<u8>) -> String {
+    let mut output = String::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        match std::str::from_utf8(&bytes[cursor..]) {
+            Ok(valid) => {
+                output.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid_end = cursor + error.valid_up_to();
+                if valid_end > cursor {
+                    output.push_str(
+                        std::str::from_utf8(&bytes[cursor..valid_end])
+                            .expect("valid prefix from UTF-8 error"),
+                    );
+                }
+                match error.error_len() {
+                    Some(invalid_len) => {
+                        output.push('\u{FFFD}');
+                        cursor = valid_end + invalid_len;
+                    }
+                    None => {
+                        pending.extend_from_slice(&bytes[valid_end..]);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    output
 }
 
 #[derive(Clone)]
@@ -214,6 +275,7 @@ pub struct TerminalCreateRequest {
     pub title: Option<String>,
     pub cwd: Option<String>,
     pub shell: Option<String>,
+    pub env: Option<Vec<TerminalShellLaunchEnvPair>>,
     pub cols: u16,
     pub rows: u16,
     pub source: Option<String>,
@@ -226,7 +288,7 @@ pub struct TerminalCreateRequest {
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalShellLaunchEnvPair {
     pub key: String,
@@ -1136,7 +1198,8 @@ fn append_output(state_handle: &SessionStateHandle, data: &[u8]) {
             state.buffer.drain(0..excess);
             state.retained_start = state.retained_start.saturating_add(excess as u64);
         }
-        let text = strip_live_terminal_control_sequences(&String::from_utf8_lossy(data));
+        let decoded = state.text_decoder.decode(data);
+        let text = strip_live_terminal_control_sequences(&decoded);
         state.text_buffer.extend_from_slice(text.as_bytes());
         state.total_text_bytes = state.total_text_bytes.saturating_add(text.len() as u64);
         if state.text_buffer.len() > MAX_SESSION_BUFFER_BYTES {
@@ -1318,9 +1381,26 @@ fn spawn_io_threads(
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
         let mut shell_parser = shell_integration::ShellIntegrationParser::new();
+        let mut event_decoder = Utf8StreamDecoder::default();
         loop {
             match reader.read(&mut buffer) {
-                Ok(0) => break,
+                Ok(0) => {
+                    let data = event_decoder.finish();
+                    if !data.is_empty() {
+                        emit_event(NativeEvent {
+                            kind: "data".to_string(),
+                            session_id: session_id_for_reader.clone(),
+                            data: Some(data),
+                            exit_code: None,
+                            error: None,
+                            source: Some(source_for_reader.clone()),
+                            mode: Some(mode_for_reader.clone()),
+                            command_id: None,
+                            command: None,
+                        });
+                    }
+                    break;
+                }
                 Ok(size) => {
                     let chunk = &buffer[..size];
                     let shell_events = if memory_writer_for_reader.is_some() {
@@ -1329,18 +1409,20 @@ fn spawn_io_threads(
                         Vec::new()
                     };
                     append_output(&state_for_reader, chunk);
-                    let data = String::from_utf8_lossy(chunk).to_string();
-                    emit_event(NativeEvent {
-                        kind: "data".to_string(),
-                        session_id: session_id_for_reader.clone(),
-                        data: Some(data),
-                        exit_code: None,
-                        error: None,
-                        source: Some(source_for_reader.clone()),
-                        mode: Some(mode_for_reader.clone()),
-                        command_id: None,
-                        command: None,
-                    });
+                    let data = event_decoder.decode(chunk);
+                    if !data.is_empty() {
+                        emit_event(NativeEvent {
+                            kind: "data".to_string(),
+                            session_id: session_id_for_reader.clone(),
+                            data: Some(data),
+                            exit_code: None,
+                            error: None,
+                            source: Some(source_for_reader.clone()),
+                            mode: Some(mode_for_reader.clone()),
+                            command_id: None,
+                            command: None,
+                        });
+                    }
                     let screen_diff_payload = screen_for_reader
                         .lock()
                         .ok()
@@ -1425,6 +1507,19 @@ fn apply_shell_cwd(command: &mut CommandBuilder, cwd: Option<&str>) {
         if !cwd_trimmed.is_empty() {
             command.cwd(cwd_trimmed);
         }
+    }
+}
+
+fn apply_requested_env(command: &mut CommandBuilder, env: Option<&[TerminalShellLaunchEnvPair]>) {
+    let Some(env) = env else {
+        return;
+    };
+    for pair in env {
+        let key = pair.key.trim();
+        if key.is_empty() || key.contains('=') || key.contains('\0') || pair.value.contains('\0') {
+            continue;
+        }
+        command.env(key, &pair.value);
     }
 }
 
@@ -1574,6 +1669,7 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
         } else if let Some(command) = command_text.as_deref() {
             configure_command_mode(&mut builder, &shell, command);
         }
+        apply_requested_env(&mut builder, request.env.as_deref());
 
         let child = match pair.slave.spawn_command(builder) {
             Ok(v) => v,
@@ -3996,7 +4092,7 @@ mod tests {
         record_observer_output, resize_observer_session, write_session, TerminalCloseRequest,
         TerminalCreateRequest, TerminalObserverCloseRequest, TerminalObserverCreateRequest,
         TerminalObserverInputRequest, TerminalObserverOutputRequest, TerminalObserverResizeRequest,
-        TerminalReadRequest, TerminalScreenReadRequest, TerminalWriteRequest,
+        TerminalReadRequest, TerminalScreenReadRequest, TerminalWriteRequest, Utf8StreamDecoder,
     };
     use serde_json::Value;
     use std::fs;
@@ -4010,6 +4106,22 @@ mod tests {
         ));
         fs::create_dir_all(&root).expect("create temp root");
         root.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn utf8_stream_decoder_preserves_split_box_drawing() {
+        let mut decoder = Utf8StreamDecoder::default();
+        assert_eq!(decoder.decode(&[0xE2]), "");
+        assert_eq!(decoder.decode(&[0x94]), "");
+        assert_eq!(decoder.decode(&[0x80, b' ', 0xE2, 0x95]), "─ ");
+        assert_eq!(decoder.decode(&[0xB0]), "╰");
+    }
+
+    #[test]
+    fn utf8_stream_decoder_replaces_invalid_bytes_without_poisoning_next_text() {
+        let mut decoder = Utf8StreamDecoder::default();
+        assert_eq!(decoder.decode(&[0xFF, b'a']), "\u{FFFD}a");
+        assert_eq!(decoder.decode("中文".as_bytes()), "中文");
     }
 
     #[test]
@@ -4044,6 +4156,7 @@ mod tests {
             source: Some("ai".to_string()),
             mode: Some("command".to_string()),
             command: Some(command.to_string()),
+            env: None,
             persist: Some(false),
             storage_root,
             actor_json: None,
@@ -4223,6 +4336,7 @@ mod tests {
             source: Some("ai".to_string()),
             mode: Some("shell".to_string()),
             command: None,
+            env: None,
             persist: Some(false),
             storage_root: Some(root.clone()),
             actor_json: None,
@@ -4267,6 +4381,7 @@ mod tests {
             source: Some("ai".to_string()),
             mode: Some("shell".to_string()),
             command: None,
+            env: None,
             persist: Some(false),
             storage_root: Some(root.clone()),
             actor_json: None,

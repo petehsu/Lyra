@@ -158,6 +158,40 @@ describe("terminal pane surface", () => {
     expect(document.querySelector(".lyra-terminal-renderer-diagnostics")).toBeNull();
   });
 
+  test("passes terminal runtime identifiers through create env", async () => {
+    const baseProps = createProps();
+    const props = {
+      ...baseProps,
+      terminalTabId: "tab-1",
+      pane: {
+        ...baseProps.pane,
+        env: [
+          { key: "EXISTING_ENV", value: "kept" },
+          { key: "LYRA_TERMINAL_SESSION_ID", value: "stale" }
+        ]
+      }
+    };
+    const terminalApi = props.desktopApi?.terminal as unknown as {
+      createSession: ReturnType<typeof vi.fn>;
+    };
+
+    await act(async () => {
+      render(<TerminalPaneSurface {...props} />);
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+
+    await waitFor(() => {
+      expect(terminalApi.createSession).toHaveBeenCalledWith(expect.objectContaining({
+        env: expect.arrayContaining([
+          { key: "EXISTING_ENV", value: "kept" },
+          { key: "LYRA_TERMINAL_SESSION_ID", value: "session-1" },
+          { key: "LYRA_TERMINAL_PANE_ID", value: "pane-1" },
+          { key: "LYRA_TERMINAL_TAB_ID", value: "tab-1" }
+        ])
+      }));
+    });
+  });
+
   test("acknowledges runtime data after xterm writes it", async () => {
     const dataListeners: Array<(event: {
       readonly sessionId: string;

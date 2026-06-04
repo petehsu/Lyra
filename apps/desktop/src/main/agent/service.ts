@@ -1140,7 +1140,9 @@ export const createAgentIpcBridge = ({
   const resolveUiTerminal = async (
     payload: Record<string, unknown>,
     openIfMissing: boolean,
-    options: { readonly fallbackToActiveWhenOnlySessionId?: boolean } = {}
+    options: {
+      readonly fallbackToActiveWhenOnlySessionId?: boolean;
+    } = {}
   ): Promise<TerminalToolTarget> => {
     const service = getWorkbenchObservationService();
     if (service === null) {
@@ -1149,7 +1151,11 @@ export const createAgentIpcBridge = ({
     const requestedSessionId = readOptionalTerminalId(payload, "sessionId");
     const requestedTerminalTabId = readOptionalTerminalId(payload, "terminalTabId");
     const requestedPaneId = readOptionalTerminalId(payload, "paneId");
-    const listed = await service.listTerminalPanes({});
+    const listedRaw = await service.listTerminalPanes({});
+    const listed = {
+      active: listedRaw.active,
+      panes: listedRaw.panes
+    };
     const explicitTarget =
       requestedSessionId !== undefined
       || requestedTerminalTabId !== undefined
@@ -1177,7 +1183,7 @@ export const createAgentIpcBridge = ({
       const cwd = readOptionalStringField(payload, "cwd");
       pane = await service.openTerminalPane({
         placement: "dock",
-        ...(title === undefined ? {} : { title }),
+        title: title ?? "Agent Terminal",
         ...(cwd === undefined ? {} : { cwd })
       });
       await waitForTerminalSessionReady(pane.sessionId);
@@ -1210,7 +1216,11 @@ export const createAgentIpcBridge = ({
     const hasUiRef =
       readOptionalTerminalId(payload, "terminalTabId") !== undefined
       || readOptionalTerminalId(payload, "paneId") !== undefined;
-    if (preference === "ui" || hasUiRef || (preference === "auto" && browserFollowModeEnabled)) {
+    if (
+      preference === "ui"
+      || hasUiRef
+      || (preference === "auto" && browserFollowModeEnabled)
+    ) {
       return await resolveUiTerminal(payload, options.uiOpenIfMissing, {
         fallbackToActiveWhenOnlySessionId:
           preference === "auto" && browserFollowModeEnabled && !hasUiRef
@@ -2432,7 +2442,8 @@ export const createAgentIpcBridge = ({
       const agentSessionId = readRuntimeSessionId(request);
       const preference = readTerminalTargetPreference(request);
       const command = readTerminalCommand(request);
-      const useUi = preference === "ui" || (preference === "auto" && browserFollowModeEnabled);
+      const useUi = preference === "ui"
+        || (preference === "auto" && browserFollowModeEnabled);
       if (useUi) {
         const target = await resolveUiTerminal(request, true);
         await waitForTerminalSessionReady(target.sessionId);
@@ -2584,10 +2595,13 @@ export const createAgentIpcBridge = ({
     },
     "terminal.write": async (payload) => {
       const request = normalizePayload(payload);
-      const target = await resolveTerminalTarget(readRuntimeSessionId(request), request, {
+      const agentSessionId = readRuntimeSessionId(request);
+      const targetPreference = readTerminalTargetPreference(request);
+      const target = await resolveTerminalTarget(agentSessionId, request, {
         privateCreateIfMissing:
-          readTerminalTargetPreference(request) !== "ui" && !browserFollowModeEnabled,
-        uiOpenIfMissing: false
+          targetPreference !== "ui"
+          && !browserFollowModeEnabled,
+        uiOpenIfMissing: targetPreference === "ui"
       });
       const data = typeof request.data === "string" ? request.data : undefined;
       const text = typeof request.text === "string" ? request.text : undefined;
@@ -2801,8 +2815,10 @@ export const createAgentIpcBridge = ({
       const agentSessionId = readRuntimeSessionId(request);
       const targetPreference = readTerminalTargetPreference(request);
       const target = await resolveTerminalTarget(agentSessionId, request, {
-        privateCreateIfMissing: targetPreference !== "ui" && !browserFollowModeEnabled,
-        uiOpenIfMissing: false
+        privateCreateIfMissing:
+          targetPreference !== "ui"
+          && !browserFollowModeEnabled,
+        uiOpenIfMissing: targetPreference === "ui"
       });
       const toolAction = readOptionalStringField(request, "action") ?? "input";
       const semanticAction = terminalSemanticInputActionForToolAction(toolAction, request);

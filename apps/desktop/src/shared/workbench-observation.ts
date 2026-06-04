@@ -64,6 +64,7 @@ export type WorkbenchTabsListResult = {
 };
 
 export type WorkbenchTerminalPlacement = "dock" | "workspace";
+export type WorkbenchTerminalSplitDirection = "horizontal" | "vertical";
 
 export type WorkbenchTerminalPaneDescriptor = {
   readonly terminalTabId: string;
@@ -88,6 +89,9 @@ export type WorkbenchTerminalOpenRequest = {
   readonly placement?: WorkbenchTerminalPlacement;
   readonly title?: string;
   readonly cwd?: string;
+  readonly terminalTabId?: string;
+  readonly paneId?: string;
+  readonly splitDirection?: WorkbenchTerminalSplitDirection;
 };
 
 export type WorkbenchTerminalOpenResult = WorkbenchTerminalPaneDescriptor;

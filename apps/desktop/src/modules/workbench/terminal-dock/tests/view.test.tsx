@@ -130,6 +130,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     reorderDockTab: vi.fn(),
     splitActivePane: vi.fn(),
     splitTab: vi.fn(),
+    splitTabWithOptions: vi.fn(() => null),
     focusPane: vi.fn(),
     setPaneFollowMode: vi.fn(),
     closePane: vi.fn(),

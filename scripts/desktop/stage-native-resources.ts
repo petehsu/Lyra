@@ -23,7 +23,7 @@ const desktopRoot = path.join(repoRoot, "apps/desktop");
 const stagedNativeRoot = path.join(desktopRoot, "native");
 const cargoManifest = path.join(repoRoot, "Cargo.toml");
 
-const runtimePackages = ["lyrad"] as const;
+const runtimePackages = ["lyrad", "lyra-cli"] as const;
 const nativeAddonPackages = [
   "lyra-terminal-core",
   "lyra-lsp-core",
@@ -154,8 +154,8 @@ const artifactDirs = (options: CliOptions): readonly string[] => {
   return Array.from(new Set(dirs));
 };
 
-const executableName = (target: DesktopTarget): string =>
-  target.platform === "win32" ? "lyrad.exe" : "lyrad";
+const executableNames = (target: DesktopTarget): readonly string[] =>
+  target.platform === "win32" ? ["lyrad.exe", "lyra.exe"] : ["lyrad", "lyra"];
 
 const libraryNames = (stem: string, target: DesktopTarget): readonly string[] => {
   if (target.platform === "win32") {
@@ -204,7 +204,9 @@ const stageArtifacts = async (options: CliOptions): Promise<void> => {
     await rm(toDir, { recursive: true, force: true });
   }
   await mkdir(toDir, { recursive: true });
-  await copyFirstExisting(fromDirs, [executableName(options.target)], toDir);
+  for (const name of executableNames(options.target)) {
+    await copyFirstExisting(fromDirs, [name], toDir);
+  }
   for (const stem of artifactStems) {
     await copyFirstExisting(fromDirs, libraryNames(stem, options.target), toDir);
   }

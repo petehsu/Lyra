@@ -5,7 +5,13 @@ export const DEFAULT_TERMINAL_PROFILE_ID = "default" as const;
 export const DEFAULT_TERMINAL_PROFILES: readonly TerminalProfile[] = [
   {
     id: DEFAULT_TERMINAL_PROFILE_ID,
-    name: "Default"
+    name: "Lyra",
+    startupCommand: "__lyra_agent_cli__",
+    mode: "command"
+  },
+  {
+    id: "shell",
+    name: "Shell"
   },
   {
     id: "developer",

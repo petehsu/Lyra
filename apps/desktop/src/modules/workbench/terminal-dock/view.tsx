@@ -368,6 +368,7 @@ export const TerminalDock = ({
               <TerminalPaneSurface
                 key={pane.id}
                 pane={pane}
+                terminalTabId={activeDockTab.id}
                 active={pane.id === activeDockTab.activePaneId}
                 desktopApi={desktopApi}
                 labels={labels}

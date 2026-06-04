@@ -467,4 +467,69 @@ describe("terminal agent tools", () => {
 
     bridge.dispose();
   });
+
+  test("CLI follow keeps terminal tools private for inline CLI mirroring", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const runtimeClient = createRuntimeClient(registered);
+    vi.mocked(runtimeClient.request).mockImplementation(async (method: string) => {
+      if (method === "agent.cli.follow.read") {
+        return {
+          enabled: true,
+          terminalSessionId: "cli-terminal-1",
+          terminalTabId: "cli-tab-1",
+          terminalPaneId: "cli-pane-1"
+        };
+      }
+      return {};
+    });
+    const terminalBridge = createTerminalBridgeMock();
+    const cliPane = {
+      terminalTabId: "cli-tab-1",
+      paneId: "cli-pane-1",
+      sessionId: "cli-terminal-1",
+      title: "Lyra",
+      placement: "dock" as const
+    };
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({
+        active: cliPane,
+        panes: [cliPane]
+      })),
+      openTerminalPane: vi.fn(),
+      focusTerminalPane: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("terminal.input.execute")?.({
+      action: "run",
+      command: "npm test",
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-run" }
+    })).resolves.toMatchObject({
+      target: {
+        type: "private",
+        sessionId: expect.stringContaining("agent-terminal-agent-1-")
+      },
+      command: "npm test"
+    });
+    expect(observationService.openTerminalPane).not.toHaveBeenCalled();
+    expect(observationService.focusTerminalPane).not.toHaveBeenCalled();
+    expect(terminalBridge.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      source: "agent",
+      mode: "command",
+      command: "npm test"
+    }));
+    expect(terminalBridge.executeInput).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: expect.stringContaining("agent-terminal-agent-1-"),
+      action: "runCommand"
+    }));
+
+    bridge.dispose();
+  });
 });

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { access, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   ipcMain,
   MessageChannelMain,
@@ -77,6 +78,7 @@ import {
   type TerminalThemeMode
 } from "../../shared/terminal-theme";
 import type { LyraRuntimeClient } from "../runtime-client";
+import { resolveNativeResourceCandidates } from "../native-resource-paths";
 import {
   createPromptReloadCommand,
   resolvePromptShellFamily,
@@ -134,6 +136,7 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(request.title !== undefined ? { title: request.title } : {}),
     ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
     ...(normalizedShell !== undefined ? { shell: normalizedShell } : {}),
+    ...(Array.isArray(request.env) ? { env: request.env } : {}),
     ...(request.mode !== undefined ? { mode: request.mode } : {}),
     ...(request.command !== undefined ? { command: request.command } : {}),
     ...(typeof request.persist === "boolean" ? { persist: request.persist } : {}),
@@ -194,6 +197,7 @@ const TERMINAL_RENDERER_MAX_BATCH_BYTES = 128 * 1024;
 const TERMINAL_RENDERER_INTERACTIVE_DIRECT_BYTES = 4 * 1024;
 const TERMINAL_INPUT_BATCH_FLUSH_MS = 8;
 const TERMINAL_INPUT_MAX_BATCH_BYTES = 16 * 1024;
+const LYRA_AGENT_CLI_COMMAND = "__lyra_agent_cli__";
 
 type TerminalDataFlowState = {
   rendererCount: number;
@@ -216,6 +220,113 @@ type TerminalDataPortInputMessage = {
 };
 
 const quotePosixShellLiteral = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
+
+const quoteShellArg = (value: string): string => quotePosixShellLiteral(value);
+
+const resolveLyraCliBinaryName = (): string =>
+  process.platform === "win32" ? "lyra.exe" : "lyra";
+
+const resolveLyraCliBinaryPath = (): string => {
+  const candidates = resolveNativeResourceCandidates({
+    cwd: process.cwd(),
+    moduleDir: __dirname,
+    envVar: "LYRA_CLI_BIN",
+    fileNames: [resolveLyraCliBinaryName()]
+  });
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return "lyra";
+};
+
+const terminalEnvPairsToMap = (
+  env: readonly { readonly key: string; readonly value: string }[] | undefined
+): Map<string, string> => {
+  const values = new Map<string, string>();
+  for (const pair of env ?? []) {
+    const key = pair.key.trim();
+    if (key.length > 0) {
+      values.set(key, pair.value);
+    }
+  }
+  return values;
+};
+
+const envMapToPairs = (
+  env: Map<string, string>
+): readonly { readonly key: string; readonly value: string }[] =>
+  [...env.entries()].map(([key, value]) => ({ key, value }));
+
+const createLyraAgentCliLaunch = (
+  storageRoot: string,
+  request: TerminalCreateRequest
+): {
+  readonly command: string;
+  readonly env: readonly { readonly key: string; readonly value: string }[];
+} => {
+  const modulesRoot = dirname(storageRoot);
+  const runtimeRoot = join(modulesRoot, "runtime");
+  const agentRoot = join(modulesRoot, "agent");
+  const runtimeSocket = process.platform === "win32"
+    ? `\\\\.\\pipe\\lyra-runtime-${runtimeRoot.replace(/[^a-zA-Z0-9]/g, "_")}`
+    : join(runtimeRoot, "runtime", "lyrad.sock");
+  const env = terminalEnvPairsToMap(request.env);
+  if (request.sessionId !== undefined && request.sessionId.trim().length > 0) {
+    env.set("LYRA_TERMINAL_SESSION_ID", request.sessionId.trim());
+  }
+  env.set("LYRA_RUNTIME_SOCKET", runtimeSocket);
+  env.set("LYRA_AGENT_HOME", agentRoot);
+  env.set("LYRA_AGENT_RUNTIME_DIR", join(agentRoot, "runtime"));
+  env.set("JCODE_HOME", agentRoot);
+  env.set("JCODE_RUNTIME_DIR", join(agentRoot, "runtime"));
+
+  const args = ["agent", "chat", "--desktop"];
+  const agentSessionId = env.get("LYRA_AGENT_SESSION_ID");
+  const terminalSessionId = env.get("LYRA_TERMINAL_SESSION_ID");
+  const terminalPaneId = env.get("LYRA_TERMINAL_PANE_ID");
+  const terminalTabId = env.get("LYRA_TERMINAL_TAB_ID");
+  if (agentSessionId !== undefined && agentSessionId.trim().length > 0) {
+    args.push("--session-id", agentSessionId.trim());
+  }
+  if (request.cwd !== undefined && request.cwd.trim().length > 0) {
+    args.push("--working-dir", request.cwd.trim());
+  }
+  if (terminalSessionId !== undefined && terminalSessionId.trim().length > 0) {
+    args.push("--terminal-session-id", terminalSessionId.trim());
+  }
+  if (terminalPaneId !== undefined && terminalPaneId.trim().length > 0) {
+    args.push("--terminal-pane-id", terminalPaneId.trim());
+  }
+  if (terminalTabId !== undefined && terminalTabId.trim().length > 0) {
+    args.push("--terminal-tab-id", terminalTabId.trim());
+  }
+
+  return {
+    command: [
+      quoteShellArg(resolveLyraCliBinaryPath()),
+      ...args.map(quoteShellArg)
+    ].join(" "),
+    env: envMapToPairs(env)
+  };
+};
+
+const resolveLyraAgentCliRequest = (
+  storageRoot: string,
+  request: TerminalCreateRequest
+): TerminalCreateRequest => {
+  if (request.command?.trim() !== LYRA_AGENT_CLI_COMMAND) {
+    return request;
+  }
+  const launch = createLyraAgentCliLaunch(storageRoot, request);
+  return {
+    ...request,
+    mode: "command",
+    command: launch.command,
+    env: launch.env
+  };
+};
 
 const createPromptSourceCommand = (scriptPath: string): string =>
   `. ${quotePosixShellLiteral(scriptPath)} 2>/dev/null || true`;
@@ -679,7 +790,7 @@ export const createTerminalIpcBridge = (
   const createSession = async (
     request: TerminalCreateRequest
   ): Promise<TerminalSessionSnapshot> => {
-    const normalized = normalizeCreateRequest(request);
+    const normalized = resolveLyraAgentCliRequest(storageRoot, normalizeCreateRequest(request));
     const snapshot = await requestRuntime<TerminalSessionSnapshot>(
       "terminal.sessions.create",
       withStorageRoot(normalized)
@@ -722,7 +833,11 @@ export const createTerminalIpcBridge = (
   const restoreSessions = async (
     request: TerminalRestoreRequest
   ): Promise<readonly TerminalSessionSnapshot[]> => {
-    const normalized = normalizeRestoreRequest(request);
+    const normalized = {
+      sessions: normalizeRestoreRequest(request).sessions.map((session) =>
+        resolveLyraAgentCliRequest(storageRoot, session)
+      )
+    };
     const snapshots = [...await requestRuntime<readonly TerminalSessionSnapshot[]>(
       "terminal.sessions.restore",
       withSessionStorageRoot(normalized)

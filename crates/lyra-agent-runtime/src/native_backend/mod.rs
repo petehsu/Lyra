@@ -90,6 +90,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.session.transfer" => fork_session(payload, "Transferred Session"),
             "agent.session.compact" => compact_session(payload),
             "agent.session.automation.update" => update_automation(payload),
+            "agent.cli.follow.read" => read_cli_follow(payload),
+            "agent.cli.follow.update" => update_cli_follow(payload),
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" | "agent.turn.retry" => {
                 send_turn(payload)
             }

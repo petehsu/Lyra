@@ -1988,6 +1988,7 @@ export type TerminalCreateRequest = {
   readonly title?: string;
   readonly cwd?: string;
   readonly shell?: string;
+  readonly env?: readonly TerminalShellLaunchEnvPair[];
   readonly mode?: TerminalSessionMode;
   readonly command?: string;
   readonly persist?: boolean;

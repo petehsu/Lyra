@@ -11,6 +11,7 @@ import {
   reorderDockTerminalTabState,
   setTerminalPaneFollowModeState,
   splitActivePaneState,
+  splitTerminalTabWithOptionsState,
   syncTerminalSnapshotsState,
   toggleTerminalTabFavoriteState,
   toggleTerminalTabPinnedState
@@ -31,6 +32,30 @@ describe("terminal dock service", () => {
 
     expect(next.tabs[0]?.orientation).toBe("vertical");
     expect(next.tabs[0]?.paneIds.length).toBe(2);
+  });
+
+  test("splits with explicit shell options without copying the source startup command", () => {
+    const state = openTerminalTabWithProfileState(createDefaultTerminalDockState(), {
+      id: "default",
+      name: "Lyra",
+      startupCommand: "__lyra_agent_cli__",
+      mode: "command"
+    }).state;
+    const tab = state.tabs[state.tabs.length - 1]!;
+
+    const result = splitTerminalTabWithOptionsState(state, tab.id, "horizontal", {
+      title: "Agent Terminal",
+      profileId: "shell",
+      mode: "shell"
+    });
+
+    expect(result?.pane).toMatchObject({
+      title: "Agent Terminal",
+      profileId: "shell",
+      mode: "shell"
+    });
+    expect(result?.pane).not.toHaveProperty("startupCommand");
+    expect(result?.pane).not.toHaveProperty("command");
   });
 
   test("closes non-last pane", () => {

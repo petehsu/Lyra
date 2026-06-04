@@ -552,14 +552,28 @@ export const splitTerminalTabState = (
   tabId: string,
   direction: TerminalSplitDirection
 ): TerminalDockState => {
+  const result = splitTerminalTabWithOptionsState(state, tabId, direction);
+  return result?.state ?? state;
+};
+
+export const splitTerminalTabWithOptionsState = (
+  state: TerminalDockState,
+  tabId: string,
+  direction: TerminalSplitDirection,
+  options?: CreateTerminalTabOptions
+): {
+  readonly state: TerminalDockState;
+  readonly tab: TerminalDockTab;
+  readonly pane: TerminalDockPane;
+} | null => {
   const tab = findTabById(state, tabId);
   if (tab === null) {
-    return state;
+    return null;
   }
 
   const activePane = state.panes[tab.activePaneId];
   const splitPaneOptions: CreateTerminalTabOptions | undefined =
-    activePane === undefined
+    options ?? (activePane === undefined
       ? undefined
       : {
           ...(activePane.cwd === undefined ? {} : { cwd: activePane.cwd }),
@@ -572,7 +586,7 @@ export const splitTerminalTabState = (
           ...(activePane.followMode === undefined ? {} : { followMode: activePane.followMode }),
           ...(activePane.mode === undefined ? {} : { mode: activePane.mode }),
           ...(activePane.command === undefined ? {} : { command: activePane.command })
-        };
+        });
   const pane = createPane(
     Object.keys(state.panes).length + 1,
     splitPaneOptions
@@ -582,7 +596,13 @@ export const splitTerminalTabState = (
   const nextPaneIds = [...tab.paneIds];
   nextPaneIds.splice(insertIndex, 0, pane.id);
 
-  return {
+  const nextTab = {
+    ...tab,
+    orientation: direction,
+    paneIds: nextPaneIds,
+    activePaneId: pane.id
+  };
+  const nextState = {
     ...withTabUpdate(state, tab.id, (item) => ({
       ...item,
       orientation: direction,
@@ -593,6 +613,12 @@ export const splitTerminalTabState = (
       ...state.panes,
       [pane.id]: pane
     }
+  };
+
+  return {
+    state: nextState,
+    tab: nextTab,
+    pane
   };
 };
 
@@ -849,6 +875,18 @@ export const useTerminalDockModel = (): TerminalDockModel => {
     },
     splitTab: (tabId: string, direction: TerminalSplitDirection) => {
       commit((current) => splitTerminalTabState(current, tabId, direction));
+    },
+    splitTabWithOptions: (tabId, direction, options) => {
+      const result = splitTerminalTabWithOptionsState(state, tabId, direction, options);
+      if (result === null) {
+        return null;
+      }
+      persistState(result.state);
+      setState(result.state);
+      return {
+        tab: result.tab,
+        pane: result.pane
+      };
     },
     focusPane: (tabId: string, paneId: string) => {
       commit((current) => focusTerminalPaneForTabState(current, tabId, paneId));

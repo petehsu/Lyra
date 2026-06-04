@@ -51,8 +51,8 @@ use lyra_terminal_core::{
     TerminalPermissionEvaluateRequest, TerminalPermissionEventRequest,
     TerminalPermissionRespondRequest, TerminalProcessSignalRequest, TerminalProcessesReadRequest,
     TerminalReadRequest, TerminalResizeRequest, TerminalRestoreRequest, TerminalScreenReadRequest,
-    TerminalShellLaunchPlanRequest, TerminalStoredSessionsReadRequest, TerminalWaitUntilRequest,
-    TerminalWriteRequest,
+    TerminalShellLaunchEnvPair, TerminalShellLaunchPlanRequest, TerminalStoredSessionsReadRequest,
+    TerminalWaitUntilRequest, TerminalWriteRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -718,6 +718,7 @@ bridge_request!(RuntimeTerminalCreateRequest {
     title: Option<String>,
     cwd: Option<String>,
     shell: Option<String>,
+    env: Option<Vec<TerminalShellLaunchEnvPair>>,
     cols: u16,
     rows: u16,
     source: Option<String>,
@@ -1168,6 +1169,7 @@ fn map_terminal_create_request(request: RuntimeTerminalCreateRequest) -> Termina
         title: request.title,
         cwd: request.cwd,
         shell: request.shell,
+        env: request.env,
         cols: request.cols,
         rows: request.rows,
         source: request.source,

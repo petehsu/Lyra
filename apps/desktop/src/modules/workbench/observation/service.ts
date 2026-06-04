@@ -122,6 +122,45 @@ const openTerminalPane = (
   request: WorkbenchTerminalOpenRequest,
   dependencies: WorkbenchObservationDependencies
 ): WorkbenchTerminalOpenResult => {
+  const anchorTerminalTabId =
+    typeof request.terminalTabId === "string" && request.terminalTabId.trim().length > 0
+      ? request.terminalTabId.trim()
+      : undefined;
+  if (anchorTerminalTabId !== undefined) {
+    const anchorTab = dependencies.terminalModel.findTab(anchorTerminalTabId);
+    if (anchorTab !== null) {
+      const anchorPaneId =
+        typeof request.paneId === "string" && request.paneId.trim().length > 0
+          ? request.paneId.trim()
+          : undefined;
+      if (anchorPaneId !== undefined && anchorTab.paneIds.includes(anchorPaneId)) {
+        dependencies.terminalModel.focusPane(anchorTab.id, anchorPaneId);
+      }
+      const direction = request.splitDirection === "vertical" ? "vertical" : "horizontal";
+      const split = dependencies.terminalModel.splitTabWithOptions(anchorTab.id, direction, {
+        profileId: "shell",
+        mode: "shell",
+        ...(typeof request.title === "string" && request.title.trim().length > 0
+          ? { title: request.title.trim() }
+          : {}),
+        ...(typeof request.cwd === "string" && request.cwd.trim().length > 0
+          ? { cwd: request.cwd.trim() }
+          : {})
+      });
+      if (split !== null) {
+        return {
+          terminalTabId: split.tab.id,
+          paneId: split.pane.id,
+          sessionId: split.pane.sessionId,
+          title: split.pane.title,
+          placement: split.tab.placement,
+          isActive: true,
+          ...(split.pane.cwd === undefined ? {} : { cwd: split.pane.cwd }),
+          ...(split.pane.shell === undefined ? {} : { shell: split.pane.shell })
+        };
+      }
+    }
+  }
   const placement = request.placement === "workspace" ? "workspace" : "dock";
   const { tab, pane } = dependencies.terminalModel.openTabWithPlacement({
     placement,

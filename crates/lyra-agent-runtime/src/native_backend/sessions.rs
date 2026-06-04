@@ -21,6 +21,80 @@ pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
     Ok(snapshot)
 }
 
+pub(crate) fn read_cli_follow(payload: Value) -> AgentRuntimeResult<Value> {
+    let session_id = string_opt(&payload, "sessionId");
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let id = state.resolve_session_id(session_id)?;
+    let session = state
+        .sessions
+        .get(&id)
+        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+    Ok(session
+        .snapshot
+        .get("cli")
+        .and_then(|cli| cli.get("follow"))
+        .cloned()
+        .unwrap_or_else(|| {
+            json!({
+                "sessionId": id,
+                "enabled": false,
+                "terminalSessionId": Value::Null,
+                "terminalPaneId": Value::Null,
+                "terminalTabId": Value::Null
+            })
+        }))
+}
+
+pub(crate) fn update_cli_follow(payload: Value) -> AgentRuntimeResult<Value> {
+    let session_id = string_opt(&payload, "sessionId");
+    let enabled = payload
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let terminal_session_id = string_opt(&payload, "terminalSessionId");
+    let terminal_pane_id = string_opt(&payload, "terminalPaneId");
+    let terminal_tab_id = string_opt(&payload, "terminalTabId");
+    let (id, snapshot, callback) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let id = state.resolve_session_id(session_id)?;
+        let session = state
+            .sessions
+            .get_mut(&id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+        let follow = json!({
+            "sessionId": id,
+            "enabled": enabled,
+            "terminalSessionId": terminal_session_id,
+            "terminalPaneId": terminal_pane_id,
+            "terminalTabId": terminal_tab_id
+        });
+        let snapshot = session.snapshot.as_object_mut().ok_or_else(|| {
+            AgentRuntimeError::Core("session snapshot is not an object".to_string())
+        })?;
+        let cli = snapshot.entry("cli").or_insert_with(|| json!({}));
+        if !cli.is_object() {
+            *cli = json!({});
+        }
+        cli.as_object_mut()
+            .expect("cli snapshot object")
+            .insert("follow".to_string(), follow);
+        touch_session(session);
+        let snapshot = session.snapshot.clone();
+        let callback = state.event_callback.clone();
+        state.save_state()?;
+        (id, snapshot, callback)
+    };
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
+    );
+    read_cli_follow(json!({ "sessionId": id }))
+}
+
 pub(crate) fn new_session(
     title: Option<String>,
     working_dir: Option<String>,

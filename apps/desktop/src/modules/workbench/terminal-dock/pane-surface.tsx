@@ -8,6 +8,7 @@ import { resolveTerminalTheme } from "./theme";
 
 export type TerminalPaneSurfaceProps = {
   readonly pane: TerminalDockPane;
+  readonly terminalTabId?: string;
   readonly active: boolean;
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: TerminalDockLabels;
@@ -53,6 +54,22 @@ type TerminalRendererHandle = {
 };
 
 const terminalRenderersBySession = new Map<string, TerminalRendererHandle>();
+
+const withTerminalRuntimeEnv = (
+  pane: TerminalDockPane,
+  terminalTabId?: string
+): NonNullable<TerminalDockPane["env"]> => {
+  const byKey = new Map<string, string>();
+  for (const entry of pane.env ?? []) {
+    byKey.set(entry.key, entry.value);
+  }
+  byKey.set("LYRA_TERMINAL_SESSION_ID", pane.sessionId);
+  byKey.set("LYRA_TERMINAL_PANE_ID", pane.id);
+  if (terminalTabId !== undefined && terminalTabId.trim().length > 0) {
+    byKey.set("LYRA_TERMINAL_TAB_ID", terminalTabId);
+  }
+  return [...byKey.entries()].map(([key, value]) => ({ key, value }));
+};
 
 export const clearTerminalRendererStateForTests = (): void => {
   for (const renderer of terminalRenderersBySession.values()) {
@@ -286,6 +303,7 @@ const readTerminalBufferLength = (terminal: Terminal): number => {
 
 export const TerminalPaneSurface = ({
   pane,
+  terminalTabId,
   active,
   desktopApi,
   labels,
@@ -545,6 +563,7 @@ export const TerminalPaneSurface = ({
         title: pane.title,
         ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
         ...(pane.shell !== undefined ? { shell: pane.shell } : {}),
+        env: withTerminalRuntimeEnv(pane, terminalTabId),
         ...(pane.mode !== undefined ? { mode: pane.mode } : {}),
         ...(pane.command !== undefined ? { command: pane.command } : {}),
         uiThemeId,

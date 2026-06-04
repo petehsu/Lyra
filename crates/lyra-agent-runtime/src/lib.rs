@@ -216,6 +216,9 @@ impl AgentRuntimeServices {
             "agent.session.transfer" => self.session.transfer(payload),
             "agent.session.compact" => self.session.compact(payload),
             "agent.session.automation.update" => self.session.update_automation(payload),
+            "agent.cli.follow.read" | "agent.cli.follow.update" => {
+                self.backend.call(method, payload)
+            }
             "agent.selfdev.start" => self.turn_runner.start_selfdev(payload),
             "agent.selfdev.status" => self.turn_runner.selfdev_status(payload),
             "agent.selfdev.sendTurn" => self.turn_runner.send_selfdev(payload),
