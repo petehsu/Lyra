@@ -301,6 +301,52 @@ const readTerminalBufferLength = (terminal: Terminal): number => {
   return 0;
 };
 
+const terminalHasVisibleContent = (terminal: Terminal): boolean => {
+  const candidate = terminal as Terminal & {
+    readonly buffer?: {
+      readonly active?: {
+        readonly baseY?: number;
+        readonly viewportY?: number;
+        readonly length?: number;
+        readonly getLine?: (index: number) => {
+          readonly translateToString?: (trimRight?: boolean) => string;
+        } | undefined;
+      };
+    };
+  };
+  const active = candidate.buffer?.active;
+  const getLine = active?.getLine;
+  if (getLine === undefined) {
+    return readTerminalBufferLength(terminal) > 1;
+  }
+  const viewportY = typeof active.viewportY === "number"
+    ? active.viewportY
+    : (typeof active.baseY === "number" ? active.baseY : 0);
+  const maxRows = Math.max(terminal.rows, 1);
+  for (let row = 0; row < maxRows; row += 1) {
+    const line = getLine(viewportY + row) ?? getLine(row);
+    const text = line?.translateToString?.(true) ?? "";
+    if (text.trim().length > 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const textFromScreenRows = (
+  rows: readonly { readonly text: string }[],
+  fallback: string
+): string => {
+  const rowText = rows
+    .map((row) => row.text)
+    .join("\r\n")
+    .replace(/[ \t\r\n]+$/u, "");
+  if (rowText.trim().length > 0) {
+    return rowText;
+  }
+  return fallback.replace(/[ \t\r\n]+$/u, "");
+};
+
 export const TerminalPaneSurface = ({
   pane,
   terminalTabId,
@@ -580,6 +626,29 @@ export const TerminalPaneSurface = ({
         lastSyncedRows = -1;
         scheduleResizeAndSync("immediate");
         scheduleInitialResizeRetries();
+        if (terminalHasVisibleContent(terminal) || renderer.outputBuffer.length > 0) {
+          return;
+        }
+        void desktopApi.terminal.readScreen({
+          sessionId: pane.sessionId,
+          maxRows: Math.max(terminal.rows, 1),
+          maxBytes: 32_000
+        }).then((screen) => {
+          if (
+            sessionDisposedRef.current ||
+            terminalHasVisibleContent(terminal) ||
+            renderer.outputBuffer.length > 0
+          ) {
+            return;
+          }
+          const text = textFromScreenRows(screen.visibleRows, screen.visibleText);
+          if (text.trim().length === 0) {
+            return;
+          }
+          terminal.write(text);
+        }).catch((_error: unknown) => {
+          // Restoring the visible buffer is best-effort; live runtime data remains authoritative.
+        });
       })
       .catch((error: unknown) => {
         sessionReadyRef.current = false;

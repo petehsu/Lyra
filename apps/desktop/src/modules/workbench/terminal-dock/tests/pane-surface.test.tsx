@@ -142,7 +142,7 @@ describe("terminal pane surface", () => {
     expect(terminalInstances[0]?.options.convertEol).toBe(false);
   });
 
-  test("does not read kernel screen or output artifacts in the human terminal renderer", async () => {
+  test("does not render kernel projection chrome in the human terminal renderer", async () => {
     const props = createProps();
     await act(async () => {
       render(<TerminalPaneSurface {...props} />);
@@ -150,12 +150,68 @@ describe("terminal pane surface", () => {
     });
 
     expect(props.desktopApi?.terminal.read).not.toHaveBeenCalled();
-    expect(props.desktopApi?.terminal.readScreen).not.toHaveBeenCalled();
     expect(document.querySelector(".lyra-terminal-kernel-projection")).toBeNull();
     expect(document.querySelector(".lyra-terminal-kernel-toolbar")).toBeNull();
     expect(document.querySelector(".lyra-terminal-pane-product-status")).toBeNull();
     expect(document.querySelector(".lyra-terminal-agent-status")).toBeNull();
     expect(document.querySelector(".lyra-terminal-renderer-diagnostics")).toBeNull();
+  });
+
+  test("restores the visible screen when an existing session attaches to a blank renderer", async () => {
+    const props = createProps();
+    const terminalApi = props.desktopApi?.terminal as unknown as {
+      readScreen: ReturnType<typeof vi.fn>;
+    };
+    terminalApi.readScreen = vi.fn(async () => ({
+      sessionId: "session-1",
+      cursor: "7",
+      screenVersion: 7,
+      rows: 24,
+      cols: 80,
+      mode: "normal",
+      visibleText: "╭─ /Users/petehsu/Documents/Lyra\n╰─ ❯ ",
+      visibleRows: [
+        { row: 0, text: "╭─ /Users/petehsu/Documents/Lyra", wrapped: false },
+        { row: 1, text: "╰─ ❯ ", wrapped: false }
+      ],
+      scrollbackText: null,
+      scrollbackCursor: "7:0",
+      scrollbackRows: [],
+      cursorPosition: { row: 1, col: 5, visible: true },
+      cells: [],
+      cellsTruncated: false,
+      styles: [],
+      links: [],
+      inputModes: {
+        applicationCursor: false,
+        applicationKeypad: false,
+        bracketedPaste: false,
+        mouseReporting: "none",
+        mouseEncoding: "default",
+        lineWrap: true
+      },
+      selectedText: null,
+      activeCommand: null,
+      prompt: "╰─ ❯",
+      regions: [],
+      running: true,
+      exitCode: null,
+      truncated: false
+    }));
+
+    await act(async () => {
+      render(<TerminalPaneSurface {...props} />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    const terminalInstances = await getTerminalInstances();
+    expect(terminalApi.readScreen).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-1",
+      maxBytes: 32_000
+    }));
+    expect(terminalInstances[0]?.lines.join("\n")).toContain(
+      "╭─ /Users/petehsu/Documents/Lyra\n╰─ ❯"
+    );
   });
 
   test("passes terminal runtime identifiers through create env", async () => {
