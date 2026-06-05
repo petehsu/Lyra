@@ -1,0 +1,310 @@
+/* ============================================================
+   Lyra Marketing Site — CSS Custom Properties
+   
+   Three-layer token architecture:
+   1. Foundation — raw values (colors, sizes, fonts)
+   2. Semantic — purpose-driven aliases (bg-page, text-primary)
+   3. Component — component-specific overrides (rare, inline)
+   
+   This file defines Layers 1 & 2.
+   ============================================================ */
+
+:root {
+  /* ==========================================================
+     COLORS — Foundation
+     ========================================================== */
+
+  /* Brand */
+  --color-blue-500: #5c78e2;
+  --color-blue-400: #74ade8;
+  --color-blue-600: #4a6bd4;
+  --color-violet-700: #4a3f8a;
+  --color-violet-500: #a78bfa;
+  --color-purple-500: #c084fc;
+  --color-pink-500: #e879f9;
+
+  /* Neutral — Dark Theme */
+  --color-gray-950: #0a0a0f;
+  --color-gray-900: #12121a;
+  --color-gray-800: #1a1a25;
+  --color-gray-700: #2a2a3a;
+  --color-gray-600: #3a3a4a;
+  --color-gray-500: #4a4a5a;
+  --color-gray-400: #6a6a7a;
+  --color-gray-300: #8a8a9a;
+  --color-gray-200: #c0c0cc;
+  --color-gray-100: #e0e0ea;
+  --color-gray-50: #f0f0f5;
+  --color-white: #ffffff;
+
+  /* Status */
+  --color-green-400: #4ade80;
+  --color-yellow-400: #fbbf24;
+  --color-red-400: #f87171;
+  --color-sky-400: #60a5fa;
+
+  /* ==========================================================
+     COLORS — Semantic (Dark Theme)
+     ========================================================== */
+
+  /* Backgrounds */
+  --color-bg-page: var(--color-gray-950);
+  --color-bg-section: #0e0e16;
+  --color-bg-card: var(--color-gray-900);
+  --color-bg-elevated: var(--color-gray-800);
+  --color-bg-tooltip: var(--color-gray-700);
+  --color-bg-input: rgba(255, 255, 255, 0.04);
+
+  /* Glass */
+  --color-glass-bg: rgba(18, 18, 26, 0.6);
+  --color-glass-bg-hover: rgba(26, 26, 37, 0.7);
+
+  /* Text */
+  --color-text-primary: var(--color-gray-200);
+  --color-text-heading: var(--color-gray-100);
+  --color-text-body: var(--color-gray-200);
+  --color-text-secondary: var(--color-gray-300);
+  --color-text-muted: var(--color-gray-500);
+  --color-text-inverse: var(--color-gray-950);
+  --color-text-accent: var(--color-blue-500);
+
+  /* Borders */
+  --color-border-subtle: rgba(255, 255, 255, 0.04);
+  --color-border-default: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.15);
+  --color-border-glass: rgba(255, 255, 255, 0.06);
+  --color-border-glass-hover: rgba(255, 255, 255, 0.12);
+  --color-border-focus: var(--color-blue-500);
+
+  /* Brand */
+  --color-brand-primary: var(--color-blue-500);
+  --color-brand-secondary: var(--color-blue-400);
+  --color-brand-tertiary: var(--color-violet-700);
+
+  /* Status */
+  --color-success: var(--color-green-400);
+  --color-warning: var(--color-yellow-400);
+  --color-error: var(--color-red-400);
+  --color-info: var(--color-sky-400);
+
+  /* ==========================================================
+     GRADIENTS & GLOWS
+     ========================================================== */
+
+  --glow-blue: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(92, 120, 226, 0.08) 0%,
+    transparent 70%
+  );
+
+  --glow-violet: radial-gradient(
+    ellipse at 80% 50%,
+    rgba(74, 63, 138, 0.06) 0%,
+    transparent 60%
+  );
+
+  --glow-spectrum: linear-gradient(
+    90deg,
+    #5c78e2 0%,
+    #74ade8 25%,
+    #a78bfa 50%,
+    #c084fc 75%,
+    #e879f9 100%
+  );
+
+  --glow-blue-radial: radial-gradient(
+    circle at 50% 50%,
+    rgba(92, 120, 226, 0.15) 0%,
+    rgba(92, 120, 226, 0.05) 40%,
+    transparent 70%
+  );
+
+  /* ==========================================================
+     SHADOWS
+     ========================================================== */
+
+  --shadow-glow: 0 0 40px rgba(92, 120, 226, 0.06),
+                 0 0 80px rgba(92, 120, 226, 0.03);
+
+  --shadow-glow-hover: 0 0 40px rgba(92, 120, 226, 0.12),
+                       0 0 80px rgba(92, 120, 226, 0.06);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3),
+                 0 4px 16px rgba(0, 0, 0, 0.2);
+
+  --shadow-elevated: 0 4px 8px rgba(0, 0, 0, 0.4),
+                     0 16px 48px rgba(0, 0, 0, 0.3);
+
+  /* ==========================================================
+     TYPOGRAPHY — Foundation
+     ========================================================== */
+
+  --font-sans: "Geist Sans", "Inter Variable", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Lyra Nerd Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+
+  /* Font Sizes */
+  --text-hero: 6rem;
+  --text-display: 4rem;
+  --text-heading-xl: 3rem;
+  --text-heading: 2.25rem;
+  --text-heading-sm: 1.75rem;
+  --text-subheading: 1.25rem;
+  --text-body: 1rem;
+  --text-body-sm: 0.875rem;
+  --text-caption: 0.75rem;
+  --text-eyebrow: 0.6875rem;
+  --text-micro: 0.625rem;
+
+  /* Font Weights */
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Line Heights */
+  --line-height-tight: 1.0;
+  --line-height-snug: 1.1;
+  --line-height-normal: 1.2;
+  --line-height-relaxed: 1.4;
+  --line-height-loose: 1.5;
+  --line-height-prose: 1.6;
+
+  /* Letter Spacing */
+  --letter-spacing-hero: -0.04em;
+  --letter-spacing-display: -0.035em;
+  --letter-spacing-heading-xl: -0.03em;
+  --letter-spacing-heading: -0.02em;
+  --letter-spacing-heading-sm: -0.015em;
+  --letter-spacing-subheading: -0.01em;
+  --letter-spacing-body: 0em;
+  --letter-spacing-caption: 0.01em;
+  --letter-spacing-eyebrow: 0.08em;
+  --letter-spacing-micro: 0.06em;
+
+  /* ==========================================================
+     SPACING
+     ========================================================== */
+
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+  --space-40: 160px;
+
+  /* ==========================================================
+     BORDER RADIUS
+     ========================================================== */
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 9999px;
+
+  /* ==========================================================
+     LAYOUT
+     ========================================================== */
+
+  --max-width: 1200px;
+  --max-width-wide: 1440px;
+  --section-gap: 120px;
+
+  /* ==========================================================
+     BLUR
+     ========================================================== */
+
+  --blur-glass: 16px;
+  --blur-heavy: 24px;
+  --blur-light: 8px;
+
+  /* ==========================================================
+     MOTION
+     ========================================================== */
+
+  --duration-instant: 0.15s;
+  --duration-fast: 0.3s;
+  --duration-normal: 0.6s;
+  --duration-slow: 0.8s;
+  --duration-cinematic: 1.2s;
+
+  --ease-default: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-smooth: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ==========================================================
+     Z-INDEX
+     ========================================================== */
+
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-header: 300;
+  --z-overlay: 400;
+  --z-modal: 500;
+  --z-tooltip: 600;
+  --z-progress: 700;
+}
+
+/* ==========================================================
+   CJK Adjustments
+   ========================================================== */
+
+:lang(zh) {
+  --line-height-prose: 1.8;
+  --letter-spacing-hero: -0.02em;
+  --letter-spacing-display: -0.02em;
+  --line-height-tight: 1.05;
+}
+
+/* ==========================================================
+   Light Theme Override (secondary)
+   ========================================================== */
+
+[data-theme="light"] {
+  --color-bg-page: #fafafa;
+  --color-bg-section: #f5f5f7;
+  --color-bg-card: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-tooltip: #1a1a25;
+
+  --color-glass-bg: rgba(255, 255, 255, 0.8);
+  --color-glass-bg-hover: rgba(255, 255, 255, 0.9);
+
+  --color-text-primary: #1a1a25;
+  --color-text-heading: #0a0a0f;
+  --color-text-body: #2a2a3a;
+  --color-text-secondary: #4a4a5a;
+  --color-text-muted: #8a8a9a;
+  --color-text-inverse: #ffffff;
+  --color-text-accent: #4a6bd4;
+
+  --color-border-subtle: rgba(0, 0, 0, 0.04);
+  --color-border-default: rgba(0, 0, 0, 0.08);
+  --color-border-strong: rgba(0, 0, 0, 0.15);
+  --color-border-glass: rgba(0, 0, 0, 0.06);
+  --color-border-glass-hover: rgba(0, 0, 0, 0.12);
+
+  --shadow-glow: 0 0 40px rgba(92, 120, 226, 0.04),
+                 0 0 80px rgba(92, 120, 226, 0.02);
+
+  --shadow-glow-hover: 0 0 40px rgba(92, 120, 226, 0.08),
+                       0 0 80px rgba(92, 120, 226, 0.04);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06),
+                 0 4px 16px rgba(0, 0, 0, 0.04);
+
+  --shadow-elevated: 0 4px 8px rgba(0, 0, 0, 0.08),
+                     0 16px 48px rgba(0, 0, 0, 0.06);
+}

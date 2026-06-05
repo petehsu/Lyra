@@ -3,11 +3,11 @@ import {
   cancelLocalSearchStream,
   fetchAggregatedSearchPayload,
   readLocalSearchStream,
-  readSearchIndexStatus,
   startLocalSearchStream
 } from "./service";
 import {
   createLoadingSearchPayload,
+  DEFAULT_LOCAL_SCOPE_PRESET,
   DEFAULT_LOCAL_SEARCH_LIMIT
 } from "./runtime-model";
 import type {
@@ -21,7 +21,6 @@ type StandardSearchTaskServices = {
   readonly startLocalSearchStream: typeof startLocalSearchStream;
   readonly readLocalSearchStream: typeof readLocalSearchStream;
   readonly cancelLocalSearchStream: typeof cancelLocalSearchStream;
-  readonly readSearchIndexStatus: typeof readSearchIndexStatus;
   readonly setTimeout: typeof globalThis.setTimeout;
   readonly clearTimeout: typeof globalThis.clearTimeout;
 };
@@ -31,10 +30,11 @@ const defaultServices: StandardSearchTaskServices = {
   startLocalSearchStream,
   readLocalSearchStream,
   cancelLocalSearchStream,
-  readSearchIndexStatus,
   setTimeout: globalThis.setTimeout.bind(globalThis),
   clearTimeout: globalThis.clearTimeout.bind(globalThis)
 };
+
+export const LOCAL_SEARCH_STREAM_TIMEOUT_MS = 8_000;
 
 export type StartStandardSearchTaskOptions = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -72,7 +72,7 @@ export const startStandardSearchTask = ({
     state: createLoadingSearchPayload({
       query,
       requestId,
-      scopePreset: searchSettings.localScopePreset
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
     }),
     error: null,
     isSearching: true,
@@ -85,6 +85,7 @@ export const startStandardSearchTask = ({
   let cancelled = false;
   let localStreamId: string | null = null;
   let localStreamPollTimer: ReturnType<typeof setTimeout> | null = null;
+  let localStreamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   let localStreamCompleted = false;
   let pendingCount = 2;
 
@@ -92,6 +93,13 @@ export const startStandardSearchTask = ({
     if (localStreamPollTimer !== null) {
       services.clearTimeout(localStreamPollTimer);
       localStreamPollTimer = null;
+    }
+  };
+
+  const clearLocalStreamTimeout = (): void => {
+    if (localStreamTimeoutTimer !== null) {
+      services.clearTimeout(localStreamTimeoutTimer);
+      localStreamTimeoutTimer = null;
     }
   };
 
@@ -139,6 +147,8 @@ export const startStandardSearchTask = ({
       return;
     }
     localStreamCompleted = true;
+    clearLocalStreamTimer();
+    clearLocalStreamTimeout();
     completeOne();
   };
 
@@ -148,6 +158,7 @@ export const startStandardSearchTask = ({
     }
     cancelled = true;
     clearLocalStreamTimer();
+    clearLocalStreamTimeout();
     taskCache.delete(cacheKey);
     if (localStreamId !== null) {
       void services.cancelLocalSearchStream({
@@ -188,23 +199,18 @@ export const startStandardSearchTask = ({
       completeOne();
     });
 
-  void services.startLocalSearchStream({
-    desktopApi,
-    request: {
-      query,
-      limit: localLimit,
-      scopePreset: searchSettings.localScopePreset,
-      customRoots: searchSettings.localCustomRoots,
-      ...(searchSettings.localProjectRoot === undefined
-        ? {}
-        : { projectRoot: searchSettings.localProjectRoot }),
-      includeHidden: searchSettings.localIncludeHidden,
-      enableFuzzy: searchSettings.localEnableFuzzy,
-      enableContent: searchSettings.localEnableContent,
-      enableExtensionMatch: searchSettings.localEnableExtensionMatch
-    }
-  })
-    .then((started) => {
+  const beginLocalSearch = async (): Promise<void> => {
+    try {
+      const started = await services.startLocalSearchStream({
+        desktopApi,
+        request: {
+          query,
+          limit: localLimit,
+          ...(searchSettings.localProjectRoot === undefined
+            ? {}
+            : { context: { projectRoot: searchSettings.localProjectRoot } })
+        }
+      });
       if (cancelled) {
         return;
       }
@@ -225,9 +231,28 @@ export const startStandardSearchTask = ({
           }
         }
       }));
+      localStreamTimeoutTimer = services.setTimeout(() => {
+        if (cancelled || localStreamCompleted || localStreamId === null) {
+          return;
+        }
+        const timedOutStreamId = localStreamId;
+        localStreamId = null;
+        void services.cancelLocalSearchStream({
+          desktopApi,
+          streamId: timedOutStreamId
+        });
+        updateTaskState((current) => ({
+          ...current,
+          local: {
+            ...current.local,
+            status: "ready"
+          }
+        }));
+        completeLocalStream();
+      }, LOCAL_SEARCH_STREAM_TIMEOUT_MS);
 
       const pollLocalStream = async (): Promise<void> => {
-        if (cancelled || localStreamId === null) {
+        if (cancelled || localStreamCompleted || localStreamId === null) {
           return;
         }
         try {
@@ -236,7 +261,7 @@ export const startStandardSearchTask = ({
             streamId: localStreamId,
             limit: localLimit
           });
-          if (cancelled) {
+          if (cancelled || localStreamCompleted) {
             return;
           }
           if (snapshot === null) {
@@ -282,8 +307,7 @@ export const startStandardSearchTask = ({
       };
 
       void pollLocalStream();
-    })
-    .catch((error: unknown) => {
+    } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "local search failed";
       updateTaskError(task.error ?? message);
       updateTaskState((current) => ({
@@ -295,24 +319,10 @@ export const startStandardSearchTask = ({
         }
       }));
       completeLocalStream();
-    });
+    }
+  };
 
-  void services.readSearchIndexStatus({ desktopApi })
-    .then((indexStatus) => {
-      if (indexStatus === null || cancelled) {
-        return;
-      }
-      updateTaskState((current) => ({
-        ...current,
-        local: {
-          ...current.local,
-          indexStatus
-        }
-      }));
-    })
-    .catch(() => {
-      // Best-effort.
-    });
+  void beginLocalSearch();
 
   return task;
 };

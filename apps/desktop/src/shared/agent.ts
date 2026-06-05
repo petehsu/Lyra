@@ -70,6 +70,15 @@ export type AgentToolActivity = {
   readonly output?: unknown;
   readonly startedAt: string;
   readonly finishedAt?: string;
+  readonly toolPath?: string | null;
+  readonly domain?: string | null;
+  readonly operation?: string | null;
+  readonly manifestTitle?: string | null;
+  readonly activityKind?: string | null;
+  readonly rendererHint?: string | null;
+  readonly traceId?: string | null;
+  readonly artifactRefs?: readonly unknown[];
+  readonly changes?: readonly unknown[];
 };
 
 export type AgentTodoItem = {

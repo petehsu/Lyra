@@ -510,33 +510,6 @@ const createSectionControl = (
           })
         ]
       });
-    case "searchScope":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.searchScopeLabel,
-        controls: [
-          createChoiceControl({
-            label: props.searchScopeLabel,
-            options: props.searchScopeOptions,
-            value: props.searchScopeValue,
-            onChange: props.onSearchScopeChange
-          })
-        ]
-      });
-    case "searchCustomRoots":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.searchCustomRootsLabel,
-        controls: [
-          createTextControl({
-            kind: "textarea",
-            label: props.searchCustomRootsLabel,
-            value: props.searchCustomRootsValue,
-            placeholder: props.searchCustomRootsPlaceholder,
-            onChange: props.onSearchCustomRootsChange
-          })
-        ]
-      });
     case "searchWebEngines":
       return createSettingsSection({
         id: sectionId,
@@ -650,63 +623,6 @@ const createSectionControl = (
             placeholder: "https://your-searxng.example.com",
             onChange: props.onSearchSearxngEndpointChange
           })
-        ]
-      });
-    case "searchIndexingFlags":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.searchEnableContentLabel,
-        cluster: true,
-        controls: [
-          createToggleGroupControl({
-            label: props.searchEnableContentLabel,
-            gridClassName: "lyra-settings-choice-grid lyra-settings-choice-grid-flags",
-            toggles: [
-              {
-                id: "searchEnableFuzzy",
-                label: props.searchEnableFuzzyLabel,
-                active: props.searchEnableFuzzyValue,
-                onToggle: () => {
-                  props.onSearchEnableFuzzyChange(!props.searchEnableFuzzyValue);
-                }
-              },
-              {
-                id: "searchEnableContent",
-                label: props.searchEnableContentLabel,
-                active: props.searchEnableContentValue,
-                onToggle: () => {
-                  props.onSearchEnableContentChange(!props.searchEnableContentValue);
-                }
-              },
-              {
-                id: "searchIncludeHidden",
-                label: props.searchIncludeHiddenLabel,
-                active: props.searchIncludeHiddenValue,
-                onToggle: () => {
-                  props.onSearchIncludeHiddenChange(!props.searchIncludeHiddenValue);
-                }
-              },
-              {
-                id: "searchAutoIndex",
-                label: props.searchAutoIndexLabel,
-                active: props.searchAutoIndexValue,
-                onToggle: () => {
-                  props.onSearchAutoIndexChange(!props.searchAutoIndexValue);
-                }
-              }
-            ]
-          }),
-          {
-            kind: "inline-status-action",
-            label: props.searchIndexStatusLabel,
-            statusLabel: props.searchIndexStatusLabel,
-            statusValue: props.searchIndexStatusValue,
-            actionLabel: props.searchRebuildIndexPending
-              ? `${props.searchRebuildIndexLabel}...`
-              : props.searchRebuildIndexLabel,
-            actionDisabled: props.searchRebuildIndexPending,
-            onAction: props.onSearchRebuildIndex
-          }
         ]
       });
     case "jsRepl":

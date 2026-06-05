@@ -5,7 +5,6 @@ import type {
   LinuxCompatProfile,
   LinuxCompatReadStatusResponse,
   LyraDesktopApi,
-  SearchIndexStatusResponse,
   SystemNotificationMode,
   SystemNotificationStatus,
   UiuxListPacksResponse
@@ -30,21 +29,10 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settingsAiModel: SettingsAiModel;
   readonly jsReplEnabled: boolean;
-  readonly searchIndexStatus: SearchIndexStatusResponse | null;
-  readonly searchRebuildIndexPending: boolean;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
   readonly onJsReplChange: (enabled: boolean) => void;
-  readonly onSearchRebuildIndex: () => void;
-};
-
-const formatSearchIndexStatus = (status: SearchIndexStatusResponse | null): string => {
-  if (status === null) {
-    return "idle";
-  }
-
-  return `${status.state} · files ${status.indexedFiles} · dirs ${status.indexedDirs}${typeof status.progress === "number" ? ` · ${Math.round(status.progress * 100)}%` : ""}${typeof status.error === "string" ? ` · ${status.error}` : ""}`;
 };
 
 export const useWorkbenchSettingsSurfaceProps = ({
@@ -53,13 +41,10 @@ export const useWorkbenchSettingsSurfaceProps = ({
   preferencesModel,
   settingsAiModel,
   jsReplEnabled,
-  searchIndexStatus,
-  searchRebuildIndexPending,
   focusCategoryRequest = null,
   openDialog,
   publishNotification,
-  onJsReplChange,
-  onSearchRebuildIndex
+  onJsReplChange
 }: UseWorkbenchSettingsSurfacePropsParams): BrowserSettingsSurfaceProps => {
   const preferences = preferencesModel.preferences;
   const [uiuxPacks, setUiuxPacks] = useState<UiuxListPacksResponse | null>(null);
@@ -356,8 +341,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
     forceWebPageThemingValue: preferences.forceWebPageThemingEnabled,
-    searchScopeValue: preferences.searchScopePreset,
-    searchCustomRootsValue: preferences.searchCustomRoots.join("\n"),
     searchWebEngineIds: preferences.searchWebEngineIds,
     searchSearxngEndpointValue: preferences.searchSearxngEndpoint ?? "",
     searchDeepBudgetValue: preferences.deepSearchDefaultBudget,
@@ -366,12 +349,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     deepSearchSiteExpansionValue: preferences.deepSearchSiteExpansionEnabled,
     deepSearchProactiveGuessValue: preferences.deepSearchProactiveDomainGuessingEnabled,
     deepSearchCrawlPolicyValue: preferences.deepSearchCrawlPolicy,
-    searchEnableFuzzyValue: preferences.searchEnableFuzzy,
-    searchEnableContentValue: preferences.searchEnableContent,
-    searchIncludeHiddenValue: preferences.searchIncludeHidden,
-    searchAutoIndexValue: preferences.searchAutoIndexEnabled,
-    searchIndexStatusValue: formatSearchIndexStatus(searchIndexStatus),
-    searchRebuildIndexPending,
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
     systemNotificationModeValue: effectiveSystemNotificationMode,
     systemNotificationClickBehaviorValue: preferences.systemNotificationClickBehavior,
@@ -386,7 +363,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     splitTriggerModeOptions: labels.settingsOptions.splitTriggerMode,
     splitThreePaneLayoutOptions: labels.settingsOptions.splitThreePaneLayout,
     splitOverflowPolicyOptions: labels.settingsOptions.splitOverflowPolicy,
-    searchScopeOptions: labels.settingsOptions.searchScope,
     searchDeepBudgetOptions: labels.settingsOptions.deepSearchBudget,
     deepSearchLocalOpenBehaviorOptions: labels.settingsOptions.deepSearchLocalOpenBehavior,
     deepSearchCrawlPolicyOptions: labels.settingsOptions.deepSearchCrawlPolicy,
@@ -408,15 +384,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
     onForceWebPageThemingChange: preferencesModel.setForceWebPageThemingEnabled,
-    onSearchScopeChange: preferencesModel.setSearchScopePreset,
-    onSearchCustomRootsChange: (value: string) => {
-      preferencesModel.setSearchCustomRoots(
-        value
-          .split(/\r?\n/g)
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0)
-      );
-    },
     onSearchWebEnginesChange: preferencesModel.setSearchWebEngineIds,
     onSearchSearxngEndpointChange: (value: string) => {
       preferencesModel.setSearchSearxngEndpoint(value);
@@ -427,11 +394,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onDeepSearchSiteExpansionChange: preferencesModel.setDeepSearchSiteExpansionEnabled,
     onDeepSearchProactiveGuessChange: preferencesModel.setDeepSearchProactiveDomainGuessingEnabled,
     onDeepSearchCrawlPolicyChange: preferencesModel.setDeepSearchCrawlPolicy,
-    onSearchEnableFuzzyChange: preferencesModel.setSearchEnableFuzzy,
-    onSearchEnableContentChange: preferencesModel.setSearchEnableContent,
-    onSearchIncludeHiddenChange: preferencesModel.setSearchIncludeHidden,
-    onSearchAutoIndexChange: preferencesModel.setSearchAutoIndexEnabled,
-    onSearchRebuildIndex,
     onOmniboxNonBrowserSubmitTargetChange: preferencesModel.setOmniboxNonBrowserSubmitTarget,
     onSystemNotificationModeChange: handleSystemNotificationModeChange,
     onSystemNotificationClickBehaviorChange: preferencesModel.setSystemNotificationClickBehavior,
@@ -442,5 +404,3 @@ export const useWorkbenchSettingsSurfaceProps = ({
     }
   };
 };
-
-export const formatWorkbenchSearchIndexStatusForTests = formatSearchIndexStatus;

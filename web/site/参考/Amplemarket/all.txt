@@ -1,0 +1,188 @@
+Amplemarket
+
+Frosted white workspace, sun-stained corner gradient. A bright cool neutrals system with a deep violet core and one orange ember, all set in a single tight grotesk.
+
+Amplemarket operates as a minimal white canvas pierced by concentrated color. The default page is near-empty — white backgrounds, a single grotesk typeface at work, hairline borders, and tight negative tracking at display sizes that compresses the headline into a compact block. The signature move is a vivid radial atmosphere (orange → cream → lavender → cyan) that bleeds in from page edges as a soft glow rather than a background fill, paired with a hand-drawn line illustration that humanizes the otherwise austere grid. A deep violet (#10054d) is reserved for dark sections and bold accent surfaces, never competing with the bright gradient. Components are flat, border-driven, and generously spaced; elevation is almost always a 1px inset ring rather than a drop shadow. The effect is a workspace that feels calm and grown-up, with color appearing in deliberate, emotional bursts.
+
+Color Palette
+Brand
+
+
+Copy
+Deep Violet
+#10054d
+Brand purple — appears on dark surfaces, emphasis cards, and the bold accent; concentrated and used sparingly so it reads as a power color, not a wash
+
+Copy
+Violet Shade
+#2e2460
+Input field background on dark sections, slightly lifted violet that keeps form controls readable against the obsidian surface
+Accent
+
+
+Copy
+Ember Orange
+#e8400d
+Orange wash for highlight backgrounds, decorative bands, and soft emphasis behind content. Do not promote it to the primary CTA color
+
+Copy
+Blush Pink
+#ffd7f0
+Soft pastel card surface — used on feature or category tiles to break the monochrome rhythm with a gentle chromatic note
+
+Copy
+Mint Green
+#b7efb2
+Soft pastel card surface — secondary chromatic card variant in the same family as Blush Pink and Pale Yellow
+
+Copy
+Pale Yellow
+#ffef99
+Soft pastel card surface — warm accent tile, reads warm against the cool violets
+
+Copy
+Lilac Wash
+#e2ddfd
+Near-gray lavender card surface — the quietest chromatic tile, used when a hint of color is needed without breaking the neutral rhythm
+Neutrals
+
+
+Copy
+Ink Black
+#111111
+Primary text, hairline borders, icon strokes, filled button background — the dominant structural neutral at ~5000 occurrences, always reading as near-black with no warm or cool cast
+
+Copy
+Obsidian Warm
+#272625
+Dark section background (CTAs, feature blocks), dark surface for cards inside dark contexts — subtly warmer than pure black so the violet text on top still feels in the same family
+
+Copy
+Graphite Mid
+#6d6c6b
+Secondary body text, muted labels, caption helper copy, decorative image borders
+
+Copy
+Stone Border
+#b1b1af
+Light hairline borders on nav and link components, low-contrast dividers
+
+Copy
+Pearl Mist
+#ecebea
+Subtle disabled or secondary button surface, barely-there hover states
+
+Copy
+Cream Paper
+#f4f3ef
+Soft warm off-white for subtle surface lifts, link/chip backgrounds — the only non-pure-white surface tint in the system
+
+Copy
+Paper White
+#ffffff
+Primary page and card surfaces, inverse text on dark buttons and dark sections
+
+Typography
+Type Scale
+
+Major Third (1.25) from 15px base
+
+hero
+84px · 900 · 0.8
+The quick brown fox jumps
+display
+56px · 400 · 1
+The quick brown fox jumps
+44px
+44px · 400 · 1.1
+The quick brown fox jumps
+heading-lg
+36px · 400 · 1.1
+The quick brown fox jumps
+heading
+28px · 400 · 1.1
+The quick brown fox jumps
+heading-sm
+24px · 400 · 1.1
+The quick brown fox jumps
+subheading
+20px · 400 · 1.3
+The quick brown fox jumps
+body-sm
+14px · 400 · 1.3
+The quick brown fox jumps
+eyebrow
+12px · 400 · 1
+The quick brown fox jumps
+caption
+10px · 500 · 1
+The quick brown fox jumps
+8px
+8px · 400 · 1
+The quick brown fox jumps
+5px
+5px · 400 · 1.3
+The quick brown fox jumps
+
+Fonts
+
+Display
+Labil Grotesk Variable
+Weight
+400, 500, 700, 900
+Sizes
+8–84 · 12 values
+Line height
+0.8–1.3 · 5 values
+Letter spacing
+-0.0500em to 0.0300em (tightest at 84px ≈ -4.2px, expanding to +0.84px at small caps labels)
+Fallback
+Inter Variable (closest free analog with similar grotesk proportions and weight range); fall back to system-ui sans for body when Labil is unavailable
+Single-family system — Labil Grotesk carries every voice from 8px micro-labels to the 84px hero display. Variable weight axis spans Regular through Black. The custom stylistic sets ss01 and ss02 are enabled across the board, activating alternate letterforms (notably the single-story 'a' and a distinctive 'g') that give the brand its quiet distinctive voice. The signature typographic move is aggressive negative tracking at display sizes: -0.05em at 84px and -0.04em at 56px compresses the headline into a dense block that reads as confident rather than airy. Small sizes sit in positive tracking (+0.025em, +0.030em) for label and eyebrow legibility.
+
+Spacing & Shape
+Spacing
+
+Purpose	Value	Preview
+Density	comfortable
+Base unit	4px
+Max width	1200px
+Section gap	80px
+Card padding	20px
+Element gap	8px
+Border Radius
+
+Element	Value	Preview
+small	4px
+nav	8px
+cards	12px
+icons	12px
+inputs	12px
+buttons	12px
+Elevation
+
+Form controls and inputs
+Elevated card
+Card top edge highlight
+Image with depth
+
+
+Guidelines
+Do
+
+Use the hero gradient as a corner-anchored radial atmosphere on white sections only — never tile it or stretch it to full bleed
+Apply Labil Grotesk Variable with ss01 and ss02 enabled on every text element; do not fall back to a default grotesk
+Set tracking to -0.05em at the 84px display size, -0.04em at 56px, and let it expand to +0.025em at 12px eyebrow sizes
+Use Ink Black (#111111) for every primary action fill, every text element, and every structural border; do not introduce a second near-black
+Use 12px radius for buttons, inputs, images, and cards; reserve 8px for nav and small chips, 4px for tiny inline elements, 9999px for status pills
+Anchor radial gradients off-canvas (negative percentage origins) so the color bleeds in from the edge rather than centering as a disc
+Pair the Filled Primary Button (Ink Black) with the Outlined Secondary Button (white + 1px border) in the same row — the contrast is the hierarchy
+Don't
+
+Do not use the pastel chromatic tiles as more than 3-4 per page; they lose meaning when they become the dominant surface
+Do not apply drop shadows to standard cards — prefer the 1px inset ring (rgba(17,17,17,0.05)) or no elevation at all
+Do not use the orange Ember as a solid button fill or text color at body sizes; it is an atmospheric and focal accent only
+Do not mix the cool (lavender→cyan) and warm (orange→cream) gradients in the same section — pick one emotional temperature per screen
+Do not center the gradient on a hero — always offset the origin to a corner so the page feels like sunlight entering a room, not a spotlight
+Do not use letter-spacing looser than -0.01em at sizes 24px and above; the tight tracking is the signature, not a detail
+Do not place dark sections back-to-back; always separate with a white band so the Obsidian surface reads as a deliberate destination

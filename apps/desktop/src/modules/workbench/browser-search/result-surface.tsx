@@ -12,6 +12,7 @@ import {
   type SearchResultOfficialCategoryLabels,
   type SearchResultsSourceFilter
 } from "./result-surface-model";
+import { resolveLocalSearchErrorLabel } from "./local-search-errors";
 import { ResultWebSection } from "./result-web-section";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 
@@ -48,9 +49,9 @@ export type BrowserResultSurfaceProps = {
   readonly localScannedDirsLabel: string;
   readonly localContentScansLabel: string;
   readonly localMatchedLabel: string;
-  readonly localIndexLabel: string;
   readonly localScoreLabel: string;
   readonly localLineLabel: string;
+  readonly localTimedOutLabel: string;
   readonly channelIdleLabel: string;
   readonly channelLoadingLabel: string;
   readonly channelReadyLabel: string;
@@ -100,9 +101,9 @@ export const BrowserResultSurface = ({
   localScannedDirsLabel,
   localContentScansLabel,
   localMatchedLabel,
-  localIndexLabel,
   localScoreLabel,
   localLineLabel,
+  localTimedOutLabel,
   channelIdleLabel,
   channelLoadingLabel,
   channelReadyLabel,
@@ -126,6 +127,10 @@ export const BrowserResultSurface = ({
     ready: channelReadyLabel,
     error: channelErrorLabel
   });
+  const localErrorLabel = resolveLocalSearchErrorLabel(payload.local.error, {
+    streamTimeout: localTimedOutLabel
+  });
+  const localErrorProps = localErrorLabel === undefined ? {} : { error: localErrorLabel };
   const officialCategoryLabels: SearchResultOfficialCategoryLabels = {
     fallback: officialResultLabel,
     homepage: officialHomepageLabel,
@@ -233,6 +238,7 @@ export const BrowserResultSurface = ({
               localSearchingMoreLabel={localSearchingMoreLabel}
               localScoreLabel={localScoreLabel}
               localLineLabel={localLineLabel}
+              {...localErrorProps}
             />
           ) : null}
         </section>
@@ -253,7 +259,7 @@ export const BrowserResultSurface = ({
           localScannedDirsLabel={localScannedDirsLabel}
           localContentScansLabel={localContentScansLabel}
           localMatchedLabel={localMatchedLabel}
-          localIndexLabel={localIndexLabel}
+          {...(localErrorLabel === undefined ? {} : { localErrorLabel })}
           onSourceFilterChange={onSourceFilterChange}
         />
       </div>

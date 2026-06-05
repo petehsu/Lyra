@@ -19,13 +19,14 @@ use serde_json::{Map, Value, json};
 use url::Url;
 use uuid::Uuid;
 
+#[cfg(test)]
+use crate::tool_activity_service::ToolActivityService;
 use crate::{
     AgentRuntimeBackend, AgentRuntimeError, AgentRuntimeResult, EventCallback,
     HostCapabilityDispatcher,
     context_builder::{ContextBuilder, ProviderContextOptions},
     design_tools,
     prompt_policy::{self, PromptAccounting, PromptPolicyInput},
-    tool_activity_service::ToolActivityService,
 };
 
 const DEFAULT_TOOL_CONTENT_CHARS: usize = 16_000;

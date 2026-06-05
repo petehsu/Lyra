@@ -11,6 +11,7 @@ import {
   buildBrowserSearchSettingsCacheKey,
   createLoadingDeepSearchState,
   createLoadingSearchPayload,
+  DEFAULT_LOCAL_SCOPE_PRESET,
   createRequestId,
   markDeepSearchStateExpanding,
   resolveActiveBrowserSearchCacheKeys
@@ -50,13 +51,13 @@ export const useBrowserSearchModel = ({
   const [standardSearchState, setStandardSearchState] = useState<BrowserSearchPayload>(() =>
     createEmptySearchPayload({
       query: "",
-      scopePreset: searchSettings.localScopePreset
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
     })
   );
   const [deepSearchState, setDeepSearchState] = useState<DeepSearchViewState>(() =>
     createEmptyDeepSearchState({
       query: "",
-      scopePreset: searchSettings.localScopePreset,
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET,
       budgetPreset: searchSettings.deepBudgetPreset
     })
   );
@@ -156,7 +157,7 @@ export const useBrowserSearchModel = ({
       setStandardSearchState(
         createEmptySearchPayload({
           query: "",
-          scopePreset: searchSettings.localScopePreset
+          scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
         })
       );
       setIsSearching(false);
@@ -183,18 +184,16 @@ export const useBrowserSearchModel = ({
     const loading = createLoadingSearchPayload({
       query,
       requestId: createRequestId(),
-      scopePreset: searchSettings.localScopePreset
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
     });
     setStandardSearchState(loading);
     setIsSearching(true);
     setSearchError(null);
   }, [
-    activeDeepCacheKey,
     activeStandardCacheKey,
     activeTabPageKind,
     activeTabQuery,
-    currentResultMode,
-    searchSettings.localScopePreset
+    currentResultMode
   ]);
 
   useEffect(() => {
@@ -250,7 +249,7 @@ export const useBrowserSearchModel = ({
       setDeepSearchState(
         createEmptyDeepSearchState({
           query: "",
-          scopePreset: searchSettings.localScopePreset,
+          scopePreset: DEFAULT_LOCAL_SCOPE_PRESET,
           budgetPreset: searchSettings.deepBudgetPreset
         })
       );
@@ -278,7 +277,7 @@ export const useBrowserSearchModel = ({
     setDeepSearchState(createLoadingDeepSearchState({
       query,
       requestId: createRequestId(),
-      scopePreset: searchSettings.localScopePreset,
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET,
       budgetPreset: searchSettings.deepBudgetPreset
     }));
     setIsSearching(true);
@@ -288,8 +287,7 @@ export const useBrowserSearchModel = ({
     activeTabPageKind,
     activeTabQuery,
     currentResultMode,
-    searchSettings.deepBudgetPreset,
-    searchSettings.localScopePreset
+    searchSettings.deepBudgetPreset
   ]);
 
   useEffect(() => {

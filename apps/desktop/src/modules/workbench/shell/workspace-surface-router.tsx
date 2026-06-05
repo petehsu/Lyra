@@ -72,6 +72,8 @@ export type WorkspaceSurfaceI18nProps = {
   readonly resultsLocalIndex: string;
   readonly resultsLocalScore: string;
   readonly resultsLocalLine: string;
+  readonly resultsLocalIndexNotReady: string;
+  readonly resultsLocalTimedOut: string;
   readonly channelIdle: string;
   readonly channelLoading: string;
   readonly channelReady: string;
@@ -199,6 +201,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly onSessionDeleted?: AgentSessionHistorySurfaceProps["onSessionDeleted"];
     readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly query: AgentSessionHistorySurfaceProps["query"];
     readonly refreshRequestKey: AgentSessionHistorySurfaceProps["refreshRequestKey"];

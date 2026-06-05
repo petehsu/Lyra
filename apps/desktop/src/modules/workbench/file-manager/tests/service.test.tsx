@@ -429,20 +429,6 @@ const createDesktopApi = (): {
       cancelLocalStream: async () => ({
         removed: true
       }),
-      readIndexStatus: async () => ({
-        state: "idle" as const,
-        indexedFiles: 0,
-        indexedDirs: 0
-      }),
-      rebuildIndex: async () => ({
-        status: {
-          state: "ready" as const,
-          indexedFiles: 0,
-          indexedDirs: 0
-        },
-        scopePreset: "home" as const,
-        roots: []
-      }),
       startDeepStream: async () => ({
         streamId: "deep-stream-1",
         snapshot: {

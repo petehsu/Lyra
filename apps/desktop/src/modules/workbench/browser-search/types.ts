@@ -41,6 +41,31 @@ export type AggregatedSearchPayload = {
 
 export type LocalSearchScopePreset = "home" | "full_system" | "workspace" | "custom";
 
+export type LocalSearchResultSource =
+  | "file"
+  | "workspace"
+  | "browser_history"
+  | "agent_session"
+  | "recent";
+
+export type LocalSearchResultKind =
+  | "file"
+  | "directory"
+  | "page"
+  | "session"
+  | "workspace";
+
+export type LocalSearchMatchRange = {
+  readonly field: string;
+  readonly start: number;
+  readonly end: number;
+};
+
+export type LocalSearchResultAction = {
+  readonly id: string;
+  readonly label: string;
+};
+
 export type LocalSearchResultItem = {
   readonly id: string;
   readonly path: string;
@@ -52,6 +77,12 @@ export type LocalSearchResultItem = {
   readonly snippet?: string;
   readonly line?: number;
   readonly modifiedAt?: number;
+  readonly source: LocalSearchResultSource;
+  readonly kind: LocalSearchResultKind;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly matchRanges: readonly LocalSearchMatchRange[];
+  readonly actions: readonly LocalSearchResultAction[];
 };
 
 export type LocalSearchStats = {
@@ -74,15 +105,6 @@ export type LocalSearchPayload = {
   readonly stats: LocalSearchStats;
 };
 
-export type LocalSearchIndexStatus = {
-  readonly state: "idle" | "building" | "ready" | "failed";
-  readonly indexedFiles: number;
-  readonly indexedDirs: number;
-  readonly lastBuiltAt?: string;
-  readonly progress?: number;
-  readonly error?: string;
-};
-
 export type SearchChannelStatus = "idle" | "loading" | "ready" | "error";
 
 export type BrowserSearchPayload = {
@@ -97,7 +119,6 @@ export type BrowserSearchPayload = {
   readonly local: {
     readonly status: SearchChannelStatus;
     readonly payload: LocalSearchPayload;
-    readonly indexStatus?: LocalSearchIndexStatus;
     readonly error?: string;
   };
 };

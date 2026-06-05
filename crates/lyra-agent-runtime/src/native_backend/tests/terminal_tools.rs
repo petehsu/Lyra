@@ -51,65 +51,51 @@ fn terminal_schema_registry_exposes_complete_agent_surface() {
 }
 
 #[test]
-fn terminal_host_mapping_exists_for_every_terminal_tool() {
+fn terminal_tool_fs_targets_exist_for_every_terminal_action() {
     let expected = [
-        ("terminal_list", "terminal.list", "list"),
-        ("terminal_create", "terminal.create", "create"),
-        ("terminal_read", "terminal.read", "read"),
-        ("terminal_screen", "terminal.screen", "screen"),
-        ("terminal_wait", "terminal.wait", "wait"),
-        ("terminal_write", "terminal.write", "write"),
-        ("terminal_close", "terminal.close", "close"),
-        ("terminal_events", "terminal.events.read", "events"),
-        ("terminal_read_until", "terminal.waitUntil", "read_until"),
-        ("terminal_run", "terminal.input.execute", "run"),
-        ("terminal_input", "terminal.input.execute", "input"),
-        ("terminal_keys", "terminal.input.execute", "keys"),
-        ("terminal_resize", "terminal.resize", "resize"),
-        ("terminal_signal", "terminal.processes.signal", "signal"),
-        ("terminal_processes", "terminal.processes.read", "processes"),
-        (
-            "terminal_command_status",
-            "terminal.command.status",
-            "command_status",
-        ),
-        ("terminal_map", "terminal.map.read", "map"),
-        ("terminal_act", "terminal.act.execute", "act"),
-        (
-            "terminal_attach_agent",
-            "terminal.attachments.attach",
-            "attach_agent",
-        ),
-        (
-            "terminal_detach_agent",
-            "terminal.attachments.detach",
-            "detach_agent",
-        ),
+        ("terminal.list", "list"),
+        ("terminal.create", "create"),
+        ("terminal.read", "read"),
+        ("terminal.screen", "screen"),
+        ("terminal.wait", "wait"),
+        ("terminal.write", "write"),
+        ("terminal.close", "close"),
+        ("terminal.events.read", "events"),
+        ("terminal.waitUntil", "read_until"),
+        ("terminal.input.execute", "run"),
+        ("terminal.input.execute", "input"),
+        ("terminal.input.execute", "keys"),
+        ("terminal.resize", "resize"),
+        ("terminal.processes.signal", "signal"),
+        ("terminal.processes.read", "processes"),
+        ("terminal.command.status", "command_status"),
+        ("terminal.map.read", "map"),
+        ("terminal.act.execute", "act"),
+        ("terminal.attachments.attach", "attach_agent"),
+        ("terminal.attachments.detach", "detach_agent"),
     ];
 
-    for (name, method, action) in expected {
-        let mapping = host_tool_mapping(
-            name,
-            json!({
-                "sessionId": "terminal-1",
-                "runtimeCancellation": {
-                    "sessionId": "agent-1",
-                    "turnId": "turn-1",
-                    "toolCallId": "tool-1"
-                }
-            }),
-        )
-        .unwrap_or_else(|| panic!("{name} maps to host capability"));
-        assert_eq!(mapping.0, method);
-        assert_eq!(mapping.1, "terminal");
-        assert_eq!(mapping.2, action);
-        assert_eq!(mapping.3["action"].as_str(), Some(action));
-        assert_eq!(
-            mapping
-                .3
-                .pointer("/runtimeCancellation/toolCallId")
-                .and_then(Value::as_str),
-            Some("tool-1")
+    let registry = tool_fs::runtime_registry();
+    for (method, action) in expected {
+        let path = format!("/tools/terminal/{action}");
+        let manifest = registry
+            .inspect_path(&path)
+            .unwrap_or_else(|_| panic!("{path} has a manifest"));
+        assert_eq!(manifest.domain, "terminal");
+        assert_eq!(manifest.operation, action);
+        let spec = terminal_action_spec(action)
+            .unwrap_or_else(|| panic!("{action} has a terminal action spec"));
+        assert_eq!(spec.host_method, method);
+        assert!(
+            matches!(
+                tool_fs::runtime_target_for_manifest(&manifest),
+                Some(tool_fs::RuntimeToolTarget::HostAdapter {
+                    display_name: "terminal",
+                    action: resolved_action,
+                    ..
+                }) if resolved_action == action
+            ),
+            "{path} resolves to terminal host adapter"
         );
     }
 }

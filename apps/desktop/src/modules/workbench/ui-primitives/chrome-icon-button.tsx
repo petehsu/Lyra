@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 import { cx } from "./classnames";
 
@@ -9,19 +9,22 @@ export type ChromeIconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>
   readonly type?: "button" | "submit" | "reset";
 };
 
-export const ChromeIconButton = ({
+export const ChromeIconButton = forwardRef<HTMLButtonElement, ChromeIconButtonProps>(function ChromeIconButton({
   active = false,
   activeClassName,
   children,
   className,
   type = "button",
   ...buttonProps
-}: ChromeIconButtonProps) => (
+}, ref) {
+  return (
   <button
     {...buttonProps}
+    ref={ref}
     type={type}
     className={cx(className, active && activeClassName)}
   >
     {children}
   </button>
-);
+  );
+});

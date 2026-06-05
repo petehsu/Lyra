@@ -4,7 +4,10 @@ import {
   readDeepSearchStream,
   startDeepSearchStream
 } from "./service";
-import { createLoadingDeepSearchState } from "./runtime-model";
+import {
+  createLoadingDeepSearchState,
+  DEFAULT_LOCAL_SCOPE_PRESET
+} from "./runtime-model";
 import type {
   BrowserSearchSettings,
   DeepSearchTask
@@ -62,7 +65,7 @@ export const startDeepSearchTask = ({
     state: createLoadingDeepSearchState({
       query,
       requestId,
-      scopePreset: searchSettings.localScopePreset,
+      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET,
       budgetPreset: searchSettings.deepBudgetPreset
     }),
     error: null,
@@ -189,15 +192,9 @@ export const startDeepSearchTask = ({
     request: {
       query,
       budgetPreset: searchSettings.deepBudgetPreset,
-      scopePreset: searchSettings.localScopePreset,
-      customRoots: searchSettings.localCustomRoots,
       ...(searchSettings.localProjectRoot === undefined
         ? {}
-        : { projectRoot: searchSettings.localProjectRoot }),
-      includeHidden: searchSettings.localIncludeHidden,
-      enableFuzzy: searchSettings.localEnableFuzzy,
-      enableContent: searchSettings.localEnableContent,
-      enableExtensionMatch: searchSettings.localEnableExtensionMatch,
+        : { context: { projectRoot: searchSettings.localProjectRoot } }),
       engines: searchSettings.searchEngines,
       enableSiteExpansion: searchSettings.deepSiteExpansionEnabled,
       enableProactiveDomainGuessing: searchSettings.deepProactiveDomainGuessingEnabled,

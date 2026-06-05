@@ -611,15 +611,17 @@ describe("AgentSessionHistorySurface", () => {
     });
   });
 
-  test("creates and opens a fresh session after deleting the active session", async () => {
+  test("closes the AI tab after deleting the active session", async () => {
     const { api, deleteSession, createSession } = createDesktopApi();
     const onOpenSession = vi.fn();
+    const onSessionDeleted = vi.fn();
 
     renderAgentHistory({
       desktopApi: api,
       labels,
       activeSessionId: "session-1",
-      onOpenSession
+      onOpenSession,
+      onSessionDeleted
     });
 
     fireEvent.click(await screen.findByRole("button", { name: "Project sessions 1" }));
@@ -629,7 +631,8 @@ describe("AgentSessionHistorySurface", () => {
     await waitFor(() => {
       expect(deleteSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     });
-    expect(createSession).toHaveBeenCalledWith({ title: "Lyra Agent" });
-    expect(onOpenSession).toHaveBeenCalledWith("session-new");
+    expect(createSession).not.toHaveBeenCalled();
+    expect(onOpenSession).not.toHaveBeenCalled();
+    expect(onSessionDeleted).toHaveBeenCalledWith("session-1");
   });
 });

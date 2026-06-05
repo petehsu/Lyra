@@ -1,0 +1,174 @@
+Dia Browser
+
+Prism on white stationery — light refracts color from a nearly monochrome surface.
+
+Feels like holding a blank sheet of premium stationery up to warm morning light — the page is almost entirely achromatic, but a hidden spectrum bleeds through in concentrated gradient bursts that feel like sunlight refracting through a prism's edge. The warmth comes from translucent card surfaces (white at 90% opacity) floating on a #F8F8F8 canvas with backdrop-blur, creating frosted-glass depth without hard shadows. ABC Oracle at weight 300 for display text (72px, 54px) is the defining typographic gesture — impossibly thin letterforms with tight -0.04em tracking create an airy authority, like text etched into glass. The single rainbow gradient (pink → red → amber → lavender → blue) appears as a chromatic accent strip and ambient background glow, making what is otherwise a monochrome system feel alive. Buttons default to #D9D9D9 — deliberately muted, never demanding attention, letting the content hierarchy stay centered on the typography.
+
+Color Palette
+Brand
+
+
+Copy
+Spectrum Gradient
+Gradient
+The signature chromatic moment — ambient hero glow and decorative accent strip; this gradient IS the brand color, appearing where a logo mark would in other systems; Gradient stop — the red accent, available as --red token for error or emphasis states
+Accent
+
+
+Copy
+Rose Quartz
+#c679c4
+Gradient stop — pink/mauve tone at the warm edge of the spectrum
+
+Copy
+Marigold
+#ffb005
+Gradient stop — warm amber center of the spectrum, available as --yellow token
+
+Copy
+Signal Blue
+#0358f7
+Gradient stop — the cool end of the spectrum, available as --blue token for links or informational highlights
+
+Copy
+Hot Pink
+#fd02f5
+Available as --pink token for highlight or playful accent contexts
+Neutrals
+
+
+Copy
+Ink Black
+#000000
+Primary text, headings, nav links, borders, icon fills — the sole chromatic anchor in an otherwise gray system
+
+Copy
+Graphite
+#636363
+Body text, secondary copy, subheadings beneath display type
+
+Copy
+Ash
+#7c7c7c
+Subtle borders, secondary body text
+
+Copy
+Slate
+#959595
+Tertiary text, nav labels, metadata captions
+
+Copy
+Steel
+#aeaeae
+Disabled states, carousel indicator dots, icon strokes
+
+Copy
+Pebble
+#d9d9d9
+Filled button backgrounds ("Download Dia") — neutral gray buttons avoid competing with content; a deliberate anti-CTA that says 'ready when you are'
+
+Copy
+Fog
+#efefef
+Header background, subtle section dividers
+
+Copy
+Canvas
+#f8f8f8
+Page background (--background token), the overall canvas beneath frosted cards
+
+Copy
+Snow
+#ffffff
+Card backgrounds (at 90% opacity), base fills, overlay surfaces
+
+Typography
+Type Scale
+
+Minor Third (1.2) from 16px base
+
+display
+72px · 300 · 1.17
+The quick brown fox jumps
+heading-lg
+54px · 300 · 1.11
+The quick brown fox jumps
+heading
+50px · 400 · 1.5
+The quick brown fox jumps
+heading-sm
+22px · 400 · 1.18
+The quick brown fox jumps
+subheading
+18px · 400 · 1.33
+The quick brown fox jumps
+body
+16px · 400 · 1.25
+The quick brown fox jumps
+body-sm
+14px · 400 · 1.21
+The quick brown fox jumps
+13px
+13px · 400 · 1.23
+The quick brown fox jumps
+caption
+10px · 400 · 1.5
+The quick brown fox jumps
+
+Fonts
+
+Display
+ABC Oracle
+Weight
+300, 400, 500
+Sizes
+10–72px · 8 values
+Line height
+1.11–1.50
+Letter spacing
+-0.04em at display sizes (50-72px), -0.02em at heading sizes (22px), normal at body (14-18px)
+Fallback
+GT Super Display (weight 300) or DM Sans (lighter weights) for structure; for closer match, Instrument Serif light or Reckless Neue light
+The sole typeface across the entire system — display headlines at weight 300 (72px, 54px), body at 400 (16px, 18px), nav/buttons at 500 (14px, 16px). Weight 300 for display is the signature: most browser/SaaS sites use 600+ for headlines, but Dia goes featherweight, making large type feel like ink drying on paper rather than commands carved in stone. The tight -0.04em tracking at display sizes compresses the airy letterforms just enough to hold together at scale.
+
+Spacing & Shape
+Spacing
+
+Purpose	Value	Preview
+Density	spacious
+Base unit	8px
+Max width	1200px
+Section gap	80-120px
+Card padding	32px
+Element gap	15-20px
+Border Radius
+
+Element	Value	Preview
+images	10px
+navItems	16px
+cards	30px
+buttons	30px
+containers	40px
+Elevation
+
+Content Card
+
+Guidelines
+Do
+
+Use the spectrum gradient (pink → red → amber → lavender → blue) ONLY as ambient background glow or decorative strip — never as text color or button fill
+Keep buttons neutral gray (#D9D9D9) or transparent; the system deliberately avoids chromatic CTAs to keep focus on content
+Apply 30px border-radius consistently to cards and filled buttons; use 9999px pill radius only for ghost/tab buttons
+Use ABC Oracle weight 300 for all display text (50px+) with -0.04em letter-spacing; weight 500 only for buttons and labels ≤16px
+Apply backdrop-filter: blur(24px) with rgba(255,255,255,0.9) for any elevated surface to maintain the frosted-glass layering
+Maintain the rgba(0,0,0,0.08) 0px 0px 8px 0px shadow on all floating cards — this is the only shadow in the system
+Use #636363 for body text and #959595 for tertiary/metadata text against the #F8F8F8 canvas
+Don't
+
+Never use saturated colors (--red, --blue, --pink, --yellow) as solid backgrounds or button fills — they exist only within the gradient and as design tokens for rare micro-accents
+Never use border-radius less than 10px on any element; the system has no sharp corners
+Never use font weights above 500 — there is no bold (600/700/800) anywhere in this system
+Never add drop shadows beyond the single 8px blur shadow; avoid layered or colored shadows
+Never place dark backgrounds behind content sections; the system is exclusively light with the gradient as the only warm/dark element
+Never use underlined links with color changes — links stay #000000 and only animate underline opacity on hover
+Never introduce a second typeface; the entire system runs on a single family at three weights

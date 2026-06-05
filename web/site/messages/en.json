@@ -1,0 +1,14 @@
+{
+  "Hero": {
+    "title": "Agent-Native Terminal",
+    "subtitle": "Built for the next generation of AI-driven developers.",
+    "cta_primary": "Download Lyra",
+    "cta_secondary": "Read Docs"
+  },
+  "Navigation": {
+    "features": "Features",
+    "docs": "Docs",
+    "pricing": "Pricing",
+    "download": "Download"
+  }
+}

@@ -20,8 +20,6 @@ const createSchemaInput = (
   jsReplLabel: "JS REPL",
   forceWebPageThemingLabel: "Web page theming",
   searchCategoryLabel: "Search",
-  searchScopeLabel: "Search scope",
-  searchCustomRootsLabel: "Custom roots",
   searchWebEnginesLabel: "Web engines",
   searchSearxngEndpointLabel: "SearXNG endpoint",
   searchDeepBudgetLabel: "Deep budget",
@@ -29,7 +27,6 @@ const createSchemaInput = (
   deepSearchLocalOpenBehaviorLabel: "Local open behavior",
   deepSearchSiteExpansionLabel: "Site expansion",
   deepSearchCrawlPolicyLabel: "Crawl policy",
-  searchEnableContentLabel: "Index content",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationClickBehaviorLabel: "Notification click behavior",
@@ -65,16 +62,13 @@ describe("createWorkbenchSettingsSchema", () => {
 
     expect(searchCategory?.sectionIds).toEqual([
       "omniboxNonBrowserSubmitTarget",
-      "searchScope",
-      "searchCustomRoots",
       "searchWebEngines",
       "searchDeepBudget",
       "deepSearchRestoreViewport",
       "deepSearchLocalOpenBehavior",
       "deepSearchSiteExpansion",
       "deepSearchCrawlPolicy",
-      "searchSearxngEndpoint",
-      "searchIndexingFlags"
+      "searchSearxngEndpoint"
     ]);
   });
 

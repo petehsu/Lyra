@@ -156,9 +156,6 @@ export const DeepSearchMetricsSection = ({
           <li>files: {snapshot.local.stats.scannedFiles}</li>
           <li>dirs: {snapshot.local.stats.scannedDirs}</li>
           <li>content: {snapshot.local.stats.contentScannedFiles}</li>
-          {snapshot.local.indexStatus === undefined ? null : (
-            <li>index: {snapshot.local.indexStatus.state}</li>
-          )}
           {snapshot.local.error === undefined ? null : (
             <li className="lyra-deep-search-error-text">{snapshot.local.error}</li>
           )}

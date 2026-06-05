@@ -347,7 +347,7 @@
   color: var(--lyra-text-primary);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 720px) {
   .lyra-terminal-dock {
     grid-template-columns: var(--lyra-unit-120) minmax(0, 1fr);
   }

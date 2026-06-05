@@ -13,6 +13,7 @@ dirs.workspace = true
 lyra-agent-api.workspace = true
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
+lyra-tool-fs-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
 glob.workspace = true

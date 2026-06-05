@@ -177,20 +177,6 @@ describe("aggregated search service", () => {
           cancelLocalStream: vi.fn(async () => ({
             removed: true
           })),
-          readIndexStatus: vi.fn(async () => ({
-            state: "idle" as const,
-            indexedFiles: 0,
-            indexedDirs: 0
-          })),
-          rebuildIndex: vi.fn(async () => ({
-            status: {
-              state: "ready" as const,
-              indexedFiles: 0,
-              indexedDirs: 0
-            },
-            scopePreset: "home" as const,
-            roots: []
-          })),
           startDeepStream: vi.fn(async () => ({
             streamId: "deep-stream-1",
             snapshot: {

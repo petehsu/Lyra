@@ -8,8 +8,6 @@ export {
   fetchLocalSearchPayload,
   readDeepSearchStream,
   readLocalSearchStream,
-  readSearchIndexStatus,
-  rebuildSearchIndex,
   startDeepSearchStream,
   startLocalSearchStream
 } from "./service";

@@ -6,6 +6,9 @@ use lyra_agent_plugins::{
     McpToolProvider, SkillRegistry, SkillToolProvider, ToolCapability, ToolExposureMode,
     ToolProvider, ToolProviderRegistry,
 };
+use lyra_tool_fs_core::{
+    TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_RUN, provider_tool_names,
+};
 use serde_json::{Value, json};
 
 #[derive(Clone)]
@@ -81,17 +84,11 @@ impl ToolActivityService {
     }
 
     pub fn model_tool_names(&self) -> Vec<String> {
-        self.model_tool_descriptors()
-            .into_iter()
-            .map(|descriptor| descriptor.name)
-            .collect()
+        provider_tool_names()
     }
 
     pub fn model_provider_tools(&self) -> Vec<Value> {
-        self.model_tool_descriptors()
-            .into_iter()
-            .map(model_tool_provider_json)
-            .collect()
+        tool_fs_provider_tools()
     }
 
     pub fn can_dispatch_model_tool(&self, name: &str) -> bool {
@@ -1685,24 +1682,67 @@ fn lumen_target_schema_with_default(extra_properties: Value, default_target_mode
     })
 }
 
-fn model_tool_provider_json(descriptor: ModelToolDescriptor) -> Value {
+fn tool_fs_provider_tools() -> Vec<Value> {
+    vec![
+        tool_fs_provider_tool(
+            TOOL_FS_LIST,
+            "List Lyra Tool Filesystem directories and tool manifests.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "default": "/tools" },
+                    "page": { "type": "integer", "minimum": 0, "default": 0 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 200, "default": 80 }
+                }
+            }),
+        ),
+        tool_fs_provider_tool(
+            TOOL_FS_READ_DOC,
+            "Read concise documentation for a Lyra Tool Filesystem path.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "default": "/tools" }
+                },
+                "required": ["path"]
+            }),
+        ),
+        tool_fs_provider_tool(
+            TOOL_FS_INSPECT,
+            "Inspect one Lyra Tool Filesystem target and get its argument schema.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "toolHandle": { "type": "string" }
+                }
+            }),
+        ),
+        tool_fs_provider_tool(
+            TOOL_FS_RUN,
+            "Run one Lyra Tool Filesystem target.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "toolHandle": { "type": "string" },
+                    "args": { "type": "object", "additionalProperties": true, "default": {} }
+                },
+                "required": ["args"]
+            }),
+        ),
+    ]
+}
+
+fn tool_fs_provider_tool(name: &str, description: &str, schema: Value) -> Value {
     json!({
         "type": "function",
         "function": {
-            "name": descriptor.name,
-            "description": descriptor.description,
-            "parameters": with_additional_properties(descriptor.schema),
+            "name": name,
+            "description": description,
+            "parameters": schema,
         }
     })
-}
-
-fn with_additional_properties(mut schema: Value) -> Value {
-    if let Some(object) = schema.as_object_mut() {
-        object
-            .entry("additionalProperties")
-            .or_insert(Value::Bool(false));
-    }
-    schema
 }
 
 fn tool_capability_json(capability: ToolCapability) -> Value {
@@ -1741,6 +1781,7 @@ fn exposure_mode_str(mode: &ToolExposureMode) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::ToolActivityService;
+    use serde_json::Value;
 
     #[test]
     fn tool_capabilities_are_registry_backed() {
@@ -1763,6 +1804,33 @@ mod tests {
     #[test]
     fn model_tool_descriptors_are_registry_backed() {
         let service = ToolActivityService::default();
+        assert_eq!(
+            service.model_tool_names(),
+            vec![
+                "tool_fs_list".to_string(),
+                "tool_fs_read_doc".to_string(),
+                "tool_fs_inspect".to_string(),
+                "tool_fs_run".to_string()
+            ]
+        );
+        let provider_tool_names = service
+            .model_provider_tools()
+            .into_iter()
+            .filter_map(|tool| {
+                tool.pointer("/function/name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            provider_tool_names,
+            vec![
+                "tool_fs_list".to_string(),
+                "tool_fs_read_doc".to_string(),
+                "tool_fs_inspect".to_string(),
+                "tool_fs_run".to_string()
+            ]
+        );
         let descriptors = service.model_tool_descriptors();
         let names = descriptors
             .iter()

@@ -2,21 +2,20 @@ mod handlers;
 mod modules;
 mod router;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::collections::HashMap;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::env;
 #[cfg(unix)]
 use std::path::PathBuf;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::sync::{mpsc as std_mpsc, Arc, Mutex};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::time::Duration;
 
-#[cfg(unix)]
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use lyra_agent_runtime::{
     clear_host_capability_dispatcher as clear_agent_host_capability_dispatcher,
     clear_runtime_event_callback as clear_agent_event_callback,
@@ -24,49 +23,57 @@ use lyra_agent_runtime::{
     register_runtime_event_callback as register_agent_event_callback,
     set_runtime_backend as set_agent_runtime_backend, LyraAgentBackend,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use lyra_download_core::{
     clear_rust_event_callback as clear_download_event_callback,
     register_rust_event_callback as register_download_event_callback,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use lyra_lsp_core::{
     clear_rust_event_callback as clear_lsp_event_callback,
     register_rust_event_callback as register_lsp_event_callback, shutdown as shutdown_lsp,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
+use lyra_performance_core::{
+    clear_performance_event_callback, register_performance_event_callback,
+};
+#[cfg(any(unix, windows))]
 use lyra_runtime_protocol::{RuntimeEnvelope, RuntimeError};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use lyra_terminal_core::{
     clear_rust_event_callback as clear_terminal_event_callback,
     register_rust_event_callback as register_terminal_event_callback,
     shutdown as shutdown_terminal,
 };
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use serde_json::{json, Value};
-#[cfg(unix)]
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(any(unix, windows))]
+use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+#[cfg(windows)]
+use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 pub(crate) const RUNTIME_NAME: &str = "lyrad";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const TOKIO_WORKER_STACK_SIZE_BYTES: usize = 16 * 1024 * 1024;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const TERMINAL_RUNTIME_EVENT_NAME: &str = "terminal.runtime";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const LSP_RUNTIME_EVENT_NAME: &str = "lsp.runtime";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const DOWNLOAD_RUNTIME_EVENT_NAME: &str = "download.runtime";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const AGENT_RUNTIME_EVENT_NAME: &str = "agent.runtime";
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
+const PERFORMANCE_RUNTIME_EVENT_NAME: &str = "performance.kernel";
+#[cfg(any(unix, windows))]
 const DEFAULT_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(30);
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const MAX_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(120);
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 
 fn main() {
@@ -90,25 +97,42 @@ fn run() {
     runtime.block_on(run_unix_runtime());
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn run() {
-    eprintln!("lyrad local socket runtime is currently implemented for unix targets only");
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(TOKIO_WORKER_STACK_SIZE_BYTES)
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("failed to initialize {RUNTIME_NAME} runtime: {error}");
+            std::process::exit(1);
+        }
+    };
+
+    runtime.block_on(run_windows_runtime());
+}
+
+#[cfg(not(any(unix, windows)))]
+fn run() {
+    eprintln!("lyrad local socket runtime is not implemented for this target");
     std::process::exit(1);
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Clone)]
 struct ConnectionContext {
     outgoing: UnboundedSender<RuntimeEnvelope>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Clone, Default)]
 struct DaemonSessionManager {
     inner: Arc<DaemonSessionManagerInner>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[derive(Default)]
 struct DaemonSessionManagerInner {
     next_id: AtomicU64,
@@ -116,7 +140,7 @@ struct DaemonSessionManagerInner {
     pending_requests: Mutex<HashMap<String, std_mpsc::Sender<Result<Value, RuntimeError>>>>,
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 impl DaemonSessionManager {
     fn register(&self, outgoing: UnboundedSender<RuntimeEnvelope>) -> u64 {
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -198,7 +222,7 @@ impl DaemonSessionManager {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn host_capability_timeout(payload: &Value) -> Duration {
     let requested = payload
         .get("timeoutMs")
@@ -258,6 +282,34 @@ async fn run_unix_runtime() {
     }
 }
 
+#[cfg(windows)]
+async fn run_windows_runtime() {
+    let pipe_name = resolve_pipe_name();
+    let sessions = DaemonSessionManager::default();
+    register_runtime_hooks(&sessions);
+    loop {
+        let server = match ServerOptions::new().create(&pipe_name) {
+            Ok(server) => server,
+            Err(error) => {
+                eprintln!("failed to create runtime named pipe {pipe_name}: {error}");
+                shutdown_runtime_modules();
+                std::process::exit(1);
+            }
+        };
+        if let Err(error) = server.connect().await {
+            eprintln!("failed to accept runtime named pipe connection: {error}");
+            shutdown_runtime_modules();
+            std::process::exit(1);
+        }
+        let sessions = sessions.clone();
+        tokio::spawn(async move {
+            if let Err(error) = serve_connection(server, sessions).await {
+                eprintln!("runtime connection error: {}", error.message);
+            }
+        });
+    }
+}
+
 #[cfg(unix)]
 fn resolve_socket_path() -> PathBuf {
     let mut args = env::args().skip(1);
@@ -271,7 +323,20 @@ fn resolve_socket_path() -> PathBuf {
     panic!("missing required --socket argument");
 }
 
-#[cfg(unix)]
+#[cfg(windows)]
+fn resolve_pipe_name() -> String {
+    let mut args = env::args().skip(1);
+    while let Some(argument) = args.next() {
+        if argument == "--socket" {
+            if let Some(value) = args.next() {
+                return value;
+            }
+        }
+    }
+    panic!("missing required --socket argument");
+}
+
+#[cfg(any(unix, windows))]
 fn forward_json_event(sessions: &DaemonSessionManager, event_name: &str, payload_json: &str) {
     let payload = match serde_json::from_str::<Value>(payload_json) {
         Ok(payload) => payload,
@@ -286,7 +351,7 @@ fn forward_json_event(sessions: &DaemonSessionManager, event_name: &str, payload
     });
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     set_agent_runtime_backend(Arc::new(LyraAgentBackend));
 
@@ -310,6 +375,15 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
         forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
     }));
 
+    let performance_sessions = sessions.clone();
+    register_performance_event_callback(Arc::new(move |event_json| {
+        forward_json_event(
+            &performance_sessions,
+            PERFORMANCE_RUNTIME_EVENT_NAME,
+            &event_json,
+        );
+    }));
+
     let host_sessions = sessions.clone();
     register_agent_host_capability_dispatcher(Arc::new(move |method, payload_json| {
         let payload = match serde_json::from_str::<Value>(&payload_json) {
@@ -324,7 +398,7 @@ fn register_runtime_hooks(sessions: &DaemonSessionManager) {
     }));
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn shutdown_runtime_modules() {
     let _ = shutdown_terminal();
     let _ = shutdown_lsp();
@@ -332,14 +406,17 @@ fn shutdown_runtime_modules() {
     clear_lsp_event_callback();
     clear_download_event_callback();
     clear_agent_event_callback();
+    clear_performance_event_callback();
     clear_agent_host_capability_dispatcher();
 }
 
-#[cfg(unix)]
-async fn write_loop(
-    mut writer: tokio::net::unix::OwnedWriteHalf,
+#[cfg(any(unix, windows))]
+async fn write_loop<W>(
+    mut writer: W,
     mut receiver: tokio::sync::mpsc::UnboundedReceiver<RuntimeEnvelope>,
-) {
+) where
+    W: AsyncWrite + Unpin,
+{
     while let Some(envelope) = receiver.recv().await {
         let encoded = match serde_json::to_vec(&envelope) {
             Ok(value) => value,
@@ -354,7 +431,7 @@ async fn write_loop(
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn handle_request_envelope(
     connection: ConnectionContext,
     id: String,
@@ -394,6 +471,28 @@ async fn serve_connection(
     sessions: DaemonSessionManager,
 ) -> Result<(), RuntimeError> {
     let (reader, writer) = stream.into_split();
+    serve_stream(reader, writer, sessions).await
+}
+
+#[cfg(windows)]
+async fn serve_connection(
+    stream: NamedPipeServer,
+    sessions: DaemonSessionManager,
+) -> Result<(), RuntimeError> {
+    let (reader, writer) = tokio::io::split(stream);
+    serve_stream(reader, writer, sessions).await
+}
+
+#[cfg(any(unix, windows))]
+async fn serve_stream<R, W>(
+    reader: R,
+    writer: W,
+    sessions: DaemonSessionManager,
+) -> Result<(), RuntimeError>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
     let (outgoing, receiver) = unbounded_channel::<RuntimeEnvelope>();
     let connection_id = sessions.register(outgoing.clone());
     let context = ConnectionContext {
@@ -592,5 +691,26 @@ mod tests {
         let error = handle_runtime_request("agent.unknown", serde_json::json!({}))
             .expect_err("unknown route should fail");
         assert_eq!(error.code, "METHOD_NOT_FOUND");
+    }
+
+    #[test]
+    fn performance_routes_are_registered() {
+        let status = handle_runtime_request("performance.status", serde_json::json!({}))
+            .expect("performance status");
+        assert_eq!(status["authorizationRequired"], true);
+
+        let registered = handle_runtime_request(
+            "performance.registerResource",
+            serde_json::json!({
+                "resourceId": "browserPage:route-test",
+                "kind": "browserPage",
+                "coreKey": "https://example.test",
+                "stateKey": "web-state:route-test",
+                "lifecycle": "hotHidden",
+                "sharedSignature": "https://example.test/home"
+            }),
+        )
+        .expect("performance register");
+        assert_eq!(registered["event"]["resourceId"], "browserPage:route-test");
     }
 }

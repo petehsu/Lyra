@@ -53,8 +53,10 @@ export const BrowserTabStrip = ({
     onDetachTabFromSplit
   });
   const animationState = useBrowserTabStripAnimationState(tabs);
+  const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId));
   const layoutState = useBrowserTabStripLayoutState(
     tabs.length,
+    activeIndex,
     runtime.navRef,
     stackedMode
   );
@@ -79,6 +81,7 @@ export const BrowserTabStrip = ({
       workspaceDragTabId: runtime.state.workspaceDragTabId,
       rightDragPreview: runtime.state.rightDragPreview,
       density: layoutState.density,
+      layout: layoutState.layout,
       closeLockedTabWidth: closeLock.closeLockedTabWidth
     }),
     [
@@ -87,6 +90,7 @@ export const BrowserTabStrip = ({
       closeTabLabel,
       closeLock.closeLockedTabWidth,
       layoutState.density,
+      layoutState.layout,
       isTabInSplit,
       runtime.state.dropIndicatorX,
       runtime.state.isSplitDropActive,

@@ -18,7 +18,6 @@ import type {
   SearchDeepStreamReadResponse,
   SearchDeepStreamStartRequest,
   SearchDeepStreamStartResponse,
-  SearchIndexStatusResponse,
   SearchLocalResponse,
   SearchLocalResultItem,
   SearchLocalStats,
@@ -283,7 +282,7 @@ const createEmptySnapshot = (request: SearchDeepRequest, rootNodeId: string): Se
   },
   local: {
     status: "loading",
-    scopePreset: request.scopePreset,
+    scopePreset: "home",
     roots: [],
     elapsedMs: 0,
     stats: cloneLocalStats(ZERO_LOCAL_STATS)
@@ -879,13 +878,7 @@ const searchDerivedQuery = async (
       readRuntime<SearchLocalResponse>(runtimeClient, state.storageRoot, "search.local", {
         query,
         limit: DEFAULT_EXPANSION_LOCAL_LIMIT,
-        scopePreset: state.request.scopePreset,
-        customRoots: state.request.customRoots,
-        projectRoot: state.request.projectRoot,
-        includeHidden: state.request.includeHidden,
-        enableFuzzy: state.request.enableFuzzy,
-        enableContent: state.request.enableContent,
-        enableExtensionMatch: state.request.enableExtensionMatch
+        ...(state.request.context === undefined ? {} : { context: state.request.context })
       })
     ]);
     addWebResults(state, derivedNodeId, webResponse.blendedResults);
@@ -1069,28 +1062,6 @@ const startRootLocalSearch = (
 ): void => {
   beginJob(state);
 
-  void readRuntime<SearchIndexStatusResponse>(
-    runtimeClient,
-    state.storageRoot,
-    "search.index.status",
-    {}
-  )
-    .then((indexStatus) => {
-      if (state.cancelled) {
-        return;
-      }
-      updateSnapshot(state, (snapshot) => ({
-        ...snapshot,
-        local: {
-          ...snapshot.local,
-          indexStatus
-        }
-      }));
-    })
-    .catch(() => {
-      // Keep index status best-effort.
-    });
-
   void readRuntime<SearchLocalStreamStartResponse>(
     runtimeClient,
     state.storageRoot,
@@ -1098,13 +1069,7 @@ const startRootLocalSearch = (
     {
       query: state.request.query,
       limit: DEFAULT_ROOT_LOCAL_LIMIT,
-      scopePreset: state.request.scopePreset,
-      customRoots: state.request.customRoots,
-      projectRoot: state.request.projectRoot,
-      includeHidden: state.request.includeHidden,
-      enableFuzzy: state.request.enableFuzzy,
-      enableContent: state.request.enableContent,
-      enableExtensionMatch: state.request.enableExtensionMatch
+      ...(state.request.context === undefined ? {} : { context: state.request.context })
     }
   )
     .then((started) => {
@@ -1314,7 +1279,6 @@ export const createDeepSearchOrchestrator = (options: {
             {
               query: "",
               budgetPreset: "medium",
-              scopePreset: "home",
               engines: []
             },
             "root:missing"

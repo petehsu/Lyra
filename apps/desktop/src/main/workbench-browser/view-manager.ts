@@ -44,6 +44,7 @@ import type {
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
+import type { LyraPerformanceResourceDescriptor } from "../../shared/performance-kernel";
 import {
   WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION,
   WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
@@ -60,6 +61,7 @@ import type {
   BrowserDomSummaryReadOptions,
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
+import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import {
   buildBrowserDiagnosticsSummary,
@@ -994,7 +996,8 @@ export const createWorkbenchBrowserViewManager = ({
   getWindow,
   publishEvent,
   workbenchState,
-  onWebContentsCreated
+  onWebContentsCreated,
+  performanceScheduler
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
@@ -1003,6 +1006,7 @@ export const createWorkbenchBrowserViewManager = ({
     readonly writeState: (key: typeof BROWSER_SESSION_STATE_KEY, json: string) => void;
   };
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
+  readonly performanceScheduler?: LyraPerformanceResourceScheduler;
 }): WorkbenchBrowserViewManager => {
   const entries = new Map<string, BrowserPageEntry>();
   const browserAgentShadows = new Map<string, BrowserAgentShadowEntry>();
@@ -1022,6 +1026,7 @@ export const createWorkbenchBrowserViewManager = ({
   const pendingRestoreValidations = new Map<string, NonNullable<WorkbenchBrowserPageRuntimeState["restoreState"]>>();
   const followSessions = new Map<string, BrowserAgentFollowSession>();
   const agentSyntheticInputUntil = new Map<string, number>();
+  const userInputDirtyTabs = new Set<string>();
   const sharedControlStates = new Map<string, SharedControlSnapshot>();
   const sharedControlTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const lastControlHandoffByTabId = new Map<string, WorkbenchBrowserSharedControlEvent>();
@@ -1305,6 +1310,87 @@ export const createWorkbenchBrowserViewManager = ({
     return false;
   };
 
+  const toPerformanceLifecycle = (
+    lifecycle: WorkbenchBrowserPageRuntimeState["lifecycleState"]
+  ): LyraPerformanceResourceDescriptor["lifecycle"] => {
+    switch (lifecycle) {
+      case "foreground":
+        return "foreground";
+      case "visible":
+        return "visible";
+      case "hot-hidden":
+        return "hotHidden";
+      case "tombstoned":
+        return "tombstoned";
+      case "restoring":
+        return "restoring";
+      default:
+        return "hotHidden";
+    }
+  };
+
+  const readWebContentsProcessId = (entry: BrowserPageEntry | undefined): number | undefined => {
+    if (entry === undefined || entry.webContents.isDestroyed()) {
+      return undefined;
+    }
+    try {
+      const processId = entry.webContents.getOSProcessId();
+      return Number.isFinite(processId) && processId > 0 ? processId : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const toPerformanceBrowserResource = (
+    runtime: WorkbenchBrowserPageRuntimeState,
+    entry?: BrowserPageEntry
+  ): LyraPerformanceResourceDescriptor => {
+    const formDraft = runtime.restoreState?.formDraft;
+    const storage = runtime.restoreState?.storage;
+    const historyEntryCount = runtime.restoreState?.history?.entries.length ?? 0;
+    const processId = readWebContentsProcessId(entry);
+    const webContentsId =
+      entry === undefined || entry.webContents.isDestroyed()
+        ? undefined
+        : entry.webContents.id;
+    return {
+      resourceId: `browserPage:${runtime.tabId}`,
+      kind: "browserPage",
+      coreKey: runtime.coreKey ?? resolveBrowserCoreKey(runtime.address),
+      stateKey: runtime.stateKey ?? `web-state:${runtime.tabId}`,
+      lifecycle: toPerformanceLifecycle(runtime.lifecycleState),
+      visible: runtime.isVisible,
+      active: runtime.isActive,
+      signals: {
+        hasUserInput: userInputDirtyTabs.has(runtime.tabId),
+        hasFormDraft: (formDraft?.editedFieldCount ?? 0) > 0,
+        hasAgentControl: hasActiveLiveAgentBrowserTask(runtime.tabId),
+        hasDivergentHistory: historyEntryCount > 1,
+        isLoading: runtime.isLoading,
+        isFullscreen: runtime.isHtmlFullscreen,
+        unknown: runtime.recoveryFailure !== undefined
+      },
+      isolation: {
+        containsSensitiveInput: (formDraft?.passwordFieldCount ?? 0) > 0,
+        authenticatedSession: (storage?.cookieCount ?? 0) > 0,
+        crossOriginState: storage?.localStorage === "available"
+          || storage?.indexedDB === "available"
+          || storage?.sessionStorage === "available"
+      },
+      ...(processId === undefined ? {} : { processId }),
+      ...(webContentsId === undefined ? {} : { webContentsId }),
+      sharedSignature: runtime.address,
+      updatedAt: runtime.updatedAt
+    };
+  };
+
+  const syncPerformanceRuntimeState = (
+    runtime: WorkbenchBrowserPageRuntimeState,
+    entry?: BrowserPageEntry
+  ): void => {
+    performanceScheduler?.updateResource(toPerformanceBrowserResource(runtime, entry));
+  };
+
   const updateRuntimeState = (
     entry: BrowserPageEntry,
     patch: Partial<WorkbenchBrowserPageRuntimeState>
@@ -1321,6 +1407,7 @@ export const createWorkbenchBrowserViewManager = ({
       return;
     }
     entry.runtime = nextRuntime;
+    syncPerformanceRuntimeState(nextRuntime, entry);
     publishEvent({
       kind: "page-runtime-state",
       page: nextRuntime
@@ -1329,6 +1416,7 @@ export const createWorkbenchBrowserViewManager = ({
   };
 
   const publishRuntimeState = (runtime: WorkbenchBrowserPageRuntimeState): void => {
+    syncPerformanceRuntimeState(runtime);
     publishEvent({
       kind: "page-runtime-state",
       page: runtime
@@ -2247,6 +2335,7 @@ export const createWorkbenchBrowserViewManager = ({
     }
     if (emitClosedEvent) {
       tombstones.delete(entry.tabId);
+      performanceScheduler?.unregisterResource(`browserPage:${entry.tabId}`);
       publishEvent({
         kind: "page-closed",
         tabId: entry.tabId
@@ -3549,6 +3638,7 @@ export const createWorkbenchBrowserViewManager = ({
       hideChromePopover(entry);
       elementPickerController.handlePageNavigated(entry.tabId);
       invalidateBrowserAgentTargets(entry.tabId, "live", "navigation");
+      userInputDirtyTabs.delete(entry.tabId);
       syncAddress(url);
       void captureBrowserRestoreState(entry);
     });
@@ -3595,11 +3685,15 @@ export const createWorkbenchBrowserViewManager = ({
           : mouse.type === "mouseWheel" ? "wheel" : "mouse_down";
       handleSharedControlInput(entry.tabId, inputType, event);
       if (mouse.type === "mouseDown") {
+        userInputDirtyTabs.add(entry.tabId);
+        syncPerformanceRuntimeState(entry.runtime, entry);
         hideChromePopover(entry);
       }
     });
 
     webContents.on("before-input-event", (event) => {
+      userInputDirtyTabs.add(entry.tabId);
+      syncPerformanceRuntimeState(entry.runtime, entry);
       handleSharedControlInput(entry.tabId, "keyboard", event);
     });
 
@@ -3632,6 +3726,7 @@ export const createWorkbenchBrowserViewManager = ({
 
     webThemeInjector.attach(entry.tabId, webContents);
     loadRequestedAddress(entry);
+    syncPerformanceRuntimeState(entry.runtime, entry);
     publishEvent({
       kind: "page-runtime-state",
       page: entry.runtime
@@ -3738,6 +3833,7 @@ export const createWorkbenchBrowserViewManager = ({
         continue;
       }
       tombstones.delete(tabId);
+      performanceScheduler?.unregisterResource(`browserPage:${tabId}`);
       publishEvent({
         kind: "page-closed",
         tabId
@@ -7855,6 +7951,7 @@ export const createWorkbenchBrowserViewManager = ({
       followSessions.clear();
       pageDiagnostics.clear();
       agentSyntheticInputUntil.clear();
+      userInputDirtyTabs.clear();
       for (const timer of sharedControlTimers.values()) {
         clearTimeout(timer);
       }

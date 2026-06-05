@@ -1,6 +1,9 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { startStandardSearchTask } from "../standard-search-task";
+import {
+  LOCAL_SEARCH_STREAM_TIMEOUT_MS,
+  startStandardSearchTask
+} from "../standard-search-task";
 import type {
   BrowserSearchSettings,
   StandardSearchTask
@@ -25,12 +28,6 @@ const flushPromises = async (rounds = 6): Promise<void> => {
 const searchSettings: BrowserSearchSettings = {
   searchEngines: [{ id: "bing", label: "Bing", accentColor: "#008373" }],
   resultsPerEngine: 5,
-  localScopePreset: "home",
-  localCustomRoots: [],
-  localIncludeHidden: false,
-  localEnableFuzzy: true,
-  localEnableContent: true,
-  localEnableExtensionMatch: true,
   deepBudgetPreset: "medium",
   deepSiteExpansionEnabled: true,
   deepProactiveDomainGuessingEnabled: true,
@@ -64,6 +61,10 @@ const localPayload: LocalSearchPayload = {
 };
 
 describe("standard search task", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("publishes loading, web/local results, and caches the finished payload", async () => {
     const taskCache = new Map<string, StandardSearchTask>();
     const resultCache = new Map<string, BrowserSearchPayload>();
@@ -93,11 +94,6 @@ describe("standard search task", () => {
           streamId: "local-stream-1",
           payload: localPayload,
           done: true
-        })),
-        readSearchIndexStatus: vi.fn(async () => ({
-          state: "ready" as const,
-          indexedFiles: 2,
-          indexedDirs: 1
         }))
       }
     });
@@ -157,6 +153,107 @@ describe("standard search task", () => {
     expect(cancelLocalSearchStream).toHaveBeenCalledWith({
       desktopApi: null,
       streamId: "local-stream-1"
+    });
+  });
+
+  test("stops waiting for stalled local streams without turning the whole local panel into an error", async () => {
+    vi.useFakeTimers();
+    const taskCache = new Map<string, StandardSearchTask>();
+    const resultCache = new Map<string, BrowserSearchPayload>();
+    const cancelLocalSearchStream = vi.fn(async () => undefined);
+    const published: BrowserSearchPayload[] = [];
+
+    const task = startStandardSearchTask({
+      desktopApi: null,
+      cacheKey: "tab-1:standard:lyra:settings",
+      tabId: "tab-1",
+      query: "lyra",
+      requestId: "request-1",
+      searchSettings,
+      taskCache,
+      resultCache,
+      publishTaskState: (_cacheKey, nextTask) => {
+        published.push(nextTask.state);
+      },
+      services: {
+        fetchAggregatedSearchPayload: vi.fn(async () => webPayload),
+        startLocalSearchStream: vi.fn(async (): Promise<LocalSearchStreamStartPayload> => ({
+          streamId: "local-stream-1",
+          query: "lyra",
+          scopePreset: "home",
+          roots: ["/Users/test"]
+        })),
+        readLocalSearchStream: vi.fn(
+          () => new Promise<LocalSearchStreamReadPayload | null>(() => undefined)
+        ),
+        cancelLocalSearchStream,
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis)
+      }
+    });
+
+    await flushPromises();
+    expect(taskCache.get(task.cacheKey)).toBe(task);
+    expect(published.at(-1)?.local.status).toBe("loading");
+
+    await vi.advanceTimersByTimeAsync(LOCAL_SEARCH_STREAM_TIMEOUT_MS);
+    await flushPromises();
+
+    const cached = resultCache.get(task.cacheKey);
+    expect(cancelLocalSearchStream).toHaveBeenCalledWith({
+      desktopApi: null,
+      streamId: "local-stream-1"
+    });
+    expect(taskCache.has(task.cacheKey)).toBe(false);
+    expect(cached?.local.status).toBe("ready");
+    expect(cached?.local.error).toBeUndefined();
+  });
+
+  test("starts zero-config local search without waiting for index status", async () => {
+    const taskCache = new Map<string, StandardSearchTask>();
+    const resultCache = new Map<string, BrowserSearchPayload>();
+    const startLocalSearchStream = vi.fn(async (): Promise<LocalSearchStreamStartPayload> => ({
+      streamId: "local-stream-1",
+      query: "lyra",
+      scopePreset: "home",
+      roots: ["/Users/test"]
+    }));
+
+    startStandardSearchTask({
+      desktopApi: null,
+      cacheKey: "tab-1:standard:lyra:settings",
+      tabId: "tab-1",
+      query: "lyra",
+      requestId: "request-1",
+      searchSettings: {
+        ...searchSettings,
+        localProjectRoot: "/Users/test/project"
+      },
+      taskCache,
+      resultCache,
+      publishTaskState: vi.fn(),
+      services: {
+        fetchAggregatedSearchPayload: vi.fn(async () => webPayload),
+        startLocalSearchStream,
+        readLocalSearchStream: vi.fn(async () => ({
+          streamId: "local-stream-1",
+          payload: localPayload,
+          done: true
+        }))
+      }
+    });
+
+    await flushPromises();
+
+    expect(startLocalSearchStream).toHaveBeenCalledWith({
+      desktopApi: null,
+      request: {
+        query: "lyra",
+        limit: 60,
+        context: {
+          projectRoot: "/Users/test/project"
+        }
+      }
     });
   });
 });

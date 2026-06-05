@@ -20,6 +20,8 @@ pub(crate) struct NativeRuntimeState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeStateFile {
+    #[serde(default)]
+    pub(crate) tool_runtime_schema_version: u32,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
     #[serde(default, rename = "sharedMemory", skip_serializing)]

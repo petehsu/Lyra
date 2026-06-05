@@ -108,16 +108,19 @@ describe("AI panel session tabs", () => {
     expect(readAiPanelSessionTabsState()).toEqual({
       tabs: [
         {
+          tabId: "session-a",
           sessionId: "session-a",
           title: "新会话",
           lastKnownStatus: "running"
         },
         {
+          tabId: "session-b",
           sessionId: "session-b",
           title: "Beta",
           lastKnownStatus: null
         }
       ],
+      activeTabId: "session-a",
       activeSessionId: "session-a"
     });
   });
@@ -181,6 +184,47 @@ describe("AI panel session tabs", () => {
       sessionId: "created-session",
       title: "Created"
     });
+  });
+
+  test("creates draft tabs, reorders tabs, and removes deleted sessions", () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 2,
+      tabs: [
+        { tabId: "session-a", sessionId: "session-a", title: "Alpha", lastKnownStatus: "idle" },
+        { tabId: "session-b", sessionId: "session-b", title: "Beta", lastKnownStatus: "idle" }
+      ],
+      activeTabId: "session-a",
+      activeSessionId: "session-a"
+    }));
+    const { api, createSession } = createDesktopApi();
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+
+    act(() => {
+      result.current.createDraftSession({
+        title: "新会话",
+        workingDir: "/Users/petehsu/Documents/Lyra"
+      });
+    });
+
+    const draft = result.current.activeTab;
+    expect(createSession).not.toHaveBeenCalled();
+    expect(draft).toMatchObject({
+      sessionId: null,
+      title: "新会话",
+      draftWorkingDir: "/Users/petehsu/Documents/Lyra"
+    });
+    expect(result.current.activeSessionId).toBeNull();
+
+    act(() => {
+      result.current.reorderSessionTabs(draft!.tabId, "session-a");
+    });
+    expect(result.current.tabs[0]?.tabId).toBe(draft?.tabId);
+
+    act(() => {
+      result.current.removeSession("session-b");
+    });
+    expect(result.current.tabs.some((tab) => tab.sessionId === "session-b")).toBe(false);
+    expect(result.current.activeTabId).toBe(draft?.tabId);
   });
 
   test("updates background tab running and finished summaries from runtime events", async () => {

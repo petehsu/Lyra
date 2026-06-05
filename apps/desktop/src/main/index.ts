@@ -32,6 +32,10 @@ import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
+import {
+  createLyraPerformanceResourceScheduler,
+  createLyraWorkspaceSurfacePerformanceSync
+} from "./performance";
 import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
@@ -113,6 +117,7 @@ let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
+let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
 
@@ -685,6 +690,27 @@ const registerIpcHandlers = (): void => {
     agentStorageRoot: storageRoots.modules.agent
   });
   disposeRuntimeClient = runtimeClient.dispose;
+  const performanceScheduler = createLyraPerformanceResourceScheduler(runtimeClient);
+  const registerRuntimePerformanceResource = (
+    resourceId: string,
+    kind: "agentTask" | "downloadTask" | "lspTask" | "searchTask" | "terminalPane"
+  ): void => {
+    performanceScheduler.registerResource({
+      resourceId,
+      kind,
+      coreKey: resourceId,
+      stateKey: resourceId,
+      lifecycle: "keptAlive",
+      visible: false,
+      active: false,
+      sharedSignature: resourceId
+    });
+  };
+  registerRuntimePerformanceResource("terminal:runtime", "terminalPane");
+  registerRuntimePerformanceResource("download:runtime", "downloadTask");
+  registerRuntimePerformanceResource("lsp:runtime", "lspTask");
+  registerRuntimePerformanceResource("search:runtime", "searchTask");
+  registerRuntimePerformanceResource("agent:runtime", "agentTask");
   const downloadManagerBridge = createDownloadManagerIpcBridge({
     storageRoot: storageRoots.modules.downloadManager,
     runtimeClient,
@@ -733,11 +759,17 @@ const registerIpcHandlers = (): void => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  const workspaceSurfacePerformanceSync = createLyraWorkspaceSurfacePerformanceSync({
+    workbenchState: workbenchStateBridge,
+    performanceScheduler
+  });
+  disposeWorkspaceSurfacePerformanceSync = workspaceSurfacePerformanceSync.dispose;
   workbenchBrowserBridge = createWorkbenchBrowserIpcBridge({
     getWindow: () => mainWindow,
     downloadManager: downloadManagerBridge,
     loginManager: loginManagerBridge,
-    workbenchState: workbenchStateBridge
+    workbenchState: workbenchStateBridge,
+    performanceScheduler
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const uiuxPacksBridge = createUiuxPacksIpcBridge({
@@ -931,6 +963,10 @@ app.on("before-quit", () => {
   if (disposeWorkbenchBrowserBridge !== null) {
     disposeWorkbenchBrowserBridge();
     disposeWorkbenchBrowserBridge = null;
+  }
+  if (disposeWorkspaceSurfacePerformanceSync !== null) {
+    disposeWorkspaceSurfacePerformanceSync();
+    disposeWorkspaceSurfacePerformanceSync = null;
   }
   if (disposeWorkbenchObservationRendererClient !== null) {
     disposeWorkbenchObservationRendererClient();

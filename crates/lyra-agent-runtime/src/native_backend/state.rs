@@ -1,6 +1,7 @@
 use super::*;
 
 pub(crate) static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
+pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 3;
 
 pub(crate) fn state() -> &'static Mutex<NativeRuntimeState> {
     STATE.get_or_init(|| Mutex::new(NativeRuntimeState::load()))
@@ -8,7 +9,10 @@ pub(crate) fn state() -> &'static Mutex<NativeRuntimeState> {
 
 impl NativeRuntimeState {
     pub(crate) fn load() -> Self {
-        let root = runtime_root();
+        Self::load_from_root(runtime_root())
+    }
+
+    pub(crate) fn load_from_root(root: PathBuf) -> Self {
         let sessions_dir = root.join("sessions");
         let _ = fs::create_dir_all(&sessions_dir);
 
@@ -26,8 +30,16 @@ impl NativeRuntimeState {
             .unwrap_or_default();
         install_default_providers(&mut config);
 
+        let reset_tool_sessions = state_file
+            .as_ref()
+            .map(|state| state.tool_runtime_schema_version < TOOL_RUNTIME_SCHEMA_VERSION)
+            .unwrap_or(true);
+        if reset_tool_sessions {
+            clear_session_files(&sessions_dir);
+        }
+
         let mut sessions = HashMap::new();
-        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+        if !reset_tool_sessions && let Ok(entries) = fs::read_dir(&sessions_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|value| value.to_str()) != Some("json") {
@@ -39,20 +51,32 @@ impl NativeRuntimeState {
             }
         }
 
-        let pending_permissions = state_file
-            .as_ref()
-            .map(|state| state.pending_permissions.clone())
-            .unwrap_or_default();
-        let pending_clarifications = state_file
-            .as_ref()
-            .map(|state| state.pending_clarifications.clone())
-            .unwrap_or_default();
+        let pending_permissions = if reset_tool_sessions {
+            HashMap::new()
+        } else {
+            state_file
+                .as_ref()
+                .map(|state| state.pending_permissions.clone())
+                .unwrap_or_default()
+        };
+        let pending_clarifications = if reset_tool_sessions {
+            HashMap::new()
+        } else {
+            state_file
+                .as_ref()
+                .map(|state| state.pending_clarifications.clone())
+                .unwrap_or_default()
+        };
         let mut loaded = Self {
             root,
             sessions,
-            active_session_id: state_file
-                .as_ref()
-                .and_then(|state| state.active_session_id.clone()),
+            active_session_id: if reset_tool_sessions {
+                None
+            } else {
+                state_file
+                    .as_ref()
+                    .and_then(|state| state.active_session_id.clone())
+            },
             config,
             active_skills: state_file
                 .as_ref()
@@ -77,7 +101,7 @@ impl NativeRuntimeState {
             host_dispatcher: None,
         };
         let pruned_pending = loaded.prune_non_live_pending();
-        if migrated_legacy_memory || pruned_pending {
+        if migrated_legacy_memory || pruned_pending || reset_tool_sessions {
             let _ = loaded.save_state();
         }
         loaded
@@ -99,6 +123,7 @@ impl NativeRuntimeState {
             .map(|(id, request)| (id.clone(), request.clone()))
             .collect();
         let state = NativeStateFile {
+            tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
             legacy_shared_memory: Vec::new(),
@@ -175,6 +200,18 @@ impl NativeRuntimeState {
         self.active_session_id = Some(id.clone());
         self.save_state()?;
         Ok(id)
+    }
+}
+
+fn clear_session_files(sessions_dir: &Path) {
+    let Ok(entries) = fs::read_dir(sessions_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) == Some("json") {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 

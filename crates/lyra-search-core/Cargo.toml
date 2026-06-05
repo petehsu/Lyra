@@ -1,0 +1,23 @@
+[package]
+name = "lyra-search-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lyra_search_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+lyra-local-search = { workspace = true }
+notify = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

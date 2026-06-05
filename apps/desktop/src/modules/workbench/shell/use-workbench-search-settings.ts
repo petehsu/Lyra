@@ -55,12 +55,6 @@ export const useWorkbenchSearchSettings = (
     () => ({
       searchEngines: activeSearchEngines,
       resultsPerEngine: WORKBENCH_CONFIG.browser.resultsPerEngine,
-      localScopePreset: preferences.searchScopePreset,
-      localCustomRoots: preferences.searchCustomRoots,
-      localIncludeHidden: preferences.searchIncludeHidden,
-      localEnableFuzzy: preferences.searchEnableFuzzy,
-      localEnableContent: preferences.searchEnableContent,
-      localEnableExtensionMatch: true,
       deepBudgetPreset: preferences.deepSearchDefaultBudget,
       deepSiteExpansionEnabled: preferences.deepSearchSiteExpansionEnabled,
       deepProactiveDomainGuessingEnabled: preferences.deepSearchProactiveDomainGuessingEnabled,
@@ -71,12 +65,7 @@ export const useWorkbenchSearchSettings = (
       preferences.deepSearchCrawlPolicy,
       preferences.deepSearchDefaultBudget,
       preferences.deepSearchProactiveDomainGuessingEnabled,
-      preferences.deepSearchSiteExpansionEnabled,
-      preferences.searchCustomRoots,
-      preferences.searchEnableContent,
-      preferences.searchEnableFuzzy,
-      preferences.searchIncludeHidden,
-      preferences.searchScopePreset
+      preferences.deepSearchSiteExpansionEnabled
     ]
   );
 

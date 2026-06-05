@@ -1,5 +1,3 @@
-use super::*;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TerminalToolSpec {
     pub(crate) name: &'static str,
@@ -141,33 +139,11 @@ pub(crate) fn terminal_tool_names() -> impl Iterator<Item = &'static str> {
     TERMINAL_TOOL_SPECS.iter().map(|spec| spec.name)
 }
 
-pub(crate) fn terminal_tool_spec(name: &str) -> Option<TerminalToolSpec> {
-    TERMINAL_TOOL_SPECS
-        .iter()
-        .copied()
-        .find(|spec| spec.name == name)
-}
-
 pub(crate) fn terminal_action_spec(action: &str) -> Option<TerminalToolSpec> {
     TERMINAL_TOOL_SPECS
         .iter()
         .copied()
         .find(|spec| spec.action == action)
-}
-
-pub(crate) fn terminal_host_tool_mapping(
-    name: &str,
-    arguments: Value,
-) -> Option<(String, String, String, Value)> {
-    let spec = terminal_tool_spec(name)?;
-    let mut input = arguments.as_object().cloned().unwrap_or_default();
-    input.insert("action".to_string(), Value::String(spec.action.to_string()));
-    Some((
-        spec.host_method.to_string(),
-        "terminal".to_string(),
-        spec.action.to_string(),
-        Value::Object(input),
-    ))
 }
 
 pub(crate) fn terminal_action_is_read_only(action: &str) -> bool {

@@ -231,6 +231,9 @@ export const createAppSurfaceRenderModel = (
         labels: context.agentSessionHistory.labels,
         activeSessionId: context.agentSessionHistory.activeSessionId,
         onOpenSession: context.agentSessionHistory.onOpenSession,
+        ...(context.agentSessionHistory.onSessionDeleted === undefined
+          ? {}
+          : { onSessionDeleted: context.agentSessionHistory.onSessionDeleted }),
         openDialog: context.agentSessionHistory.openDialog,
         query: context.agentSessionHistory.query ?? "",
         refreshRequestKey: context.agentSessionHistory.refreshRequestKey ?? 0,

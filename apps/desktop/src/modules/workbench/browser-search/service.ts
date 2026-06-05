@@ -8,7 +8,6 @@ import type {
   LyraDesktopApi,
   SearchAggregateRequest,
   SearchAggregateResponse,
-  SearchIndexStatusResponse,
   SearchLocalRequest,
   SearchLocalResponse,
   SearchLocalStreamReadResponse,
@@ -31,6 +30,8 @@ const toEmptyAggregatedPayload = (query: string): AggregatedSearchPayload => ({
   fetchedAt: new Date().toISOString(),
   elapsedMs: 0
 });
+
+const DEFAULT_LOCAL_SCOPE_PRESET: LocalSearchScopePreset = "home";
 
 const toEmptyLocalPayload = (
   query: string,
@@ -147,7 +148,7 @@ export const fetchLocalSearchPayload = async (options: {
 }): Promise<LocalSearchPayload> => {
   const query = options.request.query.trim();
   if (query.length === 0 || options.desktopApi === null) {
-    return toEmptyLocalPayload(query, options.request.scopePreset);
+    return toEmptyLocalPayload(query, DEFAULT_LOCAL_SCOPE_PRESET);
   }
   const response = await options.desktopApi.search.local({
     ...options.request,
@@ -236,32 +237,6 @@ export const cancelLocalSearchStream = async (options: {
   await options.desktopApi.search.cancelLocalStream({
     streamId: options.streamId
   });
-};
-
-export const readSearchIndexStatus = async (options: {
-  readonly desktopApi: LyraDesktopApi | null;
-}): Promise<SearchIndexStatusResponse | null> => {
-  if (options.desktopApi === null) {
-    return null;
-  }
-  return await options.desktopApi.search.readIndexStatus();
-};
-
-export const rebuildSearchIndex = async (options: {
-  readonly desktopApi: LyraDesktopApi | null;
-  readonly request: {
-    readonly scopePreset: LocalSearchScopePreset;
-    readonly customRoots?: readonly string[];
-    readonly projectRoot?: string;
-    readonly includeHidden?: boolean;
-    readonly force?: boolean;
-  };
-}): Promise<SearchIndexStatusResponse | null> => {
-  if (options.desktopApi === null) {
-    return null;
-  }
-  const response = await options.desktopApi.search.rebuildIndex(options.request);
-  return response.status;
 };
 
 export const createEmptySearchPayload = (options: {

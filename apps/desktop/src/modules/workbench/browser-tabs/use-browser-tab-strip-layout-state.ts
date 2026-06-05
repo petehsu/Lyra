@@ -2,64 +2,42 @@ import { useLayoutEffect, useState, type RefObject } from "react";
 
 import type { BrowserTabStripDensity } from "./tab-strip-render-model";
 import {
-  BROWSER_TAB_CONTENT_MARGIN_PX,
-  BROWSER_TAB_OVERLAP_PX,
-  BROWSER_TAB_SIZE_MINI_PX,
-  BROWSER_TAB_SIZE_SMALLER_PX,
-  BROWSER_TAB_SIZE_SMALL_PX
-} from "./tab-strip-layout-constants";
-
-const resolveDensity = (
-  tabCount: number,
-  listWidth: number
-): BrowserTabStripDensity => {
-  if (tabCount === 0 || listWidth <= 0) {
-    return "regular";
-  }
-
-  const targetTabWidth =
-    (listWidth + BROWSER_TAB_OVERLAP_PX * Math.max(0, tabCount - 1)) / tabCount;
-  const targetContentWidth = targetTabWidth - BROWSER_TAB_CONTENT_MARGIN_PX * 2;
-  if (targetContentWidth < BROWSER_TAB_SIZE_MINI_PX) {
-    return "mini";
-  }
-  if (targetContentWidth < BROWSER_TAB_SIZE_SMALLER_PX) {
-    return "smaller";
-  }
-  if (targetContentWidth < BROWSER_TAB_SIZE_SMALL_PX) {
-    return "small";
-  }
-  return "regular";
-};
-
-const resolveAvailableTabListWidth = (host: HTMLElement): number => {
-  const strip = host.querySelector<HTMLElement>(".lyra-browser-tab-strip");
-  const list = host.querySelector<HTMLElement>(".lyra-browser-tab-list");
-  if (strip === null) {
-    return list?.getBoundingClientRect().width ?? 0;
-  }
-  const addButton = strip.querySelector<HTMLElement>(".lyra-browser-tab-add");
-  const stripWidth = strip.getBoundingClientRect().width;
-  const addButtonWidth = addButton?.getBoundingClientRect().width ?? 0;
-  if (stripWidth <= 0) {
-    return list?.getBoundingClientRect().width ?? 0;
-  }
-  return Math.max(0, stripWidth - addButtonWidth);
-};
+  computeChromeTabStripLayout,
+  type ChromeTabStripLayout
+} from "../ui-primitives";
 
 export const useBrowserTabStripLayoutState = (
   tabCount: number,
+  activeIndex: number,
   navRef: RefObject<HTMLElement>,
   stackedMode: boolean
 ): {
   readonly density: BrowserTabStripDensity;
+  readonly layout: ChromeTabStripLayout;
 } => {
   const [density, setDensity] = useState<BrowserTabStripDensity>("regular");
+  const [layout, setLayout] = useState<ChromeTabStripLayout>(() =>
+    computeChromeTabStripLayout({
+      tabCount,
+      stripWidth: 0,
+      addButtonWidth: 0,
+      activeIndex,
+      stackedMode
+    })
+  );
 
   useLayoutEffect(() => {
     const host = navRef.current;
     if (host === null) {
-      setDensity("regular");
+      const emptyLayout = computeChromeTabStripLayout({
+        tabCount,
+        stripWidth: 0,
+        addButtonWidth: 0,
+        activeIndex,
+        stackedMode
+      });
+      setDensity(emptyLayout.density);
+      setLayout(emptyLayout);
       return;
     }
     const strip = host.querySelector<HTMLElement>(".lyra-browser-tab-strip");
@@ -67,10 +45,16 @@ export const useBrowserTabStripLayoutState = (
     const addButton = host.querySelector<HTMLElement>(".lyra-browser-tab-add");
 
     const measure = (): void => {
-      const nextDensity = stackedMode
-        ? "regular"
-        : resolveDensity(tabCount, resolveAvailableTabListWidth(host));
+      const nextLayout = computeChromeTabStripLayout({
+        tabCount,
+        stripWidth: strip?.getBoundingClientRect().width ?? 0,
+        addButtonWidth: addButton?.getBoundingClientRect().width ?? 0,
+        activeIndex,
+        stackedMode
+      });
+      const nextDensity = nextLayout.density;
       setDensity((current) => current === nextDensity ? current : nextDensity);
+      setLayout(nextLayout);
     };
     measure();
 
@@ -91,7 +75,7 @@ export const useBrowserTabStripLayoutState = (
     return () => {
       observer.disconnect();
     };
-  }, [navRef, stackedMode, tabCount]);
+  }, [activeIndex, navRef, stackedMode, tabCount]);
 
-  return { density };
+  return { density, layout };
 };

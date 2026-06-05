@@ -100,6 +100,7 @@ export type AgentSessionHistorySurfaceProps = {
     element: HTMLElement | null
   ) => void;
   readonly onOpenSession: (sessionId: string) => Promise<void> | void;
+  readonly onSessionDeleted?: (sessionId: string) => Promise<void> | void;
   readonly onOpenBrowserHistoryEntry?: (entry: BrowserHistoryEntry) => Promise<void> | void;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly locale?: WorkbenchLocale;

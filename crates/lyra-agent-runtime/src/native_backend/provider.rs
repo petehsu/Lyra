@@ -1117,11 +1117,6 @@ pub(crate) fn finalize_streaming_tool_calls(
 
 pub(crate) const TEXTUAL_TOOL_CALL_MARKER: &str = "[Tool call:";
 
-pub(crate) struct PseudoToolCallExtraction {
-    pub(crate) content: String,
-    pub(crate) tool_calls: Vec<ModelToolCall>,
-}
-
 pub(crate) fn normalize_model_reply_protocol(
     reply: &mut ModelReply,
     tools: &[Value],
@@ -1135,9 +1130,13 @@ pub(crate) fn normalize_model_reply_protocol(
     let Some(content) = reply.content.take() else {
         return Ok(());
     };
-    let extraction = extract_pseudo_tool_calls(&content, &allowed_tool_names)?;
-    reply.tool_calls.extend(extraction.tool_calls);
-    reply.content = normalize_visible_assistant_text(&extraction.content);
+    if contains_textual_tool_call_marker(&content) {
+        return Err(AgentRuntimeError::Core(
+            "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
+                .to_string(),
+        ));
+    }
+    reply.content = normalize_visible_assistant_text(&content);
     Ok(())
 }
 
@@ -1152,144 +1151,6 @@ pub(crate) fn model_tool_name_set(tools: &[Value]) -> HashSet<String> {
         .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
         .map(str::to_string)
         .collect()
-}
-
-pub(crate) fn extract_pseudo_tool_calls(
-    content: &str,
-    allowed_tool_names: &HashSet<String>,
-) -> AgentRuntimeResult<PseudoToolCallExtraction> {
-    if allowed_tool_names.is_empty() {
-        if contains_textual_tool_call_marker(content) {
-            return Err(AgentRuntimeError::Core(
-                "provider emitted textual tool-call syntax while no structured Lyra tools were available"
-                    .to_string(),
-            ));
-        }
-        return Ok(PseudoToolCallExtraction {
-            content: content.to_string(),
-            tool_calls: Vec::new(),
-        });
-    }
-
-    let mut cursor = 0;
-    let mut cleaned = String::with_capacity(content.len());
-    let mut tool_calls = Vec::new();
-
-    while let Some(marker_start) =
-        find_ascii_case_insensitive(content, TEXTUAL_TOOL_CALL_MARKER, cursor)
-    {
-        cleaned.push_str(&content[cursor..marker_start]);
-        match parse_pseudo_tool_call_at(content, marker_start, allowed_tool_names) {
-            Some((call, end)) => {
-                tool_calls.push(call);
-                cursor = end;
-            }
-            None => {
-                return Err(AgentRuntimeError::Core(
-                    "provider emitted invalid textual tool-call syntax instead of a structured Lyra tool call"
-                        .to_string(),
-                ));
-            }
-        }
-    }
-
-    cleaned.push_str(&content[cursor..]);
-    if contains_textual_tool_call_marker(&cleaned) {
-        return Err(AgentRuntimeError::Core(
-            "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
-                .to_string(),
-        ));
-    }
-
-    Ok(PseudoToolCallExtraction {
-        content: cleaned,
-        tool_calls,
-    })
-}
-
-pub(crate) fn parse_pseudo_tool_call_at(
-    content: &str,
-    marker_start: usize,
-    allowed_tool_names: &HashSet<String>,
-) -> Option<(ModelToolCall, usize)> {
-    let bytes = content.as_bytes();
-    let mut index = marker_start + TEXTUAL_TOOL_CALL_MARKER.len();
-    skip_ascii_whitespace(bytes, &mut index);
-
-    let name_start = index;
-    while index < bytes.len() && is_tool_name_byte(bytes[index]) {
-        index += 1;
-    }
-    if name_start == index {
-        return None;
-    }
-    let name = content[name_start..index].to_string();
-    if !allowed_tool_names.contains(&name) {
-        return None;
-    }
-
-    skip_ascii_whitespace(bytes, &mut index);
-    if bytes.get(index) != Some(&b'(') {
-        return None;
-    }
-    index += 1;
-    let arguments_start = index;
-    let arguments_end = find_pseudo_tool_arguments_end(content, arguments_start)?;
-    let arguments_text = content[arguments_start..arguments_end].trim();
-    let arguments = if arguments_text.is_empty() {
-        json!({})
-    } else {
-        serde_json::from_str(arguments_text).ok()?
-    };
-
-    index = arguments_end + 1;
-    skip_ascii_whitespace(bytes, &mut index);
-    if bytes.get(index) != Some(&b']') {
-        return None;
-    }
-
-    Some((
-        ModelToolCall {
-            id: format!("tool-{}", Uuid::new_v4()),
-            name,
-            arguments,
-        },
-        index + 1,
-    ))
-}
-
-pub(crate) fn skip_ascii_whitespace(bytes: &[u8], index: &mut usize) {
-    while *index < bytes.len() && bytes[*index].is_ascii_whitespace() {
-        *index += 1;
-    }
-}
-
-pub(crate) fn is_tool_name_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
-}
-
-pub(crate) fn find_pseudo_tool_arguments_end(content: &str, start: usize) -> Option<usize> {
-    let bytes = content.as_bytes();
-    let mut in_string = false;
-    let mut escaped = false;
-    for (index, byte) in bytes.iter().enumerate().skip(start) {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if *byte == b'\\' {
-                escaped = true;
-            } else if *byte == b'"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match *byte {
-            b'"' => in_string = true,
-            b')' => return Some(index),
-            _ => {}
-        }
-    }
-    None
 }
 
 pub(crate) fn contains_textual_tool_call_marker(content: &str) -> bool {

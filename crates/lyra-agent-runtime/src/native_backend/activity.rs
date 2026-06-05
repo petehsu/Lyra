@@ -1,64 +1,5 @@
 use super::*;
 
-pub(crate) fn host_tool_mapping(
-    name: &str,
-    arguments: Value,
-) -> Option<(String, String, String, Value)> {
-    if let Some(mapping) = terminal_host_tool_mapping(name, arguments.clone()) {
-        return Some(mapping);
-    }
-    let mut input = arguments.as_object().cloned().unwrap_or_default();
-    let mapping = match name {
-        "workbench_list_tabs" => ("workbench.listTabs", "workbench", "list_tabs"),
-        "workbench_read_workspace" => ("workbench.readWorkspace", "workbench", "read_workspace"),
-        "workbench_read_tab" => ("workbench.readTab", "workbench", "read_tab"),
-        "workbench_activate_tab" => ("workbench.activateTab", "workbench", "activate_tab"),
-        "terminal_list" => ("terminal.list", "terminal", "list"),
-        "terminal_create" => ("terminal.create", "terminal", "create"),
-        "terminal_read" => ("terminal.read", "terminal", "read"),
-        "terminal_screen" => ("terminal.screen", "terminal", "screen"),
-        "terminal_wait" => ("terminal.wait", "terminal", "wait"),
-        "terminal_write" => ("terminal.write", "terminal", "write"),
-        "terminal_close" => ("terminal.close", "terminal", "close"),
-        "software_list_capabilities" => {
-            ("software.listCapabilities", "software", "list_capabilities")
-        }
-        "software_inspect_capability" => (
-            "software.inspectCapability",
-            "software",
-            "inspect_capability",
-        ),
-        "software_read_state" => ("software.readState", "software", "read_state"),
-        "software_invoke_capability" => {
-            ("software.invokeCapability", "software", "invoke_capability")
-        }
-        "lyra_lumen_map" => ("lyraLumen.map", "lyra_lumen", "map"),
-        "lyra_lumen_read" => ("lyraLumen.read", "lyra_lumen", "read"),
-        "lyra_lumen_see" => ("lyraLumen.see", "lyra_lumen", "see"),
-        "lyra_lumen_act" => ("lyraLumen.act", "lyra_lumen", "act"),
-        "lyra_lumen_type" => ("lyraLumen.type", "lyra_lumen", "type"),
-        "lyra_lumen_press" => ("lyraLumen.press", "lyra_lumen", "press"),
-        "lyra_lumen_submit" => ("lyraLumen.submit", "lyra_lumen", "submit"),
-        "lyra_lumen_wait" => ("lyraLumen.wait", "lyra_lumen", "wait"),
-        "lyra_lumen_read_until" => ("lyraLumen.wait", "lyra_lumen", "read_until"),
-        "lyra_lumen_navigate" => ("lyraLumen.navigate", "lyra_lumen", "navigate"),
-        "lyra_lumen_reveal" => ("lyraLumen.reveal", "lyra_lumen", "reveal"),
-        "lyra_lumen_focus_scan" => ("lyraLumen.focusScan", "lyra_lumen", "focus_scan"),
-        "lyra_lumen_follow_audit" => ("lyraLumen.followAudit", "lyra_lumen", "follow_audit"),
-        "lyra_lumen_explain_target" => ("lyraLumen.explainTarget", "lyra_lumen", "explain_target"),
-        "lyra_lumen_audit" => ("lyraLumen.audit", "lyra_lumen", "audit"),
-        "lyra_lumen_elevate" => ("lyraLumen.elevate", "lyra_lumen", "elevate"),
-        _ => return None,
-    };
-    input.insert("action".to_string(), Value::String(mapping.2.to_string()));
-    Some((
-        mapping.0.to_string(),
-        mapping.1.to_string(),
-        mapping.2.to_string(),
-        Value::Object(input),
-    ))
-}
-
 pub(crate) fn resolved_tool_activity_input(mut input: Value, output: &Value) -> Value {
     let Some(input_object) = input.as_object_mut() else {
         return input;
@@ -127,6 +68,79 @@ pub(crate) fn tool_activity(
     started_at: &str,
     finished_at: Option<String>,
 ) -> Value {
+    let action = input
+        .get("operation")
+        .or_else(|| input.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let tool_path = input
+        .get("toolPath")
+        .or_else(|| input.get("tool_path"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| crate::native_backend::tools::tool_fs::path_for_activity(name, action));
+    let domain = input
+        .get("domain")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            tool_path
+                .as_deref()
+                .and_then(|path| path.trim_start_matches("/tools/").split('/').next())
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        });
+    let manifest = tool_path.as_deref().and_then(|path| {
+        crate::native_backend::tools::tool_fs::runtime_registry()
+            .inspect_path(path)
+            .ok()
+    });
+    let output_ref = output.as_ref();
+    let manifest_title = output_ref
+        .and_then(|value| value.get("manifestTitle"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| manifest.as_ref().map(|manifest| manifest.title.clone()));
+    let activity_kind = output_ref
+        .and_then(|value| value.get("activityKind"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            manifest
+                .as_ref()
+                .map(|manifest| manifest.activity_kind.clone())
+        });
+    let renderer_hint = output_ref
+        .and_then(|value| value.get("rendererHint"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            manifest
+                .as_ref()
+                .map(|manifest| manifest.renderer_hint.clone())
+        });
+    let trace_id = output_ref
+        .and_then(|value| value.get("traceId"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            input
+                .pointer("/toolOperation/traceId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
+    let artifact_refs = output_ref
+        .map(activity_artifact_refs)
+        .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()));
+    let changes = output_ref
+        .and_then(|value| value.get("changes"))
+        .filter(|value| value.is_array())
+        .cloned()
+        .or_else(|| {
+            output_ref
+                .map(|value| activity_changes(tool_path.as_deref(), manifest.as_ref(), value))
+                .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()))
+        });
     json!({
         "id": id,
         "name": name,
@@ -136,7 +150,109 @@ pub(crate) fn tool_activity(
         "output": output,
         "startedAt": started_at,
         "finishedAt": finished_at,
+        "toolPath": tool_path,
+        "domain": domain,
+        "operation": if action.is_empty() { Value::Null } else { Value::String(action.to_string()) },
+        "manifestTitle": manifest_title,
+        "activityKind": activity_kind,
+        "rendererHint": renderer_hint,
+        "traceId": trace_id,
+        "artifactRefs": artifact_refs,
+        "changes": changes,
     })
+}
+
+fn activity_artifact_refs(output: &Value) -> Value {
+    let mut refs = Vec::new();
+    for source in [Some(output), output.get("raw")] {
+        let Some(source) = source else {
+            continue;
+        };
+        for key in [
+            "artifactRef",
+            "diffArtifactRef",
+            "projectionRef",
+            "dataRef",
+            "stdoutRef",
+            "stderrRef",
+            "stdoutArtifactRef",
+            "stderrArtifactRef",
+            "logArtifactRef",
+        ] {
+            if let Some(value) = source.get(key).filter(|value| value.is_object()) {
+                refs.push(value.clone());
+            }
+        }
+        if let Some(values) = source
+            .get("artifactRefs")
+            .or_else(|| source.get("artifacts"))
+            .and_then(Value::as_array)
+        {
+            refs.extend(values.iter().filter(|value| value.is_object()).cloned());
+        }
+    }
+    Value::Array(dedupe_activity_values(refs))
+}
+
+fn activity_changes(
+    tool_path: Option<&str>,
+    manifest: Option<&lyra_tool_fs_core::ToolManifest>,
+    output: &Value,
+) -> Value {
+    let Some(manifest) = manifest else {
+        return Value::Array(Vec::new());
+    };
+    let changed_files = output
+        .pointer("/raw/changedFiles")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if changed_files.is_empty() {
+        return Value::Array(Vec::new());
+    }
+    let diff_ref = output
+        .pointer("/raw/diffArtifactRef")
+        .filter(|value| value.is_object())
+        .cloned();
+    Value::Array(
+        changed_files
+            .into_iter()
+            .map(|file| {
+                let operation = file
+                    .get("operation")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&manifest.operation)
+                    .to_string();
+                let path = file.get("path").and_then(Value::as_str).map(str::to_string);
+                json!({
+                    "schemaVersion": lyra_tool_fs_core::TOOL_FS_SCHEMA_VERSION,
+                    "changeId": format!("change-{}", Uuid::new_v4()),
+                    "kind": "file",
+                    "operation": operation,
+                    "path": path,
+                    "summary": "Filesystem mutation executed.",
+                    "detail": file,
+                    "reversible": true,
+                    "beforeRef": Value::Null,
+                    "afterRef": Value::Null,
+                    "diffRef": diff_ref.clone(),
+                    "toolPath": tool_path,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn dedupe_activity_values(values: Vec<Value>) -> Vec<Value> {
+    let mut seen = HashSet::new();
+    values
+        .into_iter()
+        .filter(|value| {
+            serde_json::to_string(value)
+                .ok()
+                .is_none_or(|key| seen.insert(key))
+        })
+        .collect()
 }
 
 pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value, event_kind: &str) {

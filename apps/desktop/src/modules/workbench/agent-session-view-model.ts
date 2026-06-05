@@ -317,7 +317,31 @@ const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   const input = toolInputRecord(tool);
   const output = asRecord(tool.output);
   const raw = asRecord(output.raw);
-  const action = stringField(input, "action");
+  const hintedKind = toolKindFromHint(tool.activityKind ?? tool.rendererHint ?? null);
+  if (hintedKind !== null) return hintedKind;
+  const action = (tool.operation ?? stringField(input, "operation", "action") ?? "").toLowerCase();
+  const domain = (tool.domain ?? stringField(input, "domain") ?? "").toLowerCase();
+  const toolPath = (tool.toolPath ?? stringField(input, "toolPath", "tool_path") ?? "").toLowerCase();
+  if (domain === "render" || toolPath.startsWith("/tools/render/")) return "render";
+  if (domain === "workbench" || toolPath.startsWith("/tools/workbench/")) return "workbench";
+  if (domain === "terminal" || toolPath.startsWith("/tools/terminal/")) return "terminal";
+  if (
+    domain === "browser" ||
+    domain === "web" ||
+    toolPath.startsWith("/tools/browser/") ||
+    toolPath.startsWith("/tools/web/")
+  ) return "web";
+  if (domain === "shell" || toolPath.startsWith("/tools/shell/")) return "shell";
+  if (domain === "todo" || toolPath.startsWith("/tools/todo/")) return "task";
+  if (domain === "git" || toolPath.startsWith("/tools/git/")) {
+    return ["stage", "unstage", "discard"].includes(action) ? "edit" : "read";
+  }
+  if (domain === "filesystem" || toolPath.startsWith("/tools/filesystem/")) {
+    if (["write", "edit", "multiedit", "apply_patch"].includes(action)) return "edit";
+    if (["glob", "list"].includes(action)) return "search";
+    return "read";
+  }
+  if (domain === "code" || toolPath.startsWith("/tools/code/")) return "search";
   if (
     toolName === "render" ||
     toolName === "render_surface" ||
@@ -372,6 +396,33 @@ const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   ) return "edit";
   if (toolName.includes("todo")) return "task";
   return "thought";
+};
+
+const toolKindFromHint = (hint: string | null | undefined): ToolCall["kind"] | null => {
+  switch ((hint ?? "").toLowerCase()) {
+    case "read":
+      return "read";
+    case "edit":
+      return "edit";
+    case "search":
+      return "search";
+    case "shell":
+      return "shell";
+    case "terminal":
+      return "terminal";
+    case "web":
+    case "lumen":
+      return "web";
+    case "workbench":
+      return "workbench";
+    case "render":
+      return "render";
+    case "task":
+    case "todo":
+      return "task";
+    default:
+      return null;
+  }
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -633,11 +684,12 @@ const isHttpUrl = (value: string): boolean =>
   value.startsWith("https://") || value.startsWith("http://");
 
 const isLyraLumenTool = (tool: AgentToolActivity): boolean =>
-  tool.name.toLowerCase() === "lyra_lumen";
+  tool.name.toLowerCase() === "lyra_lumen" || tool.domain === "browser";
 
 const isSoftwareTool = (tool: AgentToolActivity): boolean => {
   const toolName = tool.name.toLowerCase();
-  return toolName === "software"
+  return tool.domain === "software"
+    || toolName === "software"
     || toolName === "software_invoke_capability"
     || toolName === "software_inspect_capability"
     || toolName === "software_read_state"
@@ -647,7 +699,7 @@ const isSoftwareTool = (tool: AgentToolActivity): boolean => {
 
 const isTerminalTool = (tool: AgentToolActivity): boolean => {
   const toolName = tool.name.toLowerCase();
-  return toolName === "terminal" || toolName.startsWith("terminal_");
+  return tool.domain === "terminal" || toolName === "terminal" || toolName.startsWith("terminal_");
 };
 
 const compactText = (value: string): string =>
@@ -1772,10 +1824,47 @@ const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
   return "success";
 };
 
+const toolFsMetaTitle = (tool: AgentToolActivity): string | null => {
+  const input = toolInputRecord(tool);
+  const operation = tool.operation ?? stringField(input, "operation", "action");
+  const toolName = tool.name.toLowerCase();
+  if (toolName !== "tool_fs" && !toolName.startsWith("tool_fs_")) return null;
+  if (operation === "list") return "List tools";
+  if (operation === "read_doc") return "Read tool docs";
+  if (operation === "inspect") return "Inspect tool";
+  if (operation === "run") return "Run tool";
+  return "Tool filesystem";
+};
+
+const genericToolTitle = (tool: AgentToolActivity): string => {
+  const metaTitle = toolFsMetaTitle(tool);
+  if (metaTitle !== null) return metaTitle;
+  const label = tool.label.trim();
+  if (label.length > 0 && label !== "Ran" && label !== "Used Lyra tool") return label;
+  const input = toolInputRecord(tool);
+  const path = tool.toolPath ?? stringField(input, "toolPath", "tool_path");
+  const pathParts = path?.split("/").filter(Boolean) ?? [];
+  const leaf = pathParts[pathParts.length - 1];
+  if (leaf !== undefined) {
+    return leaf
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return tool.name;
+};
+
+const manifestToolTitle = (tool: AgentToolActivity): string | null => {
+  const title =
+    tool.manifestTitle?.trim() || stringField(asRecord(tool.output), "manifestTitle")?.trim();
+  return title !== undefined && title.length > 0 ? title : null;
+};
+
 const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const kind = toolKind(tool);
   const details = toToolDetails(tool, kind);
-  const title = isLyraLumenTool(tool)
+  const title = manifestToolTitle(tool)
+    ?? (isLyraLumenTool(tool)
     ? lumenTitle(tool)
     : isSoftwareTool(tool)
       ? softwareTitle(tool)
@@ -1785,7 +1874,7 @@ const toToolCall = (tool: AgentToolActivity): ToolCall => {
         ? stringField(asRecord(asRecord(tool.output).raw), "title") ?? "Rendered surface"
     : kind === "workbench"
       ? workbenchActionLabel(stringField(toolInputRecord(tool), "action") ?? "workbench")
-      : tool.label === "Ran" || tool.label.trim().length === 0 ? tool.name : tool.label;
+      : genericToolTitle(tool));
   return {
     id: tool.id,
     kind,

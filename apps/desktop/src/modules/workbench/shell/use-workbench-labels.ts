@@ -77,28 +77,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
             description: t("settings.linuxCompatProfilePerformanceDescription")
           }
         ],
-        searchScope: [
-          {
-            value: "home" as const,
-            label: t("settings.searchScopeHomeLabel"),
-            description: t("settings.searchScopeHomeDescription")
-          },
-          {
-            value: "full_system" as const,
-            label: t("settings.searchScopeFullSystemLabel"),
-            description: t("settings.searchScopeFullSystemDescription")
-          },
-          {
-            value: "workspace" as const,
-            label: t("settings.searchScopeWorkspaceLabel"),
-            description: t("settings.searchScopeWorkspaceDescription")
-          },
-          {
-            value: "custom" as const,
-            label: t("settings.searchScopeCustomLabel"),
-            description: t("settings.searchScopeCustomDescription")
-          }
-        ],
         searchWebEngine: [
           { value: "bing", label: t("settings.searchWebEngineBing") },
           { value: "brave", label: t("settings.searchWebEngineBrave") },
@@ -167,9 +145,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         forceWebPageThemingEnabledLabel: t("settings.forceWebPageThemingEnabled"),
         forceWebPageThemingDisabledLabel: t("settings.forceWebPageThemingDisabled"),
         searchCategoryLabel: t("settings.searchCategoryLabel"),
-        searchScopeLabel: t("settings.searchScopeLabel"),
-        searchCustomRootsLabel: t("settings.searchCustomRootsLabel"),
-        searchCustomRootsPlaceholder: t("settings.searchCustomRootsPlaceholder"),
         searchWebEnginesLabel: t("settings.searchWebEnginesLabel"),
         searchSearxngEndpointLabel: t("settings.searchSearxngEndpointLabel"),
         searchDeepBudgetLabel: t("settings.deepSearchDefaultBudgetLabel"),
@@ -178,12 +153,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         deepSearchSiteExpansionLabel: t("settings.deepSearchSiteExpansionLabel"),
         deepSearchProactiveGuessLabel: t("settings.deepSearchProactiveGuessLabel"),
         deepSearchCrawlPolicyLabel: t("settings.deepSearchCrawlPolicyLabel"),
-        searchEnableFuzzyLabel: t("settings.searchEnableFuzzyLabel"),
-        searchEnableContentLabel: t("settings.searchEnableContentLabel"),
-        searchIncludeHiddenLabel: t("settings.searchIncludeHiddenLabel"),
-        searchAutoIndexLabel: t("settings.searchAutoIndexLabel"),
-        searchIndexStatusLabel: t("settings.searchIndexStatusLabel"),
-        searchRebuildIndexLabel: t("settings.searchRebuildIndexLabel"),
         omniboxNonBrowserSubmitTargetLabel: t("settings.omniboxNonBrowserSubmitTargetLabel"),
         systemNotificationModeLabel: t("settings.systemNotificationModeLabel"),
         systemNotificationModeOffLabel: t("settings.systemNotificationModeOffLabel"),
@@ -954,6 +923,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         resultsLocalIndex: t("browser.resultsLocalIndex"),
         resultsLocalScore: t("browser.resultsLocalScore"),
         resultsLocalLine: t("browser.resultsLocalLine"),
+        resultsLocalIndexNotReady: t("browser.resultsLocalIndexNotReady"),
+        resultsLocalTimedOut: t("browser.resultsLocalTimedOut"),
         channelIdle: t("browser.channelIdle"),
         channelLoading: t("browser.channelLoading"),
         channelReady: t("browser.channelReady"),

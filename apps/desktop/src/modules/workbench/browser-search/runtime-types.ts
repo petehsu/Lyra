@@ -8,19 +8,12 @@ import type {
 import type {
   BrowserSearchPayload,
   DeepSearchViewState,
-  LocalSearchScopePreset,
   SearchEngineDefinition
 } from "./types";
 
 export type BrowserSearchSettings = {
   readonly searchEngines: readonly SearchEngineDefinition[];
   readonly resultsPerEngine: number;
-  readonly localScopePreset: LocalSearchScopePreset;
-  readonly localCustomRoots: readonly string[];
-  readonly localIncludeHidden: boolean;
-  readonly localEnableFuzzy: boolean;
-  readonly localEnableContent: boolean;
-  readonly localEnableExtensionMatch: boolean;
   readonly localProjectRoot?: string;
   readonly localLimit?: number;
   readonly deepBudgetPreset: "low" | "medium" | "high";

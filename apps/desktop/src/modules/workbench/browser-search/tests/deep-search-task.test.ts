@@ -20,12 +20,6 @@ const flushPromises = async (rounds = 6): Promise<void> => {
 const searchSettings: BrowserSearchSettings = {
   searchEngines: [{ id: "bing", label: "Bing", accentColor: "#008373" }],
   resultsPerEngine: 5,
-  localScopePreset: "home",
-  localCustomRoots: [],
-  localIncludeHidden: false,
-  localEnableFuzzy: true,
-  localEnableContent: true,
-  localEnableExtensionMatch: true,
   deepBudgetPreset: "medium",
   deepSiteExpansionEnabled: true,
   deepProactiveDomainGuessingEnabled: true,

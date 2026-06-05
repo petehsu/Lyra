@@ -184,6 +184,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         memory_records,
         memory_injection_explanation,
         active_skills,
+        working_dir,
     ) = {
         let state = state()
             .lock()
@@ -271,6 +272,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             selected_memory,
             memory_injection_explanation,
             state.active_skills.clone(),
+            working_dir,
         )
     };
     let capabilities = model_capabilities(&provider, &model);
@@ -284,6 +286,13 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     };
     let mut runtime_context =
         build_runtime_context(host_dispatcher.as_ref(), &memory_records, &capabilities);
+    let tool_scene = infer_tool_filesystem_scene(
+        working_dir.as_deref(),
+        design_research_required,
+        &active_skills,
+        &runtime_context["workbench"],
+    );
+    runtime_context["toolFilesystem"] = tool_filesystem_runtime_context(&tool_scene);
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
             "latestUserIntent": latest_user_text,
@@ -309,7 +318,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     runtime_context["design"] = json!({
         "researchRequired": design_research_required,
         "availableTools": if design_research_required {
-            design_tools::design_tool_names()
+            vec![
+                "/tools/design/search_styles",
+                "/tools/design/get_style_details",
+            ]
         } else {
             Vec::new()
         },

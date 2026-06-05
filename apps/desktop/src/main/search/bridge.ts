@@ -12,7 +12,6 @@ import {
   type SearchDeepStreamReadResponse,
   type SearchDeepStreamStartRequest,
   type SearchDeepStreamStartResponse,
-  type SearchIndexStatusResponse,
   type SearchLocalRequest,
   type SearchLocalResponse,
   type SearchLocalStreamCancelRequest,
@@ -20,9 +19,7 @@ import {
   type SearchLocalStreamReadRequest,
   type SearchLocalStreamReadResponse,
   type SearchLocalStreamStartRequest,
-  type SearchLocalStreamStartResponse,
-  type SearchRebuildIndexRequest,
-  type SearchRebuildIndexResponse
+  type SearchLocalStreamStartResponse
 } from "../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../runtime-client";
 import { createDeepSearchOrchestrator } from "./deep-orchestrator";
@@ -92,23 +89,6 @@ export const createSearchIpcBridge = (options: {
   );
 
   ipcMain.handle(
-    LYRA_CHANNELS.searchIndexStatus,
-    async (): Promise<SearchIndexStatusResponse> =>
-      await requestRuntime<SearchIndexStatusResponse>("search.index.status", {
-        storageRoot: options.storageRoot
-      })
-  );
-
-  ipcMain.handle(
-    LYRA_CHANNELS.searchRebuildIndex,
-    async (_event, request: SearchRebuildIndexRequest): Promise<SearchRebuildIndexResponse> =>
-      await requestRuntime<SearchRebuildIndexResponse>("search.index.rebuild", {
-        storageRoot: options.storageRoot,
-        ...request
-      })
-  );
-
-  ipcMain.handle(
     LYRA_CHANNELS.searchDeepStreamStart,
     async (
       _event,
@@ -151,8 +131,6 @@ export const createSearchIpcBridge = (options: {
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamStart);
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamRead);
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamCancel);
-      ipcMain.removeHandler(LYRA_CHANNELS.searchIndexStatus);
-      ipcMain.removeHandler(LYRA_CHANNELS.searchRebuildIndex);
       ipcMain.removeHandler(LYRA_CHANNELS.searchDeepStreamStart);
       ipcMain.removeHandler(LYRA_CHANNELS.searchDeepStreamRead);
       ipcMain.removeHandler(LYRA_CHANNELS.searchDeepStreamCancel);

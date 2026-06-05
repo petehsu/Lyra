@@ -56,7 +56,6 @@ import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-noti
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
-import { useWorkbenchSearchIndexStatus } from "./use-workbench-search-index-status";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
@@ -179,17 +178,6 @@ resolvedThemeId,
     animationSyncIntervalMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS
   });
   const searchSettingsFacade = useWorkbenchSearchSettings(preferencesModel.preferences);
-  const {
-    searchIndexStatus,
-    searchRebuildIndexPending,
-    onSearchRebuildIndex
-  } = useWorkbenchSearchIndexStatus({
-    desktopApi,
-    scopePreset: preferencesModel.preferences.searchScopePreset,
-    customRoots: preferencesModel.preferences.searchCustomRoots,
-    includeHidden: preferencesModel.preferences.searchIncludeHidden
-  });
-
   const browserSearchModel = useBrowserSearchModel({
     desktopApi,
     tabsModel,
@@ -308,13 +296,10 @@ resolvedThemeId,
     preferencesModel,
     settingsAiModel,
     jsReplEnabled,
-    searchIndexStatus,
-    searchRebuildIndexPending,
     focusCategoryRequest: settingsFocusRequest,
     openDialog: globalDialogModel.openDialog,
     publishNotification,
-    onJsReplChange: updateJsReplSetting,
-    onSearchRebuildIndex
+    onJsReplChange: updateJsReplSetting
   });
   useWorkbenchLinuxCompatNotice({
     desktopApi,
@@ -517,17 +502,17 @@ resolvedThemeId,
     inspectLabel: t("navigation.elementPickerInspect"),
     layoutLabel: t("navigation.elementPickerLayout")
   });
-
   const aiLaunchProps = useWorkbenchAiLaunchProps(t);
-
   const sidebarAiSurfacePropsWithFileOpen = {
     ...sidebarAiSurfaceProps,
+    activeSessionTabId: aiSessionTabsModel.activeTabId,
     activeSessionId: aiSessionTabsModel.activeSessionId,
-    onActiveSessionChange: aiSessionTabsModel.activateSession,
     sessionTabs: aiSessionTabsModel.tabs,
+    onActiveSessionChange: aiSessionTabsModel.activateSession,
     onActivateSessionTab: aiSessionTabsModel.activateSession,
-    onCloseSessionTab: aiSessionTabsModel.closeSession,
-    onCreateSessionTab: aiSessionTabsModel.createSession,
+    onCloseSessionTab: aiSessionTabsModel.closeSession, onReorderSessionTabs: aiSessionTabsModel.reorderSessionTabs,
+    onCreateDraftSessionTab: aiSessionTabsModel.createDraftSession,
+    onCreateSessionTab: aiSessionTabsModel.createSession, onMissingSession: aiSessionTabsModel.removeSession,
     onSessionSnapshotChange: aiSessionTabsModel.upsertSnapshot
   };
   useWorkbenchEmptyAppTabGuards({
@@ -610,6 +595,7 @@ resolvedThemeId,
       labels: labels.agentSessionHistory,
       activeSessionId: aiSessionTabsModel.activeSessionId,
       onOpenSession: onOpenAgentSession,
+      onSessionDeleted: aiSessionTabsModel.removeSession,
       openDialog: globalDialogModel.openDialog,
       query: activeTab?.pageKind === "app" && activeTab.appId === "agent-session-history"
         ? activeTab.inputValue
@@ -626,7 +612,6 @@ resolvedThemeId,
       locale: preferencesModel.preferences.locale
     }
   });
-
   const rootClassName = cx(
     "lyra-root",
     uiRuntime.rootClassName,

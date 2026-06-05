@@ -1,0 +1,169 @@
+Claude
+
+Warm letterpress on cream paper — a literary workspace where ink-black text rests on ivory stock and color appears only as deliberate annotation.
+
+Claude's design system reads like a letterpress journal on cream paper — a warm ivory canvas (#faf9f5) under near-black ink (#141413), with taupe linen borders that frame content like printed margins. The interface is almost achromatic: color is rationed to a single dusty blue accent, used sparingly for emphasis rather than decoration. Typography carries the brand: a humanist sans (Anthropic Sans) for UI and a literary serif (Anthropic Serif) for headlines, which transforms what could be generic SaaS into something editorial and considered. Components are flat, border-defined, and gently rounded — the system trades drop shadows for hairline warmth, creating a tactile paper-like quality instead of the usual glass-and-elevation vocabulary of tech products.
+
+Color Palette
+Accent
+
+
+Copy
+Dust Blue
+#ccdbe8
+Sole chromatic accent — link states, decorative highlights, subtle wash backgrounds, icon tints. The only color in an otherwise monochrome system
+Neutrals
+
+
+Copy
+Ink Black
+#141413
+Primary text, dark filled buttons, high-emphasis UI elements — near-black with a warm cast
+
+Copy
+Charcoal
+#1f1e1d
+Secondary text, nav text, body copy — slightly lighter than Ink for hierarchical depth
+
+Copy
+Warm Slate
+#3d3d3a
+Tertiary text, button labels, subdued body content — reads as soft graphite
+
+Copy
+Stone Gray
+#73726c
+Muted helper text, captions, inactive nav items — quiet supporting voice
+
+Copy
+Pewter
+#9c9a92
+Subtle icons, decorative strokes, low-emphasis inline elements
+
+Copy
+Cool Stone
+#b7b7b5
+Supporting neutral for secondary UI, dividers, and muted labels. Do not promote it to the primary CTA color
+
+Copy
+Linen Border
+#dedcd1
+Hairline borders, card outlines, dividers — the warm taupe that defines surfaces without harshness
+
+Copy
+Warm Parchment
+#f0eee6
+Secondary surface for subtle differentiation — toggle backgrounds, hover washes, muted zones
+
+Copy
+Ivory Canvas
+#faf9f5
+Page background, primary canvas — warm off-white that makes the interface feel like printed paper rather than a screen
+
+Copy
+Pure White
+#ffffff
+Card surfaces, input fields, elevated containers sitting atop the ivory canvas
+
+Typography
+Type Scale
+
+Major Second (1.125) from 16px base
+
+display
+56px · 330 · 1.2
+The quick brown fox jumps
+heading
+30px · 400 · 1.2
+The quick brown fox jumps
+heading-sm
+24px · 600 · 1.33
+The quick brown fox jumps
+subheading
+18px · 400 · 1.56
+The quick brown fox jumps
+16px
+16px · 400 · 1.5
+The quick brown fox jumps
+body
+15px · 400 · 1.5
+The quick brown fox jumps
+14px
+14px · 500 · 1.43
+The quick brown fox jumps
+12px
+12px · 400 · 1.33
+The quick brown fox jumps
+caption
+11px · 400 · 1.5
+The quick brown fox jumps
+
+Fonts
+
+Display
+Anthropic Serif
+Weight
+330, 400
+Sizes
+18px, 24px, 30px, 56px
+Line height
+1.20, 1.33, 1.56
+Fallback
+Source Serif 4, Tiempos Text, or PT Serif
+Editorial display and heading type. Used for hero headlines (56px weight 330), section headings (30px), plan tier names, and price figures. The low weight 330 for large display sizes is anti-convention — most tech brands use 700+ for hero text, but this whisper-weight serif creates authority through literary restraint rather than visual volume. Liga features enabled for refined ligatures.
+
+Display
+Anthropic Sans
+Weight
+400, 430, 500, 600
+Sizes
+11–24px · 6 values
+Line height
+1.33–1.63 · 5 values
+Letter spacing
+normal
+Fallback
+Inter, IBM Plex Sans, or Söhne
+Interface and body type. Weight 430 (between regular and medium) is the workhorse for body text and buttons — 400 for body, 430 for buttons and emphasis, 500 for subheadings, 600 for strong UI labels. Size 24px sans serves as a mid-scale heading or prominent label. The 430 weight is distinctive — it provides more presence than 400 without jumping to the heaviness of 500, giving the UI a slightly warmer, less clinical feel than standard system fonts.
+
+Spacing & Shape
+Spacing
+
+Purpose	Value	Preview
+Density	comfortable
+Base unit	8px
+Max width	1200px
+Section gap	64px
+Card padding	32px
+Element gap	8px
+Border Radius
+
+Element	Value	Preview
+nav	9.6px
+inputs	9.6px
+buttons	9.6px
+cards	16px
+containers	24px
+hero-panels	32px
+
+Guidelines
+Do
+
+Use Anthropic Serif weight 330 at 56px for hero display headlines — the whisper-weight serif is the brand's signature editorial voice
+Maintain the Ivory Canvas (#faf9f5) as the base background for all pages; never substitute pure white (#ffffff) at the page level
+Use 9.6px border-radius for all interactive elements (buttons, inputs, toggles, nav elements) — this is the system's defining corner treatment
+Use Linen (#dedcd1) 1px borders for card and container edges instead of drop shadows
+Use Charcoal (#1f1e1d) fill with white text for primary action buttons — the only acceptable filled-button treatment
+Use Anthropic Sans weight 430 for button labels and nav links — this slightly-bold weight is warmer than standard 400
+Apply 32px padding inside plan cards and major content containers, 16-20px inside buttons and inputs
+Keep the palette nearly monochrome; use Dust Blue (#ccdbe8) only for link states and subtle accent washes, never for filled buttons
+Don't
+
+Do not use drop shadows or box-shadow on cards, buttons, or containers — this system is flat and border-defined
+Do not use pure black (#000000) for body text — Ink (#141413) is the correct near-black with warm cast
+Do not use rounded pill shapes (border-radius: 9999px) for buttons — 9.6px is the maximum
+Do not use bold (700+) or heavy weights for headings — the system relies on 330-400 weights for authority
+Do not introduce additional chromatic colors — Dust Blue is the sole accent in an achromatic system
+Do not use the Cool Stone border (#b7b7b5) for content cards — reserve it only for nav-level interactive elements
+Do not use sans-serif type for section headings or display text — Anthropic Serif is mandatory for all heading-level content
+Do not add gradients, glows, or color transitions to surfaces — warmth comes from the cream canvas, not visual effects

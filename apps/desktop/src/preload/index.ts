@@ -173,7 +173,6 @@ import {
   type SearchDeepStreamReadResponse,
   type SearchDeepStreamStartRequest,
   type SearchDeepStreamStartResponse,
-  type SearchIndexStatusResponse,
   type SearchLocalRequest,
   type SearchLocalResponse,
   type SearchLocalStreamCancelRequest,
@@ -182,8 +181,6 @@ import {
   type SearchLocalStreamReadResponse,
   type SearchLocalStreamStartRequest,
   type SearchLocalStreamStartResponse,
-  type SearchRebuildIndexRequest,
-  type SearchRebuildIndexResponse,
   type SystemNotificationAccessRequestResult,
   type SystemNotificationActivation,
   type SystemNotificationOpenSettingsResult,
@@ -813,15 +810,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.localSearchStreamCancel,
         request
       ) as Promise<SearchLocalStreamCancelResponse>,
-    readIndexStatus: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchIndexStatus
-      ) as Promise<SearchIndexStatusResponse>,
-    rebuildIndex: (request: SearchRebuildIndexRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchRebuildIndex,
-        request
-      ) as Promise<SearchRebuildIndexResponse>,
     startDeepStream: (request: SearchDeepStreamStartRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.searchDeepStreamStart,

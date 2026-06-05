@@ -485,6 +485,7 @@ export const AgentSessionHistorySurface = ({
   onBrowserHistoryPreviewChange,
   onBrowserHistoryPreviewHostChange,
   onOpenSession,
+  onSessionDeleted,
   onOpenBrowserHistoryEntry,
   openDialog,
   locale
@@ -862,16 +863,12 @@ export const AgentSessionHistorySurface = ({
       setPreview((current) =>
         current.sessionId === sessionId ? EMPTY_PREVIEW_STATE : current
       );
-      if (activeSessionId === sessionId) {
-        const snapshot = await agentApi.createSession({ title: "Lyra Agent" });
-        await onOpenSession(snapshot.id);
-      }
+      await onSessionDeleted?.(sessionId);
     });
   }, [
-    activeSessionId,
     desktopApi,
     labels.runtimeUnavailable,
-    onOpenSession,
+    onSessionDeleted,
     runSessionAction
   ]);
 

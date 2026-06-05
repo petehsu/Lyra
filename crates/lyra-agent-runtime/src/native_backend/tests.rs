@@ -40,6 +40,16 @@ fn model_tool_names(request: &Value) -> Vec<String> {
         .collect()
 }
 
+fn expected_provider_tool_names() -> Vec<String> {
+    vec![
+        "tool_fs_list".to_string(),
+        "tool_fs_read_doc".to_string(),
+        "tool_fs_inspect".to_string(),
+        "tool_fs_run".to_string(),
+        LYRA_TURN_FINISH_TOOL.to_string(),
+    ]
+}
+
 fn start_test_runtime_turn(session_id: &str) -> String {
     let turn_id = format!("turn-test-{}", Uuid::new_v4());
     let cancellation = Arc::new(AtomicBool::new(false));
@@ -59,6 +69,17 @@ fn start_test_runtime_turn(session_id: &str) -> String {
         .active_cancellations
         .insert(turn_id.clone(), cancellation);
     turn_id
+}
+
+fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {
+    ModelToolCall {
+        id: id.to_string(),
+        name: "tool_fs_run".to_string(),
+        arguments: json!({
+            "path": path,
+            "args": args,
+        }),
+    }
 }
 
 fn wait_for_pending_permission(session_id: &str) -> String {

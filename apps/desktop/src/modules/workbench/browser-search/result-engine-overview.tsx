@@ -19,7 +19,7 @@ type ResultEngineOverviewProps = {
   readonly localScannedDirsLabel: string;
   readonly localContentScansLabel: string;
   readonly localMatchedLabel: string;
-  readonly localIndexLabel: string;
+  readonly localErrorLabel?: string;
   readonly onSourceFilterChange: (value: SearchResultsSourceFilter) => void;
 };
 
@@ -39,7 +39,7 @@ export const ResultEngineOverview = ({
   localScannedDirsLabel,
   localContentScansLabel,
   localMatchedLabel,
-  localIndexLabel,
+  localErrorLabel,
   onSourceFilterChange
 }: ResultEngineOverviewProps) => (
   <aside className="lyra-results-side">
@@ -112,11 +112,8 @@ export const ResultEngineOverview = ({
           <li>{localScannedDirsLabel}: {payload.local.payload.stats.scannedDirs}</li>
           <li>{localContentScansLabel}: {payload.local.payload.stats.contentScannedFiles}</li>
           <li>{localMatchedLabel}: {payload.local.payload.stats.matchedFiles}</li>
-          {payload.local.indexStatus === undefined ? null : (
-            <li>{localIndexLabel}: {payload.local.indexStatus.state}</li>
-          )}
-          {payload.local.error === undefined ? null : (
-            <li className="lyra-engine-error">{payload.local.error}</li>
+          {localErrorLabel === undefined ? null : (
+            <li className="lyra-engine-error">{localErrorLabel}</li>
           )}
         </ul>
       </section>

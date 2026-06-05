@@ -4,7 +4,6 @@ import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   SearchDeepCrawlPolicy,
   SearchDeepBudgetPreset,
-  SearchLocalScopePreset,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -38,14 +37,8 @@ export type WorkbenchPreferences = {
   readonly aiStopBehavior: WorkbenchAiStopBehavior;
   readonly preventSleepEnabled: boolean;
   readonly forceWebPageThemingEnabled: boolean;
-  readonly searchScopePreset: SearchLocalScopePreset;
-  readonly searchCustomRoots: readonly string[];
-  readonly searchEnableFuzzy: boolean;
-  readonly searchEnableContent: boolean;
-  readonly searchIncludeHidden: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpoint?: string;
-  readonly searchAutoIndexEnabled: boolean;
   readonly deepSearchDefaultBudget: SearchDeepBudgetPreset;
   readonly deepSearchRestoreViewport: boolean;
   readonly deepSearchLocalOpenBehavior: "open_file" | "reveal_in_manager";
@@ -71,14 +64,8 @@ export type WorkbenchPreferencesModel = {
   readonly setAiStopBehavior: (value: WorkbenchAiStopBehavior) => void;
   readonly setPreventSleepEnabled: (enabled: boolean) => void;
   readonly setForceWebPageThemingEnabled: (enabled: boolean) => void;
-  readonly setSearchScopePreset: (value: SearchLocalScopePreset) => void;
-  readonly setSearchCustomRoots: (value: readonly string[]) => void;
-  readonly setSearchEnableFuzzy: (value: boolean) => void;
-  readonly setSearchEnableContent: (value: boolean) => void;
-  readonly setSearchIncludeHidden: (value: boolean) => void;
   readonly setSearchWebEngineIds: (value: readonly string[]) => void;
   readonly setSearchSearxngEndpoint: (value?: string) => void;
-  readonly setSearchAutoIndexEnabled: (value: boolean) => void;
   readonly setDeepSearchDefaultBudget: (value: SearchDeepBudgetPreset) => void;
   readonly setDeepSearchRestoreViewport: (value: boolean) => void;
   readonly setDeepSearchLocalOpenBehavior: (value: "open_file" | "reveal_in_manager") => void;

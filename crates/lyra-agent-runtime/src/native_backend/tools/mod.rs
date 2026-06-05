@@ -6,6 +6,7 @@ mod search;
 mod shell;
 mod terminal;
 mod todo;
+pub(crate) mod tool_fs;
 mod web;
 
 pub(crate) use self::{file::*, render::*, search::*, shell::*, terminal::*, todo::*, web::*};
@@ -392,94 +393,254 @@ pub(crate) fn execute_model_tool(
             "cancelled": true,
         });
     }
-    if matches!(
-        call.name.as_str(),
-        "memory_search"
-            | "memory_remember"
-            | "memory_update"
-            | "memory_forget"
-            | "memory_list"
-            | "memory_link"
-            | "memory_review_candidates"
-            | "memory_apply_candidate"
-            | "memory_reject_candidate"
-            | "memory_explain_injection"
-    ) {
-        return execute_memory_tool(session_id, turn_id, call, &started_at);
-    }
-    if matches!(call.name.as_str(), "ask_user" | "request_clarification") {
-        return execute_clarification_tool(session_id, turn_id, call, &started_at);
-    }
-    if design_tools::design_tool_names().contains(&call.name.as_str()) {
-        return execute_design_model_tool(session_id, turn_id, call, &started_at);
-    }
-    if matches!(
-        call.name.as_str(),
-        "skill_list" | "skill_inspect" | "skill_activate" | "skill_deactivate"
-    ) {
-        return execute_skill_model_tool(session_id, turn_id, call, &started_at);
-    }
-    if call.name.starts_with("mcp_") {
-        return execute_mcp_model_tool(session_id, turn_id, call, &started_at);
-    }
-    if let Some((display_name, action)) = native_tool_mapping(&call.name) {
-        return execute_native_model_tool(
+    if tool_fs::is_tool_fs_model_tool(&call.name) {
+        return tool_fs::execute_tool_fs_model_tool(
             session_id,
             turn_id,
+            dispatcher,
             cancellation,
             call,
-            display_name,
-            action,
             &started_at,
         );
     }
-    let (host_method, display_name, action, input) =
-        match host_tool_mapping(&call.name, call.arguments.clone()) {
-            Some(mapping) => mapping,
-            None => {
-                if let Some(output) =
-                    execute_registry_model_tool(session_id, turn_id, &call, &started_at)
-                {
-                    return output;
-                }
-                let output = tool_failure_output(
-                    "tool_not_found",
-                    &format!("Unknown Lyra tool: {}", call.name),
-                    "Call one of the tools listed in the current Lyra runtime context.",
-                    None,
-                );
-                record_tool_activity(
-                    session_id,
-                    turn_id,
-                    tool_activity(
-                        &call.id,
-                        &call.name,
-                        &call.name,
-                        "failed",
-                        call.arguments,
-                        Some(output.clone()),
-                        &started_at,
-                        Some(now()),
-                    ),
-                    "toolFinished",
-                );
-                return output;
-            }
-        };
-    let input =
-        attach_runtime_cancellation(input, session_id, turn_id, &call.id, &display_name, &action);
-    let (input, timeout_ms) = apply_tool_timeout_policy(input, &display_name, &action);
+    let output = tool_failure_output(
+        "tool_not_found",
+        &format!("Unknown Lyra provider-visible tool: {}", call.name),
+        "Use tool_fs_list, tool_fs_inspect, and tool_fs_run to discover and execute Lyra tools.",
+        None,
+    );
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
             &call.id,
-            &display_name,
-            &tool_label(&display_name, &action),
+            &call.name,
+            &call.name,
+            "failed",
+            call.arguments,
+            Some(output.clone()),
+            &started_at,
+            Some(now()),
+        ),
+        "toolFinished",
+    );
+    output
+}
+
+pub(crate) fn execute_tool_fs_target(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    manifest: &lyra_tool_fs_core::ToolManifest,
+    arguments: Value,
+) -> Value {
+    let started_at = now();
+    if cancellation.load(Ordering::SeqCst) {
+        return json!({
+            "content": "Lyra tool call was cancelled before execution.",
+            "cancelled": true,
+        });
+    }
+    let Some(target) = tool_fs::runtime_target_for_manifest(manifest) else {
+        let output = tool_failure_output(
+            "tool_not_found",
+            &format!("No runtime adapter is registered for {}", manifest.path),
+            "Use tool_fs_list or tool_fs_inspect to choose a supported Tool-FS target.",
+            Some(json!({ "toolPath": manifest.path })),
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                &manifest.domain,
+                &manifest.title,
+                "failed",
+                arguments,
+                Some(output.clone()),
+                &started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    };
+    if matches!(target, tool_fs::RuntimeToolTarget::Git) {
+        return tool_fs::execute_git_tool_fs_tool(
+            session_id,
+            turn_id,
+            tool_call_id,
+            manifest,
+            arguments,
+            &started_at,
+        );
+    }
+    match &target {
+        tool_fs::RuntimeToolTarget::HostAdapter {
+            host_method,
+            display_name,
+            action,
+        } => {
+            return execute_host_tool_adapter(
+                session_id,
+                turn_id,
+                dispatcher,
+                cancellation,
+                tool_call_id,
+                host_method,
+                display_name,
+                action,
+                host_adapter_arguments(arguments, action),
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::SoftwareCapability {
+            software_id,
+            action_id,
+        } => {
+            return execute_host_tool_adapter(
+                session_id,
+                turn_id,
+                dispatcher,
+                cancellation,
+                tool_call_id,
+                "software.invokeCapability",
+                "software",
+                "invoke_capability",
+                software_capability_adapter_arguments(arguments, software_id, action_id),
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::MemoryAdapter { tool_name, action } => {
+            return execute_memory_tool_adapter(
+                session_id,
+                turn_id,
+                tool_call_id,
+                tool_name,
+                action,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::Clarification => {
+            return execute_clarification_tool_adapter(
+                session_id,
+                turn_id,
+                tool_call_id,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::NativeAdapter {
+            tool_name,
+            display_name,
+            action,
+        } => {
+            return execute_native_tool_adapter(
+                session_id,
+                turn_id,
+                cancellation,
+                tool_call_id,
+                tool_name,
+                display_name,
+                action,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::DesignAdapter { tool_name, action } => {
+            return execute_design_tool_adapter(
+                session_id,
+                turn_id,
+                tool_call_id,
+                tool_name,
+                action,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::SkillAdapter { tool_name, action } => {
+            return execute_skill_tool_adapter(
+                session_id,
+                turn_id,
+                tool_call_id,
+                tool_name,
+                action,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::McpAdapter { tool_name, action } => {
+            return execute_mcp_tool_adapter(
+                session_id,
+                turn_id,
+                tool_call_id,
+                tool_name,
+                action,
+                arguments,
+                &started_at,
+            );
+        }
+        tool_fs::RuntimeToolTarget::Git => {}
+    }
+    let output = tool_failure_output(
+        "tool_not_found",
+        &format!("No Tool-FS runtime adapter completed {}", manifest.path),
+        "Use tool_fs_list or tool_fs_inspect to choose a supported Tool-FS target.",
+        Some(json!({ "toolPath": manifest.path })),
+    );
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            tool_call_id,
+            &manifest.domain,
+            &manifest.title,
+            "failed",
+            arguments,
+            Some(output.clone()),
+            &started_at,
+            Some(now()),
+        ),
+        "toolFinished",
+    );
+    output
+}
+
+fn execute_host_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    host_method: &str,
+    display_name: &str,
+    action: &str,
+    input: Value,
+    started_at: &str,
+) -> Value {
+    let input = attach_runtime_cancellation(
+        input,
+        session_id,
+        turn_id,
+        tool_call_id,
+        display_name,
+        action,
+    );
+    let (input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            tool_call_id,
+            display_name,
+            &tool_label(display_name, action),
             "running",
             input.clone(),
             None,
-            &started_at,
+            started_at,
             None,
         ),
         "toolStarted",
@@ -487,9 +648,9 @@ pub(crate) fn execute_model_tool(
     if let Some(permission) = permission_request_for_tool(
         session_id,
         turn_id,
-        &call.id,
-        &display_name,
-        &action,
+        tool_call_id,
+        display_name,
+        action,
         &input,
     ) {
         if cancellation.load(Ordering::SeqCst) {
@@ -512,13 +673,13 @@ pub(crate) fn execute_model_tool(
                     session_id,
                     turn_id,
                     tool_activity(
-                        &call.id,
-                        &display_name,
-                        &tool_label(&display_name, &action),
+                        tool_call_id,
+                        display_name,
+                        &tool_label(display_name, action),
                         "failed",
                         input,
                         Some(output.clone()),
-                        &started_at,
+                        started_at,
                         Some(now()),
                     ),
                     "toolFinished",
@@ -537,13 +698,13 @@ pub(crate) fn execute_model_tool(
                     session_id,
                     turn_id,
                     tool_activity(
-                        &call.id,
-                        &display_name,
-                        &tool_label(&display_name, &action),
+                        tool_call_id,
+                        display_name,
+                        &tool_label(display_name, action),
                         "failed",
                         input,
                         Some(output.clone()),
-                        &started_at,
+                        started_at,
                         Some(now()),
                     ),
                     "toolFinished",
@@ -557,13 +718,13 @@ pub(crate) fn execute_model_tool(
             session_id,
             turn_id,
             tool_activity(
-                &call.id,
-                &display_name,
-                &tool_label(&display_name, &action),
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
                 "cancelled",
                 input.clone(),
                 Some(json!({ "content": "Lyra tool call was cancelled." })),
-                &started_at,
+                started_at,
                 Some(now()),
             ),
             "toolFinished",
@@ -579,7 +740,7 @@ pub(crate) fn execute_model_tool(
         .and_then(|dispatcher| {
             invoke_host_capability_with_timeout(
                 dispatcher.clone(),
-                host_method.clone(),
+                host_method.to_string(),
                 input.clone(),
                 timeout_ms,
             )
@@ -589,13 +750,13 @@ pub(crate) fn execute_model_tool(
             session_id,
             turn_id,
             tool_activity(
-                &call.id,
-                &display_name,
-                &tool_label(&display_name, &action),
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
                 "cancelled",
                 input.clone(),
                 Some(json!({ "content": "Lyra tool call was cancelled." })),
-                &started_at,
+                started_at,
                 Some(now()),
             ),
             "toolFinished",
@@ -610,9 +771,9 @@ pub(crate) fn execute_model_tool(
             let user_action_resolution = resolve_host_needs_user_action(
                 session_id,
                 turn_id,
-                &call.id,
-                &display_name,
-                &action,
+                tool_call_id,
+                display_name,
+                action,
                 &input,
                 &value,
                 dispatcher.as_ref(),
@@ -623,7 +784,7 @@ pub(crate) fn execute_model_tool(
                 object.insert("userActionResolution".to_string(), resolution.clone());
             }
             let activity_input = resolved_tool_activity_input(input.clone(), &value);
-            let raw = redacted_tool_raw_output(&display_name, &action, value.clone());
+            let raw = redacted_tool_raw_output(display_name, action, value.clone());
             let status = if value.get("ok").and_then(Value::as_bool) == Some(false)
                 || value.get("error").is_some_and(|value| !value.is_null())
             {
@@ -631,7 +792,7 @@ pub(crate) fn execute_model_tool(
             } else {
                 "completed"
             };
-            let mut content = format_tool_output(&display_name, &action, &value);
+            let mut content = format_tool_output(display_name, action, &value);
             if let Some(resolution) = user_action_resolution.as_ref() {
                 content.push_str("\n\n");
                 content.push_str(&format_user_action_resolution(resolution));
@@ -658,13 +819,13 @@ pub(crate) fn execute_model_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
-            &display_name,
-            &tool_label(&display_name, &action),
+            tool_call_id,
+            display_name,
+            &tool_label(display_name, action),
             status,
             finished_input,
             Some(output.clone()),
-            &started_at,
+            started_at,
             Some(now()),
         ),
         "toolFinished",
@@ -672,33 +833,81 @@ pub(crate) fn execute_model_tool(
     output
 }
 
-pub(crate) fn execute_design_model_tool(
+fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    input.insert("action".to_string(), Value::String(action.to_string()));
+    Value::Object(input)
+}
+
+fn software_capability_adapter_arguments(
+    arguments: Value,
+    software_id: &str,
+    action_id: &str,
+) -> Value {
+    let original_args = arguments
+        .pointer("/toolOperation/args")
+        .cloned()
+        .unwrap_or_else(|| strip_tool_fs_metadata(arguments.clone()));
+    let reason = original_args
+        .get("reason")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "softwareId".to_string(),
+        Value::String(software_id.to_string()),
+    );
+    payload.insert("actionId".to_string(), Value::String(action_id.to_string()));
+    payload.insert(
+        "capabilityId".to_string(),
+        Value::String(action_id.to_string()),
+    );
+    payload.insert("input".to_string(), original_args);
+    if let Some(reason) = reason {
+        payload.insert("reason".to_string(), Value::String(reason));
+    }
+    for key in ["toolPath", "domain", "operation", "toolOperation"] {
+        if let Some(value) = arguments.get(key).cloned() {
+            payload.insert(key.to_string(), value);
+        }
+    }
+    Value::Object(payload)
+}
+
+fn strip_tool_fs_metadata(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    for key in ["toolPath", "domain", "operation", "toolOperation", "action"] {
+        input.remove(key);
+    }
+    Value::Object(input)
+}
+
+fn execute_design_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    tool_name: &str,
+    action: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let action = match call.name.as_str() {
-        "lyra_design_search_styles" => "search_styles",
-        "lyra_design_get_style_details" => "get_style_details",
-        _ => "design",
-    };
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "lyra_design",
             &tool_label("lyra_design", action),
             "running",
-            call.arguments.clone(),
+            arguments.clone(),
             None,
             started_at,
             None,
         ),
         "toolStarted",
     );
-    let raw = design_tools::execute_design_tool(&call.name, &call.arguments);
+    let raw = design_tools::execute_design_tool(tool_name, &arguments);
     let output = json!({
         "content": format_design_output(action, &raw),
         "raw": raw,
@@ -707,11 +916,11 @@ pub(crate) fn execute_design_model_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "lyra_design",
             &tool_label("lyra_design", action),
             "completed",
-            call.arguments,
+            arguments,
             Some(output.clone()),
             started_at,
             Some(now()),
@@ -721,29 +930,31 @@ pub(crate) fn execute_design_model_tool(
     output
 }
 
-pub(crate) fn execute_skill_model_tool(
+fn execute_skill_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    tool_name: &str,
+    action: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let action = call.name.trim_start_matches("skill_");
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "skills",
             &tool_label("skills", action),
             "running",
-            call.arguments.clone(),
+            arguments.clone(),
             None,
             started_at,
             None,
         ),
         "toolStarted",
     );
-    let raw_result = execute_skill_state_change(&call.name, &call.arguments);
+    let raw_result = execute_skill_state_change(tool_name, &arguments);
     let (status, output) = match raw_result {
         Ok(value) => (
             "completed",
@@ -767,11 +978,11 @@ pub(crate) fn execute_skill_model_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "skills",
             &tool_label("skills", action),
             status,
-            call.arguments,
+            arguments,
             Some(output.clone()),
             started_at,
             Some(now()),
@@ -781,22 +992,24 @@ pub(crate) fn execute_skill_model_tool(
     output
 }
 
-pub(crate) fn execute_mcp_model_tool(
+fn execute_mcp_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    tool_name: &str,
+    action: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let action = call.name.trim_start_matches("mcp_");
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "mcp",
             &tool_label("mcp", action),
             "running",
-            call.arguments.clone(),
+            arguments.clone(),
             None,
             started_at,
             None,
@@ -810,18 +1023,18 @@ pub(crate) fn execute_mcp_model_tool(
             "tools": [],
             "available": false,
             "reason": "no_configured_mcp_servers",
-            "requestedTool": call.name,
+            "requestedTool": tool_name,
         }
     });
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "mcp",
             &tool_label("mcp", action),
             "failed",
-            call.arguments,
+            arguments,
             Some(output.clone()),
             started_at,
             Some(now()),
@@ -928,32 +1141,30 @@ pub(crate) fn invoke_host_capability_with_timeout(
     }
 }
 
-pub(crate) fn execute_clarification_tool(
+fn execute_clarification_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let question = call
-        .arguments
+    let question = arguments
         .get("question")
         .and_then(Value::as_str)
         .unwrap_or("What should Lyra Agent do next?")
         .trim()
         .to_string();
-    let options = call
-        .arguments
+    let options = arguments
         .get("options")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let allow_custom_answer = call
-        .arguments
+    let allow_custom_answer = arguments
         .get("allowCustomAnswer")
-        .or_else(|| call.arguments.get("allow_custom_answer"))
+        .or_else(|| arguments.get("allow_custom_answer"))
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    let detail = string_opt(&call.arguments, "detail");
+    let detail = string_opt(&arguments, "detail");
     let input = json!({
         "question": question,
         "options": options,
@@ -964,7 +1175,7 @@ pub(crate) fn execute_clarification_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "clarification",
             &tool_label("clarification", "ask"),
             "running",
@@ -979,7 +1190,7 @@ pub(crate) fn execute_clarification_tool(
         id: format!("clarification-{}", Uuid::new_v4()),
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
-        tool_call_id: call.id.clone(),
+        tool_call_id: tool_call_id.to_string(),
         question,
         options,
         allow_custom_answer,
@@ -1019,7 +1230,7 @@ pub(crate) fn execute_clarification_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "clarification",
             &tool_label("clarification", "ask"),
             status,
@@ -1033,19 +1244,21 @@ pub(crate) fn execute_clarification_tool(
     output
 }
 
-pub(crate) fn execute_memory_tool(
+fn execute_memory_tool_adapter(
     session_id: &str,
     turn_id: &str,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    tool_name: &str,
+    action: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let action = memory_action_name(&call.name);
-    let input = memory_tool_input(&call.name, call.arguments.clone());
+    let input = memory_tool_input(tool_name, arguments);
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "memory",
             &tool_label("memory", action),
             "running",
@@ -1056,7 +1269,7 @@ pub(crate) fn execute_memory_tool(
         ),
         "toolStarted",
     );
-    let raw_result = match call.name.as_str() {
+    let raw_result = match tool_name {
         "memory_remember" => long_term_memory_create(input.clone()),
         "memory_search" => long_term_memory_search(input.clone()),
         "memory_update" => long_term_memory_update(input.clone()),
@@ -1068,8 +1281,7 @@ pub(crate) fn execute_memory_tool(
         "memory_reject_candidate" => memory_reject_candidate(input.clone()),
         "memory_explain_injection" => memory_explain_injection(input.clone()),
         _ => Err(AgentRuntimeError::Core(format!(
-            "unknown memory tool: {}",
-            call.name
+            "unknown memory tool: {tool_name}"
         ))),
     };
     let (status, output) = match raw_result {
@@ -1092,7 +1304,7 @@ pub(crate) fn execute_memory_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             "memory",
             &tool_label("memory", action),
             status,
@@ -1185,47 +1397,23 @@ pub(crate) struct WorkspacePath {
     pub(crate) relative: String,
 }
 
-pub(crate) fn native_tool_mapping(name: &str) -> Option<(&'static str, &'static str)> {
-    match name {
-        "artifact_read" => Some(("artifact", "read")),
-        "file_read" => Some(("file", "read")),
-        "file_list" => Some(("file", "list")),
-        "file_glob" => Some(("file", "glob")),
-        "file_write" => Some(("file", "write")),
-        "file_edit" => Some(("file", "edit")),
-        "file_multiedit" => Some(("file", "multiedit")),
-        "apply_patch" => Some(("file", "apply_patch")),
-        "shell_run" => Some(("shell", "run")),
-        "project_search" => Some(("search", "project")),
-        "code_search_text" => Some(("code", "search_text")),
-        "code_search_symbol" => Some(("code", "search_symbol")),
-        "code_graph_expand" => Some(("code", "graph_expand")),
-        "lsp_query" => Some(("lsp", "query")),
-        "network_status" => Some(("network", "status")),
-        "web_search" => Some(("web", "search")),
-        "web_fetch" => Some(("web", "fetch")),
-        "render_surface" => Some(("render", "surface")),
-        "todo_read" => Some(("todo", "read")),
-        "todo_write" => Some(("todo", "write")),
-        _ => None,
-    }
-}
-
-pub(crate) fn execute_native_model_tool(
+fn execute_native_tool_adapter(
     session_id: &str,
     turn_id: &str,
     cancellation: &Arc<AtomicBool>,
-    call: ModelToolCall,
+    tool_call_id: &str,
+    tool_name: &str,
     display_name: &str,
     action: &str,
+    arguments: Value,
     started_at: &str,
 ) -> Value {
-    let mut input = native_tool_input(action, call.arguments.clone());
+    let mut input = native_tool_input(action, arguments);
     record_tool_activity(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             display_name,
             &tool_label(display_name, action),
             "running",
@@ -1247,7 +1435,7 @@ pub(crate) fn execute_native_model_tool(
             session_id,
             turn_id,
             tool_activity(
-                &call.id,
+                tool_call_id,
                 display_name,
                 &tool_label(display_name, action),
                 "cancelled",
@@ -1263,7 +1451,7 @@ pub(crate) fn execute_native_model_tool(
     if let Some(permission) = native_permission_request_for_tool(
         session_id,
         turn_id,
-        &call.id,
+        tool_call_id,
         display_name,
         action,
         &input,
@@ -1285,7 +1473,7 @@ pub(crate) fn execute_native_model_tool(
                     session_id,
                     turn_id,
                     tool_activity(
-                        &call.id,
+                        tool_call_id,
                         display_name,
                         &tool_label(display_name, action),
                         "failed",
@@ -1309,7 +1497,7 @@ pub(crate) fn execute_native_model_tool(
                     session_id,
                     turn_id,
                     tool_activity(
-                        &call.id,
+                        tool_call_id,
                         display_name,
                         &tool_label(display_name, action),
                         "failed",
@@ -1325,14 +1513,14 @@ pub(crate) fn execute_native_model_tool(
         }
     }
 
-    let result = run_native_tool(session_id, turn_id, &call.name, &call.id, &input);
+    let result = run_native_tool(session_id, turn_id, tool_name, tool_call_id, &input);
     let (status, output) = match result {
         Ok(success) => (
             "completed",
             budgeted_tool_output(
                 session_id,
                 turn_id,
-                &call.id,
+                tool_call_id,
                 success.content,
                 success.raw,
                 success.recommended_next_action,
@@ -1352,7 +1540,7 @@ pub(crate) fn execute_native_model_tool(
         session_id,
         turn_id,
         tool_activity(
-            &call.id,
+            tool_call_id,
             display_name,
             &tool_label(display_name, action),
             status,
@@ -1431,108 +1619,6 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
         .is_some_and(|tokens| command_requires_permission(&tokens))
 }
 
-pub(crate) fn execute_registry_model_tool(
-    session_id: &str,
-    turn_id: &str,
-    call: &ModelToolCall,
-    started_at: &str,
-) -> Option<Value> {
-    let service = ToolActivityService::default();
-    let capability = service.capability_ref_for_model_tool(&call.name)?;
-    let display_name = capability.provider_id.clone();
-    let action = capability.tool_name.clone();
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            &call.id,
-            &display_name,
-            &tool_label(&display_name, &action),
-            "running",
-            call.arguments.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let result = service.execute_model_tool_blocking(&call.name, call.arguments.clone())?;
-    let (status, output) = match result.status {
-        lyra_agent_api::AgentToolStatus::Completed => {
-            let raw = result.output.unwrap_or(Value::Null);
-            let content = raw
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| serde_json::to_string_pretty(&raw).unwrap_or_default());
-            (
-                "completed",
-                budgeted_tool_output(session_id, turn_id, &call.id, content, raw, None),
-            )
-        }
-        lyra_agent_api::AgentToolStatus::Running => (
-            "running",
-            budgeted_tool_output(
-                session_id,
-                turn_id,
-                &call.id,
-                "Registry tool is still running.".to_string(),
-                result.output.unwrap_or(Value::Null),
-                Some(
-                    "Wait for the registry tool to finish before relying on its result."
-                        .to_string(),
-                ),
-            ),
-        ),
-        lyra_agent_api::AgentToolStatus::Cancelled => (
-            "cancelled",
-            tool_failure_output(
-                "cancelled",
-                "Registry tool was cancelled.",
-                "Retry only if the user still wants this tool call.",
-                result.output,
-            ),
-        ),
-        lyra_agent_api::AgentToolStatus::Failed => {
-            let detail = result
-                .error
-                .as_ref()
-                .and_then(|error| serde_json::to_value(error).ok())
-                .or(result.output);
-            let message = result
-                .error
-                .as_ref()
-                .map(|error| error.message.clone())
-                .unwrap_or_else(|| "Registry tool failed.".to_string());
-            (
-                "failed",
-                tool_failure_output(
-                    "registry_tool_failed",
-                    &message,
-                    "Inspect the structured error and retry with valid tool input.",
-                    detail,
-                ),
-            )
-        }
-    };
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            &call.id,
-            &display_name,
-            &tool_label(&display_name, &action),
-            status,
-            call.arguments.clone(),
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    Some(output)
-}
-
 pub(crate) fn run_native_tool(
     session_id: &str,
     turn_id: &str,
@@ -1549,7 +1635,7 @@ pub(crate) fn run_native_tool(
         "file_edit" => tool_file_edit(session_id, turn_id, tool_call_id, input),
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
         "apply_patch" => tool_apply_patch(session_id, turn_id, tool_call_id, input),
-        "shell_run" => tool_shell_run(session_id, input),
+        "shell_run" => tool_shell_run(session_id, turn_id, tool_call_id, input),
         "project_search" => tool_project_search(session_id, input),
         "code_search_text" => tool_code_search_text(session_id, input),
         "code_search_symbol" => tool_code_search_symbol(session_id, input),

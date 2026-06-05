@@ -23,13 +23,7 @@ const defaults: WorkbenchPreferences = {
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
   forceWebPageThemingEnabled: true,
-  searchScopePreset: "home",
-  searchCustomRoots: [],
-  searchEnableFuzzy: true,
-  searchEnableContent: true,
-  searchIncludeHidden: false,
   searchWebEngineIds: ["bing", "brave", "duckduckgo"],
-  searchAutoIndexEnabled: true,
   deepSearchDefaultBudget: "medium",
   deepSearchRestoreViewport: false,
   deepSearchLocalOpenBehavior: "open_file",
@@ -190,18 +184,12 @@ describe("workbench preferences", () => {
     });
   });
 
-  test("updates search preferences via model and persists", () => {
+  test("updates web and deep search preferences via model and persists", () => {
     const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
 
     act(() => {
-      result.current.setSearchScopePreset("custom");
-      result.current.setSearchCustomRoots(["/Users/petehsu/Documents", "  /tmp  "]);
-      result.current.setSearchEnableFuzzy(false);
-      result.current.setSearchEnableContent(false);
-      result.current.setSearchIncludeHidden(true);
       result.current.setSearchWebEngineIds(["bing", "searxng"]);
       result.current.setSearchSearxngEndpoint("https://searx.example/search");
-      result.current.setSearchAutoIndexEnabled(false);
       result.current.setDeepSearchDefaultBudget("high");
       result.current.setDeepSearchRestoreViewport(true);
       result.current.setDeepSearchLocalOpenBehavior("reveal_in_manager");
@@ -212,14 +200,8 @@ describe("workbench preferences", () => {
 
     expect(result.current.preferences).toEqual({
       ...defaults,
-      searchScopePreset: "custom",
-      searchCustomRoots: ["/Users/petehsu/Documents", "/tmp"],
-      searchEnableFuzzy: false,
-      searchEnableContent: false,
-      searchIncludeHidden: true,
       searchWebEngineIds: ["bing", "searxng"],
       searchSearxngEndpoint: "https://searx.example/search",
-      searchAutoIndexEnabled: false,
       deepSearchDefaultBudget: "high",
       deepSearchRestoreViewport: true,
       deepSearchLocalOpenBehavior: "reveal_in_manager",
@@ -227,6 +209,20 @@ describe("workbench preferences", () => {
       deepSearchProactiveDomainGuessingEnabled: false,
       deepSearchCrawlPolicy: "accessibility_only"
     });
+  });
+
+  test("ignores legacy local search settings from persisted storage", () => {
+    writeWorkbenchStateSync("preferences", JSON.stringify({
+      ...defaults,
+      searchScopePreset: "custom",
+      searchCustomRoots: ["/Users/petehsu/Documents", "/tmp"],
+      searchEnableFuzzy: false,
+      searchEnableContent: false,
+      searchIncludeHidden: true,
+      searchAutoIndexEnabled: false
+    }));
+
+    expect(readWorkbenchPreferences(defaults)).toEqual(defaults);
   });
 
   test("reset restores defaults", () => {

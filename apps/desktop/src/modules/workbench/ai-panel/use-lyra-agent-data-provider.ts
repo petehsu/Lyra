@@ -116,6 +116,7 @@ type State = {
 
 type Action =
   | { readonly type: "loading" }
+  | { readonly type: "empty" }
   | { readonly type: "snapshot"; readonly snapshot: AgentSessionSnapshot }
   | { readonly type: "event"; readonly event: AgentRuntimeEvent }
   | { readonly type: "error"; readonly message: string };
@@ -203,6 +204,14 @@ function isCustomOptionLabel(label: string): boolean {
 
 const reducer = (state: State, action: Action): State => {
   if (action.type === "loading") return { ...state, loading: true, error: null, turnError: null };
+  if (action.type === "empty") {
+    return {
+      session: null,
+      error: null,
+      turnError: null,
+      loading: false
+    };
+  }
   if (action.type === "snapshot") {
     return {
       ...state,
@@ -218,6 +227,17 @@ const reducer = (state: State, action: Action): State => {
 
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const isMissingSessionError = (error: unknown): boolean => {
+  const message = toErrorMessage(error).toLowerCase();
+  return (
+    message.includes("not found") ||
+    message.includes("missing") ||
+    message.includes("deleted") ||
+    message.includes("no such file") ||
+    message.includes("enoent")
+  );
+};
 
 const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
   if ("sessionId" in event) return event.sessionId;
@@ -261,38 +281,46 @@ const normalizeGoalItem = (value: unknown): AgentGoalItem | null => {
   };
 };
 
+type LyraAgentDataProviderCallbacks = {
+  readonly onActiveSessionChange?: ((sessionId: string) => void) | undefined;
+  readonly onSessionSnapshotChange?: ((snapshot: AgentSessionSnapshot) => void) | undefined;
+  readonly onCreateDraftSessionTab?: ((request: AgentSessionCreateRequest) => void) | undefined;
+  readonly onCreateSessionTab?: ((
+    request: AgentSessionCreateRequest
+  ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot) | undefined;
+  readonly onMissingSession?: ((sessionId: string) => void) | undefined;
+  readonly onRequestProjectBind?: ((currentPath?: string) => Promise<string | null>) | undefined;
+  readonly onOpenProjectTree?: ((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => Promise<void> | void) | undefined;
+  readonly onOpenSelfDevLab?: ((request: {
+    readonly parentSessionId: string | null;
+  }) => Promise<void> | void) | undefined;
+  readonly onOpenOvernightLab?: ((request: {
+    readonly parentSessionId: string | null;
+  }) => Promise<void> | void) | undefined;
+  readonly onOpenModelSettings?: (() => Promise<void> | void) | undefined;
+  readonly onOpenUrlInWorkbench?: ((request: {
+    readonly url: string;
+    readonly title?: string;
+  }) => Promise<void> | void) | undefined;
+  readonly onOpenFile?: ((filePath: string, location?: FileRevealLocation) => void) | undefined;
+  readonly onOpenTerminalLiveSession?: ((request: {
+    readonly sessionId?: string | null;
+    readonly terminalTabId?: string | null;
+    readonly paneId?: string | null;
+  }) => Promise<void> | void) | undefined;
+  readonly locale?: Locale | undefined;
+};
+
 export const useLyraAgentDataProvider = (
   desktopApi: LyraDesktopApi | null,
   settingsAiModel?: SettingsAiModel,
   activeSessionId?: string | null,
-  onActiveSessionChange?: (sessionId: string) => void,
-  onSessionSnapshotChange?: (snapshot: AgentSessionSnapshot) => void,
-  onCreateSessionTab?: (
-    request: AgentSessionCreateRequest
-  ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot,
-  onRequestProjectBind?: (currentPath?: string) => Promise<string | null>,
-  onOpenProjectTree?: (request: {
-    readonly sessionId: string;
-    readonly workingDir: string;
-  }) => Promise<void> | void,
-  onOpenSelfDevLab?: (request: {
-    readonly parentSessionId: string | null;
-  }) => Promise<void> | void,
-  onOpenOvernightLab?: (request: {
-    readonly parentSessionId: string | null;
-  }) => Promise<void> | void,
-  onOpenModelSettings?: () => Promise<void> | void,
-  onOpenUrlInWorkbench?: (request: {
-    readonly url: string;
-    readonly title?: string;
-  }) => Promise<void> | void,
-  onOpenFile?: (filePath: string, location?: FileRevealLocation) => void,
-  onOpenTerminalLiveSession?: (request: {
-    readonly sessionId?: string | null;
-    readonly terminalTabId?: string | null;
-    readonly paneId?: string | null;
-  }) => Promise<void> | void,
-  locale?: Locale
+  activeDraftWorkingDir?: string | null,
+  deferInitialSessionCreation = false,
+  callbacks: LyraAgentDataProviderCallbacks = {}
 ): {
   readonly data: ReturnType<typeof createDataProviderValue>;
   readonly followRunning: boolean;
@@ -300,6 +328,22 @@ export const useLyraAgentDataProvider = (
   readonly error: string | null;
   readonly cancel: () => Promise<void>;
 } => {
+  const {
+    onActiveSessionChange,
+    onSessionSnapshotChange,
+    onCreateDraftSessionTab,
+    onCreateSessionTab,
+    onMissingSession,
+    onRequestProjectBind,
+    onOpenProjectTree,
+    onOpenSelfDevLab,
+    onOpenOvernightLab,
+    onOpenModelSettings,
+    onOpenUrlInWorkbench,
+    onOpenFile,
+    onOpenTerminalLiveSession,
+    locale
+  } = callbacks;
   if (locale !== undefined) {
     setLocale(locale);
   }
@@ -373,7 +417,6 @@ export const useLyraAgentDataProvider = (
       return;
     }
     let disposed = false;
-    dispatch({ type: "loading" });
     const agentApi = desktopApi.agent;
     const requestedSessionId = activeSessionId ?? null;
     currentSessionIdRef.current = requestedSessionId;
@@ -420,10 +463,20 @@ export const useLyraAgentDataProvider = (
             if (disposed || currentSessionIdRef.current !== snapshot.id) return;
             dispatch({ type: "snapshot", snapshot });
           })
-          .catch(() => undefined);
+        .catch(() => undefined);
       }
     });
 
+    if (requestedSessionId === null && deferInitialSessionCreation) {
+      setModelState(null);
+      dispatch({ type: "empty" });
+      return () => {
+        disposed = true;
+        unsubscribe();
+      };
+    }
+
+    dispatch({ type: "loading" });
     const initialSession = requestedSessionId === null
       ? agentApi.createSession({ title: "新会话" })
       : agentApi.readSession({ sessionId: requestedSessionId });
@@ -436,6 +489,11 @@ export const useLyraAgentDataProvider = (
       })
       .catch((error: unknown) => {
         if (disposed) return;
+        if (requestedSessionId !== null && isMissingSessionError(error)) {
+          onMissingSession?.(requestedSessionId);
+          dispatch({ type: "empty" });
+          return;
+        }
         dispatch({ type: "error", message: toErrorMessage(error) });
       });
 
@@ -443,7 +501,7 @@ export const useLyraAgentDataProvider = (
       disposed = true;
       unsubscribe();
     };
-  }, [activeSessionId, desktopApi, locale]);
+  }, [activeSessionId, deferInitialSessionCreation, desktopApi, locale, onMissingSession]);
 
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
@@ -508,6 +566,40 @@ export const useLyraAgentDataProvider = (
 
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
+  const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
+    const stateWorkingDir =
+      state.session?.projectBound === true && typeof state.session.workingDir === "string"
+        ? state.session.workingDir.trim()
+        : "";
+    const draftWorkingDir = activeDraftWorkingDir?.trim() ?? "";
+    const workingDir = stateWorkingDir.length > 0
+      ? stateWorkingDir
+      : draftWorkingDir.length > 0
+        ? draftWorkingDir
+        : null;
+    return workingDir === null
+      ? { title: "新会话" }
+      : { title: "新会话", workingDir };
+  }, [
+    activeDraftWorkingDir,
+    state.session?.projectBound,
+    state.session?.workingDir
+  ]);
+
+  const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
+    if (desktopApi?.agent === undefined) return null;
+    if (state.session !== null) return state.session;
+    const request = createSessionRequest();
+    const snapshot = await (
+      onCreateSessionTab === undefined
+        ? desktopApi.agent.createSession(request)
+        : onCreateSessionTab(request)
+    );
+    currentSessionIdRef.current = snapshot.id;
+    dispatch({ type: "snapshot", snapshot });
+    return snapshot;
+  }, [createSessionRequest, desktopApi, onCreateSessionTab, state.session]);
+
   const sendMessage = useCallback(async (
     text: string,
     images: readonly AgentImageAttachment[] = []
@@ -515,8 +607,10 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     const trimmed = text.trim();
     if (trimmed.length === 0 && images.length === 0) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
     await desktopApi.agent.sendTurn({
-      sessionId: resolvedSessionId,
+      sessionId: session.id,
       text: trimmed,
       ...(images.length === 0
         ? {}
@@ -531,7 +625,7 @@ export const useLyraAgentDataProvider = (
             }))
           })
     });
-  }, [desktopApi, resolvedSessionId]);
+  }, [desktopApi, ensureBackingSession]);
 
   const captureBrowserScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
@@ -603,13 +697,16 @@ export const useLyraAgentDataProvider = (
 
   const createSession = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
+    const request = createSessionRequest();
+    if (onCreateDraftSessionTab !== undefined) {
+      onCreateDraftSessionTab(request);
+      setModelState(null);
+      dispatch({ type: "empty" });
+      return;
+    }
     dispatch({ type: "loading" });
     setModelState(null);
     try {
-      const request =
-        state.session?.projectBound === true && typeof state.session.workingDir === "string"
-          ? { title: "新会话", workingDir: state.session.workingDir }
-          : { title: "新会话" };
       const snapshot = await (
         onCreateSessionTab === undefined
           ? desktopApi.agent.createSession(request)
@@ -619,7 +716,12 @@ export const useLyraAgentDataProvider = (
     } catch (error: unknown) {
       dispatch({ type: "error", message: toErrorMessage(error) });
     }
-  }, [desktopApi, onCreateSessionTab, state.session?.projectBound, state.session?.workingDir]);
+  }, [
+    createSessionRequest,
+    desktopApi,
+    onCreateDraftSessionTab,
+    onCreateSessionTab
+  ]);
 
   const bindProject = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;
@@ -629,15 +731,17 @@ export const useLyraAgentDataProvider = (
         : undefined;
     const selectedPath = await onRequestProjectBind(currentPath);
     if (selectedPath === null) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
     const snapshot = await desktopApi.agent.bindProject({
-      sessionId: resolvedSessionId,
+      sessionId: session.id,
       workingDir: selectedPath
     });
     dispatch({ type: "snapshot", snapshot });
   }, [
     desktopApi,
+    ensureBackingSession,
     onRequestProjectBind,
-    resolvedSessionId,
     state.session?.projectBound,
     state.session?.workingDir
   ]);

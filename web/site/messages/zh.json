@@ -1,0 +1,14 @@
+{
+  "Hero": {
+    "title": "Agent 原生终端",
+    "subtitle": "为下一代 AI 驱动的开发者而生。",
+    "cta_primary": "下载 Lyra",
+    "cta_secondary": "阅读文档"
+  },
+  "Navigation": {
+    "features": "功能",
+    "docs": "文档",
+    "pricing": "定价",
+    "download": "下载"
+  }
+}

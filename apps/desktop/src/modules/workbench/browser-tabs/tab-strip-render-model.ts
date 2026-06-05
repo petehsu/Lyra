@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 import { cx } from "../ui-primitives";
+import type { ChromeTabStripLayout } from "../ui-primitives";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type { RightDragPreview } from "./tab-strip-types";
 
@@ -12,6 +13,7 @@ export type BrowserTabStripTabModel = {
   readonly isAgentActive: boolean;
   readonly tabClassName: string;
   readonly tabMainClassName: string;
+  readonly tabStyle?: CSSProperties | undefined;
   readonly closeLabel: string;
 };
 
@@ -28,6 +30,7 @@ export type BrowserTabStripRenderModel = {
   readonly navClassName: string;
   readonly navStyle?: CSSProperties | undefined;
   readonly stripClassName: string;
+  readonly addButtonStyle?: CSSProperties | undefined;
   readonly tabs: readonly BrowserTabStripTabModel[];
   readonly preview: BrowserTabStripPreviewModel | null;
 };
@@ -47,6 +50,7 @@ type CreateBrowserTabStripRenderModelInput = {
   readonly workspaceDragTabId: string | null;
   readonly rightDragPreview: RightDragPreview | null;
   readonly density?: BrowserTabStripDensity;
+  readonly layout?: ChromeTabStripLayout;
   readonly closeLockedTabWidth?: number | null;
 };
 
@@ -65,6 +69,7 @@ export const createBrowserTabStripRenderModel = ({
   workspaceDragTabId,
   rightDragPreview,
   density = "regular",
+  layout,
   closeLockedTabWidth = null
 }: CreateBrowserTabStripRenderModelInput): BrowserTabStripRenderModel => {
   const splitGroupLookup = new Set(splitGroupTabIds);
@@ -91,6 +96,12 @@ export const createBrowserTabStripRenderModel = ({
       isCollapsed,
       isAgentActive,
       closeLabel: `${closeTabLabel}-${tab.title}`,
+      tabStyle: layout?.items[index] === undefined
+        ? undefined
+        : {
+            width: `${Math.round(layout.items[index]!.width)}px`,
+            transform: `translate3d(${Math.round(layout.items[index]!.x)}px, 0, 0)`
+          },
       tabClassName: cx(
         "lyra-browser-tab-item",
         "lyra-browser-tab-item-drag-enabled",
@@ -156,8 +167,12 @@ export const createBrowserTabStripRenderModel = ({
       "lyra-browser-tab-strip",
       stackedMode && "lyra-browser-tab-strip-stacked",
       !stackedMode && density !== "regular" && `lyra-browser-tab-strip-density-${density}`,
+      workspaceDragTabId !== null && "lyra-browser-tab-strip-sorting",
       closeLockedTabWidth !== null && "lyra-browser-tab-strip-close-lock"
     ),
+    addButtonStyle: layout === undefined
+      ? undefined
+      : { transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` },
     tabs: tabModels,
     preview
   };

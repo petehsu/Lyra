@@ -23,7 +23,7 @@ const desktopRoot = path.join(repoRoot, "apps/desktop");
 const stagedNativeRoot = path.join(desktopRoot, "native");
 const cargoManifest = path.join(repoRoot, "Cargo.toml");
 
-const runtimePackages = ["lyrad", "lyra-cli"] as const;
+const runtimePackages = ["lyrad", "lyra-cli", "lyra-performance-core"] as const;
 const nativeAddonPackages = [
   "lyra-terminal-core",
   "lyra-lsp-core",
@@ -155,7 +155,9 @@ const artifactDirs = (options: CliOptions): readonly string[] => {
 };
 
 const executableNames = (target: DesktopTarget): readonly string[] =>
-  target.platform === "win32" ? ["lyrad.exe", "lyra.exe"] : ["lyrad", "lyra"];
+  target.platform === "win32"
+    ? ["lyrad.exe", "lyra.exe", "lyra-performance-helper.exe"]
+    : ["lyrad", "lyra", "lyra-performance-helper"];
 
 const libraryNames = (stem: string, target: DesktopTarget): readonly string[] => {
   if (target.platform === "win32") {

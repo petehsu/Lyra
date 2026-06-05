@@ -1,6 +1,11 @@
 use super::*;
 
-pub(crate) fn tool_shell_run(session_id: &str, input: &Value) -> NativeToolResult {
+pub(crate) fn tool_shell_run(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+) -> NativeToolResult {
     let command = required_value_string(input, "command")?;
     if shell_command_has_control_operator(&command) {
         return Err(NativeToolFailure::new(
@@ -115,6 +120,22 @@ pub(crate) fn tool_shell_run(session_id: &str, input: &Value) -> NativeToolResul
         "command: {}\ncwd: {}\nexitCode: {:?}\ntimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
         command, cwd.relative, exit_code, timed_out, stdout.text, stderr.text
     );
+    let stdout_ref = (!stdout.text.is_empty() || stdout.truncated).then(|| {
+        write_tool_artifact(
+            session_id,
+            turn_id,
+            &format!("{tool_call_id}-stdout"),
+            &stdout.text,
+        )
+    });
+    let stderr_ref = (!stderr.text.is_empty() || stderr.truncated).then(|| {
+        write_tool_artifact(
+            session_id,
+            turn_id,
+            &format!("{tool_call_id}-stderr"),
+            &stderr.text,
+        )
+    });
     Ok(NativeToolSuccess {
         content,
         raw: json!({
@@ -129,6 +150,8 @@ pub(crate) fn tool_shell_run(session_id: &str, input: &Value) -> NativeToolResul
             "stderrTruncated": stderr.truncated,
             "stdoutBytes": stdout.total_bytes,
             "stderrBytes": stderr.total_bytes,
+            "stdoutRef": stdout_ref.flatten(),
+            "stderrRef": stderr_ref.flatten(),
         }),
         recommended_next_action: if timed_out {
             Some(

@@ -984,6 +984,11 @@
   background: color-mix(in srgb, var(--lyra-bg-editor) 95%, var(--lyra-bg-surface) 5%);
 }
 
+.lyra-results-state-error {
+  color: var(--lyra-status-error);
+  border-color: color-mix(in srgb, var(--lyra-status-error) 42%, var(--lyra-line-variant));
+}
+
 .lyra-results-skeleton-list {
   margin: 0;
   padding: 0;

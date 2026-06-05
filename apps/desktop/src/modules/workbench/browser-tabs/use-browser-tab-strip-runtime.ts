@@ -53,6 +53,14 @@ type UseBrowserTabStripRuntimeInput = {
   readonly onDetachTabFromSplit?: ((tabId: string) => void) | undefined;
 };
 
+type WorkspaceTabSortState = {
+  readonly tabId: string;
+  readonly startClientX: number;
+  readonly startX: number;
+  readonly positions: readonly number[];
+  readonly lastTargetIndex: number;
+};
+
 export type BrowserTabStripRuntimeState = {
   readonly isTerminalDropActive: boolean;
   readonly dropIndicatorX: number | null;
@@ -85,6 +93,22 @@ export type BrowserTabStripRuntime = {
   readonly onTabDragEnd: () => void;
 };
 
+const closestPositionIndex = (
+  value: number,
+  positions: readonly number[]
+): number => {
+  let closestDistance = Infinity;
+  let closestIndex = -1;
+  positions.forEach((position, index) => {
+    const distance = Math.abs(value - position);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+  return closestIndex;
+};
+
 export const useBrowserTabStripRuntime = ({
   tabs,
   splitGroupTabIds,
@@ -98,6 +122,7 @@ export const useBrowserTabStripRuntime = ({
 }: UseBrowserTabStripRuntimeInput): BrowserTabStripRuntime => {
   const navRef = useRef<HTMLElement | null>(null);
   const rightDragRef = useRef<RightDragState | null>(null);
+  const workspaceSortRef = useRef<WorkspaceTabSortState | null>(null);
   const suppressContextMenuRef = useRef(false);
 
   const [isTerminalDropActive, setIsTerminalDropActive] = useState(false);
@@ -114,6 +139,10 @@ export const useBrowserTabStripRuntime = ({
     setSplitDropTargetTabId(null);
     setWorkspaceDragTabId(null);
     setRightDragPreview(null);
+  }, []);
+
+  const clearWorkspaceSortState = useCallback((): void => {
+    workspaceSortRef.current = null;
   }, []);
 
   const clearAllDragPayloads = useCallback((): void => {
@@ -286,6 +315,56 @@ export const useBrowserTabStripRuntime = ({
     return true;
   }, [splitGroupTabIds]);
 
+  const beginWorkspaceTabSort = useCallback((
+    tabId: string,
+    startClientX: number
+  ): void => {
+    const host = navRef.current;
+    const strip = host?.querySelector<HTMLElement>(".lyra-browser-tab-strip") ?? null;
+    if (strip === null) {
+      workspaceSortRef.current = null;
+      return;
+    }
+
+    const stripRect = strip.getBoundingClientRect();
+    const tabElements = Array.from(
+      strip.querySelectorAll<HTMLElement>(".lyra-browser-tab-item[data-lyra-tab-id]")
+    );
+    const sourceIndex = tabElements.findIndex(
+      (element) => element.dataset.lyraTabId === tabId
+    );
+    if (sourceIndex === -1) {
+      workspaceSortRef.current = null;
+      return;
+    }
+
+    const positions = tabElements.map((element) =>
+      element.getBoundingClientRect().left - stripRect.left
+    );
+    workspaceSortRef.current = {
+      tabId,
+      startClientX,
+      startX: positions[sourceIndex] ?? 0,
+      positions,
+      lastTargetIndex: sourceIndex
+    };
+  }, []);
+
+  const resolveLiveWorkspaceReorderTarget = useCallback((
+    tabId: string,
+    clientX: number
+  ): number | null => {
+    const sort = workspaceSortRef.current;
+    if (sort === null || sort.tabId !== tabId || sort.positions.length === 0) {
+      return null;
+    }
+    const targetIndex = closestPositionIndex(
+      sort.startX + clientX - sort.startClientX,
+      sort.positions
+    );
+    return targetIndex === -1 ? null : targetIndex;
+  }, []);
+
   const onWorkspaceTabDragStart = useCallback(
     (event: ReactDragEvent<HTMLElement>, tab: WorkspaceTab): void => {
       const splitIntent = hasClassicCtrlLeftSplitIntent(
@@ -296,6 +375,11 @@ export const useBrowserTabStripRuntime = ({
       );
       writeWorkspaceTabDragPayload(event.dataTransfer, tab.id, splitIntent ? "split" : "reorder");
       setWorkspaceDragTabId(splitIntent ? null : tab.id);
+      if (!splitIntent) {
+        beginWorkspaceTabSort(tab.id, event.clientX);
+      } else {
+        clearWorkspaceSortState();
+      }
       if (tab.pageKind === "terminal" && tab.terminalTabId !== undefined) {
         writeTerminalTabDragPayload(event.dataTransfer, {
           source: "workspace",
@@ -314,7 +398,14 @@ export const useBrowserTabStripRuntime = ({
         );
       }
     },
-    [interactionPolicy, onSplitTabs, setSplitGroupDragImage, splitTriggerMode]
+    [
+      beginWorkspaceTabSort,
+      clearWorkspaceSortState,
+      interactionPolicy,
+      onSplitTabs,
+      setSplitGroupDragImage,
+      splitTriggerMode
+    ]
   );
 
   const onTabBarDragOver = useCallback(
@@ -348,6 +439,31 @@ export const useBrowserTabStripRuntime = ({
       ) {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
+        const liveTargetIndex = resolveLiveWorkspaceReorderTarget(
+          workspacePayload.tabId,
+          event.clientX
+        );
+        if (liveTargetIndex !== null) {
+          const sort = workspaceSortRef.current;
+          const currentIndex = tabs.findIndex((tab) => tab.id === workspacePayload.tabId);
+          if (
+            sort !== null &&
+            liveTargetIndex !== sort.lastTargetIndex &&
+            currentIndex !== -1 &&
+            currentIndex !== liveTargetIndex
+          ) {
+            workspaceSortRef.current = {
+              ...sort,
+              lastTargetIndex: liveTargetIndex
+            };
+            onReorderTabs(workspacePayload.tabId, liveTargetIndex);
+          }
+          setDropIndicatorX(null);
+          setIsTerminalDropActive(false);
+          setIsSplitDropActive(false);
+          setSplitDropTargetTabId(null);
+          return;
+        }
         const target = resolveWorkspaceDropTarget(event, workspacePayload.tabId);
         setDropIndicatorX(target.indicatorX);
         setIsTerminalDropActive(false);
@@ -378,6 +494,7 @@ export const useBrowserTabStripRuntime = ({
       onDropTerminalDockTab,
       onReorderTabs,
       onSplitTabs,
+      resolveLiveWorkspaceReorderTarget,
       resolveDockDraggedTerminalTabId,
       resolveSplitHoverFromNode,
       resolveWorkspaceDropTarget
@@ -416,6 +533,14 @@ export const useBrowserTabStripRuntime = ({
       }
 
       if (workspacePayload !== null && onReorderTabs !== undefined) {
+        const sort = workspaceSortRef.current;
+        if (sort !== null && sort.tabId === workspacePayload.tabId) {
+          event.preventDefault();
+          clearWorkspaceSortState();
+          clearAllDragPayloads();
+          clearDragUiState();
+          return;
+        }
         const target = resolveWorkspaceDropTarget(event, workspacePayload.tabId);
         event.preventDefault();
         onReorderTabs(workspacePayload.tabId, target.targetIndex);
@@ -440,6 +565,7 @@ export const useBrowserTabStripRuntime = ({
     [
       clearAllDragPayloads,
       clearDragUiState,
+      clearWorkspaceSortState,
       onDetachTabFromSplit,
       onDropTerminalDockTab,
       onReorderTabs,
@@ -559,20 +685,7 @@ export const useBrowserTabStripRuntime = ({
     splitTriggerMode
   ]);
 
-  const onTabStripWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>): void => {
-    if (event.ctrlKey) {
-      return;
-    }
-    const strip = event.currentTarget;
-    if (strip.scrollWidth <= strip.clientWidth) {
-      return;
-    }
-    const horizontalDelta = Math.abs(event.deltaX) > 0.01 ? event.deltaX : event.deltaY;
-    if (Math.abs(horizontalDelta) <= 0.01) {
-      return;
-    }
-    strip.scrollLeft += horizontalDelta;
-  }, []);
+  const onTabStripWheel = useCallback((_event: ReactWheelEvent<HTMLDivElement>): void => {}, []);
 
   const onTabItemMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>, tabId: string): void => {
     if (
@@ -666,9 +779,10 @@ export const useBrowserTabStripRuntime = ({
   }, [interactionPolicy, onSplitTabs, onTabContextMenu, splitTriggerMode]);
 
   const onTabDragEnd = useCallback((): void => {
+    clearWorkspaceSortState();
     clearAllDragPayloads();
     clearDragUiState();
-  }, [clearAllDragPayloads, clearDragUiState]);
+  }, [clearAllDragPayloads, clearDragUiState, clearWorkspaceSortState]);
 
   return {
     navRef,

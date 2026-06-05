@@ -5,6 +5,7 @@ members = [
   "crates/lyra-agent-kernel",
   "crates/lyra-agent-plugins",
   "crates/lyra-agent-runtime",
+  "crates/lyra-tool-fs-core",
   "crates/lyra-cli",
   "crates/lyrad",
   "crates/lyra-runtime-protocol",
@@ -20,7 +21,9 @@ members = [
   "crates/lyra-download-core",
   "crates/lyra-download-napi",
   "crates/lyra-local-search",
+  "crates/lyra-search-core",
   "crates/lyra-local-inference-core",
+  "crates/lyra-performance-core",
 ]
 resolver = "2"
 
@@ -43,7 +46,10 @@ lyra-agent-api = { path = "crates/lyra-agent-api" }
 lyra-agent-kernel = { path = "crates/lyra-agent-kernel" }
 lyra-agent-plugins = { path = "crates/lyra-agent-plugins" }
 lyra-agent-runtime = { path = "crates/lyra-agent-runtime" }
+lyra-tool-fs-core = { path = "crates/lyra-tool-fs-core" }
 lyra-local-search = { path = "crates/lyra-local-search" }
+lyra-search-core = { path = "crates/lyra-search-core" }
+lyra-performance-core = { path = "crates/lyra-performance-core" }
 
 # External
 age = "0.11.1"
@@ -165,6 +171,7 @@ strum = "0.27.2"
 strum_macros = "0.28.0"
 supports-color = "3.0.2"
 syntect = "5"
+sysinfo = "0.33.1"
 sys-locale = "0.3.2"
 tempfile = "3.23.0"
 test-log = "0.2.19"

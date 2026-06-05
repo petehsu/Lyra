@@ -4,7 +4,6 @@ import { WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
 import type {
   SearchDeepCrawlPolicy,
   SearchDeepBudgetPreset,
-  SearchLocalScopePreset,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -48,8 +47,6 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
   value === "turn_only" || value === "turn_and_background";
-const isSearchScopePreset = (value: unknown): value is SearchLocalScopePreset =>
-  value === "home" || value === "full_system" || value === "workspace" || value === "custom";
 const isSearchDeepBudgetPreset = (value: unknown): value is SearchDeepBudgetPreset =>
   value === "low" || value === "medium" || value === "high";
 const isSearchDeepCrawlPolicy = (value: unknown): value is SearchDeepCrawlPolicy =>
@@ -100,14 +97,8 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly aiStopBehavior?: unknown;
       readonly preventSleepEnabled?: unknown;
       readonly forceWebPageThemingEnabled?: unknown;
-      readonly searchScopePreset?: unknown;
-      readonly searchCustomRoots?: unknown;
-      readonly searchEnableFuzzy?: unknown;
-      readonly searchEnableContent?: unknown;
-      readonly searchIncludeHidden?: unknown;
       readonly searchWebEngineIds?: unknown;
       readonly searchSearxngEndpoint?: unknown;
-      readonly searchAutoIndexEnabled?: unknown;
       readonly deepSearchDefaultBudget?: unknown;
       readonly deepSearchRestoreViewport?: unknown;
       readonly deepSearchLocalOpenBehavior?: unknown;
@@ -155,26 +146,10 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       forceWebPageThemingEnabled: isBoolean(parsed.forceWebPageThemingEnabled)
         ? parsed.forceWebPageThemingEnabled
         : defaults.forceWebPageThemingEnabled,
-      searchScopePreset: isSearchScopePreset(parsed.searchScopePreset)
-        ? parsed.searchScopePreset
-        : defaults.searchScopePreset,
-      searchCustomRoots: asStringArray(parsed.searchCustomRoots),
-      searchEnableFuzzy: isBoolean(parsed.searchEnableFuzzy)
-        ? parsed.searchEnableFuzzy
-        : defaults.searchEnableFuzzy,
-      searchEnableContent: isBoolean(parsed.searchEnableContent)
-        ? parsed.searchEnableContent
-        : defaults.searchEnableContent,
-      searchIncludeHidden: isBoolean(parsed.searchIncludeHidden)
-        ? parsed.searchIncludeHidden
-        : defaults.searchIncludeHidden,
       searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
       ...(normalizedSearxngEndpoint === undefined
         ? {}
         : { searchSearxngEndpoint: normalizedSearxngEndpoint }),
-      searchAutoIndexEnabled: isBoolean(parsed.searchAutoIndexEnabled)
-        ? parsed.searchAutoIndexEnabled
-        : defaults.searchAutoIndexEnabled,
       deepSearchDefaultBudget: isSearchDeepBudgetPreset(parsed.deepSearchDefaultBudget)
         ? parsed.deepSearchDefaultBudget
         : defaults.deepSearchDefaultBudget,
@@ -300,38 +275,6 @@ export const useWorkbenchPreferencesModel = (
         forceWebPageThemingEnabled
       }));
     },
-    setSearchScopePreset: (searchScopePreset) => {
-      commit((current) => ({
-        ...current,
-        searchScopePreset
-      }));
-    },
-    setSearchCustomRoots: (searchCustomRoots) => {
-      commit((current) => ({
-        ...current,
-        searchCustomRoots: searchCustomRoots
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0)
-      }));
-    },
-    setSearchEnableFuzzy: (searchEnableFuzzy) => {
-      commit((current) => ({
-        ...current,
-        searchEnableFuzzy
-      }));
-    },
-    setSearchEnableContent: (searchEnableContent) => {
-      commit((current) => ({
-        ...current,
-        searchEnableContent
-      }));
-    },
-    setSearchIncludeHidden: (searchIncludeHidden) => {
-      commit((current) => ({
-        ...current,
-        searchIncludeHidden
-      }));
-    },
     setSearchWebEngineIds: (searchWebEngineIds) => {
       commit((current) => ({
         ...current,
@@ -355,12 +298,6 @@ export const useWorkbenchPreferencesModel = (
               ...current,
               searchSearxngEndpoint: normalizedSearxngEndpoint
             })
-      }));
-    },
-    setSearchAutoIndexEnabled: (searchAutoIndexEnabled) => {
-      commit((current) => ({
-        ...current,
-        searchAutoIndexEnabled
       }));
     },
     setDeepSearchDefaultBudget: (deepSearchDefaultBudget) => {

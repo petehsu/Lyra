@@ -76,16 +76,4 @@ describe("BrowserSettingsSurface", () => {
     expect(onPreventSleepChange).toHaveBeenCalledWith(false);
     expect(onSearchWebEnginesChange).toHaveBeenCalledWith(["google", "bing"]);
   });
-
-  test("keeps pending rebuild index actions disabled", () => {
-    render(
-      <BrowserSettingsSurface
-        {...createBrowserSettingsSurfaceProps({
-          searchRebuildIndexPending: true
-        })}
-      />
-    );
-
-    expect(screen.getByRole("button", { name: "Rebuild..." })).toBeDisabled();
-  });
 });

@@ -42,6 +42,73 @@ const createProps = (overrides: Partial<BrowserTabStripProps> = {}): BrowserTabS
   ...overrides
 });
 
+type MockDataTransfer = DataTransfer & {
+  _store: Record<string, string>;
+};
+
+const createDataTransfer = (): MockDataTransfer => {
+  const store: Record<string, string> = {};
+  const types: string[] = [];
+  return {
+    _store: store,
+    dropEffect: "none",
+    effectAllowed: "none",
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types,
+    clearData: (format?: string) => {
+      if (format === undefined) {
+        for (const key of Object.keys(store)) {
+          delete store[key];
+        }
+        types.length = 0;
+        return;
+      }
+      delete store[format];
+      const nextTypes = Object.keys(store);
+      types.length = 0;
+      types.push(...nextTypes);
+    },
+    getData: (format: string) => store[format] ?? "",
+    setData: (format: string, data: string) => {
+      store[format] = data;
+      if (types.includes(format) === false) {
+        types.push(format);
+      }
+    },
+    setDragImage: () => undefined
+  } as unknown as MockDataTransfer;
+};
+
+const mockRect = (
+  element: Element,
+  rect: Pick<DOMRect, "left" | "right" | "top" | "bottom" | "width" | "height">
+): void => {
+  element.getBoundingClientRect = vi.fn(() => ({
+    x: rect.left,
+    y: rect.top,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+    toJSON: () => ({})
+  } as DOMRect));
+};
+
+const fireDragEvent = (
+  element: Element,
+  type: "dragstart" | "dragover",
+  dataTransfer: DataTransfer,
+  clientX: number
+): void => {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
+  Object.defineProperty(event, "clientX", { value: clientX });
+  fireEvent(element, event);
+};
+
 describe("BrowserTabStrip", () => {
   test("renders accessible controls and dispatches tab actions", () => {
     const onGoBack = vi.fn();
@@ -215,5 +282,53 @@ describe("BrowserTabStrip", () => {
 
     expect(newTab).not.toHaveClass("lyra-browser-tab-item-new");
     vi.useRealTimers();
+  });
+
+  test("reorders tabs during drag using fixed chrome-tab positions", () => {
+    const onReorderTabs = vi.fn();
+    render(
+      <BrowserTabStrip
+        {...createProps({
+          onReorderTabs
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("browser-tabs");
+    const strip = nav.querySelector(".lyra-browser-tab-strip") as HTMLElement;
+    const homeTab = nav.querySelector('[data-lyra-tab-id="home"]') as HTMLElement;
+    const docsTab = nav.querySelector('[data-lyra-tab-id="docs"]') as HTMLElement;
+    const homeButton = within(nav).getByRole("button", { name: "Home" });
+    mockRect(strip, {
+      left: 100,
+      right: 320,
+      top: 0,
+      bottom: 34,
+      width: 220,
+      height: 34
+    });
+    mockRect(homeTab, {
+      left: 100,
+      right: 190,
+      top: 0,
+      bottom: 34,
+      width: 90,
+      height: 34
+    });
+    mockRect(docsTab, {
+      left: 190,
+      right: 280,
+      top: 0,
+      bottom: 34,
+      width: 90,
+      height: 34
+    });
+
+    const dataTransfer = createDataTransfer();
+    fireDragEvent(homeButton, "dragstart", dataTransfer, 110);
+    expect(dataTransfer._store).toHaveProperty("application/x-lyra-workspace-tab");
+    fireDragEvent(nav, "dragover", dataTransfer, 205);
+
+    expect(onReorderTabs).toHaveBeenCalledWith("home", 1);
   });
 });

@@ -14,14 +14,18 @@ export type AiPanelSurfaceProps = {
   readonly variant: AiPanelSurfaceVariant;
   readonly desktopApi: LyraDesktopApi | null;
   readonly settingsAiModel?: SettingsAiModel;
+  readonly activeSessionTabId?: string | null;
   readonly activeSessionId?: string | null;
   readonly onActiveSessionChange?: (sessionId: string) => void;
   readonly sessionTabs?: readonly AiPanelSessionTab[];
   readonly onActivateSessionTab?: (sessionId: string) => void;
   readonly onCloseSessionTab?: (sessionId: string) => void;
+  readonly onReorderSessionTabs?: (sourceTabId: string, targetTabId: string) => void;
+  readonly onCreateDraftSessionTab?: (request: AgentSessionCreateRequest) => void;
   readonly onCreateSessionTab?: (
     request: AgentSessionCreateRequest
   ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot;
+  readonly onMissingSession?: (sessionId: string) => void;
   readonly onSessionSnapshotChange?: (snapshot: AgentSessionSnapshot) => void;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
   readonly onOpenProjectTree?: (request: {

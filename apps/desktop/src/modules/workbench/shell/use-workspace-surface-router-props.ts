@@ -68,6 +68,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
     readonly labels: AgentSessionHistorySurfaceProps["labels"];
     readonly activeSessionId: string | null;
     readonly onOpenSession: AgentSessionHistorySurfaceProps["onOpenSession"];
+    readonly onSessionDeleted?: AgentSessionHistorySurfaceProps["onSessionDeleted"];
     readonly openDialog: AgentSessionHistorySurfaceProps["openDialog"];
     readonly query: AgentSessionHistorySurfaceProps["query"];
     readonly refreshRequestKey: AgentSessionHistorySurfaceProps["refreshRequestKey"];
@@ -89,7 +90,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   onPageHostChange,
   terminalModel,
   desktopApi,
-    resolvedThemeId,
+  resolvedThemeId,
   fileManagerModel,
   resolveFileManagerChooser,
   fileEditorModel,

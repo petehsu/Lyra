@@ -1,0 +1,39 @@
+Lyra Design System (All-in-One Reference)
+
+# DESIGN.md
+A minimalist, high-end "Cyber-Premium" design tailored for next-generation Agent-native developers. Deep dark canvas, sharp contrasts, and glowing tech accents.
+Theme: dark
+
+Colors:
+- Deep Void: #09090b (Base page background)
+- Matte Surface: #18181b (Card surfaces)
+- Border Line: #27272a (Hairline borders)
+- Text Primary: #fafafa (Main headings)
+- Text Muted: #a1a1aa (Secondary text)
+- Lyra Cyan: #06b6d4 (Primary accent)
+- AI Amethyst: #a855f7 (Secondary accent)
+
+Typography:
+- Sans: Inter
+- Mono: JetBrains Mono
+
+Radii:
+- Button: 6px
+- Card: 12px
+
+# variables.css
+:root {
+  --color-deep-void: #09090b;
+  --color-matte-surface: #18181b;
+  --color-border-line: #27272a;
+  --color-text-primary: #fafafa;
+  --color-text-muted: #a1a1aa;
+  --color-lyra-cyan: #06b6d4;
+  --color-ai-amethyst: #a855f7;
+  --font-primary-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --radius-button: 6px;
+  --radius-card: 12px;
+  --section-gap: 120px;
+  --page-max-width: 1280px;
+}

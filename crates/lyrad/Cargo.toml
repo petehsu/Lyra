@@ -11,6 +11,8 @@ lyra-lsp-core = { path = "../lyra-lsp-core", default-features = false }
 lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 lyra-terminal-core = { path = "../lyra-terminal-core", default-features = false }
 lyra-local-search = { path = "../lyra-local-search" }
+lyra-search-core = { path = "../lyra-search-core" }
+lyra-performance-core = { path = "../lyra-performance-core" }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 rayon = "1.10.0"

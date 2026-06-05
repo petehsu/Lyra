@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildSettingsCategoryDomId,
-  createSettingsSurfaceModel,
-  type SettingsInlineStatusActionControlDescriptor
+  createSettingsSurfaceModel
 } from "../settings-render-model";
 import { createBrowserSettingsSurfaceProps } from "./settings-test-helpers";
 
@@ -50,31 +49,6 @@ describe("createSettingsSurfaceModel", () => {
 
     expect(findSection(singlePackModel, "uiStyle")).toBeUndefined();
     expect(findSection(multiPackModel, "uiStyle")?.label).toBe("UI style");
-  });
-
-  test("describes search indexing as toggles plus a pending action", () => {
-    const model = createSettingsSurfaceModel(
-      createBrowserSettingsSurfaceProps({
-        searchRebuildIndexPending: true,
-        searchIndexStatusValue: "indexing"
-      })
-    );
-    const section = findSection(model, "searchIndexingFlags");
-
-    expect(section?.cluster).toBe(true);
-    expect(section?.controls.map((control) => control.kind)).toEqual([
-      "toggle-group",
-      "inline-status-action"
-    ]);
-
-    const action = section?.controls.find(
-      (control): control is SettingsInlineStatusActionControlDescriptor =>
-        control.kind === "inline-status-action"
-    );
-
-    expect(action?.statusValue).toBe("indexing");
-    expect(action?.actionLabel).toBe("Rebuild...");
-    expect(action?.actionDisabled).toBe(true);
   });
 
   test("keeps AI provider settings as a custom renderer passthrough", () => {

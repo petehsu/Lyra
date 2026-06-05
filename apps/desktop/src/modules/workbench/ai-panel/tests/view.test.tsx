@@ -2033,11 +2033,13 @@ describe("AiPanelSurface", () => {
           activeSessionId={activeSessionId}
           sessionTabs={[
             {
+              tabId: "session-1",
               sessionId: "session-1",
               title: "Primary Chat",
               lastKnownStatus: "idle"
             },
             {
+              tabId: "session-2",
               sessionId: "session-2",
               title: "Background plan",
               lastKnownStatus: "running"
@@ -2100,6 +2102,7 @@ describe("AiPanelSurface", () => {
       const [activeSessionId, setActiveSessionId] = useState("session-1");
       const [tabs, setTabs] = useState<AiPanelSessionTab[]>([
         {
+          tabId: "session-1",
           sessionId: "session-1",
           title: "Bound project chat",
           lastKnownStatus: "idle"
@@ -2116,6 +2119,7 @@ describe("AiPanelSurface", () => {
             setTabs((current) => [
               ...current,
               {
+                tabId: next.id,
                 sessionId: next.id,
                 title: next.title,
                 lastKnownStatus: next.turnStatus
@@ -2146,6 +2150,103 @@ describe("AiPanelSurface", () => {
       .toHaveAttribute("aria-selected", "true");
   });
 
+  test("opens a draft tab from the tab button and materializes it on first send", async () => {
+    const { api, createSession, setReadSnapshot } = createDesktopApi();
+    const onCreateSessionTab = vi.fn(async (request) => ({
+      ...snapshot,
+      id: "session-2",
+      title: request.title ?? "新会话",
+      workingDir: request.workingDir ?? "/",
+      projectBound: typeof request.workingDir === "string",
+      updatedAt: "2026-05-13T00:01:00.000Z"
+    }));
+    setReadSnapshot({
+      ...snapshot,
+      title: "Bound project chat",
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true
+    });
+
+    function Harness() {
+      const [activeSessionTabId, setActiveSessionTabId] = useState("session-1");
+      const [activeSessionId, setActiveSessionId] = useState<string | null>("session-1");
+      const [tabs, setTabs] = useState<AiPanelSessionTab[]>([
+        {
+          tabId: "session-1",
+          sessionId: "session-1",
+          title: "Bound project chat",
+          lastKnownStatus: "idle"
+        }
+      ]);
+      return (
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          activeSessionTabId={activeSessionTabId}
+          activeSessionId={activeSessionId}
+          sessionTabs={tabs}
+          onCreateDraftSessionTab={(request) => {
+            const draft: AiPanelSessionTab = {
+              tabId: "draft-1",
+              sessionId: null,
+              title: request.title ?? "新会话",
+              lastKnownStatus: null,
+              draftWorkingDir: request.workingDir ?? null
+            };
+            setTabs((current) => [...current, draft]);
+            setActiveSessionTabId(draft.tabId);
+            setActiveSessionId(null);
+          }}
+          onCreateSessionTab={async (request) => {
+            const next = await onCreateSessionTab(request);
+            setTabs((current) =>
+              current.map((tab) =>
+                tab.tabId === activeSessionTabId
+                  ? {
+                      tabId: tab.tabId,
+                      sessionId: next.id,
+                      title: next.title,
+                      lastKnownStatus: next.turnStatus
+                    }
+                  : tab
+              )
+            );
+            setActiveSessionId(next.id);
+            return next;
+          }}
+          title="Agent"
+          emptyThreadLabel="No messages"
+          locale="en-US"
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    await screen.findByText("Lyra");
+    fireEvent.click(screen.getByLabelText("New session"));
+
+    expect(createSession).not.toHaveBeenCalled();
+    expect(await screen.findByRole("tab", { name: "新会话" }))
+      .toHaveAttribute("aria-selected", "true");
+
+    fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
+      target: { value: "Start for real" }
+    });
+    fireEvent.click(screen.getByLabelText("Send"));
+
+    await waitFor(() => {
+      expect(onCreateSessionTab).toHaveBeenCalledWith({
+        title: "新会话",
+        workingDir: "/Users/petehsu/Documents/Lyra"
+      });
+      expect(api.agent?.sendTurn).toHaveBeenCalledWith({
+        sessionId: "session-2",
+        text: "Start for real"
+      });
+    });
+  });
+
   test("keeps long session tab titles isolated from tab controls", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     const longTitle = "A very long investigation title that should stay inside the tab label and never collide with controls";
@@ -2161,6 +2262,7 @@ describe("AiPanelSurface", () => {
         activeSessionId="session-1"
         sessionTabs={[
           {
+            tabId: "session-1",
             sessionId: "session-1",
             title: longTitle,
             lastKnownStatus: "idle"
@@ -2177,6 +2279,165 @@ describe("AiPanelSurface", () => {
     expect(tab.querySelector(".ai-session-tab-title")).not.toBeNull();
     expect(screen.getByLabelText(`Close session tab: ${longTitle}`)).toBeInTheDocument();
     expect(screen.getByLabelText("New session")).toBeInTheDocument();
+  });
+
+  test("keeps cramped session tabs readable by scrolling horizontally", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const rect = (width: number, height = 34): DOMRect => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: width,
+      top: 0,
+      bottom: height,
+      width,
+      height,
+      toJSON: () => ({})
+    } as DOMRect);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
+        if (this.classList.contains("ai-session-tab-strip")) {
+          return rect(172);
+        }
+        if (this.classList.contains("ai-session-tab-add")) {
+          return rect(32, 30);
+        }
+        return rect(0);
+      });
+
+    try {
+      setReadSnapshot({
+        ...snapshot,
+        title: "Session 1"
+      });
+
+      const { container } = render(
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          activeSessionId="session-1"
+          sessionTabs={[
+            {
+              tabId: "session-1",
+              sessionId: "session-1",
+              title: "Session 1",
+              lastKnownStatus: "idle"
+            },
+            {
+              tabId: "session-2",
+              sessionId: "session-2",
+              title: "Session 2",
+              lastKnownStatus: "idle"
+            },
+            {
+              tabId: "session-3",
+              sessionId: "session-3",
+              title: "Session 3",
+              lastKnownStatus: "idle"
+            },
+            {
+              tabId: "session-4",
+              sessionId: "session-4",
+              title: "Session 4",
+              lastKnownStatus: "idle"
+            }
+          ]}
+          title="Agent"
+          emptyThreadLabel="No messages"
+          locale="en-US"
+        />
+      );
+
+      await screen.findByRole("tab", { name: "Session 1" });
+      await waitFor(() => {
+        expect(container.querySelector(".ai-session-tab-strip"))
+          .not.toHaveClass("ai-session-tab-strip-stacked");
+      });
+      const activeTab = container.querySelector(".ai-session-tab-item-active");
+      expect(activeTab)
+        .toHaveStyle({ width: "132px", transform: "translate3d(0px, 0, 0)" });
+      expect(container.querySelector(".ai-session-tab-list-spacer"))
+        .toHaveStyle({ width: "525px" });
+      expect(activeTab?.querySelector(".ai-session-tab-title"))
+        .toHaveTextContent("Session 1");
+      expect(container.querySelector("[data-ai-session-tab-id='session-2'] .ai-session-tab-title"))
+        .toHaveTextContent("Session 2");
+      expect(screen.getByLabelText("New session")).toBeInTheDocument();
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  test("scrolls the active session tab into view when it is outside the tab viewport", async () => {
+    const { api, setReadSnapshot } = createDesktopApi();
+    const rect = (width: number, height = 34): DOMRect => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: width,
+      top: 0,
+      bottom: height,
+      width,
+      height,
+      toJSON: () => ({})
+    } as DOMRect);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
+        if (this.classList.contains("ai-session-tab-strip")) {
+          return rect(220);
+        }
+        if (this.classList.contains("ai-session-tab-list")) {
+          return rect(188);
+        }
+        if (this.classList.contains("ai-session-tab-add")) {
+          return rect(32, 30);
+        }
+        return rect(0);
+      });
+
+    try {
+      setReadSnapshot({
+        ...snapshot,
+        id: "session-8",
+        title: "Session 8"
+      });
+
+      const { container } = render(
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          activeSessionId="session-8"
+          sessionTabs={Array.from({ length: 8 }, (_, index) => {
+            const id = `session-${index + 1}`;
+            return {
+              tabId: id,
+              sessionId: id,
+              title: `Session ${index + 1}`,
+              lastKnownStatus: "idle" as const
+            };
+          })}
+          title="Agent"
+          emptyThreadLabel="No messages"
+          locale="en-US"
+        />
+      );
+
+      await screen.findByRole("tab", { name: "Session 8" });
+      await waitFor(() => {
+        expect(container.querySelector(".ai-session-tab-strip"))
+          .not.toHaveClass("ai-session-tab-strip-stacked");
+      });
+      expect(container.querySelector(".ai-session-tab-item-active"))
+        .toHaveStyle({ width: "132px", transform: "translate3d(917px, 0, 0)" });
+      await waitFor(() => {
+        expect(container.querySelector(".ai-session-tab-list"))
+          .toHaveProperty("scrollLeft", 861);
+      });
+    } finally {
+      rectSpy.mockRestore();
+    }
   });
 
   test("keeps the new session tab button available while the current session is empty", async () => {

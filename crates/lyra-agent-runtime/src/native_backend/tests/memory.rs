@@ -13,15 +13,15 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
         &turn_id,
         &None,
         &Arc::new(AtomicBool::new(false)),
-        ModelToolCall {
-            id: "tool-memory".to_string(),
-            name: "memory_remember".to_string(),
-            arguments: json!({
+        tool_fs_run_call(
+            "tool-memory",
+            "/tools/memory/remember",
+            json!({
                 "scope": "global",
                 "category": "user_profile",
                 "fact": "The user prefers to be called Xu Yuanhao."
             }),
-        },
+        ),
     );
 
     assert!(output["content"].as_str().unwrap().contains("Xu Yuanhao"));
@@ -183,15 +183,15 @@ fn memory_tool_activity_does_not_commit_memory_events_as_chat_messages() {
         &turn_id,
         &None,
         &Arc::new(AtomicBool::new(false)),
-        ModelToolCall {
-            id: "tool-memory-isolation".to_string(),
-            name: "memory_remember".to_string(),
-            arguments: json!({
+        tool_fs_run_call(
+            "tool-memory-isolation",
+            "/tools/memory/remember",
+            json!({
                 "scope": "global",
                 "category": "other",
                 "fact": format!("memory isolation fact {marker}")
             }),
-        },
+        ),
     );
 
     assert!(output["content"].as_str().unwrap().contains(&marker));
@@ -256,6 +256,7 @@ fn legacy_shared_memory_migration_is_idempotent_and_state_json_drops_array() {
     assert_eq!(records[0].access_count, 7);
 
     let state_file = NativeStateFile {
+        tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
         active_session_id: None,
         config: NativeConfig::default(),
         legacy_shared_memory: vec![legacy],

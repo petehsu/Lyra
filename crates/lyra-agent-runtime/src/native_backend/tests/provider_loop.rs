@@ -37,8 +37,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
     let stream = concat!(
         "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"workbench_list_tabs\",\"arguments\":\"{\\\"scope\\\"\"}}]}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\":\\\"all\\\"}\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"tool_fs_run\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
         "data: [DONE]\n\n",
     );
     let reply = parse_streaming_response(
@@ -52,8 +51,12 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
 
     assert_eq!(reply.content.as_deref(), Some("Hello"));
     assert_eq!(reply.tool_calls[0].id, "call-1");
-    assert_eq!(reply.tool_calls[0].name, "workbench_list_tabs");
-    assert_eq!(reply.tool_calls[0].arguments["scope"], "all");
+    assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
+    assert_eq!(
+        reply.tool_calls[0].arguments["path"],
+        "/tools/workbench/list_tabs"
+    );
+    assert_eq!(reply.tool_calls[0].arguments["args"]["scope"], "all");
     let event_kinds = events
         .lock()
         .expect("events lock")
@@ -66,7 +69,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
 }
 
 #[test]
-fn textual_tool_call_is_normalized_before_assistant_text_commit() {
+fn textual_tool_call_is_rejected_before_assistant_text_commit() {
     let mut reply = ModelReply {
         content: Some(
             "好的，我来帮你在工作区打开。\n\n[Tool call: software_invoke_capability({\"softwareId\":\"browser-search\",\"capabilityId\":\"browser-search.openUrl\",\"input\":{\"url\":\"https://vimeo.com/1148303712\"}})]"
@@ -76,26 +79,13 @@ fn textual_tool_call_is_normalized_before_assistant_text_commit() {
         ui_message_id: None,
     };
 
-    normalize_model_reply_protocol(&mut reply, &model_tools(false))
-        .expect("normalize provider reply");
-
-    assert_eq!(
-        reply.content.as_deref(),
-        Some("好的，我来帮你在工作区打开。")
-    );
-    assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(reply.tool_calls[0].name, "software_invoke_capability");
-    assert_eq!(
-        reply.tool_calls[0]
-            .arguments
-            .pointer("/input/url")
-            .and_then(Value::as_str),
-        Some("https://vimeo.com/1148303712")
-    );
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+        .expect_err("textual tool calls must be rejected");
+    assert!(error.to_string().contains("textual tool-call syntax"));
 }
 
 #[test]
-fn streaming_textual_tool_call_is_not_emitted_as_message_delta() {
+fn streaming_textual_tool_call_is_rejected() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -121,18 +111,16 @@ fn streaming_textual_tool_call_is_not_emitted_as_message_delta() {
         "data: [DONE]\n\n",
     );
 
-    let reply = parse_streaming_response(
+    let error = parse_streaming_response(
         BufReader::new(stream.as_bytes()),
         &session_id,
         &turn_id,
         &cancellation,
         &model_tools(false),
     )
-    .expect("streaming reply");
+    .expect_err("streaming textual tool call must be rejected");
 
-    assert_eq!(reply.content.as_deref(), Some("好的，我来打开。"));
-    assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(reply.tool_calls[0].name, "software_invoke_capability");
+    assert!(error.to_string().contains("textual tool-call syntax"));
     let emitted_text = events
         .lock()
         .expect("events lock")
@@ -140,7 +128,6 @@ fn streaming_textual_tool_call_is_not_emitted_as_message_delta() {
         .filter_map(|event| event.get("delta").and_then(Value::as_str))
         .collect::<Vec<_>>()
         .join("");
-    assert_eq!(emitted_text, "好的，我来打开。");
     assert!(!emitted_text.contains("[Tool call:"));
     backend.clear_event_callback();
 }
@@ -157,15 +144,11 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let tools = vec![function_tool(
-        "workbench_list_tabs",
-        "List tabs",
-        json!({ "type": "object", "properties": {} }),
-    )];
+    let tools = model_tools(false);
     let stream = concat!(
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0}}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\n",
-        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"null\",\"function\":{\"name\":\"WORKBENCH_LIST_TABS\",\"arguments\":\"{}\"}}]}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"null\",\"function\":{\"name\":\"TOOL_FS_RUN\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{}}\"}}]}}]}\n\n",
         "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
         "data: [DONE]\n\n",
     );
@@ -181,9 +164,12 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
 
     assert_eq!(reply.content, None);
     assert_eq!(reply.tool_calls.len(), 1);
-    assert_eq!(reply.tool_calls[0].name, "workbench_list_tabs");
+    assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
     assert!(reply.tool_calls[0].id.starts_with("tool-"));
-    assert_eq!(reply.tool_calls[0].arguments, json!({}));
+    assert_eq!(
+        reply.tool_calls[0].arguments,
+        json!({ "path": "/tools/workbench/list_tabs", "args": {} })
+    );
 }
 
 #[test]
@@ -339,12 +325,12 @@ fn streaming_transport_error_falls_back_to_non_streaming() {
 
 #[test]
 fn non_stream_tool_call_parser_preserves_invalid_arguments_as_evidence() {
-    let allowed_tool_names = HashSet::from(["workbench_list_tabs".to_string()]);
+    let allowed_tool_names = HashSet::from(["tool_fs_run".to_string()]);
     let parsed = parse_model_tool_call(
         &json!({
             "id": "",
             "function": {
-                "name": "WorkBench_List_Tabs",
+                "name": "TOOL_FS_RUN",
                 "arguments": "{\"scope\":"
             }
         }),
@@ -352,7 +338,7 @@ fn non_stream_tool_call_parser_preserves_invalid_arguments_as_evidence() {
     )
     .expect("tool call");
 
-    assert_eq!(parsed.name, "workbench_list_tabs");
+    assert_eq!(parsed.name, "tool_fs_run");
     assert!(parsed.id.starts_with("tool-"));
     assert_eq!(parsed.arguments["rawArguments"], "{\"scope\":");
     assert!(parsed.arguments["parseError"].as_str().is_some());
@@ -455,9 +441,12 @@ fn model_loop_has_no_fixed_tool_round_cap() {
             let _ = read_http_json_body(&mut stream);
             let body = if index < 40 {
                 let arguments = json!({
-                    "scope": "session",
-                    "category": "test",
-                    "fact": format!("tool evidence {index}")
+                    "path": "/tools/memory/remember",
+                    "args": {
+                        "scope": "session",
+                        "category": "test",
+                        "fact": format!("tool evidence {index}")
+                    }
                 })
                 .to_string();
                 json!({
@@ -469,7 +458,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
                                 "id": format!("call-{index}"),
                                 "type": "function",
                                 "function": {
-                                    "name": "memory_remember",
+                                    "name": "tool_fs_run",
                                     "arguments": arguments
                                 }
                             }]
@@ -482,7 +471,15 @@ fn model_loop_has_no_fixed_tool_round_cap() {
                     "choices": [{
                         "message": {
                             "role": "assistant",
-                            "content": "Completed after forty tool rounds."
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "finish-after-forty",
+                                "type": "function",
+                                "function": {
+                                    "name": "lyra_turn_finish",
+                                    "arguments": "{\"status\":\"completed\",\"finalText\":\"Completed after forty tool rounds.\"}"
+                                }
+                            }]
                         }
                     }]
                 })
@@ -520,19 +517,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
-        tools: vec![function_tool(
-            "memory_remember",
-            "Remember a fact.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "scope": { "type": "string" },
-                    "category": { "type": "string" },
-                    "fact": { "type": "string" }
-                },
-                "required": ["fact"]
-            }),
-        )],
+        tools: model_tools(false),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -736,8 +721,8 @@ fn model_loop_requires_structured_finish_after_tool_result() {
                                     "id": "remember-1",
                                     "type": "function",
                                     "function": {
-                                        "name": "memory_remember",
-                                        "arguments": "{\"scope\":\"session\",\"category\":\"task\",\"fact\":\"GitHub page has a Google login option.\"}"
+                                        "name": "tool_fs_run",
+                                        "arguments": "{\"path\":\"/tools/memory/remember\",\"args\":{\"scope\":\"session\",\"category\":\"task\",\"fact\":\"GitHub page has a Google login option.\"}}"
                                     }
                                 }]
                             }
@@ -808,33 +793,7 @@ fn model_loop_requires_structured_finish_after_tool_result() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "点击 GitHub 的 Google 登录" })],
-        tools: vec![
-            function_tool(
-                "memory_remember",
-                "Remember a fact.",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "scope": { "type": "string" },
-                        "category": { "type": "string" },
-                        "fact": { "type": "string" }
-                    },
-                    "required": ["fact"]
-                }),
-            ),
-            function_tool(
-                LYRA_TURN_FINISH_TOOL,
-                "Finish turn",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "status": { "type": "string" },
-                        "finalText": { "type": "string" }
-                    },
-                    "required": ["status", "finalText"]
-                }),
-            ),
-        ],
+        tools: model_tools(false),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -857,10 +816,7 @@ fn model_loop_requires_structured_finish_after_tool_result() {
     assert_eq!(requests.len(), 3);
     assert_eq!(
         model_tool_names(&requests[2]),
-        vec![
-            "memory_remember".to_string(),
-            LYRA_TURN_FINISH_TOOL.to_string()
-        ]
+        expected_provider_tool_names()
     );
     let retry_messages = requests[2]["messages"].as_array().expect("retry messages");
     assert!(retry_messages.iter().any(|message| {
@@ -913,7 +869,11 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send captured request");
             let body = if index == 0 {
-                let arguments = json!({ "path": lumen_path }).to_string();
+                let arguments = json!({
+                    "path": "/tools/runtime/artifact_read",
+                    "args": { "path": lumen_path }
+                })
+                .to_string();
                 json!({
                     "choices": [{
                         "message": {
@@ -923,7 +883,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
                                 "id": "read-artifact-1",
                                 "type": "function",
                                 "function": {
-                                    "name": "artifact_read",
+                                    "name": "tool_fs_run",
                                     "arguments": arguments
                                 }
                             }]
@@ -982,24 +942,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "读取这张截图" })],
-        tools: vec![
-            function_tool(
-                "artifact_read",
-                "Read Lyra artifact",
-                json!({ "type": "object", "properties": { "path": { "type": "string" } } }),
-            ),
-            function_tool(
-                LYRA_TURN_FINISH_TOOL,
-                "Finish turn",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "status": { "type": "string" },
-                        "finalText": { "type": "string" }
-                    }
-                }),
-            ),
-        ],
+        tools: model_tools(false),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -1065,9 +1008,12 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             request_tx.send(request).expect("send captured request");
             let body = if index < 5 {
                 let arguments = json!({
-                    "scope": "session",
-                    "category": "loop",
-                    "fact": "same evidence"
+                    "path": "/tools/memory/remember",
+                    "args": {
+                        "scope": "session",
+                        "category": "loop",
+                        "fact": "same evidence"
+                    }
                 })
                 .to_string();
                 json!({
@@ -1079,7 +1025,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                                 "id": format!("repeat-{index}"),
                                 "type": "function",
                                 "function": {
-                                    "name": "memory_remember",
+                                    "name": "tool_fs_run",
                                     "arguments": arguments
                                 }
                             }]
@@ -1130,19 +1076,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
-        tools: vec![function_tool(
-            "memory_remember",
-            "Remember a fact.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "scope": { "type": "string" },
-                    "category": { "type": "string" },
-                    "fact": { "type": "string" }
-                },
-                "required": ["fact"]
-            }),
-        )],
+        tools: model_tools(false),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),

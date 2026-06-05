@@ -9,10 +9,7 @@ import type {
 import { createTranslator } from "../../i18n";
 import type { WorkbenchPreferencesModel } from "../../preferences";
 import { useWorkbenchLabels } from "../use-workbench-labels";
-import {
-  formatWorkbenchSearchIndexStatusForTests,
-  useWorkbenchSettingsSurfaceProps
-} from "../use-workbench-settings-surface-props";
+import { useWorkbenchSettingsSurfaceProps } from "../use-workbench-settings-surface-props";
 import { createInitialWorkbenchPreferences } from "../workbench-shell-defaults";
 
 const createSystemNotificationStatus = (
@@ -75,32 +72,11 @@ const renderSettingsProps = ({
       preferencesModel,
       settingsAiModel: {} as never,
       jsReplEnabled: true,
-      searchIndexStatus: null,
-      searchRebuildIndexPending: false,
       openDialog: vi.fn(),
       publishNotification: vi.fn(),
-      onJsReplChange: vi.fn(),
-      onSearchRebuildIndex: vi.fn()
+      onJsReplChange: vi.fn()
     });
   });
-
-describe("formatWorkbenchSearchIndexStatusForTests", () => {
-  test("formats idle search index status", () => {
-    expect(formatWorkbenchSearchIndexStatusForTests(null)).toBe("idle");
-  });
-
-  test("includes indexed counts, progress, and error details", () => {
-    expect(
-      formatWorkbenchSearchIndexStatusForTests({
-        state: "failed",
-        indexedFiles: 42,
-        indexedDirs: 7,
-        progress: 0.625,
-        error: "permission denied"
-      })
-    ).toBe("failed · files 42 · dirs 7 · 63% · permission denied");
-  });
-});
 
 describe("useWorkbenchSettingsSurfaceProps system notifications", () => {
   test("keeps the mode off when selecting off", async () => {

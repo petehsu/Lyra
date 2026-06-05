@@ -27,6 +27,28 @@ pub struct GitFileRequest {
     pub path: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogRequest {
+    pub working_dir: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitShowRequest {
+    pub working_dir: String,
+    pub ref_name: Option<String>,
+    #[serde(default)]
+    pub ref_: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchRequest {
+    pub working_dir: String,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum GitDiffScope {
@@ -112,6 +134,46 @@ pub struct GitMutationResponse {
     pub snapshot: GitStatusSnapshot,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogResponse {
+    pub working_dir: String,
+    pub repository_root: String,
+    pub commits: Vec<GitCommitSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitSummary {
+    pub hash: String,
+    pub short_hash: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub authored_at: String,
+    pub subject: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitShowResponse {
+    pub working_dir: String,
+    pub repository_root: String,
+    pub ref_name: String,
+    pub output: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchResponse {
+    pub working_dir: String,
+    pub repository_root: String,
+    pub current: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub branches: Vec<String>,
+}
+
 pub fn git_status_json(payload: String) -> Result<String> {
     let request: GitStatusRequest = serde_json::from_str(&payload)?;
     serde_json::to_string(&git_status(&request.working_dir)?).context("encode git status")
@@ -154,6 +216,107 @@ pub fn git_discard_json(payload: String) -> Result<String> {
         )?;
     }
     mutation_response(repo.working_dir)
+}
+
+pub fn git_log_json(payload: String) -> Result<String> {
+    let request: GitLogRequest = serde_json::from_str(&payload)?;
+    let repo = resolve_repository(&request.working_dir)?;
+    let limit = request.limit.unwrap_or(20).clamp(1, 100);
+    let output = run_git_checked(
+        &repo.root,
+        [
+            "log",
+            &format!("-n{limit}"),
+            "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e",
+        ],
+    )?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let commits = text
+        .split('\x1e')
+        .filter_map(parse_commit_summary)
+        .collect::<Vec<_>>();
+    serde_json::to_string(&GitLogResponse {
+        working_dir: repo.working_dir,
+        repository_root: path_to_string(&repo.root),
+        commits,
+    })
+    .context("encode git log response")
+}
+
+pub fn git_show_json(payload: String) -> Result<String> {
+    let request: GitShowRequest = serde_json::from_str(&payload)?;
+    let repo = resolve_repository(&request.working_dir)?;
+    let ref_name = request
+        .ref_name
+        .or(request.ref_)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "HEAD".to_string());
+    let output = run_git_checked(
+        &repo.root,
+        [
+            "show",
+            "--stat",
+            "--patch",
+            "--find-renames",
+            "--find-copies",
+            "--max-count=1",
+            "--",
+            &ref_name,
+        ],
+    )
+    .or_else(|_| {
+        run_git_checked(
+            &repo.root,
+            [
+                "show",
+                "--stat",
+                "--patch",
+                "--find-renames",
+                "--find-copies",
+                "--max-count=1",
+                &ref_name,
+            ],
+        )
+    })?;
+    serde_json::to_string(&GitShowResponse {
+        working_dir: repo.working_dir,
+        repository_root: path_to_string(&repo.root),
+        ref_name,
+        output: truncate_git_text(String::from_utf8_lossy(&output.stdout).to_string()),
+    })
+    .context("encode git show response")
+}
+
+pub fn git_branch_json(payload: String) -> Result<String> {
+    let request: GitBranchRequest = serde_json::from_str(&payload)?;
+    let repo = resolve_repository(&request.working_dir)?;
+    let upstream = run_git_optional_text(
+        &repo.root,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    );
+    let (ahead, behind) = upstream
+        .as_ref()
+        .and_then(|_| ahead_behind(&repo.root).ok())
+        .unwrap_or((0, 0));
+    let branches = run_git_optional_text(&repo.root, ["branch", "--format=%(refname:short)"])
+        .map(|text| {
+            text.lines()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    serde_json::to_string(&GitBranchResponse {
+        working_dir: repo.working_dir,
+        repository_root: path_to_string(&repo.root),
+        current: current_branch(&repo.root),
+        upstream,
+        ahead,
+        behind,
+        branches,
+    })
+    .context("encode git branch response")
 }
 
 fn mutation_response(working_dir: String) -> Result<String> {
@@ -246,6 +409,35 @@ fn git_diff(request: GitDiffRequest) -> Result<GitDiffResponse> {
         diff,
         is_binary,
     })
+}
+
+fn parse_commit_summary(record: &str) -> Option<GitCommitSummary> {
+    let trimmed = record.trim_matches(|ch| ch == '\n' || ch == '\r');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts = trimmed.split('\x1f').collect::<Vec<_>>();
+    if parts.len() < 6 {
+        return None;
+    }
+    Some(GitCommitSummary {
+        hash: parts[0].to_string(),
+        short_hash: parts[1].to_string(),
+        author_name: parts[2].to_string(),
+        author_email: parts[3].to_string(),
+        authored_at: parts[4].to_string(),
+        subject: parts[5].to_string(),
+    })
+}
+
+fn truncate_git_text(mut text: String) -> String {
+    const MAX_GIT_TEXT_BYTES: usize = 96_000;
+    if text.len() <= MAX_GIT_TEXT_BYTES {
+        return text;
+    }
+    text.truncate(MAX_GIT_TEXT_BYTES);
+    text.push_str("\n[truncated]\n");
+    text
 }
 
 #[derive(Debug)]

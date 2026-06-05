@@ -11,6 +11,7 @@ type ResultLocalSectionProps = {
   readonly localSearchingMoreLabel: string;
   readonly localScoreLabel: string;
   readonly localLineLabel: string;
+  readonly error?: string;
 };
 
 export const ResultLocalSection = ({
@@ -21,7 +22,8 @@ export const ResultLocalSection = ({
   localNoMatchesLabel,
   localSearchingMoreLabel,
   localScoreLabel,
-  localLineLabel
+  localLineLabel,
+  error
 }: ResultLocalSectionProps) => {
   const localHasResults = payload.results.length > 0;
 
@@ -40,7 +42,10 @@ export const ResultLocalSection = ({
           ))}
         </ul>
       ) : null}
-      {status !== "loading" && !localHasResults ? (
+      {status === "error" && error !== undefined ? (
+        <div className="lyra-results-state lyra-results-state-error">{error}</div>
+      ) : null}
+      {status !== "loading" && status !== "error" && !localHasResults ? (
         <div className="lyra-results-state">{localNoMatchesLabel}</div>
       ) : null}
       {localHasResults ? (

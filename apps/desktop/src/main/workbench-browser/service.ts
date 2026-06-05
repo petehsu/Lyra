@@ -30,6 +30,7 @@ import type {
 } from "../workbench-observation/browser/types";
 import type { DownloadManagerIpcBridge } from "../download-manager";
 import type { LoginManagerIpcBridge } from "../login-manager";
+import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
@@ -216,17 +217,20 @@ export const createWorkbenchBrowserIpcBridge = ({
   getWindow,
   downloadManager,
   loginManager,
-  workbenchState
+  workbenchState,
+  performanceScheduler
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
   readonly loginManager?: Pick<LoginManagerIpcBridge, "attachWebContents">;
   readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
+  readonly performanceScheduler?: LyraPerformanceResourceScheduler;
 }): WorkbenchBrowserIpcBridge => {
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
     publishEvent: (event) => publishEvent(getWindow, event),
     ...(workbenchState === undefined ? {} : { workbenchState }),
+    ...(performanceScheduler === undefined ? {} : { performanceScheduler }),
     ...(
       downloadManager === undefined && loginManager === undefined
         ? {}

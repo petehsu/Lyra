@@ -4,7 +4,6 @@ import type {
   LinuxCompatReadStatusResponse,
   SearchDeepBudgetPreset,
   SearchDeepCrawlPolicy,
-  SearchLocalScopePreset,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -77,9 +76,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly forceWebPageThemingEnabledLabel: string;
   readonly forceWebPageThemingDisabledLabel: string;
   readonly searchCategoryLabel: string;
-  readonly searchScopeLabel: string;
-  readonly searchCustomRootsLabel: string;
-  readonly searchCustomRootsPlaceholder: string;
   readonly searchWebEnginesLabel: string;
   readonly searchSearxngEndpointLabel: string;
   readonly searchDeepBudgetLabel: string;
@@ -88,12 +84,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly deepSearchSiteExpansionLabel: string;
   readonly deepSearchProactiveGuessLabel: string;
   readonly deepSearchCrawlPolicyLabel: string;
-  readonly searchEnableFuzzyLabel: string;
-  readonly searchEnableContentLabel: string;
-  readonly searchIncludeHiddenLabel: string;
-  readonly searchAutoIndexLabel: string;
-  readonly searchIndexStatusLabel: string;
-  readonly searchRebuildIndexLabel: string;
   readonly omniboxNonBrowserSubmitTargetLabel: string;
   readonly systemNotificationModeLabel: string;
   readonly systemNotificationModeOffLabel: string;
@@ -141,8 +131,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
   readonly forceWebPageThemingValue: boolean;
-  readonly searchScopeValue: SearchLocalScopePreset;
-  readonly searchCustomRootsValue: string;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpointValue: string;
   readonly searchDeepBudgetValue: SearchDeepBudgetPreset;
@@ -151,12 +139,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly deepSearchSiteExpansionValue: boolean;
   readonly deepSearchProactiveGuessValue: boolean;
   readonly deepSearchCrawlPolicyValue: SearchDeepCrawlPolicy;
-  readonly searchEnableFuzzyValue: boolean;
-  readonly searchEnableContentValue: boolean;
-  readonly searchIncludeHiddenValue: boolean;
-  readonly searchAutoIndexValue: boolean;
-  readonly searchIndexStatusValue: string;
-  readonly searchRebuildIndexPending: boolean;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly systemNotificationModeValue: SystemNotificationMode;
   readonly systemNotificationClickBehaviorValue: SystemNotificationClickBehavior;
@@ -171,7 +153,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitTriggerModeOptions: readonly SettingsOption<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly SettingsOption<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly SettingsOption<WorkbenchSplitOverflowPolicy>[];
-  readonly searchScopeOptions: readonly SettingsOption<SearchLocalScopePreset>[];
   readonly searchDeepBudgetOptions: readonly SettingsOption<SearchDeepBudgetPreset>[];
   readonly deepSearchLocalOpenBehaviorOptions: readonly SettingsOption<"open_file" | "reveal_in_manager">[];
   readonly deepSearchCrawlPolicyOptions: readonly SettingsOption<SearchDeepCrawlPolicy>[];
@@ -193,8 +174,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
   readonly onForceWebPageThemingChange: (value: boolean) => void;
-  readonly onSearchScopeChange: (value: SearchLocalScopePreset) => void;
-  readonly onSearchCustomRootsChange: (value: string) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
   readonly onSearchSearxngEndpointChange: (value: string) => void;
   readonly onSearchDeepBudgetChange: (value: SearchDeepBudgetPreset) => void;
@@ -203,11 +182,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onDeepSearchSiteExpansionChange: (value: boolean) => void;
   readonly onDeepSearchProactiveGuessChange: (value: boolean) => void;
   readonly onDeepSearchCrawlPolicyChange: (value: SearchDeepCrawlPolicy) => void;
-  readonly onSearchEnableFuzzyChange: (value: boolean) => void;
-  readonly onSearchEnableContentChange: (value: boolean) => void;
-  readonly onSearchIncludeHiddenChange: (value: boolean) => void;
-  readonly onSearchAutoIndexChange: (value: boolean) => void;
-  readonly onSearchRebuildIndex: () => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;
   readonly onSystemNotificationModeChange: (value: SystemNotificationMode) => void;
   readonly onSystemNotificationClickBehaviorChange: (

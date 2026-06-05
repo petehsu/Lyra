@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 export const DEFAULT_LOCAL_SEARCH_LIMIT = 60;
+export const DEFAULT_LOCAL_SCOPE_PRESET: LocalSearchScopePreset = "home";
 
 export const buildBrowserSearchSettingsCacheKey = (
   settings: BrowserSearchSettings
@@ -24,12 +25,6 @@ export const buildBrowserSearchSettingsCacheKey = (
       endpoint: engine.endpoint ?? null
     })),
     limitPerEngine: settings.resultsPerEngine,
-    localScopePreset: settings.localScopePreset,
-    localCustomRoots: settings.localCustomRoots,
-    localIncludeHidden: settings.localIncludeHidden,
-    localEnableFuzzy: settings.localEnableFuzzy,
-    localEnableContent: settings.localEnableContent,
-    localEnableExtensionMatch: settings.localEnableExtensionMatch,
     localProjectRoot: settings.localProjectRoot ?? null,
     localLimit: settings.localLimit ?? DEFAULT_LOCAL_SEARCH_LIMIT,
     deepBudgetPreset: settings.deepBudgetPreset,

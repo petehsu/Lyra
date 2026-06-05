@@ -21,12 +21,7 @@ const searchSettings: BrowserSearchSettings = {
     }
   ],
   resultsPerEngine: 5,
-  localScopePreset: "workspace",
-  localCustomRoots: ["/tmp/project"],
-  localIncludeHidden: true,
-  localEnableFuzzy: true,
-  localEnableContent: true,
-  localEnableExtensionMatch: true,
+  localProjectRoot: "/tmp/project",
   deepBudgetPreset: "medium",
   deepSiteExpansionEnabled: true,
   deepProactiveDomainGuessingEnabled: false,
@@ -34,11 +29,11 @@ const searchSettings: BrowserSearchSettings = {
 };
 
 describe("browser search runtime model", () => {
-  test("builds a stable settings cache key from web, local, and deep settings", () => {
+  test("builds a stable settings cache key from web, context, and deep settings", () => {
     const parsed = JSON.parse(buildBrowserSearchSettingsCacheKey(searchSettings)) as {
       readonly engines: readonly { readonly id: string; readonly endpoint: string | null }[];
       readonly localLimit: number;
-      readonly localScopePreset: string;
+      readonly localProjectRoot: string | null;
       readonly deepBudgetPreset: string;
       readonly deepSiteExpansionEnabled: boolean;
     };
@@ -48,7 +43,7 @@ describe("browser search runtime model", () => {
       { id: "searxng", endpoint: "https://search.example.com" }
     ]);
     expect(parsed.localLimit).toBe(60);
-    expect(parsed.localScopePreset).toBe("workspace");
+    expect(parsed.localProjectRoot).toBe("/tmp/project");
     expect(parsed.deepBudgetPreset).toBe("medium");
     expect(parsed.deepSiteExpansionEnabled).toBe(true);
   });

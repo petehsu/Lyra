@@ -255,8 +255,14 @@ const bridgeOnlyMainModules = new Map<string, string>([
     "documents",
     "Bridge-only module: native document parser loader/types exposed to shell services."
   ],
+  [
+    "performance",
+    "Bridge-only module: performance scheduler IPC forwards to lyrad and owns no native scheduling state."
+  ],
   ["runtime", "Bridge-only utilities. Runtime ports must stay thin and native-backed where declared."]
 ]);
+
+const ignoredMainModuleDirs = new Set<string>(["tests"]);
 
 const purityScopes: readonly SourcePurityScope[] = [
   {
@@ -330,6 +336,9 @@ const checkMainModuleRegistry = (): void => {
 
   for (const entry of entries) {
     if (entry.isDirectory() === false) {
+      continue;
+    }
+    if (ignoredMainModuleDirs.has(entry.name)) {
       continue;
     }
     if (classified.has(entry.name)) {

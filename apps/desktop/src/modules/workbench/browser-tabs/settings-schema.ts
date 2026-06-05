@@ -30,8 +30,6 @@ export type SettingsFieldId =
   | "linuxCompatStatus"
   | "linuxCompatRestart"
   | "omniboxNonBrowserSubmitTarget"
-  | "searchScope"
-  | "searchCustomRoots"
   | "searchWebEngines"
   | "searchDeepBudget"
   | "deepSearchRestoreViewport"
@@ -39,7 +37,6 @@ export type SettingsFieldId =
   | "deepSearchSiteExpansion"
   | "deepSearchCrawlPolicy"
   | "searchSearxngEndpoint"
-  | "searchIndexingFlags"
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
@@ -90,8 +87,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "jsReplLabel"
   | "forceWebPageThemingLabel"
   | "searchCategoryLabel"
-  | "searchScopeLabel"
-  | "searchCustomRootsLabel"
   | "searchWebEnginesLabel"
   | "searchSearxngEndpointLabel"
   | "searchDeepBudgetLabel"
@@ -99,7 +94,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "deepSearchLocalOpenBehaviorLabel"
   | "deepSearchSiteExpansionLabel"
   | "deepSearchCrawlPolicyLabel"
-  | "searchEnableContentLabel"
   | "omniboxNonBrowserSubmitTargetLabel"
   | "systemNotificationModeLabel"
   | "systemNotificationClickBehaviorLabel"
@@ -149,8 +143,6 @@ export const createWorkbenchSettingsSchema = (
     createField("linuxCompatStatus", "linux", props.linuxCompatStatusLabel, "custom", props.linuxCompatVisible),
     createField("linuxCompatRestart", "linux", props.linuxCompatRestartLabel, "action", props.linuxCompatVisible),
     createField("omniboxNonBrowserSubmitTarget", "search", props.omniboxNonBrowserSubmitTargetLabel, "choice"),
-    createField("searchScope", "search", props.searchScopeLabel, "choice"),
-    createField("searchCustomRoots", "search", props.searchCustomRootsLabel, "textarea"),
     createField("searchWebEngines", "search", props.searchWebEnginesLabel, "multi-choice"),
     createField("searchDeepBudget", "search", props.searchDeepBudgetLabel, "choice"),
     createField("deepSearchRestoreViewport", "search", props.deepSearchRestoreViewportLabel, "boolean-choice"),
@@ -158,7 +150,6 @@ export const createWorkbenchSettingsSchema = (
     createField("deepSearchSiteExpansion", "search", props.deepSearchSiteExpansionLabel, "boolean-choice"),
     createField("deepSearchCrawlPolicy", "search", props.deepSearchCrawlPolicyLabel, "choice"),
     createField("searchSearxngEndpoint", "search", props.searchSearxngEndpointLabel, "text"),
-    createField("searchIndexingFlags", "search", props.searchEnableContentLabel, "custom"),
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),

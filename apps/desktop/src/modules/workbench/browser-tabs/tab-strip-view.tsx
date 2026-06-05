@@ -247,6 +247,7 @@ export const BrowserTabStripView = ({
                 newlyAddedTabIds.has(tabModel.tab.id)
                   && "lyra-browser-tab-item-new"
               )}
+              style={tabModel.tabStyle}
               data-lyra-tab-id={tabModel.tab.id}
               data-agent-active={tabModel.isAgentActive ? "true" : "false"}
               allowWebDrag
@@ -305,6 +306,7 @@ export const BrowserTabStripView = ({
         </div>
         <ChromeIconButton
           className="lyra-browser-tab-add"
+          style={renderModel.addButtonStyle}
           aria-label={openNewTabLabel}
           onClick={onOpenNewTab}
         >

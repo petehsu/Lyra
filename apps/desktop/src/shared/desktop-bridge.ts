@@ -280,6 +280,15 @@ export type {
   DownloadManagerUpdateSettingsRequest
 } from "./download-manager";
 export type {
+  LyraPerformanceActivitySignals,
+  LyraPerformanceDecisionKind,
+  LyraPerformanceIsolationFlags,
+  LyraPerformanceKernelEvent,
+  LyraPerformanceResourceDescriptor,
+  LyraPerformanceResourceKind,
+  LyraPerformanceResourceLifecycle
+} from "./performance-kernel";
+export type {
   BrowserActiveElementRef,
   BrowserElementBounds,
   BrowserFormDraftFieldMetadata,
@@ -476,8 +485,6 @@ export const LYRA_CHANNELS = {
   localSearchStreamStart: "lyra:search/local-stream/start",
   localSearchStreamRead: "lyra:search/local-stream/read",
   localSearchStreamCancel: "lyra:search/local-stream/cancel",
-  searchIndexStatus: "lyra:search/index-status",
-  searchRebuildIndex: "lyra:search/rebuild-index",
   searchDeepStreamStart: "lyra:search/deep-stream/start",
   searchDeepStreamRead: "lyra:search/deep-stream/read",
   searchDeepStreamCancel: "lyra:search/deep-stream/cancel",
@@ -944,16 +951,41 @@ export type SearchAggregateResponse = {
 
 export type SearchLocalScopePreset = "home" | "full_system" | "workspace" | "custom";
 
+export type SearchLocalContext = {
+  readonly projectRoot?: string;
+  readonly activeTabId?: string;
+  readonly workspaceId?: string;
+};
+
 export type SearchLocalRequest = {
   readonly query: string;
-  readonly limit: number;
-  readonly scopePreset: SearchLocalScopePreset;
-  readonly customRoots?: readonly string[];
-  readonly projectRoot?: string;
-  readonly includeHidden?: boolean;
-  readonly enableFuzzy?: boolean;
-  readonly enableContent?: boolean;
-  readonly enableExtensionMatch?: boolean;
+  readonly limit?: number;
+  readonly context?: SearchLocalContext;
+};
+
+export type SearchLocalResultSource =
+  | "file"
+  | "workspace"
+  | "browser_history"
+  | "agent_session"
+  | "recent";
+
+export type SearchLocalResultKind =
+  | "file"
+  | "directory"
+  | "page"
+  | "session"
+  | "workspace";
+
+export type SearchLocalMatchRange = {
+  readonly field: string;
+  readonly start: number;
+  readonly end: number;
+};
+
+export type SearchLocalResultAction = {
+  readonly id: string;
+  readonly label: string;
 };
 
 export type SearchLocalResultItem = {
@@ -967,6 +999,12 @@ export type SearchLocalResultItem = {
   readonly snippet?: string;
   readonly line?: number;
   readonly modifiedAt?: number;
+  readonly source: SearchLocalResultSource;
+  readonly kind: SearchLocalResultKind;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly matchRanges: readonly SearchLocalMatchRange[];
+  readonly actions: readonly SearchLocalResultAction[];
 };
 
 export type SearchLocalStats = {
@@ -1022,29 +1060,6 @@ export type SearchLocalStreamCancelRequest = {
 
 export type SearchLocalStreamCancelResponse = {
   readonly removed: boolean;
-};
-
-export type SearchIndexStatusResponse = {
-  readonly state: "idle" | "building" | "ready" | "failed";
-  readonly indexedFiles: number;
-  readonly indexedDirs: number;
-  readonly lastBuiltAt?: string;
-  readonly progress?: number;
-  readonly error?: string;
-};
-
-export type SearchRebuildIndexRequest = {
-  readonly scopePreset: SearchLocalScopePreset;
-  readonly customRoots?: readonly string[];
-  readonly projectRoot?: string;
-  readonly includeHidden?: boolean;
-  readonly force?: boolean;
-};
-
-export type SearchRebuildIndexResponse = {
-  readonly status: SearchIndexStatusResponse;
-  readonly scopePreset: SearchLocalScopePreset;
-  readonly roots: readonly string[];
 };
 
 export type SearchDeepBudgetPreset = "low" | "medium" | "high";
@@ -1184,13 +1199,7 @@ export type SearchDeepEdge = {
 export type SearchDeepRequest = {
   readonly query: string;
   readonly budgetPreset: SearchDeepBudgetPreset;
-  readonly scopePreset: SearchLocalScopePreset;
-  readonly customRoots?: readonly string[];
-  readonly projectRoot?: string;
-  readonly includeHidden?: boolean;
-  readonly enableFuzzy?: boolean;
-  readonly enableContent?: boolean;
-  readonly enableExtensionMatch?: boolean;
+  readonly context?: SearchLocalContext;
   readonly engines: readonly SearchAggregateEngine[];
   readonly enableSiteExpansion?: boolean;
   readonly enableProactiveDomainGuessing?: boolean;
@@ -1226,7 +1235,6 @@ export type SearchDeepSnapshot = {
     readonly roots: readonly string[];
     readonly elapsedMs: number;
     readonly stats: SearchLocalStats;
-    readonly indexStatus?: SearchIndexStatusResponse;
     readonly error?: string;
   };
   readonly stats: {
@@ -2363,10 +2371,6 @@ export type SearchApi = {
   readonly cancelLocalStream: (
     request: SearchLocalStreamCancelRequest
   ) => Promise<SearchLocalStreamCancelResponse>;
-  readonly readIndexStatus: () => Promise<SearchIndexStatusResponse>;
-  readonly rebuildIndex: (
-    request: SearchRebuildIndexRequest
-  ) => Promise<SearchRebuildIndexResponse>;
   readonly startDeepStream: (
     request: SearchDeepStreamStartRequest
   ) => Promise<SearchDeepStreamStartResponse>;
