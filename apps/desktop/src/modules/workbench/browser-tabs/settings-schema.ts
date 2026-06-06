@@ -72,6 +72,9 @@ export type WorkbenchSettingsSchema = {
 
 type WorkbenchSettingsSchemaInput = Pick<
   BrowserSettingsSurfaceProps,
+  | "generalCategoryLabel"
+  | "appearanceCategoryLabel"
+  | "workspaceCategoryLabel"
   | "aiCategoryLabel"
   | "notificationsCategoryLabel"
   | "linuxCategoryLabel"
@@ -167,17 +170,17 @@ export const createWorkbenchSettingsSchema = (
   const categories: readonly WorkbenchSettingsCategory[] = [
     {
       id: "general",
-      label: props.languageLabel,
+      label: props.generalCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "general").map((section) => section.id)
     },
     {
       id: "appearance",
-      label: props.themeLabel,
+      label: props.appearanceCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "appearance").map((section) => section.id)
     },
     {
       id: "workspace",
-      label: props.splitThreePaneLayoutLabel,
+      label: props.workspaceCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "workspace").map((section) => section.id)
     },
     {

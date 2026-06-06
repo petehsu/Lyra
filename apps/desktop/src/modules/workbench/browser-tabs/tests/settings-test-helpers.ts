@@ -6,6 +6,9 @@ export const createBrowserSettingsSurfaceProps = (
   overrides: Partial<BrowserSettingsSurfaceProps> = {}
 ): BrowserSettingsSurfaceProps => ({
   title: "Settings",
+  generalCategoryLabel: "General",
+  appearanceCategoryLabel: "Appearance",
+  workspaceCategoryLabel: "Workspace",
   aiCategoryLabel: "AI",
   notificationsCategoryLabel: "Notifications",
   linuxCategoryLabel: "Linux",

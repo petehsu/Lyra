@@ -111,6 +111,9 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
       },
       settingsSurface: {
         title: t("settings.pageTitle"),
+        generalCategoryLabel: t("settings.generalCategoryLabel"),
+        appearanceCategoryLabel: t("settings.appearanceCategoryLabel"),
+        workspaceCategoryLabel: t("settings.workspaceCategoryLabel"),
         aiCategoryLabel: t("settings.aiCategoryLabel"),
         notificationsCategoryLabel: t("settings.notificationsCategoryLabel"),
         linuxCategoryLabel: t("settings.linuxCategoryLabel"),

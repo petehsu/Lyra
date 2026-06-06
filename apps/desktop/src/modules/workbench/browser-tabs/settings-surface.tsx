@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  buildSettingsCategoryDomId,
-  createSettingsSurfaceModel
-} from "./settings-render-model";
+import { createSettingsSurfaceModel } from "./settings-render-model";
 import { SettingsSurfaceView } from "./settings-surface-view";
 import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -20,17 +17,8 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
   );
   const model = useMemo(() => createSettingsSurfaceModel(props), [props]);
 
-  const scrollToCategory = (categoryId: SettingsCategoryId): void => {
-    const target = document.getElementById(buildSettingsCategoryDomId(categoryId));
-    target?.scrollIntoView({
-      behavior: "smooth",
-      block: "start"
-    });
-  };
-
   const handleActivateCategory = (categoryId: SettingsCategoryId): void => {
     setActiveCategory(categoryId);
-    scrollToCategory(categoryId);
   };
 
   useEffect(() => {
@@ -39,9 +27,6 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       return;
     }
     setActiveCategory(categoryId);
-    requestAnimationFrame(() => {
-      scrollToCategory(categoryId);
-    });
   }, [props.focusCategoryRequest?.categoryId, props.focusCategoryRequest?.requestId]);
 
   const titlebarContribution = useMemo(
@@ -77,7 +62,6 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       model={model}
       activeCategory={activeCategory}
       onActivateCategory={handleActivateCategory}
-      onCategoryPointerEnter={setActiveCategory}
     />
   );
 };

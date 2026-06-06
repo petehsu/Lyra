@@ -19,7 +19,6 @@ type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
   readonly activeCategory: SettingsCategoryId;
   readonly onActivateCategory: (categoryId: SettingsCategoryId) => void;
-  readonly onCategoryPointerEnter: (categoryId: SettingsCategoryId) => void;
 };
 
 const buildThemePreviewClassName = (value: string): string =>
@@ -346,51 +345,55 @@ const renderSection = (section: SettingsRenderedSection): ReactNode => {
 export const SettingsSurfaceView = ({
   model,
   activeCategory,
-  onActivateCategory,
-  onCategoryPointerEnter
-}: SettingsSurfaceViewProps) => (
-  <section className="lyra-settings-surface" aria-label="settings-surface">
-    <div className="lyra-settings-shell">
-      <aside className="lyra-settings-nav" aria-label="settings-nav">
-        <div className="lyra-settings-nav-list">
-          {model.categories.map((category) => (
-            <button
-              key={category.id}
-              className={category.id === activeCategory
-                ? "lyra-settings-nav-item lyra-settings-nav-item-active"
-                : "lyra-settings-nav-item"}
-              type="button"
-              onClick={() => {
-                onActivateCategory(category.id);
-              }}
-            >
-              {category.navLabel}
-            </button>
-          ))}
-        </div>
-      </aside>
+  onActivateCategory
+}: SettingsSurfaceViewProps) => {
+  const selectedCategory =
+    model.categories.find((category) => category.id === activeCategory)
+    ?? model.categories[0]
+    ?? null;
 
-      <main className="lyra-settings-main">
-        {model.categories.map((category) => (
-          <section
-            key={category.id}
-            id={category.domId}
-            className="lyra-settings-category"
-            onMouseEnter={() => {
-              onCategoryPointerEnter(category.id);
-            }}
-          >
-            <header className="lyra-settings-category-header">
-              <h2>{category.heading}</h2>
-            </header>
-            {category.sections.map((section) => (
-              <div key={section.id}>
-                {renderSection(section)}
-              </div>
+  return (
+    <section className="lyra-settings-surface" aria-label="settings-surface">
+      <div className="lyra-settings-shell">
+        <aside className="lyra-settings-nav" aria-label="settings-nav">
+          <div className="lyra-settings-nav-list">
+            {model.categories.map((category) => (
+              <button
+                key={category.id}
+                className={category.id === selectedCategory?.id
+                  ? "lyra-settings-nav-item lyra-settings-nav-item-active"
+                  : "lyra-settings-nav-item"}
+                type="button"
+                onClick={() => {
+                  onActivateCategory(category.id);
+                }}
+              >
+                {category.navLabel}
+              </button>
             ))}
-          </section>
-        ))}
-      </main>
-    </div>
-  </section>
-);
+          </div>
+        </aside>
+
+        <main className="lyra-settings-main">
+          {selectedCategory === null ? null : (
+            <section
+              key={selectedCategory.id}
+              id={selectedCategory.domId}
+              className="lyra-settings-category"
+              aria-labelledby={`${selectedCategory.domId}-heading`}
+            >
+              <header className="lyra-settings-category-header">
+                <h2 id={`${selectedCategory.domId}-heading`}>{selectedCategory.heading}</h2>
+              </header>
+              {selectedCategory.sections.map((section) => (
+                <div key={section.id}>
+                  {renderSection(section)}
+                </div>
+              ))}
+            </section>
+          )}
+        </main>
+      </div>
+    </section>
+  );
+};

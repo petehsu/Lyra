@@ -5,6 +5,9 @@ import { createWorkbenchSettingsSchema } from "../settings-schema";
 const createSchemaInput = (
   uiStyleOptionCount = 1
 ): Parameters<typeof createWorkbenchSettingsSchema>[0] => ({
+  generalCategoryLabel: "General",
+  appearanceCategoryLabel: "Appearance",
+  workspaceCategoryLabel: "Workspace",
   aiCategoryLabel: "AI",
   languageLabel: "Language",
   themeLabel: "Theme",
@@ -53,6 +56,15 @@ describe("createWorkbenchSettingsSchema", () => {
       "linux",
       "search",
       "ai"
+    ]);
+    expect(schema.categories.map((category) => category.label)).toEqual([
+      "General",
+      "Appearance",
+      "Workspace",
+      "Notifications",
+      "Linux",
+      "Search",
+      "AI"
     ]);
   });
 

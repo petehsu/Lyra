@@ -42,6 +42,9 @@ export type SettingsOption<T extends string = string> = {
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
+  readonly generalCategoryLabel: string;
+  readonly appearanceCategoryLabel: string;
+  readonly workspaceCategoryLabel: string;
   readonly aiCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
   readonly linuxCategoryLabel: string;

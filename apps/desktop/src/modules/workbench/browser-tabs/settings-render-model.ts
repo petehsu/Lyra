@@ -279,11 +279,13 @@ const resolveCategoryHeading = (
 ): string => {
   switch (categoryId) {
     case "general":
-      return props.languageLabel;
+      return props.generalCategoryLabel;
     case "appearance":
-      return props.themeLabel;
+      return props.appearanceCategoryLabel;
     case "workspace":
-      return props.splitTriggerModeLabel;
+      return props.workspaceCategoryLabel;
+    case "notifications":
+      return props.notificationsCategoryLabel;
     case "search":
       return props.searchCategoryLabel;
     case "linux":
