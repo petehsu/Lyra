@@ -4,22 +4,17 @@ import {
   WebContentsView,
   session as electronSessionApi,
   shell,
-  type Rectangle,
   type Session,
   type WebContents,
   type WebFrameMain
 } from "electron";
-import { X509Certificate } from "node:crypto";
-
 import type {
-  BrowserRecoveryAnchor,
   BrowserSessionSnapshot,
   BrowserSessionTabSnapshot,
   BrowserSiteStorageAvailability,
   BrowserStorageStateRef,
   WorkbenchBrowserEvent,
   WorkbenchBrowserChromePopoverRequest,
-  WorkbenchBrowserCertificateInfo,
   WorkbenchBrowserClearSiteDataRequest,
   WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserLayoutSnapshot,
@@ -37,25 +32,19 @@ import type {
   WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserAuthChallengeSignal,
   WorkbenchBrowserElevationSession,
-  WorkbenchBrowserSecurityLevel,
-  WorkbenchBrowserSecurityLocale,
   WorkbenchBrowserSharedControlEvent,
   WorkbenchBrowserSharedControlStateEvent,
   WorkbenchLumenFollowAudit,
   WorkbenchLumenStaleTarget,
-  WorkbenchLumenTargetKind,
   WorkbenchLumenTargetRef,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/desktop-bridge";
-import type { LyraPerformanceResourceDescriptor } from "../../shared/performance-kernel";
 import {
   WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION,
   WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
-  WORKBENCH_BROWSER_SESSION_SNAPSHOT_SCHEMA_VERSION,
   createBrowserStorageStateRef,
-  sanitizeBrowserPageRestoreState,
-  sanitizeBrowserSessionSnapshot
+  sanitizeBrowserPageRestoreState
 } from "../../shared/workbench-browser";
 import type {
   WorkbenchTabExtractTextResult,
@@ -96,12 +85,6 @@ import {
   type SharedControlInputType,
   type SharedControlSnapshot
 } from "./shared-control";
-import {
-  buildBrowserChromePopoverDocument,
-  resolveBrowserFindPopoverHeight,
-  resolveBrowserChromePopoverHeight,
-  resolveBrowserOmniboxPopoverHeight
-} from "./chrome-popover-overlay";
 import {
   buildFrameDomProbeScript,
   normalizeFrameDomProbeResult
@@ -146,1027 +129,93 @@ import type {
   WorkbenchBrowserViewManager
 } from "./types";
 
-type BrowserPageFindTarget = {
-  readonly tabId: string;
-  readonly webContents: WebContents;
-  readonly address: string;
-  readonly title: string;
-};
-
-type BrowserPageFindRevealResult = {
-  readonly ok: boolean;
-  readonly rect?: {
-    readonly left: number;
-    readonly top: number;
-    readonly right: number;
-    readonly bottom: number;
-  };
-};
-
-type BrowserPageEntry = {
-  readonly tabId: string;
-  readonly view: WebContentsView;
-  readonly webContents: WebContents;
-  requestedAddress: string;
-  titleHint: string | null;
-  attached: boolean;
-  viewVisible: boolean;
-  isDestroyed: boolean;
-  layout: WorkbenchBrowserPageLayout | null;
-  runtime: WorkbenchBrowserPageRuntimeState;
-  historyRestoreAttempted: boolean;
-  readonly disposeListeners: () => void;
-};
-
-type BrowserAgentPageTarget = {
-  readonly tabId: string;
-  readonly webContents: WebContents;
-  readonly targetMode: WorkbenchBrowserAgentTargetMode;
-  readonly liveEntry?: BrowserPageEntry;
-  browserMode: WorkbenchBrowserAgentModeInfo;
-  address: string;
-  title: string;
-  isLoading: boolean;
-};
-
-type BrowserAgentViewportState = {
-  readonly width: number;
-  readonly height: number;
-  readonly scrollX: number;
-  readonly scrollY: number;
-  readonly maxScrollX: number;
-  readonly maxScrollY: number;
-};
-
-type BrowserAgentAutoScrollResult = {
-  readonly element?: WorkbenchBrowserAgentElement;
-  readonly point?: {
-    readonly x: number;
-    readonly y: number;
-  };
-  readonly effect?: WorkbenchBrowserAgentScrollEffect;
-};
-
-type BrowserAgentShadowEntry = BrowserAgentPageTarget & {
-  readonly window: BrowserWindow;
-  readonly sourceTabId: string;
-  detached: boolean;
-};
-
-type BrowserAgentLoginBorrowResult = {
-  readonly borrowed: boolean;
-  readonly sourceOrigin?: string;
-  readonly cookieCount?: number;
-  readonly localStorageItemCount?: number;
-  readonly coverage: readonly ("cookies" | "localStorage")[];
-  readonly unavailableReason?: string;
-};
-
-type BrowserPageTombstone = {
-  readonly tabId: string;
-  requestedAddress: string;
-  titleHint: string | null;
-  runtime: WorkbenchBrowserPageRuntimeState;
-  recoveryFailure?: WorkbenchBrowserRecoveryFailure;
-  readonly tombstonedAt: number;
-};
-
-type BrowserAgentCacheEntry = {
-  readonly observationId: string;
-  readonly mapEpoch: number;
-  readonly elements: readonly WorkbenchBrowserAgentElement[];
-  readonly elementsById: ReadonlyMap<number, WorkbenchBrowserAgentElement>;
-  readonly elementsByTargetRef: ReadonlyMap<string, WorkbenchBrowserAgentElement>;
-  readonly targets: readonly WorkbenchLumenTargetRef[];
-  readonly targetsByRef: ReadonlyMap<string, WorkbenchLumenTargetRef>;
-  readonly url: string;
-  readonly title: string;
-};
-
-type BrowserAgentFollowSession = {
-  readonly sessionId: string;
-  turnId: string | null;
-  readonly tabId: string;
-  readonly targetMode: WorkbenchBrowserAgentTargetMode;
-  readonly startedAt: number;
-  endedAt: number | null;
-  updatedAt: number;
-  status: "running" | "completed" | "cancelled" | "failed" | "interrupted";
-  reason: string | null;
-  totalActions: number;
-  interruptedCount: number;
-  readonly actions: Array<{
-    readonly id: string;
-    readonly at: number;
-    readonly tabId: string;
-    readonly targetMode: WorkbenchBrowserAgentTargetMode;
-    readonly action: BrowserAgentCursorOverlayAction;
-    readonly interaction?: WorkbenchBrowserAgentInteraction;
-    readonly cursorPhase?: BrowserAgentCursorOverlayPhase;
-    readonly inputActive: boolean;
-    readonly cursor?: { readonly x: number; readonly y: number };
-    readonly result?: "success" | "failure" | "interrupted";
-    readonly summary: string;
-    readonly sharedControlState?: SharedControlSnapshot["state"];
-    readonly criticalInput?: boolean;
-    readonly redacted?: boolean;
-  }>;
-  readonly frames: Array<{
-    readonly id: string;
-    readonly at: number;
-    readonly actionId: string;
-    readonly tabId: string;
-    readonly targetMode: WorkbenchBrowserAgentTargetMode;
-    readonly cursor?: { readonly x: number; readonly y: number };
-    readonly cursorPhase?: BrowserAgentCursorOverlayPhase;
-    readonly event: "cursor" | "input" | "wait" | "navigation" | "interrupt";
-  }>;
-};
-
-type BrowserElevationSessionRecord = WorkbenchBrowserElevationSession;
-
-class SharedControlInterruptionError extends Error {
-  readonly code = "sharedControlInterrupted";
-  readonly handoff: WorkbenchBrowserSharedControlEvent;
-
-  constructor(handoff: WorkbenchBrowserSharedControlEvent) {
-    super("Live browser control was interrupted by user input.");
-    this.name = "SharedControlInterruptionError";
-    this.handoff = handoff;
-  }
-}
-
-type BrowserAgentFrameOwnerCandidate = {
-  readonly index: number;
-  readonly sourceKind: "iframe" | "frame";
-  readonly name: string;
-  readonly src: string;
-  readonly title: string;
-  readonly selectorPreview: string;
-  readonly bounds: WorkbenchBrowserFrameGlobalBounds;
-  readonly visible: boolean;
-  readonly hostChain: readonly string[];
-};
-
-type BrowserAgentSemanticFrameGraph = {
-  readonly frames: readonly WorkbenchBrowserSemanticFrame[];
-  readonly framesByTreeNodeId: ReadonlyMap<number, WorkbenchBrowserSemanticFrame>;
-  readonly warnings: readonly string[];
-  readonly blockedRegions: readonly WorkbenchBrowserSemanticBlockedRegion[];
-};
-
-type BrowserAgentRawFrameObservation = {
-  readonly frame: WorkbenchBrowserSemanticFrame;
-  readonly raw: Record<string, unknown>;
-};
-
-const DEFAULT_PAGE_TITLE = "New Tab";
-const HIDDEN_PAGE_TOMBSTONE_DELAY_MS = 45_000;
-const MAX_BROWSER_AGENT_FOLLOW_ACTIONS = 240;
-const MAX_BROWSER_AGENT_FOLLOW_FRAMES = 320;
-const MAX_BROWSER_PAGE_DIAGNOSTICS = 180;
-const BROWSER_SESSION_STATE_KEY = "browser-session" as const;
-const BROWSER_SESSION_SNAPSHOT_WRITE_DELAY_MS = 120;
-
-const hashStableString = (value: string): string => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-};
-
-const browserAgentTargetFingerprint = (
-  pageUrl: string,
-  element: Pick<
-    WorkbenchBrowserAgentElement,
-    | "frameTreeNodeId"
-    | "tagName"
-    | "role"
-    | "label"
-    | "selectorPreview"
-    | "bounds"
-    | "href"
-    | "inputType"
-    | "frameUrl"
-    | "discoveryScope"
-    | "hostChainFingerprint"
-  >
-): string => [
-  element.frameUrl ?? pageUrl,
-  element.frameTreeNodeId,
-  element.tagName,
-  element.role,
-  element.label,
-  element.selectorPreview,
-  element.href ?? "",
-  element.inputType ?? "",
-  element.discoveryScope ?? "document",
-  element.hostChainFingerprint ?? "",
-  Math.round(element.bounds.x / 8),
-  Math.round(element.bounds.y / 8),
-  Math.round(element.bounds.width / 8),
-  Math.round(element.bounds.height / 8)
-].join("|");
-
-const createBrowserAgentTargetRef = (
-  pageUrl: string,
-  element: Pick<
-    WorkbenchBrowserAgentElement,
-    | "frameTreeNodeId"
-    | "tagName"
-    | "role"
-    | "label"
-    | "selectorPreview"
-    | "bounds"
-    | "href"
-    | "inputType"
-    | "frameUrl"
-    | "discoveryScope"
-    | "hostChainFingerprint"
-  >
-): { readonly stableId: string; readonly targetRef: string; readonly elementFingerprint: string } => {
-  const elementFingerprint = browserAgentTargetFingerprint(pageUrl, element);
-  const stableId = hashStableString(elementFingerprint);
-  return {
-    stableId,
-    targetRef: `lumen:${stableId}`,
-    elementFingerprint
-  };
-};
-
-const createBrowserAgentFrameRef = (
-  frameTreeNodeId: number,
-  url: string,
-  parentFrameTreeNodeId?: number
-): string =>
-  `lumen-frame:${hashStableString([
-    parentFrameTreeNodeId ?? "root",
-    frameTreeNodeId,
-    url
-  ].join("|"))}`;
-
-const browserAgentTargetKind = (
-  element: Pick<WorkbenchBrowserAgentElement, "tagName" | "role" | "editable" | "discoveryScope">
-): WorkbenchLumenTargetKind => {
-  if (element.discoveryScope === "visual") {
-    return "visual";
-  }
-  const role = element.role.toLowerCase();
-  const tagName = element.tagName.toLowerCase();
-  if (element.editable || tagName === "input" || tagName === "textarea" || role === "textbox" || role === "searchbox") {
-    return "input";
-  }
-  if (tagName === "button" || role === "button") {
-    return "button";
-  }
-  if (tagName === "a" || role === "link") {
-    return "link";
-  }
-  if (role === "frame") {
-    return "frame";
-  }
-  return "element";
-};
-
-const normalizeUnitCoverage = (value: number): number =>
-  Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value.toFixed(3)) : 0));
-
-const coerceFrameBounds = (value: unknown): WorkbenchBrowserFrameGlobalBounds | null => {
-  if (value === null || typeof value !== "object") {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const x = Number(record.x);
-  const y = Number(record.y);
-  const width = Number(record.width);
-  const height = Number(record.height);
-  if (
-    Number.isFinite(x) === false
-    || Number.isFinite(y) === false
-    || Number.isFinite(width) === false
-    || Number.isFinite(height) === false
-    || width <= 0
-    || height <= 0
-  ) {
-    return null;
-  }
-  return {
-    x: Math.round(x),
-    y: Math.round(y),
-    width: Math.round(width),
-    height: Math.round(height)
-  };
-};
-
-const coerceElementVisibility = (
-  value: unknown
-): WorkbenchBrowserAgentElement["visibility"] | undefined => {
-  if (value === null || typeof value !== "object") {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  return {
-    visible: record.visible !== false,
-    offscreen: record.offscreen === true,
-    covered: record.covered === true,
-    ariaHidden: record.ariaHidden === true
-  };
-};
-
-const boundsCenter = (
-  bounds: WorkbenchBrowserFrameGlobalBounds
-): { readonly x: number; readonly y: number } => ({
-  x: bounds.x + Math.round(bounds.width / 2),
-  y: bounds.y + Math.round(bounds.height / 2)
-});
-
-const semanticNodeKeyForTarget = (
-  targetRef: string,
-  source: string,
-  frameRef: string
-): string => `semantic:${hashStableString([targetRef, source, frameRef].join("|"))}`;
-
-const actionCapabilitiesForElement = (
-  element: Pick<WorkbenchBrowserAgentElement, "role" | "tagName" | "editable" | "actionHint" | "stateHint" | "disabled">
-): readonly WorkbenchBrowserSemanticActionCapability[] => {
-  if (element.disabled) {
-    return [];
-  }
-  const role = element.role.toLowerCase();
-  const tagName = element.tagName.toLowerCase();
-  const capabilities = new Set<WorkbenchBrowserSemanticActionCapability>();
-  if (element.editable || role === "textbox" || role === "searchbox" || tagName === "input" || tagName === "textarea") {
-    capabilities.add("type");
-  }
-  if (tagName === "select" || role === "combobox" || element.actionHint === "select") {
-    capabilities.add("select");
-  }
-  if (role === "checkbox" || role === "switch" || tagName === "input" && element.actionHint === "check") {
-    capabilities.add("check");
-  }
-  if (role === "button" || role === "link" || tagName === "button" || tagName === "a") {
-    capabilities.add(role === "link" || tagName === "a" ? "open" : "click");
-  }
-  if (role === "menuitem") {
-    capabilities.add("menuitem");
-    capabilities.add("click");
-  }
-  if (element.actionHint?.startsWith("open") === true) {
-    capabilities.add("open");
-  }
-  if (element.stateHint === "collapsed" || element.stateHint === "expanded" || element.actionHint === "expand") {
-    capabilities.add("expand");
-  }
-  if (element.actionHint === "click" && capabilities.size === 0) {
-    capabilities.add("click");
-  }
-  if (capabilities.size === 0) {
-    capabilities.add("click");
-  }
-  return [...capabilities];
-};
-
-const buildBrowserAgentFrameOwnerProbeScript = (): string => `
-  (() => {
-    const normalizeText = (value, maxLength = 160) => {
-      if (typeof value !== "string") return "";
-      const normalized = value.replace(/\\s+/g, " ").trim();
-      return normalized.length <= maxLength ? normalized : normalized.slice(0, maxLength - 3) + "...";
-    };
-    const selectorPreview = (element) => {
-      const tagName = String(element.tagName || "iframe").toLowerCase();
-      const parts = [tagName];
-      const id = normalizeText(element.id || "", 40);
-      if (id) parts.push("#" + id);
-      const name = normalizeText(element.getAttribute?.("name") || "", 40);
-      if (name) parts.push("[name=\\"" + name + "\\"]");
-      const title = normalizeText(element.getAttribute?.("title") || "", 40);
-      if (title) parts.push("[title=\\"" + title + "\\"]");
-      return parts.join("").slice(0, 140);
-    };
-    const isVisible = (element) => {
-      if (!(element instanceof Element) || !element.isConnected) return false;
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return false;
-      const style = window.getComputedStyle(element);
-      return style.display !== "none"
-        && style.visibility !== "hidden"
-        && Number.parseFloat(style.opacity || "1") > 0;
-    };
-    const absoluteUrl = (value) => {
-      const text = normalizeText(value || "", 800);
-      if (!text) return "";
-      try {
-        return new URL(text, String(window.location.href || "about:blank")).href;
-      } catch (_error) {
-        return text;
-      }
-    };
-    const candidates = [];
-    const crawl = (root, hostChain = []) => {
-      for (const element of Array.from(root.querySelectorAll("iframe, frame"))) {
-        const rect = element.getBoundingClientRect();
-        candidates.push({
-          index: candidates.length,
-          sourceKind: String(element.tagName || "").toLowerCase() === "frame" ? "frame" : "iframe",
-          name: normalizeText(element.getAttribute?.("name") || element.name || "", 120),
-          src: absoluteUrl(element.getAttribute?.("src") || ""),
-          title: normalizeText(element.getAttribute?.("title") || "", 120),
-          selectorPreview: selectorPreview(element),
-          bounds: {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          },
-          visible: isVisible(element),
-          hostChain
-        });
-      }
-      for (const element of Array.from(root.querySelectorAll("*"))) {
-        if (element.shadowRoot) {
-          crawl(element.shadowRoot, [...hostChain, selectorPreview(element)]);
-        }
-      }
-    };
-    crawl(document);
-    return {
-      title: normalizeText(document.title || "", 200),
-      url: normalizeText(String(window.location.href || ""), 800),
-      viewport: {
-        x: 0,
-        y: 0,
-        width: Math.max(1, Math.round(window.innerWidth || document.documentElement?.clientWidth || 1)),
-        height: Math.max(1, Math.round(window.innerHeight || document.documentElement?.clientHeight || 1))
-      },
-      candidates
-    };
-  })()
-`;
-
-const coerceFrameOwnerCandidates = (value: unknown): {
-  readonly viewport: WorkbenchBrowserFrameGlobalBounds | null;
-  readonly candidates: readonly BrowserAgentFrameOwnerCandidate[];
-} => {
-  const record = value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
-  const candidates = Array.isArray(record.candidates)
-    ? record.candidates
-        .map((entry): BrowserAgentFrameOwnerCandidate | null => {
-          if (entry === null || typeof entry !== "object") {
-            return null;
-          }
-          const candidate = entry as Record<string, unknown>;
-          const bounds = coerceFrameBounds(candidate.bounds);
-          if (bounds === null) {
-            return null;
-          }
-          return {
-            index: Number.isFinite(Number(candidate.index)) ? Math.round(Number(candidate.index)) : 0,
-            sourceKind: candidate.sourceKind === "frame" ? "frame" : "iframe",
-            name: typeof candidate.name === "string" ? candidate.name : "",
-            src: typeof candidate.src === "string" ? candidate.src : "",
-            title: typeof candidate.title === "string" ? candidate.title : "",
-            selectorPreview: typeof candidate.selectorPreview === "string" ? candidate.selectorPreview : "iframe",
-            bounds,
-            visible: candidate.visible === true,
-            hostChain: Array.isArray(candidate.hostChain)
-              ? candidate.hostChain.filter((item): item is string => typeof item === "string" && item.length > 0)
-              : []
-          };
-        })
-        .filter((entry): entry is BrowserAgentFrameOwnerCandidate => entry !== null)
-    : [];
-  return {
-    viewport: coerceFrameBounds(record.viewport),
-    candidates
-  };
-};
-
-const scoreFrameOwnerCandidate = (
-  frame: WebFrameMain,
-  candidate: BrowserAgentFrameOwnerCandidate,
-  siblingOrdinal: number
-): number => {
-  let score = 0;
-  const frameUrl = frame.url.trim();
-  if (frameUrl.length > 0 && candidate.src.length > 0 && frameUrl === candidate.src) {
-    score += 80;
-  }
-  if (frame.name.length > 0 && frame.name === candidate.name) {
-    score += 60;
-  }
-  if (candidate.visible) {
-    score += 20;
-  }
-  if (candidate.index === siblingOrdinal) {
-    score += 18;
-  }
-  if (frameUrl.length > 0 && candidate.src.length > 0) {
-    try {
-      const frameOrigin = new URL(frameUrl).origin;
-      const candidateOrigin = new URL(candidate.src).origin;
-      if (frameOrigin === candidateOrigin) {
-        score += 10;
-      }
-    } catch {
-      // ignore non-standard frame URLs
-    }
-  }
-  return score;
-};
-
-const matchFrameOwnerCandidates = (
-  parentFrame: WebFrameMain,
-  candidates: readonly BrowserAgentFrameOwnerCandidate[]
-): ReadonlyMap<number, BrowserAgentFrameOwnerCandidate> => {
-  const matches = new Map<number, BrowserAgentFrameOwnerCandidate>();
-  const usedCandidateIndexes = new Set<number>();
-  parentFrame.frames
-    .filter((frame) => frame.isDestroyed() === false)
-    .forEach((frame, siblingOrdinal) => {
-      const ranked = candidates
-        .filter((candidate) => usedCandidateIndexes.has(candidate.index) === false)
-        .map((candidate) => ({
-          candidate,
-          score: scoreFrameOwnerCandidate(frame, candidate, siblingOrdinal)
-        }))
-        .sort((left, right) => right.score - left.score || left.candidate.index - right.candidate.index);
-      const selected = ranked[0]?.candidate;
-      if (selected !== undefined) {
-        usedCandidateIndexes.add(selected.index);
-        matches.set(frame.frameTreeNodeId, selected);
-      }
-    });
-  return matches;
-};
-
-const normalizeString = (value: unknown): string | null => {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const normalizeSearchText = (value: string, caseSensitive: boolean): string =>
-  caseSensitive ? value : value.toLocaleLowerCase();
-
-const buildSearchSnippet = (
-  text: string,
-  startChar: number,
-  endChar: number
-): string => {
-  const snippetStart = Math.max(0, startChar - 90);
-  const snippetEnd = Math.min(text.length, endChar + 90);
-  const prefix = snippetStart > 0 ? "..." : "";
-  const suffix = snippetEnd < text.length ? "..." : "";
-  return `${prefix}${text.slice(snippetStart, snippetEnd)}${suffix}`
-    .replace(/\s+/gu, " ")
-    .trim();
-};
-
-const findSearchInPageMatches = (
-  text: string,
-  query: string,
-  request: Pick<WorkbenchBrowserSearchInPageRequest, "caseSensitive" | "maxMatches">
-): {
-  readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
-  readonly totalMatches: number;
-  readonly truncated: boolean;
-} => {
-  const caseSensitive = request.caseSensitive === true;
-  const maxMatches = Math.max(1, Math.min(100, Math.round(request.maxMatches ?? 20)));
-  const haystack = normalizeSearchText(text, caseSensitive);
-  const needle = normalizeSearchText(query, caseSensitive);
-  const matches: WorkbenchBrowserSearchInPageMatch[] = [];
-  let totalMatches = 0;
-  let cursor = 0;
-  while (needle.length > 0 && cursor <= haystack.length) {
-    const index = haystack.indexOf(needle, cursor);
-    if (index < 0) break;
-    totalMatches += 1;
-    const endChar = index + query.length;
-    if (matches.length < maxMatches) {
-      matches.push({
-        id: `find-${hashStableString(`${query}|${totalMatches}|${index}|${endChar}`)}`,
-        index: totalMatches,
-        startChar: index,
-        endChar,
-        snippet: buildSearchSnippet(text, index, endChar)
-      });
-    }
-    cursor = Math.max(index + needle.length, index + 1);
-  }
-  return {
-    matches,
-    totalMatches,
-    truncated: totalMatches > matches.length
-  };
-};
-
-type BrowserSemanticLocateCandidate = {
-  readonly anchorQuery: string;
-  readonly score: number;
-  readonly reason: string;
-};
-
-const semanticLocateTokens = (value: string): readonly string[] => {
-  const normalized = value
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}\u4e00-\u9fff]+/gu, " ")
-    .trim();
-  if (normalized.length === 0) {
-    return [];
-  }
-  const words = normalized
-    .split(/\s+/u)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-  const cjk = [...normalized.matchAll(/[\u4e00-\u9fff]{2,}/gu)]
-    .flatMap((match) => {
-      const text = match[0];
-      const grams: string[] = [];
-      for (let index = 0; index < text.length - 1; index += 1) {
-        grams.push(text.slice(index, index + 2));
-      }
-      return grams;
-    });
-  return [...new Set([...words, ...cjk])].slice(0, 80);
-};
-
-const semanticLocateChunks = (text: string): readonly string[] => {
-  const lines = text
-    .split(/\n+/u)
-    .map((line) => line.replace(/\s+/gu, " ").trim())
-    .filter((line) => line.length > 0);
-  const chunks: string[] = [];
-  let current = "";
-  for (const line of lines) {
-    const next = current.length === 0 ? line : `${current}\n${line}`;
-    if (next.length > 800 && current.length >= 260) {
-      chunks.push(current);
-      current = line;
-    } else {
-      current = next;
-    }
-  }
-  if (current.length > 0) {
-    chunks.push(current);
-  }
-  return chunks.length > 0 ? chunks : [text.replace(/\s+/gu, " ").trim()].filter(Boolean);
-};
-
-const fuzzySubsequence = (needle: string, haystack: string): boolean => {
-  if (needle.length === 0) {
-    return false;
-  }
-  let cursor = 0;
-  for (const char of haystack) {
-    if (char === needle[cursor]) {
-      cursor += 1;
-      if (cursor >= needle.length) {
-        return true;
-      }
-    }
-  }
-  return false;
-};
-
-const semanticLocateAnchorFromChunk = (
-  chunk: string,
-  queryTokens: readonly string[]
-): string => {
-  const sentences = chunk
-    .split(/(?<=[。！？.!?])\s+|\n+/u)
-    .map((sentence) => sentence.replace(/\s+/gu, " ").trim())
-    .filter((sentence) => sentence.length > 0);
-  const candidates = sentences.length > 0 ? sentences : [chunk.replace(/\s+/gu, " ").trim()];
-  const scored = candidates
-    .map((candidate) => {
-      const tokens = semanticLocateTokens(candidate);
-      const overlap = queryTokens.filter((token) => tokens.includes(token)).length;
-      return { candidate, overlap };
-    })
-    .sort((left, right) => right.overlap - left.overlap || left.candidate.length - right.candidate.length);
-  const anchor = scored[0]?.candidate ?? chunk;
-  return anchor.length <= 96 ? anchor : anchor.slice(0, 96).trim();
-};
-
-const selectSemanticLocateCandidate = (
-  text: string,
-  query: string
-): BrowserSemanticLocateCandidate | null => {
-  const queryTokens = semanticLocateTokens(query);
-  if (queryTokens.length === 0) {
-    return null;
-  }
-  const normalizedQuery = query.toLocaleLowerCase().trim();
-  const scored = semanticLocateChunks(text)
-    .map((chunk) => {
-      const normalizedChunk = chunk.toLocaleLowerCase();
-      const chunkTokens = semanticLocateTokens(chunk);
-      const overlapCount = queryTokens.filter((token) => chunkTokens.includes(token)).length;
-      const overlapScore = overlapCount / Math.max(1, queryTokens.length);
-      const phraseBonus = normalizedChunk.includes(normalizedQuery) ? 0.45 : 0;
-      const fuzzyBonus = queryTokens.some((token) => fuzzySubsequence(token, normalizedChunk)) ? 0.12 : 0;
-      const shortBonus = chunk.length <= 420 ? 0.08 : 0;
-      const score = overlapScore + phraseBonus + fuzzyBonus + shortBonus;
-      return {
-        chunk,
-        score,
-        reason:
-          phraseBonus > 0
-            ? "phrase-match"
-            : overlapCount > 0 ? `token-overlap:${overlapCount}/${queryTokens.length}` : "fuzzy-overlap"
-      };
-    })
-    .sort((left, right) => right.score - left.score);
-  const best = scored[0];
-  if (best === undefined || best.score < 0.34) {
-    return null;
-  }
-  return {
-    anchorQuery: semanticLocateAnchorFromChunk(best.chunk, queryTokens),
-    score: Number(best.score.toFixed(3)),
-    reason: best.reason
-  };
-};
-
-const normalizeNumber = (value: unknown, fallback = 0): number => {
-  if (typeof value !== "number" || Number.isFinite(value) === false) {
-    return fallback;
-  }
-  return Math.round(value);
-};
-
-const normalizeAddress = (value: unknown): string | null => {
-  let next = normalizeString(value);
-  if (next === null) {
-    return null;
-  }
-  if (next === "about:blank") {
-    return "about:blank";
-  }
-  // Automatically prepend "http://" if a protocol/scheme is missing
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(next)) {
-    next = "http://" + next;
-  }
-  try {
-    const parsed = new URL(next);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:" && parsed.protocol !== "file:") {
-      return null;
-    }
-    return parsed.toString();
-  } catch (_error) {
-    return null;
-  }
-};
-
-const normalizeWebOrigin = (value: unknown): string | null => {
-  const address = normalizeAddress(value);
-  if (address === null) {
-    return null;
-  }
-  try {
-    const parsed = new URL(address);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    return parsed.origin;
-  } catch (_error) {
-    return null;
-  }
-};
-
-const normalizePageSpec = (value: unknown): WorkbenchBrowserPageSpec | null => {
-  if (value === null || typeof value !== "object") {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const tabId = normalizeString(record.tabId);
-  const address = normalizeAddress(record.address);
-  if (tabId === null || address === null) {
-    return null;
-  }
-  const restoreState = sanitizeBrowserPageRestoreState(record.restoreState);
-  return {
-    tabId,
-    address,
-    ...(normalizeString(record.titleHint) === null
-      ? {}
-      : { titleHint: normalizeString(record.titleHint)! }),
-    ...(restoreState === undefined ? {} : { restoreState }),
-    isActive: record.isActive === true
-  };
-};
-
-const normalizeTopology = (value: unknown): WorkbenchBrowserTopologySnapshot => {
-  if (value === null || typeof value !== "object") {
-    return {
-      activeTabId: null,
-      pages: []
-    };
-  }
-  const record = value as Record<string, unknown>;
-  const pages = Array.isArray(record.pages)
-    ? record.pages
-        .map(normalizePageSpec)
-        .filter((entry): entry is WorkbenchBrowserPageSpec => entry !== null)
-    : [];
-  const explicitActiveTabId = normalizeString(record.activeTabId);
-  const activeTabId =
-    explicitActiveTabId !== null && pages.some((page) => page.tabId === explicitActiveTabId)
-      ? explicitActiveTabId
-      : pages.find((page) => page.isActive)?.tabId ?? null;
-  return {
-    activeTabId,
-    pages
-  };
-};
-
-const normalizePageLayout = (value: unknown): WorkbenchBrowserPageLayout | null => {
-  if (value === null || typeof value !== "object") {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const tabId = normalizeString(record.tabId);
-  if (tabId === null) {
-    return null;
-  }
-  const width = Math.max(0, normalizeNumber(record.width));
-  const height = Math.max(0, normalizeNumber(record.height));
-  return {
-    tabId,
-    x: normalizeNumber(record.x),
-    y: normalizeNumber(record.y),
-    width,
-    height,
-    visible: record.visible === true && width > 0 && height > 0,
-    zIndex: normalizeNumber(record.zIndex),
-    isFocusedPane: record.isFocusedPane === true
-  };
-};
-
-const normalizeLayout = (value: unknown): WorkbenchBrowserLayoutSnapshot => {
-  if (value === null || typeof value !== "object") {
-    return {
-      windowWidth: 0,
-      windowHeight: 0,
-      layouts: []
-    };
-  }
-  const record = value as Record<string, unknown>;
-  const layouts = Array.isArray(record.layouts)
-    ? record.layouts
-        .map(normalizePageLayout)
-        .filter((entry): entry is WorkbenchBrowserPageLayout => entry !== null)
-    : [];
-  return {
-    windowWidth: Math.max(0, normalizeNumber(record.windowWidth)),
-    windowHeight: Math.max(0, normalizeNumber(record.windowHeight)),
-    layouts
-  };
-};
-
-const resolveBrowserCoreKey = (address: string): string => {
-  try {
-    const parsed = new URL(address);
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch (_error) {
-    return address;
-  }
-};
-
-const toInitialRuntimeState = (spec: WorkbenchBrowserPageSpec): WorkbenchBrowserPageRuntimeState => ({
-  tabId: spec.tabId,
-  address: spec.address,
-  title: spec.titleHint ?? DEFAULT_PAGE_TITLE,
-  lifecycleState: spec.isActive ? "foreground" : "hot-hidden",
-  coreKey: resolveBrowserCoreKey(spec.address),
-  stateKey: `web-state:${spec.tabId}`,
-  isTombstoned: false,
-  isActive: spec.isActive,
-  isVisible: false,
-  isLoading: false,
-  canGoBack: false,
-  canGoForward: false,
-  isHtmlFullscreen: false,
-  ...(spec.restoreState === undefined ? {} : { restoreState: spec.restoreState }),
-  updatedAt: Date.now()
-});
-
-const runtimeStateEquals = (
-  left: WorkbenchBrowserPageRuntimeState,
-  right: WorkbenchBrowserPageRuntimeState
-): boolean =>
-  left.tabId === right.tabId
-  && left.address === right.address
-  && left.title === right.title
-  && left.faviconUrl === right.faviconUrl
-  && left.lifecycleState === right.lifecycleState
-  && left.coreKey === right.coreKey
-  && left.stateKey === right.stateKey
-  && left.isTombstoned === right.isTombstoned
-  && left.restoreReason === right.restoreReason
-  && left.isActive === right.isActive
-  && left.isVisible === right.isVisible
-  && left.isLoading === right.isLoading
-  && left.canGoBack === right.canGoBack
-  && left.canGoForward === right.canGoForward
-  && left.isHtmlFullscreen === right.isHtmlFullscreen
-  && JSON.stringify(left.restoreState ?? null) === JSON.stringify(right.restoreState ?? null)
-  && JSON.stringify(left.recoveryFailure ?? null) === JSON.stringify(right.recoveryFailure ?? null);
-
-const isSupportedWebUrl = (value: string): boolean => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch (_error) {
-    return false;
-  }
-};
-
-const toBounds = (layout: WorkbenchBrowserPageLayout): Rectangle => ({
-  x: layout.x,
-  y: layout.y,
-  width: Math.max(1, layout.width),
-  height: Math.max(1, layout.height)
-});
-
-const delay = async (ms: number): Promise<void> => {
-  if (ms <= 0) {
-    return;
-  }
-  await new Promise((resolve) => setTimeout(resolve, ms));
-};
-
-const normalizeExecuteScriptTimeoutMs = (value: unknown, fallback = 8_000): number => {
-  if (typeof value !== "number" || Number.isFinite(value) === false) {
-    return fallback;
-  }
-  return Math.max(250, Math.min(30_000, Math.round(value)));
-};
-
-const normalizeAgentVerification = (
-  value: WorkbenchBrowserAgentVerification | undefined
-): WorkbenchBrowserAgentVerification =>
-  value === "full" ? "full" : "none";
-
-const runFrameScriptWithTimeout = async <T>(
-  execute: () => Promise<T>,
-  timeoutMs: number
-): Promise<T> => {
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => {
-      const error = new Error(`frame script timed out after ${timeoutMs}ms`) as Error & {
-        readonly code?: string;
-      };
-      (error as { code: string }).code = "script_execution_timeout";
-      reject(error);
-    }, timeoutMs);
-  });
-  try {
-    return await Promise.race([execute(), timeoutPromise]);
-  } finally {
-    if (timeoutHandle !== null) {
-      clearTimeout(timeoutHandle);
-    }
-  }
-};
-
-const isScriptExecutionTimeout = (error: unknown): boolean =>
-  error !== null
-  && typeof error === "object"
-  && (error as { readonly code?: unknown }).code === "script_execution_timeout";
-
-const toNativeInputEvent = (event: WorkbenchBrowserNativeInputEvent):
-  | Electron.MouseInputEvent
-  | Electron.MouseWheelInputEvent
-  | Electron.KeyboardInputEvent => {
-  switch (event.type) {
-    case "mouseMove":
-    case "mouseDown":
-    case "mouseUp":
-      return {
-        type: event.type,
-        x: Math.round(event.x),
-        y: Math.round(event.y),
-        button: event.button ?? "left",
-        clickCount: Math.max(1, Math.round(event.clickCount ?? 1))
-      };
-    case "keyDown":
-    case "keyUp":
-    case "char":
-      return {
-        type: event.type,
-        keyCode: event.keyCode,
-        modifiers: event.modifiers === undefined ? [] : [...event.modifiers]
-      };
-  }
-};
+import type {
+  BrowserAgentAutoScrollResult,
+  BrowserAgentCacheEntry,
+  BrowserAgentFollowSession,
+  BrowserAgentFrameOwnerCandidate,
+  BrowserAgentLoginBorrowResult,
+  BrowserAgentPageTarget,
+  BrowserAgentRawFrameObservation,
+  BrowserAgentSemanticFrameGraph,
+  BrowserAgentShadowEntry,
+  BrowserAgentViewportState,
+  BrowserElevationSessionRecord,
+  BrowserPageEntry,
+  BrowserPageFindRevealResult,
+  BrowserPageFindTarget,
+  BrowserPageTombstone
+} from "./view-manager-runtime/types";
+import { SharedControlInterruptionError } from "./view-manager-runtime/types";
+import { createChromePopoverRuntime } from "./view-manager-runtime/chrome-popover-runtime";
+import { createBrowserSessionRuntime } from "./view-manager-runtime/session-runtime";
+import {
+  boundsFromCdpBoxModel,
+  buildBrowserAgentObservationScript,
+  readAxValueText
+} from "./view-manager-runtime/agent-observation-runtime";
+import {
+  agentPointInsideViewport,
+  centerOfAgentElement,
+  clampAgentPointToViewport,
+  normalizeAgentScrollBlock,
+  preferredAgentPointForBlock,
+  scrollDeltaForDirection,
+  scrollDeltaToPlacePoint
+} from "./view-manager-runtime/agent-action-runtime";
+import {
+  agentTargetAddress,
+  agentTargetIsLoading,
+  agentTargetTitle,
+  debuggerSessionKey,
+  defaultBrowserMode,
+  liveAgentTarget,
+  normalizeBrowserAgentModeRequest,
+  wantsLiveLoginState
+} from "./view-manager-runtime/agent-target-runtime";
+import {
+  BROWSER_SESSION_SNAPSHOT_WRITE_DELAY_MS,
+  BROWSER_SESSION_STATE_KEY,
+  DEFAULT_PAGE_TITLE,
+  HIDDEN_PAGE_TOMBSTONE_DELAY_MS,
+  MAX_BROWSER_AGENT_FOLLOW_ACTIONS,
+  MAX_BROWSER_AGENT_FOLLOW_FRAMES,
+  MAX_BROWSER_PAGE_DIAGNOSTICS,
+  actionCapabilitiesForElement,
+  boundsCenter,
+  browserAgentTargetKind,
+  buildBrowserAgentFrameOwnerProbeScript,
+  coerceElementVisibility,
+  coerceFrameBounds,
+  coerceFrameOwnerCandidates,
+  createBrowserAgentFrameRef,
+  createBrowserAgentTargetRef,
+  delay,
+  findSearchInPageMatches,
+  hashStableString,
+  isScriptExecutionTimeout,
+  isSupportedWebUrl,
+  matchFrameOwnerCandidates,
+  normalizeAddress,
+  normalizeAgentVerification,
+  normalizeExecuteScriptTimeoutMs,
+  normalizeLayout,
+  normalizeNumber,
+  normalizeSearchText,
+  normalizeString,
+  normalizeTopology,
+  normalizeUnitCoverage,
+  normalizeWebOrigin,
+  resolveBrowserCoreKey,
+  runFrameScriptWithTimeout,
+  runtimeStateEquals,
+  scoreFrameOwnerCandidate,
+  selectSemanticLocateCandidate,
+  semanticNodeKeyForTarget,
+  toBounds,
+  toInitialRuntimeState,
+  toNativeInputEvent
+} from "./view-manager-runtime/normalizers";
 
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
@@ -1209,7 +258,6 @@ export const createWorkbenchBrowserViewManager = ({
   const elevationSessions = new Map<string, BrowserElevationSessionRecord>();
   const elevationSessionByIsolatedTabId = new Map<string, string>();
   const pageDiagnostics = new Map<string, WorkbenchBrowserPageDiagnosticEntry[]>();
-  const activeChromePopovers = new Map<string, WorkbenchBrowserChromePopoverRequest>();
   const tombstoneTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const debuggerSessions = new Map<
     string,
@@ -1236,468 +284,59 @@ export const createWorkbenchBrowserViewManager = ({
     windowHeight: 0,
     layouts: []
   };
-  let chromePopoverView: WebContentsView | null = null;
-  let chromePopoverViewAttached = false;
-  let persistedBrowserSessionSnapshot: BrowserSessionSnapshot | null = (() => {
-    const raw = workbenchState?.readState(BROWSER_SESSION_STATE_KEY) ?? null;
-    if (raw === null) {
-      return null;
-    }
-    try {
-      return sanitizeBrowserSessionSnapshot(JSON.parse(raw));
-    } catch (_error) {
-      return null;
-    }
-  })();
-  let lastBrowserSessionSnapshotJson =
-    persistedBrowserSessionSnapshot === null
-      ? null
-      : JSON.stringify(persistedBrowserSessionSnapshot);
-  let browserSessionSnapshotWriteTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const persistedTabSnapshot = (tabId: string): BrowserSessionTabSnapshot | null =>
-    persistedBrowserSessionSnapshot?.tabs.find((tab) => tab.tabId === tabId) ?? null;
-
-  const sessionStoragePath = (electronSession: Session): string | null => {
-    try {
-      return electronSession.getStoragePath();
-    } catch (_error) {
-      return null;
-    }
-  };
-
   const liveElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION);
 
   const isolatedElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION);
 
-  const storageStateFromSites = (
-    sites: readonly BrowserSiteStorageAvailability[]
-  ): BrowserStorageStateRef => {
-    const cookieCount = sites.reduce((total, site) => total + site.cookieCount, 0);
-    const hasLocalStorage = sites.some((site) => site.localStorage === "available");
-    const hasSessionStorage = sites.some((site) => site.sessionStorage === "available");
-    const hasIndexedDB = sites.some((site) => site.indexedDB === "available");
-    return {
-      ...createBrowserStorageStateRef({
-        profileMode: "live",
-        profilePartition: WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
-        chromiumStoragePath: sessionStoragePath(liveElectronSession()),
-        sites
-      }),
-      cookies: {
-        availability: cookieCount > 0 ? "available" : "unknown",
-        manifestOnly: true,
-        count: cookieCount
-      },
-      localStorage: {
-        availability: hasLocalStorage ? "available" : "unknown",
-        manifestOnly: true
-      },
-      sessionStorage: {
-        availability: hasSessionStorage ? "available" : "unknown",
-        manifestOnly: true
-      },
-      indexedDB: {
-        availability: hasIndexedDB ? "available" : "unknown",
-        manifestOnly: true
-      },
-      cacheStorage: {
-        availability: "unknown",
-        manifestOnly: true
-      }
-    };
-  };
+  const browserSessionRuntime = createBrowserSessionRuntime({
+    workbenchState,
+    entries,
+    tombstones,
+    followSessions,
+    userInputDirtyTabs,
+    publishEvent,
+    performanceScheduler,
+    readTopology: () => topology,
+    readLayoutSnapshot: () => layoutSnapshot,
+    liveElectronSession
+  });
 
-  const authStateFromStorage = (
-    storage: BrowserSiteStorageAvailability | undefined
-  ): BrowserRecoveryAnchor["authState"] => {
-    if (storage === undefined) {
-      return "unknown";
-    }
-    if (storage.cookieCount > 0) {
-      return "possibly_logged_in";
-    }
-    if (
-      storage.localStorage === "available" ||
-      storage.sessionStorage === "available" ||
-      storage.indexedDB === "available"
-    ) {
-      return "possibly_logged_in";
-    }
-    return "unknown";
-  };
-
-  const buildRecoveryAnchor = (
-    tab: BrowserSessionTabSnapshot | null
-  ): BrowserRecoveryAnchor | undefined => {
-    if (tab === null) {
-      return undefined;
-    }
-    const siteOrigin = normalizeWebOrigin(tab.address) ?? undefined;
-    const activeTargetRef =
-      tab.restoreState.activeElement?.targetRef ??
-      tab.restoreState.targetRegistry?.activeTargetRef;
-    return {
-      schemaVersion: WORKBENCH_BROWSER_SESSION_SNAPSHOT_SCHEMA_VERSION,
-      tabId: tab.tabId,
-      address: tab.address,
-      title: tab.title,
-      ...(activeTargetRef === undefined ? {} : { targetRef: activeTargetRef }),
-      ...(tab.restoreState.textHash === undefined ? {} : { textHash: tab.restoreState.textHash }),
-      storageStateRef: {
-        profilePartition: tab.profilePartition,
-        ...(siteOrigin === undefined ? {} : { siteOrigin })
-      },
-      authState: authStateFromStorage(tab.restoreState.storage),
-      capturedAt: tab.restoreState.capturedAt
-    };
-  };
-
-  const tabSnapshotFromRuntime = (
-    runtime: WorkbenchBrowserPageRuntimeState,
-    fallbackAddress: string,
-    fallbackTitle: string | null,
-    recoveryFailure?: WorkbenchBrowserRecoveryFailure
-  ): BrowserSessionTabSnapshot | null => {
-    const restoreState =
-      runtime.restoreState ??
-      persistedTabSnapshot(runtime.tabId)?.restoreState ??
-      sanitizeBrowserPageRestoreState({
-        capturedAt: Date.now(),
-        loadState: runtime.isLoading ? "loading" : "idle"
-      });
-    if (restoreState === undefined) {
-      return null;
-    }
-    return {
-      tabId: runtime.tabId,
-      address: normalizeAddress(runtime.address) ?? normalizeAddress(fallbackAddress) ?? "about:blank",
-      title: normalizeString(runtime.title) ?? fallbackTitle ?? DEFAULT_PAGE_TITLE,
-      ...(runtime.faviconUrl === undefined ? {} : { faviconUrl: runtime.faviconUrl }),
-      isActive: runtime.isActive,
-      ...(runtime.lifecycleState === undefined ? {} : { lifecycleState: runtime.lifecycleState }),
-      canGoBack: runtime.canGoBack,
-      canGoForward: runtime.canGoForward,
-      profilePartition: WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
-      restoreState,
-      ...(recoveryFailure === undefined ? {} : { recoveryFailure })
-    };
-  };
-
-  const buildBrowserSessionSnapshot = (): BrowserSessionSnapshot | null => {
-    if (topology.pages.length === 0 && persistedBrowserSessionSnapshot !== null) {
-      return persistedBrowserSessionSnapshot;
-    }
-    const tabs: BrowserSessionTabSnapshot[] = [];
-    for (const page of topology.pages) {
-      const entry = entries.get(page.tabId);
-      const tombstone = tombstones.get(page.tabId);
-      const persisted = persistedTabSnapshot(page.tabId);
-      const snapshot =
-        entry !== undefined
-          ? tabSnapshotFromRuntime(entry.runtime, entry.requestedAddress, entry.titleHint)
-          : tombstone !== undefined
-            ? tabSnapshotFromRuntime(
-                tombstone.runtime,
-                tombstone.requestedAddress,
-                tombstone.titleHint,
-                tombstone.recoveryFailure
-              )
-            : persisted !== null
-              ? {
-                  ...persisted,
-                  isActive: page.isActive,
-                  address: page.address,
-                  title: page.titleHint ?? persisted.title
-                }
-              : null;
-      if (snapshot !== null) {
-        tabs.push(snapshot);
-      }
-    }
-    if (tabs.length === 0) {
-      return null;
-    }
-    const activeTabId =
-      topology.activeTabId !== null && tabs.some((tab) => tab.tabId === topology.activeTabId)
-        ? topology.activeTabId
-        : tabs.find((tab) => tab.isActive)?.tabId ?? tabs[0]?.tabId ?? null;
-    const storageSites = tabs
-      .map((tab) => tab.restoreState.storage)
-      .filter((site): site is BrowserSiteStorageAvailability => site !== undefined);
-    const activeTab = activeTabId === null
-      ? null
-      : tabs.find((tab) => tab.tabId === activeTabId) ?? null;
-    const recoveryAnchor = buildRecoveryAnchor(activeTab);
-    return {
-      schemaVersion: WORKBENCH_BROWSER_SESSION_SNAPSHOT_SCHEMA_VERSION,
-      snapshotId: `browser-session-${Date.now()}`,
-      capturedAt: Date.now(),
-      activeTabId,
-      layout: layoutSnapshot,
-      tabs,
-      storageState: storageStateFromSites(storageSites),
-      ...(recoveryAnchor === undefined ? {} : { recoveryAnchor }),
-      migrations: persistedBrowserSessionSnapshot?.migrations ?? []
-    };
-  };
-
-  const persistBrowserSessionSnapshot = (): BrowserSessionSnapshot | null => {
-    const snapshot = buildBrowserSessionSnapshot();
-    persistedBrowserSessionSnapshot = snapshot;
-    if (snapshot === null || workbenchState === undefined) {
-      return snapshot;
-    }
-    const json = JSON.stringify(snapshot);
-    if (json === lastBrowserSessionSnapshotJson) {
-      return snapshot;
-    }
-    lastBrowserSessionSnapshotJson = json;
-    workbenchState.writeState(BROWSER_SESSION_STATE_KEY, json);
-    return snapshot;
-  };
-
+  const persistBrowserSessionSnapshot = (): BrowserSessionSnapshot | null =>
+    browserSessionRuntime.persistBrowserSessionSnapshot();
   const scheduleBrowserSessionSnapshotWrite = (delayMs = BROWSER_SESSION_SNAPSHOT_WRITE_DELAY_MS): void => {
-    if (workbenchState === undefined) {
-      return;
-    }
-    if (browserSessionSnapshotWriteTimer !== null) {
-      clearTimeout(browserSessionSnapshotWriteTimer);
-    }
-    browserSessionSnapshotWriteTimer = setTimeout(() => {
-      browserSessionSnapshotWriteTimer = null;
-      persistBrowserSessionSnapshot();
-    }, Math.max(0, delayMs));
+    browserSessionRuntime.scheduleBrowserSessionSnapshotWrite(delayMs);
   };
-
-  const hasActiveLiveAgentBrowserTask = (tabId: string): boolean => {
-    for (const session of followSessions.values()) {
-      if (
-        session.tabId === tabId
-        && session.targetMode === "live"
-        && session.endedAt === null
-        && (session.status === "running" || session.status === "interrupted")
-      ) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const toPerformanceLifecycle = (
-    lifecycle: WorkbenchBrowserPageRuntimeState["lifecycleState"]
-  ): LyraPerformanceResourceDescriptor["lifecycle"] => {
-    switch (lifecycle) {
-      case "foreground":
-        return "foreground";
-      case "visible":
-        return "visible";
-      case "hot-hidden":
-        return "hotHidden";
-      case "tombstoned":
-        return "tombstoned";
-      case "restoring":
-        return "restoring";
-      default:
-        return "hotHidden";
-    }
-  };
-
-  const readWebContentsProcessId = (entry: BrowserPageEntry | undefined): number | undefined => {
-    if (entry === undefined || entry.webContents.isDestroyed()) {
-      return undefined;
-    }
-    try {
-      const processId = entry.webContents.getOSProcessId();
-      return Number.isFinite(processId) && processId > 0 ? processId : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const toPerformanceBrowserResource = (
-    runtime: WorkbenchBrowserPageRuntimeState,
-    entry?: BrowserPageEntry
-  ): LyraPerformanceResourceDescriptor => {
-    const formDraft = runtime.restoreState?.formDraft;
-    const storage = runtime.restoreState?.storage;
-    const historyEntryCount = runtime.restoreState?.history?.entries.length ?? 0;
-    const processId = readWebContentsProcessId(entry);
-    const webContentsId =
-      entry === undefined || entry.webContents.isDestroyed()
-        ? undefined
-        : entry.webContents.id;
-    return {
-      resourceId: `browserPage:${runtime.tabId}`,
-      kind: "browserPage",
-      coreKey: runtime.coreKey ?? resolveBrowserCoreKey(runtime.address),
-      stateKey: runtime.stateKey ?? `web-state:${runtime.tabId}`,
-      lifecycle: toPerformanceLifecycle(runtime.lifecycleState),
-      visible: runtime.isVisible,
-      active: runtime.isActive,
-      signals: {
-        hasUserInput: userInputDirtyTabs.has(runtime.tabId),
-        hasFormDraft: (formDraft?.editedFieldCount ?? 0) > 0,
-        hasAgentControl: hasActiveLiveAgentBrowserTask(runtime.tabId),
-        hasDivergentHistory: historyEntryCount > 1,
-        isLoading: runtime.isLoading,
-        isFullscreen: runtime.isHtmlFullscreen,
-        unknown: runtime.recoveryFailure !== undefined
-      },
-      isolation: {
-        containsSensitiveInput: (formDraft?.passwordFieldCount ?? 0) > 0,
-        authenticatedSession: (storage?.cookieCount ?? 0) > 0,
-        crossOriginState: storage?.localStorage === "available"
-          || storage?.indexedDB === "available"
-          || storage?.sessionStorage === "available"
-      },
-      ...(processId === undefined ? {} : { processId }),
-      ...(webContentsId === undefined ? {} : { webContentsId }),
-      sharedSignature: runtime.address,
-      updatedAt: runtime.updatedAt
-    };
-  };
-
-  const syncPerformanceRuntimeState = (
-    runtime: WorkbenchBrowserPageRuntimeState,
-    entry?: BrowserPageEntry
-  ): void => {
-    performanceScheduler?.updateResource(toPerformanceBrowserResource(runtime, entry));
-  };
-
+  const readPageStorageAvailability = async (
+    entry: BrowserPageEntry
+  ): Promise<BrowserSiteStorageAvailability | undefined> =>
+    await browserSessionRuntime.readPageStorageAvailability(entry);
+  const sessionStoragePath = (electronSession: Session): string | null =>
+    browserSessionRuntime.sessionStoragePath(electronSession);
   const updateRuntimeState = (
     entry: BrowserPageEntry,
     patch: Partial<WorkbenchBrowserPageRuntimeState>
   ): void => {
-    if (entry.isDestroyed) {
-      return;
-    }
-    const nextRuntime: WorkbenchBrowserPageRuntimeState = {
-      ...entry.runtime,
-      ...patch,
-      updatedAt: Date.now()
-    };
-    if (runtimeStateEquals(entry.runtime, nextRuntime)) {
-      return;
-    }
-    entry.runtime = nextRuntime;
-    syncPerformanceRuntimeState(nextRuntime, entry);
-    publishEvent({
-      kind: "page-runtime-state",
-      page: nextRuntime
-    });
-    scheduleBrowserSessionSnapshotWrite();
+    browserSessionRuntime.updateRuntimeState(entry, patch);
   };
-
   const publishRuntimeState = (runtime: WorkbenchBrowserPageRuntimeState): void => {
-    syncPerformanceRuntimeState(runtime);
-    publishEvent({
-      kind: "page-runtime-state",
-      page: runtime
-    });
-    scheduleBrowserSessionSnapshotWrite();
+    browserSessionRuntime.publishRuntimeState(runtime);
   };
-
+  const syncPerformanceRuntimeState = (
+    runtime: WorkbenchBrowserPageRuntimeState,
+    entry?: BrowserPageEntry
+  ): void => {
+    browserSessionRuntime.syncPerformanceRuntimeState(runtime, entry);
+  };
   const navigationHistorySnapshot = (
     entry: BrowserPageEntry
-  ): NonNullable<WorkbenchBrowserPageRuntimeState["restoreState"]>["history"] | undefined => {
-    try {
-      const entries = entry.webContents.navigationHistory
-        .getAllEntries()
-        .map((historyEntry) => {
-          const url = normalizeAddress(historyEntry.url);
-          if (url === null) {
-            return null;
-          }
-          return {
-            url,
-            title: normalizeString(historyEntry.title) ?? url,
-            ...(entry.runtime.faviconUrl === undefined || url !== entry.runtime.address
-              ? {}
-              : { faviconUrl: entry.runtime.faviconUrl }),
-            timestamp: Date.now()
-          };
-        })
-        .filter((historyEntry): historyEntry is NonNullable<
-          NonNullable<WorkbenchBrowserPageRuntimeState["restoreState"]>["history"]
-        >["entries"][number] => historyEntry !== null);
-      if (entries.length === 0) {
-        return undefined;
-      }
-      const currentIndex = Math.max(
-        0,
-        Math.min(entries.length - 1, entry.webContents.navigationHistory.getActiveIndex())
-      );
-      return {
-        entries,
-        currentIndex
-      };
-    } catch (_error) {
-      return entry.runtime.restoreState?.history;
-    }
-  };
-
-  const readPageStorageAvailability = async (
-    entry: BrowserPageEntry
-  ): Promise<BrowserSiteStorageAvailability | undefined> => {
-    const origin = normalizeWebOrigin(entry.runtime.address);
-    if (origin === null || entry.webContents.isDestroyed()) {
-      return undefined;
-    }
-    const cookieCount = await entry.webContents.session.cookies
-      .get({ url: origin })
-      .then((cookies) => cookies.length)
-      .catch(() => 0);
-    const availability = await entry.webContents.executeJavaScript(`
-      (async () => {
-        const result = {
-          localStorage: "unknown",
-          sessionStorage: "unknown",
-          indexedDB: "unknown"
-        };
-        try {
-          result.localStorage = window.localStorage && window.localStorage.length > 0
-            ? "available"
-            : "unavailable";
-        } catch (_error) {
-          result.localStorage = "unavailable";
-        }
-        try {
-          result.sessionStorage = window.sessionStorage && window.sessionStorage.length > 0
-            ? "available"
-            : "unavailable";
-        } catch (_error) {
-          result.sessionStorage = "unavailable";
-        }
-        try {
-          if (typeof indexedDB?.databases === "function") {
-            const databases = await indexedDB.databases();
-            result.indexedDB = Array.isArray(databases) && databases.length > 0
-              ? "available"
-              : "unavailable";
-          }
-        } catch (_error) {
-          result.indexedDB = "unknown";
-        }
-        return result;
-      })()
-    `, true)
-      .catch(() => ({})) as Record<string, unknown>;
-    const toAvailability = (value: unknown): BrowserSiteStorageAvailability["localStorage"] =>
-      value === "available" || value === "unavailable" || value === "unknown"
-        ? value
-        : "unknown";
-    return {
-      origin,
-      cookieCount,
-      localStorage: toAvailability(availability.localStorage),
-      sessionStorage: toAvailability(availability.sessionStorage),
-      indexedDB: toAvailability(availability.indexedDB),
-      capturedAt: Date.now()
-    };
-  };
+  ): NonNullable<WorkbenchBrowserPageRuntimeState["restoreState"]>["history"] | undefined =>
+    browserSessionRuntime.navigationHistorySnapshot(entry);
+  const persistedTabSnapshot = (tabId: string): BrowserSessionTabSnapshot | null =>
+    browserSessionRuntime.persistedTabSnapshot(tabId);
+  const hasActiveLiveAgentBrowserTask = (tabId: string): boolean =>
+    browserSessionRuntime.hasActiveLiveAgentBrowserTask(tabId);
 
   const captureBrowserRestoreState = async (
     entry: BrowserPageEntry
@@ -2183,490 +822,15 @@ export const createWorkbenchBrowserViewManager = ({
     return topology.pages[0]?.tabId ?? null;
   };
 
-  const readChromePopoverAnchor = (
-    request: WorkbenchBrowserChromePopoverRequest
-  ): WorkbenchBrowserChromePopoverRequest["anchorRect"] | null => {
-    const rect = request.anchorRect;
-    if (rect === undefined) {
-      return null;
-    }
-    const values = [rect.left, rect.top, rect.right, rect.bottom, rect.width, rect.height];
-    if (values.every((value) => typeof value === "number" && Number.isFinite(value))) {
-      return rect;
-    }
-    return null;
-  };
-
-  const ensureChromePopoverView = (): WebContentsView => {
-    if (
-      chromePopoverView !== null
-      && chromePopoverView.webContents.isDestroyed() === false
-    ) {
-      return chromePopoverView;
-    }
-    chromePopoverView = new WebContentsView({
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        spellcheck: false
-      }
-    });
-    chromePopoverView.setVisible(false);
-    chromePopoverView.setBackgroundColor("#00000000");
-    chromePopoverView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    chromePopoverView.webContents.on("will-navigate", (event, url) => {
-      if (handleChromePopoverNavigation(url)) {
-        event.preventDefault();
-      }
-    });
-    return chromePopoverView;
-  };
-
-  const attachChromePopoverView = (view: WebContentsView): void => {
-    if (!chromePopoverViewAttached) {
-      overlayView.addChildView(view);
-      chromePopoverViewAttached = true;
-      return;
-    }
-    // Re-adding keeps the popover above page WebContentsViews after layout updates.
-    overlayView.removeChildView(view);
-    overlayView.addChildView(view);
-  };
-
-  const chromePopoverKindForRequest = (
-    request: WorkbenchBrowserChromePopoverRequest | undefined
-  ): "security" | "find" | "omnibox" => {
-    if (request?.kind === "find" || request?.kind === "omnibox") {
-      return request.kind;
-    }
-    return "security";
-  };
-
-  const activeFindPopoverEntry = (): {
-    readonly tabId: string;
-    readonly request: WorkbenchBrowserChromePopoverRequest;
-  } | null => {
-    for (const [tabId, request] of activeChromePopovers.entries()) {
-      if (request.kind === "find" && request.find !== undefined) {
-        return { tabId, request };
-      }
-    }
-    return null;
-  };
-
-  const activeOmniboxPopoverEntry = (): {
-    readonly tabId: string;
-    readonly request: WorkbenchBrowserChromePopoverRequest;
-  } | null => {
-    for (const [tabId, request] of activeChromePopovers.entries()) {
-      if (request.kind === "omnibox" && request.omnibox !== undefined) {
-        return { tabId, request };
-      }
-    }
-    return null;
-  };
-
-  const handleChromePopoverNavigation = (url: string): boolean => {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return false;
-    }
-    if (parsed.protocol === "lyra-omnibox:") {
-      const active = activeOmniboxPopoverEntry();
-      if (active === null) {
-        return true;
-      }
-      const action = parsed.hostname || parsed.pathname.replace(/^\//u, "");
-      if (action !== "suggestion") {
-        return true;
-      }
-      const index = Math.round(Number(parsed.searchParams.get("index") ?? -1));
-      if (!Number.isFinite(index) || index < 0) {
-        return true;
-      }
-      publishEvent({
-        kind: "request-omnibox-suggestion-select",
-        tabId: active.tabId,
-        index
-      });
-      return true;
-    }
-    if (parsed.protocol !== "lyra-find:") {
-      return false;
-    }
-    const active = activeFindPopoverEntry();
-    const activeFind = active?.request.find;
-    if (active === null || activeFind === undefined) {
-      return true;
-    }
-    const action = parsed.hostname || parsed.pathname.replace(/^\//u, "");
-    void (async () => {
-      if (action === "close") {
-        await setChromePopover({ ...active.request, tabId: active.tabId, visible: false });
-        const entry = entries.get(active.tabId);
-        if (entry !== undefined) {
-          await clearSearchInPageOverlay(entry);
-        }
-        return;
-      }
-      if (action === "match") {
-        const requestedIndex = Math.round(Number(
-          parsed.searchParams.get("value") ?? activeFind.currentIndex
-        ));
-        if (Number.isFinite(requestedIndex) && requestedIndex > 0) {
-          publishEvent({
-            kind: "request-page-find-match-select",
-            tabId: active.tabId,
-            index: requestedIndex
-          });
-        }
-        return;
-      }
-    })();
-    return true;
-  };
-
-  const detachChromePopoverView = (): void => {
-    const view = chromePopoverView;
-    if (view === null) {
-      chromePopoverViewAttached = false;
-      return;
-    }
-    if (chromePopoverViewAttached) {
-      overlayView.removeChildView(view);
-      chromePopoverViewAttached = false;
-    }
-    if (view.webContents.isDestroyed() === false) {
-      view.setVisible(false);
-      void view.webContents.loadURL("about:blank").catch(() => undefined);
-    }
-  };
-
+  let chromePopoverRuntime: ReturnType<typeof createChromePopoverRuntime>;
   const hideChromePopover = (entry: BrowserPageEntry): void => {
-    const previous = activeChromePopovers.get(entry.tabId);
-    const hadPopover = activeChromePopovers.delete(entry.tabId);
-    if (activeChromePopovers.size === 0) {
-      detachChromePopoverView();
-    }
-    if (hadPopover) {
-      publishEvent({
-        kind: "chrome-popover-state",
-        tabId: entry.tabId,
-        popoverKind: chromePopoverKindForRequest(previous),
-        visible: false
-      });
-      if (previous?.kind === "find") {
-        void clearSearchInPageOverlay(entry);
-      }
-    }
+    chromePopoverRuntime.hideChromePopover(entry);
   };
-
   const hideTransientChromePopover = (entry: BrowserPageEntry): void => {
-    const previous = activeChromePopovers.get(entry.tabId);
-    if (previous?.kind === "find") {
-      return;
-    }
-    hideChromePopover(entry);
+    chromePopoverRuntime.hideTransientChromePopover(entry);
   };
-
-  const securityUnavailableCopy = (
-    locale: WorkbenchBrowserSecurityLocale | undefined,
-    key: "notHttps" | "noCertificate" | "certificateReadFailed"
-  ): string => {
-    const zh = locale !== "en-US";
-    switch (key) {
-      case "notHttps":
-        return zh ? "当前页面不是 HTTPS 连接。" : "The current page is not an HTTPS connection.";
-      case "certificateReadFailed":
-        return zh ? "Chromium 证书接口读取失败。" : "Chromium certificate lookup failed.";
-      case "noCertificate":
-      default:
-        return zh
-          ? "Chromium 未返回可解析的证书链。"
-          : "Chromium did not return a parsable certificate chain.";
-    }
-  };
-
-  const extractCertificateCommonName = (value: string): string | undefined => {
-    const match = value
-      .split(/\r?\n|,\s*/)
-      .map((part) => part.trim())
-      .find((part) => part.startsWith("CN="));
-    if (match === undefined) {
-      return undefined;
-    }
-    const commonName = match.slice(3).trim();
-    return commonName.length === 0 ? undefined : commonName;
-  };
-
-  const parseCertificateInfo = (derBase64: string): WorkbenchBrowserCertificateInfo => {
-    const certificate = new X509Certificate(Buffer.from(derBase64, "base64"));
-    const subjectCommonName = extractCertificateCommonName(certificate.subject);
-    const issuerCommonName = extractCertificateCommonName(certificate.issuer);
-    return {
-      subject: certificate.subject,
-      ...(subjectCommonName === undefined ? {} : { subjectCommonName }),
-      issuer: certificate.issuer,
-      ...(issuerCommonName === undefined ? {} : { issuerCommonName }),
-      validFrom: certificate.validFrom,
-      validTo: certificate.validTo,
-      serialNumber: certificate.serialNumber,
-      fingerprint256: certificate.fingerprint256,
-      ...(certificate.subjectAltName === undefined ? {} : { subjectAltName: certificate.subjectAltName })
-    };
-  };
-
-  const classifySecurityLevelForUrl = (url: URL): WorkbenchBrowserSecurityLevel => {
-    if (url.protocol === "https:") {
-      return "secure";
-    }
-    if (url.protocol === "http:") {
-      return "insecure";
-    }
-    return "system";
-  };
-
-  const readEntrySecurityUrl = (
-    entry: BrowserPageEntry,
-    request: WorkbenchBrowserChromePopoverRequest
-  ): URL | null => {
-    const candidates = [
-      normalizeString(entry.webContents.getURL()),
-      normalizeString(entry.runtime.address),
-      normalizeString(request.security?.address)
-    ];
-    for (const candidate of candidates) {
-      if (candidate === null) {
-        continue;
-      }
-      try {
-        return new URL(candidate);
-      } catch (_error) {
-        // Try the next observed address.
-      }
-    }
-    return null;
-  };
-
-  const enrichSecurityChromePopoverRequest = async (
-    entry: BrowserPageEntry,
-    request: WorkbenchBrowserChromePopoverRequest
-  ): Promise<WorkbenchBrowserChromePopoverRequest> => {
-    if (request.kind !== "security" || request.security === undefined) {
-      return request;
-    }
-
-    const locale = request.security.locale;
-    const {
-      certificate: _certificate,
-      certificateStatus: _certificateStatus,
-      certificateUnavailableReason: _certificateUnavailableReason,
-      ...securityInput
-    } = request.security;
-    const url = readEntrySecurityUrl(entry, request);
-    const level = url === null ? request.security.level : classifySecurityLevelForUrl(url);
-    const address = url?.toString() ?? request.security.address;
-    const scheme = url?.protocol.replace(/:$/, "") ?? request.security.scheme;
-    const origin = url?.origin === "null" ? undefined : url?.origin ?? request.security.origin;
-    const domain =
-      url?.hostname
-      ?? normalizeString(request.security.domain)
-      ?? normalizeString(request.security.address)
-      ?? address;
-    const baseSecurity = {
-      ...securityInput,
-      level,
-      address,
-      domain,
-      ...(locale === undefined ? {} : { locale }),
-      ...(scheme === undefined || scheme.length === 0 ? {} : { scheme }),
-      ...(origin === undefined || origin.length === 0 ? {} : { origin })
-    };
-
-    if (level !== "secure" || url?.protocol !== "https:" || origin === undefined) {
-      return {
-        ...request,
-        security: {
-          ...baseSecurity,
-          certificateStatus: "not-applicable",
-          certificateUnavailableReason: securityUnavailableCopy(locale, "notHttps")
-        }
-      };
-    }
-
-    let debuggerSession: WorkbenchBrowserDebuggerSession | null = null;
-    try {
-      debuggerSession = await openDebuggerSessionForTarget(liveAgentTarget(entry));
-      const response = await debuggerSession.sendCommand("Network.getCertificate", { origin });
-      const tableNames = response.tableNames;
-      const certificateDer =
-        Array.isArray(tableNames) && typeof tableNames[0] === "string"
-          ? tableNames[0]
-          : undefined;
-      if (certificateDer === undefined || certificateDer.trim().length === 0) {
-        return {
-          ...request,
-          security: {
-            ...baseSecurity,
-            certificateStatus: "unavailable",
-            certificateUnavailableReason: securityUnavailableCopy(locale, "noCertificate")
-          }
-        };
-      }
-      return {
-        ...request,
-        security: {
-          ...baseSecurity,
-          certificate: parseCertificateInfo(certificateDer),
-          certificateStatus: "available"
-        }
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        ...request,
-        security: {
-          ...baseSecurity,
-          certificateStatus: "unavailable",
-          certificateUnavailableReason: `${securityUnavailableCopy(locale, "certificateReadFailed")} ${message}`
-        }
-      };
-    } finally {
-      await debuggerSession?.close().catch(() => undefined);
-    }
-  };
-
-  const setChromePopover = async (
-    request: WorkbenchBrowserChromePopoverRequest
-  ): Promise<void> => {
-    const tabId = normalizeString(request.tabId) ?? getActiveOrFocusedTabId();
-    if (tabId === null) {
-      return;
-    }
-    const entry = requireEntry(tabId);
-    if (request.visible !== true) {
-      const previous = activeChromePopovers.get(tabId);
-      const hadPopover = activeChromePopovers.delete(tabId);
-      if (activeChromePopovers.size === 0) {
-        detachChromePopoverView();
-      }
-      if (hadPopover) {
-        publishEvent({
-          kind: "chrome-popover-state",
-          tabId,
-          popoverKind: chromePopoverKindForRequest(previous ?? request),
-          visible: false
-        });
-        if ((previous ?? request).kind === "find") {
-          await clearSearchInPageOverlay(entry);
-        }
-      }
-      return;
-    }
-    if (
-      (request.kind === "security" && request.security === undefined)
-      || (request.kind === "find" && request.find === undefined)
-      || (request.kind === "omnibox" && request.omnibox === undefined)
-    ) {
-      throw new Error("chrome_popover_payload_required");
-    }
-    const popoverRequest = await enrichSecurityChromePopoverRequest(entry, request);
-    activeChromePopovers.clear();
-    const layout = entry.layout ?? findLayout(tabId);
-    const pageBounds =
-      layout === null
-        ? { x: 0, y: 0, width: 800, height: 600 }
-        : toBounds(layout);
-    const anchor = readChromePopoverAnchor(popoverRequest);
-    const boundaryPadding = 8;
-    const anchorLeft = anchor?.left ?? pageBounds.x + boundaryPadding;
-    const anchorBottom = anchor?.bottom ?? pageBounds.y + boundaryPadding;
-    const anchorTop = anchor?.top ?? pageBounds.y + boundaryPadding;
-    const anchorWidth = Math.max(1, Math.round(anchor?.width ?? 340));
-    const pageRelativeLeft = anchorLeft - pageBounds.x;
-    const pageRelativeBottom = anchorBottom - pageBounds.y;
-    const pageRelativeTop = anchorTop - pageBounds.y;
-    const isOmniboxLikePopover = popoverRequest.kind === "find" || popoverRequest.kind === "omnibox";
-    const popoverWidth =
-      isOmniboxLikePopover
-        ? Math.max(
-            220,
-            Math.min(anchorWidth, Math.max(220, pageBounds.width - boundaryPadding * 2))
-          )
-        : 340;
-    const maxPopoverHeight =
-      isOmniboxLikePopover
-        ? Math.max(54, Math.min(240, pageBounds.height - boundaryPadding * 2))
-        : Math.max(160, Math.min(520, pageBounds.height - boundaryPadding * 2));
-    const popoverHeight =
-      popoverRequest.kind === "find"
-        ? resolveBrowserFindPopoverHeight({
-            matchCount: popoverRequest.find?.matches.length ?? 0,
-            maxHeight: maxPopoverHeight
-          })
-        : popoverRequest.kind === "omnibox"
-        ? resolveBrowserOmniboxPopoverHeight({
-            itemCount: popoverRequest.omnibox?.suggestions.length ?? 0,
-            maxHeight: maxPopoverHeight
-          })
-        : resolveBrowserChromePopoverHeight({
-            level: popoverRequest.security!.level,
-            maxHeight: maxPopoverHeight
-          });
-    const x = Math.max(
-      boundaryPadding,
-      Math.min(
-        Math.round(pageRelativeLeft),
-        Math.max(boundaryPadding, pageBounds.width - popoverWidth - boundaryPadding)
-      )
-    );
-    const spaceBelow = pageBounds.height - pageRelativeBottom - boundaryPadding - 6;
-    const preferredY =
-      popoverRequest.kind === "find"
-        ? anchorTop - popoverHeight - 6
-        : popoverRequest.kind === "omnibox"
-          ? pageRelativeTop - popoverHeight + 1
-          : spaceBelow >= popoverHeight
-            ? pageRelativeBottom + 6
-            : pageRelativeTop - popoverHeight - 6;
-    const y = Math.max(
-      boundaryPadding,
-      Math.min(
-        Math.round(preferredY),
-        popoverRequest.kind === "find"
-          ? Math.max(boundaryPadding, pageBounds.y + pageBounds.height - popoverHeight - boundaryPadding)
-          : Math.max(boundaryPadding, pageBounds.height - popoverHeight - boundaryPadding)
-      )
-    );
-    const view = ensureChromePopoverView();
-    view.setBounds({
-      x: pageBounds.x + x,
-      y: popoverRequest.kind === "find" ? y : pageBounds.y + y,
-      width: popoverWidth,
-      height: popoverHeight
-    });
-    attachChromePopoverView(view);
-    view.setVisible(true);
-    const html = buildBrowserChromePopoverDocument({
-      kind: popoverRequest.kind,
-      width: popoverWidth,
-      height: popoverHeight,
-      ...(popoverRequest.security === undefined ? {} : { security: popoverRequest.security }),
-      ...(popoverRequest.find === undefined ? {} : { find: popoverRequest.find }),
-      ...(popoverRequest.omnibox === undefined ? {} : { omnibox: popoverRequest.omnibox }),
-      theme: webThemeInjector.readCurrentSnapshot()
-    });
-    await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    activeChromePopovers.set(tabId, popoverRequest);
-    publishEvent({
-      kind: "chrome-popover-state",
-      tabId,
-      popoverKind: popoverRequest.kind,
-      visible: true
-    });
+  const setChromePopover = async (request: WorkbenchBrowserChromePopoverRequest): Promise<void> => {
+    await chromePopoverRuntime.setChromePopover(request);
   };
 
   const syncNavigationFlags = (entry: BrowserPageEntry): void => {
@@ -2792,13 +956,7 @@ export const createWorkbenchBrowserViewManager = ({
       }
       startCdpAuditSessionForEntry(entry);
     }
-    if (
-      chromePopoverView !== null
-      && chromePopoverViewAttached
-      && chromePopoverView.webContents.isDestroyed() === false
-    ) {
-      attachChromePopoverView(chromePopoverView);
-    }
+    chromePopoverRuntime.reattachVisiblePopover();
   };
 
   const destroyEntry = (entry: BrowserPageEntry, emitClosedEvent: boolean): void => {
@@ -2874,67 +1032,6 @@ export const createWorkbenchBrowserViewManager = ({
         });
       });
   };
-
-  const agentTargetAddress = (target: BrowserAgentPageTarget): string =>
-    target.liveEntry?.runtime.address ?? target.address;
-
-  const agentTargetTitle = (target: BrowserAgentPageTarget): string =>
-    target.liveEntry?.runtime.title ?? target.title;
-
-  const agentTargetIsLoading = (target: BrowserAgentPageTarget): boolean =>
-    target.liveEntry?.runtime.isLoading ?? target.isLoading;
-
-  const defaultBrowserMode = (
-    targetMode: WorkbenchBrowserAgentTargetMode,
-    reason: WorkbenchBrowserAgentModeReason = targetMode === "live"
-      ? "default_current_visible_browser"
-      : "explicit_isolated",
-    visibleFollow = false,
-    liveLoginState?: BrowserAgentLoginBorrowResult
-  ): WorkbenchBrowserAgentModeInfo => ({
-    targetMode,
-    visibleFollow: targetMode === "live" && visibleFollow,
-    authState:
-      targetMode === "live"
-        ? "liveProfile"
-        : liveLoginState === undefined
-          ? "isolatedProfile"
-          : liveLoginState.borrowed
-            ? "borrowedLiveLogin"
-            : "borrowLiveLoginUnavailable",
-    reason:
-      targetMode === "live" && visibleFollow
-        ? "follow_toggle_enabled"
-        : liveLoginState === undefined
-          ? reason
-          : liveLoginState.borrowed
-            ? "user_authorized_live_login_state"
-            : "isolated_login_state_unavailable",
-    profilePartition:
-      targetMode === "live"
-        ? WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION
-        : WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION,
-    ...(liveLoginState === undefined ? {} : { liveLoginState })
-  });
-
-  const liveAgentTarget = (
-    entry: BrowserPageEntry,
-    browserMode: WorkbenchBrowserAgentModeInfo = defaultBrowserMode("live")
-  ): BrowserAgentPageTarget => ({
-    tabId: entry.tabId,
-    webContents: entry.webContents,
-    targetMode: "live",
-    liveEntry: entry,
-    browserMode,
-    address: entry.runtime.address,
-    title: entry.runtime.title,
-    isLoading: entry.runtime.isLoading
-  });
-
-  const debuggerSessionKey = (
-    tabId: string,
-    targetMode: WorkbenchBrowserAgentTargetMode
-  ): string => targetMode === "live" ? tabId : `${targetMode}:${tabId}`;
 
   const openDebuggerSessionForTarget = async (
     target: BrowserAgentPageTarget
@@ -3790,18 +1887,6 @@ export const createWorkbenchBrowserViewManager = ({
     return shadow;
   };
 
-  const normalizeBrowserAgentModeRequest = (
-    request: WorkbenchBrowserAgentModeRequest | WorkbenchBrowserAgentTargetMode | undefined
-  ): WorkbenchBrowserAgentModeRequest => {
-    if (request === "live" || request === "isolated") {
-      return { targetMode: request };
-    }
-    return request ?? {};
-  };
-
-  const wantsLiveLoginState = (request: WorkbenchBrowserAgentModeRequest): boolean =>
-    request.useLiveLoginState === true || request.authState === "borrowLiveLogin";
-
   const readLiveLocalStorageEntries = async (
     source: BrowserPageEntry,
     origin: string,
@@ -4649,6 +2734,19 @@ export const createWorkbenchBrowserViewManager = ({
     `, true).catch(() => undefined);
   };
 
+  chromePopoverRuntime = createChromePopoverRuntime({
+    overlayView,
+    entries,
+    publishEvent,
+    webThemeInjector,
+    findLayout,
+    requireEntry,
+    getActiveOrFocusedTabId,
+    clearSearchInPageOverlay,
+    openDebuggerSessionForTarget,
+    liveAgentTarget
+  });
+
   const revealSearchInPageMatch = async (
     target: Pick<BrowserPageFindTarget, "webContents">,
     query: string,
@@ -5339,43 +3437,6 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
-  const readAxValueText = (value: unknown): string => {
-    if (typeof value === "string") {
-      return value.trim();
-    }
-    if (value !== null && typeof value === "object") {
-      const record = value as Record<string, unknown>;
-      return typeof record.value === "string" ? record.value.trim() : "";
-    }
-    return "";
-  };
-
-  const boundsFromCdpBoxModel = (value: unknown): WorkbenchBrowserFrameGlobalBounds | null => {
-    const model = value !== null && typeof value === "object"
-      ? (value as Record<string, unknown>).model
-      : null;
-    const record = model !== null && typeof model === "object" ? model as Record<string, unknown> : {};
-    const quad = Array.isArray(record.border)
-      ? record.border
-      : Array.isArray(record.content) ? record.content : [];
-    const numbers = quad.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
-    if (numbers.length < 8) {
-      return null;
-    }
-    const xs = numbers.filter((_value, index) => index % 2 === 0);
-    const ys = numbers.filter((_value, index) => index % 2 === 1);
-    const left = Math.min(...xs);
-    const top = Math.min(...ys);
-    const right = Math.max(...xs);
-    const bottom = Math.max(...ys);
-    return coerceFrameBounds({
-      x: left,
-      y: top,
-      width: right - left,
-      height: bottom - top
-    });
-  };
-
   const createVisualFallbackElement = ({
     tabId,
     rawUrl,
@@ -5575,544 +3636,6 @@ export const createWorkbenchBrowserViewManager = ({
       await debuggerSession?.close().catch(() => undefined);
     }
   };
-
-  const buildBrowserAgentObservationScript = ({
-    frameTreeNodeId,
-    frameRef,
-    frameBounds,
-    strategy,
-    includeChildFrames
-  }: {
-    readonly frameTreeNodeId: number;
-    readonly frameRef: string;
-    readonly frameBounds: WorkbenchBrowserFrameGlobalBounds;
-    readonly strategy: WorkbenchBrowserAgentObserveStrategy;
-    readonly includeChildFrames: boolean;
-  }): string => `
-    (() => {
-      const FRAME_TREE_NODE_ID = ${JSON.stringify(frameTreeNodeId)};
-      const FRAME_REF = ${JSON.stringify(frameRef)};
-      const FRAME_BOUNDS = ${JSON.stringify(frameBounds)};
-      const STRATEGY = ${JSON.stringify(strategy)};
-      const INCLUDE_CHILD_FRAMES = ${JSON.stringify(includeChildFrames)};
-      const LIGHTWEIGHT_STRATEGY = STRATEGY === "interactiveOnly" || STRATEGY === "picker" || STRATEGY === "focus";
-      const MAX_LIGHTWEIGHT_SCAN_NODES = 3000;
-      const MAX_LIGHTWEIGHT_CANDIDATES = 220;
-      const MAX_LIGHTWEIGHT_SHADOW_HOSTS = 180;
-      const warnings = [];
-      const blockedRegions = [];
-
-      const normalizeText = (value, maxLength = 160) => {
-        if (typeof value !== "string") return "";
-        const normalized = value.replace(/\\s+/g, " ").trim();
-        return normalized.length <= maxLength ? normalized : normalized.slice(0, maxLength - 3) + "...";
-      };
-
-      const isDisabled = (element) =>
-        element.disabled === true
-        || element.getAttribute?.("disabled") !== null
-        || element.getAttribute?.("aria-disabled") === "true";
-
-      const isVisible = (element, win = window) => {
-        const ElementCtor = win.Element || Element;
-        if (!(element instanceof ElementCtor) || !element.isConnected) return false;
-        const rect = element.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return false;
-        const style = win.getComputedStyle(element);
-        if (style.display === "none" || style.visibility === "hidden") return false;
-        if (Number.parseFloat(style.opacity || "1") <= 0) return false;
-        return true;
-      };
-
-      const visibilityState = (element, win = window) => {
-        const viewportWidth = win.innerWidth || element.ownerDocument?.documentElement?.clientWidth || 0;
-        const viewportHeight = win.innerHeight || element.ownerDocument?.documentElement?.clientHeight || 0;
-        const rect = element.getBoundingClientRect();
-        const visible = isVisible(element, win);
-        const offscreen = rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight;
-        const ariaHidden = element.closest?.("[aria-hidden='true']") !== null;
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        let covered = false;
-        if (visible && !offscreen && centerX >= 0 && centerY >= 0 && centerX <= viewportWidth && centerY <= viewportHeight) {
-          const hit = element.ownerDocument?.elementFromPoint?.(centerX, centerY) ?? null;
-          covered = hit !== null && hit !== element && !element.contains(hit) && !hit.contains(element);
-        }
-        return { visible, offscreen, ariaHidden, covered };
-      };
-
-      const associatedLabel = (element, doc = document) => {
-        if (element.id) {
-          const label = doc.querySelector("label[for=" + JSON.stringify(element.id) + "]");
-          if (label) return label.innerText || label.textContent || "";
-        }
-        let parent = element.parentElement;
-        while (parent) {
-          if (parent.tagName === "LABEL") return parent.innerText || parent.textContent || "";
-          parent = parent.parentElement;
-        }
-        return "";
-      };
-
-      const describedByText = (element, doc = document) => String(element.getAttribute?.("aria-describedby") || "")
-        .split(/\\s+/)
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((id) => doc.getElementById(id))
-        .filter((entry) => entry instanceof HTMLElement)
-        .map((entry) => normalizeText(entry.innerText || entry.textContent || "", 80))
-        .find(Boolean) || "";
-
-      const selectorPreview = (element) => {
-        const tagName = String(element.tagName || "div").toLowerCase();
-        const parts = [tagName];
-        const id = normalizeText(element.id || "", 40);
-        if (id) parts.push("#" + id);
-        const classes = Array.from(element.classList || [])
-          .map((item) => normalizeText(String(item), 24))
-          .filter((item) => item.length > 0 && !item.startsWith("__lyra"))
-          .slice(0, 2);
-        if (classes.length > 0) parts.push(classes.map((item) => "." + item).join(""));
-        const name = normalizeText(element.getAttribute?.("name") || "", 24);
-        if (name) parts.push("[name=\\"" + name + "\\"]");
-        const testId = normalizeText(
-          element.getAttribute?.("data-testid") || element.getAttribute?.("data-test-id") || "",
-          24
-        );
-        if (testId) parts.push("[data-testid=\\"" + testId + "\\"]");
-        const type = normalizeText(element.getAttribute?.("type") || "", 20);
-        if (type) parts.push("[type=\\"" + type + "\\"]");
-        const preview = parts.join("");
-        return preview.length <= 120 ? preview : preview.slice(0, 117) + "...";
-      };
-
-      const stateHint = (element) => {
-        const expanded = element.getAttribute?.("aria-expanded");
-        if (expanded === "true") return "expanded";
-        if (expanded === "false") return "collapsed";
-        const selected = element.getAttribute?.("aria-selected");
-        if (selected === "true") return "selected";
-        if (selected === "false") return "unselected";
-        const pressed = element.getAttribute?.("aria-pressed");
-        if (pressed === "true") return "pressed";
-        if (pressed === "false") return "unpressed";
-        return normalizeText(element.getAttribute?.("data-state") || "", 32);
-      };
-
-      const checkedState = (element) => {
-        const checked = element.getAttribute?.("aria-checked");
-        if (checked === "true") return true;
-        if (checked === "false") return false;
-        return element.checked === true ? true : undefined;
-      };
-
-      const expandedState = (element) => {
-        const expanded = element.getAttribute?.("aria-expanded");
-        if (expanded === "true") return true;
-        if (expanded === "false") return false;
-        return undefined;
-      };
-
-      const isEditable = (element) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        const contentEditable = String(element.getAttribute?.("contenteditable") || "").toLowerCase();
-        const role = String(element.getAttribute?.("role") || "").toLowerCase();
-        return element instanceof win.HTMLInputElement
-          || element instanceof win.HTMLTextAreaElement
-          || element instanceof win.HTMLSelectElement
-          || (element instanceof win.HTMLElement && element.isContentEditable)
-          || (contentEditable.length > 0 && contentEditable !== "false")
-          || role === "textbox"
-          || role === "searchbox";
-      };
-
-      const isFocusable = (element) => {
-        if (isDisabled(element)) return false;
-        if (element.getAttribute?.("tabindex") === "-1") return false;
-        const win = element?.ownerDocument?.defaultView || window;
-        if (element instanceof win.HTMLElement && element.tabIndex >= 0) return true;
-        if (element instanceof win.HTMLAnchorElement && element.href) return true;
-        if (element instanceof win.HTMLButtonElement) return true;
-        if (isEditable(element)) return true;
-        const role = element.getAttribute?.("role");
-        return role === "button" || role === "link" || role === "checkbox" || role === "menuitem";
-      };
-
-      const actionHint = (element, cursor) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        if (element instanceof win.HTMLSelectElement) return "select";
-        if (isEditable(element)) return "type";
-        const role = normalizeText(element.getAttribute?.("role") || "", 32);
-        const popup = normalizeText(element.getAttribute?.("aria-haspopup") || "", 32);
-        if (popup) return "open " + popup;
-        if (element instanceof win.HTMLAnchorElement && element.href) return "open";
-        if (role === "button" || role === "link" || cursor === "pointer") return "click";
-        return "";
-      };
-
-      const labelFor = (element, doc = document) => {
-        const label = normalizeText(
-          element.getAttribute?.("aria-label")
-            || element.getAttribute?.("placeholder")
-            || element.getAttribute?.("title")
-            || element.getAttribute?.("alt")
-            || associatedLabel(element, doc)
-            || element.innerText
-            || element.textContent
-            || element.value
-            || "",
-          120
-        );
-        return label || "(no label)";
-      };
-
-      const collectLimitedElements = (root, limit, warning) => {
-        const ownerDocument = root.ownerDocument || (root.nodeType === 9 ? root : document);
-        const win = ownerDocument.defaultView || window;
-        const walker = ownerDocument.createTreeWalker(root, win.NodeFilter.SHOW_ELEMENT);
-        const elements = [];
-        let visited = 0;
-        let node = root instanceof win.Element ? root : walker.nextNode();
-        while (node) {
-          if (node instanceof win.Element) {
-            elements.push(node);
-          }
-          visited += 1;
-          if (visited >= limit) {
-            warnings.push(warning);
-            break;
-          }
-          node = walker.nextNode();
-        }
-        return elements;
-      };
-
-      const collectInteractiveCandidates = (root, selector, scope, hostChain) => {
-        if (!LIGHTWEIGHT_STRATEGY) {
-          return Array.from(root.querySelectorAll(selector))
-            .map((element) => ({ element, scope, hostChain }));
-        }
-        const collected = [];
-        for (const element of collectLimitedElements(root, MAX_LIGHTWEIGHT_SCAN_NODES, "interactive_scan_limited")) {
-          if (element.matches?.(selector)) {
-            collected.push({ element, scope, hostChain });
-            if (collected.length >= MAX_LIGHTWEIGHT_CANDIDATES) {
-              warnings.push("interactive_candidate_limit");
-              break;
-            }
-          }
-        }
-        return collected;
-      };
-
-      const collectShadowHosts = (root) => {
-        if (!LIGHTWEIGHT_STRATEGY) {
-          return Array.from(root.querySelectorAll("*"));
-        }
-        return collectLimitedElements(root, MAX_LIGHTWEIGHT_SHADOW_HOSTS, "shadow_host_scan_limited");
-      };
-
-      const detectAuthChallengeSignals = (doc, win, frameUrl = "") => {
-        const signals = [];
-        const pushSignal = (signal) => {
-          if (!signals.some((entry) => entry.kind === signal.kind && entry.label === signal.label && entry.url === signal.url)) {
-            signals.push(signal);
-          }
-        };
-        const passwordFields = Array.from(doc.querySelectorAll("input[type='password']"))
-          .filter((element) => isVisible(element, win) && !isDisabled(element));
-        if (passwordFields.length > 0) {
-          pushSignal({
-            kind: "login_wall",
-            confidence: "medium",
-            source: "dom",
-            label: "visible password field",
-            url: frameUrl
-          });
-        }
-        const oneTimeCodeFields = Array.from(doc.querySelectorAll("input[autocomplete='one-time-code'], input[inputmode='numeric']"))
-          .filter((element) => {
-            if (!isVisible(element, win) || isDisabled(element)) return false;
-            const input = element;
-            const maxLength = Number(input.getAttribute?.("maxlength") || NaN);
-            return input.getAttribute?.("autocomplete") === "one-time-code"
-              || (Number.isFinite(maxLength) && maxLength >= 4 && maxLength <= 8);
-          });
-        if (oneTimeCodeFields.length > 0) {
-          pushSignal({
-            kind: "mfa",
-            confidence: "high",
-            source: "attribute",
-            label: "one-time-code input",
-            url: frameUrl
-          });
-        }
-        try {
-          const url = new URL(String(win.location.href || frameUrl || "https://invalid.local"));
-          const params = url.searchParams;
-          if (
-            params.has("client_id")
-            && (params.has("redirect_uri") || params.has("response_type") || params.has("scope"))
-          ) {
-            pushSignal({
-              kind: "oauth_popup",
-              confidence: "high",
-              source: "browser",
-              label: "oauth authorization parameters",
-              url: String(url.href)
-            });
-          }
-        } catch (_error) {
-          // URL parsing is best effort; DOM and frame signals remain authoritative.
-        }
-        const fileInputs = Array.from(doc.querySelectorAll("input[type='file']"))
-          .filter((element) => isVisible(element, win) && !isDisabled(element));
-        if (fileInputs.length > 0) {
-          pushSignal({
-            kind: "permission_prompt",
-            confidence: "medium",
-            source: "attribute",
-            label: "visible file chooser",
-            url: frameUrl
-          });
-        }
-        const paymentFields = Array.from(doc.querySelectorAll(
-          "input[autocomplete='cc-number'], input[autocomplete='cc-csc'], input[autocomplete='cc-exp'], iframe[src*='stripe'], iframe[src*='paypal']"
-        )).filter((element) => isVisible(element, win) && !isDisabled(element));
-        if (paymentFields.length > 0) {
-          pushSignal({
-            kind: "payment_auth",
-            confidence: "high",
-            source: "attribute",
-            label: "payment credential field",
-            url: frameUrl
-          });
-        }
-        const downloadLinks = Array.from(doc.querySelectorAll("a[download]"))
-          .filter((element) => isVisible(element, win));
-        if (downloadLinks.length > 0) {
-          pushSignal({
-            kind: "download_prompt",
-            confidence: "medium",
-            source: "attribute",
-            label: "download attribute link",
-            url: frameUrl
-          });
-        }
-        for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
-          const src = normalizeText(frame.getAttribute?.("src") || "", 600);
-          if (!src) continue;
-          let host = "";
-          try {
-            host = new URL(src, String(win.location.href || "https://invalid.local")).hostname.toLowerCase();
-          } catch (_error) {
-            host = src.toLowerCase();
-          }
-          if (
-            host.includes("recaptcha")
-            || host.includes("hcaptcha")
-            || host.includes("challenges.cloudflare")
-            || host.includes("turnstile")
-          ) {
-            pushSignal({
-              kind: "captcha",
-              confidence: "high",
-              source: "frame",
-              label: host,
-              url: src
-            });
-          }
-        }
-        return signals;
-      };
-
-      const items = [];
-      const seen = new Set();
-      const authChallengeSignals = [];
-      let activeElementId = null;
-
-      const crawl = (doc, win, offsetX = 0, offsetY = 0, frameUrl = "") => {
-        const selector = [
-          "a[href]",
-          "button",
-          "input",
-          "select",
-          "textarea",
-          "summary",
-          "[contenteditable]",
-          "[tabindex]",
-          "[role='button']",
-          "[role='link']",
-          "[role='checkbox']",
-          "[role='textbox']",
-          "[role='searchbox']",
-          "[role='menuitem']"
-        ].join(",");
-        const collectCandidates = (root, scope = "document", hostChain = []) => {
-          const collected = collectInteractiveCandidates(root, selector, scope, hostChain);
-          const descendants = collectShadowHosts(root);
-          for (const element of descendants) {
-            if (element.shadowRoot) {
-              collected.push(...collectCandidates(
-                element.shadowRoot,
-                "shadow",
-                [...hostChain, selectorPreview(element)]
-              ));
-            } else if (String(element.tagName || "").includes("-") && isVisible(element, win)) {
-              warnings.push("closed_shadow_or_custom_element_boundary");
-              const rect = element.getBoundingClientRect();
-              blockedRegions.push({
-                id: "closed-shadow-" + selectorPreview(element),
-                kind: "closed-shadow",
-                frameRef: FRAME_REF,
-                frameTreeNodeId: FRAME_TREE_NODE_ID,
-                bounds: {
-                  x: Math.round(rect.left + offsetX),
-                  y: Math.round(rect.top + offsetY),
-                  width: Math.round(rect.width),
-                  height: Math.round(rect.height)
-                },
-                reason: "custom element has no open shadowRoot; closed shadow DOM may require visual or user fallback",
-                fallback: "visual",
-                confidence: "low"
-              });
-            }
-          }
-          return collected;
-        };
-        const candidates = collectCandidates(doc, "document");
-
-        for (const candidate of candidates) {
-          const { element, scope, hostChain } = candidate;
-          if (!(element instanceof win.Element) || seen.has(element)) continue;
-          seen.add(element);
-          const visibility = visibilityState(element, win);
-          if (!visibility.visible) continue;
-          if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
-          const focusable = isFocusable(element);
-          if (STRATEGY === "focus" && !focusable) continue;
-          const rect = element.getBoundingClientRect();
-          const style = win.getComputedStyle(element);
-          const cursor = normalizeText(style.cursor || "", 32);
-          const editable = isEditable(element);
-          const tabIndex = element instanceof win.HTMLElement ? element.tabIndex : -1;
-          const id = items.length + 1;
-          if (element === doc.activeElement) activeElementId = id;
-          const hostChainFingerprint = hostChain.length > 0
-            ? hostChain.join(">")
-            : "";
-          items.push({
-            id,
-            frameTreeNodeId: FRAME_TREE_NODE_ID,
-            frameRef: FRAME_REF,
-            tagName: String(element.tagName || "div").toLowerCase(),
-            role: normalizeText(element.getAttribute?.("role") || String(element.tagName || "element").toLowerCase(), 40),
-            label: labelFor(element, doc),
-            actionHint: actionHint(element, cursor),
-            stateHint: stateHint(element),
-            tooltipText: normalizeText(element.getAttribute?.("title") || describedByText(element, doc), 80),
-            textSnippet: normalizeText(
-              element instanceof win.HTMLInputElement || element instanceof win.HTMLTextAreaElement
-                ? element.value || ""
-                : element.innerText || element.textContent || "",
-              80
-            ),
-            selectorPreview: selectorPreview(element),
-            bounds: {
-              x: Math.round(rect.left + offsetX),
-              y: Math.round(rect.top + offsetY),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
-            },
-            localBounds: {
-              x: Math.round(rect.left),
-              y: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
-            },
-            frameBounds: FRAME_BOUNDS,
-            visibility,
-            checked: checkedState(element),
-            expanded: expandedState(element),
-            focusable,
-            tabIndex,
-            disabled: isDisabled(element),
-            editable,
-            href: element instanceof win.HTMLAnchorElement ? element.href : "",
-            inputType: element instanceof win.HTMLInputElement ? normalizeText(element.type || "", 32) : "",
-            frameUrl,
-            discoveryScope: scope,
-            hostChain,
-            hostChainFingerprint
-          });
-        }
-
-        authChallengeSignals.push(...detectAuthChallengeSignals(doc, win, frameUrl));
-
-        if (!INCLUDE_CHILD_FRAMES) {
-          return;
-        }
-        for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
-          try {
-            if (!isVisible(frame, win)) continue;
-            const childDoc = frame.contentDocument || frame.contentWindow?.document;
-            const childWin = frame.contentWindow;
-            if (!childDoc || !childWin) continue;
-            const frameRect = frame.getBoundingClientRect();
-            crawl(
-              childDoc,
-              childWin,
-              offsetX + frameRect.left,
-              offsetY + frameRect.top,
-              normalizeText(String(childWin.location?.href || ""), 400)
-            );
-          } catch (_error) {
-            warnings.push("cross_origin_frame_skipped");
-            const src = normalizeText(frame.getAttribute?.("src") || "", 600);
-            if (src) {
-              authChallengeSignals.push({
-                kind: "oauth_popup",
-                confidence: "low",
-                source: "frame",
-                label: "cross-origin frame",
-                url: src
-              });
-            }
-          }
-        }
-      };
-
-      crawl(
-        document,
-        window,
-        Number(FRAME_BOUNDS.x) || 0,
-        Number(FRAME_BOUNDS.y) || 0,
-        normalizeText(String(window.location.href || ""), 400)
-      );
-
-      const focusOrder = items
-        .filter((item) => item.focusable)
-        .slice()
-        .sort((a, b) => {
-          const aTab = a.tabIndex > 0 ? a.tabIndex : Number.MAX_SAFE_INTEGER;
-          const bTab = b.tabIndex > 0 ? b.tabIndex : Number.MAX_SAFE_INTEGER;
-          if (aTab !== bTab) return aTab - bTab;
-          return a.id - b.id;
-        })
-        .map((item) => item.id);
-
-      return {
-        title: normalizeText(document.title || "", 200),
-        url: normalizeText(String(window.location.href || ""), 600),
-        elements: items,
-        focusOrder,
-        activeElementId,
-        authChallengeSignals,
-        blockedRegions,
-        warnings
-      };
-    })()
-  `;
 
   const observeAgentPage = async (
     tabId: string,
@@ -6781,17 +4304,6 @@ export const createWorkbenchBrowserViewManager = ({
     }
   };
 
-  const centerOfAgentElement = (element: WorkbenchBrowserAgentElement): { x: number; y: number } => ({
-    x: element.bounds.x + Math.round(element.bounds.width / 2),
-    y: element.bounds.y + Math.round(element.bounds.height / 2)
-  });
-
-  const normalizeAgentScrollBlock = (
-    value: WorkbenchBrowserAgentScrollBlock | undefined
-  ): WorkbenchBrowserAgentScrollBlock => (
-    value === "start" || value === "end" || value === "nearest" ? value : "center"
-  );
-
   const readAgentViewportState = async (
     target: BrowserAgentPageTarget,
     timeoutMs: number | undefined
@@ -6850,99 +4362,6 @@ export const createWorkbenchBrowserViewManager = ({
         maxScrollY: 0
       };
     }
-  };
-
-  const clampAgentPointToViewport = (
-    point: { readonly x: number; readonly y: number },
-    viewport: BrowserAgentViewportState,
-    margin = 24
-  ): { x: number; y: number } => ({
-    x: Math.max(margin, Math.min(viewport.width - margin, Math.round(point.x))),
-    y: Math.max(margin, Math.min(viewport.height - margin, Math.round(point.y)))
-  });
-
-  const agentPointInsideViewport = (
-    point: { readonly x: number; readonly y: number },
-    viewport: BrowserAgentViewportState,
-    margin = 24
-  ): boolean => (
-    point.x >= margin
-    && point.y >= margin
-    && point.x <= viewport.width - margin
-    && point.y <= viewport.height - margin
-  );
-
-  const preferredAgentPointForBlock = (
-    viewport: BrowserAgentViewportState,
-    block: WorkbenchBrowserAgentScrollBlock
-  ): { x: number; y: number } => {
-    const x = Math.round(viewport.width * 0.5);
-    if (block === "start") {
-      return { x, y: Math.round(viewport.height * 0.18) };
-    }
-    if (block === "end") {
-      return { x, y: Math.round(viewport.height * 0.82) };
-    }
-    return { x, y: Math.round(viewport.height * 0.55) };
-  };
-
-  const scrollDeltaToPlacePoint = (
-    point: { readonly x: number; readonly y: number },
-    viewport: BrowserAgentViewportState,
-    block: WorkbenchBrowserAgentScrollBlock
-  ): { deltaX: number; deltaY: number } => {
-    if (agentPointInsideViewport(point, viewport) && block === "nearest") {
-      return { deltaX: 0, deltaY: 0 };
-    }
-    if (block === "nearest") {
-      const margin = 32;
-      const deltaX =
-        point.x < margin
-          ? point.x - margin
-          : point.x > viewport.width - margin
-            ? point.x - (viewport.width - margin)
-            : 0;
-      const deltaY =
-        point.y < margin
-          ? point.y - margin
-          : point.y > viewport.height - margin
-            ? point.y - (viewport.height - margin)
-            : 0;
-      return {
-        deltaX: Math.round(deltaX),
-        deltaY: Math.round(deltaY)
-      };
-    }
-    if (agentPointInsideViewport(point, viewport)) {
-      return { deltaX: 0, deltaY: 0 };
-    }
-    const preferred = preferredAgentPointForBlock(viewport, block);
-    return {
-      deltaX: Math.round(point.x - preferred.x),
-      deltaY: Math.round(point.y - preferred.y)
-    };
-  };
-
-  const scrollDeltaForDirection = (
-    direction: WorkbenchBrowserAgentScrollDirection,
-    viewport: BrowserAgentViewportState,
-    amount: number | undefined,
-    pages: number | undefined
-  ): { deltaX: number; deltaY: number } => {
-    const pageAmount = Math.max(0.1, Math.min(10, pages ?? 0.82));
-    const rawAmount = typeof amount === "number" && Number.isFinite(amount)
-      ? Math.max(1, Math.min(5_000, Math.round(amount)))
-      : Math.round((direction === "left" || direction === "right" ? viewport.width : viewport.height) * pageAmount);
-    if (direction === "up") {
-      return { deltaX: 0, deltaY: -rawAmount };
-    }
-    if (direction === "left") {
-      return { deltaX: -rawAmount, deltaY: 0 };
-    }
-    if (direction === "right") {
-      return { deltaX: rawAmount, deltaY: 0 };
-    }
-    return { deltaX: 0, deltaY: rawAmount };
   };
 
   const scrollAgentViewportByDelta = async ({
@@ -9503,10 +6922,7 @@ export const createWorkbenchBrowserViewManager = ({
         clearTimeout(timer);
       }
       tombstoneTimers.clear();
-      if (browserSessionSnapshotWriteTimer !== null) {
-        clearTimeout(browserSessionSnapshotWriteTimer);
-        browserSessionSnapshotWriteTimer = null;
-      }
+      browserSessionRuntime.dispose();
       for (const entry of entries.values()) {
         destroyEntry(entry, false);
       }
@@ -9529,15 +6945,7 @@ export const createWorkbenchBrowserViewManager = ({
       lastControlHandoffByTabId.clear();
       elevationSessions.clear();
       elevationSessionByIsolatedTabId.clear();
-      activeChromePopovers.clear();
-      detachChromePopoverView();
-      if (
-        chromePopoverView !== null
-        && chromePopoverView.webContents.isDestroyed() === false
-      ) {
-        chromePopoverView.webContents.close({ waitForBeforeUnload: false });
-      }
-      chromePopoverView = null;
+      chromePopoverRuntime.dispose();
       entries.clear();
       tombstones.clear();
       const window = getWindow();
@@ -9549,13 +6957,7 @@ export const createWorkbenchBrowserViewManager = ({
     },
     applyWebTheme: async (snapshot: WorkbenchBrowserWebThemeSnapshot) => {
       await webThemeInjector.updateSnapshot(snapshot);
-      for (const [tabId, request] of [...activeChromePopovers.entries()]) {
-        if (entries.has(tabId)) {
-          await setChromePopover({ ...request, tabId, visible: true }).catch(() => {
-            activeChromePopovers.delete(tabId);
-          });
-        }
-      }
+      await chromePopoverRuntime.reapplyActivePopovers();
     },
     syncTopology,
     syncLayout,
