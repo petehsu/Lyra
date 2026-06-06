@@ -41,6 +41,14 @@ pub(crate) fn assistant_message_with_id(id: String, text: String) -> Value {
     })
 }
 
+pub(crate) fn assistant_message_with_metadata(text: String, metadata: Option<Value>) -> Value {
+    let mut message = assistant_message(text);
+    if let Some(metadata) = metadata.filter(|value| !value.is_null()) {
+        message["metadata"] = metadata;
+    }
+    message
+}
+
 pub(crate) fn session_summary(session: &NativeSession) -> Value {
     let snapshot = &session.snapshot;
     let title = snapshot

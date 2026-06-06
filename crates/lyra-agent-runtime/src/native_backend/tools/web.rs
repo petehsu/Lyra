@@ -1,5 +1,29 @@
 use super::*;
 
+pub(crate) fn execute_web_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    execute_native_tool_adapter(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+    )
+}
+
 pub(crate) fn tool_web_fetch(turn_id: &str, tool_call_id: &str, input: &Value) -> NativeToolResult {
     let url = required_value_string(input, "url")?;
     let max_chars = value_usize(input, "maxChars", 12_000, 100_000);
@@ -104,7 +128,13 @@ pub(crate) fn tool_web_fetch(turn_id: &str, tool_call_id: &str, input: &Value) -
         text = truncate_chars(&text, max_chars);
     }
     let artifact_ref = if truncated {
-        write_tool_artifact("web", turn_id, tool_call_id, &full_text)
+        write_tool_artifact_with_kind(
+            "web",
+            turn_id,
+            tool_call_id,
+            ToolArtifactKind::WebPage,
+            &full_text,
+        )
     } else {
         None
     };

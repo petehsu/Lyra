@@ -1,5 +1,29 @@
 use super::*;
 
+pub(crate) fn execute_code_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    execute_native_tool_adapter(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+    )
+}
+
 pub(crate) fn tool_project_search(session_id: &str, input: &Value) -> NativeToolResult {
     let query = required_value_string(input, "query")?;
     let root = value_string(input, "root").unwrap_or_else(|| ".".to_string());

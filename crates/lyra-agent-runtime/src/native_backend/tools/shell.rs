@@ -1,5 +1,29 @@
 use super::*;
 
+pub(crate) fn execute_shell_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    execute_native_tool_adapter(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+    )
+}
+
 pub(crate) fn tool_shell_run(
     session_id: &str,
     turn_id: &str,
@@ -121,18 +145,20 @@ pub(crate) fn tool_shell_run(
         command, cwd.relative, exit_code, timed_out, stdout.text, stderr.text
     );
     let stdout_ref = (!stdout.text.is_empty() || stdout.truncated).then(|| {
-        write_tool_artifact(
+        write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stdout"),
+            ToolArtifactKind::Stdout,
             &stdout.text,
         )
     });
     let stderr_ref = (!stderr.text.is_empty() || stderr.truncated).then(|| {
-        write_tool_artifact(
+        write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stderr"),
+            ToolArtifactKind::Stderr,
             &stderr.text,
         )
     });

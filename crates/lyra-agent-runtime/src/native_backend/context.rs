@@ -237,7 +237,7 @@ pub(crate) fn build_runtime_context(
         "software": software,
         "memory": memory,
         "tools": if capabilities.supports_tool_calling { model_tool_names(false) } else { Vec::new() },
-        "toolFilesystem": tool_filesystem_runtime_context("general"),
+        "toolFilesystem": tool_filesystem_runtime_context("general", dispatcher),
         "network": network_runtime_context(),
         "sensitiveValues": {
             "refKind": "lyra-sensitive-value-ref",
@@ -256,6 +256,7 @@ pub(crate) fn build_runtime_context(
 }
 
 pub(crate) fn infer_tool_filesystem_scene(
+    session_kind: Option<&str>,
     working_dir: Option<&str>,
     design_research_required: bool,
     active_skills: &HashSet<String>,
@@ -267,13 +268,17 @@ pub(crate) fn infer_tool_filesystem_scene(
         .map(str::to_string);
     let active_tab_kind = active_workbench_tab_signal(workbench);
     let signals = lyra_tool_fs_core::ToolSceneSignals {
+        session_kind: session_kind
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
         project_bound: working_dir_value.is_some(),
         working_dir: working_dir_value.clone(),
         git_repo: working_dir_is_git_repo(working_dir),
         active_tab_kind: active_tab_kind.clone(),
         focused_tab_kind: active_tab_kind,
-        terminal_active: false,
-        browser_active: false,
+        terminal_active: workbench_terminal_active(workbench),
+        browser_active: workbench_browser_active(workbench),
         editor_active: false,
         design_active: design_research_required,
         software_active: false,
@@ -285,13 +290,17 @@ pub(crate) fn infer_tool_filesystem_scene(
         .to_string()
 }
 
-pub(crate) fn tool_filesystem_runtime_context(scene: &str) -> Value {
+pub(crate) fn tool_filesystem_runtime_context(
+    scene: &str,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
     json!({
         "scene": scene,
-        "pinnedHandles": tools::tool_fs::pinned_handles_for_scene(scene),
-        "rootSummary": tools::tool_fs::root_summary(),
+        "pinnedHandles": tools::tool_fs::pinned_handles_for_scene(scene, dispatcher),
+        "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
+        "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
         "policy": {
-            "providerVisibleTools": tools::tool_fs::model_tool_names(),
+            "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
             "discovery": "Use tool_fs_list on /tools, tool_fs_read_doc for directory docs, tool_fs_inspect for a target schema, and tool_fs_run with path or pinned handle.",
             "sceneBehavior": "Scene changes only reorder directories and pinned handles; every built-in tool remains discoverable under /tools.",
@@ -307,6 +316,8 @@ fn active_workbench_tab_signal(workbench: &Value) -> Option<String> {
         "type",
         "tabKind",
         "surfaceKind",
+        "pageKind",
+        "observationKind",
         "appId",
         "softwareId",
     ];
@@ -337,6 +348,46 @@ fn active_workbench_tab(workbench: &Value) -> Option<&Value> {
                 .and_then(Value::as_str)
                 == Some(active_id)
         })
+}
+
+fn workbench_terminal_active(workbench: &Value) -> bool {
+    active_workbench_tab_signal(workbench)
+        .is_some_and(|signal| signal.to_lowercase().contains("terminal"))
+        || workbench
+            .get("terminal")
+            .and_then(|terminal| terminal.get("active"))
+            .is_some_and(|value| !value.is_null())
+}
+
+fn workbench_browser_active(workbench: &Value) -> bool {
+    let Some(active_tab) = active_workbench_tab(workbench) else {
+        return false;
+    };
+    if active_workbench_tab_signal(workbench).is_some_and(|signal| {
+        let signal = signal.to_lowercase();
+        signal.contains("browser") || signal.contains("lumen") || signal.contains("web")
+    }) {
+        return true;
+    }
+    let page_kind = active_tab
+        .get("pageKind")
+        .or_else(|| active_tab.get("kind"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let observation_kind = active_tab
+        .get("observationKind")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let address = active_tab
+        .get("url")
+        .or_else(|| active_tab.get("displayAddress"))
+        .or_else(|| active_tab.get("address"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    page_kind == "page"
+        || observation_kind == "page"
+        || address.starts_with("http://")
+        || address.starts_with("https://")
 }
 
 fn working_dir_is_git_repo(working_dir: Option<&str>) -> bool {
@@ -404,6 +455,28 @@ fn turn_finish_model_tool() -> Value {
                 "evidenceSummary": {
                     "type": "string",
                     "description": "Brief summary of the Lyra tool evidence used, if any."
+                },
+                "verificationRecords": {
+                    "type": "array",
+                    "description": "Structured verification records. Include test/lint/typecheck records; use status not_run with notRunReason when a check was not run.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": {
+                                "type": "string",
+                                "enum": ["test", "lint", "typecheck"]
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["passed", "failed", "skipped", "not_run"]
+                            },
+                            "command": { "type": "string" },
+                            "summary": { "type": "string" },
+                            "notRunReason": { "type": "string" },
+                            "artifactRef": { "type": "object", "additionalProperties": true }
+                        },
+                        "required": ["kind", "status"]
+                    }
                 }
             },
             "required": ["status", "finalText"]
@@ -412,52 +485,17 @@ fn turn_finish_model_tool() -> Value {
 }
 
 pub(crate) fn function_tool(name: &str, description: &str, parameters: Value) -> Value {
-    let parameters = with_lumen_auth_state_schema(name, parameters);
     json!({
         "type": "function",
         "function": {
             "name": name,
             "description": description,
-            "parameters": with_additional_properties(parameters),
+            "parameters": close_object_schema(parameters),
         }
     })
 }
 
-fn with_lumen_auth_state_schema(name: &str, mut schema: Value) -> Value {
-    if !name.starts_with("lyra_lumen_") {
-        return schema;
-    }
-    let Some(properties) = schema
-        .as_object_mut()
-        .and_then(|object| object.get_mut("properties"))
-        .and_then(Value::as_object_mut)
-    else {
-        return schema;
-    };
-    if !properties.contains_key("targetMode") {
-        return schema;
-    }
-    properties.entry("authState".to_string()).or_insert_with(|| {
-        json!({
-            "type": "string",
-            "enum": ["none", "borrowLiveLogin"],
-            "default": "none",
-            "description": "For targetMode=isolated only: request user-authorized borrowing of the current live Lyra browser login state for the hidden background page. This requires a permission prompt and never exposes cookie/password values to the model."
-        })
-    });
-    properties
-        .entry("useLiveLoginState".to_string())
-        .or_insert_with(|| {
-            json!({
-                "type": "boolean",
-                "default": false,
-                "description": "Alias for authState=borrowLiveLogin. Use only when the task must operate a hidden isolated page with the user's current Lyra browser login state."
-            })
-        });
-    schema
-}
-
-pub(crate) fn with_additional_properties(mut schema: Value) -> Value {
+pub(crate) fn close_object_schema(mut schema: Value) -> Value {
     if let Some(object) = schema.as_object_mut() {
         object
             .entry("additionalProperties")

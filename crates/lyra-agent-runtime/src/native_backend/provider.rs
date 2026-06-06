@@ -1,5 +1,6 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
 
 const REPEATED_TOOL_ROUND_SOFT_OCCURRENCES: usize = 3;
 const REPEATED_TOOL_ROUND_HARD_OCCURRENCES: usize = 5;
@@ -48,12 +49,21 @@ pub(crate) struct ProviderStreamState {
 #[derive(Clone, Debug)]
 pub(crate) struct ModelLoopResult {
     pub(crate) final_text: Option<String>,
+    pub(crate) metadata: Option<Value>,
 }
 
 impl ModelLoopResult {
     pub(crate) fn final_text(text: String) -> Self {
         Self {
             final_text: Some(text),
+            metadata: None,
+        }
+    }
+
+    fn final_text_with_metadata(text: String, metadata: Value) -> Self {
+        Self {
+            final_text: Some(text),
+            metadata: Some(metadata),
         }
     }
 }
@@ -478,8 +488,12 @@ fn try_finish_from_turn_finish_tool(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim();
+    let metadata = turn_finish_metadata(&call.arguments);
     if !final_text.is_empty() {
-        return Ok(Some(ModelLoopResult::final_text(final_text.to_string())));
+        return Ok(Some(ModelLoopResult::final_text_with_metadata(
+            final_text.to_string(),
+            metadata,
+        )));
     }
     let fallback = match status {
         "blocked" => call
@@ -494,7 +508,135 @@ fn try_finish_from_turn_finish_tool(
             .unwrap_or("我需要更多信息才能继续。"),
         _ => "任务已结束，但模型没有提供可显示的最终文本。",
     };
-    Ok(Some(ModelLoopResult::final_text(fallback.to_string())))
+    Ok(Some(ModelLoopResult::final_text_with_metadata(
+        fallback.to_string(),
+        metadata,
+    )))
+}
+
+fn turn_finish_metadata(arguments: &Value) -> Value {
+    let evidence_summary = arguments
+        .get("evidenceSummary")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let provided_records = arguments
+        .get("verificationRecords")
+        .or_else(|| arguments.get("verification"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let verification_records = normalized_verification_records(provided_records);
+    json!({
+        "schemaVersion": 1,
+        "kind": "lyra_turn_finish",
+        "status": arguments
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("answered"),
+        "evidenceSummary": evidence_summary,
+        "verificationRecords": verification_records,
+    })
+}
+
+fn normalized_verification_records(records: Vec<Value>) -> Vec<Value> {
+    let mut normalized = records
+        .into_iter()
+        .filter_map(normalize_verification_record)
+        .collect::<Vec<_>>();
+    for kind in ["test", "lint", "typecheck"] {
+        if !normalized
+            .iter()
+            .any(|record| record.get("kind").and_then(Value::as_str) == Some(kind))
+        {
+            normalized.push(json!({
+                "schemaVersion": 1,
+                "kind": kind,
+                "status": "not_run",
+                "notRunReason": "not_reported_by_model",
+                "summary": format!("{kind} was not reported by lyra_turn_finish."),
+            }));
+        }
+    }
+    normalized
+}
+
+fn normalize_verification_record(record: Value) -> Option<Value> {
+    let object = record.as_object()?;
+    let kind = object
+        .get("kind")
+        .or_else(|| object.get("type"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_ascii_lowercase();
+    let kind = match kind.as_str() {
+        "tests" | "test" => "test",
+        "lint" | "lints" => "lint",
+        "typecheck" | "type_check" | "type-check" | "tsc" => "typecheck",
+        other => other,
+    };
+    let status = object
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("not_run")
+        .to_ascii_lowercase();
+    let status = match status.as_str() {
+        "passed" | "pass" | "success" | "ok" => "passed",
+        "failed" | "fail" | "error" => "failed",
+        "skipped" | "skip" => "skipped",
+        "not-run" | "not_run" | "notrun" => "not_run",
+        other => other,
+    };
+    let mut output = serde_json::Map::new();
+    output.insert(
+        "schemaVersion".to_string(),
+        Value::Number(serde_json::Number::from(1)),
+    );
+    output.insert("kind".to_string(), Value::String(kind.to_string()));
+    output.insert("status".to_string(), Value::String(status.to_string()));
+    if let Some(command) = object
+        .get("command")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        output.insert("command".to_string(), Value::String(command.to_string()));
+    }
+    if let Some(summary) = object
+        .get("summary")
+        .or_else(|| object.get("message"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        output.insert("summary".to_string(), Value::String(summary.to_string()));
+    }
+    if let Some(reason) = object
+        .get("notRunReason")
+        .or_else(|| object.get("not_run_reason"))
+        .or_else(|| object.get("reason"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        output.insert(
+            "notRunReason".to_string(),
+            Value::String(reason.to_string()),
+        );
+    } else if status == "not_run" {
+        output.insert(
+            "notRunReason".to_string(),
+            Value::String("not_reported_by_model".to_string()),
+        );
+    }
+    if let Some(artifact_ref) = object.get("artifactRef").filter(|value| value.is_object()) {
+        output.insert("artifactRef".to_string(), artifact_ref.clone());
+    }
+    Some(Value::Object(output))
 }
 
 fn provider_image_message_from_tool_output(
@@ -1130,7 +1272,7 @@ pub(crate) fn normalize_model_reply_protocol(
     let Some(content) = reply.content.take() else {
         return Ok(());
     };
-    if contains_textual_tool_call_marker(&content) {
+    if contains_textual_tool_call_marker(&content, &allowed_tool_names) {
         return Err(AgentRuntimeError::Core(
             "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
                 .to_string(),
@@ -1153,8 +1295,54 @@ pub(crate) fn model_tool_name_set(tools: &[Value]) -> HashSet<String> {
         .collect()
 }
 
-pub(crate) fn contains_textual_tool_call_marker(content: &str) -> bool {
-    find_ascii_case_insensitive(content, TEXTUAL_TOOL_CALL_MARKER, 0).is_some()
+pub(crate) fn contains_textual_tool_call_marker(
+    content: &str,
+    allowed_tool_names: &HashSet<String>,
+) -> bool {
+    if find_ascii_case_insensitive(content, TEXTUAL_TOOL_CALL_MARKER, 0).is_some() {
+        return true;
+    }
+    contains_textual_structured_tool_shape(content, allowed_tool_names)
+}
+
+fn contains_textual_structured_tool_shape(
+    content: &str,
+    allowed_tool_names: &HashSet<String>,
+) -> bool {
+    let lower = content.to_ascii_lowercase();
+    if lower.contains("```")
+        && lower.contains("\"path\"")
+        && lower.contains("\"/tools/")
+        && lower.contains("\"args\"")
+    {
+        return true;
+    }
+    let tool_names = textual_tool_name_candidates(allowed_tool_names);
+    tool_names.iter().any(|tool_name| {
+        let tool = tool_name.to_ascii_lowercase();
+        if lower.contains(&format!("{tool}(")) {
+            return true;
+        }
+        let quoted = format!("\"{tool}\"");
+        if !lower.contains(&quoted) {
+            return false;
+        }
+        lower.contains("\"arguments\"")
+            || lower.contains("\"args\"")
+            || lower.contains("\"function\"")
+            || lower.contains("\"tool_calls\"")
+            || lower.contains("tool_call")
+            || lower.contains("```")
+    })
+}
+
+fn textual_tool_name_candidates(allowed_tool_names: &HashSet<String>) -> HashSet<String> {
+    let mut names = allowed_tool_names.clone();
+    for name in PROVIDER_VISIBLE_TOOL_NAMES {
+        names.insert(name.to_string());
+    }
+    names.insert(LYRA_TURN_FINISH_TOOL.to_string());
+    names
 }
 
 pub(crate) fn find_ascii_case_insensitive(
@@ -1246,7 +1434,10 @@ pub(crate) fn repair_model_tool_name(
     if trimmed.is_empty() {
         return None;
     }
-    if allowed_tool_names.is_empty() || allowed_tool_names.contains(trimmed) {
+    if allowed_tool_names.is_empty() {
+        return None;
+    }
+    if allowed_tool_names.contains(trimmed) {
         return Some(trimmed.to_string());
     }
     let lowercase = trimmed.to_ascii_lowercase();

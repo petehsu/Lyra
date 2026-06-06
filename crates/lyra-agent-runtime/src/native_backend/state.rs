@@ -15,6 +15,7 @@ impl NativeRuntimeState {
     pub(crate) fn load_from_root(root: PathBuf) -> Self {
         let sessions_dir = root.join("sessions");
         let _ = fs::create_dir_all(&sessions_dir);
+        let _ = prune_low_value_tool_artifacts(&root);
 
         let state_file = read_json::<NativeStateFile>(&root.join("state.json"));
         let legacy_shared_memory = state_file
@@ -30,13 +31,26 @@ impl NativeRuntimeState {
             .unwrap_or_default();
         install_default_providers(&mut config);
 
-        let reset_tool_sessions = state_file
+        let previous_tool_runtime_schema_version = state_file
             .as_ref()
-            .map(|state| state.tool_runtime_schema_version < TOOL_RUNTIME_SCHEMA_VERSION)
-            .unwrap_or(true);
+            .map(|state| state.tool_runtime_schema_version)
+            .unwrap_or_default();
+        let reset_tool_sessions =
+            previous_tool_runtime_schema_version < TOOL_RUNTIME_SCHEMA_VERSION;
+        let mut tool_runtime_migration_diagnostics = state_file
+            .as_ref()
+            .map(|state| state.tool_runtime_migration_diagnostics.clone())
+            .unwrap_or_default();
         if reset_tool_sessions {
-            clear_session_files(&sessions_dir);
+            tool_runtime_migration_diagnostics =
+                clear_session_files(&sessions_dir, previous_tool_runtime_schema_version);
         }
+        let tool_runtime_schema_version =
+            if reset_tool_sessions && !tool_runtime_migration_diagnostics.is_empty() {
+                previous_tool_runtime_schema_version
+            } else {
+                TOOL_RUNTIME_SCHEMA_VERSION
+            };
 
         let mut sessions = HashMap::new();
         if !reset_tool_sessions && let Ok(entries) = fs::read_dir(&sessions_dir) {
@@ -69,6 +83,8 @@ impl NativeRuntimeState {
         };
         let mut loaded = Self {
             root,
+            tool_runtime_schema_version,
+            tool_runtime_migration_diagnostics,
             sessions,
             active_session_id: if reset_tool_sessions {
                 None
@@ -123,7 +139,8 @@ impl NativeRuntimeState {
             .map(|(id, request)| (id.clone(), request.clone()))
             .collect();
         let state = NativeStateFile {
-            tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+            tool_runtime_schema_version: self.tool_runtime_schema_version,
+            tool_runtime_migration_diagnostics: self.tool_runtime_migration_diagnostics.clone(),
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
             legacy_shared_memory: Vec::new(),
@@ -203,16 +220,27 @@ impl NativeRuntimeState {
     }
 }
 
-fn clear_session_files(sessions_dir: &Path) {
+fn clear_session_files(sessions_dir: &Path, from_schema_version: u32) -> Vec<Value> {
+    let mut diagnostics = Vec::new();
     let Ok(entries) = fs::read_dir(sessions_dir) else {
-        return;
+        return diagnostics;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|value| value.to_str()) == Some("json") {
-            let _ = fs::remove_file(path);
+            if let Err(error) = fs::remove_file(&path) {
+                diagnostics.push(json!({
+                    "code": "tool_runtime_session_delete_failed",
+                    "message": "Failed to delete an incompatible Agent session during Tool-FS schema migration.",
+                    "path": path.display().to_string(),
+                    "fromSchemaVersion": from_schema_version,
+                    "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
+                    "error": error.to_string(),
+                }));
+            }
         }
     }
+    diagnostics
 }
 
 fn is_live_pending_permission(

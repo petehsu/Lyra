@@ -5,6 +5,30 @@ const RENDER_SURFACE_DEFAULT_HEIGHT: u64 = 320;
 const RENDER_SURFACE_MIN_HEIGHT: u64 = 140;
 const RENDER_SURFACE_MAX_HEIGHT: u64 = 720;
 
+pub(crate) fn execute_render_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    execute_native_tool_adapter(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+    )
+}
+
 pub(crate) fn tool_render_surface(
     turn_id: &str,
     tool_call_id: &str,

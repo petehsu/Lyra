@@ -69,10 +69,10 @@ pub fn tool_strategy_section() -> &'static str {
 - Inspect large schemas only when needed, then execute the smallest relevant tool.
 - Tool calls must be emitted only through the provider's structured tool_call protocol. Never write simulated tool calls, function-call syntax, JSON call syntax, or markers such as "[Tool call: ...]" in assistant text.
 - If a Lyra capability is needed, call the tool. If no suitable tool is available, explain the missing capability in normal text without inventing a tool transcript.
-- Use `render_surface` when the best answer is an inline mini app, dashboard, diagram, table, JSON inspector, rich report, or temporary interactive UI in the chat timeline. Do not write a local HTML file only to show a quick visual surface.
-- Lyra-owned artifact paths under `.lyra` are not workspace files. Use `artifact_read` for Lumen screenshots, message images, and tool-output artifacts; use `file_read` only for files inside the bound project workspace.
+- Use `/tools/render/surface` when the best answer is an inline mini app, dashboard, diagram, table, JSON inspector, rich report, or temporary interactive UI in the chat timeline. Do not write a local HTML file only to show a quick visual surface.
+- Lyra-owned artifact paths under `.lyra` are not workspace files. Use `/tools/runtime/artifact_read` for browser screenshots, message images, and tool-output artifacts; use `/tools/filesystem/read_file` only for files inside the bound project workspace.
 - For Lyra browser pages, `targetMode` and Follow are separate. `targetMode: "live"` means the user's current visible Lyra browser profile; it does not imply visible Follow cursor unless the real Follow toggle is on. Use `targetMode: "isolated"` only for explicitly background/isolated browser tasks or elevation recovery.
-- Treat `browserRecovery` runtime context as stale recovery metadata only. Never claim the user is currently viewing a browser page from `browserRecovery`; current browser/page claims require fresh evidence from Workbench tabs, `workbench_read_tab`, or Lumen/browser tool results in this turn.
+- Treat `browserRecovery` runtime context as stale recovery metadata only. Never claim the user is currently viewing a browser page from `browserRecovery`; current browser/page claims require fresh evidence from Workbench tabs, `/tools/workbench/read_tab`, or browser tool results in this turn.
 - If an isolated background browser task needs the user's existing logged-in state, set `authState: "borrowLiveLogin"` or `useLiveLoginState: true`; Lyra will ask the user through the permission panel before borrowing cookies/storage metadata. Do not claim isolated and live views are the same; report the returned `browserMode` object when browser state differs.
 - Continue until the user's requested task is handled, blocked by a real missing capability, or requires user input.
 - When Lyra tools are available, finish the turn through the structured `lyra_turn_finish` tool after required tool evidence is gathered, or when no external capability is needed. Do not use plain assistant text as the final commit path for a tool-capable turn.
@@ -99,6 +99,7 @@ pub fn verification_section() -> &'static str {
     r#"Verification and evidence:
 - Do not claim work is complete without evidence from tool results, tests, runtime state, or files you actually inspected.
 - For code changes, run targeted verification when available and say exactly what passed or what could not be run.
+- When finishing a code turn, include `verificationRecords` in `lyra_turn_finish`; if test, lint, or typecheck was not run, record that check with status `not_run` and a concise `notRunReason`.
 - Keep tool and provider errors out of assistant-only claims; use structured failure details and recoverable next actions.
 - Preserve user work and never imply unrelated dirty files were changed by you."#
 }
@@ -143,6 +144,36 @@ mod tests {
         assert!(prompt.contains("Do not claim work is complete without evidence"));
         let legacy_name = ["jc", "ode"].join("");
         assert!(!prompt.to_lowercase().contains(&legacy_name));
+        for direct_tool_name in [
+            "file_read",
+            "shell_run",
+            "artifact_read",
+            "render_surface",
+            "workbench_read_tab",
+            "lyra_lumen",
+            "lyra_design",
+            "software_invoke_capability",
+        ] {
+            assert!(
+                !contains_standalone_tool_name(&prompt, direct_tool_name),
+                "{direct_tool_name} leaked into prompt"
+            );
+        }
+        assert!(prompt.contains("/tools/filesystem/read_file"));
+        assert!(prompt.contains("/tools/runtime/artifact_read"));
+        assert!(prompt.contains("/tools/render/surface"));
+    }
+
+    fn contains_standalone_tool_name(prompt: &str, tool_name: &str) -> bool {
+        prompt.match_indices(tool_name).any(|(index, _)| {
+            let before = prompt[..index].chars().next_back();
+            let after = prompt[index + tool_name.len()..].chars().next();
+            !is_tool_path_or_identifier_char(before) && !is_tool_path_or_identifier_char(after)
+        })
+    }
+
+    fn is_tool_path_or_identifier_char(value: Option<char>) -> bool {
+        value.is_some_and(|value| value.is_ascii_alphanumeric() || matches!(value, '_' | '-' | '/'))
     }
 
     #[test]

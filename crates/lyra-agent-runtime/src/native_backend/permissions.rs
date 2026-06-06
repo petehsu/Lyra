@@ -8,6 +8,17 @@ pub(crate) fn permission_request_for_tool(
     action: &str,
     input: &Value,
 ) -> Option<PermissionRequest> {
+    if input
+        .pointer("/toolOperation/permissionMode")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.trim().replace('-', "_") == "full_access")
+        || input
+            .get("permissionGranted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return None;
+    }
     let risk = permission_risk(display_name, action, input)?;
     let summary = permission_summary(display_name, action, input);
     let title = match risk.as_str() {
@@ -120,22 +131,6 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
     ) {
         return None;
     }
-    let text = format!("{display_name} {action} {input}").to_lowercase();
-    if text.contains("shell")
-        || text.contains("terminal")
-        || text.contains("command")
-        || text.contains("exec")
-    {
-        return Some("shell".to_string());
-    }
-    if text.contains("write")
-        || text.contains("delete")
-        || text.contains("patch")
-        || text.contains("edit")
-        || text.contains("file")
-    {
-        return Some("file".to_string());
-    }
     if matches!(
         (display_name, action),
         ("software", "invoke_capability")
@@ -233,6 +228,20 @@ fn terminal_permission_summary(action: &str, input: &Value) -> String {
 }
 
 pub(crate) fn wait_for_permission(request: PermissionRequest) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal(request, None)
+}
+
+pub(crate) fn wait_for_permission_with_cancellation(
+    request: PermissionRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal(request, Some(cancellation))
+}
+
+fn wait_for_permission_internal(
+    request: PermissionRequest,
+    cancellation: Option<&Arc<AtomicBool>>,
+) -> AgentRuntimeResult<bool> {
     let request_id = request.id.clone();
     let session_id = request.session_id.clone();
     let turn_id = request.turn_id.clone();
@@ -293,16 +302,20 @@ pub(crate) fn wait_for_permission(request: PermissionRequest) -> AgentRuntimeRes
         emit_with_callback(&callback, event);
     }
 
-    wait_for_permission_decision(&session_id, &turn_id, &request_id)
+    wait_for_permission_decision_with_cancellation(&session_id, &turn_id, &request_id, cancellation)
 }
 
-pub(crate) fn wait_for_permission_decision(
+pub(crate) fn wait_for_permission_decision_with_cancellation(
     session_id: &str,
     turn_id: &str,
     request_id: &str,
+    cancellation: Option<&Arc<AtomicBool>>,
 ) -> AgentRuntimeResult<bool> {
     for _ in 0..24_000 {
-        if turn_was_cancelled(session_id, turn_id) {
+        if cancellation.is_some_and(|cancellation| cancellation.load(Ordering::SeqCst))
+            || turn_was_cancelled(session_id, turn_id)
+        {
+            remove_pending_permission(request_id)?;
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
         }
         if let Ok(mut state) = state().lock()
@@ -320,6 +333,14 @@ pub(crate) fn wait_for_permission_decision(
     Err(AgentRuntimeError::Core(
         "permission request timed out".to_string(),
     ))
+}
+
+fn remove_pending_permission(request_id: &str) -> AgentRuntimeResult<()> {
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    state.pending_permissions.remove(request_id);
+    state.save_state()
 }
 
 pub(crate) fn respond_permission(payload: Value) -> AgentRuntimeResult<Value> {

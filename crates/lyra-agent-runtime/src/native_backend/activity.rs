@@ -129,6 +129,10 @@ pub(crate) fn tool_activity(
                 .and_then(Value::as_str)
                 .map(str::to_string)
         });
+    let trace = output_ref
+        .and_then(|value| value.get("trace"))
+        .filter(|value| value.is_array())
+        .cloned();
     let artifact_refs = output_ref
         .map(activity_artifact_refs)
         .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()));
@@ -157,6 +161,7 @@ pub(crate) fn tool_activity(
         "activityKind": activity_kind,
         "rendererHint": renderer_hint,
         "traceId": trace_id,
+        "trace": trace,
         "artifactRefs": artifact_refs,
         "changes": changes,
     })
@@ -178,6 +183,7 @@ fn activity_artifact_refs(output: &Value) -> Value {
             "stdoutArtifactRef",
             "stderrArtifactRef",
             "logArtifactRef",
+            "pageArtifactRef",
         ] {
             if let Some(value) = source.get(key).filter(|value| value.is_object()) {
                 refs.push(value.clone());
@@ -665,8 +671,8 @@ pub(crate) fn native_skill_state(skill_id: &str, active_skills: &HashSet<String>
             "prompt": "For design or UI work, call Lyra design reference tools first, then include a concise Design Research Summary before proposing or editing UI.",
             "permissions": ["design.reference.read"],
             "toolCapabilities": [
-                { "providerId": "lyra-design", "toolName": "lyra_design_search_styles" },
-                { "providerId": "lyra-design", "toolName": "lyra_design_get_style_details" }
+                { "providerId": "tool-fs", "toolPath": "/tools/design/search_styles" },
+                { "providerId": "tool-fs", "toolPath": "/tools/design/get_style_details" }
             ],
             "active": active_skills.contains(skill_id),
         })),
@@ -1156,7 +1162,7 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                     .and_then(Value::as_str)
                     .unwrap_or("notFound");
                 format!(
-                    "{target_ref} is stale or unavailable ({reason}). Call lyra_lumen_map before acting."
+                    "{target_ref} is stale or unavailable ({reason}). Call /tools/browser/map before acting."
                 )
             }
         }

@@ -19,6 +19,7 @@ import type {
   ToolDetails,
   ToolGroup,
   ToolActionTarget,
+  ToolArtifactPreview,
   ToolPeek,
   RenderSurfaceColumn,
   RenderSurfaceRow,
@@ -313,15 +314,11 @@ export const applyAgentRuntimeEventToSnapshot = (
 };
 
 const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
-  const toolName = tool.name.toLowerCase();
-  const input = toolInputRecord(tool);
-  const output = asRecord(tool.output);
-  const raw = asRecord(output.raw);
   const hintedKind = toolKindFromHint(tool.activityKind ?? tool.rendererHint ?? null);
   if (hintedKind !== null) return hintedKind;
-  const action = (tool.operation ?? stringField(input, "operation", "action") ?? "").toLowerCase();
-  const domain = (tool.domain ?? stringField(input, "domain") ?? "").toLowerCase();
-  const toolPath = (tool.toolPath ?? stringField(input, "toolPath", "tool_path") ?? "").toLowerCase();
+  const action = (toolFsOperation(tool) ?? "").toLowerCase();
+  const domain = (toolFsDomain(tool) ?? "").toLowerCase();
+  const toolPath = (toolFsPath(tool) ?? "").toLowerCase();
   if (domain === "render" || toolPath.startsWith("/tools/render/")) return "render";
   if (domain === "workbench" || toolPath.startsWith("/tools/workbench/")) return "workbench";
   if (domain === "terminal" || toolPath.startsWith("/tools/terminal/")) return "terminal";
@@ -342,59 +339,6 @@ const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
     return "read";
   }
   if (domain === "code" || toolPath.startsWith("/tools/code/")) return "search";
-  if (
-    toolName === "render" ||
-    toolName === "render_surface" ||
-    toolName === "lyra-render" ||
-    toolName === "lyra_render" ||
-    action === "surface" ||
-    raw.kind === "render_surface"
-  ) return "render";
-  if (
-    toolName === "workbench" ||
-    toolName.startsWith("workbench.") ||
-    toolName.startsWith("workbench_") ||
-    action === "list_tabs" ||
-    action === "read_tab" ||
-    action === "read_workspace" ||
-    action === "extract_tab_text"
-  ) return "workbench";
-  if (toolName === "terminal" || toolName.startsWith("terminal_")) return "terminal";
-  if (
-    toolName === "websearch" ||
-    toolName === "webfetch" ||
-    toolName === "web_search" ||
-    toolName === "web_fetch" ||
-    toolName.startsWith("web.") ||
-    toolName.startsWith("web_") ||
-    toolName.startsWith("web-") ||
-    toolName.includes("websearch") ||
-    toolName.includes("webfetch") ||
-    toolName.includes("web_search") ||
-    toolName.includes("web_fetch")
-  ) return "web";
-  if (toolName === "lyra_lumen") return "web";
-  if (
-    toolName === "ls" ||
-    toolName.includes("read") ||
-    toolName.includes("open")
-  ) return "read";
-  if (
-    toolName.includes("search") ||
-    toolName.includes("grep") ||
-    toolName.includes("glob")
-  ) return "search";
-  if (
-    toolName.includes("bash") ||
-    toolName.includes("shell") ||
-    toolName.includes("command")
-  ) return "shell";
-  if (
-    toolName.includes("patch") ||
-    toolName.includes("edit") ||
-    toolName.includes("write")
-  ) return "edit";
-  if (toolName.includes("todo")) return "task";
   return "thought";
 };
 
@@ -448,6 +392,17 @@ const numberField = (
   for (const key of keys) {
     const field = value[key];
     if (typeof field === "number" && Number.isFinite(field)) return field;
+  }
+  return undefined;
+};
+
+const arrayField = (
+  value: Record<string, unknown>,
+  ...keys: readonly string[]
+): readonly unknown[] | undefined => {
+  for (const key of keys) {
+    const field = value[key];
+    if (Array.isArray(field)) return field;
   }
   return undefined;
 };
@@ -558,6 +513,123 @@ const imageAttachmentFromArtifact = (
   };
 };
 
+const targetWithArtifactMetadata = (
+  target: ToolActionTarget,
+  artifact: Record<string, unknown>
+): ToolActionTarget => {
+  const mediaType = stringField(artifact, "mediaType", "mimeType");
+  const width = numberField(artifact, "width");
+  const height = numberField(artifact, "height");
+  return {
+    ...target,
+    ...(mediaType === undefined ? {} : { mediaType }),
+    ...(width === undefined ? {} : { width }),
+    ...(height === undefined ? {} : { height })
+  };
+};
+
+const targetFromArtifactRef = (
+  value: unknown,
+  fallbackLabel = "Open artifact"
+): ToolActionTarget | null => {
+  const artifact = asRecord(value);
+  if (Object.keys(artifact).length === 0) return null;
+  const openTarget = targetFromOpenTarget(artifact.openTarget, fallbackLabel);
+  if (openTarget !== null) return targetWithArtifactMetadata(openTarget, artifact);
+  const path = stringField(artifact, "path", "filePath", "source");
+  if (path === undefined) return null;
+  return targetWithArtifactMetadata({
+    kind: "file",
+    label: fallbackLabel ?? stringField(artifact, "label", "title") ?? labelFromPath(path),
+    value: path
+  }, artifact);
+};
+
+const artifactTargetsFromEvidence = (
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined
+): ToolActionTarget[] | undefined => {
+  const targets = uniqueActionTargets([
+    ...(artifactRefs ?? []).map((artifact, index) =>
+      targetFromArtifactRef(artifact, `Open artifact ${index + 1}`)
+    ),
+    ...(changes ?? []).flatMap((change, index) => {
+      const record = asRecord(change);
+      return [
+        targetFromArtifactRef(record.diffRef, `Open change ${index + 1} diff`),
+        targetFromArtifactRef(record.beforeRef, `Open change ${index + 1} before`),
+        targetFromArtifactRef(record.afterRef, `Open change ${index + 1} after`),
+        targetFromArtifactRef(record.dataRef, `Open change ${index + 1} data`),
+        targetFromArtifactRef(record.artifactRef, `Open change ${index + 1}`)
+      ];
+    })
+  ]);
+  return targets.length === 0 ? undefined : targets;
+};
+
+const artifactPreviewFromRef = (
+  value: unknown,
+  fallbackLabel: string
+): ToolArtifactPreview | null => {
+  const artifact = asRecord(value);
+  if (Object.keys(artifact).length === 0) return null;
+  const text = stringField(
+    artifact,
+    "preview",
+    "excerpt",
+    "summary",
+    "content",
+    "text"
+  );
+  if (text === undefined || text.trim().length === 0) return null;
+  const kind = stringField(artifact, "kind", "type");
+  const path = stringField(artifact, "path", "filePath", "uri", "id");
+  const bytes = numberField(artifact, "bytes", "size");
+  const truncated = typeof artifact.previewTruncated === "boolean"
+    ? artifact.previewTruncated
+    : typeof artifact.truncated === "boolean"
+      ? artifact.truncated
+      : undefined;
+  return {
+    label: stringField(artifact, "label", "title", "id", "kind") ?? fallbackLabel,
+    text,
+    ...(kind === undefined ? {} : { kind }),
+    ...(path === undefined ? {} : { path }),
+    ...(bytes === undefined ? {} : { bytes }),
+    ...(truncated === undefined ? {} : { truncated })
+  };
+};
+
+const artifactPreviewsFromEvidence = (
+  artifactRefs: readonly unknown[] | undefined,
+  changes: readonly unknown[] | undefined
+): ToolArtifactPreview[] | undefined => {
+  const candidates = [
+    ...(artifactRefs ?? []).map((artifact, index) =>
+      artifactPreviewFromRef(artifact, `artifact ${index + 1}`)
+    ),
+    ...(changes ?? []).flatMap((change, index) => {
+      const record = asRecord(change);
+      return [
+        artifactPreviewFromRef(record.diffRef, `change ${index + 1} diff`),
+        artifactPreviewFromRef(record.beforeRef, `change ${index + 1} before`),
+        artifactPreviewFromRef(record.afterRef, `change ${index + 1} after`),
+        artifactPreviewFromRef(record.dataRef, `change ${index + 1} data`),
+        artifactPreviewFromRef(record.artifactRef, `change ${index + 1}`)
+      ];
+    })
+  ].filter((preview): preview is ToolArtifactPreview => preview !== null);
+  const seen = new Set<string>();
+  const result: ToolArtifactPreview[] = [];
+  for (const preview of candidates) {
+    const key = `${preview.label}:${preview.path ?? ""}:${preview.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(preview);
+  }
+  return result.length === 0 ? undefined : result;
+};
+
 const secretTargetsFromValue = (
   value: unknown,
   depth = 0
@@ -620,24 +692,15 @@ const toolInputRecord = (tool: AgentToolActivity): Record<string, unknown> => {
   return input;
 };
 
+const toolArgsRecord = (tool: AgentToolActivity): Record<string, unknown> =>
+  asRecord(toolInputRecord(tool).args);
+
 const toolOutputText = (tool: AgentToolActivity): string => {
   const output = asRecord(tool.output);
   const content = output.content;
   if (typeof content === "string") return content;
   if (tool.output !== undefined) return JSON.stringify(tool.output, null, 2);
   return JSON.stringify(tool.input, null, 2);
-};
-
-type ParsedWebSearchOutput = {
-  readonly query: string;
-  readonly results: WebResult[];
-};
-
-type ParsedWebFetchOutput = {
-  readonly url: string;
-  readonly fetchedBytes: number;
-  readonly title?: string;
-  readonly preview?: string;
 };
 
 type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;
@@ -652,9 +715,6 @@ type ParsedLumenElement = {
   readonly label: string;
 };
 
-const WEB_SEARCH_HEADER = "Search results for:";
-const WEB_SEARCH_RESULT_HEADING = /^\s*\d+\.\s+\*\*(.+?)\*\*\s*$/u;
-const WEB_FETCH_HEADER = /^Fetched\s+(https?:\/\/\S+)\s+\((\d+)\s+bytes\)\n\n([\s\S]*)$/u;
 const LUMEN_ACTIONS = new Set([
   "map",
   "focus_scan",
@@ -672,34 +732,72 @@ const LUMEN_ACTIONS = new Set([
   "explain_target",
   "elevate"
 ]);
-const LUMEN_OBSERVATION_HEADER =
-  /^Observation\s+(\S+)\s+\(([^)]+)\)\s+for\s+(.+?)(?:\s+-\s+(https?:\/\/\S+))?$/u;
-const LUMEN_ELEMENT_ROW =
-  /^\[(.+?)\]\s+([^:]+):\s+"([^"]*)"(?:\s+\[[^\]]+\])?\s+at\s+\(([-\d]+),([-\d]+)\)\s+(\d+)x(\d+)$/u;
-const LUMEN_FOCUS_LINE = /^Focus\s+([^;]+);\s+active element:\s+(.+)$/u;
-const LUMEN_FOCUSED_LINE = /^Focused\s+([^:]+):\s+"([^"]*)"$/u;
-const LUMEN_TRAIL_LINE = /^\s+\d+\.\s+\[(.+?)\]\s+(.+)$/u;
 
 const isHttpUrl = (value: string): boolean =>
   value.startsWith("https://") || value.startsWith("http://");
 
+const normalizeToolFsPath = (value: string | null | undefined): string | undefined => {
+  const normalized = value?.trim();
+  if (normalized === undefined || normalized.length === 0) return undefined;
+  return normalized === "/tools" || normalized.startsWith("/tools/")
+    ? normalized
+    : undefined;
+};
+
+const toolFsPath = (tool: AgentToolActivity): string | undefined => {
+  const input = toolInputRecord(tool);
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  return [
+    tool.toolPath,
+    stringField(input, "toolPath", "tool_path", "path"),
+    stringField(output, "toolPath", "tool_path"),
+    stringField(raw, "toolPath", "tool_path")
+  ].map(normalizeToolFsPath).find((path) => path !== undefined);
+};
+
+const toolFsDomain = (tool: AgentToolActivity): string | undefined => {
+  const input = toolInputRecord(tool);
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  return tool.domain
+    ?? stringField(input, "domain")
+    ?? stringField(output, "domain")
+    ?? stringField(raw, "domain");
+};
+
+const toolFsOperation = (tool: AgentToolActivity): string | undefined => {
+  const input = toolInputRecord(tool);
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  return tool.operation
+    ?? stringField(input, "operation", "action", "op")
+    ?? stringField(output, "operation", "op")
+    ?? stringField(raw, "operation", "action", "op");
+};
+
+const isToolFsActivity = (tool: AgentToolActivity): boolean => {
+  const toolName = tool.name.toLowerCase();
+  return toolName === "tool_fs"
+    || toolName.startsWith("tool_fs_")
+    || toolFsPath(tool) !== undefined
+    || toolFsDomain(tool) !== undefined
+    || toolFsOperation(tool) !== undefined
+    || manifestToolTitle(tool) !== null;
+};
+
 const isLyraLumenTool = (tool: AgentToolActivity): boolean =>
-  tool.name.toLowerCase() === "lyra_lumen" || tool.domain === "browser";
+  (toolFsDomain(tool) ?? "").toLowerCase() === "browser"
+  || (toolFsPath(tool) ?? "").toLowerCase().startsWith("/tools/browser/");
 
 const isSoftwareTool = (tool: AgentToolActivity): boolean => {
-  const toolName = tool.name.toLowerCase();
-  return tool.domain === "software"
-    || toolName === "software"
-    || toolName === "software_invoke_capability"
-    || toolName === "software_inspect_capability"
-    || toolName === "software_read_state"
-    || toolName === "software_list_capabilities"
-    || toolName.startsWith("software.");
+  return (toolFsDomain(tool) ?? "").toLowerCase() === "software"
+    || (toolFsPath(tool) ?? "").toLowerCase().startsWith("/tools/software/");
 };
 
 const isTerminalTool = (tool: AgentToolActivity): boolean => {
-  const toolName = tool.name.toLowerCase();
-  return tool.domain === "terminal" || toolName === "terminal" || toolName.startsWith("terminal_");
+  return (toolFsDomain(tool) ?? "").toLowerCase() === "terminal"
+    || (toolFsPath(tool) ?? "").toLowerCase().startsWith("/tools/terminal/");
 };
 
 const compactText = (value: string): string =>
@@ -752,60 +850,6 @@ const lumenPointLabel = (input: Record<string, unknown>): string | undefined => 
   const y = typeof point.y === "number" ? point.y : Number.NaN;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
   return `point ${Math.round(x)},${Math.round(y)}`;
-};
-
-const parseLumenMapOutput = (output: string): {
-  readonly observationId?: string;
-  readonly strategy?: string;
-  readonly title?: string;
-  readonly url?: string;
-  readonly elements: readonly ParsedLumenElement[];
-} => {
-  const [firstLine = "", ...rest] = output.trim().split(/\r?\n/u);
-  const match = firstLine.match(LUMEN_OBSERVATION_HEADER);
-  const elements = rest
-    .map((line) => line.match(LUMEN_ELEMENT_ROW))
-    .filter((item): item is RegExpMatchArray => item !== null)
-    .map((item) => ({
-      id: item[1] ?? "?",
-      role: (item[2] ?? "element").trim(),
-      label: (item[3] ?? "").trim()
-    }));
-
-  return {
-    ...(match?.[1] === undefined ? {} : { observationId: match[1] }),
-    ...(match?.[2] === undefined ? {} : { strategy: match[2] }),
-    ...(match?.[3] === undefined ? {} : { title: match[3] }),
-    ...(match?.[4] === undefined ? {} : { url: match[4] }),
-    elements
-  };
-};
-
-const parseLumenFocusOutput = (output: string): {
-  readonly direction?: string;
-  readonly activeElementId?: string;
-  readonly focused?: string;
-  readonly trail: readonly string[];
-} => {
-  const lines = output.trim().split(/\r?\n/u);
-  const focusMatch = (lines[0] ?? "").match(LUMEN_FOCUS_LINE);
-  const focusedMatch = lines
-    .map((line) => line.match(LUMEN_FOCUSED_LINE))
-    .find((item): item is RegExpMatchArray => item !== null);
-  const trail = lines
-    .map((line) => line.match(LUMEN_TRAIL_LINE))
-    .filter((item): item is RegExpMatchArray => item !== null)
-    .map((item) => item[2]?.trim() ?? "")
-    .filter((label) => label.length > 0);
-
-  return {
-    ...(focusMatch?.[1] === undefined ? {} : { direction: focusMatch[1] }),
-    ...(focusMatch?.[2] === undefined ? {} : { activeElementId: focusMatch[2] }),
-    ...(focusedMatch === undefined
-      ? {}
-      : { focused: `${focusedMatch[1] ?? "element"}: ${focusedMatch[2] ?? ""}` }),
-    trail
-  };
 };
 
 const lumenElementFromRaw = (value: unknown): ParsedLumenElement | null => {
@@ -968,23 +1012,31 @@ const toLumenDetails = (
   let excerpt: string | undefined;
 
   if (action === "map") {
-    const parsed = parseStructuredLumenMap(rawOutput) ?? parseLumenMapOutput(output);
-    if (parsed.strategy !== undefined) chips.push(parsed.strategy);
-    chips.push(`${parsed.elements.length} elements`);
-    const host = urlHost(parsed.url);
-    if (host !== undefined) chips.push(host);
-    const labels = parsed.elements
-      .map((element) => `${element.id} ${element.role} ${element.label}`)
-      .filter((label) => label.trim().length > 0)
-      .slice(0, 2);
-    excerpt = labels.length > 0
-      ? truncateText(labels.join(" / "), 120)
-      : truncateText(parsed.title ?? output, 120);
+    const parsed = parseStructuredLumenMap(rawOutput);
+    if (parsed !== null) {
+      if (parsed.strategy !== undefined) chips.push(parsed.strategy);
+      chips.push(`${parsed.elements.length} elements`);
+      const host = urlHost(parsed.url);
+      if (host !== undefined) chips.push(host);
+      const labels = parsed.elements
+        .map((element) => `${element.id} ${element.role} ${element.label}`)
+        .filter((label) => label.trim().length > 0)
+        .slice(0, 2);
+      excerpt = labels.length > 0
+        ? truncateText(labels.join(" / "), 120)
+        : truncateText(parsed.title ?? output, 120);
+    } else {
+      excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+    }
   } else if (action === "focus_scan") {
-    const parsed = parseStructuredLumenFocus(rawOutput) ?? parseLumenFocusOutput(output);
-    chips.push(`${parsed.trail.length} tab stops`);
-    if (parsed.activeElementId !== undefined) chips.push(`active ${parsed.activeElementId}`);
-    excerpt = truncateText(parsed.focused ?? parsed.trail.slice(0, 2).join(" / ") ?? output, 120);
+    const parsed = parseStructuredLumenFocus(rawOutput);
+    if (parsed !== null) {
+      chips.push(`${parsed.trail.length} tab stops`);
+      if (parsed.activeElementId !== undefined) chips.push(`active ${parsed.activeElementId}`);
+      excerpt = truncateText(parsed.focused ?? parsed.trail.slice(0, 2).join(" / "), 120);
+    } else {
+      excerpt = output.trim().length === 0 ? undefined : truncateText(output, 120);
+    }
   } else if (action === "read") {
     const strategy = stringField(input, "strategy") ?? "focus";
     chips.push(strategy === "domFallback" ? "dom fallback" : "focus read");
@@ -1057,92 +1109,6 @@ const toLumenDetails = (
   };
 };
 
-const parseWebSearchOutput = (output: string): ParsedWebSearchOutput | null => {
-  const text = output.trim();
-  if (!text.startsWith(WEB_SEARCH_HEADER)) return null;
-
-  const lines = text.replace(/\r\n?/gu, "\n").split("\n");
-  const query = lines[0]?.slice(WEB_SEARCH_HEADER.length).trim() ?? "";
-  if (query.length === 0) return null;
-
-  const results: WebResult[] = [];
-  let index = 1;
-
-  while (index < lines.length) {
-    const heading = lines[index]?.trim() ?? "";
-    const headingMatch = heading.match(WEB_SEARCH_RESULT_HEADING);
-    if (headingMatch === null) {
-      index += 1;
-      continue;
-    }
-
-    const title = headingMatch[1]?.trim() ?? "";
-    index += 1;
-    while (index < lines.length && (lines[index]?.trim() ?? "").length === 0) {
-      index += 1;
-    }
-
-    const url = lines[index]?.trim() ?? "";
-    if (title.length === 0 || !isHttpUrl(url)) {
-      continue;
-    }
-    index += 1;
-
-    const snippetLines: string[] = [];
-    while (index < lines.length) {
-      const line = lines[index]?.trim() ?? "";
-      if (line.match(WEB_SEARCH_RESULT_HEADING) !== null) break;
-      if (line.length > 0) snippetLines.push(line);
-      index += 1;
-    }
-
-    const snippet = snippetLines.join(" ").trim();
-    results.push({
-      title,
-      url,
-      ...(snippet.length === 0 ? {} : { snippet })
-    });
-  }
-
-  return results.length === 0 ? null : { query, results };
-};
-
-const cleanFetchedContentLine = (line: string): string => {
-  const trimmed = line.trim();
-  return trimmed
-    .replace(/^[-*]\s*/u, "")
-    .replace(/^#{1,6}\s*/u, "")
-    .trim();
-};
-
-const parseWebFetchOutput = (output: string): ParsedWebFetchOutput | null => {
-  const match = output.trim().match(WEB_FETCH_HEADER);
-  if (match === null) return null;
-
-  const url = match[1] ?? "";
-  const bytes = Number.parseInt(match[2] ?? "0", 10);
-  const body = match[3] ?? "";
-  const previewLines = body
-    .split(/\r?\n/u)
-    .map(cleanFetchedContentLine)
-    .filter((line) => line.length > 0)
-    .slice(0, 4);
-
-  const title = previewLines[0];
-  const preview = previewLines.slice(1).join("\n");
-
-  return {
-    url,
-    fetchedBytes: Number.isFinite(bytes) ? bytes : 0,
-    ...(title === undefined ? {} : { title }),
-    ...(preview.length === 0 ? {} : { preview })
-  };
-};
-
-const WORKBENCH_LIST_ROW =
-  /^-\s+(.+?)\s+\[([^\]]+)\]\s+(.+?)\s+\(([^)]+)\)\s+flags=([^|]*?)(?:\s+\|\s*(.*))?$/u;
-const WORKBENCH_TAB_HEADER = /^(.+?)\s+\[([^\]]+)\]\s+\(([^)]+)\)$/u;
-
 const normalizeWorkbenchFlags = (flags: string | undefined): string[] => {
   if (flags === undefined) return [];
   return flags
@@ -1166,6 +1132,59 @@ const workbenchActionLabel = (action: string): string => {
   }
 };
 
+const webResultsFromRaw = (raw: Record<string, unknown>): WebResult[] | undefined => {
+  const rawResults = arrayField(raw, "results");
+  if (rawResults === undefined) return undefined;
+  const results = rawResults
+    .map((item) => {
+      const record = asRecord(item);
+      const title = stringField(record, "title", "name") ?? "Untitled";
+      const url = stringField(record, "url", "href");
+      if (url === undefined || !isHttpUrl(url)) return null;
+      const snippet = stringField(record, "snippet", "summary", "text");
+      return {
+        title,
+        url,
+        ...(snippet === undefined ? {} : { snippet })
+      };
+    })
+    .filter((item): item is WebResult => item !== null);
+  return results.length === 0 ? undefined : results;
+};
+
+const workbenchTabFromRaw = (value: unknown): WorkbenchTabSummary | null => {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return null;
+  const tabId = stringField(record, "tabId", "id");
+  const title = stringField(record, "title", "label", "name") ?? "Untitled";
+  const kind = stringField(record, "kind", "pageKind", "type") ?? "tab";
+  const observationKind = stringField(record, "observationKind");
+  const rawFlags = arrayField(record, "flags")
+    ?.filter((flag): flag is string => typeof flag === "string")
+    ?? normalizeWorkbenchFlags(stringField(record, "flags"));
+  const url = stringField(record, "url", "displayAddress", "href");
+  const excerpt = stringField(record, "excerpt", "summary", "text", "content");
+  if (tabId === undefined && excerpt === undefined && url === undefined) return null;
+  return {
+    title,
+    tabId: tabId ?? "-",
+    kind,
+    flags: rawFlags,
+    ...(observationKind === undefined ? {} : { observationKind }),
+    ...(url === undefined || !isHttpUrl(url) ? {} : { url }),
+    ...(excerpt === undefined ? {} : { excerpt })
+  };
+};
+
+const workbenchTabsFromRaw = (raw: Record<string, unknown>): WorkbenchTabSummary[] | null => {
+  const rawTabs = arrayField(raw, "tabs", "observations", "pages");
+  if (rawTabs === undefined) return null;
+  const tabs = rawTabs
+    .map(workbenchTabFromRaw)
+    .filter((tab): tab is WorkbenchTabSummary => tab !== null);
+  return tabs.length === 0 ? null : tabs;
+};
+
 const softwareTitle = (tool: AgentToolActivity): string => {
   const input = toolInputRecord(tool);
   const actionId = stringField(input, "actionId", "capabilityId");
@@ -1178,57 +1197,17 @@ const softwareTitle = (tool: AgentToolActivity): string => {
   return "Software capability";
 };
 
-const parseWorkbenchListOutput = (output: string): WorkbenchTabSummary[] | null => {
-  const tabs = output
-    .trim()
-    .split(/\r?\n/u)
-    .map((line) => line.match(WORKBENCH_LIST_ROW))
-    .filter((match): match is RegExpMatchArray => match !== null)
-    .map((match) => {
-      const url = (match[6] ?? "").trim();
-      return {
-        title: (match[1] ?? "Untitled").trim(),
-        tabId: (match[2] ?? "-").trim(),
-        kind: (match[3] ?? "tab").trim(),
-        observationKind: (match[4] ?? "tab").trim(),
-        flags: normalizeWorkbenchFlags(match[5]),
-        ...(isHttpUrl(url) ? { url } : {})
-      };
-    });
-
-  return tabs.length === 0 ? null : tabs;
-};
-
-const parseWorkbenchTabOutput = (output: string): WorkbenchTabSummary | null => {
-  const normalized = output.trim();
-  const [firstLine = "", ...restLines] = normalized.split(/\r?\n/u);
-  const match = firstLine.match(WORKBENCH_TAB_HEADER);
-  if (match === null) return null;
-  const excerpt = restLines.join("\n").trim();
-  return {
-    title: (match[1] ?? "Untitled").trim(),
-    tabId: (match[2] ?? "-").trim(),
-    kind: (match[3] ?? "tab").trim(),
-    flags: [],
-    ...(excerpt.length === 0 ? {} : { excerpt })
-  };
-};
-
-const parseWorkbenchWorkspaceOutput = (output: string): WorkbenchTabSummary[] | null => {
-  const tabs = output
-    .split(/\n\n---\n\n/u)
-    .map(parseWorkbenchTabOutput)
-    .filter((tab): tab is WorkbenchTabSummary => tab !== null);
-  return tabs.length === 0 ? null : tabs;
-};
-
-const toWorkbenchDetails = (tool: AgentToolActivity, output: string): ParsedWorkbenchDetails => {
+const toWorkbenchDetails = (
+  tool: AgentToolActivity,
+  output: string,
+  raw: Record<string, unknown>
+): ParsedWorkbenchDetails => {
   const input = asRecord(tool.input);
   const action = stringField(input, "action") ?? "workbench";
   const label = workbenchActionLabel(action);
 
   if (action === "list_tabs") {
-    const tabs = parseWorkbenchListOutput(output);
+    const tabs = workbenchTabsFromRaw(raw);
     return {
       type: "workbench",
       action,
@@ -1238,7 +1217,7 @@ const toWorkbenchDetails = (tool: AgentToolActivity, output: string): ParsedWork
   }
 
   if (action === "read_workspace") {
-    const tabs = parseWorkbenchWorkspaceOutput(output);
+    const tabs = workbenchTabsFromRaw(raw);
     return {
       type: "workbench",
       action,
@@ -1248,7 +1227,7 @@ const toWorkbenchDetails = (tool: AgentToolActivity, output: string): ParsedWork
   }
 
   if (action === "read_tab") {
-    const tab = parseWorkbenchTabOutput(output);
+    const tab = workbenchTabFromRaw(raw.tab) ?? workbenchTabFromRaw(raw);
     return {
       type: "workbench",
       action,
@@ -1683,24 +1662,30 @@ const toRenderDetails = (
   raw: Record<string, unknown>
 ): ParsedRenderDetails => {
   const input = toolInputRecord(tool);
+  const args = toolArgsRecord(tool);
   const format = renderSurfaceFormat(
-    stringField(raw, "format", "kind") ?? stringField(input, "kind", "format")
+    stringField(raw, "format", "kind")
+    ?? stringField(args, "kind", "format")
+    ?? stringField(input, "kind", "format")
   );
   const surfaceId =
     stringField(raw, "surfaceId", "id")
+    ?? stringField(args, "surfaceId", "id")
     ?? stringField(input, "surfaceId", "id")
     ?? tool.id;
   const title =
     stringField(raw, "title")
+    ?? stringField(args, "title")
     ?? stringField(input, "title")
     ?? "Render Surface";
   const content =
     stringField(raw, "content")
+    ?? stringField(args, "content", format)
     ?? stringField(input, "content", format)
     ?? (format === "table" ? "" : output);
   const height = Math.max(
     140,
-    Math.min(720, numberField(raw, "height") ?? numberField(input, "height") ?? 320)
+    Math.min(720, numberField(raw, "height") ?? numberField(args, "height") ?? numberField(input, "height") ?? 320)
   );
   const rawSecurity = asRecord(raw.security);
   const details: ParsedRenderDetails = {
@@ -1709,19 +1694,19 @@ const toRenderDetails = (
     title,
     format,
     operation: renderSurfaceOperation(
-      stringField(raw, "operation") ?? stringField(input, "operation")
+      stringField(raw, "operation") ?? stringField(args, "operation") ?? stringField(input, "operation")
     ),
     content,
     height,
     interactive: typeof raw.interactive === "boolean" ? raw.interactive : true,
-    theme: renderSurfaceTheme(stringField(raw, "theme") ?? stringField(input, "theme"))
+    theme: renderSurfaceTheme(stringField(raw, "theme") ?? stringField(args, "theme") ?? stringField(input, "theme"))
   };
   const summary = stringField(raw, "summary");
   if (summary !== undefined) details.summary = summary;
   if (raw.data !== undefined && raw.data !== null) details.data = raw.data;
-  const columns = renderSurfaceColumns(raw.columns ?? input.columns);
+  const columns = renderSurfaceColumns(raw.columns ?? args.columns ?? input.columns);
   if (columns !== undefined) details.columns = columns;
-  const rows = renderSurfaceRows(raw.rows ?? input.rows);
+  const rows = renderSurfaceRows(raw.rows ?? args.rows ?? input.rows);
   if (rows !== undefined) details.rows = rows;
   if (Object.keys(rawSecurity).length > 0) {
     details.security = {
@@ -1744,7 +1729,14 @@ const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
 ): ToolDetails => {
+  if (!isToolFsActivity(tool)) {
+    return {
+      type: "text",
+      body: toolOutputText(tool)
+    };
+  }
   const input = asRecord(tool.input);
+  const args = toolArgsRecord(tool);
   const output = toolOutputText(tool);
   const outputRecord = asRecord(tool.output);
   const rawOutputRecord = asRecord(outputRecord.raw);
@@ -1775,42 +1767,69 @@ const toToolDetails = (
     return toRenderDetails(tool, output, rawOutputRecord);
   }
   if (kind === "read") {
+    const file =
+      stringField(rawOutputRecord, "file_path", "filePath", "path", "target")
+      ?? stringField(args, "file_path", "filePath", "path", "target")
+      ?? stringField(input, "file_path", "filePath", "path", "target")
+      ?? toolFsPath(tool)
+      ?? "Tool output";
     return {
       type: "read",
-      file:
-        stringField(input, "file_path", "filePath", "path", "target") ??
-        tool.name,
+      file,
       ...(output.trim().length === 0 ? {} : { preview: output })
     };
   }
   if (kind === "shell") {
+    const command =
+      stringField(rawOutputRecord, "command", "cmd")
+      ?? stringField(args, "command", "cmd")
+      ?? stringField(input, "command", "cmd")
+      ?? toolPathTitle(tool)
+      ?? "Command";
     return {
       type: "shell",
-      command: stringField(input, "command", "cmd") ?? tool.name,
+      command,
       output,
-      exitCode: asRecord(tool.output).error ? 1 : 0
+      exitCode: numberField(rawOutputRecord, "exitCode", "exit_code")
+        ?? (asRecord(tool.output).error ? 1 : 0)
     };
   }
   if (kind === "web") {
-    const webSearch = parseWebSearchOutput(output);
-    const webFetch = webSearch === null ? parseWebFetchOutput(output) : null;
+    const webResults = webResultsFromRaw(rawOutputRecord);
+    const query =
+      stringField(rawOutputRecord, "query")
+      ?? stringField(args, "query")
+      ?? stringField(input, "query");
+    const url =
+      stringField(rawOutputRecord, "finalUrl", "url", "href")
+      ?? stringField(args, "url", "href")
+      ?? stringField(input, "url", "href")
+      ?? webResults?.[0]?.url;
+    if (url === undefined) {
+      return {
+        type: "text",
+        body: output
+      };
+    }
     return {
       type: "web",
-      url: stringField(input, "url", "href") ?? webSearch?.results[0]?.url ?? webFetch?.url ?? tool.name,
-      ...(webSearch === null
-        ? (webFetch === null
-            ? (output.trim().length === 0 ? {} : { summary: output })
-            : {
-                fetchedBytes: webFetch.fetchedBytes,
-                ...(webFetch.title === undefined ? {} : { title: webFetch.title }),
-                ...(webFetch.preview === undefined ? {} : { summary: webFetch.preview })
-              })
-        : { query: webSearch.query, results: webSearch.results }),
+      url,
+      ...(query === undefined ? {} : { query }),
+      ...(webResults === undefined ? {} : { results: webResults }),
+      ...(numberField(rawOutputRecord, "bytes", "fetchedBytes") === undefined
+        ? {}
+        : { fetchedBytes: numberField(rawOutputRecord, "bytes", "fetchedBytes")! }),
+      ...(stringField(rawOutputRecord, "title") === undefined
+        ? {}
+        : { title: stringField(rawOutputRecord, "title")! }),
+      ...(stringField(rawOutputRecord, "text", "summary", "content") === undefined
+        ? (output.trim().length === 0 ? {} : { summary: output })
+        : { summary: stringField(rawOutputRecord, "text", "summary", "content")! }),
       screenshot
     };
   }
   if (kind === "workbench") {
-    return toWorkbenchDetails(tool, output);
+    return toWorkbenchDetails(tool, output, rawOutputRecord);
   }
   return {
     type: "text",
@@ -1826,32 +1845,37 @@ const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
 
 const toolFsMetaTitle = (tool: AgentToolActivity): string | null => {
   const input = toolInputRecord(tool);
-  const operation = tool.operation ?? stringField(input, "operation", "action");
   const toolName = tool.name.toLowerCase();
   if (toolName !== "tool_fs" && !toolName.startsWith("tool_fs_")) return null;
+  const operation = toolName.startsWith("tool_fs_")
+    ? toolName.slice("tool_fs_".length)
+    : stringField(input, "action") ?? tool.operation ?? stringField(input, "operation");
   if (operation === "list") return "List tools";
   if (operation === "read_doc") return "Read tool docs";
   if (operation === "inspect") return "Inspect tool";
-  if (operation === "run") return "Run tool";
+  if (operation === "run") return toolPathTitle(tool) ?? "Tool filesystem";
   return "Tool filesystem";
+};
+
+const toolPathTitle = (tool: AgentToolActivity): string | null => {
+  const path = toolFsPath(tool);
+  const pathParts = path?.split("/").filter(Boolean) ?? [];
+  const leaf = pathParts[pathParts.length - 1];
+  if (leaf === undefined || leaf.trim().length === 0) return null;
+  return leaf
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 };
 
 const genericToolTitle = (tool: AgentToolActivity): string => {
   const metaTitle = toolFsMetaTitle(tool);
   if (metaTitle !== null) return metaTitle;
   const label = tool.label.trim();
-  if (label.length > 0 && label !== "Ran" && label !== "Used Lyra tool") return label;
-  const input = toolInputRecord(tool);
-  const path = tool.toolPath ?? stringField(input, "toolPath", "tool_path");
-  const pathParts = path?.split("/").filter(Boolean) ?? [];
-  const leaf = pathParts[pathParts.length - 1];
-  if (leaf !== undefined) {
-    return leaf
-      .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-  return tool.name;
+  if (label.length > 0 && !["Ran", "Run tool", "Used Lyra tool"].includes(label)) return label;
+  const pathTitle = toolPathTitle(tool);
+  if (pathTitle !== null) return pathTitle;
+  return "Tool activity";
 };
 
 const manifestToolTitle = (tool: AgentToolActivity): string | null => {
@@ -1863,6 +1887,14 @@ const manifestToolTitle = (tool: AgentToolActivity): string | null => {
 const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const kind = toolKind(tool);
   const details = toToolDetails(tool, kind);
+  const output = asRecord(tool.output);
+  const traceId = tool.traceId ?? stringField(output, "traceId", "trace_id");
+  const trace = tool.trace ?? arrayField(output, "trace");
+  const artifactRefs = tool.artifactRefs ?? arrayField(output, "artifactRefs", "artifact_refs");
+  const changes = tool.changes ?? arrayField(output, "changes");
+  const artifactTargets = artifactTargetsFromEvidence(artifactRefs, changes);
+  const artifactPreviews = artifactPreviewsFromEvidence(artifactRefs, changes);
+  const failureReason = stringField(output, "notRunReason", "not_run_reason");
   const title = manifestToolTitle(tool)
     ?? (isLyraLumenTool(tool)
     ? lumenTitle(tool)
@@ -1880,7 +1912,14 @@ const toToolCall = (tool: AgentToolActivity): ToolCall => {
     kind,
     title,
     status: toolStatus(tool),
-    details
+    details,
+    ...(traceId === undefined ? {} : { traceId }),
+    ...(trace === undefined ? {} : { trace }),
+    ...(artifactRefs === undefined ? {} : { artifactRefs }),
+    ...(artifactTargets === undefined ? {} : { artifactTargets }),
+    ...(artifactPreviews === undefined ? {} : { artifactPreviews }),
+    ...(changes === undefined ? {} : { changes }),
+    ...(failureReason === undefined ? {} : { failureReason })
   };
 };
 

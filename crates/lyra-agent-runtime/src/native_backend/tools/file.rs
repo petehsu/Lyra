@@ -2,6 +2,30 @@ use super::*;
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
 
+pub(crate) fn execute_filesystem_tool_adapter(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+) -> Value {
+    execute_native_tool_adapter(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+    )
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct LyraArtifactPath {
     pub(crate) absolute: PathBuf,
@@ -86,10 +110,11 @@ pub(crate) fn tool_file_read(
         text.trim_end_matches('\n')
     );
     let artifact_ref = if over_requested_budget {
-        write_tool_artifact(
+        write_tool_artifact_with_kind(
             session_id,
             turn_id,
             tool_call_id,
+            ToolArtifactKind::RawData,
             &String::from_utf8_lossy(&bytes),
         )
     } else {
@@ -538,6 +563,22 @@ pub(crate) fn tool_file_write(
     })?;
     let diff = diff_text(&workspace_path.relative, &old, &content);
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
+    let before_ref = write_file_snapshot_artifact(
+        session_id,
+        turn_id,
+        tool_call_id,
+        &workspace_path.relative,
+        "before",
+        if before_exists { &old } else { "" },
+    );
+    let after_ref = write_file_snapshot_artifact(
+        session_id,
+        turn_id,
+        tool_call_id,
+        &workspace_path.relative,
+        "after",
+        &content,
+    );
     Ok(NativeToolSuccess {
         content: format!("Wrote {}\n{}", workspace_path.relative, diff),
         raw: json!({
@@ -547,6 +588,9 @@ pub(crate) fn tool_file_write(
                 "bytes": content.len(),
                 "beforeExists": before_exists,
                 "afterExists": true,
+                "beforeRef": before_ref,
+                "afterRef": after_ref,
+                "diffRef": diff_artifact_ref,
             }],
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
@@ -595,6 +639,22 @@ pub(crate) fn tool_file_edit(
     })?;
     let diff = diff_text(&workspace_path.relative, &old, &updated);
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
+    let before_ref = write_file_snapshot_artifact(
+        session_id,
+        turn_id,
+        tool_call_id,
+        &workspace_path.relative,
+        "before",
+        &old,
+    );
+    let after_ref = write_file_snapshot_artifact(
+        session_id,
+        turn_id,
+        tool_call_id,
+        &workspace_path.relative,
+        "after",
+        &updated,
+    );
     Ok(NativeToolSuccess {
         content: format!("Edited {}\n{}", workspace_path.relative, diff),
         raw: json!({
@@ -603,6 +663,9 @@ pub(crate) fn tool_file_edit(
                 "operation": "edit",
                 "beforeExists": true,
                 "afterExists": true,
+                "beforeRef": before_ref,
+                "afterRef": after_ref,
+                "diffRef": diff_artifact_ref,
             }],
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
@@ -715,10 +778,13 @@ pub(crate) fn tool_file_multiedit(
             "operation": "multiedit",
             "beforeExists": true,
             "afterExists": true,
+            "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", &old),
+            "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "after", &updated),
         }));
     }
     let diff = diffs.join("\n");
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
+    attach_diff_ref_to_changed_files(&mut changed_files, &diff_artifact_ref);
     Ok(NativeToolSuccess {
         content: format!("Applied {} staged edits.\n{}", changed_files.len(), diff),
         raw: json!({
@@ -946,7 +1012,40 @@ pub(crate) fn write_diff_artifact(
     if diff.trim().is_empty() {
         return None;
     }
-    write_tool_artifact(session_id, turn_id, &format!("{tool_call_id}-diff"), diff)
+    write_tool_artifact_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-diff"),
+        ToolArtifactKind::Diff,
+        diff,
+    )
+}
+
+fn write_file_snapshot_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    path: &str,
+    phase: &str,
+    content: &str,
+) -> Option<Value> {
+    write_tool_artifact_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-{phase}-{path}"),
+        ToolArtifactKind::Snapshot,
+        content,
+    )
+}
+
+fn attach_diff_ref_to_changed_files(changed_files: &mut [Value], diff_ref: &Option<Value>) {
+    for file in changed_files {
+        if let Some(object) = file.as_object_mut() {
+            object
+                .entry("diffRef".to_string())
+                .or_insert_with(|| diff_ref.clone().unwrap_or(Value::Null));
+        }
+    }
 }
 
 pub(crate) fn tool_apply_patch(
@@ -1007,6 +1106,8 @@ pub(crate) fn tool_apply_patch(
                     "operation": "add",
                     "beforeExists": false,
                     "afterExists": true,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", ""),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", &content),
                 }));
             }
             "update" => {
@@ -1056,6 +1157,8 @@ pub(crate) fn tool_apply_patch(
                     "operation": "update",
                     "beforeExists": true,
                     "afterExists": true,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", &updated),
                 }));
             }
             "delete" => {
@@ -1074,12 +1177,15 @@ pub(crate) fn tool_apply_patch(
                     "operation": "delete",
                     "beforeExists": true,
                     "afterExists": false,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", ""),
                 }));
             }
             "move" => {
                 let workspace_path = resolve_workspace_path(session_id, &path, false)?;
                 let new_path = required_value_string(operation, "newPath")?;
                 let next_workspace_path = resolve_workspace_path(session_id, &new_path, true)?;
+                let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
                 if let Some(parent) = next_workspace_path.absolute.parent() {
                     fs::create_dir_all(parent).map_err(|error| {
                         NativeToolFailure::new(
@@ -1104,6 +1210,8 @@ pub(crate) fn tool_apply_patch(
                     "operation": "move",
                     "beforeExists": true,
                     "afterExists": true,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &next_workspace_path.relative, "after", &old),
                 }));
             }
             _ => {
@@ -1117,6 +1225,7 @@ pub(crate) fn tool_apply_patch(
     }
     let diff = diffs.join("\n");
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
+    attach_diff_ref_to_changed_files(&mut changed_files, &diff_artifact_ref);
     Ok(NativeToolSuccess {
         content: format!(
             "Applied {} patch operations.\n{}",

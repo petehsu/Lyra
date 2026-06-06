@@ -2,6 +2,8 @@ use super::*;
 
 pub(crate) struct NativeRuntimeState {
     pub(crate) root: PathBuf,
+    pub(crate) tool_runtime_schema_version: u32,
+    pub(crate) tool_runtime_migration_diagnostics: Vec<Value>,
     pub(crate) sessions: HashMap<String, NativeSession>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
@@ -22,6 +24,8 @@ pub(crate) struct NativeRuntimeState {
 pub(crate) struct NativeStateFile {
     #[serde(default)]
     pub(crate) tool_runtime_schema_version: u32,
+    #[serde(default)]
+    pub(crate) tool_runtime_migration_diagnostics: Vec<Value>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
     #[serde(default, rename = "sharedMemory", skip_serializing)]

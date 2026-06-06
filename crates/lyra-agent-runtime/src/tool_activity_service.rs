@@ -561,7 +561,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_type",
-                "Type text into a browser editable element. Prefer targetRef from lyra_lumen_map; elementId is observation-local compatibility only. If omitted, Lyra uses the current or last confirmed editable target. For segmented verification-code inputs, call this once on the first field with the full code; Lyra splits the characters across fields.",
+                "Type text into a browser editable element. Prefer targetRef from /tools/browser/map; elementId is observation-local compatibility only. If omitted, Lyra uses the current or last confirmed editable target. For segmented verification-code inputs, call this once on the first field with the full code; Lyra splits the characters across fields.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({

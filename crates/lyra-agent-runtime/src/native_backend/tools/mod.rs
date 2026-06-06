@@ -1,15 +1,30 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
+mod artifact;
+mod browser_adapter;
+mod clarification_adapter;
+mod design_adapter;
 mod file;
+mod git_adapter;
+mod mcp_adapter;
+mod memory_adapter;
 mod render;
 mod search;
 mod shell;
+mod skill_adapter;
+mod software_adapter;
 mod terminal;
 mod todo;
 pub(crate) mod tool_fs;
 mod web;
+mod workbench_adapter;
 
-pub(crate) use self::{file::*, render::*, search::*, shell::*, terminal::*, todo::*, web::*};
+pub(crate) use self::{
+    artifact::*, browser_adapter::*, clarification_adapter::*, design_adapter::*, file::*,
+    git_adapter::*, mcp_adapter::*, memory_adapter::*, render::*, search::*, shell::*,
+    skill_adapter::*, software_adapter::*, terminal::*, todo::*, web::*, workbench_adapter::*,
+};
 
 const MIN_TOOL_TIMEOUT_MS: u64 = 250;
 const DEFAULT_HOST_TOOL_TIMEOUT_MS: u64 = 15_000;
@@ -17,6 +32,7 @@ const DEFAULT_BROWSER_TOOL_TIMEOUT_MS: u64 = 8_000;
 const DEFAULT_BROWSER_WAIT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS: u64 = 30_000;
 const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
+const MAX_BROWSER_PAGE_INLINE_CHARS: usize = 12_000;
 
 fn needs_user_action_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
     value.get("needsUserAction").and_then(Value::as_object)
@@ -92,7 +108,7 @@ fn permission_for_automatic_elevation(
     tool_call_id: &str,
     tab_id: &str,
     reason: &str,
-) -> Result<bool, String> {
+) -> Result<Value, String> {
     let input = json!({
         "tabId": tab_id,
         "targetMode": "isolated",
@@ -108,9 +124,21 @@ fn permission_for_automatic_elevation(
         "elevate",
         &input,
     ) else {
-        return Ok(true);
+        return Ok(auto_approval_policy_decision(
+            "lyra_lumen",
+            "elevate",
+            &input,
+        ));
     };
-    wait_for_permission(permission).map_err(|error| error.to_string())
+    let permission_record = permission.clone();
+    wait_for_permission(permission)
+        .map(|allowed| {
+            policy_decision_from_permission(
+                &permission_record,
+                if allowed { "approved" } else { "denied" },
+            )
+        })
+        .map_err(|error| error.to_string())
 }
 
 fn invoke_optional_host(
@@ -241,10 +269,17 @@ fn resolve_auth_challenge_user_action(
     }
 
     let mut elevation = Value::Null;
+    let mut elevation_policy_decision = None;
     if label == "Open Visible Tab" {
         match permission_for_automatic_elevation(session_id, turn_id, tool_call_id, &tab_id, reason)
         {
-            Ok(true) => {
+            Ok(policy_decision)
+                if policy_decision
+                    .get("outcome")
+                    .and_then(Value::as_str)
+                    .is_some_and(|outcome| outcome == "approved") =>
+            {
+                elevation_policy_decision = Some(policy_decision);
                 elevation = invoke_optional_host(
                     dispatcher,
                     "lyraLumen.elevate",
@@ -255,13 +290,14 @@ fn resolve_auth_challenge_user_action(
                     }),
                 );
             }
-            Ok(false) => {
+            Ok(policy_decision) => {
                 return json!({
                     "kind": "auth_challenge_resolution",
                     "clarificationId": request.id,
                     "answer": request.answer,
                     "selectedOption": request.selected_option,
                     "decision": "permission_denied",
+                    "policyDecision": policy_decision,
                 });
             }
             Err(error) => {
@@ -325,6 +361,7 @@ fn resolve_auth_challenge_user_action(
         "selectedOption": request.selected_option,
         "decision": if label == "Already Completed" { "verify" } else { "elevate_and_verify" },
         "elevation": elevation,
+        "policyDecision": elevation_policy_decision,
         "verification": verification,
     })
 }
@@ -427,22 +464,26 @@ pub(crate) fn execute_model_tool(
     output
 }
 
-pub(crate) fn execute_tool_fs_target(
-    session_id: &str,
-    turn_id: &str,
-    dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
-    cancellation: &Arc<AtomicBool>,
-    tool_call_id: &str,
-    manifest: &lyra_tool_fs_core::ToolManifest,
-    arguments: Value,
-) -> Value {
+pub(crate) struct ToolFsTargetExecution<'a> {
+    pub(crate) session_id: &'a str,
+    pub(crate) turn_id: &'a str,
+    pub(crate) dispatcher: &'a Option<Arc<HostCapabilityDispatcher>>,
+    pub(crate) cancellation: &'a Arc<AtomicBool>,
+    pub(crate) tool_call_id: &'a str,
+    pub(crate) manifest: &'a lyra_tool_fs_core::ToolManifest,
+    pub(crate) operation: &'a lyra_tool_fs_core::ToolOperationEnvelope,
+    pub(crate) arguments: Value,
+}
+
+pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Value {
     let started_at = now();
-    if cancellation.load(Ordering::SeqCst) {
+    if context.cancellation.load(Ordering::SeqCst) {
         return json!({
             "content": "Lyra tool call was cancelled before execution.",
             "cancelled": true,
         });
     }
+    let manifest = context.manifest;
     let Some(target) = tool_fs::runtime_target_for_manifest(manifest) else {
         let output = tool_failure_output(
             "tool_not_found",
@@ -451,14 +492,14 @@ pub(crate) fn execute_tool_fs_target(
             Some(json!({ "toolPath": manifest.path })),
         );
         record_tool_activity(
-            session_id,
-            turn_id,
+            context.session_id,
+            context.turn_id,
             tool_activity(
-                tool_call_id,
+                context.tool_call_id,
                 &manifest.domain,
                 &manifest.title,
                 "failed",
-                arguments,
+                context.arguments,
                 Some(output.clone()),
                 &started_at,
                 Some(now()),
@@ -468,12 +509,13 @@ pub(crate) fn execute_tool_fs_target(
         return output;
     };
     if matches!(target, tool_fs::RuntimeToolTarget::Git) {
-        return tool_fs::execute_git_tool_fs_tool(
-            session_id,
-            turn_id,
-            tool_call_id,
+        return execute_git_tool_fs_tool(
+            context.session_id,
+            context.turn_id,
+            context.tool_call_id,
             manifest,
-            arguments,
+            context.operation,
+            context.arguments,
             &started_at,
         );
     }
@@ -483,53 +525,98 @@ pub(crate) fn execute_tool_fs_target(
             display_name,
             action,
         } => {
-            return execute_host_tool_adapter(
-                session_id,
-                turn_id,
-                dispatcher,
-                cancellation,
-                tool_call_id,
-                host_method,
-                display_name,
-                action,
-                host_adapter_arguments(arguments, action),
-                &started_at,
-            );
+            return match *display_name {
+                "workbench" => execute_workbench_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.dispatcher,
+                    context.cancellation,
+                    context.tool_call_id,
+                    host_method,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "lyra_lumen" => execute_browser_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.dispatcher,
+                    context.cancellation,
+                    context.tool_call_id,
+                    host_method,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "software" => execute_software_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.dispatcher,
+                    context.cancellation,
+                    context.tool_call_id,
+                    host_method,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "terminal" => execute_terminal_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.dispatcher,
+                    context.cancellation,
+                    context.tool_call_id,
+                    host_method,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                _ => execute_host_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.dispatcher,
+                    context.cancellation,
+                    context.tool_call_id,
+                    host_method,
+                    display_name,
+                    action,
+                    host_adapter_arguments(context.arguments, action),
+                    &started_at,
+                ),
+            };
         }
         tool_fs::RuntimeToolTarget::SoftwareCapability {
             software_id,
             action_id,
         } => {
-            return execute_host_tool_adapter(
-                session_id,
-                turn_id,
-                dispatcher,
-                cancellation,
-                tool_call_id,
-                "software.invokeCapability",
-                "software",
-                "invoke_capability",
-                software_capability_adapter_arguments(arguments, software_id, action_id),
+            return execute_software_capability_tool_adapter(
+                context.session_id,
+                context.turn_id,
+                context.dispatcher,
+                context.cancellation,
+                context.tool_call_id,
+                software_id,
+                action_id,
+                context.arguments,
                 &started_at,
             );
         }
         tool_fs::RuntimeToolTarget::MemoryAdapter { tool_name, action } => {
             return execute_memory_tool_adapter(
-                session_id,
-                turn_id,
-                tool_call_id,
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
                 tool_name,
                 action,
-                arguments,
+                context.arguments,
                 &started_at,
             );
         }
         tool_fs::RuntimeToolTarget::Clarification => {
             return execute_clarification_tool_adapter(
-                session_id,
-                turn_id,
-                tool_call_id,
-                arguments,
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
+                context.arguments,
                 &started_at,
             );
         }
@@ -538,48 +625,116 @@ pub(crate) fn execute_tool_fs_target(
             display_name,
             action,
         } => {
-            return execute_native_tool_adapter(
-                session_id,
-                turn_id,
-                cancellation,
-                tool_call_id,
-                tool_name,
-                display_name,
-                action,
-                arguments,
-                &started_at,
-            );
+            return match manifest.domain.as_str() {
+                "filesystem" => execute_filesystem_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "code" => execute_code_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "shell" => execute_shell_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "web" => execute_web_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "render" => execute_render_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                "todo" => execute_todo_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+                _ => execute_native_tool_adapter(
+                    context.session_id,
+                    context.turn_id,
+                    context.cancellation,
+                    context.tool_call_id,
+                    tool_name,
+                    display_name,
+                    action,
+                    context.arguments,
+                    &started_at,
+                ),
+            };
         }
         tool_fs::RuntimeToolTarget::DesignAdapter { tool_name, action } => {
             return execute_design_tool_adapter(
-                session_id,
-                turn_id,
-                tool_call_id,
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
                 tool_name,
                 action,
-                arguments,
+                context.arguments,
                 &started_at,
             );
         }
         tool_fs::RuntimeToolTarget::SkillAdapter { tool_name, action } => {
             return execute_skill_tool_adapter(
-                session_id,
-                turn_id,
-                tool_call_id,
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
                 tool_name,
                 action,
-                arguments,
+                context.arguments,
                 &started_at,
             );
         }
         tool_fs::RuntimeToolTarget::McpAdapter { tool_name, action } => {
             return execute_mcp_tool_adapter(
-                session_id,
-                turn_id,
-                tool_call_id,
+                context.session_id,
+                context.turn_id,
+                context.tool_call_id,
                 tool_name,
                 action,
-                arguments,
+                context.arguments,
                 &started_at,
             );
         }
@@ -592,20 +747,97 @@ pub(crate) fn execute_tool_fs_target(
         Some(json!({ "toolPath": manifest.path })),
     );
     record_tool_activity(
-        session_id,
-        turn_id,
+        context.session_id,
+        context.turn_id,
         tool_activity(
-            tool_call_id,
+            context.tool_call_id,
             &manifest.domain,
             &manifest.title,
             "failed",
-            arguments,
+            context.arguments,
             Some(output.clone()),
             &started_at,
             Some(now()),
         ),
         "toolFinished",
     );
+    output
+}
+
+fn policy_decision_from_permission(request: &PermissionRequest, outcome: &str) -> Value {
+    json!({
+        "recordType": "policy_decision",
+        "mode": "user_prompt",
+        "outcome": outcome,
+        "permissionRequestId": request.id,
+        "risk": request.risk,
+        "action": request.action,
+        "summary": request.summary,
+        "recordedAt": now(),
+    })
+}
+
+pub(crate) fn auto_approval_policy_decision(
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Value {
+    json!({
+        "recordType": "policy_decision",
+        "mode": "auto_approved",
+        "outcome": "approved",
+        "risk": permission_risk(display_name, action, input).unwrap_or_else(|| "mutation".to_string()),
+        "action": action,
+        "summary": permission_summary(display_name, action, input),
+        "recordedAt": now(),
+    })
+}
+
+pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &Value) -> bool {
+    match (display_name, action) {
+        ("file", "write" | "edit" | "multiedit" | "apply_patch") => true,
+        ("shell", "run") => true,
+        ("terminal", "create") => input
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty()),
+        ("terminal", terminal_action) => terminal_action_requires_policy(terminal_action),
+        ("git", "stage" | "unstage" | "discard") => true,
+        ("lyra_lumen", "act" | "type" | "press" | "submit" | "navigate" | "elevate") => true,
+        ("software", "invoke_capability") => true,
+        _ => false,
+    }
+}
+
+fn attach_policy_decision_to_raw(mut raw: Value, policy_decision: Option<Value>) -> Value {
+    let Some(policy_decision) = policy_decision else {
+        return raw;
+    };
+    if let Some(object) = raw.as_object_mut() {
+        object
+            .entry("policyDecision".to_string())
+            .or_insert(policy_decision);
+    }
+    raw
+}
+
+fn attach_policy_decision_to_output(mut output: Value, policy_decision: Option<Value>) -> Value {
+    let Some(policy_decision) = policy_decision else {
+        return output;
+    };
+    if let Some(raw) = output.get_mut("raw")
+        && let Some(raw_object) = raw.as_object_mut()
+    {
+        raw_object
+            .entry("policyDecision".to_string())
+            .or_insert(policy_decision);
+        return output;
+    }
+    if let Some(object) = output.as_object_mut() {
+        object
+            .entry("policyDecision".to_string())
+            .or_insert(policy_decision);
+    }
     output
 }
 
@@ -630,6 +862,7 @@ fn execute_host_tool_adapter(
         action,
     );
     let (input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
+    let mut policy_decision = None;
     record_tool_activity(
         session_id,
         turn_id,
@@ -653,22 +886,34 @@ fn execute_host_tool_adapter(
         action,
         &input,
     ) {
+        let permission_record = permission.clone();
         if cancellation.load(Ordering::SeqCst) {
             return json!({
                 "content": "Lyra tool call was cancelled before permission was resolved.",
                 "cancelled": true,
             });
         }
-        match wait_for_permission(permission) {
-            Ok(true) => {}
+        match wait_for_permission_with_cancellation(permission, cancellation) {
+            Ok(true) => {
+                policy_decision = Some(policy_decision_from_permission(
+                    &permission_record,
+                    "approved",
+                ));
+            }
             Ok(false) => {
-                let output = json!({
-                    "content": "Permission denied by the user. Do not execute this tool call; choose a safer alternative or explain what cannot proceed.",
-                    "error": {
-                        "code": "permissionDenied",
-                        "message": "The user denied this tool request.",
-                    }
-                });
+                let output = attach_policy_decision_to_output(
+                    json!({
+                        "content": "Permission denied by the user. Do not execute this tool call; choose a safer alternative or explain what cannot proceed.",
+                        "error": {
+                            "code": "permissionDenied",
+                            "message": "The user denied this tool request.",
+                        }
+                    }),
+                    Some(policy_decision_from_permission(
+                        &permission_record,
+                        "denied",
+                    )),
+                );
                 record_tool_activity(
                     session_id,
                     turn_id,
@@ -687,13 +932,21 @@ fn execute_host_tool_adapter(
                 return output;
             }
             Err(error) => {
-                let output = json!({
-                    "content": format!("Permission request failed: {error}"),
-                    "error": {
-                        "code": "permissionRequestFailed",
-                        "message": error.to_string(),
-                    }
-                });
+                let cancelled = permission_wait_was_cancelled(&error);
+                let output = if cancelled {
+                    json!({
+                        "content": "Lyra tool call was cancelled before permission was resolved.",
+                        "cancelled": true,
+                    })
+                } else {
+                    json!({
+                        "content": format!("Permission request failed: {error}"),
+                        "error": {
+                            "code": "permissionRequestFailed",
+                            "message": error.to_string(),
+                        }
+                    })
+                };
                 record_tool_activity(
                     session_id,
                     turn_id,
@@ -701,7 +954,7 @@ fn execute_host_tool_adapter(
                         tool_call_id,
                         display_name,
                         &tool_label(display_name, action),
-                        "failed",
+                        if cancelled { "cancelled" } else { "failed" },
                         input,
                         Some(output.clone()),
                         started_at,
@@ -712,6 +965,8 @@ fn execute_host_tool_adapter(
                 return output;
             }
         }
+    } else if policy_record_required(display_name, action, &input) {
+        policy_decision = Some(auto_approval_policy_decision(display_name, action, &input));
     }
     if cancellation.load(Ordering::SeqCst) {
         record_tool_activity(
@@ -783,8 +1038,32 @@ fn execute_host_tool_adapter(
             {
                 object.insert("userActionResolution".to_string(), resolution.clone());
             }
+            attach_lumen_screenshot_artifact(
+                session_id,
+                turn_id,
+                tool_call_id,
+                display_name,
+                action,
+                &mut value,
+            );
+            attach_lumen_page_artifact(
+                session_id,
+                turn_id,
+                tool_call_id,
+                display_name,
+                action,
+                &mut value,
+            );
             let activity_input = resolved_tool_activity_input(input.clone(), &value);
-            let raw = redacted_tool_raw_output(display_name, action, value.clone());
+            let raw = attach_host_log_artifact(
+                session_id,
+                turn_id,
+                tool_call_id,
+                display_name,
+                action,
+                redacted_tool_raw_output(display_name, action, value.clone()),
+            );
+            let raw = attach_policy_decision_to_raw(raw, policy_decision.clone());
             let status = if value.get("ok").and_then(Value::as_bool) == Some(false)
                 || value.get("error").is_some_and(|value| !value.is_null())
             {
@@ -810,7 +1089,10 @@ fn execute_host_tool_adapter(
             "failed",
             json!({
                 "content": format!("Lyra tool failed: {error}"),
-                "error": error,
+                "error": {
+                    "code": host_adapter_error_code(&error),
+                    "message": error,
+                },
             }),
             input.clone(),
         ),
@@ -831,6 +1113,258 @@ fn execute_host_tool_adapter(
         "toolFinished",
     );
     output
+}
+
+fn attach_lumen_page_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    value: &mut Value,
+) {
+    if display_name != "lyra_lumen"
+        || !matches!(
+            action,
+            "map" | "read" | "read_until" | "wait" | "follow_audit"
+        )
+        || value.get("pageArtifactRef").is_some()
+    {
+        return;
+    }
+    let Some((field, text)) = lumen_page_text_field(value) else {
+        return;
+    };
+    let original_chars = text.chars().count();
+    if original_chars <= MAX_BROWSER_PAGE_INLINE_CHARS {
+        return;
+    }
+    let Some(artifact_ref) = write_tool_artifact_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-browser-page"),
+        ToolArtifactKind::WebPage,
+        &text,
+    ) else {
+        return;
+    };
+    let preview = format!(
+        "{}\n\n[Full browser page text stored in pageArtifactRef.]",
+        truncate_chars(&text, MAX_BROWSER_PAGE_INLINE_CHARS)
+    );
+    if let Some(object) = value.as_object_mut() {
+        if let Some(field_value) = object.get_mut(field) {
+            *field_value = Value::String(preview);
+        }
+        object.insert("pageArtifactRef".to_string(), artifact_ref);
+        object.insert("pageTextTruncated".to_string(), Value::Bool(true));
+        object.insert(
+            "pageTextSourceField".to_string(),
+            Value::String(field.to_string()),
+        );
+        object.insert(
+            "pageTextOriginalChars".to_string(),
+            Value::Number(serde_json::Number::from(original_chars as u64)),
+        );
+    }
+}
+
+fn lumen_page_text_field(value: &Value) -> Option<(&'static str, String)> {
+    let mut best: Option<(&'static str, String, usize)> = None;
+    for field in [
+        "content",
+        "text",
+        "markdown",
+        "pageText",
+        "visibleText",
+        "innerText",
+        "compactText",
+        "html",
+    ] {
+        let Some(text) = value
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+        else {
+            continue;
+        };
+        let chars = text.chars().count();
+        if best
+            .as_ref()
+            .is_none_or(|(_, _, best_chars)| chars > *best_chars)
+        {
+            best = Some((field, text.to_string(), chars));
+        }
+    }
+    best.map(|(field, text, _)| (field, text))
+}
+
+fn attach_host_log_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    mut raw: Value,
+) -> Value {
+    if display_name != "terminal" || raw.get("logArtifactRef").is_some() {
+        return raw;
+    }
+    let log_text = raw
+        .get("output")
+        .and_then(Value::as_str)
+        .or_else(|| raw.pointer("/screen/visibleText").and_then(Value::as_str))
+        .or_else(|| raw.get("text").and_then(Value::as_str))
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let Some(log_text) = log_text else {
+        return raw;
+    };
+    let Some(log_ref) = write_tool_artifact_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-terminal-{action}-log"),
+        ToolArtifactKind::Log,
+        &log_text,
+    ) else {
+        return raw;
+    };
+    if let Some(object) = raw.as_object_mut() {
+        object.insert("logArtifactRef".to_string(), log_ref);
+    }
+    raw
+}
+
+fn attach_lumen_screenshot_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    value: &mut Value,
+) {
+    if display_name != "lyra_lumen" || action != "see" {
+        return;
+    }
+    if value
+        .pointer("/imageArtifact/path")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty())
+    {
+        return;
+    }
+    let Some(image_data) = value
+        .get("imageBase64")
+        .and_then(Value::as_str)
+        .or_else(|| value.pointer("/screenshot/data").and_then(Value::as_str))
+        .filter(|data| !data.trim().is_empty())
+    else {
+        return;
+    };
+    let image_data = image_data
+        .trim()
+        .strip_prefix("data:")
+        .and_then(|data_url| data_url.split_once(',').map(|(_, data)| data))
+        .unwrap_or(image_data.trim());
+    let Ok(bytes) = BASE64_STANDARD.decode(image_data) else {
+        return;
+    };
+    if bytes.is_empty() {
+        return;
+    }
+    let media_type = value
+        .pointer("/screenshot/mediaType")
+        .or_else(|| value.get("mediaType"))
+        .and_then(Value::as_str)
+        .unwrap_or("image/png")
+        .to_string();
+    let extension = image_extension_for_media_type(&media_type);
+    let Some(artifact_ref) = write_tool_artifact_bytes_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-browser-screenshot"),
+        ToolArtifactKind::BrowserScreenshot,
+        extension,
+        &media_type,
+        &bytes,
+    ) else {
+        return;
+    };
+    let width = value
+        .get("width")
+        .or_else(|| value.pointer("/screenshot/width"))
+        .and_then(Value::as_u64);
+    let height = value
+        .get("height")
+        .or_else(|| value.pointer("/screenshot/height"))
+        .and_then(Value::as_u64);
+    let path = artifact_ref
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let id = artifact_ref
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("browser_screenshot")
+        .to_string();
+    if let Some(object) = value.as_object_mut() {
+        object.insert("screenshotArtifactRef".to_string(), artifact_ref.clone());
+        object.insert(
+            "providerImage".to_string(),
+            json!({
+                "path": path,
+                "mediaType": media_type,
+                "bytes": bytes.len(),
+            }),
+        );
+        object.insert(
+            "imageArtifact".to_string(),
+            json!({
+                "id": id,
+                "kind": "image",
+                "mediaType": media_type,
+                "path": path,
+                "width": width,
+                "height": height,
+                "openTarget": {
+                    "kind": "file",
+                    "path": path,
+                    "mediaType": media_type,
+                }
+            }),
+        );
+    }
+}
+
+fn image_extension_for_media_type(media_type: &str) -> &'static str {
+    match media_type
+        .split(';')
+        .next()
+        .unwrap_or(media_type)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "image/bmp" => "bmp",
+        _ => "png",
+    }
+}
+
+fn host_adapter_error_code(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("host capability bridge is not available") {
+        "host_unavailable"
+    } else if lower.contains("reply channel closed") {
+        "host_channel_closed"
+    } else {
+        "host_capability_failed"
+    }
 }
 
 fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
@@ -883,165 +1417,8 @@ fn strip_tool_fs_metadata(arguments: Value) -> Value {
     Value::Object(input)
 }
 
-fn execute_design_tool_adapter(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    action: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Value {
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "lyra_design",
-            &tool_label("lyra_design", action),
-            "running",
-            arguments.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let raw = design_tools::execute_design_tool(tool_name, &arguments);
-    let output = json!({
-        "content": format_design_output(action, &raw),
-        "raw": raw,
-    });
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "lyra_design",
-            &tool_label("lyra_design", action),
-            "completed",
-            arguments,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
-}
-
-fn execute_skill_tool_adapter(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    action: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Value {
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "skills",
-            &tool_label("skills", action),
-            "running",
-            arguments.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let raw_result = execute_skill_state_change(tool_name, &arguments);
-    let (status, output) = match raw_result {
-        Ok(value) => (
-            "completed",
-            json!({
-                "content": format_skill_output(action, &value),
-                "raw": value,
-            }),
-        ),
-        Err(error) => (
-            "failed",
-            json!({
-                "content": error.clone(),
-                "error": {
-                    "code": "skillToolFailed",
-                    "message": error,
-                }
-            }),
-        ),
-    };
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "skills",
-            &tool_label("skills", action),
-            status,
-            arguments,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
-}
-
-fn execute_mcp_tool_adapter(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    action: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Value {
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "mcp",
-            &tool_label("mcp", action),
-            "running",
-            arguments.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let output = json!({
-        "content": "No Lyra MCP servers are configured in this native runtime instance. Use mcp_server_list to verify server availability, then connect or configure a server before execution.",
-        "raw": {
-            "servers": [],
-            "tools": [],
-            "available": false,
-            "reason": "no_configured_mcp_servers",
-            "requestedTool": tool_name,
-        }
-    });
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "mcp",
-            &tool_label("mcp", action),
-            "failed",
-            arguments,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
+fn permission_wait_was_cancelled(error: &AgentRuntimeError) -> bool {
+    error.to_string().contains("turn cancelled")
 }
 
 pub(crate) fn attach_runtime_cancellation(
@@ -1141,218 +1518,6 @@ pub(crate) fn invoke_host_capability_with_timeout(
     }
 }
 
-fn execute_clarification_tool_adapter(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Value {
-    let question = arguments
-        .get("question")
-        .and_then(Value::as_str)
-        .unwrap_or("What should Lyra Agent do next?")
-        .trim()
-        .to_string();
-    let options = arguments
-        .get("options")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let allow_custom_answer = arguments
-        .get("allowCustomAnswer")
-        .or_else(|| arguments.get("allow_custom_answer"))
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
-    let detail = string_opt(&arguments, "detail");
-    let input = json!({
-        "question": question,
-        "options": options,
-        "allowCustomAnswer": allow_custom_answer,
-        "detail": detail,
-    });
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "clarification",
-            &tool_label("clarification", "ask"),
-            "running",
-            input.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let request = ClarificationRequest {
-        id: format!("clarification-{}", Uuid::new_v4()),
-        session_id: session_id.to_string(),
-        turn_id: turn_id.to_string(),
-        tool_call_id: tool_call_id.to_string(),
-        question,
-        options,
-        allow_custom_answer,
-        detail,
-        status: "pending".to_string(),
-        answer: None,
-        selected_option: None,
-        created_at: now(),
-        responded_at: None,
-    };
-    let wait_result = wait_for_clarification(request);
-    let (status, output) = match wait_result {
-        Ok(request) => (
-            "completed",
-            json!({
-                "content": format!(
-                    "User answered clarification: {}",
-                    request.answer.clone().unwrap_or_default()
-                ),
-                "answer": request.answer,
-                "selectedOption": request.selected_option,
-                "clarificationId": request.id,
-            }),
-        ),
-        Err(error) => (
-            "failed",
-            json!({
-                "content": format!("Clarification failed: {error}"),
-                "error": {
-                    "code": "clarificationFailed",
-                    "message": error.to_string(),
-                }
-            }),
-        ),
-    };
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "clarification",
-            &tool_label("clarification", "ask"),
-            status,
-            input,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
-}
-
-fn execute_memory_tool_adapter(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
-    action: &str,
-    arguments: Value,
-    started_at: &str,
-) -> Value {
-    let input = memory_tool_input(tool_name, arguments);
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "memory",
-            &tool_label("memory", action),
-            "running",
-            input.clone(),
-            None,
-            started_at,
-            None,
-        ),
-        "toolStarted",
-    );
-    let raw_result = match tool_name {
-        "memory_remember" => long_term_memory_create(input.clone()),
-        "memory_search" => long_term_memory_search(input.clone()),
-        "memory_update" => long_term_memory_update(input.clone()),
-        "memory_forget" => long_term_memory_forget(input.clone()),
-        "memory_list" => long_term_memory_list(input.clone()),
-        "memory_link" => long_term_memory_link(input.clone()),
-        "memory_review_candidates" => memory_review_candidates(input.clone()),
-        "memory_apply_candidate" => memory_apply_candidate(input.clone()),
-        "memory_reject_candidate" => memory_reject_candidate(input.clone()),
-        "memory_explain_injection" => memory_explain_injection(input.clone()),
-        _ => Err(AgentRuntimeError::Core(format!(
-            "unknown memory tool: {tool_name}"
-        ))),
-    };
-    let (status, output) = match raw_result {
-        Ok(value) => (
-            "completed",
-            json!({
-                "content": format_memory_output(action, &value),
-                "raw": value,
-            }),
-        ),
-        Err(error) => (
-            "failed",
-            json!({
-                "content": format!("Lyra memory tool failed: {error}"),
-                "error": error.to_string(),
-            }),
-        ),
-    };
-    record_tool_activity(
-        session_id,
-        turn_id,
-        tool_activity(
-            tool_call_id,
-            "memory",
-            &tool_label("memory", action),
-            status,
-            input,
-            Some(output.clone()),
-            started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
-}
-
-pub(crate) fn memory_tool_input(name: &str, arguments: Value) -> Value {
-    let mut input = arguments.as_object().cloned().unwrap_or_default();
-    if name == "memory_remember" {
-        input
-            .entry("scope".to_string())
-            .or_insert_with(|| Value::String("global".to_string()));
-        input
-            .entry("category".to_string())
-            .or_insert_with(|| Value::String("other".to_string()));
-        input
-            .entry("sourceType".to_string())
-            .or_insert_with(|| Value::String("agent_inference".to_string()));
-    }
-    input.insert(
-        "action".to_string(),
-        Value::String(memory_action_name(name).to_string()),
-    );
-    Value::Object(input)
-}
-
-fn memory_action_name(name: &str) -> &'static str {
-    match name {
-        "memory_remember" => "remember",
-        "memory_update" => "update",
-        "memory_forget" => "forget",
-        "memory_list" => "list",
-        "memory_link" => "link",
-        "memory_review_candidates" => "review_candidates",
-        "memory_apply_candidate" => "apply_candidate",
-        "memory_reject_candidate" => "reject_candidate",
-        "memory_explain_injection" => "explain_injection",
-        _ => "search",
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct NativeToolSuccess {
     pub(crate) content: String,
@@ -1409,6 +1574,7 @@ fn execute_native_tool_adapter(
     started_at: &str,
 ) -> Value {
     let mut input = native_tool_input(action, arguments);
+    let mut policy_decision = None;
     record_tool_activity(
         session_id,
         turn_id,
@@ -1456,18 +1622,29 @@ fn execute_native_tool_adapter(
         action,
         &input,
     ) {
-        match wait_for_permission(permission) {
+        let permission_record = permission.clone();
+        match wait_for_permission_with_cancellation(permission, cancellation) {
             Ok(true) => {
                 if let Some(object) = input.as_object_mut() {
                     object.insert("permissionGranted".to_string(), Value::Bool(true));
                 }
+                policy_decision = Some(policy_decision_from_permission(
+                    &permission_record,
+                    "approved",
+                ));
             }
             Ok(false) => {
-                let output = tool_failure_output(
-                    "permission_denied",
-                    "The user denied this native tool request.",
-                    "Do not execute this tool call. Explain the limitation or choose a safer alternative.",
-                    None,
+                let output = attach_policy_decision_to_output(
+                    tool_failure_output(
+                        "permission_denied",
+                        "The user denied this native tool request.",
+                        "Do not execute this tool call. Explain the limitation or choose a safer alternative.",
+                        None,
+                    ),
+                    Some(policy_decision_from_permission(
+                        &permission_record,
+                        "denied",
+                    )),
                 );
                 record_tool_activity(
                     session_id,
@@ -1487,12 +1664,20 @@ fn execute_native_tool_adapter(
                 return output;
             }
             Err(error) => {
-                let output = tool_failure_output(
-                    "permission_request_failed",
-                    &format!("Permission request failed: {error}"),
-                    "Stop this tool call and wait for user input before retrying.",
-                    None,
-                );
+                let cancelled = permission_wait_was_cancelled(&error);
+                let output = if cancelled {
+                    json!({
+                        "content": "Lyra tool call was cancelled before permission was resolved.",
+                        "cancelled": true,
+                    })
+                } else {
+                    tool_failure_output(
+                        "permission_request_failed",
+                        &format!("Permission request failed: {error}"),
+                        "Stop this tool call and wait for user input before retrying.",
+                        None,
+                    )
+                };
                 record_tool_activity(
                     session_id,
                     turn_id,
@@ -1500,7 +1685,7 @@ fn execute_native_tool_adapter(
                         tool_call_id,
                         display_name,
                         &tool_label(display_name, action),
-                        "failed",
+                        if cancelled { "cancelled" } else { "failed" },
                         input,
                         Some(output.clone()),
                         started_at,
@@ -1511,28 +1696,33 @@ fn execute_native_tool_adapter(
                 return output;
             }
         }
+    } else if policy_record_required(display_name, action, &input) {
+        policy_decision = Some(auto_approval_policy_decision(display_name, action, &input));
     }
 
     let result = run_native_tool(session_id, turn_id, tool_name, tool_call_id, &input);
     let (status, output) = match result {
-        Ok(success) => (
-            "completed",
-            budgeted_tool_output(
+        Ok(success) => {
+            let output = budgeted_tool_output(
                 session_id,
                 turn_id,
                 tool_call_id,
                 success.content,
-                success.raw,
+                attach_policy_decision_to_raw(success.raw, policy_decision),
                 success.recommended_next_action,
-            ),
-        ),
+            );
+            ("completed", output)
+        }
         Err(error) => (
             "failed",
-            tool_failure_output(
-                &error.code,
-                &error.message,
-                &error.recommended_next_action,
-                error.detail,
+            attach_policy_decision_to_output(
+                tool_failure_output(
+                    &error.code,
+                    &error.message,
+                    &error.recommended_next_action,
+                    error.detail,
+                ),
+                policy_decision,
             ),
         ),
     };
@@ -1711,52 +1901,6 @@ pub(crate) fn truncate_chars(value: &str, max_chars: usize) -> String {
     let mut output = value.chars().take(max_chars).collect::<String>();
     output.push_str("\n\n[truncated]");
     output
-}
-
-pub(crate) fn write_tool_artifact(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    content: &str,
-) -> Option<Value> {
-    let root = state().lock().ok().map(|state| state.root.clone())?;
-    let artifact_id = format!(
-        "artifact-{}-{}",
-        sanitize_component(tool_call_id),
-        Uuid::new_v4()
-    );
-    let dir = root
-        .join("artifacts")
-        .join(sanitize_component(session_id))
-        .join(sanitize_component(turn_id));
-    fs::create_dir_all(&dir).ok()?;
-    let path = dir.join(format!("{artifact_id}.txt"));
-    fs::write(&path, content).ok()?;
-    Some(json!({
-        "id": artifact_id,
-        "kind": "tool_output",
-        "mimeType": "text/plain; charset=utf-8",
-        "path": path.display().to_string(),
-        "uri": format!(
-            "lyra-agent://artifact/{}/{}/{}",
-            sanitize_component(session_id),
-            sanitize_component(turn_id),
-            sanitize_component(tool_call_id)
-        ),
-    }))
-}
-
-pub(crate) fn sanitize_component(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 pub(crate) fn value_string(input: &Value, key: &str) -> Option<String> {

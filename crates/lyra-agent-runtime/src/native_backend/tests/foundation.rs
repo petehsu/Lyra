@@ -15,6 +15,39 @@ fn native_backend_creates_and_reads_session() {
     assert_eq!(read["workingDir"], "");
     assert_eq!(read["projectBound"], false);
 }
+
+#[test]
+fn tool_activity_projects_trace_records_for_rebuild() {
+    let activity = tool_activity(
+        "tool-1",
+        "git",
+        "Git status",
+        "completed",
+        json!({
+            "toolPath": "/tools/git/status",
+            "operation": "status"
+        }),
+        Some(json!({
+            "content": "clean",
+            "toolPath": "/tools/git/status",
+            "traceId": "trace-1",
+            "trace": [{
+                "schemaVersion": 1,
+                "traceId": "trace-1",
+                "phase": "completed",
+                "status": "ok"
+            }]
+        })),
+        "2026-06-05T00:00:00.000Z",
+        Some("2026-06-05T00:00:00.010Z".to_string()),
+    );
+    assert_eq!(activity["traceId"], "trace-1");
+    assert_eq!(
+        activity.pointer("/trace/0/phase").and_then(Value::as_str),
+        Some("completed")
+    );
+}
+
 #[test]
 fn native_backend_titles_default_sessions_from_first_user_message() {
     let mut session = new_session(None, None, "normal");
@@ -56,6 +89,8 @@ fn native_state_save_only_rewrites_dirty_sessions() {
     clean_session.dirty = false;
     let mut state = NativeRuntimeState {
         root: temp.path().to_path_buf(),
+        tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+        tool_runtime_migration_diagnostics: Vec::new(),
         sessions: HashMap::from([
             (dirty_session.id.clone(), dirty_session),
             (clean_id.clone(), clean_session),
@@ -93,27 +128,141 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         &legacy_session,
     )
     .expect("write legacy session");
+    let custom_provider = NativeProviderProfile {
+        id: "custom-provider".to_string(),
+        label: "Custom Provider".to_string(),
+        provider_type: "openai-compatible".to_string(),
+        base_url: Some("http://localhost:8787/v1".to_string()),
+        default_model: Some("custom-model".to_string()),
+        api_key: Some("secret".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: Some("custom-embedding".to_string()),
+        models: vec![NativeProviderModel {
+            id: "custom-model".to_string(),
+            label: Some("Custom Model".to_string()),
+            context_window: Some(128_000),
+            supports_image_input: true,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        }],
+    };
+    let mut config = NativeConfig {
+        default_provider: Some(custom_provider.id.clone()),
+        default_model: Some("custom-model".to_string()),
+        ..NativeConfig::default()
+    };
+    config
+        .providers
+        .insert(custom_provider.id.clone(), custom_provider);
+    let memory_marker = format!("schema upgrade memory {}", Uuid::new_v4());
+    create_long_term_memory(
+        temp.path(),
+        MemoryMutation {
+            scope: Some("global".to_string()),
+            category: Some("project_context".to_string()),
+            fact: Some(memory_marker.clone()),
+            content: Some(json!({ "fact": memory_marker })),
+            confidence: Some(0.91),
+            source_type: Some("test".to_string()),
+            ..MemoryMutation::default()
+        },
+    )
+    .expect("create memory");
+    let goal_id = format!("goal-{}", Uuid::new_v4());
+    let goal = LyraGoal {
+        id: goal_id.clone(),
+        title: "Preserved goal".to_string(),
+        status: "active".to_string(),
+        scope: Some(temp.path().display().to_string()),
+        session_id: Some(legacy_session_id.clone()),
+        description: Some("Goal must survive Tool-FS session reset.".to_string()),
+        created_at: now(),
+        updated_at: now(),
+        checkpoints: vec![json!({ "summary": "before migration" })],
+    };
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
+        tool_runtime_migration_diagnostics: Vec::new(),
         active_session_id: Some(legacy_session_id.clone()),
-        config: NativeConfig::default(),
+        config,
         legacy_shared_memory: Vec::new(),
         active_skills: HashSet::from(["lyra-design-research".to_string()]),
         overnight_runs: HashMap::new(),
-        pending_permissions: HashMap::new(),
-        pending_clarifications: HashMap::new(),
-        goals: HashMap::new(),
-        focused_goal_id: None,
+        pending_permissions: HashMap::from([(
+            "permission-legacy".to_string(),
+            PermissionRequest {
+                id: "permission-legacy".to_string(),
+                session_id: legacy_session_id.clone(),
+                turn_id: "turn-legacy".to_string(),
+                tool_call_id: "tool-legacy".to_string(),
+                action: "write_file".to_string(),
+                risk: "dangerous".to_string(),
+                summary: "legacy permission".to_string(),
+                why: "legacy".to_string(),
+                title: "Legacy permission".to_string(),
+                detail: "legacy".to_string(),
+                status: "pending".to_string(),
+                allowed: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        )]),
+        pending_clarifications: HashMap::from([(
+            "clarification-legacy".to_string(),
+            ClarificationRequest {
+                id: "clarification-legacy".to_string(),
+                session_id: legacy_session_id.clone(),
+                turn_id: "turn-legacy".to_string(),
+                tool_call_id: "tool-legacy".to_string(),
+                question: "legacy clarification?".to_string(),
+                options: Vec::new(),
+                allow_custom_answer: true,
+                detail: None,
+                status: "pending".to_string(),
+                answer: None,
+                selected_option: None,
+                created_at: now(),
+                responded_at: None,
+            },
+        )]),
+        goals: HashMap::from([(goal_id.clone(), goal)]),
+        focused_goal_id: Some(goal_id.clone()),
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
     let loaded = NativeRuntimeState::load_from_root(temp.path().to_path_buf());
 
     assert!(loaded.sessions.is_empty());
+    assert_eq!(
+        loaded.tool_runtime_schema_version,
+        TOOL_RUNTIME_SCHEMA_VERSION
+    );
+    assert!(loaded.tool_runtime_migration_diagnostics.is_empty());
     assert_eq!(loaded.active_session_id, None);
     assert!(loaded.pending_permissions.is_empty());
     assert!(loaded.pending_clarifications.is_empty());
+    assert_eq!(
+        loaded.config.default_provider.as_deref(),
+        Some("custom-provider")
+    );
+    assert!(loaded.config.providers.contains_key("custom-provider"));
     assert!(loaded.active_skills.contains("lyra-design-research"));
+    assert_eq!(loaded.focused_goal_id.as_deref(), Some(goal_id.as_str()));
+    assert_eq!(
+        loaded.goals.get(&goal_id).map(|goal| goal.title.as_str()),
+        Some("Preserved goal")
+    );
+    let memory_records = list_long_term_memory(
+        temp.path(),
+        MemoryQuery {
+            query: Some(memory_marker.clone()),
+            limit: 10,
+            ..MemoryQuery::default()
+        },
+    )
+    .expect("read memory after schema upgrade");
+    assert_eq!(memory_records.len(), 1);
     assert!(
         !sessions_dir
             .join(format!("{legacy_session_id}.json"))
@@ -125,6 +274,61 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         persisted.tool_runtime_schema_version,
         TOOL_RUNTIME_SCHEMA_VERSION
     );
+    assert!(persisted.tool_runtime_migration_diagnostics.is_empty());
+    assert_eq!(
+        persisted.config.default_provider.as_deref(),
+        Some("custom-provider")
+    );
+    assert!(persisted.active_skills.contains("lyra-design-research"));
+    assert_eq!(persisted.focused_goal_id.as_deref(), Some(goal_id.as_str()));
+    assert!(persisted.goals.contains_key(&goal_id));
+}
+
+#[test]
+fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let sessions_dir = temp.path().join("sessions");
+    fs::create_dir_all(&sessions_dir).expect("sessions dir");
+    let blocked_path = sessions_dir.join("blocked.json");
+    fs::create_dir_all(&blocked_path).expect("blocked dir");
+    let state_file = NativeStateFile {
+        tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
+        tool_runtime_migration_diagnostics: Vec::new(),
+        active_session_id: Some("blocked".to_string()),
+        config: NativeConfig::default(),
+        legacy_shared_memory: Vec::new(),
+        active_skills: HashSet::new(),
+        overnight_runs: HashMap::new(),
+        pending_permissions: HashMap::new(),
+        pending_clarifications: HashMap::new(),
+        goals: HashMap::new(),
+        focused_goal_id: None,
+    };
+    write_json(&temp.path().join("state.json"), &state_file).expect("write state");
+
+    let loaded = NativeRuntimeState::load_from_root(temp.path().to_path_buf());
+
+    assert!(loaded.sessions.is_empty());
+    assert_eq!(
+        loaded.tool_runtime_schema_version,
+        TOOL_RUNTIME_SCHEMA_VERSION - 1
+    );
+    assert_eq!(loaded.tool_runtime_migration_diagnostics.len(), 1);
+    assert_eq!(
+        loaded.tool_runtime_migration_diagnostics[0]["code"],
+        "tool_runtime_session_delete_failed"
+    );
+    assert!(blocked_path.exists());
+    let persisted =
+        read_json::<NativeStateFile>(&temp.path().join("state.json")).expect("persisted state");
+    assert_eq!(
+        persisted.tool_runtime_schema_version,
+        TOOL_RUNTIME_SCHEMA_VERSION - 1
+    );
+    assert_eq!(persisted.tool_runtime_migration_diagnostics.len(), 1);
+    assert_eq!(persisted.active_session_id, None);
+    assert!(persisted.pending_permissions.is_empty());
+    assert!(persisted.pending_clarifications.is_empty());
 }
 
 #[test]
@@ -172,6 +376,8 @@ fn native_state_persists_only_live_pending_requests() {
         };
     let mut state = NativeRuntimeState {
         root: temp.path().to_path_buf(),
+        tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+        tool_runtime_migration_diagnostics: Vec::new(),
         sessions: HashMap::from([(session_id.clone(), session)]),
         active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
@@ -262,6 +468,96 @@ fn native_backend_requires_explicit_project_binding_for_workspace_tools() {
         output.pointer("/error/code").and_then(Value::as_str),
         Some("workspace_unbound")
     );
+    assert_eq!(output["notRunReason"].as_str(), Some("workspace_unbound"));
+    assert_eq!(
+        output
+            .pointer("/error/detail/toolPath")
+            .and_then(Value::as_str),
+        Some("/tools/filesystem/list_files")
+    );
+    assert!(
+        output["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .all(|record| {
+                !matches!(
+                    record.get("phase").and_then(Value::as_str),
+                    Some("validated" | "permission_checked" | "executing")
+                )
+            })
+    );
+}
+
+#[test]
+fn tool_fs_run_always_returns_tool_result_envelope_for_adapter_outputs() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("note.txt"), "adapter envelope").expect("write note");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Adapter Envelope Test",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let cancellation = Arc::new(AtomicBool::new(false));
+    for (index, (path, args, expected_domain, expected_operation)) in [
+        (
+            "/tools/filesystem/read_file",
+            json!({ "path": "note.txt" }),
+            "filesystem",
+            "read",
+        ),
+        (
+            "/tools/shell/run_command",
+            json!({ "command": "printf adapter-envelope", "cwd": "." }),
+            "shell",
+            "run",
+        ),
+        ("/tools/memory/search", json!({}), "memory", "search"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let turn_id = start_test_runtime_turn(&session_id);
+        let output = execute_model_tool(
+            &session_id,
+            &turn_id,
+            &None,
+            &cancellation,
+            tool_fs_run_call(&format!("tool-envelope-{index}"), path, args),
+        );
+        assert_eq!(output["schemaVersion"].as_u64(), Some(1), "{path}");
+        assert_eq!(output["status"].as_str(), Some("completed"), "{path}");
+        assert_eq!(output["ok"].as_bool(), Some(true), "{path}");
+        assert_eq!(
+            output["runtimeTurnId"].as_str(),
+            Some(turn_id.as_str()),
+            "{path}"
+        );
+        assert_eq!(output["toolPath"].as_str(), Some(path), "{path}");
+        assert_eq!(output["domain"].as_str(), Some(expected_domain), "{path}");
+        assert_eq!(
+            output["operation"].as_str(),
+            Some(expected_operation),
+            "{path}"
+        );
+        assert!(output["traceId"].as_str().is_some(), "{path}");
+        assert!(
+            output["trace"].as_array().is_some_and(|trace| {
+                trace.iter().any(|record| record["phase"] == "executing")
+                    && trace.iter().any(|record| record["phase"] == "completed")
+            }),
+            "{path}"
+        );
+        assert!(output["toolOperation"].is_object(), "{path}");
+        assert!(output["manifestTitle"].as_str().is_some(), "{path}");
+        assert!(output["raw"].is_object(), "{path}");
+    }
 }
 
 #[test]
@@ -355,6 +651,91 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
         Some("runtime_turn_not_active")
     );
     assert_eq!(inactive_turn["status"].as_str(), Some("failed"));
+    let inactive_list = execute_model_tool(
+        &session_id,
+        "turn-not-active",
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "inactive-turn-tool-fs-list".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools" }),
+        },
+    );
+    assert_eq!(
+        inactive_list.pointer("/error/code").and_then(Value::as_str),
+        Some("runtime_turn_not_active")
+    );
+    assert_eq!(inactive_list["status"].as_str(), Some("failed"));
+    assert!(
+        inactive_list["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .all(|record| {
+                !matches!(
+                    record.get("phase").and_then(Value::as_str),
+                    Some("executing" | "completed")
+                )
+            })
+    );
+
+    let traced = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("traced-memory-search", "/tools/memory/search", json!({})),
+    );
+    assert_eq!(traced["status"].as_str(), Some("completed"));
+    let policy_snapshot_id = traced
+        .pointer("/toolOperation/policySnapshotId")
+        .and_then(Value::as_str)
+        .expect("policy snapshot id");
+    assert!(policy_snapshot_id.contains(&session_id));
+    assert!(policy_snapshot_id.contains(&turn_id));
+    let trace = traced["trace"].as_array().expect("trace");
+    let phases = trace
+        .iter()
+        .filter_map(|entry| entry["phase"].as_str())
+        .collect::<Vec<_>>();
+    let validated_index = phases
+        .iter()
+        .position(|phase| *phase == "validated")
+        .expect("validated trace");
+    let permission_index = phases
+        .iter()
+        .position(|phase| *phase == "permission_checked")
+        .expect("permission trace");
+    let executing_index = phases
+        .iter()
+        .position(|phase| *phase == "executing")
+        .expect("executing trace");
+    assert!(validated_index < permission_index);
+    assert!(permission_index < executing_index);
+    let permission_trace = &trace[permission_index];
+    assert_eq!(
+        permission_trace.pointer("/detail/policySnapshotId"),
+        traced.pointer("/toolOperation/policySnapshotId")
+    );
+    assert_eq!(
+        permission_trace
+            .pointer("/detail/permissionMode")
+            .and_then(Value::as_str),
+        Some("runtime_policy")
+    );
+    assert_eq!(
+        permission_trace
+            .pointer("/detail/permissionPolicy")
+            .and_then(Value::as_str),
+        Some("runtime_policy")
+    );
+    assert_eq!(
+        permission_trace
+            .pointer("/detail/toolPath")
+            .and_then(Value::as_str),
+        Some("/tools/memory/search")
+    );
 }
 
 #[test]
@@ -405,6 +786,27 @@ fn model_request_injects_lyra_identity_and_tools() {
 }
 
 #[test]
+fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
+    let context = build_runtime_context(
+        None,
+        &[],
+        &ModelCapabilityProfile {
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            context_window: Some(8_192),
+        },
+    );
+    assert_eq!(context["tools"], json!([]));
+    assert_eq!(
+        context
+            .pointer("/capabilities/supportsToolCalling")
+            .and_then(Value::as_bool),
+        Some(false)
+    );
+}
+
+#[test]
 fn provider_visible_tool_schema_snapshot_is_tool_fs_only() {
     for tools in [model_tools(false), model_tools(true)] {
         let names = tools
@@ -434,6 +836,155 @@ fn provider_visible_tool_schema_snapshot_is_tool_fs_only() {
                 })
         }));
     }
+}
+
+#[test]
+fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provider_tools() {
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        assert_eq!(method, "software.listCapabilities");
+        Ok(serde_json::to_string(&json!({
+            "software": [{
+                "id": "notes",
+                "title": "Notes",
+                "actions": [{
+                    "id": "open",
+                    "title": "Open note",
+                    "summary": "Open a note in the Notes adapter.",
+                    "risk": "read",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "noteId": { "type": "string" }
+                        },
+                        "required": ["noteId"],
+                        "additionalProperties": false
+                    }
+                }]
+            }]
+        }))
+        .expect("json"))
+    });
+    let static_count = tools::tool_fs::runtime_registry()
+        .root_summary_for_scene(lyra_tool_fs_core::ToolScene::Automation)["toolCount"]
+        .as_u64()
+        .expect("static tool count");
+    let context = tool_filesystem_runtime_context("automation", Some(&dispatcher));
+    assert_eq!(
+        context["policy"]["providerVisibleTools"],
+        json!(expected_provider_tool_names())
+    );
+    assert!(
+        context["rootSummary"]["toolCount"]
+            .as_u64()
+            .expect("dynamic tool count")
+            > static_count
+    );
+    let sources = context["manifestSources"]
+        .as_array()
+        .expect("manifest source summary");
+    for expected in [
+        "core_builtin",
+        "terminal_action_specs",
+        "design_tools",
+        "skill_registry",
+        "mcp_current_state",
+        "software_host_capabilities",
+    ] {
+        assert!(
+            sources
+                .iter()
+                .any(|source| source["name"].as_str() == Some(expected)),
+            "missing manifest source {expected}"
+        );
+    }
+    assert!(sources.iter().any(|source| {
+        source["name"].as_str() == Some("software_host_capabilities")
+            && source["kind"].as_str() == Some("dynamic")
+            && source["manifestCount"].as_u64().unwrap_or(0) == 1
+    }));
+}
+
+#[test]
+fn tool_filesystem_scene_uses_runtime_state_signals() {
+    assert_eq!(
+        infer_tool_filesystem_scene(Some("selfdev"), None, false, &HashSet::new(), &json!({})),
+        "project-code"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::new(),
+            &json!({ "activeTab": { "kind": "terminal" } }),
+        ),
+        "terminal"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::new(),
+            &json!({ "activeTab": { "kind": "browser" } }),
+        ),
+        "browser"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::new(),
+            &json!({
+                "activeTabId": "term-1",
+                "tabs": [{
+                    "tabId": "term-1",
+                    "pageKind": "terminal",
+                    "focusedPane": true
+                }]
+            }),
+        ),
+        "terminal"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::new(),
+            &json!({
+                "focusedTabId": "page-1",
+                "tabs": [{
+                    "id": "page-1",
+                    "pageKind": "page",
+                    "observationKind": "page",
+                    "displayAddress": "https://example.com"
+                }]
+            }),
+        ),
+        "browser"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::new(),
+            &json!({ "activeTab": { "kind": "software" } }),
+        ),
+        "automation"
+    );
+    assert_eq!(
+        infer_tool_filesystem_scene(
+            None,
+            None,
+            false,
+            &HashSet::from(["lyra-design-research".to_string()]),
+            &json!({}),
+        ),
+        "design"
+    );
 }
 
 #[test]
@@ -541,7 +1092,7 @@ fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
             "target": { "type": "private", "sessionId": "terminal-session-1" },
             "sessionId": "terminal-session-1",
             "cursor": "1",
-            "output": "",
+            "output": "hello from terminal",
             "running": true,
             "exitCode": null,
             "truncated": false
@@ -564,6 +1115,17 @@ fn terminal_host_tool_runtime_cancellation_includes_tool_call_id() {
             .as_str()
             .expect("content")
             .contains("terminal-session-1")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/logArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("log")
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|artifact| artifact["kind"] == "log"))
     );
     let captured = captured_payload
         .lock()
@@ -688,6 +1250,17 @@ fn host_tool_timeout_finishes_activity() {
             .unwrap_or_default()
             .contains("timed out")
     );
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(output["notRunReason"].as_str(), Some("timeout"));
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("timeout")
+    );
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
         .expect("read session");
@@ -695,6 +1268,314 @@ fn host_tool_timeout_finishes_activity() {
     assert_eq!(read["tools"][0]["status"], "failed");
     assert!(read["tools"][0]["finishedAt"].is_string());
 }
+
+#[test]
+fn tool_fs_large_raw_output_is_compacted_into_artifact_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Large Raw Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let large_blob = "x".repeat(40_000);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, _payload| {
+        assert_eq!(method, "workbench.readTab");
+        Ok(serde_json::to_string(&json!({
+            "tab": {
+                "tabId": "tab-1",
+                "title": "Large Raw",
+                "pageKind": "editor",
+                "observationKind": "file"
+            },
+            "text": "Small model projection.",
+            "largeBlob": large_blob
+        }))
+        .expect("json"))
+    });
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-large-raw",
+            "/tools/workbench/read_tab",
+            json!({ "tabId": "tab-1" }),
+        ),
+    );
+    assert_eq!(output["status"], "completed");
+    assert_eq!(output["raw"]["kind"], "tool_fs_raw_ref");
+    assert_eq!(output["raw"]["truncated"], true);
+    assert_eq!(
+        output.pointer("/dataRef/id").and_then(Value::as_str),
+        output
+            .pointer("/raw/artifactRef/id")
+            .and_then(Value::as_str)
+    );
+    assert!(output["artifactRefs"].as_array().is_some_and(|refs| {
+        refs.iter()
+            .any(|artifact| artifact.get("id") == output.pointer("/dataRef/id"))
+    }));
+    assert!(
+        output["content"]
+            .as_str()
+            .expect("content")
+            .contains("Small model projection")
+    );
+    let data_ref_path = output
+        .pointer("/dataRef/path")
+        .and_then(Value::as_str)
+        .expect("data ref path")
+        .to_string();
+    let data_ref_id = output
+        .pointer("/dataRef/id")
+        .and_then(Value::as_str)
+        .expect("data ref id")
+        .to_string();
+    let artifact_read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-large-raw-artifact-read",
+            "/tools/runtime/artifact_read",
+            json!({ "path": data_ref_path, "maxBytes": 128_000 }),
+        ),
+    );
+    assert_eq!(artifact_read["status"], "completed");
+    assert_eq!(
+        artifact_read["toolPath"].as_str(),
+        Some("/tools/runtime/artifact_read")
+    );
+    assert_eq!(
+        artifact_read
+            .pointer("/raw/artifactId")
+            .and_then(Value::as_str),
+        Some(data_ref_id.as_str())
+    );
+    assert!(
+        artifact_read["content"]
+            .as_str()
+            .expect("artifact content")
+            .contains("largeBlob")
+    );
+    assert!(
+        artifact_read
+            .pointer("/raw/bytesReturned")
+            .and_then(Value::as_u64)
+            .is_some_and(|bytes| bytes > 32_000)
+    );
+}
+
+#[test]
+fn tool_fs_large_content_projection_is_compacted_into_projection_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Large Projection Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let large_text = "projection ".repeat(4_000);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, _payload| {
+        assert_eq!(method, "workbench.readTab");
+        Ok(serde_json::to_string(&json!({
+            "tab": {
+                "tabId": "tab-1",
+                "title": "Large Projection",
+                "pageKind": "editor",
+                "observationKind": "file"
+            },
+            "text": large_text
+        }))
+        .expect("json"))
+    });
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-large-projection",
+            "/tools/workbench/read_tab",
+            json!({ "tabId": "tab-1" }),
+        ),
+    );
+    assert_eq!(output["status"], "completed");
+    assert!(
+        output["content"]
+            .as_str()
+            .expect("content")
+            .ends_with("[truncated]")
+    );
+    assert!(
+        output
+            .pointer("/projectionRef/id")
+            .and_then(Value::as_str)
+            .is_some()
+    );
+    assert!(output["artifactRefs"].as_array().is_some_and(|refs| {
+        refs.iter()
+            .any(|artifact| artifact.get("id") == output.pointer("/projectionRef/id"))
+    }));
+}
+
+#[test]
+fn host_unavailable_failure_has_not_run_reason() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Host Unavailable Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-host-unavailable",
+            "/tools/workbench/list_tabs",
+            json!({}),
+        ),
+    );
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(output["notRunReason"].as_str(), Some("host_unavailable"));
+    assert!(
+        output["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .all(|record| {
+                !matches!(
+                    record.get("phase").and_then(Value::as_str),
+                    Some("permission_checked" | "executing")
+                )
+            })
+    );
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
+}
+
+#[test]
+fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Host Permission Denied Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        panic!("host dispatcher should not be called after permission denial: {method}")
+    });
+    let run_session_id = session_id.clone();
+    let run_dispatcher = dispatcher.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &turn_id,
+            &Some(run_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-host-permission-denied",
+                "/tools/browser/submit",
+                json!({ "elementId": 9, "targetMode": "live" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": false }),
+        )
+        .expect("deny host permission");
+    let output = handle.join().expect("join host permission denied");
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("permissionDenied")
+    );
+    assert_eq!(output["notRunReason"].as_str(), Some("permissionDenied"));
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
+}
+
+#[test]
+fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_request() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Permission Cancellation Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        panic!("host dispatcher should not be called after permission wait cancellation: {method}")
+    });
+    let run_session_id = session_id.clone();
+    let run_turn_id = turn_id.clone();
+    let run_cancellation = cancellation.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &run_turn_id,
+            &Some(dispatcher),
+            &run_cancellation,
+            tool_fs_run_call(
+                "tool-permission-cancelled",
+                "/tools/browser/submit",
+                json!({ "elementId": 9, "targetMode": "live" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    cancellation.store(true, Ordering::SeqCst);
+    let output = handle.join().expect("join cancelled permission wait");
+    assert_eq!(output["status"].as_str(), Some("cancelled"));
+    assert_eq!(output["notRunReason"].as_str(), Some("cancelled"));
+    assert!(
+        output["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .any(|record| record.get("phase").and_then(Value::as_str) == Some("cancelled"))
+    );
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_permissions
+            .get(&permission_id)
+            .is_none()
+    );
+}
+
 #[test]
 fn model_tool_execution_bridges_lumen_and_software_tools() {
     let backend = LyraAgentBackend;
@@ -819,6 +1700,21 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             .expect("content")
             .contains("Submitted element 9")
     );
+    assert_eq!(
+        submit_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert!(
+        submit_output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "browser"
+                    && change["operation"] == "submit"
+                    && change["reversible"] == false
+            }))
+    );
     let inspect_turn_id = start_test_runtime_turn(&session_id);
     let inspect_output = execute_model_tool(
         &session_id,
@@ -839,6 +1735,379 @@ fn model_tool_execution_bridges_lumen_and_software_tools() {
             .as_str()
             .expect("content")
             .contains("Read Image Metadata")
+    );
+}
+
+#[test]
+fn browser_inline_screenshot_is_materialized_as_artifact_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Inline Browser Screenshot Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.see");
+        assert_eq!(input["action"], "see");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenSee",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "width": 1,
+            "height": 1,
+            "imageBase64": "iVBORw0KGgo=",
+            "screenshot": {
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgo="
+            }
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-inline-see",
+            "/tools/browser/see",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert!(output["raw"].get("imageBase64").is_none());
+    assert!(output["raw"]["screenshot"].get("data").is_none());
+    assert_eq!(
+        output
+            .pointer("/raw/screenshotArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("browser_screenshot")
+    );
+    assert_eq!(
+        output.pointer("/raw/providerImage/path"),
+        output.pointer("/raw/imageArtifact/path")
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|artifact| {
+                artifact["kind"] == "browser_screenshot"
+                    && artifact["mimeType"] == "image/png"
+                    && artifact["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".png"))
+            }))
+    );
+}
+
+#[test]
+fn browser_large_page_text_is_materialized_as_web_page_artifact_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Large Browser Page Artifact Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let large_text = "Large browser page line.\n".repeat(1_000);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.read");
+        assert_eq!(input["action"], "read");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenRead",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "title": "Large Page",
+            "url": "https://example.test/large",
+            "content": large_text
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-large-browser-read",
+            "/tools/browser/read",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output
+            .pointer("/raw/pageArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("web_page")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/pageTextTruncated")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert!(
+        output
+            .pointer("/raw/content")
+            .and_then(Value::as_str)
+            .is_some_and(
+                |content| content.contains("pageArtifactRef") && content.chars().count() < 13_000
+            )
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|artifact| {
+                artifact["kind"] == "web_page"
+                    && artifact["mimeType"] == "text/plain; charset=utf-8"
+                    && artifact["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".txt"))
+            }))
+    );
+}
+
+#[test]
+fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser Chain Tool-FS Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let calls = Arc::new(Mutex::new(Vec::<String>::new()));
+    let calls_for_dispatch = calls.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        calls_for_dispatch
+            .lock()
+            .expect("calls lock")
+            .push(method.clone());
+        match method.as_str() {
+            "lyraLumen.map" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenMap",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "observationId": "obs-1",
+                "title": "Login",
+                "url": "https://example.test/login",
+                "elements": [{
+                    "id": 1,
+                    "role": "textbox",
+                    "label": "Email",
+                    "targetRef": "target-email"
+                }, {
+                    "id": 2,
+                    "role": "button",
+                    "label": "Continue",
+                    "targetRef": "target-continue"
+                }]
+            }))
+            .expect("json")),
+            "lyraLumen.type" => {
+                assert_eq!(input["targetRef"], "target-email");
+                assert_eq!(input["text"], "lyra@example.test");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenActionResult",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-email",
+                    "typed": true,
+                    "message": "typed email"
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.submit" => {
+                assert_eq!(input["targetRef"], "target-continue");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenActionResult",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-continue",
+                    "submitted": true,
+                    "message": "submitted form"
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.wait" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenWait",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "content": "Dashboard loaded"
+            }))
+            .expect("json")),
+            "lyraLumen.read" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenRead",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "title": "Dashboard",
+                "url": "https://example.test/app",
+                "content": "Welcome to the dashboard"
+            }))
+            .expect("json")),
+            other => panic!("unexpected browser host method {other}"),
+        }
+    });
+    let cancellation = Arc::new(AtomicBool::new(false));
+
+    let map = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-map",
+            "/tools/browser/map",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+        ),
+    );
+    assert_eq!(map["status"].as_str(), Some("completed"));
+    assert_eq!(map["toolPath"].as_str(), Some("/tools/browser/map"));
+    assert!(
+        map["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("target-email"))
+    );
+
+    let type_session_id = session_id.clone();
+    let type_turn_id = turn_id.clone();
+    let type_dispatcher = dispatcher.clone();
+    let type_cancellation = cancellation.clone();
+    let type_handle = thread::spawn(move || {
+        execute_model_tool(
+            &type_session_id,
+            &type_turn_id,
+            &Some(type_dispatcher),
+            &type_cancellation,
+            tool_fs_run_call(
+                "tool-browser-chain-type",
+                "/tools/browser/type",
+                json!({
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-email",
+                    "text": "lyra@example.test"
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow type permission");
+    let typed = type_handle.join().expect("join type");
+    assert_eq!(typed["status"].as_str(), Some("completed"));
+    assert!(typed["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["kind"] == "browser" && change["operation"] == "type")
+    }));
+
+    let submit_session_id = session_id.clone();
+    let submit_turn_id = turn_id.clone();
+    let submit_dispatcher = dispatcher.clone();
+    let submit_cancellation = cancellation.clone();
+    let submit_handle = thread::spawn(move || {
+        execute_model_tool(
+            &submit_session_id,
+            &submit_turn_id,
+            &Some(submit_dispatcher),
+            &submit_cancellation,
+            tool_fs_run_call(
+                "tool-browser-chain-submit",
+                "/tools/browser/submit",
+                json!({
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-continue"
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow submit permission");
+    let submitted = submit_handle.join().expect("join submit");
+    assert_eq!(submitted["status"].as_str(), Some("completed"));
+    assert!(submitted["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["kind"] == "browser" && change["operation"] == "submit")
+    }));
+
+    let waited = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-wait",
+            "/tools/browser/wait",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live", "timeoutMs": 1000 }),
+        ),
+    );
+    assert_eq!(waited["status"].as_str(), Some("completed"));
+    assert!(
+        waited["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("Dashboard loaded"))
+    );
+
+    let read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-read",
+            "/tools/browser/read",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+        ),
+    );
+    assert_eq!(read["status"].as_str(), Some("completed"));
+    assert!(
+        read["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("Welcome to the dashboard"))
+    );
+    assert_eq!(
+        calls.lock().expect("calls lock").as_slice(),
+        [
+            "lyraLumen.map",
+            "lyraLumen.type",
+            "lyraLumen.submit",
+            "lyraLumen.wait",
+            "lyraLumen.read"
+        ]
     );
 }
 
@@ -878,6 +2147,19 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
                                 },
                                 "required": ["path"]
                             }
+                        }, {
+                            "id": "image-viewer.applyFilter",
+                            "title": "Apply Image Filter",
+                            "description": "Apply a filter to the active image.",
+                            "risk": "write",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "path": { "type": "string" },
+                                    "filter": { "type": "string" }
+                                },
+                                "required": ["path", "filter"]
+                            }
                         }]
                     }]
                 }))
@@ -887,20 +2169,34 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
                 *captured_for_dispatch
                     .lock()
                     .expect("captured invocation lock") = Some(input.clone());
-                Ok(serde_json::to_string(&json!({
-                    "softwareId": "image-viewer",
-                    "actionId": "image-viewer.readMetadata",
-                    "output": {
-                        "width": 640,
-                        "height": 480
-                    }
-                }))
-                .expect("json"))
+                if input["actionId"] == "image-viewer.applyFilter" {
+                    Ok(serde_json::to_string(&json!({
+                        "softwareId": "image-viewer",
+                        "actionId": "image-viewer.applyFilter",
+                        "ok": true,
+                        "output": {
+                            "applied": true,
+                            "filter": input["input"]["filter"].clone()
+                        }
+                    }))
+                    .expect("json"))
+                } else {
+                    Ok(serde_json::to_string(&json!({
+                        "softwareId": "image-viewer",
+                        "actionId": "image-viewer.readMetadata",
+                        "output": {
+                            "width": 640,
+                            "height": 480
+                        }
+                    }))
+                    .expect("json"))
+                }
             }
             other => panic!("unexpected method {other}"),
         }
     });
     let dynamic_path = "/tools/software/capability/image-viewer/image-viewer.readMetadata";
+    let mutation_path = "/tools/software/capability/image-viewer/image-viewer.applyFilter";
     let list_output = execute_model_tool(
         &session_id,
         &turn_id,
@@ -914,11 +2210,13 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
             }),
         },
     );
-    assert_eq!(
+    assert!(
         list_output
-            .pointer("/raw/tools/0/path")
-            .and_then(Value::as_str),
-        Some(dynamic_path)
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools
+                .iter()
+                .any(|tool| tool.get("path").and_then(Value::as_str) == Some(dynamic_path)))
     );
     let inspect_output = execute_model_tool(
         &session_id,
@@ -936,6 +2234,14 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     assert_eq!(
         inspect_output.pointer("/raw/title").and_then(Value::as_str),
         Some("Read Image Metadata")
+    );
+    assert_eq!(
+        inspect_output
+            .pointer("/raw/inputSchema/$id")
+            .and_then(Value::as_str),
+        Some(
+            "lyra-tool-fs://schema/tools/software/capability/image-viewer/image-viewer.readMetadata/input"
+        )
     );
     let run_session_id = session_id.clone();
     let run_turn_id = turn_id.clone();
@@ -957,13 +2263,18 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     backend
         .call_agent_method(
             "agent.permission.respond",
-            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
         )
         .expect("allow software invocation permission");
     let run_output = run_handle.join().expect("join software run");
     assert_eq!(run_output["status"], "completed");
     assert_eq!(run_output["toolPath"], dynamic_path);
     assert_eq!(run_output["manifestTitle"], "Read Image Metadata");
+    assert!(
+        run_output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
     let invocation = captured_invocation
         .lock()
         .expect("captured invocation lock")
@@ -973,6 +2284,173 @@ fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
     assert_eq!(invocation["actionId"], "image-viewer.readMetadata");
     assert_eq!(invocation["input"]["path"], "photo.png");
     assert!(invocation["input"].get("toolPath").is_none());
+
+    let mutation_session_id = session_id.clone();
+    let mutation_turn_id = start_test_runtime_turn(&session_id);
+    let mutation_dispatcher = dispatcher.clone();
+    let mutation_handle = thread::spawn(move || {
+        execute_model_tool(
+            &mutation_session_id,
+            &mutation_turn_id,
+            &Some(mutation_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-software-mutation",
+                mutation_path,
+                json!({ "path": "photo.png", "filter": "sharpen" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow software mutation permission");
+    let mutation_output = mutation_handle.join().expect("join software mutation");
+    assert_eq!(mutation_output["status"], "completed");
+    assert_eq!(mutation_output["toolPath"], mutation_path);
+    assert_eq!(
+        mutation_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert!(
+        mutation_output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "external"
+                    && change["operation"] == "invoke_capability"
+                    && change["path"] == mutation_path
+                    && change["reversible"] == false
+            }))
+    );
+}
+
+#[test]
+fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Dynamic Software Provider Diagnostics Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/software/capability" }),
+        },
+    );
+    assert_eq!(no_host["status"].as_str(), Some("completed"));
+    assert_eq!(no_host["raw"]["path"], "/tools/software/capability");
+    assert_eq!(no_host["raw"]["tools"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+
+    let failing_dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        assert_eq!(method, "software.listCapabilities");
+        Err("software registry offline".to_string())
+    });
+    let provider_failed = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(failing_dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-provider-failed".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/software/capability" }),
+        },
+    );
+    assert_eq!(provider_failed["status"].as_str(), Some("completed"));
+    assert_eq!(
+        provider_failed
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("dynamic_provider_failed")
+    );
+    assert!(
+        provider_failed
+            .pointer("/raw/diagnostics/0/message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("software registry offline"))
+    );
+
+    let browser_no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-browser-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/browser" }),
+        },
+    );
+    assert_eq!(browser_no_host["status"].as_str(), Some("completed"));
+    assert!(
+        browser_no_host
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    );
+    assert_eq!(
+        browser_no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(
+        browser_no_host
+            .pointer("/raw/diagnostics/0/domain")
+            .and_then(Value::as_str),
+        Some("browser")
+    );
+
+    let workbench_no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-workbench-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/workbench" }),
+        },
+    );
+    assert_eq!(workbench_no_host["status"].as_str(), Some("completed"));
+    assert!(
+        workbench_no_host
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    );
+    assert_eq!(
+        workbench_no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(
+        workbench_no_host
+            .pointer("/raw/diagnostics/0/domain")
+            .and_then(Value::as_str),
+        Some("workbench")
+    );
 }
 
 #[test]
@@ -992,6 +2470,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         .into_iter()
         .map(|descriptor| descriptor.name)
         .collect::<Vec<_>>();
+    let provider_tool_names = expected_provider_tool_names();
     for required in [
         "file_read",
         "file_list",
@@ -1024,12 +2503,87 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
             service.can_dispatch_model_tool(required),
             "{required} dispatchable"
         );
+        assert!(
+            !provider_tool_names.iter().any(|name| name == required),
+            "{required} must stay out of provider-visible schema"
+        );
     }
     let registry = tool_fs::runtime_registry();
+    let root_summary = registry.root_summary();
+    let registry_domains = root_summary["domains"]
+        .as_array()
+        .expect("registry domains")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    for domain in [
+        "filesystem",
+        "code",
+        "shell",
+        "terminal",
+        "git",
+        "workbench",
+        "browser",
+        "software",
+        "web",
+        "render",
+        "todo",
+        "memory",
+        "design",
+        "skills",
+        "mcp",
+    ] {
+        assert!(
+            registry_domains.contains(&domain),
+            "/tools must expose {domain} as a public discovery domain"
+        );
+    }
     for manifest in registry.manifests() {
+        assert!(
+            manifest.path.starts_with("/tools/"),
+            "{} path must stay under /tools",
+            manifest.path
+        );
+        assert!(
+            !manifest.title.trim().is_empty(),
+            "{} title must be present",
+            manifest.path
+        );
+        assert!(
+            !manifest.summary.trim().is_empty(),
+            "{} summary must be present",
+            manifest.path
+        );
+        assert_eq!(
+            manifest.input_schema.get("type").and_then(Value::as_str),
+            Some("object"),
+            "{} input schema must be an object",
+            manifest.path
+        );
+        assert_eq!(
+            manifest.input_schema.get("$id").and_then(Value::as_str),
+            Some(lyra_tool_fs_core::schema_id_for_path(&manifest.path).as_str()),
+            "{} input schema must expose stable Tool-FS schema id",
+            manifest.path
+        );
         assert!(
             tool_fs::runtime_target_for_manifest(manifest).is_some(),
             "Tool-FS manifest lacks runtime target: {}",
+            manifest.path
+        );
+        assert!(
+            !manifest.permission_policy.trim().is_empty(),
+            "{} permission policy must be explicit",
+            manifest.path
+        );
+        assert!(
+            !manifest.risk_level.trim().is_empty(),
+            "{} risk level must be explicit",
+            manifest.path
+        );
+        assert!(
+            !manifest.activity_kind.trim().is_empty() && !manifest.renderer_hint.trim().is_empty(),
+            "{} activity projection hints must be explicit",
             manifest.path
         );
     }
@@ -1160,6 +2714,16 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     assert_eq!(shell["status"].as_str(), Some("completed"));
     assert_eq!(shell["activityKind"].as_str(), Some("shell"));
     assert!(shell["stdoutRef"].is_object());
+    assert_eq!(
+        shell.pointer("/stdoutRef/kind").and_then(Value::as_str),
+        Some("stdout")
+    );
+    assert_eq!(
+        shell
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("auto_approved")
+    );
     assert!(
         shell["artifactRefs"]
             .as_array()
@@ -1232,6 +2796,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .unwrap()
             .contains("Updated 1 todos")
     );
+    assert!(todos["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["kind"] == "todo" && change["operation"] == "write")
+    }));
     let read_session = backend
         .call_agent_method(
             "agent.session.read",
@@ -1241,6 +2810,21 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     assert_eq!(
         read_session["todos"][0]["content"].as_str(),
         Some("verify native tool surface")
+    );
+    let todo_read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("tool-todo-read", "/tools/todo/read", json!({})),
+    );
+    assert_eq!(todo_read["status"].as_str(), Some("completed"));
+    assert_eq!(todo_read["toolPath"].as_str(), Some("/tools/todo/read"));
+    assert!(
+        todo_read["content"]
+            .as_str()
+            .expect("todo read content")
+            .contains("verify native tool surface")
     );
     let outside = execute_model_tool(
         &session_id,
@@ -1328,6 +2912,208 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .contains("terminal artifact output")
     );
 }
+
+#[test]
+fn tool_fs_design_skills_and_mcp_are_discoverable_inspectable_and_runnable() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Runtime Domain Tool-FS Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+
+    let design_directory = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-design-list".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/design" }),
+        },
+    );
+    assert_eq!(design_directory["status"].as_str(), Some("completed"));
+    assert!(
+        design_directory
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools.iter().any(|tool| {
+                tool.get("path").and_then(Value::as_str) == Some("/tools/design/search_styles")
+            }))
+    );
+    let design_manifest = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-design-inspect".to_string(),
+            name: "tool_fs_inspect".to_string(),
+            arguments: json!({ "path": "/tools/design/search_styles" }),
+        },
+    );
+    assert_eq!(
+        design_manifest
+            .pointer("/raw/title")
+            .and_then(Value::as_str),
+        Some("Search design styles")
+    );
+
+    let skill_directory = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-skill-list".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/skills" }),
+        },
+    );
+    assert!(
+        skill_directory
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools.iter().any(|tool| {
+                tool.get("path").and_then(Value::as_str) == Some("/tools/skills/activate")
+            }))
+    );
+    let skill_manifest = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-skill-inspect".to_string(),
+            name: "tool_fs_inspect".to_string(),
+            arguments: json!({ "path": "/tools/skills/inspect" }),
+        },
+    );
+    assert_eq!(
+        skill_manifest.pointer("/raw/title").and_then(Value::as_str),
+        Some("Inspect skill")
+    );
+    assert!(
+        skill_manifest
+            .pointer("/raw/inputSchema/$id")
+            .and_then(Value::as_str)
+            .is_some_and(|schema_id| schema_id.contains("/tools/skills/inspect/input"))
+    );
+
+    let design_search = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-design-search",
+            "/tools/design/search_styles",
+            json!({ "query": "dashboard", "limit": 1 }),
+        ),
+    );
+    assert_eq!(design_search["status"].as_str(), Some("completed"));
+    assert_eq!(
+        design_search["toolPath"].as_str(),
+        Some("/tools/design/search_styles")
+    );
+    assert!(
+        design_search["content"]
+            .as_str()
+            .expect("design content")
+            .contains("Lyra design references")
+    );
+
+    let skill_activate = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-skill-activate",
+            "/tools/skills/activate",
+            json!({ "skillId": "lyra-design-research" }),
+        ),
+    );
+    assert_eq!(skill_activate["status"].as_str(), Some("completed"));
+    assert_eq!(
+        skill_activate["raw"]["skill"]["active"].as_bool(),
+        Some(true)
+    );
+    assert!(
+        skill_activate["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "runtime"
+                    && change["operation"] == "activate"
+                    && change["path"] == "/tools/skills/activate"
+            }))
+    );
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .active_skills
+            .contains("lyra-design-research")
+    );
+
+    let mcp_directory = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-mcp-list".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/mcp" }),
+        },
+    );
+    assert!(
+        mcp_directory
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools.iter().any(|tool| {
+                tool.get("path").and_then(Value::as_str) == Some("/tools/mcp/server_list")
+            }))
+    );
+    let mcp_manifest = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-mcp-inspect".to_string(),
+            name: "tool_fs_inspect".to_string(),
+            arguments: json!({ "path": "/tools/mcp/server_list" }),
+        },
+    );
+    assert_eq!(
+        mcp_manifest.pointer("/raw/title").and_then(Value::as_str),
+        Some("List MCP servers")
+    );
+    let mcp_list = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("tool-mcp-server-list", "/tools/mcp/server_list", json!({})),
+    );
+    assert_eq!(mcp_list["status"].as_str(), Some("failed"));
+    assert_eq!(
+        mcp_list.pointer("/error/code").and_then(Value::as_str),
+        Some("no_configured_mcp_servers")
+    );
+    assert_eq!(
+        mcp_list["notRunReason"].as_str(),
+        Some("no_configured_mcp_servers")
+    );
+    assert_eq!(mcp_list["raw"]["available"].as_bool(), Some(false));
+}
+
 #[test]
 fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     let backend = LyraAgentBackend;
@@ -1388,6 +3174,12 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     );
     assert_eq!(large["raw"]["truncated"], true);
     assert!(large["raw"]["artifactRef"].is_object());
+    assert_eq!(
+        large
+            .pointer("/raw/artifactRef/kind")
+            .and_then(Value::as_str),
+        Some("raw_data")
+    );
     let outside_write = tool_file_write(
         &session_id,
         &turn_id,
@@ -1404,6 +3196,21 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     )
     .expect("edit file");
     assert!(edit.raw["diffArtifactRef"].is_object());
+    assert_eq!(
+        edit.raw
+            .pointer("/diffArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("diff")
+    );
+    assert!(edit.raw["changedFiles"][0]["beforeRef"].is_object());
+    assert_eq!(
+        edit.raw
+            .pointer("/changedFiles/0/beforeRef/kind")
+            .and_then(Value::as_str),
+        Some("snapshot")
+    );
+    assert!(edit.raw["changedFiles"][0]["afterRef"].is_object());
+    assert!(edit.raw["changedFiles"][0]["diffRef"].is_object());
     assert!(
         fs::read_to_string(temp.path().join("src").join("main.rs"))
             .expect("read edited")
@@ -1452,6 +3259,22 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     );
     assert!(multiedit.raw["diffArtifactRef"].is_object());
     assert_eq!(
+        multiedit
+            .raw
+            .pointer("/diffArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("diff")
+    );
+    assert!(
+        multiedit.raw["changedFiles"]
+            .as_array()
+            .is_some_and(|files| files.iter().all(|file| {
+                file["beforeRef"].is_object()
+                    && file["afterRef"].is_object()
+                    && file["diffRef"].is_object()
+            }))
+    );
+    assert_eq!(
         fs::read_to_string(temp.path().join("second.txt")).expect("read second"),
         "TWO"
     );
@@ -1470,9 +3293,393 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     )
     .expect("apply patch");
     assert!(patch.raw["diffArtifactRef"].is_object());
+    assert_eq!(
+        patch
+            .raw
+            .pointer("/diffArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("diff")
+    );
+    assert!(
+        patch.raw["changedFiles"]
+            .as_array()
+            .is_some_and(|files| files.iter().all(|file| {
+                file["beforeRef"].is_object()
+                    && file["afterRef"].is_object()
+                    && file["diffRef"].is_object()
+            }))
+    );
     assert!(temp.path().join("moved.txt").exists());
     assert!(!temp.path().join("delete.txt").exists());
 }
+
+#[test]
+fn git_tool_fs_mutations_emit_change_records_and_artifacts() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init"]);
+    git(&["config", "user.email", "lyra@example.test"]);
+    git(&["config", "user.name", "Lyra Test"]);
+    fs::write(root.join("tracked.txt"), "one\n").expect("write tracked");
+    git(&["add", "tracked.txt"]);
+    git(&["commit", "-m", "initial"]);
+    fs::write(root.join("tracked.txt"), "two\n").expect("modify tracked");
+
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Git Tool-FS Coverage",
+                "workingDir": root.display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let status = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("tool-git-status", "/tools/git/status", json!({})),
+    );
+    assert_eq!(status["status"].as_str(), Some("completed"));
+    assert_eq!(status["toolPath"].as_str(), Some("/tools/git/status"));
+    assert!(
+        status
+            .pointer("/raw/summary/changed")
+            .and_then(Value::as_u64)
+            .is_some_and(|changed| changed >= 1)
+    );
+    let diff = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-git-diff",
+            "/tools/git/diff",
+            json!({ "path": "tracked.txt" }),
+        ),
+    );
+    assert_eq!(diff["status"].as_str(), Some("completed"));
+    assert_eq!(diff["toolPath"].as_str(), Some("/tools/git/diff"));
+    assert!(
+        diff.pointer("/raw/diff")
+            .and_then(Value::as_str)
+            .is_some_and(|text| text.contains("two"))
+    );
+    let log = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("tool-git-log", "/tools/git/log", json!({ "limit": 3 })),
+    );
+    assert_eq!(log["status"].as_str(), Some("completed"));
+    assert_eq!(log["toolPath"].as_str(), Some("/tools/git/log"));
+    assert!(
+        log.pointer("/raw/commits")
+            .and_then(Value::as_array)
+            .is_some_and(|commits| !commits.is_empty())
+    );
+    let assert_git_change = |output: &Value, operation: &str, reversible: bool| {
+        assert_eq!(output["status"].as_str(), Some("completed"));
+        let expected_tool_path = format!("/tools/git/{operation}");
+        assert_eq!(output["toolPath"], expected_tool_path);
+        assert_eq!(
+            output
+                .pointer("/raw/toolOperation/path")
+                .and_then(Value::as_str),
+            Some(expected_tool_path.as_str())
+        );
+        assert_eq!(
+            output
+                .pointer("/raw/policyDecision/mode")
+                .and_then(Value::as_str),
+            Some("auto_approved")
+        );
+        assert!(output["raw"]["diffArtifactRef"].is_object());
+        assert_eq!(
+            output
+                .pointer("/raw/diffArtifactRef/kind")
+                .and_then(Value::as_str),
+            Some("diff")
+        );
+        assert!(
+            output["artifactRefs"]
+                .as_array()
+                .is_some_and(|refs| refs.len() >= 3 && refs.iter().all(Value::is_object))
+        );
+        let raw_change = &output["raw"]["changedFiles"][0];
+        assert_eq!(raw_change["operation"].as_str(), Some(operation));
+        assert_eq!(raw_change["path"].as_str(), Some("tracked.txt"));
+        assert_eq!(raw_change["reversible"].as_bool(), Some(reversible));
+        assert!(raw_change["beforeRef"].is_object());
+        assert!(raw_change["afterRef"].is_object());
+        assert!(raw_change["diffRef"].is_object());
+        let change = &output["changes"][0];
+        assert_eq!(change["kind"].as_str(), Some("git"));
+        assert_eq!(change["operation"].as_str(), Some(operation));
+        assert_eq!(change["path"].as_str(), Some("tracked.txt"));
+        assert_eq!(change["reversible"].as_bool(), Some(reversible));
+        assert!(change["beforeRef"].is_object());
+        assert!(change["afterRef"].is_object());
+        assert!(change["diffRef"].is_object());
+    };
+
+    let stage = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-git-stage",
+            "/tools/git/stage",
+            json!({ "path": "tracked.txt" }),
+        ),
+    );
+    assert_git_change(&stage, "stage", true);
+
+    let unstage = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-git-unstage",
+            "/tools/git/unstage",
+            json!({ "path": "tracked.txt" }),
+        ),
+    );
+    assert_git_change(&unstage, "unstage", true);
+
+    let discard = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-git-discard",
+            "/tools/git/discard",
+            json!({ "path": "tracked.txt" }),
+        ),
+    );
+    assert_git_change(&discard, "discard", false);
+    assert_eq!(
+        fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
+        "one\n"
+    );
+}
+
+#[test]
+fn pinned_handle_code_task_chain_runs_core_code_tools() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    fs::create_dir_all(root.join("src")).expect("create src");
+    fs::write(
+        root.join("src").join("lib.rs"),
+        "pub fn greeting() -> &'static str { \"hello\" }\n",
+    )
+    .expect("write source");
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init"]);
+    git(&["config", "user.email", "lyra@example.test"]);
+    git(&["config", "user.name", "Lyra Test"]);
+    git(&["add", "."]);
+    git(&["commit", "-m", "initial"]);
+
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Pinned Handle Code Task",
+                "workingDir": root.display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let handle_call = |id: &str, tool_handle: &str, args: Value| ModelToolCall {
+        id: id.to_string(),
+        name: "tool_fs_run".to_string(),
+        arguments: json!({
+            "toolHandle": tool_handle,
+            "args": args,
+        }),
+    };
+
+    let read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        handle_call(
+            "tool-handle-read",
+            "read_file",
+            json!({ "path": "src/lib.rs" }),
+        ),
+    );
+    assert_eq!(
+        read["toolPath"].as_str(),
+        Some("/tools/filesystem/read_file")
+    );
+    assert!(
+        read["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("hello"))
+    );
+
+    let search = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        handle_call(
+            "tool-handle-search",
+            "search_code",
+            json!({ "query": "greeting", "path": "src", "limit": 10 }),
+        ),
+    );
+    assert_eq!(search["toolPath"].as_str(), Some("/tools/code/search_code"));
+    assert!(
+        search["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("src/lib.rs"))
+    );
+
+    let patch_session_id = session_id.clone();
+    let patch_turn_id = turn_id.clone();
+    let patch_cancellation = cancellation.clone();
+    let patch_handle = thread::spawn(move || {
+        execute_model_tool(
+            &patch_session_id,
+            &patch_turn_id,
+            &None,
+            &patch_cancellation,
+            ModelToolCall {
+                id: "tool-handle-patch".to_string(),
+                name: "tool_fs_run".to_string(),
+                arguments: json!({
+                    "toolHandle": "apply_patch",
+                    "args": {
+                        "operations": [{
+                            "op": "update",
+                            "path": "src/lib.rs",
+                            "oldString": "\"hello\"",
+                            "newString": "\"hello lyra\""
+                        }]
+                    }
+                }),
+            },
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow patch permission");
+    let patch = patch_handle.join().expect("join patch");
+    assert_eq!(
+        patch["toolPath"].as_str(),
+        Some("/tools/filesystem/apply_patch")
+    );
+    assert!(
+        patch["changes"]
+            .as_array()
+            .is_some_and(|changes| !changes.is_empty())
+    );
+    assert!(
+        fs::read_to_string(root.join("src").join("lib.rs"))
+            .expect("read patched")
+            .contains("hello lyra")
+    );
+
+    let shell = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        handle_call(
+            "tool-handle-shell",
+            "run_command",
+            json!({ "command": "printf pinned", "workingDir": "." }),
+        ),
+    );
+    assert_eq!(shell["toolPath"].as_str(), Some("/tools/shell/run_command"));
+    assert!(
+        shell["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("pinned"))
+    );
+
+    let status = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        handle_call("tool-handle-git-status", "git_status", json!({})),
+    );
+    assert_eq!(status["toolPath"].as_str(), Some("/tools/git/status"));
+    assert!(
+        status
+            .pointer("/raw/summary/changed")
+            .and_then(Value::as_u64)
+            .is_some_and(|changed| changed >= 1)
+    );
+
+    let diff = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        handle_call(
+            "tool-handle-git-diff",
+            "git_diff",
+            json!({ "path": "src/lib.rs" }),
+        ),
+    );
+    assert_eq!(diff["toolPath"].as_str(), Some("/tools/git/diff"));
+    assert!(
+        diff.pointer("/raw/diff")
+            .and_then(Value::as_str)
+            .is_some_and(|text| text.contains("hello lyra"))
+    );
+}
+
 #[test]
 fn native_shell_code_lsp_and_budget_guards_are_structured() {
     let backend = LyraAgentBackend;
@@ -1605,6 +3812,62 @@ fn native_web_tools_parse_fetch_and_return_structured_failures() {
         "application/octet-stream"
     );
 }
+
+#[test]
+fn tool_fs_web_and_network_read_tools_are_runnable() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tool-FS Web Network Coverage" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let url = serve_http_once(
+        "HTTP/1.1 200 OK",
+        "text/html; charset=utf-8",
+        "<html><head><title>Tool FS Web</title></head><body>local web evidence</body></html>",
+    );
+    let fetched = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-fs-web-fetch",
+            "/tools/web/fetch",
+            json!({ "url": url, "maxChars": 128, "extractText": true }),
+        ),
+    );
+    assert_eq!(fetched["status"].as_str(), Some("completed"));
+    assert_eq!(fetched["toolPath"].as_str(), Some("/tools/web/fetch"));
+    assert_eq!(fetched["raw"]["title"].as_str(), Some("Tool FS Web"));
+    assert!(
+        fetched["content"]
+            .as_str()
+            .expect("web fetch content")
+            .contains("Tool FS Web")
+    );
+
+    let network = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call("tool-fs-network", "/tools/network/status", json!({})),
+    );
+    assert_eq!(network["status"].as_str(), Some("completed"));
+    assert_eq!(network["toolPath"].as_str(), Some("/tools/network/status"));
+    assert_eq!(
+        network
+            .pointer("/raw/nativeHttpClient/implementation")
+            .and_then(Value::as_str),
+        Some("reqwest")
+    );
+}
+
 #[test]
 fn rollback_preview_and_restore_recover_messages_and_files() {
     let backend = LyraAgentBackend;
@@ -1737,6 +4000,17 @@ fn permission_request_denies_and_allows_native_file_write() {
         denied_output["toolPath"].as_str(),
         Some("/tools/filesystem/write_file")
     );
+    assert_eq!(
+        denied_output
+            .pointer("/policyDecision/outcome")
+            .and_then(Value::as_str),
+        Some("denied")
+    );
+    assert!(
+        denied_output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
     assert!(!denied_path.exists());
     let allowed_turn_id = start_test_runtime_turn(&session_id);
     let allowed_session_id = session_id.clone();
@@ -1777,6 +4051,18 @@ fn permission_request_denies_and_allows_native_file_write() {
         allowed_output["toolPath"].as_str(),
         Some("/tools/filesystem/write_file")
     );
+    assert_eq!(
+        allowed_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert_eq!(
+        allowed_output
+            .pointer("/raw/policyDecision/outcome")
+            .and_then(Value::as_str),
+        Some("approved")
+    );
     assert!(
         allowed_output["artifactRefs"]
             .as_array()
@@ -1788,6 +4074,8 @@ fn permission_request_denies_and_allows_native_file_write() {
             .is_some_and(|changes| changes.iter().any(|change| {
                 change["kind"] == "file"
                     && change["path"] == "allowed.txt"
+                    && change["beforeRef"]["id"].is_string()
+                    && change["afterRef"]["id"].is_string()
                     && change["diffRef"]["id"].is_string()
             }))
     );
@@ -1859,8 +4147,123 @@ fn permission_request_denies_and_allows_native_file_write() {
         .expect("allow shell permission");
     let allowed_shell_output = allowed_shell_handle.join().expect("join allowed shell");
     assert_eq!(allowed_shell_output["raw"]["success"].as_bool(), Some(true));
+    assert_eq!(
+        allowed_shell_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
     assert!(!allowed_shell_path.exists());
 }
+
+#[test]
+fn tool_fs_permission_modes_gate_before_adapter_execution() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("readable.txt"), "hello").expect("write readable");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Permission Mode Test", "workingDir": temp.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    let read_turn_id = start_test_runtime_turn(&session_id);
+    let read_output = execute_model_tool(
+        &session_id,
+        &read_turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-read-only-read",
+            "/tools/filesystem/read_file",
+            json!({ "path": "readable.txt" }),
+            "read_only",
+        ),
+    );
+    assert_eq!(read_output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        read_output
+            .pointer("/toolOperation/permissionMode")
+            .and_then(Value::as_str),
+        Some("read_only")
+    );
+
+    let denied_path = temp.path().join("read-only-denied.txt");
+    let read_only_turn_id = start_test_runtime_turn(&session_id);
+    let read_only_output = execute_model_tool(
+        &session_id,
+        &read_only_turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-read-only-write",
+            "/tools/filesystem/write_file",
+            json!({ "path": "read-only-denied.txt", "content": "no", "overwrite": true }),
+            "read_only",
+        ),
+    );
+    assert_eq!(read_only_output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        read_only_output["notRunReason"].as_str(),
+        Some("permission_denied")
+    );
+    assert!(!denied_path.exists());
+
+    let deny_turn_id = start_test_runtime_turn(&session_id);
+    let deny_output = execute_model_tool(
+        &session_id,
+        &deny_turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-deny-read",
+            "/tools/filesystem/read_file",
+            json!({ "path": "readable.txt" }),
+            "deny",
+        ),
+    );
+    assert_eq!(deny_output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        deny_output["notRunReason"].as_str(),
+        Some("permission_denied")
+    );
+
+    let full_access_path = temp.path().join("full-access.txt");
+    let full_access_turn_id = start_test_runtime_turn(&session_id);
+    let full_access_output = execute_model_tool(
+        &session_id,
+        &full_access_turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-full-access-write",
+            "/tools/filesystem/write_file",
+            json!({ "path": "full-access.txt", "content": "yes", "overwrite": true }),
+            "full_access",
+        ),
+    );
+    assert_eq!(full_access_output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        full_access_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("full_access")
+    );
+    assert_eq!(
+        fs::read_to_string(full_access_path).expect("read full access file"),
+        "yes"
+    );
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_permissions
+            .is_empty()
+    );
+}
+
 #[test]
 fn lumen_live_login_state_requires_permission_even_for_read_tools() {
     assert_eq!(
@@ -1920,6 +4323,118 @@ fn terminal_host_tools_apply_read_and_write_permission_policy() {
     assert_eq!(
         permission_risk("terminal", "close", &json!({ "sessionId": "terminal-1" })),
         Some("shell".to_string())
+    );
+}
+
+#[test]
+fn terminal_tool_fs_mutation_emits_change_record_and_log_artifact() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Terminal Mutation Change Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        assert_eq!(method, "terminal.write");
+        let input: Value = serde_json::from_str(&payload).expect("terminal payload json");
+        assert_eq!(input["action"], "write");
+        assert_eq!(input["sessionId"], "terminal-session-1");
+        assert_eq!(input["text"], "npm test\n");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "target": { "type": "private", "sessionId": "terminal-session-1" },
+            "sessionId": "terminal-session-1",
+            "output": "wrote 9 bytes to terminal-session-1",
+            "running": true,
+            "exitCode": null,
+            "truncated": false
+        }))
+        .expect("json"))
+    });
+    let run_session_id = session_id.clone();
+    let run_dispatcher = dispatcher.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &turn_id,
+            &Some(run_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-terminal-write",
+                "/tools/terminal/write",
+                json!({
+                    "sessionId": "terminal-session-1",
+                    "text": "npm test\n"
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow terminal write permission");
+    let output = handle.join().expect("join terminal write");
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(output["toolPath"].as_str(), Some("/tools/terminal/write"));
+    assert_eq!(
+        output
+            .pointer("/raw/logArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("log")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact["kind"] == "log"))
+    );
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "terminal"
+                    && change["operation"] == "write"
+                    && change["diffRef"]["kind"] == "log"
+                    && change["reversible"] == false
+            }))
+    );
+}
+
+#[test]
+fn permission_policy_does_not_infer_risk_from_free_text_keywords() {
+    assert_eq!(
+        permission_risk(
+            "unknown",
+            "noop",
+            &json!({
+                "note": "please delete file and exec shell command",
+                "description": "write patch terminal"
+            })
+        ),
+        None
+    );
+    assert_eq!(
+        permission_risk(
+            "workbench",
+            "read_tab",
+            &json!({ "title": "delete file shell exec" })
+        ),
+        None
+    );
+    assert_eq!(
+        permission_risk("lyra_lumen", "submit", &json!({ "label": "plain submit" })),
+        Some("dangerous".to_string())
     );
 }
 #[test]
@@ -2218,6 +4733,24 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
             .pointer("/raw/userActionResolution/verification/verified")
             .and_then(Value::as_bool),
         Some(true)
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/userActionResolution/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/userActionResolution/policyDecision/outcome")
+            .and_then(Value::as_str),
+        Some("approved")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/userActionResolution/policyDecision/action")
+            .and_then(Value::as_str),
+        Some("elevate")
     );
 }
 #[test]

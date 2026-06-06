@@ -14,8 +14,11 @@
     "paths": {
       "@lyra/browser-automation": ["../../services/browser-automation/src/index.ts"],
       "@lyra/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"],
+      "@react-three/fiber": ["src/types/react-three-fiber.ts"],
+      "@xyflow/react": ["src/types/xyflow-react.ts"],
       "@renderer/*": ["src/renderer/*"],
-      "@workbench/*": ["src/modules/workbench/*"]
+      "@workbench/*": ["src/modules/workbench/*"],
+      "lucide-react": ["src/types/lucide-react.ts"]
     }
   },
   "include": [

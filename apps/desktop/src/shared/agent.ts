@@ -9,6 +9,7 @@ export type AgentMessage = {
   readonly text: string;
   readonly blocks?: readonly AgentMessageBlock[];
   readonly createdAt: string;
+  readonly metadata?: unknown;
   readonly rollback?: AgentMessageRollback | null;
 };
 
@@ -77,6 +78,7 @@ export type AgentToolActivity = {
   readonly activityKind?: string | null;
   readonly rendererHint?: string | null;
   readonly traceId?: string | null;
+  readonly trace?: readonly unknown[];
   readonly artifactRefs?: readonly unknown[];
   readonly changes?: readonly unknown[];
 };

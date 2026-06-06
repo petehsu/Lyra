@@ -30,6 +30,13 @@ export interface ToolCall {
   title: string;
   status: ToolStatus;
   details?: ToolDetails;
+  traceId?: string;
+  trace?: readonly unknown[];
+  artifactRefs?: readonly unknown[];
+  artifactTargets?: readonly ToolActionTarget[];
+  artifactPreviews?: readonly ToolArtifactPreview[];
+  changes?: readonly unknown[];
+  failureReason?: string;
 }
 
 export type ToolDetails =
@@ -304,6 +311,15 @@ export interface ToolActionTarget {
   width?: number | null;
   height?: number | null;
   secretRef?: LyraSensitiveValueRef;
+}
+
+export interface ToolArtifactPreview {
+  label: string;
+  text: string;
+  kind?: string;
+  path?: string;
+  bytes?: number;
+  truncated?: boolean;
 }
 
 export type GroupStatus = "running" | "done";

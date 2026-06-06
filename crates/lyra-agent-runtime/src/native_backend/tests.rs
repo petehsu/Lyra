@@ -82,6 +82,23 @@ fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {
     }
 }
 
+fn tool_fs_run_call_with_permission_mode(
+    id: &str,
+    path: &str,
+    args: Value,
+    permission_mode: &str,
+) -> ModelToolCall {
+    ModelToolCall {
+        id: id.to_string(),
+        name: "tool_fs_run".to_string(),
+        arguments: json!({
+            "path": path,
+            "args": args,
+            "permissionMode": permission_mode,
+        }),
+    }
+}
+
 fn wait_for_pending_permission(session_id: &str) -> String {
     for _ in 0..200 {
         if let Some(id) = state().lock().ok().and_then(|state| {

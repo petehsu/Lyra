@@ -163,7 +163,14 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
     }
 
     match model_result {
-        Ok(result) => finish_turn(&session_id, &turn_id, "finished", result.final_text, None),
+        Ok(result) => finish_turn_with_metadata(
+            &session_id,
+            &turn_id,
+            "finished",
+            result.final_text,
+            None,
+            result.metadata,
+        ),
         Err(error) => finish_turn(
             &session_id,
             &turn_id,
@@ -185,6 +192,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         memory_injection_explanation,
         active_skills,
         working_dir,
+        session_kind,
     ) = {
         let state = state()
             .lock()
@@ -207,7 +215,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .clone()
             .or_else(|| state.config.default_model.clone())
             .unwrap_or_else(|| "gpt-4.1-mini".to_string());
-        let (session_messages, session_tools, working_dir) = {
+        let (session_messages, session_tools, working_dir, session_kind) = {
             let session = state.sessions.get(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
@@ -228,7 +236,12 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 .get("workingDir")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            (session_messages, session_tools, working_dir)
+            let session_kind = session
+                .snapshot
+                .get("sessionKind")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            (session_messages, session_tools, working_dir, session_kind)
         };
         let active_turn_id = state
             .sessions
@@ -273,6 +286,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             memory_injection_explanation,
             state.active_skills.clone(),
             working_dir,
+            session_kind,
         )
     };
     let capabilities = model_capabilities(&provider, &model);
@@ -287,12 +301,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let mut runtime_context =
         build_runtime_context(host_dispatcher.as_ref(), &memory_records, &capabilities);
     let tool_scene = infer_tool_filesystem_scene(
+        session_kind.as_deref(),
         working_dir.as_deref(),
         design_research_required,
         &active_skills,
         &runtime_context["workbench"],
     );
-    runtime_context["toolFilesystem"] = tool_filesystem_runtime_context(&tool_scene);
+    runtime_context["toolFilesystem"] =
+        tool_filesystem_runtime_context(&tool_scene, host_dispatcher.as_ref());
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
             "latestUserIntent": latest_user_text,
@@ -585,6 +601,17 @@ pub(crate) fn finish_turn(
     assistant_text: Option<String>,
     failure: Option<String>,
 ) {
+    finish_turn_with_metadata(session_id, turn_id, status, assistant_text, failure, None);
+}
+
+pub(crate) fn finish_turn_with_metadata(
+    session_id: &str,
+    turn_id: &str,
+    status: &str,
+    assistant_text: Option<String>,
+    failure: Option<String>,
+    metadata: Option<Value>,
+) {
     let mut extraction_job: Option<(PathBuf, String, String, String, Option<String>)> = None;
     let (callback, events) = match state().lock() {
         Ok(mut state) => {
@@ -605,7 +632,7 @@ pub(crate) fn finish_turn(
                     );
                     let assistant_for_extraction = assistant_text.clone();
                     if let Some(text) = assistant_text.filter(|text| !text.trim().is_empty()) {
-                        let message = assistant_message(text);
+                        let message = assistant_message_with_metadata(text, metadata.clone());
                         push_array(&mut session.snapshot, "messages", message.clone());
                         events.push(json!({
                             "kind": "messageCommitted",

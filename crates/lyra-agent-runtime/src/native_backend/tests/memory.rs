@@ -25,6 +25,15 @@ fn memory_tool_persists_shared_memory_for_future_turns() {
     );
 
     assert!(output["content"].as_str().unwrap().contains("Xu Yuanhao"));
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "memory"
+                    && change["operation"] == "remember"
+                    && change["path"] == "/tools/memory/remember"
+            }))
+    );
     let request = build_model_request(&session_id).expect("model request");
     let system_prompt = request.messages[0]["content"]
         .as_str()
@@ -257,6 +266,7 @@ fn legacy_shared_memory_migration_is_idempotent_and_state_json_drops_array() {
 
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+        tool_runtime_migration_diagnostics: Vec::new(),
         active_session_id: None,
         config: NativeConfig::default(),
         legacy_shared_memory: vec![legacy],

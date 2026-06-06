@@ -1597,7 +1597,7 @@ export const createAgentIpcBridge = ({
     }
     const trimmed = value.trim();
     if (!trimmed.startsWith("lumen:")) {
-      throw new Error(`${fieldName} must be a stable Lyra Lumen targetRef from lyra_lumen_map`);
+      throw new Error(`${fieldName} must be a stable Lyra Lumen targetRef from /tools/browser/map`);
     }
     return trimmed;
   };
@@ -1730,7 +1730,7 @@ export const createAgentIpcBridge = ({
           },
           correction: {
             message:
-              "Workbench tab ids, browser tab ids, Lumen target refs, and observation-local element ids are separate. Call lyra_lumen_map for the target tab, then prefer targetRef; use numeric elementId only with the same observation.",
+              "Workbench tab ids, browser tab ids, Lumen target refs, and observation-local element ids are separate. Call /tools/browser/map for the target tab, then prefer targetRef; use numeric elementId only with the same observation.",
             recommendedTool: error.recommendedTool
           },
           nextRecommendedAction: error.recommendedTool

@@ -10,6 +10,7 @@ import { RenderSurfaceCard, ToolDetails } from "./ToolDetails";
 import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
+import { ActionTargetList } from "../rich-text/ActionTargets";
 
 type RenderToolCall = ToolCall & {
   readonly details: Extract<NonNullable<ToolCall["details"]>, { type: "render" }>;
@@ -26,6 +27,72 @@ function editCounts(call: ToolCall | undefined): { add: number; del: number } | 
 /** Strip any trailing "+N -N" stats from a title so we can render them ourselves. */
 function stripStatsFromTitle(title: string): string {
   return title.replace(/\s*\+\d+\s+-\d+\s*$/u, "").trim();
+}
+
+function toolCallMetaChips(call: ToolCall): string[] {
+  const chips: string[] = [];
+  if (call.traceId !== undefined && call.traceId.trim().length > 0) {
+    chips.push((call.trace?.length ?? 0) > 0 ? `trace ${call.trace!.length}` : "trace");
+  } else if ((call.trace?.length ?? 0) > 0) {
+    chips.push(`trace ${call.trace!.length}`);
+  }
+  if ((call.artifactRefs?.length ?? 0) > 0) {
+    chips.push(`artifacts ${call.artifactRefs!.length}`);
+  }
+  if ((call.artifactPreviews?.length ?? 0) > 0) {
+    chips.push(`previews ${call.artifactPreviews!.length}`);
+  }
+  if ((call.changes?.length ?? 0) > 0) {
+    chips.push(`changes ${call.changes!.length}`);
+  }
+  if (call.failureReason !== undefined && call.failureReason.trim().length > 0) {
+    chips.push(call.failureReason.replaceAll("_", " "));
+  }
+  return chips;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringField(value: Record<string, unknown>, ...keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const field = value[key];
+    if (typeof field === "string" && field.trim().length > 0) return field;
+  }
+  return undefined;
+}
+
+function evidenceLabel(value: unknown, fallback: string): string {
+  const record = asRecord(value);
+  return stringField(record, "summary", "message", "label", "title", "id", "kind") ?? fallback;
+}
+
+function evidenceMeta(value: unknown): string[] {
+  const record = asRecord(value);
+  return [
+    stringField(record, "kind", "operation"),
+    stringField(record, "path", "uri"),
+    stringField(record, "diffRef", "dataRef", "artifactRef")
+  ]
+    .flatMap((item) => {
+      if (item !== undefined) return [item];
+      const nested = asRecord(record.diffRef ?? record.dataRef ?? record.artifactRef);
+      return stringField(nested, "path", "uri", "id") === undefined
+        ? []
+        : [stringField(nested, "path", "uri", "id")!];
+    })
+    .filter((item, index, items) => items.indexOf(item) === index);
+}
+
+function hasEvidence(call: ToolCall): boolean {
+  return (call.traceId?.trim().length ?? 0) > 0
+    || (call.trace?.length ?? 0) > 0
+    || (call.artifactRefs?.length ?? 0) > 0
+    || (call.artifactPreviews?.length ?? 0) > 0
+    || (call.changes?.length ?? 0) > 0;
 }
 
 /**
@@ -134,8 +201,9 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const hasDetails = !!call.details && call.details.type !== "render";
+  const hasDetails = (!!call.details && call.details.type !== "render") || hasEvidence(call);
   const counts = editCounts(call);
+  const metaChips = toolCallMetaChips(call);
 
   return (
     <div className={`tool-call ${open ? "open" : ""} status-${call.status}`}>
@@ -177,6 +245,13 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
             </span>
           </span>
         )}
+        {metaChips.length > 0 ? (
+          <span className="tool-call-meta" aria-label="Tool evidence metadata">
+            {metaChips.map((chip) => (
+              <span key={chip}>{chip}</span>
+            ))}
+          </span>
+        ) : null}
       </button>
 
       {hasDetails && (
@@ -193,12 +268,82 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
         <div className="collapse" data-open={open}>
           <div className="collapse-inner">
             <div className="tool-call-body">
-              {groupOpen && open ? <ToolDetails details={call.details!} /> : null}
+              {groupOpen && open && call.details && call.details.type !== "render" ? (
+                <ToolDetails details={call.details} />
+              ) : null}
+              {groupOpen && open ? <ToolEvidence call={call} /> : null}
             </div>
           </div>
         </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ToolEvidence({ call }: { call: ToolCall }) {
+  if (!hasEvidence(call)) return null;
+  return (
+    <div className="tool-evidence">
+      {call.traceId !== undefined && call.traceId.trim().length > 0 ? (
+        <div className="tool-evidence-section">
+          <div className="tool-evidence-label">Trace</div>
+          <code>{call.traceId}</code>
+        </div>
+      ) : null}
+
+      {(call.artifactRefs?.length ?? 0) > 0 ? (
+        <div className="tool-evidence-section">
+          <div className="tool-evidence-label">Artifacts</div>
+          <ActionTargetList targets={call.artifactTargets} />
+          <ul>
+            {call.artifactRefs!.map((artifact, index) => (
+              <li key={`artifact-${index}`}>
+                <span>{evidenceLabel(artifact, `artifact ${index + 1}`)}</span>
+                {evidenceMeta(artifact).map((item) => (
+                  <code key={item}>{item}</code>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {(call.artifactPreviews?.length ?? 0) > 0 ? (
+        <div className="tool-evidence-section">
+          <div className="tool-evidence-label">Preview</div>
+          <div className="tool-artifact-preview-list">
+            {call.artifactPreviews!.map((preview, index) => (
+              <div key={`artifact-preview-${index}`} className="tool-artifact-preview">
+                <div className="tool-artifact-preview-head">
+                  <span>{preview.label}</span>
+                  {preview.kind !== undefined ? <code>{preview.kind}</code> : null}
+                  {preview.bytes !== undefined ? <code>{preview.bytes.toLocaleString()} bytes</code> : null}
+                  {preview.truncated === true ? <code>truncated</code> : null}
+                </div>
+                {preview.path !== undefined ? <code>{preview.path}</code> : null}
+                <pre>{preview.text}</pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {(call.changes?.length ?? 0) > 0 ? (
+        <div className="tool-evidence-section">
+          <div className="tool-evidence-label">Changes</div>
+          <ul>
+            {call.changes!.map((change, index) => (
+              <li key={`change-${index}`}>
+                <span>{evidenceLabel(change, `change ${index + 1}`)}</span>
+                {evidenceMeta(change).map((item) => (
+                  <code key={item}>{item}</code>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

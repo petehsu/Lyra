@@ -85,6 +85,76 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
 }
 
 #[test]
+fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
+    let mut reply = ModelReply {
+        content: Some(
+            r#"I will run this:
+
+```json
+{"path":"/tools/shell/run_command","args":{"command":"pwd"}}
+```
+"#
+            .to_string(),
+        ),
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+        .expect_err("markdown JSON tool snippets must be rejected");
+    assert!(error.to_string().contains("textual tool-call syntax"));
+    assert!(reply.content.is_none());
+}
+
+#[test]
+fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
+    let mut reply = ModelReply {
+        content: Some(
+            "tool_fs_run({\"path\":\"/tools/workbench/list_tabs\",\"args\":{}})".to_string(),
+        ),
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+        .expect_err("function-like textual tool calls must be rejected");
+    assert!(error.to_string().contains("textual tool-call syntax"));
+    assert!(reply.content.is_none());
+}
+
+#[test]
+fn textual_provider_visible_function_call_is_rejected_even_without_advertised_tools() {
+    let mut reply = ModelReply {
+        content: Some(
+            "tool_fs_run({\"path\":\"/tools/workbench/list_tabs\",\"args\":{}})".to_string(),
+        ),
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &[])
+        .expect_err("textual Tool-FS calls must be rejected without advertised tools");
+    assert!(error.to_string().contains("textual tool-call syntax"));
+    assert!(reply.content.is_none());
+}
+
+#[test]
+fn structured_tool_call_is_ignored_when_no_tools_are_advertised() {
+    let parsed = parse_model_tool_call(
+        &json!({
+            "id": "call-1",
+            "function": {
+                "name": "tool_fs_run",
+                "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+            }
+        }),
+        &HashSet::new(),
+    );
+
+    assert!(parsed.is_none());
+}
+
+#[test]
 fn streaming_textual_tool_call_is_rejected() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -831,6 +901,153 @@ fn model_loop_requires_structured_finish_after_tool_result() {
             && message.get("content").and_then(Value::as_str)
                 == Some("让我继续点击 Continue with Google。")
     }));
+}
+
+#[test]
+fn turn_finish_metadata_records_not_run_verification_checks() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Verification Metadata Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let _request = read_http_json_body(&mut stream);
+        let arguments = json!({
+            "status": "completed",
+            "finalText": "完成。",
+            "evidenceSummary": "Read and patched the target file.",
+            "verificationRecords": [{
+                "kind": "test",
+                "status": "passed",
+                "command": "cargo test -p lyra-tool-fs-core",
+                "summary": "Core tests passed."
+            }]
+        })
+        .to_string();
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "finish-verification",
+                        "type": "function",
+                        "function": {
+                            "name": "lyra_turn_finish",
+                            "arguments": arguments
+                        }
+                    }]
+                }
+            }]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write response");
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        provider_type: "openai-compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "完成代码改动" })],
+        tools: model_tools(false),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+    assert_eq!(result.final_text.as_deref(), Some("完成。"));
+    let metadata = result.metadata.clone().expect("finish metadata");
+    assert_eq!(
+        metadata
+            .pointer("/verificationRecords/0/status")
+            .and_then(Value::as_str),
+        Some("passed")
+    );
+    assert!(
+        metadata
+            .get("verificationRecords")
+            .and_then(Value::as_array)
+            .is_some_and(|records| records.iter().any(|record| {
+                record.get("kind").and_then(Value::as_str) == Some("lint")
+                    && record.get("status").and_then(Value::as_str) == Some("not_run")
+                    && record.get("notRunReason").and_then(Value::as_str)
+                        == Some("not_reported_by_model")
+            }))
+    );
+    assert!(
+        metadata
+            .get("verificationRecords")
+            .and_then(Value::as_array)
+            .is_some_and(|records| records.iter().any(|record| {
+                record.get("kind").and_then(Value::as_str) == Some("typecheck")
+                    && record.get("status").and_then(Value::as_str) == Some("not_run")
+            }))
+    );
+
+    finish_turn_with_metadata(
+        &session_id,
+        &turn_id,
+        "finished",
+        result.final_text,
+        None,
+        result.metadata,
+    );
+    let read = backend
+        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .expect("read session");
+    let assistant = read["messages"]
+        .as_array()
+        .expect("messages")
+        .iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+        .expect("assistant message");
+    assert_eq!(
+        assistant
+            .pointer("/metadata/verificationRecords/1/status")
+            .and_then(Value::as_str),
+        Some("not_run")
+    );
+    server.join().expect("server join");
 }
 
 #[test]

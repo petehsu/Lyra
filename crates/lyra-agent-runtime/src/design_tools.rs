@@ -106,39 +106,6 @@ pub fn is_design_task(text: &str) -> bool {
     .any(|needle| value.contains(needle))
 }
 
-pub fn design_tool_names() -> Vec<&'static str> {
-    vec!["lyra_design_search_styles", "lyra_design_get_style_details"]
-}
-
-pub fn design_model_tools() -> Vec<Value> {
-    vec![
-        function_tool(
-            "lyra_design_search_styles",
-            "Search Lyra design reference styles before UI or product design work.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" },
-                    "domain": { "type": "string" },
-                    "limit": { "type": "number", "default": 3 }
-                },
-                "required": ["query"]
-            }),
-        ),
-        function_tool(
-            "lyra_design_get_style_details",
-            "Get Lyra design reference tokens, guidelines, and component patterns for one style.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "styleId": { "type": "string" }
-                },
-                "required": ["styleId"]
-            }),
-        ),
-    ]
-}
-
 pub fn execute_design_tool(name: &str, input: &Value) -> Value {
     match name {
         "lyra_design_search_styles" => search_styles(input),
@@ -179,7 +146,7 @@ fn search_styles(input: &Value) -> Value {
     }
     json!({
         "styles": styles.into_iter().take(limit.max(1)).map(style_summary_json).collect::<Vec<_>>(),
-        "guidance": "Call lyra_design_get_style_details for the closest style before producing a UI design.",
+        "guidance": "Run /tools/design/get_style_details for the closest style before producing a UI design.",
     })
 }
 
@@ -219,26 +186,6 @@ fn style_json(style: &DesignStyle) -> Value {
         "guidelines": style.guidelines,
         "components": style.components,
     })
-}
-
-fn function_tool(name: &str, description: &str, parameters: Value) -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": with_additional_properties(parameters),
-        }
-    })
-}
-
-fn with_additional_properties(mut schema: Value) -> Value {
-    if let Some(object) = schema.as_object_mut() {
-        object
-            .entry("additionalProperties")
-            .or_insert(Value::Bool(false));
-    }
-    schema
 }
 
 #[cfg(test)]

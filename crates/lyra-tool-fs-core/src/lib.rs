@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
@@ -223,18 +224,24 @@ impl Default for ToolFsRegistry {
 
 impl ToolFsRegistry {
     pub fn builtin() -> Self {
-        Self {
-            manifests: builtin_manifests(),
-        }
+        let manifests = builtin_manifests();
+        validate_manifest_set(&manifests).expect("built-in Tool-FS manifests must be valid");
+        Self { manifests }
     }
 
     pub fn with_providers(providers: &[&dyn ToolManifestProvider]) -> Self {
+        Self::try_with_providers(providers).unwrap_or_else(|_| Self::builtin())
+    }
+
+    pub fn try_with_providers(
+        providers: &[&dyn ToolManifestProvider],
+    ) -> Result<Self, ToolFsError> {
         let mut manifests = builtin_manifests();
         for provider in providers {
             manifests.extend(provider.tool_manifests());
         }
-        dedupe_manifests(&mut manifests);
-        Self { manifests }
+        validate_manifest_set(&manifests)?;
+        Ok(Self { manifests })
     }
 
     pub fn manifests(&self) -> &[ToolManifest] {
@@ -482,9 +489,14 @@ impl ToolFsRegistry {
     }
 
     pub fn root_summary(&self) -> Value {
-        let domains = self.ordered_domains(ToolScene::General);
+        self.root_summary_for_scene(ToolScene::General)
+    }
+
+    pub fn root_summary_for_scene(&self, scene: ToolScene) -> Value {
+        let domains = self.ordered_domains(scene);
         json!({
             "path": "/tools",
+            "scene": scene.as_str(),
             "domainCount": domains.len(),
             "toolCount": self.manifests.len(),
             "domains": domains,
@@ -589,6 +601,16 @@ pub fn provider_tool_names() -> Vec<String> {
 }
 
 pub fn infer_scene(signals: &ToolSceneSignals) -> ToolScene {
+    let session_kind = signals.session_kind.as_deref().unwrap_or_default().trim();
+    if matches!(session_kind, "design") {
+        return ToolScene::Design;
+    }
+    if matches!(session_kind, "selfdev" | "project-code" | "code") {
+        return ToolScene::ProjectCode;
+    }
+    if matches!(session_kind, "automation") {
+        return ToolScene::Automation;
+    }
     if signals.design_active
         || signals
             .active_skills
@@ -672,6 +694,17 @@ impl ToolOperationEnvelope {
                 "Retry after the runtime attaches the current policy snapshot.",
             ));
         }
+        if !valid_permission_mode(&self.permission_mode) {
+            return Err(ToolFsError::new(
+                "invalid_permission_mode",
+                format!(
+                    "Tool-FS permissionMode is not supported: {}",
+                    self.permission_mode
+                ),
+                "Retry with runtime_policy, ask, deny, read_only, or full_access.",
+            )
+            .with_detail(json!({ "permissionMode": self.permission_mode })));
+        }
         if let Some(timeout_ms) = self.timeout_ms
             && !(1..=MAX_TOOL_TIMEOUT_MS).contains(&timeout_ms)
         {
@@ -741,6 +774,19 @@ impl ToolOperationEnvelope {
     }
 }
 
+fn valid_permission_mode(value: &str) -> bool {
+    matches!(
+        value.trim(),
+        "runtime_policy"
+            | "ask"
+            | "deny"
+            | "read_only"
+            | "read-only"
+            | "full_access"
+            | "full-access"
+    )
+}
+
 impl ToolTraceRecord {
     pub fn new(
         trace_id: impl Into<String>,
@@ -769,66 +815,14 @@ impl ToolTraceRecord {
 }
 
 fn validate_args_against_schema(manifest: &ToolManifest, args: &Value) -> Result<(), ToolFsError> {
-    let Some(args_object) = args.as_object() else {
+    if !args.is_object() {
         return Err(ToolFsError::new(
             "invalid_tool_args",
             "Tool-FS args must be a JSON object.",
             "Retry with args as an object matching the inspected inputSchema.",
         ));
     };
-    if let Some(required) = manifest
-        .input_schema
-        .get("required")
-        .and_then(Value::as_array)
-    {
-        let missing = required
-            .iter()
-            .filter_map(Value::as_str)
-            .filter(|field| args_object.get(*field).is_none_or(Value::is_null))
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-        if !missing.is_empty() {
-            return Err(ToolFsError::new(
-                "invalid_tool_args",
-                format!(
-                    "Tool-FS args are missing required field(s): {}.",
-                    missing.join(", ")
-                ),
-                "Inspect the target tool and retry with all required args.",
-            )
-            .with_detail(json!({
-                "toolPath": manifest.path,
-                "missing": missing,
-            })));
-        }
-    }
-    let Some(properties) = manifest
-        .input_schema
-        .get("properties")
-        .and_then(Value::as_object)
-    else {
-        return Ok(());
-    };
-    let allow_additional = manifest
-        .input_schema
-        .get("additionalProperties")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
-    for (field, value) in args_object {
-        let Some(schema) = properties.get(field) else {
-            if !allow_additional {
-                return Err(schema_validation_error(
-                    manifest,
-                    field,
-                    "field is not declared in the target input schema",
-                    json!({ "field": field }),
-                ));
-            }
-            continue;
-        };
-        validate_value_against_schema(manifest, field, value, schema)?;
-    }
-    Ok(())
+    validate_value_against_schema(manifest, "args", args, &manifest.input_schema)
 }
 
 fn validate_value_against_schema(
@@ -839,6 +833,17 @@ fn validate_value_against_schema(
 ) -> Result<(), ToolFsError> {
     if value.is_null() {
         return Ok(());
+    }
+    validate_schema_combinators(manifest, field, value, schema)?;
+    if let Some(expected_const) = schema.get("const")
+        && expected_const != value
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "field value does not match const",
+            json!({ "field": field, "expected": expected_const, "actual": value }),
+        ));
     }
     if let Some(enum_values) = schema.get("enum").and_then(Value::as_array)
         && !enum_values.iter().any(|allowed| allowed == value)
@@ -864,34 +869,241 @@ fn validate_value_against_schema(
             }),
         ));
     }
-    if value.is_number() {
-        if let Some(minimum) = schema.get("minimum").and_then(Value::as_f64)
-            && value.as_f64().is_some_and(|actual| actual < minimum)
-        {
-            return Err(schema_validation_error(
-                manifest,
-                field,
-                "field value is below minimum",
-                json!({ "field": field, "minimum": minimum, "actual": value }),
-            ));
+    match value {
+        Value::Number(_) => validate_number_constraints(manifest, field, value, schema)?,
+        Value::String(actual) => validate_string_constraints(manifest, field, actual, schema)?,
+        Value::Array(values) => validate_array_constraints(manifest, field, values, schema)?,
+        Value::Object(values) => validate_object_constraints(manifest, field, values, schema)?,
+        Value::Bool(_) | Value::Null => {}
+    }
+    Ok(())
+}
+
+fn validate_schema_combinators(
+    manifest: &ToolManifest,
+    field: &str,
+    value: &Value,
+    schema: &Value,
+) -> Result<(), ToolFsError> {
+    if let Some(schemas) = schema.get("allOf").and_then(Value::as_array) {
+        for subschema in schemas {
+            validate_value_against_schema(manifest, field, value, subschema)?;
         }
-        if let Some(maximum) = schema.get("maximum").and_then(Value::as_f64)
-            && value.as_f64().is_some_and(|actual| actual > maximum)
-        {
+    }
+    if let Some(schemas) = schema.get("anyOf").and_then(Value::as_array) {
+        let matched = schemas
+            .iter()
+            .filter(|subschema| {
+                validate_value_against_schema(manifest, field, value, subschema).is_ok()
+            })
+            .count();
+        if matched == 0 {
             return Err(schema_validation_error(
                 manifest,
                 field,
-                "field value is above maximum",
-                json!({ "field": field, "maximum": maximum, "actual": value }),
+                "field value does not match any allowed schema",
+                json!({ "field": field, "schemaKeyword": "anyOf" }),
             ));
         }
     }
-    if let (Some(items), Some(values)) = (schema.get("items"), value.as_array()) {
+    if let Some(schemas) = schema.get("oneOf").and_then(Value::as_array) {
+        let matched = schemas
+            .iter()
+            .filter(|subschema| {
+                validate_value_against_schema(manifest, field, value, subschema).is_ok()
+            })
+            .count();
+        if matched != 1 {
+            return Err(schema_validation_error(
+                manifest,
+                field,
+                "field value must match exactly one allowed schema",
+                json!({ "field": field, "schemaKeyword": "oneOf", "matched": matched }),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_number_constraints(
+    manifest: &ToolManifest,
+    field: &str,
+    value: &Value,
+    schema: &Value,
+) -> Result<(), ToolFsError> {
+    if let Some(minimum) = schema.get("minimum").and_then(Value::as_f64)
+        && value.as_f64().is_some_and(|actual| actual < minimum)
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "field value is below minimum",
+            json!({ "field": field, "minimum": minimum, "actual": value }),
+        ));
+    }
+    if let Some(maximum) = schema.get("maximum").and_then(Value::as_f64)
+        && value.as_f64().is_some_and(|actual| actual > maximum)
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "field value is above maximum",
+            json!({ "field": field, "maximum": maximum, "actual": value }),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_string_constraints(
+    manifest: &ToolManifest,
+    field: &str,
+    value: &str,
+    schema: &Value,
+) -> Result<(), ToolFsError> {
+    let length = value.chars().count();
+    if let Some(min_length) = schema.get("minLength").and_then(Value::as_u64)
+        && length < min_length as usize
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "field value is shorter than minLength",
+            json!({ "field": field, "minLength": min_length, "actualLength": length }),
+        ));
+    }
+    if let Some(max_length) = schema.get("maxLength").and_then(Value::as_u64)
+        && length > max_length as usize
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "field value is longer than maxLength",
+            json!({ "field": field, "maxLength": max_length, "actualLength": length }),
+        ));
+    }
+    if let Some(pattern) = schema.get("pattern").and_then(Value::as_str) {
+        let regex = Regex::new(pattern).map_err(|error| {
+            schema_validation_error(
+                manifest,
+                field,
+                "schema pattern is invalid",
+                json!({ "field": field, "pattern": pattern, "error": error.to_string() }),
+            )
+        })?;
+        if !regex.is_match(value) {
+            return Err(schema_validation_error(
+                manifest,
+                field,
+                "field value does not match pattern",
+                json!({ "field": field, "pattern": pattern, "actual": value }),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_array_constraints(
+    manifest: &ToolManifest,
+    field: &str,
+    values: &[Value],
+    schema: &Value,
+) -> Result<(), ToolFsError> {
+    if let Some(min_items) = schema.get("minItems").and_then(Value::as_u64)
+        && values.len() < min_items as usize
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "array has fewer items than minItems",
+            json!({ "field": field, "minItems": min_items, "actualItems": values.len() }),
+        ));
+    }
+    if let Some(max_items) = schema.get("maxItems").and_then(Value::as_u64)
+        && values.len() > max_items as usize
+    {
+        return Err(schema_validation_error(
+            manifest,
+            field,
+            "array has more items than maxItems",
+            json!({ "field": field, "maxItems": max_items, "actualItems": values.len() }),
+        ));
+    }
+    if let Some(items) = schema.get("items") {
         for (index, item) in values.iter().enumerate() {
             validate_value_against_schema(manifest, &format!("{field}[{index}]"), item, items)?;
         }
     }
     Ok(())
+}
+
+fn validate_object_constraints(
+    manifest: &ToolManifest,
+    field: &str,
+    values: &serde_json::Map<String, Value>,
+    schema: &Value,
+) -> Result<(), ToolFsError> {
+    if let Some(required) = schema.get("required").and_then(Value::as_array) {
+        let missing = required
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|required_field| values.get(*required_field).is_none_or(Value::is_null))
+            .map(|required_field| child_schema_field(field, required_field))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(ToolFsError::new(
+                "invalid_tool_args",
+                format!(
+                    "Tool-FS args are missing required field(s): {}.",
+                    missing.join(", ")
+                ),
+                "Inspect the target tool and retry with all required args.",
+            )
+            .with_detail(json!({
+                "toolPath": manifest.path,
+                "missing": missing,
+            })));
+        }
+    }
+
+    let properties = schema.get("properties").and_then(Value::as_object);
+    let additional_properties = schema.get("additionalProperties");
+    for (key, value) in values {
+        if let Some(property_schema) = properties.and_then(|properties| properties.get(key)) {
+            validate_value_against_schema(
+                manifest,
+                &child_schema_field(field, key),
+                value,
+                property_schema,
+            )?;
+            continue;
+        }
+        match additional_properties {
+            Some(Value::Bool(false)) => {
+                return Err(schema_validation_error(
+                    manifest,
+                    &child_schema_field(field, key),
+                    "field is not declared in the target input schema",
+                    json!({ "field": child_schema_field(field, key) }),
+                ));
+            }
+            Some(additional_schema @ Value::Object(_)) => validate_value_against_schema(
+                manifest,
+                &child_schema_field(field, key),
+                value,
+                additional_schema,
+            )?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn child_schema_field(parent: &str, child: &str) -> String {
+    if parent.is_empty() || parent == "args" {
+        child.to_string()
+    } else {
+        format!("{parent}.{child}")
+    }
 }
 
 fn schema_type_allows(expected: &Value, value: &Value) -> bool {
@@ -988,20 +1200,115 @@ pub fn new_operation_envelope(
     }
 }
 
-fn dedupe_manifests(manifests: &mut Vec<ToolManifest>) {
-    let mut seen_paths = HashSet::new();
-    let mut seen_handles = HashSet::new();
-    manifests.retain(|manifest| {
-        if !seen_paths.insert(manifest.path.clone()) {
-            return false;
+fn validate_manifest_set(manifests: &[ToolManifest]) -> Result<(), ToolFsError> {
+    let mut paths = HashSet::new();
+    let mut handles = HashSet::new();
+    for manifest in manifests {
+        validate_manifest(manifest)?;
+        if !paths.insert(manifest.path.clone()) {
+            return Err(ToolFsError::new(
+                "duplicate_tool_path",
+                format!("Tool-FS manifest path is duplicated: {}", manifest.path),
+                "Fix the manifest provider so every tool path is unique.",
+            ));
         }
-        if let Some(handle) = &manifest.handle
-            && !seen_handles.insert(handle.clone())
+        if let Some(handle) = manifest.handle.as_deref().filter(|value| !value.is_empty())
+            && !handles.insert(handle.to_string())
         {
-            return false;
+            return Err(ToolFsError::new(
+                "duplicate_tool_handle",
+                format!("Tool-FS manifest handle is duplicated: {handle}"),
+                "Fix the manifest provider so every pinned handle is unique.",
+            ));
         }
-        true
-    });
+    }
+    Ok(())
+}
+
+fn validate_manifest(manifest: &ToolManifest) -> Result<(), ToolFsError> {
+    let normalized = normalize_tool_path(&manifest.path);
+    if manifest.path != normalized || !manifest.path.starts_with("/tools/") {
+        return Err(ToolFsError::new(
+            "invalid_tool_path",
+            format!("Tool-FS manifest path is invalid: {}", manifest.path),
+            "Use a normalized /tools/<domain>/<operation> path.",
+        ));
+    }
+    let path_domain = manifest
+        .path
+        .trim_start_matches("/tools/")
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    if manifest.domain.trim().is_empty()
+        || manifest.domain != path_domain
+        || !is_manifest_token(&manifest.domain)
+    {
+        return Err(ToolFsError::new(
+            "invalid_tool_domain",
+            format!(
+                "Tool-FS manifest domain `{}` does not match path `{}`.",
+                manifest.domain, manifest.path
+            ),
+            "Use a lowercase manifest domain matching /tools/<domain>.",
+        ));
+    }
+    if manifest.operation.trim().is_empty() || !is_manifest_token(&manifest.operation) {
+        return Err(ToolFsError::new(
+            "invalid_tool_operation",
+            format!(
+                "Tool-FS manifest operation is invalid: {}",
+                manifest.operation
+            ),
+            "Use a non-empty lowercase operation id.",
+        ));
+    }
+    if manifest.title.trim().is_empty() || manifest.summary.trim().is_empty() {
+        return Err(ToolFsError::new(
+            "invalid_tool_manifest",
+            format!(
+                "Tool-FS manifest is missing title or summary: {}",
+                manifest.path
+            ),
+            "Provide a user-facing title and summary.",
+        ));
+    }
+    if manifest.input_schema.get("type").and_then(Value::as_str) != Some("object") {
+        return Err(ToolFsError::new(
+            "invalid_tool_schema",
+            format!(
+                "Tool-FS manifest inputSchema must be an object: {}",
+                manifest.path
+            ),
+            "Provide an object inputSchema.",
+        ));
+    }
+    let expected_schema_id = schema_id_for_path(&manifest.path);
+    if manifest.input_schema.get("$id").and_then(Value::as_str) != Some(expected_schema_id.as_str())
+    {
+        return Err(ToolFsError::new(
+            "invalid_tool_schema_id",
+            format!(
+                "Tool-FS manifest inputSchema $id is invalid: {}",
+                manifest.path
+            ),
+            "Attach the stable Tool-FS schema id for this path.",
+        )
+        .with_detail(json!({
+            "expected": expected_schema_id,
+            "actual": manifest.input_schema.get("$id").cloned().unwrap_or(Value::Null),
+        })));
+    }
+    Ok(())
+}
+
+fn is_manifest_token(value: &str) -> bool {
+    value.chars().all(|character| {
+        character.is_ascii_lowercase()
+            || character.is_ascii_digit()
+            || character == '_'
+            || character == '-'
+    })
 }
 
 fn builtin_manifests() -> Vec<ToolManifest> {
@@ -1624,7 +1931,6 @@ fn builtin_manifests() -> Vec<ToolManifest> {
         ),
     ];
     entries.extend(terminal_manifests());
-    dedupe_manifests(&mut entries);
     entries
 }
 
@@ -1765,7 +2071,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         "type": "string",
         "description": "Defaults to the current Lyra session workingDir when available."
     });
-    match (domain, operation) {
+    let schema = match (domain, operation) {
         ("runtime", "read") => object_schema(
             [
                 ("artifactId", string("Lyra artifact id.")),
@@ -1993,7 +2299,22 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             &[],
         ),
         _ => json!({ "type": "object", "properties": {} }),
+    };
+    attach_schema_id(path, schema)
+}
+
+pub fn schema_id_for_path(path: &str) -> String {
+    let normalized = normalize_tool_path(path);
+    format!("lyra-tool-fs://schema{normalized}/input")
+}
+
+pub fn attach_schema_id(path: &str, mut schema: Value) -> Value {
+    if let Some(object) = schema.as_object_mut() {
+        object
+            .entry("$id".to_string())
+            .or_insert_with(|| Value::String(schema_id_for_path(path)));
     }
+    schema
 }
 
 fn object_schema<const N: usize>(properties: [(&str, Value); N], required: &[&str]) -> Value {
@@ -2128,6 +2449,24 @@ mod tests {
         assert_eq!(files.page_size, 2);
         assert_eq!(files.tools.len(), 2);
         assert!(files.has_more);
+
+        let files_page_2 = registry
+            .list("/tools/filesystem", 1, 2, ToolScene::ProjectCode)
+            .expect("filesystem page 2");
+        assert_eq!(files_page_2.page, 1);
+        assert_eq!(files_page_2.page_size, 2);
+        assert_ne!(files.tools[0].path, files_page_2.tools[0].path);
+
+        let git_tools = registry
+            .list("/tools/git", 0, 20, ToolScene::Git)
+            .expect("git tools");
+        assert_eq!(
+            git_tools
+                .tools
+                .first()
+                .and_then(|tool| tool.handle.as_deref()),
+            Some("git_status")
+        );
     }
 
     #[test]
@@ -2135,6 +2474,25 @@ mod tests {
         let registry = ToolFsRegistry::default();
         let root_doc = registry.read_doc("/tools").expect("root doc");
         assert_eq!(root_doc["kind"], "tool_fs_doc");
+
+        let domain_doc = registry.read_doc("/tools/git").expect("git doc");
+        assert_eq!(domain_doc["path"], "/tools/git");
+        assert!(
+            domain_doc["content"]
+                .as_str()
+                .is_some_and(|content| content.contains("Git"))
+        );
+
+        let tool_doc = registry
+            .read_doc("/tools/shell/run_command")
+            .expect("tool doc");
+        assert_eq!(tool_doc["path"], "/tools/shell/run_command");
+        assert_eq!(tool_doc["title"], "Run command");
+        assert!(
+            tool_doc["content"]
+                .as_str()
+                .is_some_and(|content| content.contains("bounded shell command"))
+        );
 
         let by_path = registry
             .inspect_path("/tools/filesystem/read_file")
@@ -2157,6 +2515,87 @@ mod tests {
         assert!(json.get(&legacy_field).is_none());
         assert!(json.get("inputSchema").is_some());
         assert!(json.get("handle").is_some());
+    }
+
+    #[test]
+    fn manifest_input_schemas_have_stable_ids() {
+        let registry = ToolFsRegistry::default();
+        for manifest in registry.manifests() {
+            let expected = schema_id_for_path(&manifest.path);
+            assert_eq!(
+                manifest.input_schema.get("$id").and_then(Value::as_str),
+                Some(expected.as_str()),
+                "{} schema id",
+                manifest.path
+            );
+        }
+    }
+
+    struct TestManifestProvider {
+        manifests: Vec<ToolManifest>,
+    }
+
+    impl ToolManifestProvider for TestManifestProvider {
+        fn tool_manifests(&self) -> Vec<ToolManifest> {
+            self.manifests.clone()
+        }
+    }
+
+    fn test_manifest(path: &str, handle: Option<&str>) -> ToolManifest {
+        let domain = path
+            .trim_start_matches("/tools/")
+            .split('/')
+            .next()
+            .unwrap_or("test");
+        ToolManifest {
+            path: path.to_string(),
+            handle: handle.map(str::to_string),
+            domain: domain.to_string(),
+            operation: "read".to_string(),
+            title: "Test tool".to_string(),
+            summary: "A test tool.".to_string(),
+            risk_level: "read".to_string(),
+            permission_policy: "runtime_policy".to_string(),
+            input_schema: attach_schema_id(path, json!({ "type": "object", "properties": {} })),
+            output_kind: "json".to_string(),
+            activity_kind: "task".to_string(),
+            renderer_hint: "task".to_string(),
+        }
+    }
+
+    #[test]
+    fn registry_startup_validation_rejects_invalid_manifests() {
+        let duplicate_path = TestManifestProvider {
+            manifests: vec![test_manifest("/tools/filesystem/read_file", None)],
+        };
+        assert_eq!(
+            ToolFsRegistry::try_with_providers(&[&duplicate_path])
+                .unwrap_err()
+                .code,
+            "duplicate_tool_path"
+        );
+
+        let duplicate_handle = TestManifestProvider {
+            manifests: vec![test_manifest("/tools/test/read", Some("read_file"))],
+        };
+        assert_eq!(
+            ToolFsRegistry::try_with_providers(&[&duplicate_handle])
+                .unwrap_err()
+                .code,
+            "duplicate_tool_handle"
+        );
+
+        let mut invalid_schema = test_manifest("/tools/test/no_schema", None);
+        invalid_schema.input_schema = json!({ "type": "object", "properties": {} });
+        let invalid_schema_provider = TestManifestProvider {
+            manifests: vec![invalid_schema],
+        };
+        assert_eq!(
+            ToolFsRegistry::try_with_providers(&[&invalid_schema_provider])
+                .unwrap_err()
+                .code,
+            "invalid_tool_schema_id"
+        );
     }
 
     #[test]
@@ -2243,6 +2682,23 @@ mod tests {
             "missing_policy_snapshot"
         );
 
+        let mut invalid_permission_mode = envelope.clone();
+        invalid_permission_mode.permission_mode = "free_for_all".to_string();
+        assert_eq!(
+            invalid_permission_mode
+                .validate(&registry)
+                .unwrap_err()
+                .code,
+            "invalid_permission_mode"
+        );
+
+        let mut invalid_timeout = envelope.clone();
+        invalid_timeout.timeout_ms = Some(MAX_TOOL_TIMEOUT_MS + 1);
+        assert_eq!(
+            invalid_timeout.validate(&registry).unwrap_err().code,
+            "invalid_timeout"
+        );
+
         let mut missing_args = envelope.clone();
         missing_args.args = json!({});
         assert_eq!(
@@ -2275,6 +2731,167 @@ mod tests {
         assert_eq!(
             cancelled.validate(&registry).unwrap_err().code,
             "operation_cancelled"
+        );
+    }
+
+    #[test]
+    fn operation_envelope_validator_recursively_checks_json_schema_constraints() {
+        let path = "/tools/test/validate_args";
+        let mut manifest = test_manifest(path, None);
+        manifest.operation = "validate_args".to_string();
+        manifest.input_schema = attach_schema_id(
+            path,
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 5,
+                        "pattern": "^[a-z]+$"
+                    },
+                    "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "items": { "type": "integer", "minimum": 1 }
+                    },
+                    "options": {
+                        "type": "object",
+                        "properties": {
+                            "mode": { "enum": ["fast", "safe"] }
+                        },
+                        "required": ["mode"],
+                        "additionalProperties": false
+                    },
+                    "choice": {
+                        "oneOf": [
+                            { "const": "a" },
+                            { "const": "b" }
+                        ]
+                    },
+                    "maybe": {
+                        "anyOf": [
+                            { "type": "string" },
+                            { "type": "integer" }
+                        ]
+                    }
+                },
+                "required": ["name", "items", "options"],
+                "additionalProperties": false
+            }),
+        );
+        let provider = TestManifestProvider {
+            manifests: vec![manifest.clone()],
+        };
+        let registry = ToolFsRegistry::try_with_providers(&[&provider]).expect("registry");
+        let context = ToolOperationContext {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            ..ToolOperationContext::default()
+        };
+        let valid_args = json!({
+            "name": "alpha",
+            "items": [1, 2],
+            "options": { "mode": "fast" },
+            "choice": "a",
+            "maybe": 7
+        });
+        let mut valid = new_operation_envelope(&manifest, valid_args, None, context.clone());
+        valid.created_at = "2026-06-05T00:00:00.000Z".to_string();
+        assert!(valid.validate(&registry).is_ok());
+
+        let invalid_cases = [
+            (
+                json!({
+                    "name": "Alpha",
+                    "items": [1],
+                    "options": { "mode": "fast" }
+                }),
+                "name",
+            ),
+            (
+                json!({
+                    "name": "ok",
+                    "items": [],
+                    "options": { "mode": "fast" }
+                }),
+                "items",
+            ),
+            (
+                json!({
+                    "name": "ok",
+                    "items": [0],
+                    "options": { "mode": "fast" }
+                }),
+                "items[0]",
+            ),
+            (
+                json!({
+                    "name": "ok",
+                    "items": [1],
+                    "options": { "mode": "fast", "extra": true }
+                }),
+                "options.extra",
+            ),
+            (
+                json!({
+                    "name": "ok",
+                    "items": [1],
+                    "options": { "mode": "fast" },
+                    "choice": "c"
+                }),
+                "choice",
+            ),
+            (
+                json!({
+                    "name": "ok",
+                    "items": [1],
+                    "options": { "mode": "fast" },
+                    "maybe": true
+                }),
+                "maybe",
+            ),
+        ];
+        for (args, field) in invalid_cases {
+            let mut envelope = new_operation_envelope(&manifest, args, None, context.clone());
+            envelope.created_at = "2026-06-05T00:00:00.000Z".to_string();
+            let error = envelope.validate(&registry).expect_err("invalid args");
+            assert_eq!(error.code, "invalid_tool_args");
+            assert_eq!(
+                error
+                    .detail
+                    .as_ref()
+                    .and_then(|detail| detail.pointer("/schemaError/field"))
+                    .and_then(Value::as_str),
+                Some(field)
+            );
+        }
+
+        let mut missing_nested = new_operation_envelope(
+            &manifest,
+            json!({
+                "name": "ok",
+                "items": [1],
+                "options": {}
+            }),
+            None,
+            context,
+        );
+        missing_nested.created_at = "2026-06-05T00:00:00.000Z".to_string();
+        let error = missing_nested
+            .validate(&registry)
+            .expect_err("missing nested");
+        assert_eq!(error.code, "invalid_tool_args");
+        assert!(
+            error
+                .detail
+                .as_ref()
+                .and_then(|detail| detail.get("missing"))
+                .and_then(Value::as_array)
+                .is_some_and(|missing| missing
+                    .iter()
+                    .any(|field| field.as_str() == Some("options.mode")))
         );
     }
 
@@ -2338,18 +2955,111 @@ mod tests {
     #[test]
     fn scene_package_uses_state_signals() {
         let signals = ToolSceneSignals {
-            project_bound: true,
-            git_repo: false,
-            active_tab_kind: Some("editor".to_string()),
+            session_kind: Some("selfdev".to_string()),
             ..ToolSceneSignals::default()
         };
         assert_eq!(infer_scene(&signals), ToolScene::ProjectCode);
+
+        let signals = ToolSceneSignals {
+            project_bound: true,
+            git_repo: false,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::ProjectCode);
+
+        let signals = ToolSceneSignals {
+            git_repo: true,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::Git);
+
+        let signals = ToolSceneSignals {
+            terminal_active: true,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::Terminal);
+
+        let signals = ToolSceneSignals {
+            browser_active: true,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::Browser);
+
+        let signals = ToolSceneSignals {
+            editor_active: true,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::ProjectCode);
+
+        let signals = ToolSceneSignals {
+            software_active: true,
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::Automation);
 
         let signals = ToolSceneSignals {
             active_skills: vec!["lyra-design-research".to_string()],
             ..ToolSceneSignals::default()
         };
         assert_eq!(infer_scene(&signals), ToolScene::Design);
+
+        let signals = ToolSceneSignals {
+            active_tab_kind: Some("workbench".to_string()),
+            ..ToolSceneSignals::default()
+        };
+        assert_eq!(infer_scene(&signals), ToolScene::Workbench);
+    }
+
+    #[test]
+    fn scene_changes_sorting_and_pins_without_hiding_tools() {
+        let registry = ToolFsRegistry::default();
+        let general_root = registry
+            .list("/tools", 0, 100, ToolScene::General)
+            .expect("general tools root");
+        let git_root = registry
+            .list("/tools", 0, 100, ToolScene::Git)
+            .expect("git tools root");
+        assert_eq!(
+            registry.root_summary_for_scene(ToolScene::Git)["domains"][0],
+            "git"
+        );
+        let general_domains = general_root
+            .directories
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<HashSet<_>>();
+        let git_domains = git_root
+            .directories
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(general_domains, git_domains);
+        assert_ne!(
+            general_root.directories[0].name,
+            git_root.directories[0].name
+        );
+
+        let general_filesystem = registry
+            .list("/tools/filesystem", 0, 200, ToolScene::General)
+            .expect("general filesystem tools");
+        let project_filesystem = registry
+            .list("/tools/filesystem", 0, 200, ToolScene::ProjectCode)
+            .expect("project filesystem tools");
+        let general_paths = general_filesystem
+            .tools
+            .iter()
+            .map(|manifest| manifest.path.as_str())
+            .collect::<HashSet<_>>();
+        let project_paths = project_filesystem
+            .tools
+            .iter()
+            .map(|manifest| manifest.path.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(general_paths, project_paths);
+        assert_eq!(
+            project_filesystem.tools[0].path,
+            "/tools/filesystem/read_file"
+        );
     }
 
     #[test]
