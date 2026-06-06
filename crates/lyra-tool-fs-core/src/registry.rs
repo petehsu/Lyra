@@ -1,0 +1,468 @@
+use serde_json::{Value, json};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashSet};
+
+use crate::catalog::{builtin_manifests, domain_summary, validate_manifest_set};
+use crate::error::ToolFsError;
+use crate::model::{
+    PinnedToolHandle, ResolvedToolRun, ToolDirectory, ToolDirectoryEntry, ToolManifest,
+    ToolManifestProvider, ToolSearchResponse, ToolSearchResult,
+};
+use crate::scene::{ToolScene, pinned_handle_names, scene_domain_order};
+use crate::search::{best_fallback_list_path, round_score, score_manifest_search};
+
+#[derive(Clone, Debug)]
+pub struct ToolFsRegistry {
+    manifests: Vec<ToolManifest>,
+}
+
+impl Default for ToolFsRegistry {
+    fn default() -> Self {
+        Self::builtin()
+    }
+}
+
+impl ToolFsRegistry {
+    pub fn builtin() -> Self {
+        let manifests = builtin_manifests();
+        validate_manifest_set(&manifests).expect("built-in Tool-FS manifests must be valid");
+        Self { manifests }
+    }
+
+    pub fn with_providers(providers: &[&dyn ToolManifestProvider]) -> Self {
+        Self::try_with_providers(providers).unwrap_or_else(|_| Self::builtin())
+    }
+
+    pub fn try_with_providers(
+        providers: &[&dyn ToolManifestProvider],
+    ) -> Result<Self, ToolFsError> {
+        let mut manifests = builtin_manifests();
+        for provider in providers {
+            manifests.extend(provider.tool_manifests());
+        }
+        validate_manifest_set(&manifests)?;
+        Ok(Self { manifests })
+    }
+
+    pub fn manifests(&self) -> &[ToolManifest] {
+        &self.manifests
+    }
+
+    pub fn list(
+        &self,
+        path: &str,
+        page: usize,
+        page_size: usize,
+        scene: ToolScene,
+    ) -> Result<ToolDirectory, ToolFsError> {
+        let normalized = normalize_tool_path(path);
+        let page_size = page_size.clamp(1, 200);
+        if normalized == "/tools" {
+            let directories = self.ordered_domains(scene);
+            return Ok(ToolDirectory {
+                kind: "tool_fs_directory".to_string(),
+                path: "/tools".to_string(),
+                directories: directories
+                    .into_iter()
+                    .map(|domain| ToolDirectoryEntry {
+                        path: format!("/tools/{domain}"),
+                        name: domain.to_string(),
+                        summary: domain_summary(&domain).to_string(),
+                    })
+                    .collect(),
+                tools: Vec::new(),
+                total: 0,
+                page,
+                page_size,
+                has_more: false,
+            });
+        }
+
+        let prefix = format!("{}/", normalized.trim_end_matches('/'));
+        let mut tools = self
+            .manifests
+            .iter()
+            .filter(|manifest| manifest.path.starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        if tools.is_empty() {
+            return Err(ToolFsError::new(
+                "tool_directory_not_found",
+                format!("Tool directory was not found or is empty: {normalized}"),
+                "Call tool_fs_list with /tools to discover available directories.",
+            ));
+        }
+        self.sort_manifests(&mut tools, scene);
+        let total = tools.len();
+        let start = page.saturating_mul(page_size).min(total);
+        let end = (start + page_size).min(total);
+        Ok(ToolDirectory {
+            kind: "tool_fs_directory".to_string(),
+            path: normalized,
+            directories: Vec::new(),
+            tools: tools[start..end].to_vec(),
+            total,
+            page,
+            page_size,
+            has_more: end < total,
+        })
+    }
+
+    pub fn search(
+        &self,
+        query: &str,
+        domain: Option<&str>,
+        page: usize,
+        page_size: usize,
+        scene: ToolScene,
+    ) -> Result<ToolSearchResponse, ToolFsError> {
+        self.search_with_boosts(query, domain, page, page_size, scene, &BTreeMap::new())
+    }
+
+    pub fn search_with_boosts(
+        &self,
+        query: &str,
+        domain: Option<&str>,
+        page: usize,
+        page_size: usize,
+        scene: ToolScene,
+        usage_boosts: &BTreeMap<String, f64>,
+    ) -> Result<ToolSearchResponse, ToolFsError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(ToolFsError::new(
+                "invalid_tool_search_query",
+                "tool_fs_search query must not be empty.",
+                "Describe the task or capability you need, or call tool_fs_list with /tools.",
+            ));
+        }
+        let domain = domain
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.trim_start_matches("/tools/").to_ascii_lowercase());
+        let page_size = page_size.clamp(1, 100);
+        let mut scored = self
+            .manifests
+            .iter()
+            .filter(|manifest| {
+                domain
+                    .as_deref()
+                    .is_none_or(|domain| manifest.domain == domain)
+            })
+            .filter_map(|manifest| score_manifest_search(manifest, query, scene, usage_boosts))
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.manifest.path.cmp(&right.manifest.path))
+        });
+        let total = scored.len();
+        let start = page.saturating_mul(page_size).min(total);
+        let end = (start + page_size).min(total);
+        let results = scored[start..end]
+            .iter()
+            .map(|entry| ToolSearchResult {
+                path: entry.manifest.path.clone(),
+                handle: entry.manifest.handle.clone(),
+                title: entry.manifest.title.clone(),
+                domain: entry.manifest.domain.clone(),
+                operation: entry.manifest.operation.clone(),
+                summary: entry.manifest.summary.clone(),
+                score: round_score(entry.score),
+                matched_fields: entry.matched_fields.clone(),
+                match_reason: entry.match_reason.clone(),
+                recommended_next_action: "Call tool_fs_inspect for the schema, then tool_fs_run with this path or handle.".to_string(),
+            })
+            .collect::<Vec<_>>();
+        let fallback_list_path = if let Some(domain) = domain.as_deref()
+            && self
+                .manifests
+                .iter()
+                .any(|manifest| manifest.domain == domain)
+        {
+            format!("/tools/{domain}")
+        } else {
+            best_fallback_list_path(query, &self.manifests, scene)
+        };
+        let recommended_next_action = if results.is_empty() {
+            format!(
+                "No strong Tool-FS search result matched. Call tool_fs_list with {fallback_list_path}, then inspect a concrete /tools path."
+            )
+        } else {
+            "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.".to_string()
+        };
+        Ok(ToolSearchResponse {
+            kind: "tool_fs_search".to_string(),
+            query: query.to_string(),
+            scene: scene.as_str().to_string(),
+            domain,
+            results,
+            total,
+            page,
+            page_size,
+            has_more: end < total,
+            fallback_list_path,
+            recommended_next_action,
+        })
+    }
+
+    pub fn read_doc(&self, path: &str) -> Result<Value, ToolFsError> {
+        let normalized = normalize_tool_path(path);
+        if normalized == "/tools" {
+            return Ok(json!({
+                "kind": "tool_fs_doc",
+                "path": "/tools",
+                "title": "Lyra Tool Filesystem",
+                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, tool_fs_run, and lyra_turn_finish."
+            }));
+        }
+        if let Some(manifest) = self.lookup_path(&normalized) {
+            return Ok(json!({
+                "kind": "tool_fs_doc",
+                "path": manifest.path,
+                "title": manifest.title,
+                "content": format!("{} {} Input schema is available through tool_fs_inspect.", manifest.summary, manifest.description),
+                "aliases": manifest.aliases.clone(),
+                "examples": manifest.examples.clone(),
+                "tags": manifest.tags.clone(),
+            }));
+        }
+        let domain = normalized
+            .trim_start_matches("/tools/")
+            .split('/')
+            .next()
+            .unwrap_or_default();
+        if !domain.is_empty()
+            && self
+                .manifests
+                .iter()
+                .any(|manifest| manifest.domain == domain)
+        {
+            return Ok(json!({
+                "kind": "tool_fs_doc",
+                "path": format!("/tools/{domain}"),
+                "title": format!("/tools/{domain}"),
+                "content": domain_summary(domain),
+            }));
+        }
+        Err(ToolFsError::new(
+            "tool_doc_not_found",
+            format!("Tool documentation was not found: {normalized}"),
+            "Call tool_fs_list to discover valid documentation paths.",
+        ))
+    }
+
+    pub fn inspect_path(&self, path: &str) -> Result<ToolManifest, ToolFsError> {
+        let normalized = normalize_tool_path(path);
+        self.lookup_path(&normalized).cloned().ok_or_else(|| {
+            ToolFsError::new(
+                "tool_not_found",
+                format!("Tool Filesystem target was not found: {normalized}"),
+                "Inspect an existing /tools path or pinned handle.",
+            )
+        })
+    }
+
+    pub fn inspect_handle(&self, handle: &str) -> Result<ToolManifest, ToolFsError> {
+        let normalized = handle.trim();
+        self.lookup_handle(normalized).cloned().ok_or_else(|| {
+            ToolFsError::new(
+                "tool_not_found",
+                format!("Tool Filesystem handle was not found: {normalized}"),
+                "Inspect an existing /tools path or pinned handle.",
+            )
+        })
+    }
+
+    pub fn inspect_input(&self, input: &Value) -> Result<ToolManifest, ToolFsError> {
+        if let Some(path) = input.get("path").and_then(Value::as_str) {
+            return self.inspect_path(path);
+        }
+        if let Some(handle) = input
+            .get("toolHandle")
+            .or_else(|| input.get("tool_handle"))
+            .and_then(Value::as_str)
+        {
+            return self.inspect_handle(handle);
+        }
+        Err(ToolFsError::new(
+            "tool_target_required",
+            "tool_fs_inspect requires path or toolHandle.",
+            "Provide a concrete /tools path or pinned tool handle.",
+        ))
+    }
+
+    pub(crate) fn resolve_target(
+        &self,
+        target_path: Option<&str>,
+        target_handle: Option<&str>,
+        op: &str,
+    ) -> Result<ToolManifest, ToolFsError> {
+        let target_path = target_path.map(str::trim).filter(|value| !value.is_empty());
+        let target_handle = target_handle
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if target_path.is_none() && target_handle.is_none() {
+            return Err(ToolFsError::new(
+                "tool_target_required",
+                format!("tool_fs_{op} requires path or toolHandle."),
+                "Provide a concrete /tools path or pinned handle.",
+            ));
+        }
+        let path_manifest = target_path
+            .map(|path| self.inspect_path(path))
+            .transpose()?;
+        let handle_manifest = target_handle
+            .map(|handle| self.inspect_handle(handle))
+            .transpose()?;
+        match (path_manifest, handle_manifest) {
+            (Some(path_manifest), Some(handle_manifest)) => {
+                if path_manifest.path != handle_manifest.path {
+                    return Err(ToolFsError::new(
+                        "ambiguous_tool_target",
+                        "Tool-FS path and toolHandle resolve to different tools.",
+                        "Provide only one target, or make path and toolHandle refer to the same tool.",
+                    )
+                    .with_detail(json!({
+                        "pathTarget": path_manifest.path,
+                        "handleTarget": handle_manifest.path,
+                    })));
+                }
+                Ok(path_manifest)
+            }
+            (Some(manifest), None) | (None, Some(manifest)) => Ok(manifest),
+            (None, None) => unreachable!("target presence checked above"),
+        }
+    }
+
+    pub fn resolve_run_input(&self, input: &Value) -> Result<ResolvedToolRun, ToolFsError> {
+        let target_path = input.get("path").and_then(Value::as_str);
+        let target_handle = input
+            .get("toolHandle")
+            .or_else(|| input.get("tool_handle"))
+            .and_then(Value::as_str);
+        let manifest = self.resolve_target(target_path, target_handle, "run")?;
+        let args = input.get("args").cloned().unwrap_or_else(|| json!({}));
+        if !args.is_object() {
+            return Err(ToolFsError::new(
+                "invalid_tool_args",
+                "tool_fs_run args must be an object.",
+                "Retry with args as a JSON object matching the inspected inputSchema.",
+            )
+            .with_detail(json!({ "args": args })));
+        }
+        Ok(ResolvedToolRun {
+            manifest,
+            args,
+            requested_path: target_path.map(str::to_string),
+            requested_handle: target_handle.map(str::to_string),
+        })
+    }
+
+    pub fn lookup_path(&self, path: &str) -> Option<&ToolManifest> {
+        let normalized = normalize_tool_path(path);
+        self.manifests
+            .iter()
+            .find(|manifest| manifest.path == normalized)
+    }
+
+    pub fn lookup_handle(&self, handle: &str) -> Option<&ToolManifest> {
+        let handle = handle.trim();
+        self.manifests
+            .iter()
+            .find(|manifest| manifest.handle.as_deref() == Some(handle))
+    }
+
+    pub fn pinned_handles(&self, scene: ToolScene) -> Vec<PinnedToolHandle> {
+        pinned_handle_names(scene)
+            .into_iter()
+            .filter_map(|handle| {
+                let manifest = self.lookup_handle(handle)?;
+                Some(PinnedToolHandle {
+                    handle: handle.to_string(),
+                    path: manifest.path.clone(),
+                    title: manifest.title.clone(),
+                    domain: manifest.domain.clone(),
+                    operation: manifest.operation.clone(),
+                })
+            })
+            .collect()
+    }
+
+    pub fn root_summary(&self) -> Value {
+        self.root_summary_for_scene(ToolScene::General)
+    }
+
+    pub fn root_summary_for_scene(&self, scene: ToolScene) -> Value {
+        let domains = self.ordered_domains(scene);
+        json!({
+            "path": "/tools",
+            "scene": scene.as_str(),
+            "searchAvailable": true,
+            "recommendedDiscovery": "Call tool_fs_search first with a natural-language task description; call tool_fs_list only when search needs a directory fallback.",
+            "searchExamples": [
+                "edit a file",
+                "search code text",
+                "run a shell command",
+                "read browser page",
+                "show git diff"
+            ],
+            "domainCount": domains.len(),
+            "toolCount": self.manifests.len(),
+            "domains": domains,
+        })
+    }
+
+    fn ordered_domains(&self, scene: ToolScene) -> Vec<String> {
+        let present = self
+            .manifests
+            .iter()
+            .map(|manifest| manifest.domain.as_str())
+            .collect::<HashSet<_>>();
+        let mut ordered = scene_domain_order(scene)
+            .into_iter()
+            .filter(|domain| present.contains(*domain))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        let mut rest = present.into_iter().collect::<Vec<_>>();
+        rest.sort_unstable();
+        for domain in rest {
+            if !ordered.iter().any(|ordered| ordered == domain) {
+                ordered.push(domain.to_string());
+            }
+        }
+        ordered
+    }
+
+    fn sort_manifests(&self, tools: &mut [ToolManifest], scene: ToolScene) {
+        let pinned = pinned_handle_names(scene);
+        tools.sort_by(|left, right| {
+            let left_rank = left
+                .handle
+                .as_deref()
+                .and_then(|handle| pinned.iter().position(|pinned| *pinned == handle))
+                .unwrap_or(usize::MAX);
+            let right_rank = right
+                .handle
+                .as_deref()
+                .and_then(|handle| pinned.iter().position(|pinned| *pinned == handle))
+                .unwrap_or(usize::MAX);
+            left_rank
+                .cmp(&right_rank)
+                .then_with(|| left.path.cmp(&right.path))
+        });
+    }
+}
+
+pub fn normalize_tool_path(path: &str) -> String {
+    let trimmed = path.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "/tools".to_string();
+    }
+    if trimmed == "/tools" || trimmed.starts_with("/tools/") {
+        return trimmed.to_string();
+    }
+    format!("/tools/{}", trimmed.trim_start_matches('/'))
+}
