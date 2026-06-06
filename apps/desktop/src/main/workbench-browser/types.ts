@@ -394,6 +394,76 @@ export type WorkbenchBrowserAgentPoint = {
   readonly reason?: string;
 };
 
+export type WorkbenchBrowserAgentScrollDirection =
+  | "up"
+  | "down"
+  | "left"
+  | "right";
+
+export type WorkbenchBrowserAgentScrollBlock =
+  | "start"
+  | "center"
+  | "end"
+  | "nearest";
+
+export type WorkbenchBrowserAgentScrollEffect = {
+  readonly reason:
+    | "target_offscreen"
+    | "point_offscreen"
+    | "explicit_scroll"
+    | "ensure_visible";
+  readonly scrolled: boolean;
+  readonly method:
+    | "wheel"
+    | "scrollIntoView"
+    | "scrollBy"
+    | "containerScroll"
+    | "none";
+  readonly before: {
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly after: {
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly deltaX: number;
+  readonly deltaY: number;
+  readonly targetRef?: string;
+  readonly elementId?: number;
+  readonly beforeObservationId?: string;
+  readonly afterObservationId?: string;
+};
+
+export type WorkbenchBrowserAgentScrollResult = {
+  readonly ok: boolean;
+  readonly kind: "lyraLumenScrollResult";
+  readonly tabId: string;
+  readonly inputMode: "chromium";
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+  readonly direction?: WorkbenchBrowserAgentScrollDirection;
+  readonly amount?: number;
+  readonly pages?: number;
+  readonly x?: number;
+  readonly y?: number;
+  readonly targetRef?: string;
+  readonly elementId?: number;
+  readonly beforeObservationId?: string;
+  readonly afterObservationId?: string;
+  readonly scrolled: boolean;
+  readonly method: WorkbenchBrowserAgentScrollEffect["method"];
+  readonly deltaX: number;
+  readonly deltaY: number;
+  readonly autoScroll?: WorkbenchBrowserAgentScrollEffect;
+  readonly message?: string;
+  readonly nextRecommendedAction?: string;
+  readonly error?: {
+    readonly kind: string;
+    readonly message: string;
+  };
+};
+
 export type WorkbenchBrowserAgentFocusDirection =
   | "next"
   | "previous"
@@ -453,12 +523,47 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly staleElement?: boolean;
   readonly staleTarget?: WorkbenchLumenStaleTarget;
   readonly nearestCandidates?: readonly WorkbenchBrowserAgentElement[];
+  readonly autoScroll?: WorkbenchBrowserAgentScrollEffect;
   readonly message?: string;
   readonly nextRecommendedAction?: string;
   readonly error?: {
     readonly kind: string;
     readonly message: string;
   };
+};
+
+export type WorkbenchBrowserAgentFindResult = WorkbenchBrowserSearchInPageResult & {
+  readonly ok: true;
+  readonly kind: "lyraLumenFind";
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+  readonly revealRect?: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAgentLocateResult = {
+  readonly ok: true;
+  readonly kind: "lyraLumenLocate";
+  readonly tabId: string;
+  readonly address: string;
+  readonly title: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+  readonly matched: boolean;
+  readonly matchMode: "exact" | "semantic";
+  readonly query: string;
+  readonly anchorQuery?: string;
+  readonly semanticScore?: number;
+  readonly semanticReason?: string;
+  readonly findResult?: WorkbenchBrowserAgentFindResult;
+  readonly observationId?: string;
+  readonly nearbyElements?: readonly WorkbenchBrowserAgentElement[];
+  readonly nextRecommendedAction?: string;
 };
 
 export type WorkbenchBrowserViewManager = {
@@ -539,8 +644,28 @@ export type WorkbenchBrowserViewManager = {
     request?: WorkbenchBrowserAgentModeRequest & {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
       readonly timeoutMs?: number;
+      readonly suppressActivity?: boolean;
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly findAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & WorkbenchBrowserSearchInPageRequest & {
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentFindResult>;
+  readonly locateAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly query: string;
+      readonly matchMode?: "exact" | "semantic";
+      readonly autoMap?: boolean;
+      readonly nearbyLimit?: number;
+      readonly reveal?: boolean;
+      readonly caseSensitive?: boolean;
+      readonly maxMatches?: number;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentLocateResult>;
   readonly actOnAgentElement: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -569,6 +694,22 @@ export type WorkbenchBrowserViewManager = {
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentFocusResult>;
+  readonly scrollAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly direction?: WorkbenchBrowserAgentScrollDirection;
+      readonly amount?: number;
+      readonly pages?: number;
+      readonly block?: WorkbenchBrowserAgentScrollBlock;
+      readonly behavior?: "instant" | "smooth";
+      readonly elementId?: number;
+      readonly targetRef?: string;
+      readonly point?: WorkbenchBrowserAgentPoint;
+      readonly autoMap?: boolean;
+      readonly timeoutMs?: number;
+      readonly reason?: "explicit_scroll" | "ensure_visible";
+    }
+  ) => Promise<WorkbenchBrowserAgentScrollResult>;
   readonly typeIntoAgentElement: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {

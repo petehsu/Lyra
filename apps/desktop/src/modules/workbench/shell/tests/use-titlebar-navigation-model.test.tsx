@@ -47,6 +47,28 @@ const createRuntimeState = (
   ...overrides
 });
 
+const createPageFindResult = (query: string, currentIndex = 1) => ({
+  tabId: "browser-tab-1",
+  address: "https://example.com/",
+  title: "Example",
+  query,
+  currentIndex,
+  activeMatchId: query.length === 0 ? undefined : `match-${currentIndex}`,
+  totalMatches: query.length === 0 ? 0 : 3,
+  matches: query.length === 0
+    ? []
+    : [
+      {
+        id: `match-${currentIndex}`,
+        index: currentIndex,
+        startChar: 4,
+        endChar: 4 + query.length,
+        snippet: `Example ${query} snippet`
+      }
+    ],
+  truncated: false
+});
+
 const renderModel = ({
   activeTab,
   desktopApi = null,
@@ -377,6 +399,116 @@ describe("useTitlebarNavigationModel", () => {
     });
 
     expect(onRunTerminalCommand).toHaveBeenCalledWith("npm test");
+    expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
+  });
+
+  test("opens page find from the browser find shortcut and clears the omnibox value", () => {
+    const searchInPage = vi.fn(async ({ query }: { readonly query: string }) =>
+      createPageFindResult(query)
+    );
+    const { result } = renderModel({
+      activeTab: createPageTab(),
+      activePageRuntimeState: createRuntimeState(),
+      desktopApi: {
+        workbenchBrowser: {
+          searchInPage,
+          setChromePopover: vi.fn(async () => undefined),
+          onEvent: vi.fn(() => () => undefined)
+        }
+      } as unknown as LyraDesktopApi
+    });
+
+    expect(result.current.mode).toBe("normal");
+    expect(result.current.value).toBe("https://example.com/");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "f",
+        ctrlKey: true,
+        bubbles: true
+      }));
+    });
+
+    expect(result.current.mode).toBe("page-find");
+    expect(result.current.value).toBe("");
+    expect(result.current.showSuggestions).toBe(false);
+    expect(searchInPage).toHaveBeenCalledWith({
+      tabId: "browser-tab-1",
+      query: ""
+    });
+  });
+
+  test("runs page-find queries instead of normal navigation while in page-find mode", async () => {
+    vi.useFakeTimers();
+    const tabsModel = createTabsModel();
+    const searchInPage = vi.fn(async (request: { readonly query: string; readonly direction?: string }) =>
+      createPageFindResult(request.query, request.direction === "next" ? 2 : 1)
+    );
+    const { result } = renderModel({
+      activeTab: createPageTab(),
+      activePageRuntimeState: createRuntimeState(),
+      tabsModel,
+      desktopApi: {
+        workbenchBrowser: {
+          searchInPage,
+          setChromePopover: vi.fn(async () => undefined),
+          onEvent: vi.fn(() => () => undefined)
+        }
+      } as unknown as LyraDesktopApi
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "f",
+        metaKey: true,
+        bubbles: true
+      }));
+    });
+    expect(result.current.mode).toBe("page-find");
+    await act(async () => {
+      result.current.onChange("Lyra");
+    });
+    expect(result.current.value).toBe("Lyra");
+    expect(tabsModel.updateActiveInput).not.toHaveBeenCalledWith("Lyra");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(searchInPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabId: "browser-tab-1",
+        query: "Lyra",
+        direction: "current",
+        reveal: true
+      })
+    );
+
+    await act(async () => {
+      await result.current.onSubmit();
+    });
+
+    expect(searchInPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabId: "browser-tab-1",
+        query: "Lyra",
+        direction: "next",
+        reveal: true
+      })
+    );
+
+    await act(async () => {
+      await result.current.onPageFindMatchClick(7);
+    });
+
+    expect(searchInPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabId: "browser-tab-1",
+        query: "Lyra",
+        activeIndex: 7,
+        direction: "current",
+        reveal: true
+      })
+    );
     expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
   });
 });

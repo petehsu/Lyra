@@ -139,6 +139,7 @@ pub(crate) fn new_session(
         short_name: None,
         runtime_turns: Vec::new(),
         rollback_checkpoints: Vec::new(),
+        file_read_state: HashMap::new(),
         dirty: true,
     }
 }

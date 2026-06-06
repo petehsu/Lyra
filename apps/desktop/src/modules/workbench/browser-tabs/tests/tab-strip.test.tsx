@@ -169,11 +169,15 @@ describe("BrowserTabStrip", () => {
     );
 
     const nav = screen.getByLabelText("browser-tabs");
+    const surface = nav.querySelector(".lyra-browser-chrome-surface");
     const strip = nav.querySelector(".lyra-browser-tab-strip") as HTMLElement;
     const toolbar = nav.querySelector(".lyra-browser-tabs-toolbar") as HTMLElement;
     const navigationShell = nav.querySelector(".lyra-browser-tabs-navigation");
     const contextShell = nav.querySelector(".lyra-browser-tabs-toolbar-context");
     expect(nav).toHaveClass("lyra-browser-tabs-with-navigation");
+    expect(surface).not.toBeNull();
+    expect(surface).toContainElement(toolbar);
+    expect(surface).toContainElement(strip);
     expect(toolbar).not.toBeNull();
     expect(
       toolbar.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING

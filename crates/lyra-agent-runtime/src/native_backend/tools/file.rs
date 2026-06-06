@@ -1,4 +1,9 @@
 use super::*;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    time::SystemTime,
+};
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -104,6 +109,16 @@ pub(crate) fn tool_file_read(
     if start_line.is_some() || end_line.is_some() {
         text = apply_line_range(&text, start_line, end_line);
     }
+    let read_version = record_file_read_state(
+        session_id,
+        &workspace_path.relative,
+        &workspace_path.absolute,
+        &bytes,
+        metadata.len(),
+        metadata_mtime_ms(&metadata),
+        start_line,
+        end_line,
+    )?;
     let content = format!(
         "{}\n---\n{}",
         workspace_path.relative,
@@ -131,6 +146,13 @@ pub(crate) fn tool_file_read(
             "artifactRef": artifact_ref,
             "startLine": start_line,
             "endLine": end_line,
+            "readVersion": read_version,
+            "contentHash": stable_text_hash(&bytes),
+            "mtimeMs": metadata_mtime_ms(&metadata),
+            "range": {
+                "startLine": start_line,
+                "endLine": end_line,
+            },
         }),
         recommended_next_action: over_requested_budget.then_some(
             "Use a narrower line range or read the artifact reference if more context is needed."
@@ -607,6 +629,15 @@ pub(crate) fn tool_file_edit(
     tool_call_id: &str,
     input: &Value,
 ) -> NativeToolResult {
+    tool_file_strict_edit(session_id, turn_id, tool_call_id, input)
+}
+
+pub(crate) fn tool_file_strict_edit(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+) -> NativeToolResult {
     let path = required_value_string(input, "path")?;
     let old_string = required_value_string(input, "oldString")?;
     let new_string = input
@@ -622,11 +653,41 @@ pub(crate) fn tool_file_edit(
         .to_string();
     let replace_all = value_bool(input, "replaceAll", false);
     let workspace_path = resolve_workspace_path(session_id, &path, false)?;
-    let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
+    let old_bytes = fs::read(&workspace_path.absolute).map_err(|error| {
         NativeToolFailure::new(
             "read_failed",
             format!("failed to read file before edit: {error}"),
             "Retry with a readable UTF-8 workspace file.",
+        )
+    })?;
+    if old_bytes.contains(&0) {
+        return Err(NativeToolFailure::new(
+            "encoding_unsupported",
+            "strict_edit only supports text files",
+            "Use a text source file or a binary-aware tool.",
+        ));
+    }
+    let metadata = fs::metadata(&workspace_path.absolute).map_err(|error| {
+        NativeToolFailure::new(
+            "read_failed",
+            format!("failed to read file metadata before edit: {error}"),
+            "Retry with a readable workspace file.",
+        )
+    })?;
+    validate_file_read_state(
+        session_id,
+        &workspace_path.relative,
+        &workspace_path.absolute,
+        &old_bytes,
+        metadata.len(),
+        metadata_mtime_ms(&metadata),
+        value_string(input, "expectedReadVersion").as_deref(),
+    )?;
+    let old = String::from_utf8(old_bytes).map_err(|error| {
+        NativeToolFailure::new(
+            "encoding_unsupported",
+            format!("file is not valid UTF-8: {error}"),
+            "Retry with a UTF-8 text file.",
         )
     })?;
     let updated = apply_exact_replacement(&old, &old_string, &new_string, replace_all)?;
@@ -656,11 +717,11 @@ pub(crate) fn tool_file_edit(
         &updated,
     );
     Ok(NativeToolSuccess {
-        content: format!("Edited {}\n{}", workspace_path.relative, diff),
+        content: format!("Strict edited {}\n{}", workspace_path.relative, diff),
         raw: json!({
             "changedFiles": [{
                 "path": workspace_path.relative,
-                "operation": "edit",
+                "operation": "strict_edit",
                 "beforeExists": true,
                 "afterExists": true,
                 "beforeRef": before_ref,
@@ -671,7 +732,7 @@ pub(crate) fn tool_file_edit(
             "diffArtifactRef": diff_artifact_ref,
         }),
         recommended_next_action: Some(
-            "Review the diff and run the relevant validation command.".to_string(),
+            "Review git_diff and run the relevant validation command.".to_string(),
         ),
     })
 }
@@ -693,7 +754,7 @@ pub(crate) fn apply_exact_replacement(
     if count == 0 {
         return Err(NativeToolFailure::new(
             "edit_not_found",
-            "oldString was not found exactly once in the target file",
+            "oldString was not found in the target file",
             "Read the current file contents and retry with an exact oldString.",
         ));
     }
@@ -709,6 +770,124 @@ pub(crate) fn apply_exact_replacement(
     } else {
         original.replacen(old_string, new_string, 1)
     })
+}
+
+fn record_file_read_state(
+    session_id: &str,
+    relative_path: &str,
+    absolute_path: &Path,
+    bytes: &[u8],
+    size: u64,
+    mtime_ms: u64,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> Result<String, NativeToolFailure> {
+    let content_hash = stable_text_hash(bytes);
+    let read_version = format!("{mtime_ms}-{size}-{content_hash}");
+    let mut state = state().lock().map_err(|_| {
+        NativeToolFailure::new(
+            "runtime_state_unavailable",
+            "agent runtime state lock failed while recording file read state",
+            "Retry the tool call.",
+        )
+    })?;
+    let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+        NativeToolFailure::new(
+            "session_not_found",
+            format!("session not found: {session_id}"),
+            "Start a valid Lyra runtime session and retry.",
+        )
+    })?;
+    session.file_read_state.insert(
+        relative_path.to_string(),
+        FileReadStateEntry {
+            path: relative_path.to_string(),
+            absolute_path: absolute_path.display().to_string(),
+            read_version: read_version.clone(),
+            content_hash,
+            mtime_ms,
+            size,
+            start_line,
+            end_line,
+            read_at: now(),
+        },
+    );
+    session.dirty = true;
+    state.save_state().map_err(|error| {
+        NativeToolFailure::new(
+            "runtime_state_unavailable",
+            format!("failed to save file read state: {error}"),
+            "Retry the tool call.",
+        )
+    })?;
+    Ok(read_version)
+}
+
+fn validate_file_read_state(
+    session_id: &str,
+    relative_path: &str,
+    absolute_path: &Path,
+    current_bytes: &[u8],
+    current_size: u64,
+    current_mtime_ms: u64,
+    expected_read_version: Option<&str>,
+) -> Result<(), NativeToolFailure> {
+    let current_hash = stable_text_hash(current_bytes);
+    let entry = state()
+        .lock()
+        .map_err(|_| {
+            NativeToolFailure::new(
+                "runtime_state_unavailable",
+                "agent runtime state lock failed while checking file read state",
+                "Retry the tool call.",
+            )
+        })?
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.file_read_state.get(relative_path).cloned())
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "must_read_first",
+                format!("file must be read before strict editing: {relative_path}"),
+                "Call /tools/filesystem/read_file or read_range for this file, then retry strict_edit.",
+            )
+        })?;
+    if let Some(expected) = expected_read_version
+        && expected != entry.read_version
+    {
+        return Err(NativeToolFailure::new(
+            "file_modified_since_read",
+            "expectedReadVersion does not match the latest recorded readVersion",
+            "Read the file again and retry with the new readVersion.",
+        ));
+    }
+    if entry.absolute_path != absolute_path.display().to_string()
+        || entry.size != current_size
+        || entry.mtime_ms != current_mtime_ms
+        || entry.content_hash != current_hash
+    {
+        return Err(NativeToolFailure::new(
+            "file_modified_since_read",
+            format!("file changed since it was last read: {relative_path}"),
+            "Read the current file contents again before editing.",
+        ));
+    }
+    Ok(())
+}
+
+fn stable_text_hash(bytes: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn metadata_mtime_ms(metadata: &fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 pub(crate) fn tool_file_multiedit(
@@ -1048,6 +1227,29 @@ fn attach_diff_ref_to_changed_files(changed_files: &mut [Value], diff_ref: &Opti
     }
 }
 
+#[derive(Clone)]
+enum StagedPatchOperation {
+    Write {
+        absolute: PathBuf,
+        relative: String,
+        before: Option<String>,
+        after: String,
+        operation: &'static str,
+    },
+    Delete {
+        absolute: PathBuf,
+        relative: String,
+        before: String,
+    },
+    Move {
+        from_absolute: PathBuf,
+        from_relative: String,
+        to_absolute: PathBuf,
+        to_relative: String,
+        content: String,
+    },
+}
+
 pub(crate) fn tool_apply_patch(
     session_id: &str,
     turn_id: &str,
@@ -1064,19 +1266,14 @@ pub(crate) fn tool_apply_patch(
                 "Retry with structured add, update, delete, or move operations.",
             )
         })?;
-    let mut changed_files = Vec::new();
-    let mut diffs = Vec::new();
+    let mut staged = Vec::new();
+    let mut touched = HashSet::new();
     for operation in operations {
         let op = required_value_string(operation, "op")?;
         let path = required_value_string(operation, "path")?;
         match op.as_str() {
             "add" => {
                 let workspace_path = resolve_workspace_path(session_id, &path, true)?;
-                let content = operation
-                    .get("content")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
                 if workspace_path.absolute.exists() {
                     return Err(NativeToolFailure::new(
                         "file_exists",
@@ -1084,39 +1281,68 @@ pub(crate) fn tool_apply_patch(
                         "Use update for existing files.",
                     ));
                 }
-                if let Some(parent) = workspace_path.absolute.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        NativeToolFailure::new(
-                            "write_failed",
-                            format!("failed to create parent directory: {error}"),
-                            "Retry after creating a writable parent directory.",
-                        )
-                    })?;
+                let content = operation
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                if !touched.insert(workspace_path.absolute.clone()) {
+                    return Err(NativeToolFailure::new(
+                        "conflicting_patch",
+                        format!(
+                            "patch touches the same path more than once: {}",
+                            workspace_path.relative
+                        ),
+                        "Combine edits for the same path into one update operation.",
+                    ));
                 }
-                fs::write(&workspace_path.absolute, &content).map_err(|error| {
-                    NativeToolFailure::new(
-                        "write_failed",
-                        format!("failed to add file: {error}"),
-                        "Retry with a writable workspace path.",
-                    )
-                })?;
-                diffs.push(diff_text(&workspace_path.relative, "", &content));
-                changed_files.push(json!({
-                    "path": workspace_path.relative,
-                    "operation": "add",
-                    "beforeExists": false,
-                    "afterExists": true,
-                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", ""),
-                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", &content),
-                }));
+                staged.push(StagedPatchOperation::Write {
+                    absolute: workspace_path.absolute,
+                    relative: workspace_path.relative,
+                    before: None,
+                    after: content,
+                    operation: "add",
+                });
             }
             "update" => {
                 let workspace_path = resolve_workspace_path(session_id, &path, false)?;
-                let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
+                let old_bytes = fs::read(&workspace_path.absolute).map_err(|error| {
                     NativeToolFailure::new(
                         "read_failed",
                         format!("failed to read file before patch: {error}"),
                         "Retry with a readable UTF-8 workspace file.",
+                    )
+                })?;
+                if old_bytes.contains(&0) {
+                    return Err(NativeToolFailure::new(
+                        "encoding_unsupported",
+                        "apply_patch update only supports text files",
+                        "Use a text source file or a binary-aware tool.",
+                    ));
+                }
+                let metadata = fs::metadata(&workspace_path.absolute).map_err(|error| {
+                    NativeToolFailure::new(
+                        "read_failed",
+                        format!("failed to read file metadata before patch: {error}"),
+                        "Retry with a readable workspace file.",
+                    )
+                })?;
+                if operation.get("oldString").is_some() {
+                    validate_file_read_state(
+                        session_id,
+                        &workspace_path.relative,
+                        &workspace_path.absolute,
+                        &old_bytes,
+                        metadata.len(),
+                        metadata_mtime_ms(&metadata),
+                        operation.get("expectedReadVersion").and_then(Value::as_str),
+                    )?;
+                }
+                let old = String::from_utf8(old_bytes).map_err(|error| {
+                    NativeToolFailure::new(
+                        "encoding_unsupported",
+                        format!("file is not valid UTF-8: {error}"),
+                        "Retry with a UTF-8 text file.",
                     )
                 })?;
                 let updated = if operation.get("oldString").is_some() {
@@ -1124,7 +1350,13 @@ pub(crate) fn tool_apply_patch(
                     let new_string = operation
                         .get("newString")
                         .and_then(Value::as_str)
-                        .unwrap_or_default();
+                        .ok_or_else(|| {
+                            NativeToolFailure::new(
+                                "bad_request",
+                                "newString is required when oldString is provided",
+                                "Retry with oldString and newString.",
+                            )
+                        })?;
                     apply_exact_replacement(
                         &old,
                         &old_string,
@@ -1144,75 +1376,86 @@ pub(crate) fn tool_apply_patch(
                         })?
                         .to_string()
                 };
-                fs::write(&workspace_path.absolute, &updated).map_err(|error| {
-                    NativeToolFailure::new(
-                        "write_failed",
-                        format!("failed to update file: {error}"),
-                        "Retry with a writable workspace file.",
-                    )
-                })?;
-                diffs.push(diff_text(&workspace_path.relative, &old, &updated));
-                changed_files.push(json!({
-                    "path": workspace_path.relative,
-                    "operation": "update",
-                    "beforeExists": true,
-                    "afterExists": true,
-                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
-                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", &updated),
-                }));
+                if !touched.insert(workspace_path.absolute.clone()) {
+                    return Err(NativeToolFailure::new(
+                        "conflicting_patch",
+                        format!(
+                            "patch touches the same path more than once: {}",
+                            workspace_path.relative
+                        ),
+                        "Combine edits for the same path into one update operation.",
+                    ));
+                }
+                staged.push(StagedPatchOperation::Write {
+                    absolute: workspace_path.absolute,
+                    relative: workspace_path.relative,
+                    before: Some(old),
+                    after: updated,
+                    operation: "update",
+                });
             }
             "delete" => {
                 let workspace_path = resolve_workspace_path(session_id, &path, false)?;
-                let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
-                fs::remove_file(&workspace_path.absolute).map_err(|error| {
+                let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
                     NativeToolFailure::new(
-                        "delete_failed",
-                        format!("failed to delete file: {error}"),
-                        "Retry with a writable file path.",
+                        "read_failed",
+                        format!("failed to read file before delete: {error}"),
+                        "Retry with a readable UTF-8 workspace file.",
                     )
                 })?;
-                diffs.push(diff_text(&workspace_path.relative, &old, ""));
-                changed_files.push(json!({
-                    "path": workspace_path.relative,
-                    "operation": "delete",
-                    "beforeExists": true,
-                    "afterExists": false,
-                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
-                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "after", ""),
-                }));
+                if !touched.insert(workspace_path.absolute.clone()) {
+                    return Err(NativeToolFailure::new(
+                        "conflicting_patch",
+                        format!(
+                            "patch touches the same path more than once: {}",
+                            workspace_path.relative
+                        ),
+                        "Combine edits for the same path into one operation.",
+                    ));
+                }
+                staged.push(StagedPatchOperation::Delete {
+                    absolute: workspace_path.absolute,
+                    relative: workspace_path.relative,
+                    before: old,
+                });
             }
             "move" => {
                 let workspace_path = resolve_workspace_path(session_id, &path, false)?;
                 let new_path = required_value_string(operation, "newPath")?;
                 let next_workspace_path = resolve_workspace_path(session_id, &new_path, true)?;
-                let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
-                if let Some(parent) = next_workspace_path.absolute.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        NativeToolFailure::new(
-                            "write_failed",
-                            format!("failed to create move target parent: {error}"),
-                            "Retry after creating a writable parent directory.",
-                        )
-                    })?;
+                if next_workspace_path.absolute.exists() {
+                    return Err(NativeToolFailure::new(
+                        "file_exists",
+                        format!(
+                            "move target already exists: {}",
+                            next_workspace_path.relative
+                        ),
+                        "Choose a new target path or update the existing file explicitly.",
+                    ));
                 }
-                fs::rename(&workspace_path.absolute, &next_workspace_path.absolute).map_err(
-                    |error| {
-                        NativeToolFailure::new(
-                            "move_failed",
-                            format!("failed to move file: {error}"),
-                            "Retry with writable source and target paths.",
-                        )
-                    },
-                )?;
-                changed_files.push(json!({
-                    "path": workspace_path.relative,
-                    "newPath": next_workspace_path.relative,
-                    "operation": "move",
-                    "beforeExists": true,
-                    "afterExists": true,
-                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &workspace_path.relative, "before", &old),
-                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &next_workspace_path.relative, "after", &old),
-                }));
+                let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
+                    NativeToolFailure::new(
+                        "read_failed",
+                        format!("failed to read file before move: {error}"),
+                        "Retry with a readable UTF-8 workspace file.",
+                    )
+                })?;
+                if !touched.insert(workspace_path.absolute.clone())
+                    || !touched.insert(next_workspace_path.absolute.clone())
+                {
+                    return Err(NativeToolFailure::new(
+                        "conflicting_patch",
+                        "patch move conflicts with another operation",
+                        "Use one operation per source/target path.",
+                    ));
+                }
+                staged.push(StagedPatchOperation::Move {
+                    from_absolute: workspace_path.absolute,
+                    from_relative: workspace_path.relative,
+                    to_absolute: next_workspace_path.absolute,
+                    to_relative: next_workspace_path.relative,
+                    content: old,
+                });
             }
             _ => {
                 return Err(NativeToolFailure::new(
@@ -1220,6 +1463,70 @@ pub(crate) fn tool_apply_patch(
                     format!("unsupported patch operation: {op}"),
                     "Use add, update, delete, or move.",
                 ));
+            }
+        }
+    }
+    let mut changed_files = Vec::new();
+    let mut diffs = Vec::new();
+    let mut applied = Vec::new();
+    for operation in &staged {
+        if let Err(error) = apply_staged_patch_operation(operation) {
+            rollback_staged_patch_operations(&applied);
+            return Err(error);
+        }
+        applied.push(operation.clone());
+    }
+    for operation in staged {
+        match operation {
+            StagedPatchOperation::Write {
+                relative,
+                before,
+                after,
+                operation,
+                ..
+            } => {
+                diffs.push(diff_text(
+                    &relative,
+                    before.as_deref().unwrap_or(""),
+                    &after,
+                ));
+                changed_files.push(json!({
+                    "path": relative,
+                    "operation": operation,
+                    "beforeExists": before.is_some(),
+                    "afterExists": true,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", before.as_deref().unwrap_or("")),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "after", &after),
+                }));
+            }
+            StagedPatchOperation::Delete {
+                relative, before, ..
+            } => {
+                diffs.push(diff_text(&relative, &before, ""));
+                changed_files.push(json!({
+                    "path": relative,
+                    "operation": "delete",
+                    "beforeExists": true,
+                    "afterExists": false,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", &before),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "after", ""),
+                }));
+            }
+            StagedPatchOperation::Move {
+                from_relative,
+                to_relative,
+                content,
+                ..
+            } => {
+                changed_files.push(json!({
+                    "path": from_relative,
+                    "newPath": to_relative,
+                    "operation": "move",
+                    "beforeExists": true,
+                    "afterExists": true,
+                    "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &from_relative, "before", &content),
+                    "afterRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &to_relative, "after", &content),
+                }));
             }
         }
     }
@@ -1241,4 +1548,95 @@ pub(crate) fn tool_apply_patch(
             "Review changed files and run the relevant validation command.".to_string(),
         ),
     })
+}
+
+fn apply_staged_patch_operation(operation: &StagedPatchOperation) -> Result<(), NativeToolFailure> {
+    match operation {
+        StagedPatchOperation::Write {
+            absolute,
+            relative,
+            after,
+            ..
+        } => {
+            if let Some(parent) = absolute.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    NativeToolFailure::new(
+                        "write_failed",
+                        format!("failed to create parent directory for {relative}: {error}"),
+                        "Retry after creating a writable parent directory.",
+                    )
+                })?;
+            }
+            fs::write(absolute, after).map_err(|error| {
+                NativeToolFailure::new(
+                    "write_failed",
+                    format!("failed to write patch target {relative}: {error}"),
+                    "Patch was rolled back; retry with writable workspace paths.",
+                )
+            })
+        }
+        StagedPatchOperation::Delete {
+            absolute, relative, ..
+        } => fs::remove_file(absolute).map_err(|error| {
+            NativeToolFailure::new(
+                "delete_failed",
+                format!("failed to delete file {relative}: {error}"),
+                "Patch was rolled back; retry with a writable file path.",
+            )
+        }),
+        StagedPatchOperation::Move {
+            from_absolute,
+            from_relative,
+            to_absolute,
+            ..
+        } => {
+            if let Some(parent) = to_absolute.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    NativeToolFailure::new(
+                        "write_failed",
+                        format!("failed to create move target parent: {error}"),
+                        "Patch was rolled back; retry with a writable parent directory.",
+                    )
+                })?;
+            }
+            fs::rename(from_absolute, to_absolute).map_err(|error| {
+                NativeToolFailure::new(
+                    "move_failed",
+                    format!("failed to move file {from_relative}: {error}"),
+                    "Patch was rolled back; retry with writable source and target paths.",
+                )
+            })
+        }
+    }
+}
+
+fn rollback_staged_patch_operations(applied: &[StagedPatchOperation]) {
+    for operation in applied.iter().rev() {
+        match operation {
+            StagedPatchOperation::Write {
+                absolute, before, ..
+            } => {
+                if let Some(before) = before {
+                    let _ = fs::write(absolute, before);
+                } else {
+                    let _ = fs::remove_file(absolute);
+                }
+            }
+            StagedPatchOperation::Delete {
+                absolute, before, ..
+            } => {
+                if let Some(parent) = absolute.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(absolute, before);
+            }
+            StagedPatchOperation::Move {
+                from_absolute,
+                to_absolute,
+                ..
+            } => {
+                let _ = fs::rename(to_absolute, from_absolute);
+            }
+        }
+    }
 }

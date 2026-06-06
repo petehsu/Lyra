@@ -61,12 +61,12 @@ describe("AnimatedMagicBorder", () => {
     });
   });
 
-  test("does not request ambient frames while closed", () => {
+  test("requests ambient frames while closed for drift effect", () => {
     const { container, rerender } = render(<AnimatedMagicBorder isOpen={false} />);
     const sweep = container.querySelector(".lyra-magic-border-sweep") as HTMLDivElement;
 
     expect(sweep.style.webkitMaskImage).toContain("96deg");
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    expect(window.requestAnimationFrame).toHaveBeenCalled();
     const closedMask = sweep.style.webkitMaskImage;
 
     rerender(<AnimatedMagicBorder isOpen />);
@@ -92,7 +92,7 @@ describe("AnimatedMagicBorder", () => {
     expect(sweep.style.webkitMaskImage).not.toContain("black 72deg, black 96deg");
   });
 
-  test("stops requesting frames once the close transition settles", () => {
+  test("keeps requesting frames after close transition settles for drift effect", () => {
     const { rerender } = render(<AnimatedMagicBorder isOpen />);
 
     runNextFrame(0);
@@ -102,6 +102,6 @@ describe("AnimatedMagicBorder", () => {
       runNextFrame(100 + index * 50);
     }
 
-    expect(frameCallbacks.size).toBe(0);
+    expect(frameCallbacks.size).toBeGreaterThan(0);
   });
 });

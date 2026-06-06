@@ -467,6 +467,124 @@
     0 var(--lyra-unit-10) var(--lyra-unit-28) color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
 }
 
+.lyra-omnibox-suggestions {
+  box-sizing: border-box;
+  width: 100%;
+  flex: 1 1 auto;
+  max-height: var(--lyra-unit-240);
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
+  padding: var(--lyra-unit-6) 0 var(--lyra-unit-3);
+  list-style: none;
+  margin: 0;
+  text-align: left;
+  border-bottom: var(--lyra-stroke-hairline) solid
+    color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
+  background: transparent;
+}
+
+.lyra-omnibox-suggestions::-webkit-scrollbar {
+  width: var(--lyra-unit-10);
+  height: var(--lyra-unit-10);
+  background: transparent;
+}
+
+.lyra-omnibox-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lyra-omnibox-suggestions::-webkit-scrollbar-thumb {
+  background-color: var(--lyra-scrollbar-thumb-idle);
+  border: var(--lyra-unit-2) solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--lyra-unit-999);
+}
+
+.lyra-omnibox-suggestions::-webkit-scrollbar-thumb:hover {
+  background-color: var(--lyra-scrollbar-thumb-hover);
+}
+
+.lyra-suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lyra-unit-10);
+  min-width: 0;
+  padding: var(--lyra-unit-7) var(--lyra-unit-12);
+  color: var(--lyra-text-primary);
+  cursor: pointer;
+  transition:
+    background-color var(--lyra-transition-fast),
+    color var(--lyra-transition-fast);
+}
+
+.lyra-suggestion-item:hover,
+.lyra-suggestion-item.is-selected {
+  background: color-mix(in srgb, var(--lyra-bg-editor) 78%, var(--lyra-text-accent) 10%);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-suggestion-left {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-10);
+  min-width: 0;
+  flex: 1;
+}
+
+.lyra-find-result-index {
+  width: calc(var(--lyra-unit-28) + var(--lyra-unit-6));
+  flex: 0 0 calc(var(--lyra-unit-28) + var(--lyra-unit-6));
+  color: var(--lyra-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lyra-suggestion-text {
+  min-width: 0;
+  font-size: var(--lyra-unit-11);
+  font-family: var(--lyra-font-ui);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--lyra-text-primary);
+}
+
+.lyra-suggestion-text mark {
+  color: inherit;
+  background: color-mix(in srgb, var(--lyra-status-warning) 42%, transparent);
+  border-radius: var(--lyra-unit-3);
+  padding: 0 var(--lyra-unit-1);
+}
+
+.lyra-suggestion-type-badge {
+  font-size: var(--lyra-unit-9);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--lyra-text-muted);
+  letter-spacing: 0.04em;
+  opacity: 0.68;
+  flex: 0 0 auto;
+}
+
+.lyra-suggestion-item:hover .lyra-suggestion-type-badge,
+.lyra-suggestion-item.is-selected .lyra-suggestion-type-badge {
+  opacity: 0.95;
+}
+
+.lyra-find-empty,
+.lyra-find-truncated {
+  list-style: none;
+  color: var(--lyra-text-muted);
+  padding: var(--lyra-unit-7) var(--lyra-unit-12);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-find-truncated {
+  padding: var(--lyra-unit-3) var(--lyra-unit-12) var(--lyra-unit-6);
+  font-size: var(--lyra-unit-10);
+}
+
 .lyra-titlebar-navigation-icon {
   display: inline-flex;
   align-items: center;
@@ -498,6 +616,10 @@
 
 .lyra-titlebar-navigation-shell[data-has-value="true"][data-has-trailing-control="true"] .lyra-titlebar-navigation-input {
   padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 3);
+}
+
+.lyra-titlebar-navigation-shell[data-mode="page-find"] .lyra-titlebar-navigation-input {
+  padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 3 + var(--lyra-space-48));
 }
 
 .lyra-titlebar-navigation-input::placeholder {
@@ -537,6 +659,18 @@
   color: var(--lyra-text-primary);
   background: transparent;
   opacity: 1;
+}
+
+.lyra-titlebar-page-find-counter {
+  min-width: var(--lyra-space-48);
+  height: var(--lyra-shell-titlebar-nav-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-11);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .lyra-titlebar-context {

@@ -538,6 +538,7 @@ const createDesktopApi = (): {
         address: "https://example.test/",
         title: "Example",
         query: "test",
+        currentIndex: 0,
         totalMatches: 0,
         matches: [],
         truncated: false

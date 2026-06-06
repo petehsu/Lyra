@@ -8,7 +8,7 @@ Tool-FS 的目标是降低工具数量增长带来的上下文污染和误选工
 
 生产执行必须保持结构化：支持原生 tool calling 的 provider 使用 provider 原生 tool call 承载 `tool_fs_*`；当前不支持原生 tool calling 的模型不得执行工具。未来如果接入严格 schema/JSON 输出模型，也必须先转换为 `ToolOperationEnvelope` 并经过同一套 validator、policy gate、trace 和 result envelope，不能解析自由文本、Markdown 代码块或自然语言伪工具调用。
 
-Tool-FS 不做“幽灵工具”。模型负责决定何时 list、inspect、run；runtime 负责校验、权限、执行和压缩结果。场景包只能影响 pinned handles 和目录排序，不能隐藏工具、不能扩大 provider-visible schema。
+Tool-FS 不做“幽灵工具”。模型负责先 search、必要时 list 兜底、inspect、run；runtime 负责校验、权限、执行和压缩结果。场景包只能影响 pinned handles、cached handles 和目录/搜索排序，不能隐藏工具、不能扩大具体业务工具的 provider-visible schema。
 
 Follow 事件只表达过程状态，例如文件编辑、终端输出、浏览器动作正在发生。模型和 UI 的最终事实来源始终是 `ToolResultEnvelope`、artifact refs、changes 和 trace。
 
@@ -16,8 +16,9 @@ Follow 事件只表达过程状态，例如文件编辑、终端输出、浏览�
 
 ## Provider-visible tools
 
-模型只看到 5 个 provider-visible tools：
+模型只看到 6 个 provider-visible tools：
 
+- `tool_fs_search`
 - `tool_fs_list`
 - `tool_fs_read_doc`
 - `tool_fs_inspect`
@@ -47,7 +48,7 @@ Follow 事件只表达过程状态，例如文件编辑、终端输出、浏览�
 - `/tools/mcp/*`
 - `/tools/runtime/*`
 
-场景只改变 pinned handles 和目录排序，不隐藏工具，也不增加 provider-visible function schema。
+场景和工具使用缓存只改变 pinned handles、cached handles、目录排序和搜索排序，不隐藏工具，也不增加具体业务工具的 provider-visible function schema。
 
 `toolFilesystem.manifestSources` 暴露运行时来源摘要：`core_builtin` 是静态 manifest 基座；terminal、design、skills、MCP management、workbench/browser host capability 是静态 handler 来源；software capability 是动态 provider 来源。动态 provider 只能向 registry 注入 `ToolManifest`，不能新增 provider-visible function schema。
 

@@ -5,6 +5,7 @@ export type BrowserAgentCursorOverlayAction =
   | "wait"
   | "navigate"
   | "focus"
+  | "scroll"
   | "act"
   | "type"
   | "press";

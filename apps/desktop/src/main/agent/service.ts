@@ -105,6 +105,8 @@ import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import {
   WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
   type WorkbenchBrowserAgentModeRequest,
+  type WorkbenchBrowserAgentScrollBlock,
+  type WorkbenchBrowserAgentScrollDirection,
   type WorkbenchBrowserAgentTargetMode
 } from "../workbench-browser/types";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
@@ -1511,6 +1513,35 @@ export const createAgentIpcBridge = ({
     return value === "next" || value === "previous" ? value : "scan";
   };
 
+  const readLumenScrollDirection = (
+    payload: Record<string, unknown>
+  ): WorkbenchBrowserAgentScrollDirection | undefined => {
+    const value = payload.direction;
+    return value === "up" || value === "down" || value === "left" || value === "right"
+      ? value
+      : undefined;
+  };
+
+  const readLumenScrollBlock = (
+    payload: Record<string, unknown>
+  ): WorkbenchBrowserAgentScrollBlock | undefined => {
+    const value = payload.block;
+    return value === "start" || value === "center" || value === "end" || value === "nearest"
+      ? value
+      : undefined;
+  };
+
+  const readLumenScrollOperation = (payload: Record<string, unknown>) => {
+    const value = payload.action ?? payload.operation;
+    if (value === "scroll_to_target" || value === "ensure_visible" || value === "scroll") {
+      return value;
+    }
+    const toolPath = typeof payload.toolPath === "string" ? payload.toolPath : "";
+    if (toolPath.endsWith("/scroll_to_target")) return "scroll_to_target";
+    if (toolPath.endsWith("/ensure_visible")) return "ensure_visible";
+    return "scroll";
+  };
+
   const readLumenWaitUntil = (payload: Record<string, unknown>) => {
     const value = payload.until;
     return value === "loadIdle"
@@ -1618,6 +1649,27 @@ export const createAgentIpcBridge = ({
       y,
       ...(typeof point.reason === "string" && point.reason.trim().length > 0
         ? { reason: point.reason.trim() }
+        : {})
+    };
+  };
+
+  const readOptionalLumenPoint = (payload: Record<string, unknown>) => {
+    if (payload.point !== undefined) {
+      return readLumenPoint(payload);
+    }
+    const x = payload.x;
+    const y = payload.y;
+    if (x === undefined && y === undefined) {
+      return undefined;
+    }
+    if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error("x and y must be finite numbers when point is omitted");
+    }
+    return {
+      x,
+      y,
+      ...(typeof payload.reason === "string" && payload.reason.trim().length > 0
+        ? { reason: payload.reason.trim() }
         : {})
     };
   };
@@ -2115,6 +2167,59 @@ export const createAgentIpcBridge = ({
         nextRecommendedAction: enriched.ok === false ? "lyra_lumen_audit" : "lyra_lumen.wait"
       }, tabId, elementId);
     }),
+    "lyraLumen.scroll": withLyraLumenResult("lyraLumen.scroll", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const operation = readLumenScrollOperation(payload);
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const elementId = readOptionalLumenElementId(payload);
+      const targetRef = readOptionalLumenTargetRef(payload);
+      const point = readOptionalLumenPoint(payload);
+      if (
+        (operation === "scroll_to_target" || operation === "ensure_visible")
+        && elementId === undefined
+        && targetRef === undefined
+        && point === undefined
+      ) {
+        throw new Error(`${operation} requires targetRef, elementId, or point`);
+      }
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const amount = readOptionalNumberField(payload, "amount");
+      const pages = readOptionalNumberField(payload, "pages");
+      const autoMap = readOptionalBooleanField(payload, "autoMap");
+      const direction = readLumenScrollDirection(payload);
+      const block = readLumenScrollBlock(payload);
+      const reason: "explicit_scroll" | "ensure_visible" =
+        operation === "ensure_visible" ? "ensure_visible" : "explicit_scroll";
+      const scrollRequest = {
+        ...(amount === undefined ? {} : { amount }),
+        ...(pages === undefined ? {} : { pages }),
+        ...(block === undefined ? {} : { block }),
+        ...(payload.behavior === "smooth" ? { behavior: "smooth" as const } : {}),
+        ...(elementId === undefined ? {} : { elementId }),
+        ...(targetRef === undefined ? {} : { targetRef }),
+        ...(point === undefined ? {} : { point }),
+        ...(autoMap === undefined ? {} : { autoMap }),
+        reason,
+        ...readLumenModeRequest(payload, targetMode),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      };
+      const result = await browser.scrollAgentPage(tabId, {
+        ...scrollRequest,
+        ...(operation === "scroll"
+          ? { direction: direction ?? "down" }
+          : direction === undefined ? {} : { direction })
+      });
+      return withLumenTargetIds({
+        ...result,
+        kind: "lyraLumenScrollResult",
+        nextRecommendedAction:
+          result.ok === false
+            ? "lyra_lumen.map"
+            : result.nextRecommendedAction ?? "lyra_lumen.map"
+      }, tabId, elementId);
+    }),
     "lyraLumen.focusScan": withLyraLumenResult("lyraLumen.focusScan", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
@@ -2274,6 +2379,54 @@ export const createAgentIpcBridge = ({
         ...("browserMode" in res && res.browserMode !== undefined ? { browserMode: res.browserMode } : {}),
         message: `Navigated Lyra Lumen to ${res.address}.`
       }, res.tabId ?? resolvedTabId);
+    }),
+    "lyraLumen.find": withLyraLumenResult("lyraLumen.find", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const direction = payload.direction === "next" || payload.direction === "previous"
+        ? payload.direction
+        : "current";
+      const activeIndex = readOptionalNumberField(payload, "activeIndex");
+      const maxMatches = readOptionalNumberField(payload, "maxMatches");
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const result = await browser.findAgentPage(tabId, {
+        query: readStringField(payload, "query"),
+        direction,
+        reveal: payload.reveal === true,
+        caseSensitive: payload.caseSensitive === true,
+        ...readLumenModeRequest(payload, targetMode),
+        ...(activeIndex === undefined ? {} : { activeIndex }),
+        ...(maxMatches === undefined ? {} : { maxMatches }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      return withLumenTargetIds({
+        ...result,
+        nextRecommendedAction: "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.locate": withLyraLumenResult("lyraLumen.locate", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const maxMatches = readOptionalNumberField(payload, "maxMatches");
+      const nearbyLimit = readOptionalNumberField(payload, "nearbyLimit");
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const matchMode = payload.matchMode === "exact" ? "exact" : "semantic";
+      const result = await browser.locateAgentPage(tabId, {
+        query: readStringField(payload, "query"),
+        matchMode,
+        reveal: payload.reveal !== false,
+        autoMap: payload.autoMap !== false,
+        caseSensitive: payload.caseSensitive === true,
+        ...readLumenModeRequest(payload, targetMode),
+        ...(maxMatches === undefined ? {} : { maxMatches }),
+        ...(nearbyLimit === undefined ? {} : { nearbyLimit }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      return withLumenTargetIds(result, tabId);
     }),
     "lyraLumen.read": withLyraLumenResult("lyraLumen.read", async (payload) => {
       const browser = getBrowserBridge();

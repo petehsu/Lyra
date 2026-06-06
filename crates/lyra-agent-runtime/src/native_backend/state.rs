@@ -81,10 +81,17 @@ impl NativeRuntimeState {
                 .map(|state| state.pending_clarifications.clone())
                 .unwrap_or_default()
         };
+        let mut tool_usage_cache = state_file
+            .as_ref()
+            .map(|state| state.tool_usage_cache.clone())
+            .unwrap_or_default();
+        prune_tool_usage_cache(&mut tool_usage_cache, Utc::now());
+
         let mut loaded = Self {
             root,
             tool_runtime_schema_version,
             tool_runtime_migration_diagnostics,
+            tool_usage_cache,
             sessions,
             active_session_id: if reset_tool_sessions {
                 None
@@ -113,6 +120,7 @@ impl NativeRuntimeState {
                 .and_then(|state| state.focused_goal_id.clone()),
             cancelled_turns: HashSet::new(),
             active_cancellations: HashMap::new(),
+            suppressed_tool_usage_by_turn: HashMap::new(),
             event_callback: None,
             host_dispatcher: None,
         };
@@ -126,6 +134,7 @@ impl NativeRuntimeState {
     pub(crate) fn save_state(&mut self) -> AgentRuntimeResult<()> {
         fs::create_dir_all(self.root.join("sessions"))
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        prune_tool_usage_cache(&mut self.tool_usage_cache, Utc::now());
         let pending_permissions = self
             .pending_permissions
             .iter()
@@ -141,6 +150,7 @@ impl NativeRuntimeState {
         let state = NativeStateFile {
             tool_runtime_schema_version: self.tool_runtime_schema_version,
             tool_runtime_migration_diagnostics: self.tool_runtime_migration_diagnostics.clone(),
+            tool_usage_cache: self.tool_usage_cache.clone(),
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
             legacy_shared_memory: Vec::new(),
@@ -241,6 +251,84 @@ fn clear_session_files(sessions_dir: &Path, from_schema_version: u32) -> Vec<Val
         }
     }
     diagnostics
+}
+
+fn prune_tool_usage_cache(
+    cache: &mut HashMap<String, ToolUsageCacheEntry>,
+    now: DateTime<Utc>,
+) -> bool {
+    let before_len = cache.len();
+    cache.retain(|_, entry| {
+        let Some(last_used_at) = entry_last_used_at(entry) else {
+            return false;
+        };
+        let Ok(last_used_at) = DateTime::parse_from_rfc3339(last_used_at) else {
+            return false;
+        };
+        let age_days = now
+            .signed_duration_since(last_used_at.with_timezone(&Utc))
+            .num_days()
+            .max(0);
+        age_days <= tool_usage_retention_days(entry)
+    });
+    if cache.len() > 500 {
+        let mut ranked = cache
+            .values()
+            .map(|entry| {
+                (
+                    entry.tool_path.clone(),
+                    entry_last_used_at(entry).unwrap_or_default().to_string(),
+                    tool_usage_success_rate(entry),
+                    entry.total_runs,
+                )
+            })
+            .collect::<Vec<_>>();
+        ranked.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| {
+                    right
+                        .2
+                        .partial_cmp(&left.2)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| right.3.cmp(&left.3))
+        });
+        let keep = ranked
+            .into_iter()
+            .take(500)
+            .map(|entry| entry.0)
+            .collect::<HashSet<_>>();
+        cache.retain(|path, _| keep.contains(path));
+    }
+    cache.len() != before_len
+}
+
+fn entry_last_used_at(entry: &ToolUsageCacheEntry) -> Option<&str> {
+    entry
+        .last_used_at
+        .as_deref()
+        .or(entry.last_success_at.as_deref())
+        .or(entry.last_failure_at.as_deref())
+}
+
+fn tool_usage_retention_days(entry: &ToolUsageCacheEntry) -> i64 {
+    if entry.successes == 0 {
+        7
+    } else if entry.total_runs >= 3 && tool_usage_success_rate(entry) >= 0.8 {
+        90
+    } else {
+        30
+    }
+}
+
+fn tool_usage_success_rate(entry: &ToolUsageCacheEntry) -> f64 {
+    if entry.total_runs == 0 {
+        0.0
+    } else {
+        entry.successes as f64 / entry.total_runs as f64
+    }
 }
 
 fn is_live_pending_permission(

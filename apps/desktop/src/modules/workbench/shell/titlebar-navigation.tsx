@@ -10,20 +10,68 @@ import {
   Globe,
   Info,
   ShieldCheck,
-  Calendar,
   AlertTriangle
 } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type {
   WorkbenchBrowserChromePopoverRequest,
-  WorkbenchBrowserEvent
+  WorkbenchBrowserEvent,
+  WorkbenchBrowserSecurityLocale,
+  WorkbenchBrowserSearchInPageResult
 } from "../../../shared/desktop-bridge";
 import type { OmniboxSuggestion } from "./use-titlebar-navigation-model";
 import { useAnchoredOverlayPosition } from "./use-anchored-overlay-position";
 
 export type TitlebarNavigationPrimaryActionKind = "submit" | "reload";
 
+export type TitlebarNavigationSecurityLabels = {
+  readonly ariaLabel: string;
+  readonly title: string;
+  readonly secureTitle: string;
+  readonly secureBody: string;
+  readonly insecureTitle: string;
+  readonly insecureBody: string;
+  readonly systemTitle: string;
+  readonly systemBody: string;
+  readonly connectionLabel: string;
+  readonly addressLabel: string;
+  readonly hostLabel: string;
+  readonly originLabel: string;
+  readonly schemeLabel: string;
+  readonly certificateUnavailableLabel: string;
+  readonly certificateNotApplicableLabel: string;
+  readonly secureConnection: string;
+  readonly insecureConnection: string;
+  readonly localConnection: string;
+  readonly unavailableNotHttps: string;
+  readonly unavailableNoCertificate: string;
+};
+
+const DEFAULT_SECURITY_LABELS: TitlebarNavigationSecurityLabels = {
+  ariaLabel: "连接安全信息",
+  title: "查看连接安全信息",
+  secureTitle: "连接是安全的",
+  secureBody: "此页面通过 HTTPS 加载。下面仅显示 Lyra 从当前页面实际读取到的连接信息。",
+  insecureTitle: "连接不安全",
+  insecureBody: "此页面未通过 HTTPS 加载，连接内容可能被网络中的其他方读取或修改。",
+  systemTitle: "本地或系统页面",
+  systemBody: "此页面不是远程 HTTPS 网站。下面显示当前地址可确认的本地或系统来源信息。",
+  connectionLabel: "连接状态",
+  addressLabel: "地址",
+  hostLabel: "主机",
+  originLabel: "来源",
+  schemeLabel: "协议",
+  certificateUnavailableLabel: "证书详情",
+  certificateNotApplicableLabel: "不适用",
+  secureConnection: "HTTPS",
+  insecureConnection: "未加密 HTTP",
+  localConnection: "本地/内置页面",
+  unavailableNotHttps: "当前页面不是 HTTPS 连接。",
+  unavailableNoCertificate: "当前界面无法读取证书链。"
+};
+
 type TitlebarNavigationProps = {
+  readonly mode?: "normal" | "page-find";
   readonly value: string;
   readonly placeholder: string;
   readonly ariaLabel: string;
@@ -43,6 +91,14 @@ type TitlebarNavigationProps = {
   readonly showSuggestions?: boolean;
   readonly onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   readonly onSuggestionClick?: (suggestion: OmniboxSuggestion) => void;
+  readonly focusRequestKey?: number;
+  readonly pageFindResult?: WorkbenchBrowserSearchInPageResult | null;
+  readonly onPageFindClose?: () => void;
+  readonly onPageFindNext?: () => void | Promise<void>;
+  readonly onPageFindPrevious?: () => void | Promise<void>;
+  readonly onPageFindMatchClick?: (index: number) => void | Promise<void>;
+  readonly locale?: WorkbenchBrowserSecurityLocale;
+  readonly securityLabels?: TitlebarNavigationSecurityLabels;
   readonly activeBrowserTabId?: string | null;
   readonly browserChromePopoverBridge?: {
     readonly setChromePopover?: (
@@ -55,6 +111,7 @@ type TitlebarNavigationProps = {
 };
 
 export const TitlebarNavigation = ({
+  mode = "normal",
   value,
   placeholder,
   ariaLabel,
@@ -72,22 +129,50 @@ export const TitlebarNavigation = ({
   showSuggestions = false,
   onKeyDown = () => undefined,
   onSuggestionClick = () => undefined,
+  focusRequestKey = 0,
+  pageFindResult = null,
+  onPageFindClose = () => undefined,
+  onPageFindNext = () => undefined,
+  onPageFindPrevious = () => undefined,
+  onPageFindMatchClick = () => undefined,
+  locale = "zh-CN",
+  securityLabels = DEFAULT_SECURITY_LABELS,
   activeBrowserTabId = null,
   browserChromePopoverBridge
 }: TitlebarNavigationProps) => {
   const hasValue = value.length > 0;
   const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
+  const pageFindMode = mode === "page-find";
   const primaryActionLabel =
     primaryActionKind === "reload" ? reloadLabel : submitLabel;
 
   // SSL security state management
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
   const navigationRef = useRef<HTMLFormElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const securityButtonRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const suggestionsRef = useRef<HTMLUListElement | null>(null);
   const nativeSecurityPopoverTabIdRef = useRef<string | null>(null);
-  const suggestionPanelOpen = showSuggestions && suggestions.length > 0;
+  const nativeFindPopoverTabIdRef = useRef<string | null>(null);
+  const nativeOmniboxPopoverTabIdRef = useRef<string | null>(null);
+  const suggestionPanelOpen = !pageFindMode && showSuggestions && suggestions.length > 0;
+  const canUseNativeOmniboxPopover =
+    activeBrowserTabId !== null && browserChromePopoverBridge?.setChromePopover !== undefined;
+  const canUseNativeFindPopover =
+    pageFindMode
+    && activeBrowserTabId !== null
+    && browserChromePopoverBridge?.setChromePopover !== undefined;
+  const nativeSuggestionPanelOpen = suggestionPanelOpen && canUseNativeOmniboxPopover;
+  const inlineSuggestionPanelOpen = suggestionPanelOpen && !nativeSuggestionPanelOpen;
+  const inlinePageFindPanelOpen = pageFindMode && !canUseNativeFindPopover;
+  const navigationShellExpanded = suggestionPanelOpen || inlinePageFindPanelOpen;
+  const pageFindMatches = pageFindMode ? pageFindResult?.matches ?? [] : [];
+  const pageFindCounter = pageFindMode
+    ? pageFindResult !== null && pageFindResult.totalMatches > 0
+      ? `${Math.max(1, pageFindResult.currentIndex)} / ${pageFindResult.totalMatches}`
+      : "0 / 0"
+    : null;
   const securityPopoverPosition = useAnchoredOverlayPosition({
     open: showSecurityPopover,
     anchorRef: securityButtonRef,
@@ -149,14 +234,60 @@ export const TitlebarNavigation = ({
     }
   };
 
-  const getCleanDomain = (url: string) => {
+  const getSecurityUrl = (url: string): URL | null => {
     try {
-      const clean = url.replace(/^(https?:\/\/)?(www\.)?/, "");
-      return clean.split("/")[0] || clean;
+      return new URL(url);
     } catch {
-      return url;
+      return null;
     }
   };
+  const securityUrl = getSecurityUrl(value.trim());
+  const securityDomain =
+    securityUrl?.hostname
+    ?? value.replace(/^(https?:\/\/)?(www\.)?/u, "").split("/")[0]
+    ?? "";
+  const securityScheme =
+    securityUrl === null ? "" : securityUrl.protocol.replace(/:$/u, "");
+  const securityOrigin = securityUrl?.origin ?? "";
+  const securityConnection =
+    securityLevel === "secure"
+      ? securityLabels.secureConnection
+      : securityLevel === "insecure"
+        ? securityLabels.insecureConnection
+        : securityLabels.localConnection;
+  const securityHeader =
+    securityLevel === "secure"
+      ? {
+          title: securityLabels.secureTitle,
+          body: securityLabels.secureBody,
+          icon: <ShieldCheck size={18} className="text-green" />
+        }
+      : securityLevel === "insecure"
+        ? {
+            title: securityLabels.insecureTitle,
+            body: securityLabels.insecureBody,
+            icon: <AlertTriangle size={18} className="text-red animated-bounce" />
+          }
+        : {
+            title: securityLabels.systemTitle,
+            body: securityLabels.systemBody,
+            icon: <Globe size={18} className="text-muted" />
+          };
+  const securityRows = [
+    [securityLabels.connectionLabel, securityConnection],
+    [securityLabels.addressLabel, value.trim()],
+    ...(securityDomain.length === 0 ? [] : [[securityLabels.hostLabel, securityDomain]]),
+    ...(securityOrigin.length === 0 || securityOrigin === "null"
+      ? []
+      : [[securityLabels.originLabel, securityOrigin]]),
+    ...(securityScheme.length === 0 ? [] : [[securityLabels.schemeLabel, securityScheme]]),
+    [
+      securityLabels.certificateUnavailableLabel,
+      securityLevel === "secure"
+        ? securityLabels.unavailableNoCertificate
+        : securityLabels.unavailableNotHttps
+    ]
+  ] as const;
 
   const canUseNativeSecurityPopover =
     activeBrowserTabId !== null && browserChromePopoverBridge?.setChromePopover !== undefined;
@@ -170,6 +301,32 @@ export const TitlebarNavigation = ({
     void browserChromePopoverBridge.setChromePopover({
       tabId,
       kind: "security",
+      visible: false
+    }).catch(() => undefined);
+  }, [browserChromePopoverBridge]);
+
+  const hideNativeOmniboxPopover = useCallback((): void => {
+    const tabId = nativeOmniboxPopoverTabIdRef.current;
+    nativeOmniboxPopoverTabIdRef.current = null;
+    if (tabId === null || browserChromePopoverBridge?.setChromePopover === undefined) {
+      return;
+    }
+    void browserChromePopoverBridge.setChromePopover({
+      tabId,
+      kind: "omnibox",
+      visible: false
+    }).catch(() => undefined);
+  }, [browserChromePopoverBridge]);
+
+  const hideNativeFindPopover = useCallback((): void => {
+    const tabId = nativeFindPopoverTabIdRef.current;
+    nativeFindPopoverTabIdRef.current = null;
+    if (tabId === null || browserChromePopoverBridge?.setChromePopover === undefined) {
+      return;
+    }
+    void browserChromePopoverBridge.setChromePopover({
+      tabId,
+      kind: "find",
       visible: false
     }).catch(() => undefined);
   }, [browserChromePopoverBridge]);
@@ -198,19 +355,52 @@ export const TitlebarNavigation = ({
       },
       security: {
         level: securityLevel,
+        locale,
         address: value,
-        domain: getCleanDomain(value)
+        domain: securityDomain,
+        ...(securityScheme.length === 0 ? {} : { scheme: securityScheme }),
+        ...(securityOrigin.length === 0 || securityOrigin === "null" ? {} : { origin: securityOrigin }),
+        certificateStatus: securityLevel === "secure" ? "unavailable" : "not-applicable",
+        certificateUnavailableReason:
+          securityLevel === "secure"
+            ? securityLabels.unavailableNoCertificate
+            : securityLabels.unavailableNotHttps
       }
     }).catch(() => {
       nativeSecurityPopoverTabIdRef.current = null;
       setShowSecurityPopover(false);
     });
     return true;
-  }, [activeBrowserTabId, browserChromePopoverBridge, securityLevel, value]);
+  }, [
+    activeBrowserTabId,
+    browserChromePopoverBridge,
+    locale,
+    securityDomain,
+    securityLabels.unavailableNoCertificate,
+    securityLabels.unavailableNotHttps,
+    securityLevel,
+    securityOrigin,
+    securityScheme,
+    value
+  ]);
 
   useEffect(() => () => {
     hideNativeSecurityPopover();
-  }, [hideNativeSecurityPopover]);
+    hideNativeFindPopover();
+    hideNativeOmniboxPopover();
+  }, [hideNativeFindPopover, hideNativeOmniboxPopover, hideNativeSecurityPopover]);
+
+  useEffect(() => {
+    if (focusRequestKey <= 0) {
+      return;
+    }
+    const input = inputRef.current;
+    if (input === null) {
+      return;
+    }
+    input.focus();
+    input.select();
+  }, [focusRequestKey]);
 
   useEffect(() => {
     if (browserChromePopoverBridge?.onEvent === undefined) {
@@ -226,8 +416,38 @@ export const TitlebarNavigation = ({
         nativeSecurityPopoverTabIdRef.current = null;
         setShowSecurityPopover(false);
       }
+      if (
+        event.kind === "chrome-popover-state"
+        && event.popoverKind === "omnibox"
+        && event.tabId === activeBrowserTabId
+        && event.visible === false
+      ) {
+        nativeOmniboxPopoverTabIdRef.current = null;
+      }
+      if (
+        event.kind === "chrome-popover-state"
+        && event.popoverKind === "find"
+        && event.tabId === activeBrowserTabId
+        && event.visible === false
+      ) {
+        nativeFindPopoverTabIdRef.current = null;
+      }
+      if (
+        event.kind === "request-omnibox-suggestion-select"
+        && event.tabId === activeBrowserTabId
+      ) {
+        const suggestion = suggestions[event.index];
+        if (suggestion !== undefined) {
+          onSuggestionClick(suggestion);
+        }
+      }
     });
-  }, [activeBrowserTabId, browserChromePopoverBridge]);
+  }, [
+    activeBrowserTabId,
+    browserChromePopoverBridge,
+    onSuggestionClick,
+    suggestions
+  ]);
 
   useEffect(() => {
     if (showSecurityPopover === false) {
@@ -251,88 +471,122 @@ export const TitlebarNavigation = ({
     showSecurityPopover
   ]);
 
+  useEffect(() => {
+    if (
+      !nativeSuggestionPanelOpen
+      || activeBrowserTabId === null
+      || browserChromePopoverBridge?.setChromePopover === undefined
+      || navigationRef.current === null
+    ) {
+      hideNativeOmniboxPopover();
+      return;
+    }
+    const rect = navigationRef.current.getBoundingClientRect();
+    nativeOmniboxPopoverTabIdRef.current = activeBrowserTabId;
+    void browserChromePopoverBridge.setChromePopover({
+      tabId: activeBrowserTabId,
+      kind: "omnibox",
+      visible: true,
+      anchorRect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      },
+      omnibox: {
+        value,
+        selectedIndex,
+        suggestions: suggestions.map((suggestion) => ({
+          value: suggestion.value,
+          type: suggestion.type,
+          ...(suggestion.label === undefined ? {} : { label: suggestion.label })
+        }))
+      }
+    }).catch(() => {
+      nativeOmniboxPopoverTabIdRef.current = null;
+    });
+  }, [
+    activeBrowserTabId,
+    browserChromePopoverBridge,
+    hideNativeOmniboxPopover,
+    nativeSuggestionPanelOpen,
+    selectedIndex,
+    suggestions,
+    value
+  ]);
+
+  useEffect(() => {
+    if (
+      !canUseNativeFindPopover
+      || activeBrowserTabId === null
+      || browserChromePopoverBridge?.setChromePopover === undefined
+      || navigationRef.current === null
+    ) {
+      hideNativeFindPopover();
+      return;
+    }
+    const rect = navigationRef.current.getBoundingClientRect();
+    nativeFindPopoverTabIdRef.current = activeBrowserTabId;
+    const result = pageFindResult;
+    void browserChromePopoverBridge.setChromePopover({
+      tabId: activeBrowserTabId,
+      kind: "find",
+      visible: true,
+      anchorRect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      },
+      find: {
+        query: result?.query ?? value,
+        currentIndex: result?.currentIndex ?? 0,
+        totalMatches: result?.totalMatches ?? 0,
+        ...(result?.activeMatchId === undefined ? {} : { activeMatchId: result.activeMatchId }),
+        matches: result?.matches ?? [],
+        truncated: result?.truncated === true
+      }
+    }).catch(() => {
+      nativeFindPopoverTabIdRef.current = null;
+    });
+  }, [
+    activeBrowserTabId,
+    browserChromePopoverBridge,
+    canUseNativeFindPopover,
+    hideNativeFindPopover,
+    pageFindResult,
+    value
+  ]);
+
   const securityPopover = (
     <div
       ref={popoverRef}
       className="lyra-omnibox-security-popover"
       role="dialog"
-      aria-label="连接安全与证书信息"
+      aria-label={securityLabels.ariaLabel}
       data-placement={securityPopoverPosition.placement}
       style={securityPopoverPosition.style}
     >
-      {securityLevel === "secure" && (
-        <>
-          <div className="lyra-security-popover-header">
-            <ShieldCheck size={18} className="text-green" />
-            <div>
-              <h3>连接是安全的</h3>
-              <p>您发送到该站点的隐私数据（例如密码、Cookies）都经过高级证书加密，第三方无法读取。</p>
+      <div className="lyra-security-popover-header">
+        {securityHeader.icon}
+        <div>
+          <h3>{securityHeader.title}</h3>
+          <p>{securityHeader.body}</p>
+        </div>
+      </div>
+      <div className="lyra-security-details-list">
+        {securityRows
+          .filter((row) => row[1].trim().length > 0)
+          .map(([label, rowValue]) => (
+            <div key={label} className="lyra-security-detail-item">
+              <strong>{label}</strong>
+              <span>{rowValue}</span>
             </div>
-          </div>
-          <div className="lyra-security-details-list">
-            <div className="lyra-security-detail-item">
-              <strong>证书颁发机构 (CA)</strong>
-              <span>Let's Encrypt / Lyra Trusted CA Root</span>
-            </div>
-            <div className="lyra-security-detail-item">
-              <strong>验证域名 (CN)</strong>
-              <span>{getCleanDomain(value)}</span>
-            </div>
-            <div className="lyra-security-detail-item">
-              <strong>加密强算法 (Cipher Suite)</strong>
-              <span>TLS 1.3, AES_256_GCM, X25519</span>
-            </div>
-          </div>
-        </>
-      )}
-
-      {securityLevel === "insecure" && (
-        <>
-          <div className="lyra-security-popover-header">
-            <AlertTriangle size={18} className="text-red animated-bounce" />
-            <div>
-              <h3>网站连接不安全</h3>
-              <p>当前连接未启用 SSL 加密传输（HTTP）。请勿在当前网页提交任何密码、银行卡等敏感凭证，以防数据被拦截窃取。</p>
-            </div>
-          </div>
-          <div className="lyra-security-details-list">
-            <div className="lyra-security-detail-item">
-              <strong>风险警告 (Threat)</strong>
-              <span>明文数据传输 (Unencrypted HTTP Protocol)</span>
-            </div>
-            <div className="lyra-security-detail-item">
-              <strong>应对措施 (Actions)</strong>
-              <span>建议点击地址栏修改为 https:// 开头尝试重新加载。</span>
-            </div>
-          </div>
-        </>
-      )}
-
-      {securityLevel === "system" && (
-        <>
-          <div className="lyra-security-popover-header">
-            <Globe size={18} className="text-muted" />
-            <div>
-              <h3>系统沙箱内置安全页</h3>
-              <p>此页面为 Lyra 客户端本地系统加载的管理页、终端或本地文件。页面环境运行于安全沙箱内部。</p>
-            </div>
-          </div>
-          <div className="lyra-security-details-list">
-            <div className="lyra-security-detail-item">
-              <strong>控制范围 (Scope)</strong>
-              <span>Lyra 本地资源与开发文件存储沙箱</span>
-            </div>
-            <div className="lyra-security-detail-item">
-              <strong>安全级别 (Level)</strong>
-              <span>信任并允许执行本地高级指令</span>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className="lyra-security-popover-footer">
-        <Calendar size={11} />
-        <span>验证有效期限：2026-05-01 至 2026-08-01</span>
+          ))}
       </div>
     </div>
   );
@@ -373,6 +627,74 @@ export const TitlebarNavigation = ({
     </ul>
   );
 
+  const renderPageFindSnippet = (snippet: string): ReactNode => {
+    const trimmedQuery = value.trim();
+    if (trimmedQuery.length === 0) {
+      return snippet;
+    }
+    const lowerSnippet = snippet.toLocaleLowerCase();
+    const lowerQuery = trimmedQuery.toLocaleLowerCase();
+    const index = lowerSnippet.indexOf(lowerQuery);
+    if (index < 0) {
+      return snippet;
+    }
+    return (
+      <>
+        {snippet.slice(0, index)}
+        <mark>{snippet.slice(index, index + trimmedQuery.length)}</mark>
+        {snippet.slice(index + trimmedQuery.length)}
+      </>
+    );
+  };
+
+  const pageFindResultsList = inlinePageFindPanelOpen ? (
+    <ul
+      ref={suggestionsRef}
+      className="lyra-omnibox-suggestions"
+      role="listbox"
+      aria-label="网页内容搜索结果"
+    >
+      {pageFindMatches.length > 0 ? (
+        pageFindMatches.map((match) => {
+          const selected =
+            match.id === pageFindResult?.activeMatchId
+            || match.index === pageFindResult?.currentIndex;
+          return (
+            <li
+              key={match.id}
+              role="option"
+              aria-selected={selected}
+              className={`lyra-suggestion-item ${selected ? "is-selected" : ""}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                void onPageFindMatchClick(match.index);
+              }}
+            >
+              <div className="lyra-suggestion-left">
+                <span className="lyra-find-result-index">#{match.index}</span>
+                <span className="lyra-suggestion-text">
+                  {renderPageFindSnippet(match.snippet)}
+                </span>
+              </div>
+              <span className="lyra-suggestion-type-badge">
+                {selected ? "当前" : "结果"}
+              </span>
+            </li>
+          );
+        })
+      ) : (
+        <li className="lyra-find-empty">
+          {value.trim().length === 0 ? "输入网页内容开始搜索" : "未找到匹配结果"}
+        </li>
+      )}
+      {pageFindResult?.truncated === true ? (
+        <li className="lyra-find-truncated">
+          仅显示前 {pageFindMatches.length} 个结果。
+        </li>
+      ) : null}
+    </ul>
+  ) : null;
+
   return (
     <>
       <form ref={navigationRef} className="lyra-titlebar-navigation lyra-no-drag" onSubmit={handleSubmit}>
@@ -384,9 +706,12 @@ export const TitlebarNavigation = ({
           }
           data-has-value={hasValue ? "true" : "false"}
           data-has-trailing-control={hasTrailingControl ? "true" : "false"}
-          data-suggestions-open={suggestionPanelOpen ? "true" : "false"}
+          data-suggestions-open={navigationShellExpanded ? "true" : "false"}
+          data-mode={pageFindMode ? "page-find" : "normal"}
+          data-native-find-open="false"
         >
-          {suggestionPanelOpen ? suggestionsList : null}
+          {pageFindResultsList}
+          {inlineSuggestionPanelOpen ? suggestionsList : null}
           <div className="lyra-titlebar-navigation-row">
             <button
               type="button"
@@ -404,12 +729,13 @@ export const TitlebarNavigation = ({
                 }
                 setShowSecurityPopover(true);
               }}
-              title="点击查看连接安全与证书信息"
+              title={securityLabels.title}
             >
               {renderSecurityIcon()}
             </button>
 
             <input
+              ref={inputRef}
               className="lyra-titlebar-navigation-input"
               type="text"
               value={value}
@@ -438,18 +764,51 @@ export const TitlebarNavigation = ({
                   <X size={14} />
                 </button>
               ) : null}
-              <button
-                type="submit"
-                className="lyra-titlebar-navigation-action"
-                aria-label={primaryActionLabel}
-                title={primaryActionLabel}
-              >
-                {primaryActionKind === "reload" ? (
-                  <RefreshCw size={14} />
-                ) : (
-                  <ArrowRight size={14} />
-                )}
-              </button>
+              {pageFindMode ? (
+                <>
+                  <span className="lyra-titlebar-page-find-counter">
+                    {pageFindCounter}
+                  </span>
+                  <button
+                    type="button"
+                    className="lyra-titlebar-navigation-action"
+                    aria-label="Previous page result"
+                    title="Previous page result"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      void onPageFindPrevious();
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="lyra-titlebar-navigation-action"
+                    aria-label="Next page result"
+                    title="Next page result"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      void onPageFindNext();
+                    }}
+                  >
+                    ↓
+                  </button>
+                </>
+              ) : null}
+              {!pageFindMode ? (
+                <button
+                  type="submit"
+                  className="lyra-titlebar-navigation-action"
+                  aria-label={primaryActionLabel}
+                  title={primaryActionLabel}
+                >
+                  {primaryActionKind === "reload" ? (
+                    <RefreshCw size={14} />
+                  ) : (
+                    <ArrowRight size={14} />
+                  )}
+                </button>
+              ) : null}
             </span>
           </div>
         </div>

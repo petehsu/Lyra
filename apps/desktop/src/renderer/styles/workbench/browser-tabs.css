@@ -42,6 +42,10 @@
   overflow: visible;
 }
 
+.lyra-browser-chrome-surface {
+  display: contents;
+}
+
 .lyra-browser-tabs::before {
   content: "";
   position: absolute;

@@ -1,5 +1,8 @@
 import type {
   WorkbenchBrowserChromeSecurityPopoverPayload,
+  WorkbenchBrowserSecurityLocale,
+  WorkbenchBrowserOmniboxSuggestion,
+  WorkbenchBrowserSearchInPageMatch,
   WorkbenchBrowserSecurityLevel,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/workbench-browser";
@@ -8,10 +11,24 @@ import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../shared/web-theme";
 export const LYRA_BROWSER_CHROME_POPOVER_DOCUMENT_TITLE = "Lyra Browser Chrome Popover";
 
 export type BrowserChromePopoverDocumentOptions = {
-  readonly kind: "security";
+  readonly kind: "security" | "find" | "omnibox";
   readonly width: number;
   readonly height: number;
-  readonly security: WorkbenchBrowserChromeSecurityPopoverPayload;
+  readonly security?: WorkbenchBrowserChromeSecurityPopoverPayload;
+  readonly find?: {
+    readonly query: string;
+    readonly placeholder?: string;
+    readonly currentIndex: number;
+    readonly totalMatches: number;
+    readonly activeMatchId?: string;
+    readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
+    readonly truncated?: boolean;
+  };
+  readonly omnibox?: {
+    readonly value: string;
+    readonly selectedIndex: number;
+    readonly suggestions: readonly WorkbenchBrowserOmniboxSuggestion[];
+  };
   readonly theme?: WorkbenchBrowserWebThemeSnapshot;
 };
 
@@ -58,49 +75,211 @@ const normalizeTheme = (
   };
 };
 
+type SecurityPopoverCopy = {
+  readonly mark: string;
+  readonly secureTitle: string;
+  readonly secureBody: string;
+  readonly insecureTitle: string;
+  readonly insecureBody: string;
+  readonly systemTitle: string;
+  readonly systemBody: string;
+  readonly ariaLabel: string;
+  readonly connectionLabel: string;
+  readonly addressLabel: string;
+  readonly hostLabel: string;
+  readonly originLabel: string;
+  readonly schemeLabel: string;
+  readonly certificateSubjectLabel: string;
+  readonly certificateSubjectCommonNameLabel: string;
+  readonly certificateIssuerLabel: string;
+  readonly certificateIssuerCommonNameLabel: string;
+  readonly certificateValidFromLabel: string;
+  readonly certificateValidToLabel: string;
+  readonly certificateSerialLabel: string;
+  readonly certificateFingerprintLabel: string;
+  readonly certificateSubjectAltNameLabel: string;
+  readonly certificateUnavailableLabel: string;
+  readonly certificateNotApplicableLabel: string;
+  readonly secureConnection: string;
+  readonly insecureConnection: string;
+  readonly localConnection: string;
+  readonly unavailableReason: string;
+  readonly unavailableNotHttps: string;
+  readonly unavailableNoCertificate: string;
+};
+
+const SECURITY_COPY: Record<WorkbenchBrowserSecurityLocale, Omit<SecurityPopoverCopy, "mark">> = {
+  "zh-CN": {
+    ariaLabel: "连接安全信息",
+    secureTitle: "连接是安全的",
+    secureBody: "此页面通过 HTTPS 加载。Lyra 只显示从当前页面实际读取到的连接和证书信息。",
+    insecureTitle: "连接不安全",
+    insecureBody: "此页面未通过 HTTPS 加载，连接内容可能被网络中的其他方读取或修改。",
+    systemTitle: "本地或系统页面",
+    systemBody: "此页面不是远程 HTTPS 网站。Lyra 只显示当前地址可确认的本地或系统来源信息。",
+    connectionLabel: "连接状态",
+    addressLabel: "地址",
+    hostLabel: "主机",
+    originLabel: "来源",
+    schemeLabel: "协议",
+    certificateSubjectLabel: "证书主体",
+    certificateSubjectCommonNameLabel: "证书主体 CN",
+    certificateIssuerLabel: "证书签发者",
+    certificateIssuerCommonNameLabel: "签发者 CN",
+    certificateValidFromLabel: "有效期开始",
+    certificateValidToLabel: "有效期结束",
+    certificateSerialLabel: "序列号",
+    certificateFingerprintLabel: "SHA-256 指纹",
+    certificateSubjectAltNameLabel: "备用名称",
+    certificateUnavailableLabel: "证书详情",
+    certificateNotApplicableLabel: "不适用",
+    secureConnection: "HTTPS",
+    insecureConnection: "未加密 HTTP",
+    localConnection: "本地/内置页面",
+    unavailableReason: "证书详情不可用：{reason}",
+    unavailableNotHttps: "当前页面不是 HTTPS 连接。",
+    unavailableNoCertificate: "Chromium 未返回可解析的证书链。"
+  },
+  "en-US": {
+    ariaLabel: "Connection security information",
+    secureTitle: "Connection is secure",
+    secureBody: "This page loaded over HTTPS. Lyra only shows connection and certificate information it actually read from the current page.",
+    insecureTitle: "Connection is not secure",
+    insecureBody: "This page did not load over HTTPS. Content on this connection may be read or changed by others on the network.",
+    systemTitle: "Local or system page",
+    systemBody: "This is not a remote HTTPS website. Lyra only shows the local or system origin details it can confirm.",
+    connectionLabel: "Connection",
+    addressLabel: "Address",
+    hostLabel: "Host",
+    originLabel: "Origin",
+    schemeLabel: "Scheme",
+    certificateSubjectLabel: "Certificate subject",
+    certificateSubjectCommonNameLabel: "Certificate subject CN",
+    certificateIssuerLabel: "Certificate issuer",
+    certificateIssuerCommonNameLabel: "Certificate issuer CN",
+    certificateValidFromLabel: "Valid from",
+    certificateValidToLabel: "Valid until",
+    certificateSerialLabel: "Serial number",
+    certificateFingerprintLabel: "SHA-256 fingerprint",
+    certificateSubjectAltNameLabel: "Subject alternative names",
+    certificateUnavailableLabel: "Certificate details",
+    certificateNotApplicableLabel: "Not applicable",
+    secureConnection: "HTTPS",
+    insecureConnection: "Unencrypted HTTP",
+    localConnection: "Local/system page",
+    unavailableReason: "Certificate details unavailable: {reason}",
+    unavailableNotHttps: "The current page is not an HTTPS connection.",
+    unavailableNoCertificate: "Chromium did not return a parsable certificate chain."
+  }
+};
+
+const normalizeSecurityLocale = (
+  locale: WorkbenchBrowserSecurityLocale | undefined
+): WorkbenchBrowserSecurityLocale =>
+  locale === "en-US" || locale === "zh-CN" ? locale : "zh-CN";
+
 const copyForSecurityLevel = (
   level: WorkbenchBrowserSecurityLevel,
-  domain: string
+  locale: WorkbenchBrowserSecurityLocale | undefined
 ): {
   readonly mark: string;
   readonly title: string;
   readonly body: string;
-  readonly details: readonly (readonly [string, string])[];
+  readonly labels: SecurityPopoverCopy;
 } => {
+  const base = SECURITY_COPY[normalizeSecurityLocale(locale)];
+  const mark =
+    level === "secure"
+      ? "✓"
+      : level === "insecure"
+        ? "!"
+        : "i";
+  const labels = { ...base, mark };
   switch (level) {
     case "secure":
       return {
-        mark: "✓",
-        title: "连接是安全的",
-        body: "您发送到该站点的隐私数据（例如密码、Cookies）都经过证书加密，第三方无法读取。",
-        details: [
-          ["证书颁发机构 (CA)", "Let's Encrypt / Lyra Trusted CA Root"],
-          ["验证域名 (CN)", domain],
-          ["加密算法 (Cipher Suite)", "TLS 1.3, AES_256_GCM, X25519"]
-        ]
+        mark,
+        title: base.secureTitle,
+        body: base.secureBody,
+        labels
       };
     case "insecure":
       return {
-        mark: "!",
-        title: "网站连接不安全",
-        body: "当前连接未启用 SSL 加密传输（HTTP）。请勿在当前网页提交密码、银行卡等敏感凭证。",
-        details: [
-          ["风险警告 (Threat)", "明文数据传输 (Unencrypted HTTP Protocol)"],
-          ["应对措施 (Actions)", "建议将地址改为 https:// 开头后重新加载。"]
-        ]
+        mark,
+        title: base.insecureTitle,
+        body: base.insecureBody,
+        labels
       };
     case "system":
     default:
       return {
-        mark: "i",
-        title: "系统沙箱内置安全页",
-        body: "此页面为 Lyra 客户端本地系统页、终端或本地文件，运行于 Lyra 安全沙箱内部。",
-        details: [
-          ["控制范围 (Scope)", "Lyra 本地资源与开发文件存储沙箱"],
-          ["安全级别 (Level)", "信任并允许执行本地高级指令"]
-        ]
+        mark,
+        title: base.systemTitle,
+        body: base.systemBody,
+        labels
       };
   }
+};
+
+const formatSecurityUnavailableReason = (
+  template: string,
+  reason: string
+): string => template.replace("{reason}", reason);
+
+const securityConnectionLabel = (
+  level: WorkbenchBrowserSecurityLevel,
+  labels: SecurityPopoverCopy
+): string => {
+  switch (level) {
+    case "secure":
+      return labels.secureConnection;
+    case "insecure":
+      return labels.insecureConnection;
+    case "system":
+    default:
+      return labels.localConnection;
+  }
+};
+
+const securityDetailRows = (
+  security: WorkbenchBrowserChromeSecurityPopoverPayload,
+  level: WorkbenchBrowserSecurityLevel,
+  labels: SecurityPopoverCopy
+): readonly (readonly [string, string])[] => {
+  const cert = security.certificate;
+  const unavailableReason =
+    security.certificateUnavailableReason
+    ?? (level === "secure" ? labels.unavailableNoCertificate : labels.unavailableNotHttps);
+  const rows: (readonly [string, string])[] = [
+    [labels.connectionLabel, securityConnectionLabel(level, labels)],
+    [labels.addressLabel, security.address],
+    [labels.hostLabel, security.domain],
+    ...(security.origin === undefined ? [] : [[labels.originLabel, security.origin] as const]),
+    ...(security.scheme === undefined ? [] : [[labels.schemeLabel, security.scheme] as const])
+  ];
+
+  if (cert !== undefined) {
+    rows.push(
+      ...(cert.subject === undefined ? [] : [[labels.certificateSubjectLabel, cert.subject] as const]),
+      ...(cert.subjectCommonName === undefined ? [] : [[labels.certificateSubjectCommonNameLabel, cert.subjectCommonName] as const]),
+      ...(cert.issuer === undefined ? [] : [[labels.certificateIssuerLabel, cert.issuer] as const]),
+      ...(cert.issuerCommonName === undefined ? [] : [[labels.certificateIssuerCommonNameLabel, cert.issuerCommonName] as const]),
+      ...(cert.validFrom === undefined ? [] : [[labels.certificateValidFromLabel, cert.validFrom] as const]),
+      ...(cert.validTo === undefined ? [] : [[labels.certificateValidToLabel, cert.validTo] as const]),
+      ...(cert.serialNumber === undefined ? [] : [[labels.certificateSerialLabel, cert.serialNumber] as const]),
+      ...(cert.fingerprint256 === undefined ? [] : [[labels.certificateFingerprintLabel, cert.fingerprint256] as const]),
+      ...(cert.subjectAltName === undefined ? [] : [[labels.certificateSubjectAltNameLabel, cert.subjectAltName] as const])
+    );
+  } else if (security.certificateStatus === "not-applicable") {
+    rows.push([labels.certificateUnavailableLabel, labels.certificateNotApplicableLabel]);
+  } else {
+    rows.push([
+      labels.certificateUnavailableLabel,
+      formatSecurityUnavailableReason(labels.unavailableReason, unavailableReason)
+    ]);
+  }
+
+  return rows.filter((row) => row[1].trim().length > 0);
 };
 
 export const resolveBrowserChromePopoverHeight = ({
@@ -119,16 +298,531 @@ export const resolveBrowserChromePopoverHeight = ({
   return Math.max(160, Math.min(Math.round(maxHeight), preferred));
 };
 
+export const resolveBrowserFindPopoverHeight = ({
+  matchCount,
+  maxHeight
+}: {
+  readonly matchCount: number;
+  readonly maxHeight: number;
+}): number => {
+  const visibleRows = Math.min(8, Math.max(1, Math.round(matchCount)));
+  const preferred = 10 + visibleRows * 36 + 8;
+  return Math.max(54, Math.min(Math.round(maxHeight), Math.min(240, preferred)));
+};
+
+export const resolveBrowserOmniboxPopoverHeight = ({
+  itemCount,
+  maxHeight
+}: {
+  readonly itemCount: number;
+  readonly maxHeight: number;
+}): number => {
+  const visibleRows = Math.min(8, Math.max(1, Math.round(itemCount)));
+  const preferred = 10 + visibleRows * 36 + 8;
+  return Math.max(54, Math.min(Math.round(maxHeight), Math.min(240, preferred)));
+};
+
+const buildFindActionUrl = (action: string, value?: string | number): string => {
+  const params = new URLSearchParams();
+  if (value !== undefined) {
+    params.set("value", String(value));
+  }
+  return `lyra-find://${action}${params.toString().length === 0 ? "" : `?${params.toString()}`}`;
+};
+
+const buildOmniboxActionUrl = (index: number): string => {
+  const params = new URLSearchParams();
+  params.set("index", String(index));
+  return `lyra-omnibox://suggestion?${params.toString()}`;
+};
+
+const highlightSnippet = (snippet: string, query: string): string => {
+  const escapedSnippet = escapeHtml(snippet);
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length === 0) {
+    return escapedSnippet;
+  }
+  const lowerSnippet = snippet.toLocaleLowerCase();
+  const lowerQuery = trimmedQuery.toLocaleLowerCase();
+  const index = lowerSnippet.indexOf(lowerQuery);
+  if (index < 0) {
+    return escapedSnippet;
+  }
+  const before = escapeHtml(snippet.slice(0, index));
+  const match = escapeHtml(snippet.slice(index, index + trimmedQuery.length));
+  const after = escapeHtml(snippet.slice(index + trimmedQuery.length));
+  return `${before}<mark>${match}</mark>${after}`;
+};
+
+const buildFindPopoverDocument = ({
+  width,
+  height,
+  find,
+  theme
+}: {
+  readonly width: number;
+  readonly height: number;
+  readonly find: NonNullable<BrowserChromePopoverDocumentOptions["find"]>;
+  readonly theme?: WorkbenchBrowserWebThemeSnapshot;
+}): string => {
+  const rows = find.matches
+    .map((match) => {
+      const selected = match.id === find.activeMatchId || match.index === find.currentIndex;
+      return `
+        <a class="lyra-suggestion-item${selected ? " is-selected" : ""}" href="${buildFindActionUrl("match", match.index)}" role="option" aria-selected="${selected ? "true" : "false"}">
+          <span class="lyra-suggestion-left">
+            <span class="lyra-find-result-index">#${match.index}</span>
+            <span class="lyra-suggestion-text">${highlightSnippet(match.snippet, find.query)}</span>
+          </span>
+          <span class="lyra-suggestion-type-badge">${selected ? "当前" : "结果"}</span>
+        </a>`;
+    })
+    .join("");
+  const empty = find.query.trim().length === 0
+    ? "输入网页内容开始搜索"
+    : "未找到匹配结果";
+  return buildOmniboxLikeDocument({
+    width,
+    height,
+    ...(theme === undefined ? {} : { theme }),
+    ariaLabel: "网页内容搜索结果",
+    mode: "page-find",
+    body: `
+      ${rows.length > 0 ? rows : `<div class="lyra-find-empty">${escapeHtml(empty)}</div>`}
+      ${find.truncated === true ? `<div class="lyra-find-truncated">仅显示前 ${find.matches.length} 个结果。</div>` : ""}
+    `
+  });
+};
+
+const buildOmniboxLikeDocument = ({
+  width,
+  height,
+  theme,
+  body,
+  ariaLabel,
+  mode = "normal",
+  controls,
+  script
+}: {
+  readonly width: number;
+  readonly height: number;
+  readonly theme?: WorkbenchBrowserWebThemeSnapshot;
+  readonly body: string;
+  readonly ariaLabel: string;
+  readonly mode?: "normal" | "page-find";
+  readonly controls?: string;
+  readonly script?: string;
+}): string => {
+  const normalizedTheme = normalizeTheme(theme);
+  const palette = normalizedTheme.palette;
+  const hasScript = script !== undefined && script.trim().length > 0;
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src ${hasScript ? "'unsafe-inline'" : "'none'"}; navigate-to lyra-find: lyra-omnibox:;"
+    />
+    <title>${LYRA_BROWSER_CHROME_POPOVER_DOCUMENT_TITLE}</title>
+    <style>
+      :root {
+        color-scheme: ${normalizedTheme.isDark ? "dark" : "light"};
+        --lyra-unit-1: 1px;
+        --lyra-unit-2: 2px;
+        --lyra-unit-3: 3px;
+        --lyra-unit-4: 4px;
+        --lyra-unit-6: 6px;
+        --lyra-unit-7: 7px;
+        --lyra-unit-8: 8px;
+        --lyra-unit-9: 9px;
+        --lyra-unit-10: 10px;
+        --lyra-unit-11-5: 11.5px;
+        --lyra-unit-12: 12px;
+        --lyra-unit-13: 13px;
+        --lyra-unit-14: 14px;
+        --lyra-unit-18: 18px;
+        --lyra-unit-24: 24px;
+        --lyra-unit-28: 28px;
+        --lyra-unit-34: 34px;
+        --lyra-unit-44: 44px;
+        --lyra-unit-48: 48px;
+        --lyra-unit-240: 240px;
+        --lyra-unit-999: 999px;
+        --lyra-shell-titlebar-nav-h: 28px;
+        --lyra-stroke-hairline: 1px;
+        --lyra-radius-pill: 999px;
+        --lyra-titlebar-navigation-radius: var(--lyra-unit-14);
+        --lyra-bg-app: ${palette.bgApp};
+        --lyra-bg-surface: ${palette.bgSurface};
+        --lyra-bg-editor: ${palette.bgEditor};
+        --lyra-bg-hover: color-mix(in srgb, ${palette.bgEditor} 78%, ${palette.textAccent} 10%);
+        --lyra-text-primary: ${palette.textPrimary};
+        --lyra-text-secondary: ${palette.textSecondary};
+        --lyra-text-muted: ${palette.textMuted};
+        --lyra-text-accent: ${palette.textAccent};
+        --lyra-line-default: ${palette.lineDefault};
+        --lyra-scrollbar-thumb-idle: ${palette.textMuted};
+        --lyra-scrollbar-thumb-hover: ${palette.lineFocused};
+        --lyra-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html,
+      body {
+        width: ${Math.max(220, Math.round(width))}px;
+        height: ${Math.max(54, Math.round(height))}px;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+        color: var(--lyra-text-primary);
+        font: 12px/1.45 var(--lyra-font-ui);
+      }
+      .lyra-titlebar-navigation {
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        position: relative;
+      }
+      .lyra-titlebar-navigation-shell {
+        --lyra-titlebar-navigation-radius: var(--lyra-unit-14);
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        min-height: var(--lyra-shell-titlebar-nav-h);
+        max-height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 0;
+        border: var(--lyra-stroke-hairline) solid
+          color-mix(in srgb, var(--lyra-line-default) 54%, var(--lyra-text-secondary) 22%);
+        border-radius: var(--lyra-titlebar-navigation-radius);
+        background:
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--lyra-bg-surface) 96%, transparent) 0%,
+            color-mix(in srgb, var(--lyra-bg-editor) 90%, transparent) 100%
+          );
+        box-shadow:
+          inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 34%, transparent),
+          0 var(--lyra-unit-10) 28px color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
+        overflow: hidden;
+        transform-origin: bottom center;
+        animation: lyra-native-omnibox-expand 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .lyra-omnibox-suggestions {
+        box-sizing: border-box;
+        width: 100%;
+        flex: 1 1 auto;
+        max-height: var(--lyra-unit-240);
+        overflow: hidden;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
+        padding: var(--lyra-unit-6) 0 var(--lyra-unit-3);
+        list-style: none;
+        margin: 0;
+        text-align: left;
+        border-bottom: var(--lyra-stroke-hairline) solid
+          color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
+        background: transparent;
+        animation: omnibox-suggestions-reveal 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .lyra-titlebar-navigation-shell[data-mode="page-find"] .lyra-omnibox-suggestions {
+        border-bottom: 0;
+      }
+      .lyra-omnibox-suggestions::-webkit-scrollbar {
+        width: var(--lyra-unit-10);
+        height: var(--lyra-unit-10);
+        background: transparent;
+      }
+      .lyra-omnibox-suggestions::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .lyra-omnibox-suggestions::-webkit-scrollbar-thumb {
+        background-color: var(--lyra-scrollbar-thumb-idle);
+        border: var(--lyra-unit-2) solid transparent;
+        background-clip: padding-box;
+        border-radius: var(--lyra-radius-pill);
+      }
+      .lyra-omnibox-suggestions::-webkit-scrollbar-thumb:hover {
+        background-color: var(--lyra-scrollbar-thumb-hover);
+      }
+      .lyra-suggestion-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--lyra-unit-10);
+        min-width: 0;
+        padding: var(--lyra-unit-7) var(--lyra-unit-12);
+        color: var(--lyra-text-primary);
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .lyra-suggestion-item:hover,
+      .lyra-suggestion-item.is-selected {
+        background: var(--lyra-bg-hover);
+        color: var(--lyra-text-primary);
+      }
+      .lyra-suggestion-left {
+        display: flex;
+        align-items: center;
+        gap: var(--lyra-unit-10);
+        min-width: 0;
+        flex: 1;
+      }
+      .lyra-suggestion-glyph,
+      .lyra-find-result-index {
+        width: 34px;
+        flex: 0 0 34px;
+        color: var(--lyra-text-muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .lyra-suggestion-item:hover .lyra-suggestion-glyph,
+      .lyra-suggestion-item.is-selected .lyra-suggestion-glyph {
+        color: var(--lyra-text-accent);
+      }
+      .lyra-suggestion-text {
+        min-width: 0;
+        font-size: var(--lyra-unit-11-5);
+        font-family: var(--lyra-font-ui);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--lyra-text-primary);
+      }
+      .lyra-suggestion-type-badge {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--lyra-text-muted);
+        letter-spacing: 0.04em;
+        opacity: 0.68;
+        flex: 0 0 auto;
+      }
+      .lyra-suggestion-item:hover .lyra-suggestion-type-badge,
+      .lyra-suggestion-item.is-selected .lyra-suggestion-type-badge {
+        opacity: 0.95;
+      }
+      mark {
+        color: inherit;
+        background: rgba(255, 214, 64, 0.42);
+        border-radius: 3px;
+        padding: 0 1px;
+      }
+      .lyra-find-empty,
+      .lyra-find-truncated {
+        color: var(--lyra-text-muted);
+        padding: 5px;
+        font-size: var(--lyra-unit-11-5);
+      }
+      .lyra-find-empty {
+        padding: var(--lyra-unit-7) var(--lyra-unit-12);
+      }
+      .lyra-find-truncated {
+        padding: var(--lyra-unit-3) var(--lyra-unit-12) var(--lyra-unit-6);
+        font-size: 10.5px;
+      }
+      .lyra-titlebar-navigation-row {
+        width: 100%;
+        min-height: var(--lyra-shell-titlebar-nav-h);
+        display: grid;
+        grid-template-columns: var(--lyra-shell-titlebar-nav-h) minmax(0, 1fr);
+        align-items: center;
+        gap: 0;
+        position: relative;
+        flex: 0 0 var(--lyra-shell-titlebar-nav-h);
+      }
+      .lyra-titlebar-navigation-security-btn {
+        width: var(--lyra-shell-titlebar-nav-h);
+        height: var(--lyra-shell-titlebar-nav-h);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        background: transparent;
+        color: var(--lyra-text-muted);
+        flex: 0 0 var(--lyra-shell-titlebar-nav-h);
+        user-select: none;
+      }
+      .lyra-find-search-glyph {
+        font-size: var(--lyra-unit-13);
+        line-height: 1;
+      }
+      .lyra-titlebar-navigation-input {
+        box-sizing: border-box;
+        min-width: 0;
+        width: 100%;
+        height: calc(var(--lyra-shell-titlebar-nav-h) - var(--lyra-unit-2));
+        border: 0;
+        background: transparent;
+        color: var(--lyra-text-primary);
+        font-family: var(--lyra-font-ui);
+        font-size: var(--lyra-unit-12);
+        line-height: 1.5;
+        outline: none;
+        padding: 0 calc(var(--lyra-shell-titlebar-nav-h) * 4 + var(--lyra-unit-48)) 0 0;
+      }
+      .lyra-titlebar-navigation-input::placeholder {
+        color: var(--lyra-text-muted);
+      }
+      .lyra-titlebar-navigation-actions {
+        position: absolute;
+        top: 50%;
+        right: 0;
+        display: inline-flex;
+        align-items: center;
+        transform: translateY(-50%);
+      }
+      .lyra-titlebar-navigation-action {
+        width: var(--lyra-shell-titlebar-nav-h);
+        height: var(--lyra-shell-titlebar-nav-h);
+        border: 0;
+        border-radius: var(--lyra-unit-999);
+        background: transparent;
+        color: var(--lyra-text-muted);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font: 14px/1 var(--lyra-font-ui);
+        padding: 0;
+        transition:
+          color 120ms ease,
+          opacity 120ms ease;
+      }
+      .lyra-titlebar-navigation-action:hover,
+      .lyra-titlebar-navigation-action:focus-visible {
+        color: var(--lyra-text-primary);
+        background: transparent;
+        opacity: 1;
+        outline: none;
+      }
+      .lyra-titlebar-navigation-action:disabled {
+        cursor: default;
+        opacity: 0.38;
+      }
+      .lyra-titlebar-page-find-counter {
+        min-width: var(--lyra-unit-48);
+        height: var(--lyra-shell-titlebar-nav-h);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--lyra-text-secondary);
+        font-size: var(--lyra-unit-11-5);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      @keyframes lyra-native-omnibox-expand {
+        from {
+          opacity: 0;
+          clip-path: inset(calc(100% - var(--lyra-shell-titlebar-nav-h)) 0 0 0 round var(--lyra-titlebar-navigation-radius));
+        }
+        to {
+          opacity: 1;
+          clip-path: inset(0 0 0 0 round var(--lyra-titlebar-navigation-radius));
+        }
+      }
+      @keyframes omnibox-suggestions-reveal {
+        from {
+          opacity: 0;
+          transform: translateY(var(--lyra-unit-4));
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <form class="lyra-titlebar-navigation lyra-no-drag" aria-label="${escapeHtml(ariaLabel)}">
+      <div class="lyra-titlebar-navigation-shell" data-suggestions-open="true" data-mode="${mode}">
+        <div class="lyra-omnibox-suggestions" role="listbox" aria-label="${escapeHtml(ariaLabel)}">
+          ${body}
+        </div>
+        ${controls ?? ""}
+      </div>
+    </form>
+    ${hasScript ? `<script>${script}</script>` : ""}
+  </body>
+</html>`;
+};
+
+const buildOmniboxPopoverDocument = ({
+  width,
+  height,
+  omnibox,
+  theme
+}: {
+  readonly width: number;
+  readonly height: number;
+  readonly omnibox: NonNullable<BrowserChromePopoverDocumentOptions["omnibox"]>;
+  readonly theme?: WorkbenchBrowserWebThemeSnapshot;
+}): string => {
+  const rows = omnibox.suggestions
+    .map((suggestion, index) => {
+      const selected = index === omnibox.selectedIndex;
+      const text = `${suggestion.value}${suggestion.label ? ` (${suggestion.label})` : ""}`;
+      return `
+        <a class="lyra-suggestion-item${selected ? " is-selected" : ""}" href="${buildOmniboxActionUrl(index)}" role="option" aria-selected="${selected ? "true" : "false"}">
+          <span class="lyra-suggestion-left">
+            <span class="lyra-suggestion-glyph">${suggestion.type === "history" ? "◎" : "⌕"}</span>
+            <span class="lyra-suggestion-text">${escapeHtml(text)}</span>
+          </span>
+          <span class="lyra-suggestion-type-badge">${suggestion.type === "history" ? "历史" : "搜索建议"}</span>
+        </a>`;
+    })
+    .join("");
+  const empty = omnibox.value.trim().length === 0 ? "输入内容开始搜索" : "没有匹配的建议";
+  return buildOmniboxLikeDocument({
+    width,
+    height,
+    ...(theme === undefined ? {} : { theme }),
+    ariaLabel: "地址建议",
+    body: rows.length > 0 ? rows : `<div class="lyra-find-empty">${escapeHtml(empty)}</div>`
+  });
+};
+
 export const buildBrowserChromePopoverDocument = ({
+  kind,
   width,
   height,
   security,
+  find,
+  omnibox,
   theme
 }: BrowserChromePopoverDocumentOptions): string => {
+  if (kind === "omnibox") {
+    if (omnibox === undefined) {
+      throw new Error("omnibox popover payload is required");
+    }
+    return buildOmniboxPopoverDocument({
+      width,
+      height,
+      omnibox,
+      ...(theme === undefined ? {} : { theme })
+    });
+  }
+  if (kind === "find") {
+    if (find === undefined) {
+      throw new Error("find popover payload is required");
+    }
+    return buildFindPopoverDocument({
+      width,
+      height,
+      find,
+      ...(theme === undefined ? {} : { theme })
+    });
+  }
+  if (security === undefined) {
+    throw new Error("security popover payload is required");
+  }
   const normalizedTheme = normalizeTheme(theme);
   const palette = normalizedTheme.palette;
   const level = normalizeSecurityLevel(security.level);
-  const copy = copyForSecurityLevel(level, security.domain);
+  const copy = copyForSecurityLevel(level, security.locale);
   const markColor =
     level === "secure"
       ? palette.statusSuccess
@@ -138,7 +832,7 @@ export const buildBrowserChromePopoverDocument = ({
   const shadow = normalizedTheme.isDark
     ? "0 18px 50px rgba(0, 0, 0, 0.48)"
     : "0 18px 42px rgba(54, 45, 24, 0.24)";
-  const detailRows = copy.details
+  const detailRows = securityDetailRows(security, level, copy.labels)
     .map(
       ([label, value]) => `
         <div class="item">
@@ -290,7 +984,7 @@ export const buildBrowserChromePopoverDocument = ({
     </style>
   </head>
   <body>
-    <section class="popover" role="dialog" aria-label="连接安全与证书信息" data-level="${level}">
+    <section class="popover" role="dialog" aria-label="${escapeHtml(copy.labels.ariaLabel)}" data-level="${level}">
       <header class="header">
         <span class="mark">${escapeHtml(copy.mark)}</span>
         <div>
@@ -299,7 +993,6 @@ export const buildBrowserChromePopoverDocument = ({
         </div>
       </header>
       <div class="details">${detailRows}</div>
-      <footer class="footer">验证有效期限：2026-05-01 至 2026-08-01</footer>
     </section>
   </body>
 </html>`;

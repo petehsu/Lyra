@@ -1,16 +1,23 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashSet};
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub const TOOL_FS_SEARCH: &str = "tool_fs_search";
 pub const TOOL_FS_LIST: &str = "tool_fs_list";
 pub const TOOL_FS_READ_DOC: &str = "tool_fs_read_doc";
 pub const TOOL_FS_INSPECT: &str = "tool_fs_inspect";
 pub const TOOL_FS_RUN: &str = "tool_fs_run";
-pub const PROVIDER_VISIBLE_TOOL_NAMES: [&str; 4] =
-    [TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_INSPECT, TOOL_FS_RUN];
+pub const PROVIDER_VISIBLE_TOOL_NAMES: [&str; 5] = [
+    TOOL_FS_SEARCH,
+    TOOL_FS_LIST,
+    TOOL_FS_READ_DOC,
+    TOOL_FS_INSPECT,
+    TOOL_FS_RUN,
+];
 pub const TOOL_FS_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_TOOL_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
@@ -24,6 +31,14 @@ pub struct ToolManifest {
     pub operation: String,
     pub title: String,
     pub summary: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     pub risk_level: String,
     pub permission_policy: String,
     pub input_schema: Value,
@@ -51,6 +66,37 @@ pub struct ToolDirectoryEntry {
     pub path: String,
     pub name: String,
     pub summary: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSearchResponse {
+    pub kind: String,
+    pub query: String,
+    pub scene: String,
+    pub domain: Option<String>,
+    pub results: Vec<ToolSearchResult>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub has_more: bool,
+    pub fallback_list_path: String,
+    pub recommended_next_action: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSearchResult {
+    pub path: String,
+    pub handle: Option<String>,
+    pub title: String,
+    pub domain: String,
+    pub operation: String,
+    pub summary: String,
+    pub score: f64,
+    pub matched_fields: Vec<String>,
+    pub match_reason: String,
+    pub recommended_next_action: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -308,6 +354,106 @@ impl ToolFsRegistry {
         })
     }
 
+    pub fn search(
+        &self,
+        query: &str,
+        domain: Option<&str>,
+        page: usize,
+        page_size: usize,
+        scene: ToolScene,
+    ) -> Result<ToolSearchResponse, ToolFsError> {
+        self.search_with_boosts(query, domain, page, page_size, scene, &BTreeMap::new())
+    }
+
+    pub fn search_with_boosts(
+        &self,
+        query: &str,
+        domain: Option<&str>,
+        page: usize,
+        page_size: usize,
+        scene: ToolScene,
+        usage_boosts: &BTreeMap<String, f64>,
+    ) -> Result<ToolSearchResponse, ToolFsError> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Err(ToolFsError::new(
+                "invalid_tool_search_query",
+                "tool_fs_search query must not be empty.",
+                "Describe the task or capability you need, or call tool_fs_list with /tools.",
+            ));
+        }
+        let domain = domain
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.trim_start_matches("/tools/").to_ascii_lowercase());
+        let page_size = page_size.clamp(1, 100);
+        let mut scored = self
+            .manifests
+            .iter()
+            .filter(|manifest| {
+                domain
+                    .as_deref()
+                    .is_none_or(|domain| manifest.domain == domain)
+            })
+            .filter_map(|manifest| score_manifest_search(manifest, query, scene, usage_boosts))
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| {
+            right
+                .score
+                .partial_cmp(&left.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| left.manifest.path.cmp(&right.manifest.path))
+        });
+        let total = scored.len();
+        let start = page.saturating_mul(page_size).min(total);
+        let end = (start + page_size).min(total);
+        let results = scored[start..end]
+            .iter()
+            .map(|entry| ToolSearchResult {
+                path: entry.manifest.path.clone(),
+                handle: entry.manifest.handle.clone(),
+                title: entry.manifest.title.clone(),
+                domain: entry.manifest.domain.clone(),
+                operation: entry.manifest.operation.clone(),
+                summary: entry.manifest.summary.clone(),
+                score: round_score(entry.score),
+                matched_fields: entry.matched_fields.clone(),
+                match_reason: entry.match_reason.clone(),
+                recommended_next_action: "Call tool_fs_inspect for the schema, then tool_fs_run with this path or handle.".to_string(),
+            })
+            .collect::<Vec<_>>();
+        let fallback_list_path = if let Some(domain) = domain.as_deref()
+            && self
+                .manifests
+                .iter()
+                .any(|manifest| manifest.domain == domain)
+        {
+            format!("/tools/{domain}")
+        } else {
+            best_fallback_list_path(query, &self.manifests, scene)
+        };
+        let recommended_next_action = if results.is_empty() {
+            format!(
+                "No strong Tool-FS search result matched. Call tool_fs_list with {fallback_list_path}, then inspect a concrete /tools path."
+            )
+        } else {
+            "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.".to_string()
+        };
+        Ok(ToolSearchResponse {
+            kind: "tool_fs_search".to_string(),
+            query: query.to_string(),
+            scene: scene.as_str().to_string(),
+            domain,
+            results,
+            total,
+            page,
+            page_size,
+            has_more: end < total,
+            fallback_list_path,
+            recommended_next_action,
+        })
+    }
+
     pub fn read_doc(&self, path: &str) -> Result<Value, ToolFsError> {
         let normalized = normalize_tool_path(path);
         if normalized == "/tools" {
@@ -315,7 +461,7 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": "Browse /tools by domain, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_list, tool_fs_read_doc, tool_fs_inspect, tool_fs_run, and lyra_turn_finish."
+                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, tool_fs_run, and lyra_turn_finish."
             }));
         }
         if let Some(manifest) = self.lookup_path(&normalized) {
@@ -323,7 +469,10 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": manifest.path,
                 "title": manifest.title,
-                "content": format!("{} Input schema is available through tool_fs_inspect.", manifest.summary),
+                "content": format!("{} {} Input schema is available through tool_fs_inspect.", manifest.summary, manifest.description),
+                "aliases": manifest.aliases.clone(),
+                "examples": manifest.examples.clone(),
+                "tags": manifest.tags.clone(),
             }));
         }
         let domain = normalized
@@ -497,6 +646,15 @@ impl ToolFsRegistry {
         json!({
             "path": "/tools",
             "scene": scene.as_str(),
+            "searchAvailable": true,
+            "recommendedDiscovery": "Call tool_fs_search first with a natural-language task description; call tool_fs_list only when search needs a directory fallback.",
+            "searchExamples": [
+                "edit a file",
+                "search code text",
+                "run a shell command",
+                "read browser page",
+                "show git diff"
+            ],
             "domainCount": domains.len(),
             "toolCount": self.manifests.len(),
             "domains": domains,
@@ -550,6 +708,344 @@ pub struct ResolvedToolRun {
     pub args: Value,
     pub requested_path: Option<String>,
     pub requested_handle: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ScoredToolManifest {
+    manifest: ToolManifest,
+    score: f64,
+    matched_fields: Vec<String>,
+    match_reason: String,
+}
+
+fn score_manifest_search(
+    manifest: &ToolManifest,
+    query: &str,
+    scene: ToolScene,
+    usage_boosts: &BTreeMap<String, f64>,
+) -> Option<ScoredToolManifest> {
+    let normalized_query = normalize_search_text(query);
+    let query_terms = search_terms(query);
+    if normalized_query.is_empty() || query_terms.is_empty() {
+        return None;
+    }
+    let mut score = 0.0_f64;
+    let mut matched_fields = Vec::new();
+    let mut reasons = Vec::new();
+    for field in searchable_manifest_fields(manifest) {
+        let field_score = score_search_field(&normalized_query, &query_terms, &field);
+        if field_score <= 0.0 {
+            continue;
+        }
+        score += field_score * field.weight;
+        if !matched_fields.iter().any(|name| name == field.name) {
+            matched_fields.push(field.name.to_string());
+        }
+        if let Some(reason) = field.reason(field_score) {
+            reasons.push(reason);
+        }
+    }
+    if manifest
+        .handle
+        .as_deref()
+        .is_some_and(|handle| normalize_search_text(handle) == normalized_query)
+    {
+        score += 40.0;
+        reasons.push("exact handle match".to_string());
+    }
+    if normalize_search_text(&manifest.path) == normalized_query {
+        score += 42.0;
+        reasons.push("exact path match".to_string());
+    }
+    if score <= 0.0 {
+        return None;
+    }
+    if scene_domain_order(scene)
+        .first()
+        .is_some_and(|domain| *domain == manifest.domain)
+    {
+        score += 4.0;
+    } else if scene_domain_order(scene)
+        .iter()
+        .any(|domain| *domain == manifest.domain)
+    {
+        score += 2.0;
+    }
+    if let Some(handle) = manifest.handle.as_deref()
+        && pinned_handle_names(scene)
+            .iter()
+            .any(|pinned| *pinned == handle)
+    {
+        score += 6.0;
+    }
+    if let Some(boost) = usage_boosts.get(&manifest.path) {
+        score += boost.clamp(0.0, 18.0);
+        if *boost > 0.0 {
+            reasons.push("recent successful usage".to_string());
+        }
+    }
+    if score < 0.5 {
+        return None;
+    }
+    if reasons.is_empty() {
+        reasons.push("matched searchable tool metadata".to_string());
+    }
+    Some(ScoredToolManifest {
+        manifest: manifest.clone(),
+        score,
+        matched_fields,
+        match_reason: reasons.join("; "),
+    })
+}
+
+#[derive(Clone, Debug)]
+struct SearchableField {
+    name: &'static str,
+    text: String,
+    weight: f64,
+}
+
+impl SearchableField {
+    fn reason(&self, score: f64) -> Option<String> {
+        if score >= 1.8 {
+            Some(format!("strong {} match", self.name))
+        } else if score >= 1.0 {
+            Some(format!("{} token match", self.name))
+        } else if score > 0.0 {
+            Some(format!("{} fuzzy match", self.name))
+        } else {
+            None
+        }
+    }
+}
+
+fn searchable_manifest_fields(manifest: &ToolManifest) -> Vec<SearchableField> {
+    vec![
+        SearchableField {
+            name: "path",
+            text: manifest.path.clone(),
+            weight: 20.0,
+        },
+        SearchableField {
+            name: "handle",
+            text: manifest.handle.clone().unwrap_or_default(),
+            weight: 18.0,
+        },
+        SearchableField {
+            name: "title",
+            text: manifest.title.clone(),
+            weight: 16.0,
+        },
+        SearchableField {
+            name: "aliases",
+            text: manifest.aliases.join(" "),
+            weight: 14.0,
+        },
+        SearchableField {
+            name: "examples",
+            text: manifest.examples.join(" "),
+            weight: 12.0,
+        },
+        SearchableField {
+            name: "summary",
+            text: manifest.summary.clone(),
+            weight: 10.0,
+        },
+        SearchableField {
+            name: "description",
+            text: manifest.description.clone(),
+            weight: 9.0,
+        },
+        SearchableField {
+            name: "tags",
+            text: manifest.tags.join(" "),
+            weight: 7.0,
+        },
+        SearchableField {
+            name: "schema",
+            text: schema_search_text(&manifest.input_schema),
+            weight: 4.0,
+        },
+    ]
+}
+
+fn score_search_field(
+    normalized_query: &str,
+    query_terms: &[String],
+    field: &SearchableField,
+) -> f64 {
+    let normalized_field = normalize_search_text(&field.text);
+    if normalized_field.is_empty() {
+        return 0.0;
+    }
+    if normalized_field == normalized_query {
+        return 2.8;
+    }
+    if normalized_field.starts_with(normalized_query) {
+        return 2.2;
+    }
+    if normalized_field.contains(normalized_query) {
+        return 1.8;
+    }
+    let field_terms = search_terms(&normalized_field);
+    if field_terms.is_empty() {
+        return 0.0;
+    }
+    let mut exact = 0_usize;
+    let mut prefix = 0_usize;
+    let mut fuzzy = 0_usize;
+    for term in query_terms {
+        if field_terms.iter().any(|candidate| candidate == term) {
+            exact += 1;
+        } else if field_terms
+            .iter()
+            .any(|candidate| candidate.starts_with(term) || term.starts_with(candidate))
+        {
+            prefix += 1;
+        } else if field_terms
+            .iter()
+            .any(|candidate| fuzzy_term_match(term, candidate))
+        {
+            fuzzy += 1;
+        }
+    }
+    let total = query_terms.len().max(1) as f64;
+    (exact as f64 / total) * 1.35 + (prefix as f64 / total) * 1.0 + (fuzzy as f64 / total) * 0.55
+}
+
+fn best_fallback_list_path(query: &str, manifests: &[ToolManifest], scene: ToolScene) -> String {
+    let query_terms = search_terms(query);
+    let mut domain_scores = HashMap::<String, f64>::new();
+    for manifest in manifests {
+        let text = format!(
+            "{} {} {} {} {}",
+            manifest.domain,
+            manifest.title,
+            manifest.summary,
+            manifest.description,
+            manifest.tags.join(" ")
+        );
+        let terms = search_terms(&text);
+        let matched = query_terms
+            .iter()
+            .filter(|query| {
+                terms
+                    .iter()
+                    .any(|term| term == *query || fuzzy_term_match(query, term))
+            })
+            .count();
+        if matched > 0 {
+            *domain_scores.entry(manifest.domain.clone()).or_default() += matched as f64;
+        }
+    }
+    if let Some((domain, _)) = domain_scores.into_iter().max_by(|left, right| {
+        left.1
+            .partial_cmp(&right.1)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| left.0.cmp(&right.0))
+    }) {
+        return format!("/tools/{domain}");
+    }
+    scene_domain_order(scene)
+        .first()
+        .map(|domain| format!("/tools/{domain}"))
+        .unwrap_or_else(|| "/tools".to_string())
+}
+
+fn schema_search_text(schema: &Value) -> String {
+    let mut values = Vec::new();
+    collect_schema_search_text(schema, &mut values);
+    values.join(" ")
+}
+
+fn collect_schema_search_text(value: &Value, values: &mut Vec<String>) {
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                if matches!(
+                    key.as_str(),
+                    "description" | "title" | "default" | "enum" | "properties" | "required"
+                ) {
+                    values.push(key.clone());
+                }
+                if key != "$id" {
+                    values.push(key.clone());
+                    collect_schema_search_text(value, values);
+                }
+            }
+        }
+        Value::Array(array) => {
+            for value in array {
+                collect_schema_search_text(value, values);
+            }
+        }
+        Value::String(text) => values.push(text.clone()),
+        Value::Bool(_) | Value::Number(_) | Value::Null => {}
+    }
+}
+
+fn normalize_search_text(text: &str) -> String {
+    text.to_lowercase()
+        .replace(['_', '-', '/', '.', ':'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn search_terms(text: &str) -> Vec<String> {
+    normalize_search_text(text)
+        .split(|character: char| !character.is_alphanumeric())
+        .map(str::trim)
+        .filter(|term| term.chars().count() >= 2)
+        .map(str::to_string)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn fuzzy_term_match(query: &str, candidate: &str) -> bool {
+    let query_len = query.chars().count();
+    let candidate_len = candidate.chars().count();
+    if query_len < 4 || candidate_len < 4 {
+        return false;
+    }
+    let delta = query_len.abs_diff(candidate_len);
+    let max_distance = if query_len.max(candidate_len) >= 8 {
+        2
+    } else {
+        1
+    };
+    delta <= max_distance && levenshtein_distance(query, candidate, max_distance) <= max_distance
+}
+
+fn levenshtein_distance(left: &str, right: &str, max_distance: usize) -> usize {
+    let left_chars = left.chars().collect::<Vec<_>>();
+    let right_chars = right.chars().collect::<Vec<_>>();
+    if left_chars.len().abs_diff(right_chars.len()) > max_distance {
+        return max_distance + 1;
+    }
+    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
+    let mut current = vec![0; right_chars.len() + 1];
+    for (left_index, left_char) in left_chars.iter().enumerate() {
+        current[0] = left_index + 1;
+        let mut row_min = current[0];
+        for (right_index, right_char) in right_chars.iter().enumerate() {
+            let cost = usize::from(left_char != right_char);
+            current[right_index + 1] = (current[right_index] + 1)
+                .min(previous[right_index + 1] + 1)
+                .min(previous[right_index] + cost);
+            row_min = row_min.min(current[right_index + 1]);
+        }
+        if row_min > max_distance {
+            return max_distance + 1;
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    previous[right_chars.len()]
+}
+
+fn round_score(score: f64) -> f64 {
+    (score * 100.0).round() / 100.0
 }
 
 #[derive(Clone, Debug, Error, Serialize, Deserialize, PartialEq)]
@@ -737,6 +1233,7 @@ impl ToolOperationEnvelope {
         }
 
         match self.op.as_str() {
+            "search" => Ok(None),
             "list" | "read_doc" => {
                 if self
                     .path
@@ -761,7 +1258,7 @@ impl ToolOperationEnvelope {
             other => Err(ToolFsError::new(
                 "unknown_tool_fs_operation",
                 format!("Unknown Tool-FS operation: {other}"),
-                "Use list, read_doc, inspect, or run.",
+                "Use search, list, read_doc, inspect, or run.",
             )),
         }
     }
@@ -1490,6 +1987,22 @@ fn builtin_manifests() -> Vec<ToolManifest> {
             Some("browser_read"),
         ),
         s(
+            "/tools/browser/find",
+            "browser",
+            "find",
+            "Find in browser page",
+            "Search text within a browser page and optionally reveal the selected match.",
+            Some("browser_find"),
+        ),
+        s(
+            "/tools/browser/locate",
+            "browser",
+            "locate",
+            "Locate browser page section",
+            "Find or semantically locate text on a browser page, reveal it, and map nearby controls.",
+            Some("browser_locate"),
+        ),
+        s(
             "/tools/browser/see",
             "browser",
             "see",
@@ -1528,6 +2041,30 @@ fn builtin_manifests() -> Vec<ToolManifest> {
             "Submit browser control",
             "Submit focused browser control.",
             None,
+        ),
+        s(
+            "/tools/browser/scroll",
+            "browser",
+            "scroll",
+            "Scroll browser page",
+            "Scroll the browser viewport or a target area before mapping or interacting.",
+            Some("browser_scroll"),
+        ),
+        s(
+            "/tools/browser/scroll_to_target",
+            "browser",
+            "scroll_to_target",
+            "Scroll to browser target",
+            "Bring a mapped browser target near the visible viewport center.",
+            Some("browser_scroll_to_target"),
+        ),
+        s(
+            "/tools/browser/ensure_visible",
+            "browser",
+            "ensure_visible",
+            "Ensure browser target visible",
+            "Auto-scroll a browser target or point into the visible viewport before acting.",
+            Some("browser_ensure_visible"),
         ),
         s(
             "/tools/browser/wait",
@@ -1648,6 +2185,14 @@ fn builtin_manifests() -> Vec<ToolManifest> {
             "Edit file",
             "Replace text in a workspace file.",
             None,
+        ),
+        s(
+            "/tools/filesystem/strict_edit",
+            "filesystem",
+            "strict_edit",
+            "Strict edit",
+            "Replace exact text in a file after verifying the file was read and has not changed.",
+            Some("strict_edit"),
         ),
         s(
             "/tools/filesystem/multi_edit",
@@ -1979,6 +2524,10 @@ fn s(
     summary: &str,
     handle: Option<&str>,
 ) -> ToolManifest {
+    let description = description_for(path, domain, operation, title, summary);
+    let aliases = aliases_for(domain, operation, title);
+    let examples = examples_for(domain, operation, title);
+    let tags = tags_for(domain, operation);
     ToolManifest {
         path: path.to_string(),
         handle: handle.map(str::to_string),
@@ -1986,6 +2535,10 @@ fn s(
         operation: operation.to_string(),
         title: title.to_string(),
         summary: summary.to_string(),
+        description,
+        aliases,
+        examples,
+        tags,
         risk_level: risk_level(domain, operation).to_string(),
         permission_policy: permission_policy(domain, operation).to_string(),
         input_schema: input_schema_for(path, domain, operation),
@@ -1995,9 +2548,403 @@ fn s(
     }
 }
 
+fn description_for(
+    path: &str,
+    domain: &str,
+    operation: &str,
+    title: &str,
+    summary: &str,
+) -> String {
+    let purpose = match (domain, operation) {
+        ("filesystem", "read") if path.ends_with("/read_file") => {
+            "Use when the agent needs to open, inspect, or quote a complete file from the workspace."
+        }
+        ("filesystem", "read") => {
+            "Use when the agent needs a precise line range from a workspace file without loading the whole file."
+        }
+        ("filesystem", "list") => {
+            "Use when the agent needs to browse a directory, see file names, or understand project structure."
+        }
+        ("filesystem", "glob") => {
+            "Use when the agent knows a file name pattern, extension, or glob and needs matching paths."
+        }
+        ("filesystem", "write") => {
+            "Use when the agent must create or replace a whole workspace file."
+        }
+        ("filesystem", "strict_edit") => {
+            "Use when the agent must safely modify existing file text with an exact replacement after reading the current file."
+        }
+        ("filesystem", "edit" | "multiedit") => {
+            "Use when the agent must update existing file text with exact replacements."
+        }
+        ("filesystem", "apply_patch") => {
+            "Use when the agent must make structured multi-file code or text edits through a patch."
+        }
+        ("code", "search_text" | "project") => {
+            "Use when the agent needs to find real code snippets, project text, function calls, labels, strings, or file content."
+        }
+        ("code", "search_symbol") => {
+            "Use when the agent needs to find classes, functions, components, methods, symbols, or definitions."
+        }
+        ("code", "graph_expand") => {
+            "Use when the agent needs related imports, dependency context, call graph clues, or nearby code relationships."
+        }
+        ("code", "query") => {
+            "Use when the agent needs language-server diagnostics, symbol metadata, references, or editor intelligence."
+        }
+        ("shell", "run") => {
+            "Use when the agent needs to run a bounded non-interactive shell command, test, build, lint, typecheck, or inspect the system."
+        }
+        ("terminal", "run" | "input" | "write" | "keys" | "act") => {
+            "Use when the agent needs to operate an interactive terminal session or terminal UI."
+        }
+        ("terminal", _) => {
+            "Use when the agent needs to inspect, manage, wait for, or read persistent terminal sessions."
+        }
+        ("git", "status") => {
+            "Use when the agent needs the repository working tree state, changed files, staged files, or branch cleanliness."
+        }
+        ("git", "diff") => {
+            "Use when the agent needs to review exact source changes before explaining, committing, or editing further."
+        }
+        ("git", "log" | "show" | "branch") => {
+            "Use when the agent needs commit history, the current branch, or a specific Git object."
+        }
+        ("git", "stage" | "unstage" | "discard") => {
+            "Use when the agent needs to mutate Git index or working tree state."
+        }
+        ("browser", "read" | "read_until") => {
+            "Use when the agent needs readable text, page state, or content from a Lyra browser or Lumen page."
+        }
+        ("browser", "find" | "locate") => {
+            "Use when the agent needs to search, reveal, or semantically locate text or a section within a Lyra browser page before mapping nearby controls."
+        }
+        ("browser", "map" | "focus_scan" | "explain_target") => {
+            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements."
+        }
+        ("browser", "see") => {
+            "Use when the agent needs a visual screenshot or bitmap observation of the browser page."
+        }
+        ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => {
+            "Use when the agent needs to scroll a browser page, bring an offscreen button or input into view, keep the Agent cursor visible, or recover after a mapped target is outside the viewport."
+        }
+        ("browser", "act" | "type" | "press" | "submit" | "navigate" | "wait" | "reveal") => {
+            "Use when the agent needs to interact with, navigate, type into, click, wait for, or reveal browser page controls."
+        }
+        ("workbench", _) => {
+            "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
+        }
+        ("web", "search") => {
+            "Use when the agent needs current web search results from the network."
+        }
+        ("web", "fetch") => "Use when the agent needs to download or inspect a known URL.",
+        ("memory", "search" | "list" | "explain_injection") => {
+            "Use when the agent needs stored Lyra memory, user preferences, project facts, or memory injection diagnostics."
+        }
+        ("memory", _) => {
+            "Use when the agent needs to create, update, connect, review, or remove durable Lyra memory records."
+        }
+        ("todo", "read") => "Use when the agent needs current task checklist or progress state.",
+        ("todo", "write") => "Use when the agent needs to update the active task checklist.",
+        ("design", _) => {
+            "Use when the agent needs Lyra design references, visual style guidance, or UI implementation patterns."
+        }
+        ("software", _) => {
+            "Use when the agent needs to inspect or invoke installed Lyra software adapter capabilities."
+        }
+        ("skills", _) => {
+            "Use when the agent needs to discover, inspect, activate, or deactivate Lyra skills."
+        }
+        ("mcp", _) => {
+            "Use when the agent needs to manage MCP servers or discover, inspect, and execute MCP tools."
+        }
+        ("runtime", "read") => {
+            "Use when the agent needs to reopen a Lyra-owned artifact, large output, screenshot, or tool data reference."
+        }
+        _ => "Use when the agent needs this Tool-FS capability for the current Lyra task.",
+    };
+    format!(
+        "{title}. {summary} {purpose} Tool path: {path}. Domain: {domain}. Operation: {operation}."
+    )
+}
+
+fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
+    let mut aliases = vec![
+        title.to_string(),
+        title.to_ascii_lowercase(),
+        domain.replace('_', " "),
+        operation.replace('_', " "),
+    ];
+    aliases.extend(
+        match (domain, operation) {
+            ("filesystem", "list") => vec!["browse files", "list directory", "查看文件", "列目录"],
+            ("filesystem", "read") => vec!["open file", "read source", "查看文件", "读取文件"],
+            ("filesystem", "glob") => vec!["find file", "file pattern", "glob search", "找文件"],
+            ("filesystem", "write") => vec!["create file", "overwrite file", "写文件", "新建文件"],
+            ("filesystem", "strict_edit") => {
+                vec![
+                    "strict edit",
+                    "safe edit",
+                    "exact replacement",
+                    "replace text after reading",
+                    "modify file",
+                    "edit code",
+                    "修改文件",
+                    "精确替换",
+                    "安全编辑",
+                ]
+            }
+            ("filesystem", "edit" | "multiedit") => {
+                vec![
+                    "modify file",
+                    "replace text",
+                    "edit code",
+                    "修改文件",
+                    "编辑代码",
+                ]
+            }
+            ("filesystem", "apply_patch") => {
+                vec![
+                    "patch files",
+                    "apply diff",
+                    "code edit",
+                    "修改代码",
+                    "打补丁",
+                ]
+            }
+            ("code", "search_text" | "project") => {
+                vec![
+                    "search code",
+                    "find snippet",
+                    "grep",
+                    "搜索代码",
+                    "查代码片段",
+                ]
+            }
+            ("code", "search_symbol") => {
+                vec![
+                    "find symbol",
+                    "find definition",
+                    "function search",
+                    "搜索函数",
+                    "查定义",
+                ]
+            }
+            ("code", "graph_expand") => vec!["related code", "imports", "dependencies", "代码关系"],
+            ("code", "query") => vec!["lsp", "diagnostics", "references", "语言服务", "诊断"],
+            ("shell", "run") => vec![
+                "run command",
+                "execute command",
+                "test command",
+                "执行命令",
+                "跑测试",
+            ],
+            ("terminal", _) => vec!["terminal", "interactive command", "终端", "交互命令"],
+            ("git", "status") => vec!["git status", "changed files", "工作区状态", "查看改动"],
+            ("git", "diff") => vec!["git diff", "review changes", "查看 diff", "代码变更"],
+            ("git", "log" | "show" | "branch") => {
+                vec!["git history", "commit", "branch", "提交历史"]
+            }
+            ("git", "stage" | "unstage" | "discard") => {
+                vec!["git mutation", "stage file", "撤销改动"]
+            }
+            ("browser", "read" | "read_until") => {
+                vec!["read page", "browser text", "读取网页", "页面内容"]
+            }
+            ("browser", "find" | "locate") => vec![
+                "find page text",
+                "search in page",
+                "locate section",
+                "jump to text",
+                "semantic page search",
+                "查找网页内容",
+                "跳到页面位置",
+                "定位页面段落",
+            ],
+            ("browser", "map" | "focus_scan" | "explain_target") => {
+                vec![
+                    "find button",
+                    "page controls",
+                    "DOM map",
+                    "找按钮",
+                    "页面元素",
+                ]
+            }
+            ("browser", "see") => vec!["screenshot", "visual page", "截图", "看页面"],
+            ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => vec![
+                "scroll page",
+                "scroll down",
+                "scroll up",
+                "bring target into view",
+                "ensure visible",
+                "cursor offscreen",
+                "button outside viewport",
+                "滚动页面",
+                "向下滚动",
+                "滚到按钮附近",
+                "让目标可见",
+                "光标不可见",
+            ],
+            ("browser", _) => vec![
+                "click page",
+                "type in browser",
+                "navigate page",
+                "浏览器操作",
+            ],
+            ("workbench", _) => vec!["workspace tabs", "active tab", "工作区", "标签页"],
+            ("web", "search") => vec!["internet search", "search web", "联网搜索", "网页搜索"],
+            ("web", "fetch") => vec!["fetch url", "download page", "读取链接", "抓取网页"],
+            ("memory", _) => vec![
+                "memory",
+                "remember user",
+                "long term memory",
+                "记忆",
+                "偏好",
+            ],
+            ("todo", "read") => vec!["read todo", "task list", "待办", "任务列表"],
+            ("todo", "write") => vec!["update todo", "checklist", "更新待办", "计划"],
+            ("design", _) => vec!["design reference", "UI style", "设计参考", "界面风格"],
+            ("software", _) => vec!["app capability", "software adapter", "应用能力"],
+            ("skills", _) => vec!["skill", "plugin skill", "技能"],
+            ("mcp", _) => vec!["mcp", "external tool", "外部工具"],
+            ("runtime", "read") => vec!["read artifact", "open artifact", "查看产物", "大输出"],
+            _ => vec!["tool", "capability", "工具"],
+        }
+        .into_iter()
+        .map(str::to_string),
+    );
+    dedupe_strings(aliases)
+}
+
+fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
+    let specific = match (domain, operation) {
+        ("filesystem", "read") => vec!["Read src/main.rs before editing.", "查看这个文件的内容。"],
+        ("filesystem", "strict_edit") => {
+            vec![
+                "Read a file, then safely replace one exact string.",
+                "先读取文件，然后精确替换一段代码。",
+            ]
+        }
+        ("filesystem", "edit" | "multiedit") => {
+            vec!["Replace an exact string in a file.", "把按钮标题改掉。"]
+        }
+        ("filesystem", "apply_patch") => vec![
+            "Patch multiple files after locating the bug.",
+            "批量修改代码。",
+        ],
+        ("code", "search_text" | "project") => vec![
+            "Search for the text 新回话 in the project.",
+            "Find every caller of createSession.",
+        ],
+        ("code", "search_symbol") => vec![
+            "Find the React component or Rust function definition.",
+            "查找函数定义。",
+        ],
+        ("shell", "run") => vec!["Run cargo test or npm typecheck.", "执行测试命令。"],
+        ("git", "status") => vec![
+            "Check whether the repo has uncommitted changes.",
+            "查看 Git 状态。",
+        ],
+        ("git", "diff") => vec![
+            "Inspect the exact changes before summarizing.",
+            "查看某个文件 diff。",
+        ],
+        ("browser", "read" | "read_until") => {
+            vec!["Read the visible browser page text.", "读取当前网页内容。"]
+        }
+        ("browser", "find" | "locate") => {
+            vec![
+                "Find a visible browser page phrase and reveal the match.",
+                "Locate a long page section before mapping nearby controls.",
+            ]
+        }
+        ("browser", "map" | "focus_scan" | "explain_target") => {
+            vec!["Find the submit button on the page.", "定位页面按钮。"]
+        }
+        ("browser", "act" | "type" | "press" | "submit" | "navigate") => {
+            vec![
+                "Click a browser target or type into an input.",
+                "在浏览器里输入并提交。",
+            ]
+        }
+        ("browser", "scroll") => vec![
+            "Scroll the browser down one viewport and map again.",
+            "页面没有看到目标时先向下滚动。",
+        ],
+        ("browser", "scroll_to_target") => vec![
+            "Bring targetRef lumen:... near the viewport center before clicking.",
+            "把已映射的按钮滚动到屏幕中间附近。",
+        ],
+        ("browser", "ensure_visible") => vec![
+            "Ensure an offscreen targetRef is visible before act or type.",
+            "光标定位到按钮但按钮不在可见区域时先拉回可见区域。",
+        ],
+        ("workbench", _) => vec![
+            "Inspect open Lyra tabs and active workspace state.",
+            "查看当前工作区标签页。",
+        ],
+        ("web", "search") => vec!["Search the web for recent documentation.", "联网搜索资料。"],
+        ("web", "fetch") => vec!["Fetch a known documentation URL.", "读取指定网页。"],
+        ("memory", "search") => vec![
+            "Find saved user preferences or project facts.",
+            "搜索记忆里的偏好。",
+        ],
+        ("todo", "write") => vec!["Mark a plan step as completed.", "更新任务清单。"],
+        ("terminal", _) => vec![
+            "Read or operate an existing terminal pane.",
+            "操作交互式终端。",
+        ],
+        ("runtime", "read") => vec![
+            "Open a large stdout artifact or screenshot ref.",
+            "查看工具产物。",
+        ],
+        _ => vec!["Use this capability when the task asks for it."],
+    };
+    let mut examples = vec![format!("Use {title} for a matching Lyra task.")];
+    examples.extend(specific.into_iter().map(str::to_string));
+    dedupe_strings(examples)
+}
+
+fn tags_for(domain: &str, operation: &str) -> Vec<String> {
+    let mut tags = vec![domain.to_string(), operation.to_string()];
+    tags.extend(
+        match domain {
+            "filesystem" => vec!["file", "workspace", "code"],
+            "code" => vec!["search", "source", "symbol"],
+            "shell" => vec!["command", "test", "build"],
+            "terminal" => vec!["interactive", "process", "pane"],
+            "git" => vec!["repo", "diff", "commit"],
+            "browser" => vec!["page", "lumen", "dom"],
+            "workbench" => vec!["workspace", "tabs", "state"],
+            "web" => vec!["network", "url", "internet"],
+            "memory" => vec!["memory", "preference", "profile"],
+            "todo" => vec!["task", "plan", "checklist"],
+            "design" => vec!["ui", "style", "reference"],
+            "software" => vec!["adapter", "app", "capability"],
+            "skills" => vec!["skill", "activation", "instructions"],
+            "mcp" => vec!["server", "external", "tool"],
+            "runtime" => vec!["artifact", "projection", "large-output"],
+            _ => vec!["tool"],
+        }
+        .into_iter()
+        .map(str::to_string),
+    );
+    dedupe_strings(tags)
+}
+
+fn dedupe_strings(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert(value.to_ascii_lowercase()))
+        .collect()
+}
+
 fn risk_level(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
-        ("filesystem", "write" | "edit" | "multiedit" | "apply_patch") => "file",
+        ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "file",
         ("shell", "run") => "shell",
         ("terminal", "run" | "write" | "input" | "keys" | "resize" | "signal" | "act") => {
             "terminal"
@@ -2020,7 +2967,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
 
 fn permission_policy(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
-        ("filesystem", "write" | "edit" | "multiedit" | "apply_patch")
+        ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
         | ("shell", "run")
         | ("git", "stage" | "unstage" | "discard")
         | ("browser", "elevate") => "ask_on_risk",
@@ -2040,7 +2987,7 @@ fn output_kind(domain: &str, operation: &str) -> &'static str {
 
 fn activity_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
-        ("filesystem", "write" | "edit" | "multiedit" | "apply_patch") => "edit",
+        ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
         ("code", _) => "search",
         ("shell", _) => "shell",
@@ -2057,7 +3004,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
 fn renderer_hint(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("browser", _) => "lumen",
-        ("filesystem", "write" | "edit" | "multiedit" | "apply_patch") => "edit",
+        ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
         ("code", _) => "search",
         ("git", _) => "git",
@@ -2131,6 +3078,20 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("path", string("Workspace file path.")),
                 ("oldString", string("Exact text to replace.")),
                 ("newString", string("Replacement text.")),
+                ("replaceAll", json!({ "type": "boolean", "default": false })),
+            ],
+            &["path", "oldString", "newString"],
+        ),
+        ("filesystem", "strict_edit") => object_schema(
+            [
+                ("path", string("Workspace file path that was already read.")),
+                ("oldString", string("Exact unique text to replace.")),
+                ("newString", string("Replacement text.")),
+                ("replaceAll", json!({ "type": "boolean", "default": false })),
+                (
+                    "expectedReadVersion",
+                    string("Optional readVersion returned by read_file/read_range."),
+                ),
             ],
             &["path", "oldString", "newString"],
         ),
@@ -2172,10 +3133,23 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ("shell", "run") => object_schema(
             [
                 ("command", string("Command to run.")),
+                ("cwd", working_dir.clone()),
                 ("workingDir", working_dir.clone()),
+                (
+                    "description",
+                    string("Short active-voice summary of what this command does."),
+                ),
+                (
+                    "runInBackground",
+                    json!({ "type": "boolean", "default": false }),
+                ),
                 (
                     "timeoutMs",
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+                (
+                    "maxOutputBytes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 1000000 }),
                 ),
             ],
             &["command"],
@@ -2225,7 +3199,73 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 ("targetRef", string("Lumen target reference.")),
                 ("elementId", json!({ "type": ["integer", "string"] })),
+                (
+                    "direction",
+                    json!({ "type": "string", "enum": ["up", "down", "left", "right", "current", "next", "previous", "scan"], "description": "Scroll direction for /tools/browser/scroll, find navigation for /tools/browser/find, or focus scan direction." }),
+                ),
+                (
+                    "amount",
+                    json!({ "type": "number", "minimum": 1, "maximum": 5000, "description": "Scroll pixels or wheel-like amount. Defaults to about one viewport." }),
+                ),
+                (
+                    "pages",
+                    json!({ "type": "number", "minimum": 0.1, "maximum": 10, "description": "Viewport pages to scroll; overrides amount when provided." }),
+                ),
+                (
+                    "block",
+                    json!({ "type": "string", "enum": ["start", "center", "end", "nearest"], "default": "center", "description": "Preferred target placement after scroll_to_target or ensure_visible." }),
+                ),
+                (
+                    "behavior",
+                    json!({ "type": "string", "enum": ["instant", "smooth"], "default": "instant" }),
+                ),
+                (
+                    "containerRef",
+                    string("Optional scroll container targetRef."),
+                ),
+                (
+                    "point",
+                    json!({ "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "reason": { "type": "string" } } }),
+                ),
+                (
+                    "x",
+                    json!({ "type": "number", "description": "Viewport x coordinate for point-based ensure_visible." }),
+                ),
+                (
+                    "y",
+                    json!({ "type": "number", "description": "Viewport y coordinate for point-based ensure_visible." }),
+                ),
+                ("autoMap", json!({ "type": "boolean", "default": true })),
                 ("text", string("Text for type operations.")),
+                ("query", string("Text query for /tools/browser/find or /tools/browser/locate.")),
+                (
+                    "matchMode",
+                    json!({ "type": "string", "enum": ["exact", "semantic"], "default": "semantic", "description": "Match mode for /tools/browser/locate." }),
+                ),
+                (
+                    "activeIndex",
+                    json!({ "type": "number", "minimum": 0, "description": "Current 1-based match index for browser find navigation." }),
+                ),
+                (
+                    "caseSensitive",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "maxMatches",
+                    json!({ "type": "number", "minimum": 1, "maximum": 100 }),
+                ),
+                (
+                    "reveal",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "autoMap",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "nearbyLimit",
+                    json!({ "type": "number", "minimum": 1, "maximum": 20 }),
+                ),
                 ("url", string("URL for navigate operations.")),
                 (
                     "timeoutMs",
@@ -2377,16 +3417,22 @@ fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {
 fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
     match scene {
         ToolScene::ProjectCode => vec![
-            "read_file",
             "find_files",
             "search_code",
-            "search_symbol",
+            "read_file",
+            "read_range",
+            "strict_edit",
             "apply_patch",
             "run_command",
+            "git_status",
+            "git_diff",
+            "todo_write",
         ],
         ToolScene::Git => vec![
-            "read_file",
             "search_code",
+            "read_file",
+            "read_range",
+            "strict_edit",
             "apply_patch",
             "run_command",
             "git_status",
@@ -2401,6 +3447,8 @@ fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
         ],
         ToolScene::Browser => vec![
             "workbench_list_tabs",
+            "browser_locate",
+            "browser_find",
             "browser_map",
             "browser_read",
             "web_search",
@@ -2518,6 +3566,141 @@ mod tests {
     }
 
     #[test]
+    fn provider_visible_names_include_search_first() {
+        assert_eq!(
+            provider_tool_names(),
+            vec![
+                "tool_fs_search".to_string(),
+                "tool_fs_list".to_string(),
+                "tool_fs_read_doc".to_string(),
+                "tool_fs_inspect".to_string(),
+                "tool_fs_run".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
+        let registry = ToolFsRegistry::default();
+        let edit = registry
+            .search("修改文件 edit code", None, 0, 5, ToolScene::ProjectCode)
+            .expect("edit search");
+        assert!(
+            edit.results
+                .iter()
+                .any(|result| result.path == "/tools/filesystem/apply_patch")
+                || edit
+                    .results
+                    .iter()
+                    .any(|result| result.path == "/tools/filesystem/edit_file")
+        );
+
+        let command = registry
+            .search("执行测试命令", None, 0, 5, ToolScene::ProjectCode)
+            .expect("command search");
+        assert!(
+            command
+                .results
+                .iter()
+                .any(|result| result.path == "/tools/shell/run_command")
+        );
+
+        let git = registry
+            .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)
+            .expect("git search");
+        assert_eq!(
+            git.results.first().map(|result| result.path.as_str()),
+            Some("/tools/git/diff")
+        );
+
+        let browser = registry
+            .search("brower page text", None, 0, 5, ToolScene::Browser)
+            .expect("browser fuzzy search");
+        assert!(
+            browser
+                .results
+                .iter()
+                .any(|result| result.path == "/tools/browser/read")
+        );
+
+        let browser_find = registry
+            .search("search in page locate section", None, 0, 5, ToolScene::Browser)
+            .expect("browser find search");
+        assert!(browser_find.results.iter().any(|result| {
+            result.path == "/tools/browser/find" || result.path == "/tools/browser/locate"
+        }));
+
+        let browser_locate = registry
+            .search("定位页面段落", None, 0, 5, ToolScene::Browser)
+            .expect("browser locate search");
+        assert!(
+            browser_locate
+                .results
+                .iter()
+                .any(|result| result.path == "/tools/browser/locate")
+        );
+
+        let browser_scroll = registry
+            .search(
+                "滚到按钮附近 bring target into view",
+                None,
+                0,
+                5,
+                ToolScene::Browser,
+            )
+            .expect("browser scroll search");
+        assert!(browser_scroll.results.iter().any(|result| {
+            result.path == "/tools/browser/scroll_to_target"
+                || result.path == "/tools/browser/ensure_visible"
+                || result.path == "/tools/browser/scroll"
+        }));
+
+        let code = registry
+            .search(
+                "search code snippet 新回话",
+                Some("code"),
+                0,
+                5,
+                ToolScene::ProjectCode,
+            )
+            .expect("code search");
+        assert!(code.results.iter().all(|result| result.domain == "code"));
+        assert!(
+            code.results
+                .iter()
+                .any(|result| result.path == "/tools/code/search_code")
+        );
+    }
+
+    #[test]
+    fn registry_search_returns_fallback_for_unknown_query() {
+        let registry = ToolFsRegistry::default();
+        let response = registry
+            .search(
+                "zzzzqqqq xxyyzzww",
+                Some("filesystem"),
+                0,
+                5,
+                ToolScene::General,
+            )
+            .expect("search response");
+        assert!(response.results.is_empty());
+        assert_eq!(response.fallback_list_path, "/tools/filesystem");
+        assert!(response.recommended_next_action.contains("tool_fs_list"));
+    }
+
+    #[test]
+    fn builtin_manifests_have_searchable_metadata() {
+        let registry = ToolFsRegistry::default();
+        for manifest in registry.manifests() {
+            assert!(!manifest.description.trim().is_empty(), "{}", manifest.path);
+            assert!(!manifest.aliases.is_empty(), "{}", manifest.path);
+            assert!(!manifest.examples.is_empty(), "{}", manifest.path);
+            assert!(!manifest.tags.is_empty(), "{}", manifest.path);
+        }
+    }
+
+    #[test]
     fn manifest_input_schemas_have_stable_ids() {
         let registry = ToolFsRegistry::default();
         for manifest in registry.manifests() {
@@ -2554,6 +3737,10 @@ mod tests {
             operation: "read".to_string(),
             title: "Test tool".to_string(),
             summary: "A test tool.".to_string(),
+            description: "Test tool description for search.".to_string(),
+            aliases: vec!["test read".to_string()],
+            examples: vec!["Use this test tool.".to_string()],
+            tags: vec!["test".to_string()],
             risk_level: "read".to_string(),
             permission_policy: "runtime_policy".to_string(),
             input_schema: attach_schema_id(path, json!({ "type": "object", "properties": {} })),
@@ -3056,9 +4243,12 @@ mod tests {
             .map(|manifest| manifest.path.as_str())
             .collect::<HashSet<_>>();
         assert_eq!(general_paths, project_paths);
-        assert_eq!(
-            project_filesystem.tools[0].path,
-            "/tools/filesystem/read_file"
+        assert_eq!(project_filesystem.tools[0].path, "/tools/filesystem/glob");
+        assert!(
+            registry
+                .pinned_handles(ToolScene::ProjectCode)
+                .iter()
+                .any(|handle| handle.handle == "strict_edit")
         );
     }
 

@@ -42,6 +42,7 @@ fn model_tool_names(request: &Value) -> Vec<String> {
 
 fn expected_provider_tool_names() -> Vec<String> {
     vec![
+        "tool_fs_search".to_string(),
         "tool_fs_list".to_string(),
         "tool_fs_read_doc".to_string(),
         "tool_fs_inspect".to_string(),

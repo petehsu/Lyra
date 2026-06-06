@@ -20,9 +20,13 @@ export type WorkbenchBrowserSearchInPageRequest = {
   readonly query: string;
   readonly caseSensitive?: boolean;
   readonly maxMatches?: number;
+  readonly activeIndex?: number;
+  readonly direction?: "current" | "next" | "previous";
+  readonly reveal?: boolean;
 };
 
 export type WorkbenchBrowserSearchInPageMatch = {
+  readonly id: string;
   readonly index: number;
   readonly startChar: number;
   readonly endChar: number;
@@ -34,9 +38,17 @@ export type WorkbenchBrowserSearchInPageResult = {
   readonly address: string;
   readonly title: string;
   readonly query: string;
+  readonly currentIndex: number;
+  readonly activeMatchId?: string;
   readonly totalMatches: number;
   readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
   readonly truncated: boolean;
+};
+
+export type WorkbenchBrowserOmniboxSuggestion = {
+  readonly value: string;
+  readonly type: "history" | "search";
+  readonly label?: string;
 };
 
 export type WorkbenchBrowserClientRect = {
@@ -49,19 +61,52 @@ export type WorkbenchBrowserClientRect = {
 };
 
 export type WorkbenchBrowserSecurityLevel = "secure" | "insecure" | "system";
+export type WorkbenchBrowserSecurityLocale = "zh-CN" | "en-US";
+
+export type WorkbenchBrowserCertificateInfo = {
+  readonly subject?: string;
+  readonly subjectCommonName?: string;
+  readonly issuer?: string;
+  readonly issuerCommonName?: string;
+  readonly validFrom?: string;
+  readonly validTo?: string;
+  readonly serialNumber?: string;
+  readonly fingerprint256?: string;
+  readonly subjectAltName?: string;
+};
 
 export type WorkbenchBrowserChromeSecurityPopoverPayload = {
   readonly level: WorkbenchBrowserSecurityLevel;
   readonly address: string;
   readonly domain: string;
+  readonly locale?: WorkbenchBrowserSecurityLocale;
+  readonly scheme?: string;
+  readonly origin?: string;
+  readonly certificate?: WorkbenchBrowserCertificateInfo;
+  readonly certificateStatus?: "available" | "unavailable" | "not-applicable";
+  readonly certificateUnavailableReason?: string;
 };
 
 export type WorkbenchBrowserChromePopoverRequest = {
   readonly tabId?: string;
-  readonly kind: "security";
+  readonly kind: "security" | "find" | "omnibox";
   readonly visible: boolean;
   readonly anchorRect?: WorkbenchBrowserClientRect;
   readonly security?: WorkbenchBrowserChromeSecurityPopoverPayload;
+  readonly find?: {
+    readonly query: string;
+    readonly placeholder?: string;
+    readonly currentIndex: number;
+    readonly totalMatches: number;
+    readonly activeMatchId?: string;
+    readonly matches: readonly WorkbenchBrowserSearchInPageMatch[];
+    readonly truncated?: boolean;
+  };
+  readonly omnibox?: {
+    readonly value: string;
+    readonly selectedIndex: number;
+    readonly suggestions: readonly WorkbenchBrowserOmniboxSuggestion[];
+  };
 };
 
 export type WorkbenchBrowserSetElementPickerModeRequest = {
@@ -1144,6 +1189,7 @@ export type WorkbenchLumenActivityAction =
   | "wait"
   | "navigate"
   | "focus"
+  | "scroll"
   | "act"
   | "type"
   | "press"
@@ -1559,8 +1605,22 @@ export type WorkbenchBrowserEvent =
   | {
       readonly kind: "chrome-popover-state";
       readonly tabId: string;
-      readonly popoverKind: "security";
+      readonly popoverKind: "security" | "find" | "omnibox";
       readonly visible: boolean;
+    }
+  | {
+      readonly kind: "request-page-find";
+      readonly tabId: string;
+    }
+  | {
+      readonly kind: "request-page-find-match-select";
+      readonly tabId: string;
+      readonly index: number;
+    }
+  | {
+      readonly kind: "request-omnibox-suggestion-select";
+      readonly tabId: string;
+      readonly index: number;
     }
   | WorkbenchBrowserSharedControlStateEvent
   | WorkbenchBrowserSharedControlEvent

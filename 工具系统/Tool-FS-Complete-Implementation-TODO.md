@@ -17,7 +17,7 @@
 
 ## 删除架构文档的总验收门槛
 
-- [x] Provider-visible tools 永远只包含 `tool_fs_list`、`tool_fs_read_doc`、`tool_fs_inspect`、`tool_fs_run`、`lyra_turn_finish`。
+- [x] Provider-visible tools 永远只包含 `tool_fs_search`、`tool_fs_list`、`tool_fs_read_doc`、`tool_fs_inspect`、`tool_fs_run`、`lyra_turn_finish`。
 - [x] `/tools` 是所有当前 Lyra 内置/host 工具的唯一 public discovery source；runtime 测试已断言 provider schema 不含具体旧工具名，核心 domain 必须从 `/tools` 根目录发现。
 - [x] `inspect` 输出只包含 Tool-FS manifest 字段、schema refs 和 input schema，不包含 `legacyName` 或旧 direct tool name。
 - [x] 所有具体工具执行都通过 `tool_fs_run` 进入 `ToolOperationEnvelope -> validate -> policy gate -> runtime adapter -> ToolResultEnvelope`。
@@ -29,7 +29,7 @@
 ## 当前基线
 
 - [x] 已新增 `crates/lyra-tool-fs-core`，包含 manifest、registry、operation/result envelope、change record、trace record、scene package。
-- [x] `model_tools()` 和 `model_tool_names()` 主路径已收口到 4 个 `tool_fs_*` 加 `lyra_turn_finish`。
+- [x] `model_tools()` 和 `model_tool_names()` 主路径已收口到 5 个 `tool_fs_*` 加 `lyra_turn_finish`。
 - [x] `tool_fs_run` 已有 envelope、validate、trace、result projection 主流程。
 - [x] 静态内置工具大多已有 `/tools/<domain>/<operation>` 路径。
 - [x] dynamic software capability 已可通过 `/tools/software/capability/<softwareId>/<actionId>` discover、inspect、run。
@@ -44,8 +44,8 @@
 
 ## P0: Public Surface 硬切完成
 
-- [x] `lyra-agent-runtime` 的 `model_tools()` 只返回 4 个 `tool_fs_*` 和 `lyra_turn_finish`。
-- [x] `model_tool_names()` 只返回上述 5 个名称。
+- [x] `lyra-agent-runtime` 的 `model_tools()` 只返回 5 个 `tool_fs_*` 和 `lyra_turn_finish`。
+- [x] `model_tool_names()` 只返回上述 6 个名称。
 - [x] 旧 direct tool name 调用返回结构化 `tool_not_found`。
 - [x] 删除所有不可达的旧 direct provider schema/fallback 分支。
 - [x] 删除 `LYRA_AGENT_DISABLE_TOOL_REGISTRY` 等旧 registry bypass 环境分支；当前 `rg` 无命中。
@@ -63,7 +63,7 @@ rg 'LYRA_AGENT_DISABLE_TOOL_REGISTRY' crates/lyra-agent-runtime
 
 ## P0: Tool-FS Core 成为唯一 Manifest Source
 
-- [x] `ToolManifest` 字段固定为 `path/handle/domain/operation/title/summary/riskLevel/permissionPolicy/inputSchema/outputKind/activityKind/rendererHint`。
+- [x] `ToolManifest` 字段固定为 `path/handle/domain/operation/title/summary/description/aliases/examples/tags/riskLevel/permissionPolicy/inputSchema/outputKind/activityKind/rendererHint`。
 - [x] `ToolFsRegistry::with_providers` 支持 provider 注入和去重。
 - [x] manifest JSON 不含 `legacyName`。
 - [x] 将所有静态内置 manifest 审计一遍，确保标题、summary、risk、permission、rendererHint 与真实 adapter 行为一致。

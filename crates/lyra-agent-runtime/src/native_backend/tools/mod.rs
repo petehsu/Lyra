@@ -443,7 +443,7 @@ pub(crate) fn execute_model_tool(
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
-        "Use tool_fs_list, tool_fs_inspect, and tool_fs_run to discover and execute Lyra tools.",
+        "Use tool_fs_search first, then tool_fs_list as a fallback, tool_fs_inspect for schemas, and tool_fs_run to execute Lyra tools.",
         None,
     );
     record_tool_activity(
@@ -1758,7 +1758,12 @@ pub(crate) fn native_permission_request_for_tool(
     action: &str,
     input: &Value,
 ) -> Option<PermissionRequest> {
-    if display_name == "file" && matches!(action, "write" | "edit" | "multiedit" | "apply_patch") {
+    if display_name == "file"
+        && matches!(
+            action,
+            "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch"
+        )
+    {
         let mut permission_input = input.clone();
         if let Some(object) = permission_input.as_object_mut() {
             object.insert("permissionRequired".to_string(), Value::Bool(true));
@@ -1801,12 +1806,7 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
     let Some(command) = input.get("command").and_then(Value::as_str) else {
         return false;
     };
-    if shell_command_has_control_operator(command) {
-        return false;
-    }
-    shlex::split(command)
-        .filter(|tokens| !tokens.is_empty())
-        .is_some_and(|tokens| command_requires_permission(&tokens))
+    shell_command_requires_permission(command)
 }
 
 pub(crate) fn run_native_tool(
@@ -1823,6 +1823,7 @@ pub(crate) fn run_native_tool(
         "file_glob" => tool_file_glob(session_id, input),
         "file_write" => tool_file_write(session_id, turn_id, tool_call_id, input),
         "file_edit" => tool_file_edit(session_id, turn_id, tool_call_id, input),
+        "file_strict_edit" => tool_file_strict_edit(session_id, turn_id, tool_call_id, input),
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
         "apply_patch" => tool_apply_patch(session_id, turn_id, tool_call_id, input),
         "shell_run" => tool_shell_run(session_id, turn_id, tool_call_id, input),

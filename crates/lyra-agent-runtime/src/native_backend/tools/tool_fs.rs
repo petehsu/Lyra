@@ -1,11 +1,12 @@
 use super::*;
 use lyra_tool_fs_core::{
     DEFAULT_TOOL_TIMEOUT_MS, PROVIDER_VISIBLE_TOOL_NAMES, TOOL_FS_INSPECT, TOOL_FS_LIST,
-    TOOL_FS_READ_DOC, TOOL_FS_RUN, TOOL_FS_SCHEMA_VERSION, ToolChangeRecord, ToolFsError,
-    ToolFsRegistry, ToolManifest, ToolManifestProvider, ToolOperationContext,
+    TOOL_FS_READ_DOC, TOOL_FS_RUN, TOOL_FS_SCHEMA_VERSION, TOOL_FS_SEARCH, ToolChangeRecord,
+    ToolFsError, ToolFsRegistry, ToolManifest, ToolManifestProvider, ToolOperationContext,
     ToolOperationEnvelope, ToolResultEnvelope, ToolScene, ToolTraceRecord, attach_schema_id,
     provider_tool_names,
 };
+use std::collections::BTreeMap;
 
 const MAX_TOOL_FS_RAW_CHARS: usize = 32_000;
 const MAX_TOOL_FS_CONTENT_CHARS: usize = 16_000;
@@ -173,6 +174,7 @@ fn tool_fs_call_needs_dynamic_software(tool_name: &str, input: &Value) -> bool {
         .trim()
         .trim_end_matches('/');
     match tool_name {
+        TOOL_FS_SEARCH => true,
         TOOL_FS_LIST => {
             path == "/tools/software"
                 || path == "/tools/software/capability"
@@ -196,8 +198,23 @@ pub(crate) fn model_tool_names() -> Vec<String> {
 pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
+            TOOL_FS_SEARCH,
+            "Search Lyra Tool Filesystem with a natural-language task description. Prefer this before listing /tools; use results to inspect and run concrete tool paths or handles.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as edit a file, search code, show git diff, read browser page, or run tests." },
+                    "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "design", "automation"] },
+                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as filesystem, code, shell, git, browser, web, memory, todo, software, skills, or mcp." },
+                    "page": { "type": "integer", "minimum": 0, "default": 0 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
+                },
+                "required": ["query"]
+            }),
+        ),
+        function_tool(
             TOOL_FS_LIST,
-            "List Lyra Tool Filesystem directories and tool manifests. Use /tools first, then list a concrete /tools/<domain> directory.",
+            "List Lyra Tool Filesystem directories and tool manifests. Use only as a fallback after tool_fs_search, or to browse a concrete /tools/<domain> directory.",
             json!({
                 "type": "object",
                 "properties": {
@@ -474,7 +491,23 @@ fn software_action_manifests(software: &Value) -> Vec<ToolManifest> {
                 domain: "software".to_string(),
                 operation: "invoke_capability".to_string(),
                 title: action_title.to_string(),
-                summary,
+                summary: summary.clone(),
+                description: format!(
+                    "Invoke the {action_title} capability in the {software_title} Lyra software adapter. {summary} Use when the agent needs an installed app or local software integration instead of a built-in Tool-FS domain."
+                ),
+                aliases: software_capability_aliases(software_id, software_title, action_id, action_title),
+                examples: vec![
+                    format!("Use {action_title} in {software_title}."),
+                    format!("Invoke software capability {software_id}/{action_id}."),
+                    "Find and run an installed app capability.".to_string(),
+                ],
+                tags: vec![
+                    "software".to_string(),
+                    "adapter".to_string(),
+                    "capability".to_string(),
+                    software_id.to_string(),
+                    action_id.to_string(),
+                ],
                 risk_level: format!("software_{risk}"),
                 permission_policy: "host_policy".to_string(),
                 input_schema: attach_schema_id(&path, software_action_input_schema(action)),
@@ -484,6 +517,27 @@ fn software_action_manifests(software: &Value) -> Vec<ToolManifest> {
             })
         })
         .collect()
+}
+
+fn software_capability_aliases(
+    software_id: &str,
+    software_title: &str,
+    action_id: &str,
+    action_title: &str,
+) -> Vec<String> {
+    let mut values = vec![
+        software_id.to_string(),
+        software_title.to_string(),
+        action_id.to_string(),
+        action_title.to_string(),
+        format!("{software_title} {action_title}"),
+        "software adapter".to_string(),
+        "app capability".to_string(),
+        "应用能力".to_string(),
+    ];
+    values.sort();
+    values.dedup();
+    values
 }
 
 fn software_action_input_schema(action: &Value) -> Value {
@@ -525,6 +579,45 @@ pub(crate) fn execute_tool_fs_model_tool(
     started_at: &str,
 ) -> Value {
     match call.name.as_str() {
+        TOOL_FS_SEARCH => {
+            let registry = runtime_registry_for_tool_fs_call(
+                TOOL_FS_SEARCH,
+                &call.arguments,
+                dispatcher.as_ref(),
+            );
+            execute_tool_fs_read_only(
+                session_id,
+                turn_id,
+                call,
+                started_at,
+                registry,
+                |registry, input| {
+                    let scene = input
+                        .get("scene")
+                        .and_then(Value::as_str)
+                        .map(ToolScene::parse)
+                        .unwrap_or_else(|| scene_for_session(session_id));
+                    let query = input
+                        .get("query")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let domain = input.get("domain").and_then(Value::as_str);
+                    let page = input.get("page").and_then(Value::as_u64).unwrap_or(0) as usize;
+                    let page_size = input
+                        .get("pageSize")
+                        .or_else(|| input.get("page_size"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(12) as usize;
+                    let usage_boosts = tool_usage_search_boosts(scene.as_str(), turn_id);
+                    registry
+                        .search_with_boosts(query, domain, page, page_size, scene, &usage_boosts)
+                        .map(|response| {
+                            serde_json::to_value(response).unwrap_or_else(|_| json!({}))
+                        })
+                        .map_err(native_failure_from_tool_fs)
+                },
+            )
+        }
         TOOL_FS_LIST => {
             let registry = runtime_registry_for_tool_fs_call(
                 TOOL_FS_LIST,
@@ -628,7 +721,7 @@ pub(crate) fn execute_tool_fs_model_tool(
         _ => tool_failure_output(
             "tool_not_found",
             "Unknown Tool Filesystem operation.",
-            "Use tool_fs_list, tool_fs_read_doc, tool_fs_inspect, or tool_fs_run.",
+            "Use tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, or tool_fs_run.",
             None,
         ),
     }
@@ -883,6 +976,7 @@ fn execute_tool_fs_run(
             );
         }
         Err(error) => {
+            let target_manifest = registry.inspect_input(&call.arguments).ok();
             let failure = native_failure_from_tool_fs(error);
             push_trace(
                 &mut trace,
@@ -893,7 +987,7 @@ fn execute_tool_fs_run(
                 json!({ "code": failure.code }),
             );
             return target_failure_envelope(
-                None,
+                target_manifest.as_ref(),
                 failure,
                 &operation_envelope,
                 trace,
@@ -1505,11 +1599,18 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         }
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/read" => host("lyraLumen.read", "lyra_lumen", "read"),
+        "/tools/browser/find" => host("lyraLumen.find", "lyra_lumen", "find"),
+        "/tools/browser/locate" => host("lyraLumen.locate", "lyra_lumen", "locate"),
         "/tools/browser/see" => host("lyraLumen.see", "lyra_lumen", "see"),
         "/tools/browser/act" => host("lyraLumen.act", "lyra_lumen", "act"),
         "/tools/browser/type" => host("lyraLumen.type", "lyra_lumen", "type"),
         "/tools/browser/press" => host("lyraLumen.press", "lyra_lumen", "press"),
         "/tools/browser/submit" => host("lyraLumen.submit", "lyra_lumen", "submit"),
+        "/tools/browser/scroll" => host("lyraLumen.scroll", "lyra_lumen", "scroll"),
+        "/tools/browser/scroll_to_target" => {
+            host("lyraLumen.scroll", "lyra_lumen", "scroll_to_target")
+        }
+        "/tools/browser/ensure_visible" => host("lyraLumen.scroll", "lyra_lumen", "ensure_visible"),
         "/tools/browser/wait" => host("lyraLumen.wait", "lyra_lumen", "wait"),
         "/tools/browser/read_until" => host("lyraLumen.wait", "lyra_lumen", "read_until"),
         "/tools/browser/navigate" => host("lyraLumen.navigate", "lyra_lumen", "navigate"),
@@ -1530,6 +1631,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/filesystem/glob" => native("file_glob", "file", "glob"),
         "/tools/filesystem/write_file" => native("file_write", "file", "write"),
         "/tools/filesystem/edit_file" => native("file_edit", "file", "edit"),
+        "/tools/filesystem/strict_edit" => native("file_strict_edit", "file", "strict_edit"),
         "/tools/filesystem/multi_edit" => native("file_multiedit", "file", "multiedit"),
         "/tools/filesystem/apply_patch" => native("apply_patch", "file", "apply_patch"),
         "/tools/code/search_project" => native("project_search", "search", "project"),
@@ -1737,6 +1839,18 @@ fn native_failure_from_tool_fs(error: ToolFsError) -> NativeToolFailure {
 
 fn tool_fs_content(raw: &Value) -> String {
     match raw.get("kind").and_then(Value::as_str) {
+        Some("tool_fs_search") => {
+            let query = raw.get("query").and_then(Value::as_str).unwrap_or("");
+            let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
+            let first = raw
+                .get("results")
+                .and_then(Value::as_array)
+                .and_then(|results| results.first())
+                .and_then(|result| result.get("path"))
+                .and_then(Value::as_str)
+                .unwrap_or("no result");
+            format!("Searched Tool-FS for `{query}`: {total} matches. Top result: {first}.")
+        }
         Some("tool_fs_directory") => {
             let path = raw.get("path").and_then(Value::as_str).unwrap_or("/tools");
             let directories = raw
@@ -1784,6 +1898,7 @@ fn tool_fs_meta_input(name: &str, arguments: Value) -> Value {
 
 fn meta_action(name: &str) -> &'static str {
     match name {
+        TOOL_FS_SEARCH => "search",
         TOOL_FS_LIST => "list",
         TOOL_FS_READ_DOC => "read_doc",
         TOOL_FS_INSPECT => "inspect",
@@ -1911,7 +2026,7 @@ fn target_failure_envelope(
         .map(|manifest| manifest.operation.clone())
         .unwrap_or_else(|| "run".to_string());
     let error_value = native_failure_value(&error);
-    result_envelope_value(
+    let mut value = result_envelope_value(
         ToolResultEnvelope {
             schema_version: TOOL_FS_SCHEMA_VERSION,
             status: if error.code == "operation_cancelled" {
@@ -1941,7 +2056,12 @@ fn target_failure_envelope(
         operation_envelope,
         trace,
         manifest,
-    )
+    );
+    annotate_cached_tool_failure(&mut value, manifest, operation_envelope);
+    if let Some(manifest) = manifest {
+        record_tool_usage_from_result(manifest, operation_envelope, &value);
+    }
+    value
 }
 
 fn result_envelope(
@@ -2020,7 +2140,236 @@ fn result_envelope(
     };
     let mut envelope = result_envelope_value(envelope, operation_envelope, trace, Some(manifest));
     preserve_output_fields(&mut envelope, &output);
+    annotate_cached_tool_failure(&mut envelope, Some(manifest), operation_envelope);
+    record_tool_usage_from_result(manifest, operation_envelope, &envelope);
     envelope
+}
+
+fn record_tool_usage_from_result(
+    manifest: &ToolManifest,
+    operation: &ToolOperationEnvelope,
+    output: &Value,
+) {
+    let ok = output.get("ok").and_then(Value::as_bool).unwrap_or(false);
+    let error_code = output
+        .pointer("/error/code")
+        .or_else(|| output.get("notRunReason"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string);
+    let scene = scene_for_session(&operation.session_id)
+        .as_str()
+        .to_string();
+    let timestamp = now();
+    let mut guard = match state().lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    let entry = guard
+        .tool_usage_cache
+        .entry(manifest.path.clone())
+        .or_insert_with(|| ToolUsageCacheEntry {
+            tool_path: manifest.path.clone(),
+            handle: manifest.handle.clone(),
+            title: manifest.title.clone(),
+            domain: manifest.domain.clone(),
+            operation: manifest.operation.clone(),
+            ..ToolUsageCacheEntry::default()
+        });
+    entry.handle = manifest.handle.clone();
+    entry.title = manifest.title.clone();
+    entry.domain = manifest.domain.clone();
+    entry.operation = manifest.operation.clone();
+    entry.total_runs = entry.total_runs.saturating_add(1);
+    entry.last_used_at = Some(timestamp.clone());
+    entry.last_scene = Some(scene.clone());
+    let scene_stats = entry.scene_stats.entry(scene).or_default();
+    scene_stats.runs = scene_stats.runs.saturating_add(1);
+    scene_stats.last_used_at = Some(timestamp.clone());
+    if ok {
+        entry.successes = entry.successes.saturating_add(1);
+        entry.consecutive_failures = 0;
+        entry.last_success_at = Some(timestamp);
+        entry.last_error_code = None;
+        scene_stats.successes = scene_stats.successes.saturating_add(1);
+    } else {
+        entry.failures = entry.failures.saturating_add(1);
+        entry.last_failure_at = Some(timestamp);
+        entry.last_error_code = error_code.clone();
+        scene_stats.failures = scene_stats.failures.saturating_add(1);
+        if error_code.as_deref() != Some("invalid_tool_args") {
+            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+        }
+        guard
+            .suppressed_tool_usage_by_turn
+            .entry(operation.runtime_turn_id.clone())
+            .or_default()
+            .insert(manifest.path.clone());
+    }
+    let _ = guard.save_state();
+}
+
+fn annotate_cached_tool_failure(
+    output: &mut Value,
+    manifest: Option<&ToolManifest>,
+    operation: &ToolOperationEnvelope,
+) {
+    if output.get("ok").and_then(Value::as_bool) != Some(false) {
+        return;
+    }
+    let Some(manifest) = manifest else {
+        return;
+    };
+    let action = format!(
+        "This tool failed for the current turn. Do not retry {} immediately with the same arguments; call tool_fs_search with the task description or inspect another /tools/{} capability.",
+        manifest.path, manifest.domain
+    );
+    let reason = output
+        .pointer("/error/code")
+        .and_then(Value::as_str)
+        .unwrap_or("tool_failed")
+        .to_string();
+    if let Some(object) = output.as_object_mut() {
+        object.insert(
+            "recommendedNextAction".to_string(),
+            Value::String(action.clone()),
+        );
+        object.insert("cacheSuppressedForTurn".to_string(), Value::Bool(true));
+        object.insert(
+            "cacheSuppression".to_string(),
+            json!({
+                "toolPath": manifest.path.clone(),
+                "runtimeTurnId": operation.runtime_turn_id.clone(),
+                "reason": reason,
+            }),
+        );
+        if let Some(error) = object.get_mut("error").and_then(Value::as_object_mut) {
+            error.insert("recommendedNextAction".to_string(), Value::String(action));
+        }
+    }
+}
+
+fn tool_usage_search_boosts(scene: &str, turn_id: &str) -> BTreeMap<String, f64> {
+    let Ok(guard) = state().lock() else {
+        return BTreeMap::new();
+    };
+    guard
+        .tool_usage_cache
+        .iter()
+        .filter(|(tool_path, _)| {
+            !guard
+                .suppressed_tool_usage_by_turn
+                .get(turn_id)
+                .is_some_and(|suppressed| suppressed.contains(*tool_path))
+        })
+        .filter_map(|(tool_path, entry)| {
+            let score = tool_usage_cache_score(entry, scene, Utc::now());
+            (score > 0.0).then(|| (tool_path.clone(), score))
+        })
+        .collect()
+}
+
+pub(crate) fn cached_handles_for_scene(
+    scene: &str,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
+    let registry = runtime_registry_with_dispatcher(dispatcher);
+    let now = Utc::now();
+    let mut entries = match state().lock() {
+        Ok(guard) => guard
+            .tool_usage_cache
+            .values()
+            .filter_map(|entry| {
+                let manifest = registry.lookup_path(&entry.tool_path)?;
+                let score = tool_usage_cache_score(entry, scene, now);
+                (score > 0.0 && entry.successes > 0).then(|| {
+                    json!({
+                        "handle": manifest.handle.clone(),
+                        "path": manifest.path.clone(),
+                        "title": manifest.title.clone(),
+                        "domain": manifest.domain.clone(),
+                        "operation": manifest.operation.clone(),
+                        "score": round_runtime_score(score),
+                        "confidence": round_runtime_score(tool_usage_success_rate(entry)),
+                        "successRate": round_runtime_score(tool_usage_success_rate(entry)),
+                        "totalRuns": entry.total_runs,
+                        "successes": entry.successes,
+                        "failures": entry.failures,
+                        "consecutiveFailures": entry.consecutive_failures,
+                        "lastUsedAt": entry.last_used_at.clone(),
+                        "lastSuccessAt": entry.last_success_at.clone(),
+                        "source": "toolUsageCache",
+                    })
+                })
+            })
+            .collect::<Vec<_>>(),
+        Err(_) => Vec::new(),
+    };
+    entries.sort_by(|left, right| {
+        right
+            .get("score")
+            .and_then(Value::as_f64)
+            .partial_cmp(&left.get("score").and_then(Value::as_f64))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Value::Array(entries.into_iter().take(8).collect())
+}
+
+fn tool_usage_cache_score(entry: &ToolUsageCacheEntry, scene: &str, now: DateTime<Utc>) -> f64 {
+    if entry.total_runs == 0 || entry.successes == 0 {
+        return 0.0;
+    }
+    let Some(last_used_at) = entry
+        .last_used_at
+        .as_deref()
+        .or(entry.last_success_at.as_deref())
+    else {
+        return 0.0;
+    };
+    let Ok(last_used_at) = DateTime::parse_from_rfc3339(last_used_at) else {
+        return 0.0;
+    };
+    let age_days = now
+        .signed_duration_since(last_used_at.with_timezone(&Utc))
+        .num_seconds()
+        .max(0) as f64
+        / 86_400.0;
+    let retention_days = if entry.total_runs >= 3 && tool_usage_success_rate(entry) >= 0.8 {
+        90.0
+    } else {
+        30.0
+    };
+    if age_days > retention_days {
+        return 0.0;
+    }
+    let success_rate = tool_usage_success_rate(entry);
+    let failure_rate = 1.0 - success_rate;
+    let recency = (1.0 - (age_days / retention_days)).clamp(0.0, 1.0);
+    let frequency = (entry.total_runs as f64 + 1.0).ln().min(4.0) / 4.0;
+    let scene_boost = entry
+        .scene_stats
+        .get(scene)
+        .filter(|stats| stats.successes > 0)
+        .map(|stats| {
+            let scene_success_rate = stats.successes as f64 / stats.runs.max(1) as f64;
+            2.0 * scene_success_rate
+        })
+        .unwrap_or(0.0);
+    let failure_penalty = entry.consecutive_failures as f64 * 2.5 + failure_rate * 2.0;
+    (success_rate * 7.0 + recency * 4.0 + frequency * 3.0 + scene_boost - failure_penalty)
+        .clamp(0.0, 18.0)
+}
+
+fn tool_usage_success_rate(entry: &ToolUsageCacheEntry) -> f64 {
+    if entry.total_runs == 0 {
+        0.0
+    } else {
+        entry.successes as f64 / entry.total_runs as f64
+    }
+}
+
+fn round_runtime_score(score: f64) -> f64 {
+    (score * 100.0).round() / 100.0
 }
 
 fn result_envelope_value(

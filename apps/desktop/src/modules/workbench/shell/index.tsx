@@ -25,6 +25,7 @@ import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
+import { createTitlebarSecurityLabels } from "./titlebar-security-labels";
 import { useBrowserSearchModel } from "../browser-search";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
@@ -649,6 +650,7 @@ resolvedThemeId,
     }),
     [t]
   );
+  const titlebarSecurityLabels = useMemo(() => createTitlebarSecurityLabels(t), [t]);
   const workspaceTabsProps = useWorkbenchWorkspaceTabsProps({
     tabsModel,
     activeTabPageKind,
@@ -709,6 +711,8 @@ resolvedThemeId,
             {...titlebarNavigation}
             activeBrowserTabId={activeBrowserTabId}
             browserChromePopoverBridge={desktopApi?.workbenchBrowser}
+            locale={preferencesModel.preferences.locale}
+            securityLabels={titlebarSecurityLabels}
             trailingControl={
               titlebarElementPicker.visible ? (
                 <TitlebarElementPickerButton

@@ -7,7 +7,8 @@ use lyra_agent_plugins::{
     ToolProvider, ToolProviderRegistry,
 };
 use lyra_tool_fs_core::{
-    TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_RUN, provider_tool_names,
+    TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_RUN, TOOL_FS_SEARCH,
+    provider_tool_names,
 };
 use serde_json::{Value, json};
 
@@ -523,6 +524,43 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     "strategy": { "type": "string", "enum": ["focus", "hybrid", "domFallback"], "default": "focus" },
                     "maxChars": { "type": "number" }
                 })),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_find",
+                "Search text within a Lyra browser page, optionally revealing the selected match before mapping nearby controls.",
+                "read",
+                "hostCapability",
+                lumen_target_schema(json!({
+                    "query": { "type": "string" },
+                    "direction": { "type": "string", "enum": ["current", "next", "previous"], "default": "current" },
+                    "activeIndex": { "type": "number" },
+                    "caseSensitive": { "type": "boolean", "default": false },
+                    "maxMatches": { "type": "number" },
+                    "reveal": { "type": "boolean", "default": false },
+                    "timeoutMs": { "type": "number" }
+                }))
+                .with_required(vec!["query"]),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_locate",
+                "Locate a section of a Lyra browser page by exact or local semantic text matching, reveal it, and return nearby targetRefs.",
+                "read",
+                "hostCapability",
+                lumen_target_schema(json!({
+                    "query": { "type": "string" },
+                    "matchMode": { "type": "string", "enum": ["exact", "semantic"], "default": "semantic" },
+                    "autoMap": { "type": "boolean", "default": true },
+                    "nearbyLimit": { "type": "number" },
+                    "reveal": { "type": "boolean", "default": true },
+                    "caseSensitive": { "type": "boolean", "default": false },
+                    "maxMatches": { "type": "number" },
+                    "timeoutMs": { "type": "number" }
+                }))
+                .with_required(vec!["query"]),
                 Some("browser.operate"),
             ),
             capability(
@@ -1685,8 +1723,23 @@ fn lumen_target_schema_with_default(extra_properties: Value, default_target_mode
 fn tool_fs_provider_tools() -> Vec<Value> {
     vec![
         tool_fs_provider_tool(
+            TOOL_FS_SEARCH,
+            "Search Lyra Tool Filesystem with a natural-language task description. Prefer before listing directories.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "scene": { "type": "string" },
+                    "domain": { "type": "string" },
+                    "page": { "type": "integer", "minimum": 0, "default": 0 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
+                },
+                "required": ["query"]
+            }),
+        ),
+        tool_fs_provider_tool(
             TOOL_FS_LIST,
-            "List Lyra Tool Filesystem directories and tool manifests.",
+            "List Lyra Tool Filesystem directories and tool manifests as a fallback after search.",
             json!({
                 "type": "object",
                 "properties": {
@@ -1807,6 +1860,7 @@ mod tests {
         assert_eq!(
             service.model_tool_names(),
             vec![
+                "tool_fs_search".to_string(),
                 "tool_fs_list".to_string(),
                 "tool_fs_read_doc".to_string(),
                 "tool_fs_inspect".to_string(),
@@ -1825,6 +1879,7 @@ mod tests {
         assert_eq!(
             provider_tool_names,
             vec![
+                "tool_fs_search".to_string(),
                 "tool_fs_list".to_string(),
                 "tool_fs_read_doc".to_string(),
                 "tool_fs_inspect".to_string(),
@@ -1853,6 +1908,8 @@ mod tests {
         for name in [
             "lyra_lumen_map",
             "lyra_lumen_read",
+            "lyra_lumen_find",
+            "lyra_lumen_locate",
             "lyra_lumen_see",
             "lyra_lumen_act",
             "lyra_lumen_type",

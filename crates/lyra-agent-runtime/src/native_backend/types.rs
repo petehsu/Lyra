@@ -4,6 +4,7 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) root: PathBuf,
     pub(crate) tool_runtime_schema_version: u32,
     pub(crate) tool_runtime_migration_diagnostics: Vec<Value>,
+    pub(crate) tool_usage_cache: HashMap<String, ToolUsageCacheEntry>,
     pub(crate) sessions: HashMap<String, NativeSession>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
@@ -15,6 +16,7 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) focused_goal_id: Option<String>,
     pub(crate) cancelled_turns: HashSet<String>,
     pub(crate) active_cancellations: HashMap<String, Arc<AtomicBool>>,
+    pub(crate) suppressed_tool_usage_by_turn: HashMap<String, HashSet<String>>,
     pub(crate) event_callback: Option<Arc<EventCallback>>,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
 }
@@ -26,6 +28,8 @@ pub(crate) struct NativeStateFile {
     pub(crate) tool_runtime_schema_version: u32,
     #[serde(default)]
     pub(crate) tool_runtime_migration_diagnostics: Vec<Value>,
+    #[serde(default)]
+    pub(crate) tool_usage_cache: HashMap<String, ToolUsageCacheEntry>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
     #[serde(default, rename = "sharedMemory", skip_serializing)]
@@ -44,6 +48,49 @@ pub(crate) struct NativeStateFile {
     pub(crate) focused_goal_id: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ToolUsageCacheEntry {
+    pub(crate) tool_path: String,
+    pub(crate) handle: Option<String>,
+    pub(crate) title: String,
+    pub(crate) domain: String,
+    pub(crate) operation: String,
+    #[serde(default)]
+    pub(crate) total_runs: u64,
+    #[serde(default)]
+    pub(crate) successes: u64,
+    #[serde(default)]
+    pub(crate) failures: u64,
+    #[serde(default)]
+    pub(crate) consecutive_failures: u64,
+    #[serde(default)]
+    pub(crate) last_used_at: Option<String>,
+    #[serde(default)]
+    pub(crate) last_success_at: Option<String>,
+    #[serde(default)]
+    pub(crate) last_failure_at: Option<String>,
+    #[serde(default)]
+    pub(crate) last_error_code: Option<String>,
+    #[serde(default)]
+    pub(crate) last_scene: Option<String>,
+    #[serde(default)]
+    pub(crate) scene_stats: HashMap<String, ToolUsageSceneStats>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ToolUsageSceneStats {
+    #[serde(default)]
+    pub(crate) runs: u64,
+    #[serde(default)]
+    pub(crate) successes: u64,
+    #[serde(default)]
+    pub(crate) failures: u64,
+    #[serde(default)]
+    pub(crate) last_used_at: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeSession {
@@ -58,8 +105,24 @@ pub(crate) struct NativeSession {
     pub(crate) runtime_turns: Vec<Value>,
     #[serde(default)]
     pub(crate) rollback_checkpoints: Vec<RollbackCheckpoint>,
+    #[serde(default)]
+    pub(crate) file_read_state: HashMap<String, FileReadStateEntry>,
     #[serde(default, skip)]
     pub(crate) dirty: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FileReadStateEntry {
+    pub(crate) path: String,
+    pub(crate) absolute_path: String,
+    pub(crate) read_version: String,
+    pub(crate) content_hash: String,
+    pub(crate) mtime_ms: u64,
+    pub(crate) size: u64,
+    pub(crate) start_line: Option<usize>,
+    pub(crate) end_line: Option<usize>,
+    pub(crate) read_at: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -24,6 +24,7 @@ import {
 } from "../ui-primitives";
 import { renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
+import { BrowserChromeSurface } from "./browser-chrome-surface";
 import type { BrowserTabStripRenderModel } from "./tab-strip-render-model";
 import type { BrowserTabStripProps } from "./tab-strip-types";
 import type { BrowserTabStripRuntime } from "./use-browser-tab-strip-runtime";
@@ -205,34 +206,22 @@ export const BrowserTabStripView = ({
     />
   );
 
-  return (
-    <nav
-      ref={runtime.navRef}
-      className={cx(
-        renderModel.navClassName,
-        hasNavigationControl && "lyra-browser-tabs-with-navigation"
-      )}
-      style={renderModel.navStyle}
-      aria-label="browser-tabs"
-      onDragOver={runtime.onTabBarDragOver}
-      onDragEnter={runtime.onTabBarDragOver}
-      onDragLeave={runtime.onTabBarDragLeave}
-      onDrop={runtime.onTabBarDrop}
-    >
-      {hasNavigationControl ? (
-        <div className="lyra-browser-tabs-toolbar">
-          <div className="lyra-browser-tabs-toolbar-controls">
-            {navigationButtons}
-          </div>
-          <div className="lyra-browser-tabs-navigation">
-            {navigationControl}
-          </div>
-          <div className="lyra-browser-tabs-toolbar-context">
-            {toolbarContextControl}
-          </div>
-        </div>
-      ) : navigationButtons}
+  const toolbar = hasNavigationControl ? (
+    <div className="lyra-browser-tabs-toolbar">
+      <div className="lyra-browser-tabs-toolbar-controls">
+        {navigationButtons}
+      </div>
+      <div className="lyra-browser-tabs-navigation">
+        {navigationControl}
+      </div>
+      <div className="lyra-browser-tabs-toolbar-context">
+        {toolbarContextControl}
+      </div>
+    </div>
+  ) : navigationButtons;
 
+  const tabStrip = (
+    <>
       <div
         className={renderModel.stripClassName}
         onWheel={runtime.onTabStripWheel}
@@ -342,6 +331,24 @@ export const BrowserTabStripView = ({
           </ChromeTabFrame>
         </div>
       ) : null}
+    </>
+  );
+
+  return (
+    <nav
+      ref={runtime.navRef}
+      className={cx(
+        renderModel.navClassName,
+        hasNavigationControl && "lyra-browser-tabs-with-navigation"
+      )}
+      style={renderModel.navStyle}
+      aria-label="browser-tabs"
+      onDragOver={runtime.onTabBarDragOver}
+      onDragEnter={runtime.onTabBarDragOver}
+      onDragLeave={runtime.onTabBarDragLeave}
+      onDrop={runtime.onTabBarDrop}
+    >
+      <BrowserChromeSurface toolbar={toolbar} tabStrip={tabStrip} />
     </nav>
   );
 };

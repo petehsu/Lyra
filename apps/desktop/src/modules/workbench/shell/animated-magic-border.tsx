@@ -4,7 +4,6 @@ const CLOSED_SWEEP_DEGREES = 96;
 const OPEN_SWEEP_DEGREES = 360;
 const OPEN_MASK_THRESHOLD_DEGREES = 356;
 const MAX_FRAME_DELTA_MS = 48;
-const CLOSED_SETTLED_EPSILON_DEGREES = 0.4;
 
 type MagicBorderMotion = {
   angleDegrees: number;
@@ -87,9 +86,6 @@ const applySweepStyles = (
   element.style.webkitMaskImage = mask;
 };
 
-const isClosedSettled = (motion: Pick<MagicBorderMotion, "sweepDegrees">): boolean =>
-  Math.abs(motion.sweepDegrees - CLOSED_SWEEP_DEGREES) <= CLOSED_SETTLED_EPSILON_DEGREES;
-
 export const AnimatedMagicBorder = ({ isOpen, className }: AnimatedMagicBorderProps) => {
   const sweepRef = useRef<HTMLDivElement>(null);
   const isOpenRef = useRef(isOpen);
@@ -140,17 +136,11 @@ export const AnimatedMagicBorder = ({ isOpen, className }: AnimatedMagicBorderPr
         (motion.angleDegrees + motion.speedRevolutionsPerSecond * 360 * (deltaMs / 1000)) % 360;
 
       applySweepStyles(el, motion.angleDegrees, motion.sweepDegrees);
-      if (!open && isClosedSettled(motion)) {
-        animationFrameId = null;
-        return;
-      }
       startNextFrame();
     };
 
     applySweepStyles(el, motionRef.current.angleDegrees, motionRef.current.sweepDegrees);
-    if (isOpenRef.current || !isClosedSettled(motionRef.current)) {
-      startNextFrame();
-    }
+    startNextFrame();
     return () => {
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);

@@ -91,6 +91,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         root: temp.path().to_path_buf(),
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
         tool_runtime_migration_diagnostics: Vec::new(),
+        tool_usage_cache: HashMap::new(),
         sessions: HashMap::from([
             (dirty_session.id.clone(), dirty_session),
             (clean_id.clone(), clean_session),
@@ -105,6 +106,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         focused_goal_id: None,
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
+        suppressed_tool_usage_by_turn: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -184,6 +186,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
         tool_runtime_migration_diagnostics: Vec::new(),
+        tool_usage_cache: HashMap::new(),
         active_session_id: Some(legacy_session_id.clone()),
         config,
         legacy_shared_memory: Vec::new(),
@@ -294,6 +297,7 @@ fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
         tool_runtime_migration_diagnostics: Vec::new(),
+        tool_usage_cache: HashMap::new(),
         active_session_id: Some("blocked".to_string()),
         config: NativeConfig::default(),
         legacy_shared_memory: Vec::new(),
@@ -378,6 +382,7 @@ fn native_state_persists_only_live_pending_requests() {
         root: temp.path().to_path_buf(),
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
         tool_runtime_migration_diagnostics: Vec::new(),
+        tool_usage_cache: HashMap::new(),
         sessions: HashMap::from([(session_id.clone(), session)]),
         active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
@@ -420,6 +425,7 @@ fn native_state_persists_only_live_pending_requests() {
         focused_goal_id: None,
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
+        suppressed_tool_usage_by_turn: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -736,6 +742,168 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
             .and_then(Value::as_str),
         Some("/tools/memory/search")
     );
+}
+
+#[test]
+fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tool Search Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-fs-search-command".to_string(),
+            name: "tool_fs_search".to_string(),
+            arguments: json!({
+                "query": "执行测试命令 run shell command",
+                "scene": "project-code",
+                "pageSize": 8
+            }),
+        },
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output["toolPath"].as_str(),
+        Some("/tools/runtime/tool_fs_search")
+    );
+    assert_eq!(output["raw"]["kind"].as_str(), Some("tool_fs_search"));
+    assert!(
+        output["raw"]["results"]
+            .as_array()
+            .expect("search results")
+            .iter()
+            .any(|result| result["path"] == "/tools/shell/run_command")
+    );
+    assert!(
+        output["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("Searched Tool-FS"))
+    );
+    assert!(
+        output["trace"]
+            .as_array()
+            .is_some_and(|trace| trace.iter().any(|record| record["phase"] == "completed"))
+    );
+
+    let invalid = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-fs-search-empty".to_string(),
+            name: "tool_fs_search".to_string(),
+            arguments: json!({ "query": "" }),
+        },
+    );
+    assert_eq!(
+        invalid.pointer("/error/code").and_then(Value::as_str),
+        Some("invalid_tool_search_query")
+    );
+}
+
+#[test]
+fn tool_usage_cache_records_success_failure_and_context_handles() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("note.txt"), "cached tool note").expect("write note");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Tool Usage Cache Test",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.tool_usage_cache.clear();
+        state.suppressed_tool_usage_by_turn.clear();
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+
+    let success = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-cache-read-success",
+            "/tools/filesystem/read_file",
+            json!({ "path": "note.txt" }),
+        ),
+    );
+    assert_eq!(success["ok"].as_bool(), Some(true));
+    {
+        let state = state().lock().expect("state lock");
+        let entry = state
+            .tool_usage_cache
+            .get("/tools/filesystem/read_file")
+            .expect("usage cache entry");
+        assert_eq!(entry.successes, 1);
+        assert_eq!(entry.failures, 0);
+        assert_eq!(entry.consecutive_failures, 0);
+        assert_eq!(entry.handle.as_deref(), Some("read_file"));
+    }
+
+    let context = tool_filesystem_runtime_context("project-code", None);
+    assert!(
+        context["cachedHandles"]
+            .as_array()
+            .expect("cached handles")
+            .iter()
+            .any(|handle| handle["path"] == "/tools/filesystem/read_file"
+                && handle["source"] == "toolUsageCache")
+    );
+
+    let failed = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-cache-read-failed",
+            "/tools/filesystem/read_file",
+            json!({ "path": "missing.txt" }),
+        ),
+    );
+    assert_eq!(failed["ok"].as_bool(), Some(false));
+    assert_eq!(failed["cacheSuppressedForTurn"].as_bool(), Some(true));
+    assert!(
+        failed["recommendedNextAction"]
+            .as_str()
+            .is_some_and(|action| action.contains("tool_fs_search"))
+    );
+    {
+        let state = state().lock().expect("state lock");
+        let entry = state
+            .tool_usage_cache
+            .get("/tools/filesystem/read_file")
+            .expect("usage cache entry");
+        assert_eq!(entry.successes, 1);
+        assert_eq!(entry.failures, 1);
+        assert_eq!(entry.consecutive_failures, 1);
+        assert!(
+            state
+                .suppressed_tool_usage_by_turn
+                .get(&turn_id)
+                .is_some_and(|paths| paths.contains("/tools/filesystem/read_file"))
+        );
+    }
 }
 
 #[test]
@@ -2459,6 +2627,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
     assert_eq!(
         service.model_tool_names(),
         vec![
+            "tool_fs_search".to_string(),
             "tool_fs_list".to_string(),
             "tool_fs_read_doc".to_string(),
             "tool_fs_inspect".to_string(),
@@ -3188,6 +3357,21 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     )
     .expect_err("outside write should fail");
     assert_eq!(outside_write.code, "permission_denied");
+    let unread_edit = tool_file_edit(
+        &session_id,
+        &turn_id,
+        "tool-unread-edit",
+        &json!({ "path": "src/main.rs", "oldString": "beta", "newString": "gamma" }),
+    )
+    .expect_err("strict edit requires read first");
+    assert_eq!(unread_edit.code, "must_read_first");
+    tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-read-before-edit",
+        &json!({ "path": "src/main.rs" }),
+    )
+    .expect("read before edit");
     let edit = tool_file_edit(
         &session_id,
         &turn_id,
@@ -3216,6 +3400,13 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
             .expect("read edited")
             .contains("gamma")
     );
+    tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-read-before-duplicate-edit",
+        &json!({ "path": "dupes.txt" }),
+    )
+    .expect("read dupes before duplicate edit");
     let duplicate = tool_file_edit(
         &session_id,
         &turn_id,
@@ -3278,6 +3469,13 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
         fs::read_to_string(temp.path().join("second.txt")).expect("read second"),
         "TWO"
     );
+    tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-read-before-patch",
+        &json!({ "path": "first.txt" }),
+    )
+    .expect("read before patch update");
     let patch = tool_apply_patch(
         &session_id,
         &turn_id,
@@ -3286,7 +3484,7 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
             "operations": [
                 { "op": "add", "path": "added.txt", "content": "added" },
                 { "op": "update", "path": "first.txt", "oldString": "ONE", "newString": "uno" },
-                { "op": "move", "path": "added.txt", "newPath": "moved.txt" },
+                { "op": "move", "path": "second.txt", "newPath": "moved.txt" },
                 { "op": "delete", "path": "delete.txt" }
             ]
         }),
@@ -3723,6 +3921,25 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     .expect("truncated output");
     assert_eq!(truncated.raw["stdout"], "1234");
     assert_eq!(truncated.raw["stdoutTruncated"], true);
+    let composite = tool_shell_run(
+        &session_id,
+        "turn-shell-direct",
+        "tool-shell-composite",
+        &json!({
+            "command": "printf 'alpha\\nbeta\\n' | grep beta && printf done",
+            "description": "Search piped output and print marker"
+        }),
+    )
+    .expect("composite shell command");
+    assert_eq!(composite.raw["success"], true);
+    assert_eq!(composite.raw["commandKind"], "search");
+    assert!(
+        composite
+            .raw
+            .get("stdout")
+            .and_then(Value::as_str)
+            .is_some_and(|stdout| stdout.contains("beta") && stdout.contains("done"))
+    );
     let dangerous = tool_shell_run(
         &session_id,
         "turn-shell-direct",
@@ -4291,6 +4508,21 @@ fn lumen_live_login_state_requires_permission_even_for_read_tools() {
     assert_eq!(
         permission_risk("lyra_lumen", "map", &json!({ "targetMode": "isolated" })),
         None
+    );
+    assert_eq!(
+        permission_risk("lyra_lumen", "locate", &json!({ "targetMode": "isolated" })),
+        None
+    );
+    assert_eq!(
+        permission_risk(
+            "lyra_lumen",
+            "find",
+            &json!({
+                "targetMode": "isolated",
+                "useLiveLoginState": true
+            })
+        ),
+        Some("sensitive".to_string())
     );
 }
 #[test]

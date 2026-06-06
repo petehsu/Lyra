@@ -240,11 +240,17 @@ pub(crate) fn search_workspace_text(
             file_name.to_lowercase()
         };
         if haystack_name.contains(&needle) {
+            let (start_char, end_char) = match_range(file_name, &query, case_sensitive)
+                .unwrap_or((0, file_name.chars().count()));
             results.push(json!({
                 "path": relative,
                 "line": Value::Null,
                 "matchKind": "file_name",
                 "snippet": file_name,
+                "matchRanges": [{
+                    "startChar": start_char,
+                    "endChar": end_char,
+                }],
             }));
             if results.len() >= limit {
                 break;
@@ -272,11 +278,18 @@ pub(crate) fn search_workspace_text(
                 line.to_lowercase()
             };
             if haystack.contains(&needle) {
+                let (start_char, end_char) =
+                    match_range(line, query, case_sensitive).unwrap_or((0, line.chars().count()));
                 results.push(json!({
                     "path": relative,
                     "line": index + 1,
                     "matchKind": "content",
                     "snippet": line.trim(),
+                    "matchRanges": [{
+                        "line": index + 1,
+                        "startChar": start_char,
+                        "endChar": end_char,
+                    }],
                 }));
                 break;
             }
@@ -332,6 +345,11 @@ pub(crate) fn search_workspace_symbols(
                 "matchKind": "symbol",
                 "kind": classify_symbol_line(trimmed),
                 "snippet": trimmed,
+                "matchRanges": [{
+                    "line": index + 1,
+                    "startChar": match_range(trimmed, query, false).map(|range| range.0).unwrap_or(0),
+                    "endChar": match_range(trimmed, query, false).map(|range| range.1).unwrap_or_else(|| trimmed.chars().count()),
+                }],
             }));
             if results.len() >= limit {
                 break;
@@ -339,6 +357,27 @@ pub(crate) fn search_workspace_symbols(
         }
     }
     Ok(results)
+}
+
+fn match_range(haystack: &str, needle: &str, case_sensitive: bool) -> Option<(usize, usize)> {
+    if needle.is_empty() {
+        return None;
+    }
+    let haystack_cmp = if case_sensitive {
+        haystack.to_string()
+    } else {
+        haystack.to_lowercase()
+    };
+    let needle_cmp = if case_sensitive {
+        needle.to_string()
+    } else {
+        needle.to_lowercase()
+    };
+    let byte_start = haystack_cmp.find(&needle_cmp)?;
+    let byte_end = byte_start + needle_cmp.len();
+    let start_char = haystack[..byte_start].chars().count();
+    let end_char = haystack[..byte_end].chars().count();
+    Some((start_char, end_char))
 }
 
 pub(crate) fn looks_like_source_file(path: &Path) -> bool {

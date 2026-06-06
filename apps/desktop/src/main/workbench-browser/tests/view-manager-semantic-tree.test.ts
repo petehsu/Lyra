@@ -162,6 +162,7 @@ type FakeWebContents = {
   removeAllListeners: ReturnType<typeof vi.fn>;
   insertCSS: ReturnType<typeof vi.fn>;
   findInPage: ReturnType<typeof vi.fn>;
+  stopFindInPage: ReturnType<typeof vi.fn>;
   capturePage: ReturnType<typeof vi.fn>;
   navigationHistory: {
     canGoBack: ReturnType<typeof vi.fn>;
@@ -348,6 +349,7 @@ const createWebContents = (
     removeAllListeners: vi.fn(),
     insertCSS: vi.fn(async () => "css-key"),
     findInPage: vi.fn(),
+    stopFindInPage: vi.fn(),
     capturePage: vi.fn(async () => ({
       getSize: () => ({ width: 1, height: 1 }),
       toPNG: () => Buffer.from([])
@@ -506,6 +508,82 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith("Accessibility.getFullAXTree");
   });
 
+  test("finds and semantically locates page text before returning nearby controls", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/settings",
+      html: `
+        <!doctype html>
+        <title>Settings</title>
+        <button id="top">Global save</button>
+        <section>
+          <h2 id="billing-title">Billing settings</h2>
+          <p id="billing-copy">Invoices and payment method are managed here.</p>
+          <button id="edit-billing">Edit billing</button>
+          <input aria-label="Billing email" />
+        </section>
+      `
+    });
+    const topButton = mainFrame.window.document.querySelector("#top");
+    const title = mainFrame.window.document.querySelector("#billing-title");
+    const copy = mainFrame.window.document.querySelector("#billing-copy");
+    const editButton = mainFrame.window.document.querySelector("#edit-billing");
+    const input = mainFrame.window.document.querySelector("input");
+    expect(topButton).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    expect(title).toBeInstanceOf(mainFrame.window.HTMLElement);
+    expect(copy).toBeInstanceOf(mainFrame.window.HTMLElement);
+    expect(editButton).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    expect(input).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(topButton as Element, { x: 24, y: 40, width: 120, height: 32 });
+    setRect(title as Element, { x: 40, y: 280, width: 220, height: 34 });
+    setRect(copy as Element, { x: 40, y: 320, width: 420, height: 44 });
+    setRect(editButton as Element, { x: 40, y: 382, width: 120, height: 32 });
+    setRect(input as Element, { x: 180, y: 382, width: 180, height: 32 });
+
+    const { manager, webContents } = createManager(mainFrame);
+
+    await expect(
+      manager.findAgentPage("tab-1", {
+        targetMode: "live",
+        query: "payment method",
+        reveal: true
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: "lyraLumenFind",
+      totalMatches: 1,
+      currentIndex: 1,
+      revealRect: expect.objectContaining({ top: 320 })
+    });
+    expect(webContents.findInPage).toHaveBeenCalledWith(
+      "payment method",
+      expect.objectContaining({ findNext: false })
+    );
+
+    const located = await manager.locateAgentPage("tab-1", {
+      targetMode: "live",
+      query: "billing settings",
+      matchMode: "semantic",
+      reveal: true,
+      autoMap: true,
+      nearbyLimit: 3
+    });
+
+    expect(located).toMatchObject({
+      ok: true,
+      kind: "lyraLumenLocate",
+      matched: true,
+      matchMode: "semantic",
+      anchorQuery: expect.stringContaining("Billing"),
+      observationId: expect.any(String)
+    });
+    expect(located.nearbyElements?.map((element) => element.label)).toEqual([
+      "Edit billing",
+      "Billing email",
+      "Global save"
+    ]);
+  });
+
   test("maps same-origin iframe controls and clicks by child frame bounds", async () => {
     const mainFrame = createFrame({
       id: 1,
@@ -596,8 +674,9 @@ describe("Workbench browser semantic tree fixtures", () => {
       verification: "none"
     });
     expect(fastResult.afterObservationId).toBeUndefined();
-    expect(mainFrame.executeJavaScript).not.toHaveBeenCalled();
-    expect(webContents.executeJavaScript).not.toHaveBeenCalled();
+    expect(mainFrame.executeJavaScript).toHaveBeenCalledTimes(1);
+    expect(mainFrame.executeJavaScript.mock.calls[0]?.[0]).toContain("window.innerWidth");
+    expect(webContents.executeJavaScript).toHaveBeenCalledTimes(1);
 
     const fullResult = await manager.actOnAgentElement("tab-1", {
       targetMode: "live",

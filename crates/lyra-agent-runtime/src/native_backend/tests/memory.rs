@@ -267,6 +267,7 @@ fn legacy_shared_memory_migration_is_idempotent_and_state_json_drops_array() {
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
         tool_runtime_migration_diagnostics: Vec::new(),
+        tool_usage_cache: HashMap::new(),
         active_session_id: None,
         config: NativeConfig::default(),
         legacy_shared_memory: vec![legacy],

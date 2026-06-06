@@ -31,40 +31,43 @@ pub(crate) fn tool_shell_run(
     input: &Value,
 ) -> NativeToolResult {
     let command = required_value_string(input, "command")?;
-    if shell_command_has_control_operator(&command) {
+    if value_bool(input, "runInBackground", false) {
         return Err(NativeToolFailure::new(
-            "interactive_or_composite_command",
-            "shell_run only accepts one non-interactive command without shell control operators",
-            "Use a single command and arguments, or open a terminal session for interactive work.",
+            "background_not_supported",
+            "run_command does not launch background tasks in this version",
+            "Use /tools/terminal/run for long-running or interactive work, or run a bounded foreground command.",
         ));
     }
-    let tokens = shlex::split(&command).ok_or_else(|| {
-        NativeToolFailure::new(
-            "bad_command",
-            "failed to parse command tokens",
-            "Retry with a shell-escaped command that can be tokenized.",
-        )
-    })?;
-    if tokens.is_empty() {
+    if command.trim().is_empty() {
         return Err(NativeToolFailure::new(
             "bad_command",
             "command is empty",
             "Retry with a non-empty command.",
         ));
     }
+    if command.contains('\0') {
+        return Err(NativeToolFailure::new(
+            "bad_command",
+            "command contains a NUL byte",
+            "Retry with a valid shell command string.",
+        ));
+    }
     let permission_granted = input
         .get("permissionGranted")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    if command_requires_permission(&tokens) && !permission_granted {
+    let command_kind = classify_shell_command(&command);
+    if shell_command_requires_permission(&command) && !permission_granted {
         return Err(NativeToolFailure::new(
             "permission_required",
             "command is classified as high risk and was not executed without permission",
             "Request explicit user permission or choose a non-destructive validation command.",
         )
-        .with_detail(json!({ "command": command })));
+        .with_detail(json!({ "command": command, "commandKind": command_kind })));
     }
-    let cwd = value_string(input, "cwd").unwrap_or_else(|| ".".to_string());
+    let cwd = value_string(input, "cwd")
+        .or_else(|| value_string(input, "workingDir"))
+        .unwrap_or_else(|| ".".to_string());
     let cwd = resolve_workspace_path(session_id, &cwd, false)?;
     if !cwd.absolute.is_dir() {
         return Err(NativeToolFailure::new(
@@ -85,9 +88,8 @@ pub(crate) fn tool_shell_run(
         DEFAULT_COMMAND_OUTPUT_BYTES,
         1_000_000,
     );
-    let mut command_builder = Command::new(&tokens[0]);
+    let mut command_builder = shell_command_builder(&command);
     command_builder
-        .args(&tokens[1..])
         .current_dir(&cwd.absolute)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -141,8 +143,15 @@ pub(crate) fn tool_shell_run(
         .unwrap_or_else(|| LimitedOutput::default());
     let exit_code = status.code();
     let content = format!(
-        "command: {}\ncwd: {}\nexitCode: {:?}\ntimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
-        command, cwd.relative, exit_code, timed_out, stdout.text, stderr.text
+        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
+        command,
+        value_string(input, "description").unwrap_or_default(),
+        cwd.relative,
+        command_kind,
+        exit_code,
+        timed_out,
+        stdout.text,
+        stderr.text
     );
     let stdout_ref = (!stdout.text.is_empty() || stdout.truncated).then(|| {
         write_tool_artifact_with_kind(
@@ -170,6 +179,8 @@ pub(crate) fn tool_shell_run(
             "exitCode": exit_code,
             "success": status.success() && !timed_out,
             "timedOut": timed_out,
+            "commandKind": command_kind,
+            "description": value_string(input, "description"),
             "stdout": stdout.text,
             "stderr": stderr.text,
             "stdoutTruncated": stdout.truncated,
@@ -181,7 +192,7 @@ pub(crate) fn tool_shell_run(
         }),
         recommended_next_action: if timed_out {
             Some(
-                "Use a narrower command or start a terminal session for long-running work."
+                "Use a narrower command, increase timeoutMs, or start a terminal session for long-running work."
                     .to_string(),
             )
         } else if status.success() {
@@ -190,6 +201,21 @@ pub(crate) fn tool_shell_run(
             Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
         },
     })
+}
+
+fn shell_command_builder(command: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut builder = Command::new("cmd");
+        builder.args(["/S", "/C", command]);
+        builder
+    }
+    #[cfg(not(windows))]
+    {
+        let mut builder = Command::new("sh");
+        builder.args(["-lc", command]);
+        builder
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -220,18 +246,6 @@ pub(crate) fn read_limited_stream<R: Read>(mut reader: R, limit: usize) -> Limit
     }
 }
 
-pub(crate) fn shell_command_has_control_operator(command: &str) -> bool {
-    command.contains('\n')
-        || command.contains(';')
-        || command.contains("&&")
-        || command.contains("||")
-        || command.contains('|')
-        || command.contains('`')
-        || command.contains("$(")
-        || command.contains('>')
-        || command.contains('<')
-}
-
 pub(crate) fn command_requires_permission(tokens: &[String]) -> bool {
     let executable = Path::new(&tokens[0])
         .file_name()
@@ -248,6 +262,100 @@ pub(crate) fn command_requires_permission(tokens: &[String]) -> bool {
             )
         }),
         _ => false,
+    }
+}
+
+pub(crate) fn shell_command_requires_permission(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    let dangerous_patterns = [
+        "rm ",
+        "rm\t",
+        "rm -",
+        "rmdir ",
+        "unlink ",
+        "shutdown",
+        "reboot",
+        "halt",
+        "mkfs",
+        "diskutil",
+        "chmod ",
+        "chown ",
+        "sudo ",
+        "git reset",
+        "git clean",
+        "git checkout",
+        "git restore",
+        "npm install",
+        "pnpm install",
+        "yarn install",
+        "bun install",
+        "cargo install",
+    ];
+    if dangerous_patterns
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        return true;
+    }
+    shlex::split(command)
+        .filter(|tokens| !tokens.is_empty())
+        .is_some_and(|tokens| command_requires_permission(&tokens))
+}
+
+pub(crate) fn classify_shell_command(command: &str) -> &'static str {
+    let lower = command.to_ascii_lowercase();
+    let first = shlex::split(command)
+        .and_then(|tokens| tokens.first().cloned())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if lower.contains("npm test")
+        || lower.contains("pnpm test")
+        || lower.contains("yarn test")
+        || lower.contains("cargo test")
+        || lower.contains("pytest")
+        || lower.contains("vitest")
+        || lower.contains("jest")
+    {
+        "test"
+    } else if lower.contains("typecheck") || lower.contains("tsc ") || lower.ends_with("tsc") {
+        "typecheck"
+    } else if lower.contains("lint") || lower.contains("clippy") {
+        "lint"
+    } else if lower.contains("build") || lower.contains("cargo check") {
+        "build"
+    } else if first == "git" || lower.contains(" git ") || lower.starts_with("git ") {
+        if shell_command_requires_permission(command) {
+            "mutation"
+        } else {
+            "git"
+        }
+    } else if matches!(
+        first.as_str(),
+        "rg" | "grep" | "ag" | "ack" | "find" | "fd" | "locate"
+    ) || lower.contains(" grep ")
+        || lower.contains("| grep")
+        || lower.contains(" rg ")
+        || lower.contains("| rg")
+    {
+        "search"
+    } else if matches!(
+        first.as_str(),
+        "ls" | "tree" | "du" | "pwd" | "cat" | "head" | "tail" | "sed" | "awk" | "jq" | "wc"
+    ) {
+        "read"
+    } else if lower.contains("npm install")
+        || lower.contains("pnpm install")
+        || lower.contains("yarn install")
+        || lower.contains("bun install")
+        || lower.contains("cargo install")
+    {
+        "install"
+    } else if lower.contains(" dev") || lower.contains("serve") || lower.contains("watch") {
+        "server"
+    } else if shell_command_requires_permission(command) {
+        "mutation"
+    } else {
+        "unknown"
     }
 }
 

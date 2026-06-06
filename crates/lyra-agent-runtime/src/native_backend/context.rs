@@ -297,12 +297,14 @@ pub(crate) fn tool_filesystem_runtime_context(
     json!({
         "scene": scene,
         "pinnedHandles": tools::tool_fs::pinned_handles_for_scene(scene, dispatcher),
+        "cachedHandles": tools::tool_fs::cached_handles_for_scene(scene, dispatcher),
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
         "policy": {
             "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
-            "discovery": "Use tool_fs_list on /tools, tool_fs_read_doc for directory docs, tool_fs_inspect for a target schema, and tool_fs_run with path or pinned handle.",
+            "discovery": "Use tool_fs_search first with a natural-language task description. Use cachedHandles only when they clearly fit. If search misses, call tool_fs_list as a directory fallback. Use tool_fs_inspect for a target schema, then tool_fs_run with path or handle.",
+            "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "sceneBehavior": "Scene changes only reorder directories and pinned handles; every built-in tool remains discoverable under /tools.",
             "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors."
         }

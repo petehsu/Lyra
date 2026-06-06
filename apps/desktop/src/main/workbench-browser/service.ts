@@ -36,12 +36,17 @@ import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observa
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
   WorkbenchBrowserAgentActionResult,
+  WorkbenchBrowserAgentFindResult,
   WorkbenchBrowserAgentFocusDirection,
   WorkbenchBrowserAgentFocusResult,
   WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentLocateResult,
   WorkbenchBrowserAgentObservation,
   WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentPoint,
+  WorkbenchBrowserAgentScrollBlock,
+  WorkbenchBrowserAgentScrollDirection,
+  WorkbenchBrowserAgentScrollResult,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAgentVerification,
   WorkbenchBrowserDebuggerSession,
@@ -144,8 +149,34 @@ export type WorkbenchBrowserIpcBridge = {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
+      readonly suppressActivity?: boolean;
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly findAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserSearchInPageRequest & {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly authState?: "none" | "borrowLiveLogin";
+      readonly useLiveLoginState?: boolean;
+    }
+  ) => Promise<WorkbenchBrowserAgentFindResult>;
+  readonly locateAgentPage: (
+    tabId: string,
+    request: {
+      readonly query: string;
+      readonly matchMode?: "exact" | "semantic";
+      readonly autoMap?: boolean;
+      readonly nearbyLimit?: number;
+      readonly reveal?: boolean;
+      readonly caseSensitive?: boolean;
+      readonly maxMatches?: number;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly authState?: "none" | "borrowLiveLogin";
+      readonly useLiveLoginState?: boolean;
+    }
+  ) => Promise<WorkbenchBrowserAgentLocateResult>;
   readonly actOnAgentElement: (
     tabId: string,
     request: {
@@ -177,6 +208,23 @@ export type WorkbenchBrowserIpcBridge = {
       readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentFocusResult>;
+  readonly scrollAgentPage: (
+    tabId: string,
+    request: {
+      readonly direction?: WorkbenchBrowserAgentScrollDirection;
+      readonly amount?: number;
+      readonly pages?: number;
+      readonly block?: WorkbenchBrowserAgentScrollBlock;
+      readonly behavior?: "instant" | "smooth";
+      readonly elementId?: number;
+      readonly targetRef?: string;
+      readonly point?: WorkbenchBrowserAgentPoint;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly autoMap?: boolean;
+      readonly timeoutMs?: number;
+      readonly reason?: "explicit_scroll" | "ensure_visible";
+    }
+  ) => Promise<WorkbenchBrowserAgentScrollResult>;
   readonly typeIntoAgentElement: (
     tabId: string,
     request: {
@@ -395,10 +443,13 @@ export const createWorkbenchBrowserIpcBridge = ({
     actOnAgentElement: manager.actOnAgentElement,
     actOnAgentPoint: manager.actOnAgentPoint,
     focusAgentPage: manager.focusAgentPage,
+    scrollAgentPage: manager.scrollAgentPage,
     typeIntoAgentElement: manager.typeIntoAgentElement,
     pressAgentKey: manager.pressAgentKey,
     navigateAgentPage: manager.navigateAgentPage,
     readAgentPage: manager.readAgentPage,
+    findAgentPage: manager.findAgentPage,
+    locateAgentPage: manager.locateAgentPage,
     captureAgentPage: manager.captureAgentPage,
     showAgentActivity: manager.showAgentActivity,
     readAgentFollowAudit: manager.readAgentFollowAudit,

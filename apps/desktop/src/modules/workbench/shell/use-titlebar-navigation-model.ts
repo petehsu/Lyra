@@ -3,7 +3,8 @@ import React, { useCallback, useMemo, useState, useEffect } from "react";
 import type {
   AgentSessionSummary,
   LyraDesktopApi,
-  WorkbenchBrowserPageRuntimeState
+  WorkbenchBrowserPageRuntimeState,
+  WorkbenchBrowserSearchInPageResult
 } from "../../../shared/desktop-bridge";
 import type {
   AgentSessionHistoryCategory,
@@ -138,6 +139,7 @@ type UseTitlebarNavigationModelOptions = {
 };
 
 type TitlebarNavigationModel = {
+  readonly mode: "normal" | "page-find";
   readonly value: string;
   readonly placeholder: string;
   readonly ariaLabel: string;
@@ -156,6 +158,12 @@ type TitlebarNavigationModel = {
   readonly showSuggestions: boolean;
   readonly onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   readonly onSuggestionClick: (suggestion: OmniboxSuggestion) => void;
+  readonly focusRequestKey: number;
+  readonly pageFindResult: WorkbenchBrowserSearchInPageResult | null;
+  readonly onPageFindClose: () => void;
+  readonly onPageFindNext: () => Promise<void>;
+  readonly onPageFindPrevious: () => Promise<void>;
+  readonly onPageFindMatchClick: (index: number) => Promise<void>;
 };
 
 const isBrowserLikeTab = (tab: WorkspaceTab | undefined): tab is WorkspaceTab =>
@@ -312,6 +320,10 @@ export const useTitlebarNavigationModel = ({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [sessionHistory, setSessionHistory] = useState<readonly string[]>([]);
+  const [pageFindTabId, setPageFindTabId] = useState<string | null>(null);
+  const [pageFindQuery, setPageFindQuery] = useState("");
+  const [pageFindResult, setPageFindResult] = useState<WorkbenchBrowserSearchInPageResult | null>(null);
+  const [focusRequestKey, setFocusRequestKey] = useState(0);
 
   const contextualValue = useMemo(
     () =>
@@ -327,7 +339,11 @@ export const useTitlebarNavigationModel = ({
   const currentDraft = activeTab === undefined ? undefined : draftByTabId[activeTab.id];
   const activeTabId = activeTab?.id ?? null;
   const activeTabIsHistoryApp = isHistoryAppTab(activeTab);
-  const value = isBrowserLikeTab(activeTab) || activeTabIsHistoryApp
+  const activeTabIsBrowserPage = activeTab?.pageKind === "page";
+  const pageFindActive = pageFindTabId !== null && pageFindTabId === activeTabId && activeTabIsBrowserPage;
+  const value = pageFindActive
+    ? pageFindQuery
+    : isBrowserLikeTab(activeTab) || activeTabIsHistoryApp
     ? activeTab.inputValue
     : currentDraft ?? contextualValue;
   const activePageAddress =
@@ -350,14 +366,184 @@ export const useTitlebarNavigationModel = ({
     currentDraft === undefined &&
     contextualValue.trim().length > 0;
   const resolvedPlaceholder =
+    pageFindActive
+      ? "Find in page"
+      :
     activeTabIsHistoryApp && historyAppPlaceholder !== undefined
       ? historyAppPlaceholder
       : placeholder;
+
+  const resetPageFindState = useCallback((): void => {
+    setPageFindTabId(null);
+    setPageFindQuery("");
+    setPageFindResult(null);
+    setShowSuggestions(false);
+  }, []);
+
+  const closePageFind = useCallback((): void => {
+    const tabId = pageFindTabId;
+    resetPageFindState();
+    if (tabId !== null) {
+      void desktopApi?.workbenchBrowser.searchInPage({
+        tabId,
+        query: ""
+      }).catch(() => undefined);
+      void desktopApi?.workbenchBrowser.setChromePopover?.({
+        tabId,
+        kind: "find",
+        visible: false
+      }).catch(() => undefined);
+    }
+  }, [desktopApi, pageFindTabId, resetPageFindState]);
+
+  const openPageFind = useCallback((tabId: string): void => {
+    setPageFindTabId(tabId);
+    setPageFindQuery("");
+    setPageFindResult(null);
+    setSuggestions([]);
+    setSelectedIndex(-1);
+    setShowSuggestions(false);
+    setFocusRequestKey((current) => current + 1);
+    void desktopApi?.workbenchBrowser.searchInPage({
+      tabId,
+      query: ""
+    }).catch(() => undefined);
+  }, [desktopApi]);
+
+  const runPageFind = useCallback(async (
+    direction: "current" | "next" | "previous",
+    queryOverride?: string
+  ): Promise<void> => {
+    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+      return;
+    }
+    const sourceQuery = queryOverride ?? pageFindQuery;
+    const query = sourceQuery.trim();
+    const result = await desktopApi.workbenchBrowser.searchInPage({
+      tabId: activeTabId,
+      query,
+      activeIndex: pageFindResult?.currentIndex ?? 0,
+      direction,
+      reveal: query.length > 0,
+      maxMatches: 40
+    }).catch(() => null);
+    if (result !== null) {
+      setPageFindResult(result);
+    }
+  }, [activeTabId, desktopApi, pageFindActive, pageFindQuery, pageFindResult?.currentIndex]);
+
+  const selectPageFindMatch = useCallback(async (index: number): Promise<void> => {
+    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+      return;
+    }
+    const query = pageFindQuery.trim();
+    if (query.length === 0) {
+      return;
+    }
+    const result = await desktopApi.workbenchBrowser.searchInPage({
+      tabId: activeTabId,
+      query,
+      activeIndex: index,
+      direction: "current",
+      reveal: true,
+      maxMatches: 40
+    }).catch(() => null);
+    if (result !== null) {
+      setPageFindResult(result);
+    }
+  }, [activeTabId, desktopApi, pageFindActive, pageFindQuery]);
+
+  useEffect(() => {
+    if (!pageFindActive || activeTabId === null || desktopApi?.workbenchBrowser === undefined) {
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void desktopApi.workbenchBrowser.searchInPage({
+        tabId: activeTabId,
+        query: pageFindQuery,
+        activeIndex: pageFindResult?.currentIndex ?? 0,
+        direction: "current",
+        reveal: pageFindQuery.trim().length > 0,
+        maxMatches: 40
+      }).then((result) => {
+        if (!cancelled) {
+          setPageFindResult(result);
+        }
+      }).catch(() => {
+        if (!cancelled) {
+          setPageFindResult(null);
+        }
+      });
+    }, pageFindQuery.trim().length === 0 ? 0 : 90);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeTabId, desktopApi, pageFindActive, pageFindQuery, pageFindResult?.currentIndex]);
+
+  useEffect(() => {
+    if (pageFindTabId !== null && pageFindTabId !== activeTabId) {
+      closePageFind();
+    }
+  }, [activeTabId, closePageFind, pageFindTabId]);
+
+  useEffect(() => {
+    if (desktopApi?.workbenchBrowser === undefined) {
+      return undefined;
+    }
+    return desktopApi.workbenchBrowser.onEvent((event) => {
+      if (event.kind === "request-page-find" && event.tabId === activeTabId && activeTabIsBrowserPage) {
+        openPageFind(event.tabId);
+      }
+      if (
+        event.kind === "request-page-find-match-select"
+        && event.tabId === pageFindTabId
+        && activeTabIsBrowserPage
+      ) {
+        void selectPageFindMatch(event.index);
+      }
+      if (
+        event.kind === "chrome-popover-state"
+        && event.popoverKind === "find"
+        && event.visible === false
+        && event.tabId === pageFindTabId
+      ) {
+        resetPageFindState();
+      }
+    });
+  }, [
+    activeTabId,
+    activeTabIsBrowserPage,
+    desktopApi,
+    openPageFind,
+    pageFindTabId,
+    resetPageFindState,
+    selectPageFindMatch
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (
+        event.key.toLocaleLowerCase() === "f"
+        && (event.metaKey || event.ctrlKey)
+        && !event.altKey
+        && activeTabId !== null
+        && activeTabIsBrowserPage
+      ) {
+        event.preventDefault();
+        openPageFind(activeTabId);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [activeTabId, activeTabIsBrowserPage, openPageFind]);
 
   // Search Autocomplete Suggestion Fetching & Debouncing
   useEffect(() => {
     if (
       !showSuggestions
+      || pageFindActive
       || (!isBrowserLikeTab(activeTab) && !activeTabIsHistoryApp)
       || value.trim().length === 0
     ) {
@@ -449,6 +635,11 @@ export const useTitlebarNavigationModel = ({
       return;
     }
 
+    if (pageFindActive) {
+      setPageFindQuery(nextValue);
+      return;
+    }
+
     if (isBrowserLikeTab(activeTab) || isHistoryAppTab(activeTab)) {
       tabsModel.updateActiveInput(nextValue);
       return;
@@ -463,7 +654,7 @@ export const useTitlebarNavigationModel = ({
         [activeTabId]: nextValue
       };
     });
-  }, [activeTab, activeTabId, tabsModel]);
+  }, [activeTab, activeTabId, pageFindActive, tabsModel]);
 
   const executeResolution = useCallback(async (resolution: any) => {
     if (activeTab === undefined || activeTabId === null) {
@@ -560,6 +751,11 @@ export const useTitlebarNavigationModel = ({
       return;
     }
 
+    if (pageFindActive) {
+      await runPageFind("next");
+      return;
+    }
+
     if (primaryActionKind === "reload") {
       if (activeTabIsHistoryApp) {
         onHistoryAppReload?.();
@@ -579,8 +775,10 @@ export const useTitlebarNavigationModel = ({
     desktopApi,
     executeResolution,
     onHistoryAppReload,
+    pageFindActive,
     primaryActionKind,
     onReload,
+    runPageFind,
     value
   ]);
 
@@ -603,6 +801,18 @@ export const useTitlebarNavigationModel = ({
 
   const onKeyDown = useCallback(
     async (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (pageFindActive) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePageFind();
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          await runPageFind(event.shiftKey ? "previous" : "next");
+          return;
+        }
+      }
       if (!showSuggestions || suggestions.length === 0) {
         return;
       }
@@ -625,7 +835,7 @@ export const useTitlebarNavigationModel = ({
         }
       }
     },
-    [showSuggestions, suggestions, selectedIndex, selectSuggestion]
+    [closePageFind, pageFindActive, runPageFind, showSuggestions, suggestions, selectedIndex, selectSuggestion]
   );
 
   const onBlur = useCallback((): void => {
@@ -634,25 +844,30 @@ export const useTitlebarNavigationModel = ({
       setShowSuggestions(false);
     }, 150);
 
-    if (activeTab === undefined || activeTabId === null || isBrowserLikeTab(activeTab)) {
+    if (activeTab === undefined || activeTabId === null || isBrowserLikeTab(activeTab) || pageFindActive) {
       return;
     }
     if ((draftByTabId[activeTabId] ?? "").trim().length === 0) {
       clearDraft(activeTabId);
     }
-  }, [activeTab, activeTabId, clearDraft, draftByTabId]);
+  }, [activeTab, activeTabId, clearDraft, draftByTabId, pageFindActive]);
 
   return {
+    mode: pageFindActive ? "page-find" : "normal",
     value,
     placeholder: resolvedPlaceholder,
     ariaLabel,
     submitLabel,
     reloadLabel,
-    primaryActionKind,
+    primaryActionKind: pageFindActive ? "submit" : primaryActionKind,
     isContextualAddress,
     onChange,
     onSubmit,
-    onFocus: () => setShowSuggestions(true),
+    onFocus: () => {
+      if (!pageFindActive) {
+        setShowSuggestions(true);
+      }
+    },
     onBlur,
 
     // Autocomplete predictions integration
@@ -660,6 +875,12 @@ export const useTitlebarNavigationModel = ({
     selectedIndex,
     showSuggestions,
     onKeyDown,
-    onSuggestionClick: selectSuggestion
+    onSuggestionClick: selectSuggestion,
+    focusRequestKey,
+    pageFindResult,
+    onPageFindClose: closePageFind,
+    onPageFindNext: () => runPageFind("next"),
+    onPageFindPrevious: () => runPageFind("previous"),
+    onPageFindMatchClick: selectPageFindMatch
   };
 };

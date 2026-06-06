@@ -9,6 +9,7 @@ import {
   type WebContents,
   type WebFrameMain
 } from "electron";
+import { X509Certificate } from "node:crypto";
 
 import type {
   BrowserRecoveryAnchor,
@@ -18,6 +19,7 @@ import type {
   BrowserStorageStateRef,
   WorkbenchBrowserEvent,
   WorkbenchBrowserChromePopoverRequest,
+  WorkbenchBrowserCertificateInfo,
   WorkbenchBrowserClearSiteDataRequest,
   WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserLayoutSnapshot,
@@ -35,6 +37,8 @@ import type {
   WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserAuthChallengeSignal,
   WorkbenchBrowserElevationSession,
+  WorkbenchBrowserSecurityLevel,
+  WorkbenchBrowserSecurityLocale,
   WorkbenchBrowserSharedControlEvent,
   WorkbenchBrowserSharedControlStateEvent,
   WorkbenchLumenFollowAudit,
@@ -94,7 +98,9 @@ import {
 } from "./shared-control";
 import {
   buildBrowserChromePopoverDocument,
-  resolveBrowserChromePopoverHeight
+  resolveBrowserFindPopoverHeight,
+  resolveBrowserChromePopoverHeight,
+  resolveBrowserOmniboxPopoverHeight
 } from "./chrome-popover-overlay";
 import {
   buildFrameDomProbeScript,
@@ -109,16 +115,22 @@ import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "./types";
 import type {
   WorkbenchBrowserAgentActionResult,
   WorkbenchBrowserAgentElement,
+  WorkbenchBrowserAgentFindResult,
   WorkbenchBrowserAgentFocusDirection,
   WorkbenchBrowserAgentFocusResult,
   WorkbenchBrowserAgentFocusTrailEntry,
   WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentLocateResult,
   WorkbenchBrowserAgentModeInfo,
   WorkbenchBrowserAgentModeReason,
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentObservation,
   WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentPoint,
+  WorkbenchBrowserAgentScrollBlock,
+  WorkbenchBrowserAgentScrollDirection,
+  WorkbenchBrowserAgentScrollEffect,
+  WorkbenchBrowserAgentScrollResult,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAgentVerification,
   WorkbenchBrowserDebuggerSession,
@@ -133,6 +145,23 @@ import type {
   WorkbenchBrowserSemanticTree,
   WorkbenchBrowserViewManager
 } from "./types";
+
+type BrowserPageFindTarget = {
+  readonly tabId: string;
+  readonly webContents: WebContents;
+  readonly address: string;
+  readonly title: string;
+};
+
+type BrowserPageFindRevealResult = {
+  readonly ok: boolean;
+  readonly rect?: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+};
 
 type BrowserPageEntry = {
   readonly tabId: string;
@@ -158,6 +187,24 @@ type BrowserAgentPageTarget = {
   address: string;
   title: string;
   isLoading: boolean;
+};
+
+type BrowserAgentViewportState = {
+  readonly width: number;
+  readonly height: number;
+  readonly scrollX: number;
+  readonly scrollY: number;
+  readonly maxScrollX: number;
+  readonly maxScrollY: number;
+};
+
+type BrowserAgentAutoScrollResult = {
+  readonly element?: WorkbenchBrowserAgentElement;
+  readonly point?: {
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly effect?: WorkbenchBrowserAgentScrollEffect;
 };
 
 type BrowserAgentShadowEntry = BrowserAgentPageTarget & {
@@ -703,6 +750,7 @@ const findSearchInPageMatches = (
     const endChar = index + query.length;
     if (matches.length < maxMatches) {
       matches.push({
+        id: `find-${hashStableString(`${query}|${totalMatches}|${index}|${endChar}`)}`,
         index: totalMatches,
         startChar: index,
         endChar,
@@ -715,6 +763,134 @@ const findSearchInPageMatches = (
     matches,
     totalMatches,
     truncated: totalMatches > matches.length
+  };
+};
+
+type BrowserSemanticLocateCandidate = {
+  readonly anchorQuery: string;
+  readonly score: number;
+  readonly reason: string;
+};
+
+const semanticLocateTokens = (value: string): readonly string[] => {
+  const normalized = value
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\u4e00-\u9fff]+/gu, " ")
+    .trim();
+  if (normalized.length === 0) {
+    return [];
+  }
+  const words = normalized
+    .split(/\s+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+  const cjk = [...normalized.matchAll(/[\u4e00-\u9fff]{2,}/gu)]
+    .flatMap((match) => {
+      const text = match[0];
+      const grams: string[] = [];
+      for (let index = 0; index < text.length - 1; index += 1) {
+        grams.push(text.slice(index, index + 2));
+      }
+      return grams;
+    });
+  return [...new Set([...words, ...cjk])].slice(0, 80);
+};
+
+const semanticLocateChunks = (text: string): readonly string[] => {
+  const lines = text
+    .split(/\n+/u)
+    .map((line) => line.replace(/\s+/gu, " ").trim())
+    .filter((line) => line.length > 0);
+  const chunks: string[] = [];
+  let current = "";
+  for (const line of lines) {
+    const next = current.length === 0 ? line : `${current}\n${line}`;
+    if (next.length > 800 && current.length >= 260) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = next;
+    }
+  }
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+  return chunks.length > 0 ? chunks : [text.replace(/\s+/gu, " ").trim()].filter(Boolean);
+};
+
+const fuzzySubsequence = (needle: string, haystack: string): boolean => {
+  if (needle.length === 0) {
+    return false;
+  }
+  let cursor = 0;
+  for (const char of haystack) {
+    if (char === needle[cursor]) {
+      cursor += 1;
+      if (cursor >= needle.length) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+const semanticLocateAnchorFromChunk = (
+  chunk: string,
+  queryTokens: readonly string[]
+): string => {
+  const sentences = chunk
+    .split(/(?<=[。！？.!?])\s+|\n+/u)
+    .map((sentence) => sentence.replace(/\s+/gu, " ").trim())
+    .filter((sentence) => sentence.length > 0);
+  const candidates = sentences.length > 0 ? sentences : [chunk.replace(/\s+/gu, " ").trim()];
+  const scored = candidates
+    .map((candidate) => {
+      const tokens = semanticLocateTokens(candidate);
+      const overlap = queryTokens.filter((token) => tokens.includes(token)).length;
+      return { candidate, overlap };
+    })
+    .sort((left, right) => right.overlap - left.overlap || left.candidate.length - right.candidate.length);
+  const anchor = scored[0]?.candidate ?? chunk;
+  return anchor.length <= 96 ? anchor : anchor.slice(0, 96).trim();
+};
+
+const selectSemanticLocateCandidate = (
+  text: string,
+  query: string
+): BrowserSemanticLocateCandidate | null => {
+  const queryTokens = semanticLocateTokens(query);
+  if (queryTokens.length === 0) {
+    return null;
+  }
+  const normalizedQuery = query.toLocaleLowerCase().trim();
+  const scored = semanticLocateChunks(text)
+    .map((chunk) => {
+      const normalizedChunk = chunk.toLocaleLowerCase();
+      const chunkTokens = semanticLocateTokens(chunk);
+      const overlapCount = queryTokens.filter((token) => chunkTokens.includes(token)).length;
+      const overlapScore = overlapCount / Math.max(1, queryTokens.length);
+      const phraseBonus = normalizedChunk.includes(normalizedQuery) ? 0.45 : 0;
+      const fuzzyBonus = queryTokens.some((token) => fuzzySubsequence(token, normalizedChunk)) ? 0.12 : 0;
+      const shortBonus = chunk.length <= 420 ? 0.08 : 0;
+      const score = overlapScore + phraseBonus + fuzzyBonus + shortBonus;
+      return {
+        chunk,
+        score,
+        reason:
+          phraseBonus > 0
+            ? "phrase-match"
+            : overlapCount > 0 ? `token-overlap:${overlapCount}/${queryTokens.length}` : "fuzzy-overlap"
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+  const best = scored[0];
+  if (best === undefined || best.score < 0.34) {
+    return null;
+  }
+  return {
+    anchorQuery: semanticLocateAnchorFromChunk(best.chunk, queryTokens),
+    score: Number(best.score.toFixed(3)),
+    reason: best.reason
   };
 };
 
@@ -2039,6 +2215,11 @@ export const createWorkbenchBrowserViewManager = ({
     chromePopoverView.setVisible(false);
     chromePopoverView.setBackgroundColor("#00000000");
     chromePopoverView.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    chromePopoverView.webContents.on("will-navigate", (event, url) => {
+      if (handleChromePopoverNavigation(url)) {
+        event.preventDefault();
+      }
+    });
     return chromePopoverView;
   };
 
@@ -2051,6 +2232,101 @@ export const createWorkbenchBrowserViewManager = ({
     // Re-adding keeps the popover above page WebContentsViews after layout updates.
     overlayView.removeChildView(view);
     overlayView.addChildView(view);
+  };
+
+  const chromePopoverKindForRequest = (
+    request: WorkbenchBrowserChromePopoverRequest | undefined
+  ): "security" | "find" | "omnibox" => {
+    if (request?.kind === "find" || request?.kind === "omnibox") {
+      return request.kind;
+    }
+    return "security";
+  };
+
+  const activeFindPopoverEntry = (): {
+    readonly tabId: string;
+    readonly request: WorkbenchBrowserChromePopoverRequest;
+  } | null => {
+    for (const [tabId, request] of activeChromePopovers.entries()) {
+      if (request.kind === "find" && request.find !== undefined) {
+        return { tabId, request };
+      }
+    }
+    return null;
+  };
+
+  const activeOmniboxPopoverEntry = (): {
+    readonly tabId: string;
+    readonly request: WorkbenchBrowserChromePopoverRequest;
+  } | null => {
+    for (const [tabId, request] of activeChromePopovers.entries()) {
+      if (request.kind === "omnibox" && request.omnibox !== undefined) {
+        return { tabId, request };
+      }
+    }
+    return null;
+  };
+
+  const handleChromePopoverNavigation = (url: string): boolean => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    if (parsed.protocol === "lyra-omnibox:") {
+      const active = activeOmniboxPopoverEntry();
+      if (active === null) {
+        return true;
+      }
+      const action = parsed.hostname || parsed.pathname.replace(/^\//u, "");
+      if (action !== "suggestion") {
+        return true;
+      }
+      const index = Math.round(Number(parsed.searchParams.get("index") ?? -1));
+      if (!Number.isFinite(index) || index < 0) {
+        return true;
+      }
+      publishEvent({
+        kind: "request-omnibox-suggestion-select",
+        tabId: active.tabId,
+        index
+      });
+      return true;
+    }
+    if (parsed.protocol !== "lyra-find:") {
+      return false;
+    }
+    const active = activeFindPopoverEntry();
+    const activeFind = active?.request.find;
+    if (active === null || activeFind === undefined) {
+      return true;
+    }
+    const action = parsed.hostname || parsed.pathname.replace(/^\//u, "");
+    void (async () => {
+      if (action === "close") {
+        await setChromePopover({ ...active.request, tabId: active.tabId, visible: false });
+        const entry = entries.get(active.tabId);
+        if (entry !== undefined) {
+          await clearSearchInPageOverlay(entry);
+        }
+        return;
+      }
+      if (action === "match") {
+        const requestedIndex = Math.round(Number(
+          parsed.searchParams.get("value") ?? activeFind.currentIndex
+        ));
+        if (Number.isFinite(requestedIndex) && requestedIndex > 0) {
+          publishEvent({
+            kind: "request-page-find-match-select",
+            tabId: active.tabId,
+            index: requestedIndex
+          });
+        }
+        return;
+      }
+    })();
+    return true;
   };
 
   const detachChromePopoverView = (): void => {
@@ -2070,6 +2346,7 @@ export const createWorkbenchBrowserViewManager = ({
   };
 
   const hideChromePopover = (entry: BrowserPageEntry): void => {
+    const previous = activeChromePopovers.get(entry.tabId);
     const hadPopover = activeChromePopovers.delete(entry.tabId);
     if (activeChromePopovers.size === 0) {
       detachChromePopoverView();
@@ -2078,9 +2355,187 @@ export const createWorkbenchBrowserViewManager = ({
       publishEvent({
         kind: "chrome-popover-state",
         tabId: entry.tabId,
-        popoverKind: "security",
+        popoverKind: chromePopoverKindForRequest(previous),
         visible: false
       });
+      if (previous?.kind === "find") {
+        void clearSearchInPageOverlay(entry);
+      }
+    }
+  };
+
+  const hideTransientChromePopover = (entry: BrowserPageEntry): void => {
+    const previous = activeChromePopovers.get(entry.tabId);
+    if (previous?.kind === "find") {
+      return;
+    }
+    hideChromePopover(entry);
+  };
+
+  const securityUnavailableCopy = (
+    locale: WorkbenchBrowserSecurityLocale | undefined,
+    key: "notHttps" | "noCertificate" | "certificateReadFailed"
+  ): string => {
+    const zh = locale !== "en-US";
+    switch (key) {
+      case "notHttps":
+        return zh ? "当前页面不是 HTTPS 连接。" : "The current page is not an HTTPS connection.";
+      case "certificateReadFailed":
+        return zh ? "Chromium 证书接口读取失败。" : "Chromium certificate lookup failed.";
+      case "noCertificate":
+      default:
+        return zh
+          ? "Chromium 未返回可解析的证书链。"
+          : "Chromium did not return a parsable certificate chain.";
+    }
+  };
+
+  const extractCertificateCommonName = (value: string): string | undefined => {
+    const match = value
+      .split(/\r?\n|,\s*/)
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("CN="));
+    if (match === undefined) {
+      return undefined;
+    }
+    const commonName = match.slice(3).trim();
+    return commonName.length === 0 ? undefined : commonName;
+  };
+
+  const parseCertificateInfo = (derBase64: string): WorkbenchBrowserCertificateInfo => {
+    const certificate = new X509Certificate(Buffer.from(derBase64, "base64"));
+    const subjectCommonName = extractCertificateCommonName(certificate.subject);
+    const issuerCommonName = extractCertificateCommonName(certificate.issuer);
+    return {
+      subject: certificate.subject,
+      ...(subjectCommonName === undefined ? {} : { subjectCommonName }),
+      issuer: certificate.issuer,
+      ...(issuerCommonName === undefined ? {} : { issuerCommonName }),
+      validFrom: certificate.validFrom,
+      validTo: certificate.validTo,
+      serialNumber: certificate.serialNumber,
+      fingerprint256: certificate.fingerprint256,
+      ...(certificate.subjectAltName === undefined ? {} : { subjectAltName: certificate.subjectAltName })
+    };
+  };
+
+  const classifySecurityLevelForUrl = (url: URL): WorkbenchBrowserSecurityLevel => {
+    if (url.protocol === "https:") {
+      return "secure";
+    }
+    if (url.protocol === "http:") {
+      return "insecure";
+    }
+    return "system";
+  };
+
+  const readEntrySecurityUrl = (
+    entry: BrowserPageEntry,
+    request: WorkbenchBrowserChromePopoverRequest
+  ): URL | null => {
+    const candidates = [
+      normalizeString(entry.webContents.getURL()),
+      normalizeString(entry.runtime.address),
+      normalizeString(request.security?.address)
+    ];
+    for (const candidate of candidates) {
+      if (candidate === null) {
+        continue;
+      }
+      try {
+        return new URL(candidate);
+      } catch (_error) {
+        // Try the next observed address.
+      }
+    }
+    return null;
+  };
+
+  const enrichSecurityChromePopoverRequest = async (
+    entry: BrowserPageEntry,
+    request: WorkbenchBrowserChromePopoverRequest
+  ): Promise<WorkbenchBrowserChromePopoverRequest> => {
+    if (request.kind !== "security" || request.security === undefined) {
+      return request;
+    }
+
+    const locale = request.security.locale;
+    const {
+      certificate: _certificate,
+      certificateStatus: _certificateStatus,
+      certificateUnavailableReason: _certificateUnavailableReason,
+      ...securityInput
+    } = request.security;
+    const url = readEntrySecurityUrl(entry, request);
+    const level = url === null ? request.security.level : classifySecurityLevelForUrl(url);
+    const address = url?.toString() ?? request.security.address;
+    const scheme = url?.protocol.replace(/:$/, "") ?? request.security.scheme;
+    const origin = url?.origin === "null" ? undefined : url?.origin ?? request.security.origin;
+    const domain =
+      url?.hostname
+      ?? normalizeString(request.security.domain)
+      ?? normalizeString(request.security.address)
+      ?? address;
+    const baseSecurity = {
+      ...securityInput,
+      level,
+      address,
+      domain,
+      ...(locale === undefined ? {} : { locale }),
+      ...(scheme === undefined || scheme.length === 0 ? {} : { scheme }),
+      ...(origin === undefined || origin.length === 0 ? {} : { origin })
+    };
+
+    if (level !== "secure" || url?.protocol !== "https:" || origin === undefined) {
+      return {
+        ...request,
+        security: {
+          ...baseSecurity,
+          certificateStatus: "not-applicable",
+          certificateUnavailableReason: securityUnavailableCopy(locale, "notHttps")
+        }
+      };
+    }
+
+    let debuggerSession: WorkbenchBrowserDebuggerSession | null = null;
+    try {
+      debuggerSession = await openDebuggerSessionForTarget(liveAgentTarget(entry));
+      const response = await debuggerSession.sendCommand("Network.getCertificate", { origin });
+      const tableNames = response.tableNames;
+      const certificateDer =
+        Array.isArray(tableNames) && typeof tableNames[0] === "string"
+          ? tableNames[0]
+          : undefined;
+      if (certificateDer === undefined || certificateDer.trim().length === 0) {
+        return {
+          ...request,
+          security: {
+            ...baseSecurity,
+            certificateStatus: "unavailable",
+            certificateUnavailableReason: securityUnavailableCopy(locale, "noCertificate")
+          }
+        };
+      }
+      return {
+        ...request,
+        security: {
+          ...baseSecurity,
+          certificate: parseCertificateInfo(certificateDer),
+          certificateStatus: "available"
+        }
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ...request,
+        security: {
+          ...baseSecurity,
+          certificateStatus: "unavailable",
+          certificateUnavailableReason: `${securityUnavailableCopy(locale, "certificateReadFailed")} ${message}`
+        }
+      };
+    } finally {
+      await debuggerSession?.close().catch(() => undefined);
     }
   };
 
@@ -2093,6 +2548,7 @@ export const createWorkbenchBrowserViewManager = ({
     }
     const entry = requireEntry(tabId);
     if (request.visible !== true) {
+      const previous = activeChromePopovers.get(tabId);
       const hadPopover = activeChromePopovers.delete(tabId);
       if (activeChromePopovers.size === 0) {
         detachChromePopoverView();
@@ -2101,35 +2557,65 @@ export const createWorkbenchBrowserViewManager = ({
         publishEvent({
           kind: "chrome-popover-state",
           tabId,
-          popoverKind: "security",
+          popoverKind: chromePopoverKindForRequest(previous ?? request),
           visible: false
         });
+        if ((previous ?? request).kind === "find") {
+          await clearSearchInPageOverlay(entry);
+        }
       }
       return;
     }
-    if (request.kind !== "security" || request.security === undefined) {
+    if (
+      (request.kind === "security" && request.security === undefined)
+      || (request.kind === "find" && request.find === undefined)
+      || (request.kind === "omnibox" && request.omnibox === undefined)
+    ) {
       throw new Error("chrome_popover_payload_required");
     }
+    const popoverRequest = await enrichSecurityChromePopoverRequest(entry, request);
     activeChromePopovers.clear();
     const layout = entry.layout ?? findLayout(tabId);
     const pageBounds =
       layout === null
         ? { x: 0, y: 0, width: 800, height: 600 }
         : toBounds(layout);
-    const anchor = readChromePopoverAnchor(request);
-    const popoverWidth = 340;
+    const anchor = readChromePopoverAnchor(popoverRequest);
     const boundaryPadding = 8;
-    const maxPopoverHeight = Math.max(160, Math.min(520, pageBounds.height - boundaryPadding * 2));
-    const popoverHeight = resolveBrowserChromePopoverHeight({
-      level: request.security.level,
-      maxHeight: maxPopoverHeight
-    });
     const anchorLeft = anchor?.left ?? pageBounds.x + boundaryPadding;
     const anchorBottom = anchor?.bottom ?? pageBounds.y + boundaryPadding;
     const anchorTop = anchor?.top ?? pageBounds.y + boundaryPadding;
+    const anchorWidth = Math.max(1, Math.round(anchor?.width ?? 340));
     const pageRelativeLeft = anchorLeft - pageBounds.x;
     const pageRelativeBottom = anchorBottom - pageBounds.y;
     const pageRelativeTop = anchorTop - pageBounds.y;
+    const isOmniboxLikePopover = popoverRequest.kind === "find" || popoverRequest.kind === "omnibox";
+    const popoverWidth =
+      isOmniboxLikePopover
+        ? Math.max(
+            220,
+            Math.min(anchorWidth, Math.max(220, pageBounds.width - boundaryPadding * 2))
+          )
+        : 340;
+    const maxPopoverHeight =
+      isOmniboxLikePopover
+        ? Math.max(54, Math.min(240, pageBounds.height - boundaryPadding * 2))
+        : Math.max(160, Math.min(520, pageBounds.height - boundaryPadding * 2));
+    const popoverHeight =
+      popoverRequest.kind === "find"
+        ? resolveBrowserFindPopoverHeight({
+            matchCount: popoverRequest.find?.matches.length ?? 0,
+            maxHeight: maxPopoverHeight
+          })
+        : popoverRequest.kind === "omnibox"
+        ? resolveBrowserOmniboxPopoverHeight({
+            itemCount: popoverRequest.omnibox?.suggestions.length ?? 0,
+            maxHeight: maxPopoverHeight
+          })
+        : resolveBrowserChromePopoverHeight({
+            level: popoverRequest.security!.level,
+            maxHeight: maxPopoverHeight
+          });
     const x = Math.max(
       boundaryPadding,
       Math.min(
@@ -2139,38 +2625,46 @@ export const createWorkbenchBrowserViewManager = ({
     );
     const spaceBelow = pageBounds.height - pageRelativeBottom - boundaryPadding - 6;
     const preferredY =
-      spaceBelow >= popoverHeight
-        ? pageRelativeBottom + 6
-        : pageRelativeTop - popoverHeight - 6;
+      popoverRequest.kind === "find"
+        ? anchorTop - popoverHeight - 6
+        : popoverRequest.kind === "omnibox"
+          ? pageRelativeTop - popoverHeight + 1
+          : spaceBelow >= popoverHeight
+            ? pageRelativeBottom + 6
+            : pageRelativeTop - popoverHeight - 6;
     const y = Math.max(
       boundaryPadding,
       Math.min(
         Math.round(preferredY),
-        Math.max(boundaryPadding, pageBounds.height - popoverHeight - boundaryPadding)
+        popoverRequest.kind === "find"
+          ? Math.max(boundaryPadding, pageBounds.y + pageBounds.height - popoverHeight - boundaryPadding)
+          : Math.max(boundaryPadding, pageBounds.height - popoverHeight - boundaryPadding)
       )
     );
     const view = ensureChromePopoverView();
     view.setBounds({
       x: pageBounds.x + x,
-      y: pageBounds.y + y,
+      y: popoverRequest.kind === "find" ? y : pageBounds.y + y,
       width: popoverWidth,
       height: popoverHeight
     });
     attachChromePopoverView(view);
     view.setVisible(true);
     const html = buildBrowserChromePopoverDocument({
-      kind: request.kind,
+      kind: popoverRequest.kind,
       width: popoverWidth,
       height: popoverHeight,
-      security: request.security,
+      ...(popoverRequest.security === undefined ? {} : { security: popoverRequest.security }),
+      ...(popoverRequest.find === undefined ? {} : { find: popoverRequest.find }),
+      ...(popoverRequest.omnibox === undefined ? {} : { omnibox: popoverRequest.omnibox }),
       theme: webThemeInjector.readCurrentSnapshot()
     });
     await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    activeChromePopovers.set(tabId, request);
+    activeChromePopovers.set(tabId, popoverRequest);
     publishEvent({
       kind: "chrome-popover-state",
       tabId,
-      popoverKind: "security",
+      popoverKind: popoverRequest.kind,
       visible: true
     });
   };
@@ -3687,18 +4181,31 @@ export const createWorkbenchBrowserViewManager = ({
       if (mouse.type === "mouseDown") {
         userInputDirtyTabs.add(entry.tabId);
         syncPerformanceRuntimeState(entry.runtime, entry);
-        hideChromePopover(entry);
+        hideTransientChromePopover(entry);
       }
     });
 
-    webContents.on("before-input-event", (event) => {
+    webContents.on("before-input-event", (event, input) => {
+      if (
+        input.type === "keyDown"
+        && input.key.toLocaleLowerCase() === "f"
+        && (input.control === true || input.meta === true)
+        && input.alt !== true
+      ) {
+        event.preventDefault();
+        publishEvent({
+          kind: "request-page-find",
+          tabId: entry.tabId
+        });
+        return;
+      }
       userInputDirtyTabs.add(entry.tabId);
       syncPerformanceRuntimeState(entry.runtime, entry);
       handleSharedControlInput(entry.tabId, "keyboard", event);
     });
 
     webContents.on("focus", () => {
-      hideChromePopover(entry);
+      hideTransientChromePopover(entry);
     });
 
     webContents.on("enter-html-full-screen", () => {
@@ -4121,28 +4628,285 @@ export const createWorkbenchBrowserViewManager = ({
     };
   };
 
-  const searchInPage = async (
-    request: WorkbenchBrowserSearchInPageRequest
-  ): Promise<WorkbenchBrowserSearchInPageResult> => {
-    const query = normalizeString(request.query);
-    if (query === null) {
-      throw new Error("query is required");
-    }
-    const tabId = normalizeString(request.tabId) ?? getActiveOrFocusedTabId();
-    if (tabId === null) {
-      throw new Error("tab_not_found");
-    }
-    const entry = requireEntry(tabId);
+  const clearSearchInPageOverlay = async (
+    target: Pick<BrowserPageFindTarget, "webContents">
+  ): Promise<void> => {
     try {
-      entry.webContents.findInPage(query, {
-        forward: true,
-        findNext: false,
+      target.webContents.stopFindInPage("clearSelection");
+    } catch {
+      // The injected overlay below is the durable cleanup path.
+    }
+    await target.webContents.executeJavaScript(`
+      (() => {
+        const timers = window.__lyraPageFindTimers;
+        if (Array.isArray(timers)) {
+          for (const timer of timers) clearTimeout(timer);
+        }
+        window.__lyraPageFindTimers = [];
+        document.getElementById("__lyra_page_find_overlay__")?.remove();
+        return true;
+      })()
+    `, true).catch(() => undefined);
+  };
+
+  const revealSearchInPageMatch = async (
+    target: Pick<BrowserPageFindTarget, "webContents">,
+    query: string,
+    activeIndex: number,
+    caseSensitive: boolean
+  ): Promise<BrowserPageFindRevealResult> => {
+    const script = `
+      (async () => {
+        const QUERY = ${JSON.stringify(query)};
+        const TARGET_INDEX = ${JSON.stringify(activeIndex)};
+        const CASE_SENSITIVE = ${JSON.stringify(caseSensitive)};
+        const clearOverlay = () => {
+          const timers = window.__lyraPageFindTimers;
+          if (Array.isArray(timers)) {
+            for (const timer of timers) clearTimeout(timer);
+          }
+          window.__lyraPageFindTimers = [];
+          document.getElementById("__lyra_page_find_overlay__")?.remove();
+        };
+        clearOverlay();
+        if (!QUERY || TARGET_INDEX < 1 || !document.body) {
+          return { ok: false };
+        }
+        const normalize = (value) => CASE_SENSITIVE ? value : String(value).toLocaleLowerCase();
+        const needle = normalize(QUERY);
+        const rejectedTags = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SELECT", "OPTION"]);
+        const acceptNode = (node) => {
+          const parent = node.parentElement;
+          if (!parent || rejectedTags.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          if (parent.closest("#__lyra_page_find_overlay__")) return NodeFilter.FILTER_REJECT;
+          if (!node.nodeValue || node.nodeValue.trim().length === 0) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        };
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode });
+        let count = 0;
+        let selected = null;
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          const source = normalize(node.nodeValue || "");
+          let cursor = 0;
+          while (needle.length > 0 && cursor <= source.length) {
+            const index = source.indexOf(needle, cursor);
+            if (index < 0) break;
+            count += 1;
+            if (count === TARGET_INDEX) {
+              selected = { node, start: index, end: index + QUERY.length };
+              break;
+            }
+            cursor = Math.max(index + needle.length, index + 1);
+          }
+          if (selected) break;
+        }
+        if (!selected) return { ok: false, totalScanned: count };
+        const range = document.createRange();
+        range.setStart(selected.node, selected.start);
+        range.setEnd(selected.node, selected.end);
+        const waitFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+        const fallbackElementRect = selected.node.parentElement?.getBoundingClientRect?.();
+        const firstRect = typeof range.getBoundingClientRect === "function"
+          ? range.getBoundingClientRect()
+          : fallbackElementRect;
+        if (!firstRect) return { ok: false, totalScanned: count };
+        if (
+          firstRect.top < 80 ||
+          firstRect.bottom > window.innerHeight - 80 ||
+          firstRect.left < 20 ||
+          firstRect.right > window.innerWidth - 20
+        ) {
+          window.scrollBy({
+            left: firstRect.left < 20 ? firstRect.left - 80 : firstRect.right > window.innerWidth - 20 ? firstRect.right - window.innerWidth + 80 : 0,
+            top: firstRect.top - Math.max(90, window.innerHeight * 0.38),
+            behavior: "smooth"
+          });
+          await waitFrame();
+          await waitFrame();
+        }
+        const rects = (typeof range.getClientRects === "function"
+          ? Array.from(range.getClientRects())
+          : []
+        )
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .map((rect) => ({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height
+          }));
+        if (rects.length === 0 && fallbackElementRect && fallbackElementRect.width > 0 && fallbackElementRect.height > 0) {
+          rects.push({
+            left: fallbackElementRect.left,
+            top: fallbackElementRect.top,
+            right: fallbackElementRect.right,
+            bottom: fallbackElementRect.bottom,
+            width: fallbackElementRect.width,
+            height: fallbackElementRect.height
+          });
+        }
+        if (rects.length === 0) return { ok: false, totalScanned: count };
+        const bounds = rects.reduce((acc, rect) => ({
+          left: Math.min(acc.left, rect.left),
+          top: Math.min(acc.top, rect.top),
+          right: Math.max(acc.right, rect.right),
+          bottom: Math.max(acc.bottom, rect.bottom)
+        }), {
+          left: rects[0].left,
+          top: rects[0].top,
+          right: rects[0].right,
+          bottom: rects[0].bottom
+        });
+        const pad = 10;
+        const focus = {
+          left: Math.max(0, bounds.left - pad),
+          top: Math.max(0, bounds.top - pad),
+          right: Math.min(window.innerWidth, bounds.right + pad),
+          bottom: Math.min(window.innerHeight, bounds.bottom + pad)
+        };
+        const host = document.createElement("div");
+        host.id = "__lyra_page_find_overlay__";
+        host.setAttribute("aria-hidden", "true");
+        host.style.cssText = "position:fixed;inset:0;z-index:2147483646;pointer-events:none;contain:layout style paint;";
+        const style = document.createElement("style");
+        style.textContent = \`
+          #__lyra_page_find_overlay__ .lyra-find-blur {
+            position: fixed;
+            background: rgba(12, 12, 12, 0.16);
+            backdrop-filter: blur(7px);
+            -webkit-backdrop-filter: blur(7px);
+            opacity: 0;
+            transition: opacity 190ms cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          #__lyra_page_find_overlay__ .lyra-find-highlight {
+            position: fixed;
+            border-radius: 3px;
+            background: rgba(255, 214, 64, 0.58);
+            box-shadow: 0 0 0 1px rgba(180, 125, 0, 0.36), 0 4px 18px rgba(255, 204, 51, 0.28);
+            opacity: 1;
+            transition: background 260ms ease, box-shadow 260ms ease, opacity 260ms ease;
+            mix-blend-mode: multiply;
+          }
+        \`;
+        host.appendChild(style);
+        const panels = [
+          { left: 0, top: 0, width: window.innerWidth, height: focus.top },
+          { left: 0, top: focus.bottom, width: window.innerWidth, height: Math.max(0, window.innerHeight - focus.bottom) },
+          { left: 0, top: focus.top, width: focus.left, height: Math.max(0, focus.bottom - focus.top) },
+          { left: focus.right, top: focus.top, width: Math.max(0, window.innerWidth - focus.right), height: Math.max(0, focus.bottom - focus.top) }
+        ];
+        for (const panel of panels) {
+          if (panel.width <= 0 || panel.height <= 0) continue;
+          const node = document.createElement("div");
+          node.className = "lyra-find-blur";
+          node.style.left = panel.left + "px";
+          node.style.top = panel.top + "px";
+          node.style.width = panel.width + "px";
+          node.style.height = panel.height + "px";
+          host.appendChild(node);
+        }
+        for (const rect of rects) {
+          const mark = document.createElement("div");
+          mark.className = "lyra-find-highlight";
+          mark.style.left = Math.max(0, rect.left - 2) + "px";
+          mark.style.top = Math.max(0, rect.top - 1) + "px";
+          mark.style.width = Math.max(1, rect.width + 4) + "px";
+          mark.style.height = Math.max(1, rect.height + 2) + "px";
+          host.appendChild(mark);
+        }
+        document.documentElement.appendChild(host);
+        await waitFrame();
+        for (const panel of host.querySelectorAll(".lyra-find-blur")) {
+          panel.style.opacity = "1";
+        }
+        const timers = [];
+        timers.push(setTimeout(() => {
+          for (const panel of host.querySelectorAll(".lyra-find-blur")) {
+            panel.style.opacity = "0";
+          }
+        }, 2000));
+        timers.push(setTimeout(() => {
+          for (const panel of host.querySelectorAll(".lyra-find-blur")) {
+            panel.remove();
+          }
+          for (const mark of host.querySelectorAll(".lyra-find-highlight")) {
+            mark.style.background = "rgba(255, 221, 74, 0.42)";
+            mark.style.boxShadow = "0 0 0 1px rgba(170, 118, 0, 0.26)";
+          }
+        }, 2300));
+        window.__lyraPageFindTimers = timers;
+        return {
+          ok: true,
+          rect: {
+            left: Math.round(bounds.left),
+            top: Math.round(bounds.top),
+            right: Math.round(bounds.right),
+            bottom: Math.round(bounds.bottom)
+          }
+        };
+      })()
+    `;
+    try {
+      const result = await target.webContents.executeJavaScript(script, true) as Record<string, unknown>;
+      const rect = result?.rect;
+      if (result?.ok !== true || rect === null || typeof rect !== "object") {
+        return { ok: false };
+      }
+      const record = rect as Record<string, unknown>;
+      const left = Number(record.left);
+      const top = Number(record.top);
+      const right = Number(record.right);
+      const bottom = Number(record.bottom);
+      if ([left, top, right, bottom].every(Number.isFinite) === false) {
+        return { ok: true };
+      }
+      return {
+        ok: true,
+        rect: {
+          left: Math.round(left),
+          top: Math.round(top),
+          right: Math.round(right),
+          bottom: Math.round(bottom)
+        }
+      };
+    } catch {
+      return { ok: false };
+    }
+  };
+
+  const performSearchInPage = async (
+    target: BrowserPageFindTarget,
+    request: WorkbenchBrowserSearchInPageRequest
+  ): Promise<WorkbenchBrowserSearchInPageResult & {
+    readonly revealRect?: BrowserPageFindRevealResult["rect"];
+  }> => {
+    const query = typeof request.query === "string" ? request.query.trim() : "";
+    if (query.length === 0) {
+      await clearSearchInPageOverlay(target);
+      return {
+        tabId: target.tabId,
+        address: normalizeAddress(target.webContents.getURL()) ?? target.address,
+        title: target.title,
+        query: "",
+        currentIndex: 0,
+        totalMatches: 0,
+        matches: [],
+        truncated: false
+      };
+    }
+    try {
+      target.webContents.findInPage(query, {
+        forward: request.direction !== "previous",
+        findNext: request.direction === "next" || request.direction === "previous",
         matchCase: request.caseSensitive === true
       });
     } catch {
       // Text extraction below is the authoritative result; native page highlight is best effort.
     }
-    const raw = await entry.webContents.executeJavaScript(`
+    const raw = await target.webContents.executeJavaScript(`
       (() => {
         const normalizeText = (value) => {
           if (typeof value !== "string") return "";
@@ -4162,13 +4926,61 @@ export const createWorkbenchBrowserViewManager = ({
     `, true) as Record<string, unknown>;
     const text = typeof raw.text === "string" ? raw.text : "";
     const result = findSearchInPageMatches(text, query, request);
+    const totalMatches = result.totalMatches;
+    const requestedIndex = Number.isFinite(Number(request.activeIndex))
+      ? Math.round(Number(request.activeIndex))
+      : 0;
+    const normalizedRequestedIndex =
+      totalMatches === 0 ? 0 : Math.max(1, Math.min(totalMatches, requestedIndex));
+    const currentIndex = (() => {
+      if (totalMatches === 0) {
+        return 0;
+      }
+      if (request.direction === "previous") {
+        return normalizedRequestedIndex <= 1 ? totalMatches : normalizedRequestedIndex - 1;
+      }
+      if (request.direction === "next") {
+        return normalizedRequestedIndex <= 0 || normalizedRequestedIndex >= totalMatches
+          ? 1
+          : normalizedRequestedIndex + 1;
+      }
+      return normalizedRequestedIndex || 1;
+    })();
+    const activeMatchId =
+      result.matches.find((match) => match.index === currentIndex)?.id
+      ?? (currentIndex > 0 ? `find-${hashStableString(`${query}|${currentIndex}`)}` : undefined);
+    const reveal = request.reveal === true && currentIndex > 0
+      ? await revealSearchInPageMatch(target, query, currentIndex, request.caseSensitive === true)
+      : { ok: false };
     return {
-      tabId,
-      address: normalizeAddress(entry.webContents.getURL()) ?? entry.runtime.address,
-      title: normalizeString(raw.title) ?? entry.runtime.title,
+      tabId: target.tabId,
+      address: normalizeAddress(target.webContents.getURL()) ?? target.address,
+      title: normalizeString(raw.title) ?? target.title,
       query,
+      currentIndex,
+      ...(activeMatchId === undefined ? {} : { activeMatchId }),
+      ...(reveal.rect === undefined ? {} : { revealRect: reveal.rect }),
       ...result
     };
+  };
+
+  const searchInPage = async (
+    request: WorkbenchBrowserSearchInPageRequest
+  ): Promise<WorkbenchBrowserSearchInPageResult> => {
+    const tabId = normalizeString(request.tabId) ?? getActiveOrFocusedTabId();
+    if (tabId === null) {
+      throw new Error("tab_not_found");
+    }
+    const entry = requireEntry(tabId);
+    return await performSearchInPage(
+      {
+        tabId,
+        webContents: entry.webContents,
+        address: entry.runtime.address,
+        title: entry.runtime.title
+      },
+      request
+    );
   };
 
   const normalizeAgentObserveStrategy = (
@@ -5974,6 +6786,371 @@ export const createWorkbenchBrowserViewManager = ({
     y: element.bounds.y + Math.round(element.bounds.height / 2)
   });
 
+  const normalizeAgentScrollBlock = (
+    value: WorkbenchBrowserAgentScrollBlock | undefined
+  ): WorkbenchBrowserAgentScrollBlock => (
+    value === "start" || value === "end" || value === "nearest" ? value : "center"
+  );
+
+  const readAgentViewportState = async (
+    target: BrowserAgentPageTarget,
+    timeoutMs: number | undefined
+  ): Promise<BrowserAgentViewportState> => {
+    try {
+      const raw = await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(`
+          (() => {
+            const doc = document.documentElement;
+            const body = document.body;
+            const width = Math.max(1, Number(window.innerWidth || doc?.clientWidth || 1280));
+            const height = Math.max(1, Number(window.innerHeight || doc?.clientHeight || 720));
+            const scrollX = Math.max(0, Number(window.scrollX || window.pageXOffset || 0));
+            const scrollY = Math.max(0, Number(window.scrollY || window.pageYOffset || 0));
+            const scrollWidth = Math.max(
+              width,
+              Number(doc?.scrollWidth || 0),
+              Number(body?.scrollWidth || 0)
+            );
+            const scrollHeight = Math.max(
+              height,
+              Number(doc?.scrollHeight || 0),
+              Number(body?.scrollHeight || 0)
+            );
+            return {
+              width,
+              height,
+              scrollX,
+              scrollY,
+              maxScrollX: Math.max(0, scrollWidth - width),
+              maxScrollY: Math.max(0, scrollHeight - height)
+            };
+          })()
+        `, true),
+        normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
+      ) as Record<string, unknown>;
+      const number = (key: keyof BrowserAgentViewportState, fallback: number): number => {
+        const value = raw[key];
+        return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+      };
+      return {
+        width: Math.max(1, Math.round(number("width", 1_280))),
+        height: Math.max(1, Math.round(number("height", 720))),
+        scrollX: Math.max(0, number("scrollX", 0)),
+        scrollY: Math.max(0, number("scrollY", 0)),
+        maxScrollX: Math.max(0, number("maxScrollX", 0)),
+        maxScrollY: Math.max(0, number("maxScrollY", 0))
+      };
+    } catch {
+      return {
+        width: 1_280,
+        height: 720,
+        scrollX: 0,
+        scrollY: 0,
+        maxScrollX: 0,
+        maxScrollY: 0
+      };
+    }
+  };
+
+  const clampAgentPointToViewport = (
+    point: { readonly x: number; readonly y: number },
+    viewport: BrowserAgentViewportState,
+    margin = 24
+  ): { x: number; y: number } => ({
+    x: Math.max(margin, Math.min(viewport.width - margin, Math.round(point.x))),
+    y: Math.max(margin, Math.min(viewport.height - margin, Math.round(point.y)))
+  });
+
+  const agentPointInsideViewport = (
+    point: { readonly x: number; readonly y: number },
+    viewport: BrowserAgentViewportState,
+    margin = 24
+  ): boolean => (
+    point.x >= margin
+    && point.y >= margin
+    && point.x <= viewport.width - margin
+    && point.y <= viewport.height - margin
+  );
+
+  const preferredAgentPointForBlock = (
+    viewport: BrowserAgentViewportState,
+    block: WorkbenchBrowserAgentScrollBlock
+  ): { x: number; y: number } => {
+    const x = Math.round(viewport.width * 0.5);
+    if (block === "start") {
+      return { x, y: Math.round(viewport.height * 0.18) };
+    }
+    if (block === "end") {
+      return { x, y: Math.round(viewport.height * 0.82) };
+    }
+    return { x, y: Math.round(viewport.height * 0.55) };
+  };
+
+  const scrollDeltaToPlacePoint = (
+    point: { readonly x: number; readonly y: number },
+    viewport: BrowserAgentViewportState,
+    block: WorkbenchBrowserAgentScrollBlock
+  ): { deltaX: number; deltaY: number } => {
+    if (agentPointInsideViewport(point, viewport) && block === "nearest") {
+      return { deltaX: 0, deltaY: 0 };
+    }
+    if (block === "nearest") {
+      const margin = 32;
+      const deltaX =
+        point.x < margin
+          ? point.x - margin
+          : point.x > viewport.width - margin
+            ? point.x - (viewport.width - margin)
+            : 0;
+      const deltaY =
+        point.y < margin
+          ? point.y - margin
+          : point.y > viewport.height - margin
+            ? point.y - (viewport.height - margin)
+            : 0;
+      return {
+        deltaX: Math.round(deltaX),
+        deltaY: Math.round(deltaY)
+      };
+    }
+    if (agentPointInsideViewport(point, viewport)) {
+      return { deltaX: 0, deltaY: 0 };
+    }
+    const preferred = preferredAgentPointForBlock(viewport, block);
+    return {
+      deltaX: Math.round(point.x - preferred.x),
+      deltaY: Math.round(point.y - preferred.y)
+    };
+  };
+
+  const scrollDeltaForDirection = (
+    direction: WorkbenchBrowserAgentScrollDirection,
+    viewport: BrowserAgentViewportState,
+    amount: number | undefined,
+    pages: number | undefined
+  ): { deltaX: number; deltaY: number } => {
+    const pageAmount = Math.max(0.1, Math.min(10, pages ?? 0.82));
+    const rawAmount = typeof amount === "number" && Number.isFinite(amount)
+      ? Math.max(1, Math.min(5_000, Math.round(amount)))
+      : Math.round((direction === "left" || direction === "right" ? viewport.width : viewport.height) * pageAmount);
+    if (direction === "up") {
+      return { deltaX: 0, deltaY: -rawAmount };
+    }
+    if (direction === "left") {
+      return { deltaX: -rawAmount, deltaY: 0 };
+    }
+    if (direction === "right") {
+      return { deltaX: rawAmount, deltaY: 0 };
+    }
+    return { deltaX: 0, deltaY: rawAmount };
+  };
+
+  const scrollAgentViewportByDelta = async ({
+    tabId,
+    target,
+    deltaX,
+    deltaY,
+    point,
+    reason,
+    timeoutMs
+  }: {
+    readonly tabId: string;
+    readonly target: BrowserAgentPageTarget;
+    readonly deltaX: number;
+    readonly deltaY: number;
+    readonly point: {
+      readonly x: number;
+      readonly y: number;
+    };
+    readonly reason: WorkbenchBrowserAgentScrollEffect["reason"];
+    readonly timeoutMs: number | undefined;
+  }): Promise<WorkbenchBrowserAgentScrollEffect> => {
+    const beforeViewport = await readAgentViewportState(target, timeoutMs);
+    const cursor = clampAgentPointToViewport(point, beforeViewport);
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      return {
+        reason,
+        scrolled: false,
+        method: "none",
+        before: point,
+        after: point,
+        deltaX: 0,
+        deltaY: 0
+      };
+    }
+
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "scroll",
+      inputActive: true,
+      visibleFollow: target.browserMode.visibleFollow,
+      cursor,
+      durationMs: 1_600
+    });
+    target.webContents.focus();
+    sendAgentInputEvent(target, {
+      type: "mouseWheel",
+      x: cursor.x,
+      y: cursor.y,
+      deltaX,
+      deltaY
+    });
+    await delay(90);
+    let afterViewport = await readAgentViewportState(target, timeoutMs);
+    let actualDeltaX = Math.round(afterViewport.scrollX - beforeViewport.scrollX);
+    let actualDeltaY = Math.round(afterViewport.scrollY - beforeViewport.scrollY);
+    let method: WorkbenchBrowserAgentScrollEffect["method"] = "wheel";
+
+    if (Math.abs(actualDeltaX) < 1 && Math.abs(actualDeltaY) < 1) {
+      if (target.targetMode === "live") {
+        assertSharedControlCanContinue(target.tabId);
+      }
+      markSyntheticInput(target.tabId);
+      await runFrameScriptWithTimeout(
+        () => target.webContents.executeJavaScript(`
+          (() => {
+            window.scrollBy({
+              left: ${JSON.stringify(deltaX)},
+              top: ${JSON.stringify(deltaY)},
+              behavior: "instant"
+            });
+            return {
+              scrollX: Number(window.scrollX || window.pageXOffset || 0),
+              scrollY: Number(window.scrollY || window.pageYOffset || 0)
+            };
+          })()
+        `, true),
+        normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
+      ).catch(() => null);
+      await delay(70);
+      afterViewport = await readAgentViewportState(target, timeoutMs);
+      actualDeltaX = Math.round(afterViewport.scrollX - beforeViewport.scrollX);
+      actualDeltaY = Math.round(afterViewport.scrollY - beforeViewport.scrollY);
+      method = Math.abs(actualDeltaX) < 1 && Math.abs(actualDeltaY) < 1 ? "none" : "scrollBy";
+    }
+
+    const afterPoint = {
+      x: Math.round(point.x - actualDeltaX),
+      y: Math.round(point.y - actualDeltaY)
+    };
+    return {
+      reason,
+      scrolled: method !== "none",
+      method,
+      before: {
+        x: Math.round(point.x),
+        y: Math.round(point.y)
+      },
+      after: afterPoint,
+      deltaX: actualDeltaX,
+      deltaY: actualDeltaY
+    };
+  };
+
+  const autoScrollPointIntoViewport = async ({
+    tabId,
+    target,
+    point,
+    reason,
+    block,
+    timeoutMs
+  }: {
+    readonly tabId: string;
+    readonly target: BrowserAgentPageTarget;
+    readonly point: {
+      readonly x: number;
+      readonly y: number;
+    };
+    readonly reason: WorkbenchBrowserAgentScrollEffect["reason"];
+    readonly block: WorkbenchBrowserAgentScrollBlock | undefined;
+    readonly timeoutMs: number | undefined;
+  }): Promise<BrowserAgentAutoScrollResult> => {
+    const viewport = await readAgentViewportState(target, timeoutMs);
+    const normalizedBlock = normalizeAgentScrollBlock(block);
+    const { deltaX, deltaY } = scrollDeltaToPlacePoint(point, viewport, normalizedBlock);
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      return { point };
+    }
+    const effect = await scrollAgentViewportByDelta({
+      tabId,
+      target,
+      deltaX,
+      deltaY,
+      point,
+      reason,
+      timeoutMs
+    });
+    return {
+      point: effect.after,
+      effect
+    };
+  };
+
+  const ensureAgentElementVisible = async ({
+    tabId,
+    target,
+    element,
+    observationId,
+    reason,
+    block,
+    timeoutMs
+  }: {
+    readonly tabId: string;
+    readonly target: BrowserAgentPageTarget;
+    readonly element: WorkbenchBrowserAgentElement;
+    readonly observationId: string | undefined;
+    readonly reason: WorkbenchBrowserAgentScrollEffect["reason"];
+    readonly block: WorkbenchBrowserAgentScrollBlock | undefined;
+    readonly timeoutMs: number | undefined;
+  }): Promise<BrowserAgentAutoScrollResult> => {
+    const point = centerOfAgentElement(element);
+    const scrolled = await autoScrollPointIntoViewport({
+      tabId,
+      target,
+      point,
+      reason,
+      block: block ?? "center",
+      timeoutMs
+    });
+    if (scrolled.effect === undefined || scrolled.effect.scrolled === false) {
+      return {
+        element,
+        point,
+        ...(scrolled.effect === undefined ? {} : { effect: {
+          ...scrolled.effect,
+          targetRef: element.targetRef,
+          elementId: element.id,
+          ...(observationId === undefined ? {} : { beforeObservationId: observationId })
+        } })
+      };
+    }
+    const observed = await observeAgentPage(tabId, {
+      strategy: "interactiveOnly",
+      targetMode: target.targetMode,
+      suppressActivity: true,
+      ...(timeoutMs === undefined ? {} : { timeoutMs })
+    });
+    const rebound = await findAgentElement(
+      tabId,
+      { targetRef: element.targetRef },
+      target.targetMode,
+      timeoutMs
+    );
+    const nextElement = rebound.element ?? element;
+    return {
+      element: nextElement,
+      point: centerOfAgentElement(nextElement),
+      effect: {
+        ...scrolled.effect,
+        targetRef: element.targetRef,
+        elementId: element.id,
+        ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
+        afterObservationId: rebound.observationId ?? observed.observationId
+      }
+    };
+  };
+
   const nextRecommendedActionAfterAgentAction = ({
     navigationStarted,
     pageChanged
@@ -6724,11 +7901,22 @@ export const createWorkbenchBrowserViewManager = ({
       };
     }
 
+    const visibleTarget = await ensureAgentElementVisible({
+      tabId,
+      target,
+      element,
+      observationId,
+      reason: "target_offscreen",
+      block: "center",
+      timeoutMs: request.timeoutMs
+    });
+    const interactionElement = visibleTarget.element ?? element;
+    const autoScroll = visibleTarget.effect;
     const beforeUrl = agentTargetAddress(target);
     const beforeFocus = verification === "full"
       ? await readFocusedElementSignature(target, request.timeoutMs)
       : "";
-    const { x, y } = centerOfAgentElement(element);
+    const { x, y } = centerOfAgentElement(interactionElement);
     const interaction = request.interaction;
     await performAgentPointerInteraction({
       tabId,
@@ -6742,11 +7930,11 @@ export const createWorkbenchBrowserViewManager = ({
     const after = verification === "full"
       ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
       : null;
-    if (isAgentEditableElement(element)) {
+    if (isAgentEditableElement(interactionElement)) {
       cacheBrowserAgentInputTarget(
         tabId,
         target.targetMode,
-        element,
+        interactionElement,
         after?.url ?? agentTargetAddress(target),
         after?.observationId ?? observationId
       );
@@ -6763,18 +7951,187 @@ export const createWorkbenchBrowserViewManager = ({
       inputMode: "chromium",
       targetMode: target.targetMode,
       browserMode: target.browserMode,
-      elementId: element.id,
-      targetRef: element.targetRef,
+      elementId: interactionElement.id,
+      targetRef: interactionElement.targetRef,
       x,
       y,
       verification,
       ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
+      ...(autoScroll === undefined ? {} : { autoScroll }),
       pageChanged,
       ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
       navigationStarted,
-      message: `${interaction} sent to element ${element.id} (${element.targetRef}) with Chromium virtual input.`,
+      message: `${interaction} sent to element ${interactionElement.id} (${interactionElement.targetRef}) with Chromium virtual input.`,
       nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
+    };
+  };
+
+  const scrollAgentPage = async (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly direction?: WorkbenchBrowserAgentScrollDirection;
+      readonly amount?: number;
+      readonly pages?: number;
+      readonly block?: WorkbenchBrowserAgentScrollBlock;
+      readonly behavior?: "instant" | "smooth";
+      readonly elementId?: number;
+      readonly targetRef?: string;
+      readonly point?: WorkbenchBrowserAgentPoint;
+      readonly autoMap?: boolean;
+      readonly timeoutMs?: number;
+      readonly reason?: "explicit_scroll" | "ensure_visible";
+    }
+  ): Promise<WorkbenchBrowserAgentScrollResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const targetLocator = {
+      ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+      ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef })
+    };
+    let point = request.point === undefined
+      ? undefined
+      : { x: Math.round(request.point.x), y: Math.round(request.point.y) };
+    let element: WorkbenchBrowserAgentElement | undefined;
+    let beforeObservationId: string | undefined;
+    let autoScroll: WorkbenchBrowserAgentScrollEffect | undefined;
+    const ensureReason: WorkbenchBrowserAgentScrollEffect["reason"] =
+      request.reason === "ensure_visible" ? "ensure_visible" : "explicit_scroll";
+
+    if (request.elementId !== undefined || request.targetRef !== undefined) {
+      const found = await findAgentElement(
+        tabId,
+        targetLocator,
+        target.targetMode,
+        request.timeoutMs
+      );
+      beforeObservationId = found.observationId;
+      if (found.element === null) {
+        return {
+          ok: false,
+          kind: "lyraLumenScrollResult",
+          tabId,
+          inputMode: "chromium",
+          targetMode: target.targetMode,
+          browserMode: target.browserMode,
+          ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+          ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef }),
+          ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+          scrolled: false,
+          method: "none",
+          deltaX: 0,
+          deltaY: 0,
+          nextRecommendedAction: "lyra_lumen.map",
+          error: {
+            kind: found.staleTarget === undefined ? "staleElement" : "staleTarget",
+            message: request.targetRef === undefined
+              ? `Element ${request.elementId ?? "(unspecified)"} is not valid in the current browser observation.`
+              : `Target ${request.targetRef} is not available in the current Lyra Lumen target registry.`
+          }
+        };
+      }
+      const visible = await ensureAgentElementVisible({
+        tabId,
+        target,
+        element: found.element,
+        observationId: found.observationId,
+        reason: ensureReason,
+        block: request.block,
+        timeoutMs: request.timeoutMs
+      });
+      element = visible.element ?? found.element;
+      point = visible.point ?? centerOfAgentElement(element);
+      autoScroll = visible.effect;
+      beforeObservationId = autoScroll?.beforeObservationId ?? beforeObservationId;
+    } else if (point !== undefined) {
+      const visible = await autoScrollPointIntoViewport({
+        tabId,
+        target,
+        point,
+        reason: request.reason === "ensure_visible" ? "ensure_visible" : "point_offscreen",
+        block: request.block,
+        timeoutMs: request.timeoutMs
+      });
+      point = visible.point ?? point;
+      autoScroll = visible.effect;
+    }
+
+    let effect = autoScroll;
+    if (
+      request.direction !== undefined
+      || (request.elementId === undefined && request.targetRef === undefined && request.point === undefined)
+    ) {
+      const viewport = await readAgentViewportState(target, request.timeoutMs);
+      const scrollPoint = point ?? {
+        x: Math.round(viewport.width * 0.5),
+        y: Math.round(viewport.height * 0.5)
+      };
+      const direction = request.direction ?? "down";
+      const { deltaX, deltaY } = scrollDeltaForDirection(
+        direction,
+        viewport,
+        request.amount,
+        request.pages
+      );
+      const explicitEffect = await scrollAgentViewportByDelta({
+        tabId,
+        target,
+        deltaX,
+        deltaY,
+        point: scrollPoint,
+        reason: "explicit_scroll",
+        timeoutMs: request.timeoutMs
+      });
+      effect = {
+        ...explicitEffect,
+        ...(element === undefined ? {} : {
+          targetRef: element.targetRef,
+          elementId: element.id
+        }),
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId })
+      };
+      point = explicitEffect.after;
+    }
+
+    let afterObservationId = effect?.afterObservationId;
+    if (request.autoMap !== false && (effect?.scrolled === true || effect === undefined)) {
+      const observed = await observeAgentPage(tabId, {
+        strategy: "interactiveOnly",
+        targetMode: target.targetMode,
+        suppressActivity: true,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      }).catch(() => null);
+      afterObservationId = observed?.observationId ?? afterObservationId;
+    }
+
+    const finalPoint = point ?? effect?.after ?? effect?.before;
+    const scrolled = effect?.scrolled === true;
+    return {
+      ok: true,
+      kind: "lyraLumenScrollResult",
+      tabId,
+      inputMode: "chromium",
+      targetMode: target.targetMode,
+      browserMode: target.browserMode,
+      ...(request.direction === undefined ? {} : { direction: request.direction }),
+      ...(request.amount === undefined ? {} : { amount: request.amount }),
+      ...(request.pages === undefined ? {} : { pages: request.pages }),
+      ...(finalPoint === undefined ? {} : { x: finalPoint.x, y: finalPoint.y }),
+      ...(element === undefined ? {} : {
+        elementId: element.id,
+        targetRef: element.targetRef
+      }),
+      ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+      ...(afterObservationId === undefined ? {} : { afterObservationId }),
+      scrolled,
+      method: effect?.method ?? "none",
+      deltaX: effect?.deltaX ?? 0,
+      deltaY: effect?.deltaY ?? 0,
+      ...(effect === undefined ? {} : { autoScroll: { ...effect, ...(afterObservationId === undefined ? {} : { afterObservationId }) } }),
+      message: scrolled
+        ? `Scrolled browser viewport by ${effect?.deltaX ?? 0}, ${effect?.deltaY ?? 0}.`
+        : "Browser target was already visible or the page could not scroll further.",
+      nextRecommendedAction:
+        element !== undefined || request.point !== undefined ? "lyra_lumen.act" : "lyra_lumen.map"
     };
   };
 
@@ -6793,8 +8150,21 @@ export const createWorkbenchBrowserViewManager = ({
     const beforeFocus = verification === "full"
       ? await readFocusedElementSignature(target, request.timeoutMs)
       : "";
-    const x = Math.max(0, Math.round(request.point.x));
-    const y = Math.max(0, Math.round(request.point.y));
+    const initialPoint = {
+      x: Math.max(0, Math.round(request.point.x)),
+      y: Math.max(0, Math.round(request.point.y))
+    };
+    const visiblePoint = await autoScrollPointIntoViewport({
+      tabId,
+      target,
+      point: initialPoint,
+      reason: "point_offscreen",
+      block: "center",
+      timeoutMs: request.timeoutMs
+    });
+    const x = Math.max(0, Math.round(visiblePoint.point?.x ?? initialPoint.x));
+    const y = Math.max(0, Math.round(visiblePoint.point?.y ?? initialPoint.y));
+    const autoScroll = visiblePoint.effect;
     const interaction = request.interaction;
     await performAgentPointerInteraction({
       tabId,
@@ -6834,6 +8204,7 @@ export const createWorkbenchBrowserViewManager = ({
       y,
       verification,
       ...(after === null ? {} : { afterObservationId: after.observationId }),
+      ...(autoScroll === undefined ? {} : { autoScroll }),
       pageChanged,
       ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
       navigationStarted,
@@ -6902,6 +8273,17 @@ export const createWorkbenchBrowserViewManager = ({
       return noEditableTargetResult(tabId, target.targetMode, target.browserMode, beforeObservationId);
     }
 
+    const visibleTarget = await ensureAgentElementVisible({
+      tabId,
+      target,
+      element,
+      observationId: beforeObservationId,
+      reason: "target_offscreen",
+      block: "center",
+      timeoutMs: request.timeoutMs
+    });
+    element = visibleTarget.element ?? element;
+    const autoScroll = visibleTarget.effect;
     const { x, y } = centerOfAgentElement(element);
     const beforeUrl = agentTargetAddress(target);
     const beforeFocus = verification === "full"
@@ -6951,6 +8333,7 @@ export const createWorkbenchBrowserViewManager = ({
         x,
         y,
         ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        ...(autoScroll === undefined ? {} : { autoScroll }),
         nextRecommendedAction: "lyra_lumen.map",
         error: {
           kind: "insertFailed",
@@ -6976,6 +8359,7 @@ export const createWorkbenchBrowserViewManager = ({
         x,
         y,
         ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        ...(autoScroll === undefined ? {} : { autoScroll }),
         nextRecommendedAction: "lyra_lumen.map",
         error: {
           kind: insertion.errorKind ?? "insertFailed",
@@ -7019,6 +8403,7 @@ export const createWorkbenchBrowserViewManager = ({
       ...(insertion.method === undefined ? {} : { inputInsertionMethod: insertion.method }),
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
+      ...(autoScroll === undefined ? {} : { autoScroll }),
       pageChanged,
       ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
       navigationStarted,
@@ -7048,6 +8433,7 @@ export const createWorkbenchBrowserViewManager = ({
     let targetRef = request.targetRef;
     let x: number | undefined;
     let y: number | undefined;
+    let autoScroll: WorkbenchBrowserAgentScrollEffect | undefined;
     if (elementId !== undefined || targetRef !== undefined) {
       const focused = await actOnAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
@@ -7073,6 +8459,7 @@ export const createWorkbenchBrowserViewManager = ({
       targetRef = focused.targetRef;
       x = focused.x;
       y = focused.y;
+      autoScroll = focused.autoScroll;
     }
     publishBrowserAgentActivity({
       tabId,
@@ -7113,6 +8500,7 @@ export const createWorkbenchBrowserViewManager = ({
       ...(targetRef === undefined ? {} : { targetRef }),
       ...(x === undefined ? {} : { x }),
       ...(y === undefined ? {} : { y }),
+      ...(autoScroll === undefined ? {} : { autoScroll }),
       verification,
       ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
@@ -7368,6 +8756,187 @@ export const createWorkbenchBrowserViewManager = ({
       return await readAgentDomSummaryFromTarget(target, request.maxChars, timeoutMs);
     }
     return await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs);
+  };
+
+  const pageFindTargetForAgentTarget = (target: BrowserAgentPageTarget): BrowserPageFindTarget => ({
+    tabId: target.tabId,
+    webContents: target.webContents,
+    address: agentTargetAddress(target),
+    title: agentTargetTitle(target)
+  });
+
+  const readAgentPlainTextForLocate = async (
+    target: BrowserAgentPageTarget,
+    timeoutMs: number | undefined
+  ): Promise<{
+    readonly title: string;
+    readonly text: string;
+  }> => {
+    const raw = await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(`
+        (() => {
+          const normalizeText = (value) => {
+            if (typeof value !== "string") return "";
+            return value
+              .replace(/\\u00a0/g, " ")
+              .replace(/\\r/g, "")
+              .replace(/[ \\t]+\\n/g, "\\n")
+              .replace(/\\n[ \\t]+/g, "\\n")
+              .replace(/\\n{3,}/g, "\\n\\n")
+              .trim();
+          };
+          return {
+            title: normalizeText(document.title ?? ""),
+            text: normalizeText(document.body?.innerText ?? document.body?.textContent ?? "")
+          };
+        })()
+      `, true),
+      normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000)
+    ) as Record<string, unknown>;
+    return {
+      title: typeof raw.title === "string" ? raw.title : agentTargetTitle(target),
+      text: typeof raw.text === "string" ? raw.text : ""
+    };
+  };
+
+  const distanceFromRectToElement = (
+    rect: NonNullable<WorkbenchBrowserAgentFindResult["revealRect"]>,
+    element: WorkbenchBrowserAgentElement
+  ): number => {
+    const centerX = element.bounds.x + element.bounds.width / 2;
+    const centerY = element.bounds.y + element.bounds.height / 2;
+    const rectCenterX = (rect.left + rect.right) / 2;
+    const rectCenterY = (rect.top + rect.bottom) / 2;
+    const verticalGap = centerY < rect.top ? rect.top - centerY : centerY > rect.bottom ? centerY - rect.bottom : 0;
+    return verticalGap * 3 + Math.hypot(centerX - rectCenterX, centerY - rectCenterY);
+  };
+
+  const nearbyElementsFromObservation = (
+    observation: WorkbenchBrowserAgentObservation,
+    revealRect: WorkbenchBrowserAgentFindResult["revealRect"],
+    limit: number
+  ): readonly WorkbenchBrowserAgentElement[] => {
+    const elements = observation.elements
+      .filter((element) => element.disabled !== true)
+      .filter((element) => element.actionCapabilities?.length !== 0);
+    const sorted = revealRect === undefined
+      ? elements
+      : [...elements].sort((left, right) =>
+          distanceFromRectToElement(revealRect, left) - distanceFromRectToElement(revealRect, right)
+        );
+    return sorted.slice(0, Math.max(1, Math.min(20, Math.round(limit))));
+  };
+
+  const findAgentPage = async (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & WorkbenchBrowserSearchInPageRequest & {
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentFindResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "read",
+      visibleFollow: target.browserMode.visibleFollow,
+      durationMs: 1_200
+    });
+    const result = await performSearchInPage(pageFindTargetForAgentTarget(target), request);
+    const { revealRect, ...baseResult } = result;
+    return {
+      ok: true,
+      kind: "lyraLumenFind",
+      targetMode: target.targetMode,
+      browserMode: target.browserMode,
+      ...baseResult,
+      ...(revealRect === undefined ? {} : { revealRect }),
+      nextRecommendedAction: "lyra_lumen.map"
+    };
+  };
+
+  const locateAgentPage = async (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly query: string;
+      readonly matchMode?: "exact" | "semantic";
+      readonly autoMap?: boolean;
+      readonly nearbyLimit?: number;
+      readonly reveal?: boolean;
+      readonly caseSensitive?: boolean;
+      readonly maxMatches?: number;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserAgentLocateResult> => {
+    const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const query = request.query.trim();
+    const matchMode = request.matchMode === "exact" ? "exact" : "semantic";
+    const pageText = await readAgentPlainTextForLocate(target, request.timeoutMs);
+    const semantic = matchMode === "semantic"
+      ? selectSemanticLocateCandidate(pageText.text, query)
+      : null;
+    const anchorQuery = matchMode === "exact" ? query : semantic?.anchorQuery;
+    if (anchorQuery === undefined || anchorQuery.trim().length === 0) {
+      return {
+        ok: true,
+        kind: "lyraLumenLocate",
+        tabId,
+        address: normalizeAddress(target.webContents.getURL()) ?? agentTargetAddress(target),
+        title: pageText.title,
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        matched: false,
+        matchMode,
+        query,
+        nextRecommendedAction: "lyra_lumen.read"
+      };
+    }
+    const findResult = await findAgentPage(tabId, {
+      ...request,
+      query: anchorQuery,
+      direction: "current",
+      reveal: request.reveal !== false,
+      maxMatches: request.maxMatches ?? 20
+    });
+    const matched = findResult.totalMatches > 0;
+    let observation: WorkbenchBrowserAgentObservation | null = null;
+    let nearbyElements: readonly WorkbenchBrowserAgentElement[] | undefined;
+    if (matched && request.autoMap !== false) {
+      observation = await observeAgentPage(tabId, {
+        strategy: "interactiveOnly",
+        targetMode: target.targetMode,
+        suppressActivity: true,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+      nearbyElements = nearbyElementsFromObservation(
+        observation,
+        findResult.revealRect,
+        request.nearbyLimit ?? 8
+      );
+    }
+    return {
+      ok: true,
+      kind: "lyraLumenLocate",
+      tabId,
+      address: findResult.address,
+      title: findResult.title,
+      targetMode: target.targetMode,
+      browserMode: target.browserMode,
+      matched,
+      matchMode,
+      query,
+      anchorQuery,
+      ...(semantic === null ? {} : {
+        semanticScore: semantic.score,
+        semanticReason: semantic.reason
+      }),
+      findResult,
+      ...(observation === null ? {} : { observationId: observation.observationId }),
+      ...(nearbyElements === undefined ? {} : { nearbyElements }),
+      nextRecommendedAction:
+        matched === false
+          ? "lyra_lumen.read"
+          : nearbyElements !== undefined && nearbyElements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.map"
+    };
   };
 
   const captureAgentPage = async (
@@ -8311,10 +9880,13 @@ export const createWorkbenchBrowserViewManager = ({
     actOnAgentElement,
     actOnAgentPoint,
     focusAgentPage,
+    scrollAgentPage,
     typeIntoAgentElement,
     pressAgentKey,
     navigateAgentPage,
     readAgentPage,
+    findAgentPage,
+    locateAgentPage,
     captureAgentPage,
     showAgentActivity,
     readAgentFollowAudit,
