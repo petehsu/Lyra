@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -22,6 +22,7 @@ pub mod attachments;
 pub mod command_tracker;
 pub mod input_controller;
 mod memory;
+mod memory_writer;
 pub mod permissions;
 pub mod process_model;
 mod protocol;
@@ -47,6 +48,7 @@ pub use screen::{
     TerminalScreenVisibleRow,
 };
 pub use protocol::*;
+use memory_writer::{TerminalMemoryTask, TerminalMemoryWriter};
 pub use terminal_agents::{
     TerminalAgentLaunchRequest, TerminalAgentLaunchResponse, TerminalAgentRelation,
 };
@@ -87,7 +89,7 @@ impl std::error::Error for Error {}
 const DEFAULT_READ_MAX_BYTES: usize = 8 * 1024;
 const DEFAULT_READ_WAIT_MS: u64 = 750;
 const MAX_SESSION_BUFFER_BYTES: usize = 256 * 1024;
-const MEMORY_WORKER_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+pub(crate) const MEMORY_WORKER_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: Lazy<Mutex<HashMap<String, Arc<SessionRuntime>>>> =
@@ -254,22 +256,6 @@ fn decode_utf8_prefix(bytes: &[u8], pending: &mut Vec<u8>) -> String {
     output
 }
 
-#[derive(Clone)]
-struct TerminalMemoryWriter {
-    sender: mpsc::Sender<TerminalMemoryTask>,
-}
-
-enum TerminalMemoryTask {
-    ShellEvent(shell_integration::ShellIntegrationEvent),
-    Output(Vec<u8>),
-    ScreenDiff(Value),
-    Write(memory::WriteInput),
-    Resize(memory::ResizeInput),
-    Close(memory::CloseInput),
-    ProcessSignal(memory::ProcessSignalInput),
-    Exit(i32),
-    Error(String),
-}
 
 
 fn now_iso_like() -> String {
@@ -395,7 +381,7 @@ fn native_command_completion(
     }
 }
 
-fn emit_command_completion(
+pub(crate) fn emit_command_completion(
     session_id: &str,
     source: &str,
     mode: &str,
@@ -527,97 +513,6 @@ fn live_output_projection(
     (cursor, output, truncated)
 }
 
-impl TerminalMemoryWriter {
-    fn new(storage_root: String, session_id: String, source: String, mode: String) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
-            run_terminal_memory_writer(storage_root, session_id, source, mode, receiver);
-        });
-        Self { sender }
-    }
-
-    fn enqueue(&self, task: TerminalMemoryTask) {
-        let _ = self.sender.send(task);
-    }
-}
-
-fn run_terminal_memory_writer(
-    storage_root: String,
-    session_id: String,
-    source: String,
-    mode: String,
-    receiver: mpsc::Receiver<TerminalMemoryTask>,
-) {
-    let context = memory::MemoryContext {
-        storage_root,
-        session_id: session_id.clone(),
-    };
-    let mut pending: Option<TerminalMemoryTask> = None;
-    loop {
-        let task = match pending.take() {
-            Some(task) => task,
-            None => match receiver.recv() {
-                Ok(task) => task,
-                Err(_) => break,
-            },
-        };
-        match task {
-            TerminalMemoryTask::ShellEvent(event) => {
-                if let Ok(Some(completion)) =
-                    memory::record_shell_integration_event(&context, &event)
-                {
-                    emit_command_completion(&session_id, &source, &mode, completion);
-                }
-            }
-            TerminalMemoryTask::Output(mut bytes) => {
-                let mut disconnected = false;
-                while bytes.len() < MEMORY_WORKER_OUTPUT_BATCH_BYTES {
-                    match receiver.try_recv() {
-                        Ok(TerminalMemoryTask::Output(next)) => {
-                            bytes.extend_from_slice(&next);
-                        }
-                        Ok(other) => {
-                            pending = Some(other);
-                            break;
-                        }
-                        Err(mpsc::TryRecvError::Empty) => break,
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            disconnected = true;
-                            break;
-                        }
-                    }
-                }
-                let _ = memory::record_output(&context, &bytes);
-                if disconnected {
-                    break;
-                }
-            }
-            TerminalMemoryTask::ScreenDiff(payload) => {
-                let _ = memory::record_screen_diff(&context, payload);
-            }
-            TerminalMemoryTask::Write(input) => {
-                let _ = memory::record_write(input);
-            }
-            TerminalMemoryTask::Resize(input) => {
-                let _ = memory::record_resize(input);
-            }
-            TerminalMemoryTask::Close(input) => {
-                let _ = memory::record_close(input);
-            }
-            TerminalMemoryTask::ProcessSignal(input) => {
-                let _ = memory::record_process_signal_sent(input);
-            }
-            TerminalMemoryTask::Exit(exit_code) => {
-                if let Ok(Some(completion)) = memory::record_exit(&context, exit_code) {
-                    emit_command_completion(&session_id, &source, &mode, completion);
-                }
-            }
-            TerminalMemoryTask::Error(error) => {
-                let _ = memory::record_error(&context, &error);
-            }
-        }
-    }
-}
 
 fn mark_session_exit(state_handle: &SessionStateHandle, exit_code: i32) {
     let (lock, condvar) = &**state_handle;
