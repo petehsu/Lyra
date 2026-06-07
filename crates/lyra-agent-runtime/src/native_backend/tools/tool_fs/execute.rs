@@ -124,6 +124,7 @@ pub(crate) fn execute_tool_fs_model_tool(
                 &call.arguments,
                 dispatcher.as_ref(),
             );
+            let inspect_session_id = session_id.to_string();
             execute_tool_fs_read_only(
                 session_id,
                 turn_id,
@@ -134,6 +135,7 @@ pub(crate) fn execute_tool_fs_model_tool(
                     registry
                         .inspect_input(input)
                         .map(|manifest| {
+                            record_tool_descriptor_inspected(&inspect_session_id, &manifest);
                             serde_json::to_value(manifest).unwrap_or_else(|_| json!({}))
                         })
                         .map_err(native_failure_from_tool_fs)

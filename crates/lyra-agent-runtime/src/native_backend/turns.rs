@@ -190,9 +190,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         host_dispatcher,
         memory_records,
         memory_injection_explanation,
+        system_recall_records,
         active_skills,
         working_dir,
         session_kind,
+        active_turn_id,
     ) = {
         let state = state()
             .lock()
@@ -276,6 +278,13 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .iter()
             .map(|ranked| ranked.record.clone())
             .collect::<Vec<_>>();
+        let system_recall_records = select_system_recall_for_injection(
+            &state.root,
+            &latest_user_text(&session_messages),
+            working_dir.as_deref(),
+            &session_messages,
+        )
+        .unwrap_or_default();
         (
             provider,
             model,
@@ -284,9 +293,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             state.host_dispatcher.clone(),
             selected_memory,
             memory_injection_explanation,
+            system_recall_records,
             state.active_skills.clone(),
             working_dir,
             session_kind,
+            active_turn_id,
         )
     };
     let capabilities = model_capabilities(&provider, &model);
@@ -308,7 +319,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &runtime_context["workbench"],
     );
     runtime_context["toolFilesystem"] =
-        tool_filesystem_runtime_context(&tool_scene, host_dispatcher.as_ref());
+        tool_filesystem_runtime_context(&tool_scene, Some(&session_id), host_dispatcher.as_ref());
+    runtime_context["toolFilesystem"]["presearchHints"] =
+        tools::tool_fs::presearch_hints_for_message(
+            &latest_user_text,
+            &tool_scene,
+            active_turn_id.as_deref(),
+            host_dispatcher.as_ref(),
+        );
     runtime_context["memoryLayers"] = json!({
         "workingMemory": {
             "latestUserIntent": latest_user_text,
@@ -323,7 +341,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             "selectedCount": memory_records.len(),
             "records": memory_records.iter().map(memory_summary_json).collect::<Vec<_>>(),
             "injection": memory_injection_explanation,
-        }
+        },
+        "systemRecall": system_recall_json(&system_recall_records)
     });
     runtime_context["activeSkills"] = json!(active_skills.iter().cloned().collect::<Vec<_>>());
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
@@ -346,7 +365,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &runtime_context,
         &active_skill_prompt(&active_skills),
         design_research_required,
-        &shared_memory_prompt(&memory_records),
+        &combined_memory_prompt(&memory_records, &system_recall_records),
     );
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);
     let context = ContextBuilder::default().build_provider_context(
@@ -468,6 +487,20 @@ pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
         prompts.push("Skill lyra-design-research: For design or UI work, call Lyra design reference tools first, then include a concise Design Research Summary before proposing or editing UI.");
     }
     prompts.join("\n")
+}
+
+pub(crate) fn combined_memory_prompt(
+    memory_records: &[LongTermMemoryRecord],
+    system_recall_records: &[RankedSystemRecallItem],
+) -> String {
+    [
+        shared_memory_prompt(memory_records),
+        system_recall_prompt(system_recall_records),
+    ]
+    .into_iter()
+    .filter(|section| !section.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join("\n\n")
 }
 
 pub(crate) fn emit_assistant_text(session_id: &str, turn_id: &str, text: &str) -> Option<String> {
@@ -647,6 +680,7 @@ pub(crate) fn finish_turn_with_metadata(
                     update_runtime_turn(session, turn_id, status);
                     let retention_metrics = prune_transient_tool_outputs(session);
                     touch_session(session);
+                    let _ = index_session_messages_for_recall(&root, session);
                     events.push(json!({
                         "kind": "sessionSnapshot",
                         "snapshot": session.snapshot

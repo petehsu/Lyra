@@ -64,6 +64,30 @@ pub(super) fn record_tool_usage_from_result(
     let _ = guard.save_state();
 }
 
+pub(super) fn record_tool_descriptor_inspected(session_id: &str, manifest: &ToolManifest) {
+    let mut guard = match state().lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    let session_cache = guard
+        .inspected_tool_descriptors_by_session
+        .entry(session_id.to_string())
+        .or_default();
+    session_cache.insert(
+        manifest.path.clone(),
+        ToolDescriptorCacheEntry {
+            tool_path: manifest.path.clone(),
+            handle: manifest.handle.clone(),
+            title: manifest.title.clone(),
+            domain: manifest.domain.clone(),
+            operation: manifest.operation.clone(),
+            inspected_at: now(),
+            run_hint: descriptor_run_hint(manifest),
+            mini_schema: descriptor_mini_schema(manifest),
+        },
+    );
+}
+
 pub(super) fn annotate_cached_tool_failure(
     output: &mut Value,
     manifest: Option<&ToolManifest>,
@@ -170,6 +194,91 @@ pub(crate) fn cached_handles_for_scene(
     Value::Array(entries.into_iter().take(8).collect())
 }
 
+pub(crate) fn inspected_descriptors_for_session(
+    session_id: &str,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
+    let registry = runtime_registry_with_dispatcher(dispatcher);
+    let mut entries = match state().lock() {
+        Ok(guard) => guard
+            .inspected_tool_descriptors_by_session
+            .get(session_id)
+            .map(|session_cache| {
+                session_cache
+                    .values()
+                    .filter(|entry| registry.lookup_path(&entry.tool_path).is_some())
+                    .map(|entry| {
+                        json!({
+                            "path": entry.tool_path,
+                            "handle": entry.handle,
+                            "title": entry.title,
+                            "domain": entry.domain,
+                            "operation": entry.operation,
+                            "inspectedAt": entry.inspected_at,
+                            "runHint": entry.run_hint,
+                            "miniSchema": entry.mini_schema,
+                            "source": "sessionDescriptorCache",
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    entries.sort_by(|left, right| {
+        right
+            .get("inspectedAt")
+            .and_then(Value::as_str)
+            .cmp(&left.get("inspectedAt").and_then(Value::as_str))
+    });
+    Value::Array(entries.into_iter().take(12).collect())
+}
+
+pub(crate) fn presearch_hints_for_message(
+    message: &str,
+    scene: &str,
+    turn_id: Option<&str>,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
+    let query = message.trim();
+    if query.is_empty() {
+        return Value::Array(Vec::new());
+    }
+    let scene = ToolScene::parse(scene);
+    let registry = runtime_registry_with_dispatcher(dispatcher);
+    let usage_boosts = turn_id
+        .map(|turn_id| tool_usage_search_boosts(scene.as_str(), turn_id))
+        .unwrap_or_default();
+    let Ok(response) = registry.search_with_boosts(query, None, 0, 5, scene, &usage_boosts) else {
+        return Value::Array(Vec::new());
+    };
+    let hints = response
+        .results
+        .into_iter()
+        .take(5)
+        .filter(|result| result.score >= 8.0)
+        .map(|result| {
+            json!({
+                "query": response.query,
+                "path": result.path,
+                "handle": result.handle,
+                "title": result.title,
+                "domain": result.domain,
+                "operation": result.operation,
+                "summary": result.summary,
+                "runHint": result.run_hint,
+                "miniSchema": result.mini_schema,
+                "score": result.score,
+                "matchedFields": result.matched_fields,
+                "matchReason": result.match_reason,
+                "recommendedNextAction": result.recommended_next_action,
+                "source": "latestUserMessagePresearch",
+            })
+        })
+        .collect::<Vec<_>>();
+    Value::Array(hints)
+}
+
 pub(super) fn tool_usage_cache_score(
     entry: &ToolUsageCacheEntry,
     scene: &str,
@@ -229,4 +338,88 @@ pub(super) fn tool_usage_success_rate(entry: &ToolUsageCacheEntry) -> f64 {
 
 pub(super) fn round_runtime_score(score: f64) -> f64 {
     (score * 100.0).round() / 100.0
+}
+
+fn descriptor_run_hint(manifest: &ToolManifest) -> String {
+    let target = manifest
+        .handle
+        .as_deref()
+        .map(|handle| format!("toolHandle: {handle}"))
+        .unwrap_or_else(|| format!("path: {}", manifest.path));
+    format!(
+        "tool_fs_run with {target}; operation: {}; args follow miniSchema. Re-inspect only if full schema details are needed.",
+        manifest.operation
+    )
+}
+
+fn descriptor_mini_schema(manifest: &ToolManifest) -> Value {
+    let schema = &manifest.input_schema;
+    let mut required = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    required.sort();
+    let required_set = required.iter().cloned().collect::<HashSet<_>>();
+    let parameters = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .map(|properties| {
+            let mut entries = properties
+                .iter()
+                .map(|(name, value)| (name.as_str(), value))
+                .collect::<Vec<_>>();
+            entries.sort_by(|left, right| {
+                required_set
+                    .contains(left.0)
+                    .cmp(&required_set.contains(right.0))
+                    .reverse()
+                    .then_with(|| left.0.cmp(right.0))
+            });
+            entries
+                .into_iter()
+                .take(12)
+                .map(|(name, value)| {
+                    let mut summary = serde_json::Map::new();
+                    summary.insert("name".to_string(), Value::String(name.to_string()));
+                    summary.insert(
+                        "required".to_string(),
+                        Value::Bool(required_set.contains(name)),
+                    );
+                    if let Some(kind) = value.get("type") {
+                        summary.insert("type".to_string(), kind.clone());
+                    }
+                    if let Some(default) = value.get("default") {
+                        summary.insert("default".to_string(), default.clone());
+                    }
+                    if let Some(enum_values) = value.get("enum") {
+                        summary.insert("enum".to_string(), enum_values.clone());
+                    }
+                    if let Some(description) = value
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(|description| description.chars().take(160).collect::<String>())
+                    {
+                        summary.insert("description".to_string(), Value::String(description));
+                    }
+                    Value::Object(summary)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "type": schema.get("type").cloned().unwrap_or_else(|| Value::String("object".to_string())),
+        "required": required,
+        "parameters": parameters,
+        "truncated": schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_some_and(|properties| properties.len() > 12),
+    })
 }

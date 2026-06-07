@@ -121,6 +121,7 @@ impl NativeRuntimeState {
             cancelled_turns: HashSet::new(),
             active_cancellations: HashMap::new(),
             suppressed_tool_usage_by_turn: HashMap::new(),
+            inspected_tool_descriptors_by_session: HashMap::new(),
             event_callback: None,
             host_dispatcher: None,
         };

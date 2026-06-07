@@ -26,23 +26,247 @@ pub(crate) fn run_post_turn_memory_extraction(
     assistant_text: Option<&str>,
 ) -> AgentRuntimeResult<Value> {
     let mut created = Vec::new();
-    for mutation in extract_user_memory_candidates(session_id, turn_id, user_text) {
+    let extraction = run_memory_agent_extraction(session_id, turn_id, user_text, assistant_text);
+    let mutations = match extraction {
+        Ok(mutations) => mutations,
+        Err(error) => {
+            return Ok(json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "agent": "memory",
+                "skipped": true,
+                "reason": error.to_string(),
+                "candidates": [],
+            }));
+        }
+    };
+    for mutation in mutations {
         created.push(process_extracted_candidate(
             root, session_id, turn_id, mutation,
         )?);
     }
-    if let Some(assistant_text) = assistant_text {
-        for mutation in extract_agent_inference_candidates(session_id, turn_id, assistant_text) {
-            created.push(process_extracted_candidate(
-                root, session_id, turn_id, mutation,
-            )?);
-        }
-    }
     Ok(json!({
         "sessionId": session_id,
         "turnId": turn_id,
+        "agent": "memory",
         "candidates": created,
     }))
+}
+
+const MEMORY_AGENT_SYSTEM_PROMPT: &str = r#"You are Lyra's background memory maintenance agent.
+
+You are not the main chat agent. You never use tools and never answer the user. Your only job is to inspect the just-finished turn and return compact JSON describing durable memory candidates.
+
+Decide semantically whether the conversation contains useful long-term facts. Do not rely on fixed trigger phrases. Capture facts that would help future assistance, including identity, stable preferences, project decisions, working style, recurring constraints, user-owned contact details, and important project facts. Ignore transient task details, one-off commands, jokes, uncertain guesses, secrets, passwords, API keys, access tokens, and raw credentials.
+
+Return only a JSON object:
+{
+  "candidates": [
+    {
+      "fact": "short durable fact",
+      "category": "user_profile|preference|project|instruction|goal|other",
+      "scope": "global|project",
+      "confidence": 0.0,
+      "sensitivity": "low|personal|sensitive",
+      "sourceType": "user_declaration|memory_agent_inference",
+      "requiresConfirmation": true,
+      "content": {"kind":"brief_type","text":"fact or structured value"},
+      "expiresAt": null
+    }
+  ]
+}
+
+Use requiresConfirmation=true for personal contact details, addresses, account identifiers, inferred facts, and anything the user did not explicitly ask Lyra to remember. Use sourceType=user_declaration only when the user clearly stated the fact. Keep at most 6 candidates."#;
+
+fn run_memory_agent_extraction(
+    session_id: &str,
+    turn_id: &str,
+    user_text: &str,
+    assistant_text: Option<&str>,
+) -> AgentRuntimeResult<Vec<MemoryCandidateMutation>> {
+    if user_text.trim().is_empty() && assistant_text.is_none_or(|text| text.trim().is_empty()) {
+        return Ok(Vec::new());
+    }
+    let (provider, model) = memory_agent_provider_and_model()?;
+    let messages = vec![
+        json!({
+            "role": "system",
+            "content": MEMORY_AGENT_SYSTEM_PROMPT,
+        }),
+        json!({
+            "role": "user",
+            "content": json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "userMessage": user_text,
+                "assistantMessage": assistant_text.unwrap_or_default(),
+            }).to_string(),
+        }),
+    ];
+    let reply = call_model_once_non_streaming(&provider, &model, &messages, &[])?;
+    let content = reply
+        .content
+        .as_deref()
+        .ok_or_else(|| AgentRuntimeError::Core("memory agent returned no content".to_string()))?;
+    parse_memory_agent_candidates(session_id, turn_id, content)
+}
+
+fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfile, String)> {
+    let state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let provider_id = state
+        .config
+        .memory_agent_provider
+        .as_ref()
+        .or(state.config.default_provider.as_ref())
+        .ok_or_else(|| {
+            AgentRuntimeError::Core("memory agent provider is not configured".to_string())
+        })?;
+    let provider = state
+        .config
+        .providers
+        .get(provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            AgentRuntimeError::Core(format!("memory agent provider not found: {provider_id}"))
+        })?;
+    let model = state
+        .config
+        .memory_agent_model
+        .clone()
+        .or_else(|| provider.default_model.clone())
+        .or_else(|| state.config.default_model.clone())
+        .ok_or_else(|| {
+            AgentRuntimeError::Core("memory agent model is not configured".to_string())
+        })?;
+    Ok((provider, model))
+}
+
+fn parse_memory_agent_candidates(
+    session_id: &str,
+    turn_id: &str,
+    content: &str,
+) -> AgentRuntimeResult<Vec<MemoryCandidateMutation>> {
+    let value = parse_memory_agent_json(content)?;
+    let candidates = value
+        .get("candidates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            AgentRuntimeError::Core("memory agent JSON missing candidates array".to_string())
+        })?;
+    let source_ref = Some(format!("{session_id}:{turn_id}:memory_agent"));
+    Ok(candidates
+        .iter()
+        .take(6)
+        .filter_map(|candidate| memory_candidate_from_agent_json(candidate, source_ref.clone()))
+        .collect())
+}
+
+fn parse_memory_agent_json(content: &str) -> AgentRuntimeResult<Value> {
+    if let Ok(value) = serde_json::from_str::<Value>(content.trim()) {
+        return Ok(value);
+    }
+    let start = content.find('{').ok_or_else(|| {
+        AgentRuntimeError::Core("memory agent returned no JSON object".to_string())
+    })?;
+    let end = content.rfind('}').ok_or_else(|| {
+        AgentRuntimeError::Core("memory agent returned incomplete JSON object".to_string())
+    })?;
+    if end < start {
+        return Err(AgentRuntimeError::Core(
+            "memory agent returned malformed JSON object".to_string(),
+        ));
+    }
+    serde_json::from_str(&content[start..=end]).map_err(|error| {
+        AgentRuntimeError::Core(format!("memory agent JSON parse failed: {error}"))
+    })
+}
+
+fn memory_candidate_from_agent_json(
+    candidate: &Value,
+    source_ref: Option<String>,
+) -> Option<MemoryCandidateMutation> {
+    let fact = string_field(candidate, "fact")?;
+    if fact.chars().count() < 4 {
+        return None;
+    }
+    let category = normalize_memory_category(string_field(candidate, "category").as_deref());
+    let scope = normalize_memory_scope(string_field(candidate, "scope").as_deref());
+    let confidence = candidate
+        .get("confidence")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.7)
+        .clamp(0.0, 1.0);
+    let sensitivity = string_field(candidate, "sensitivity").unwrap_or_else(|| "low".to_string());
+    let requires_confirmation = candidate
+        .get("requiresConfirmation")
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| sensitivity != "low");
+    let source_type = match string_field(candidate, "sourceType").as_deref() {
+        Some("user_declaration") if !requires_confirmation && sensitivity == "low" => {
+            "user_declaration"
+        }
+        _ => "memory_agent_inference",
+    }
+    .to_string();
+    let mut content = candidate
+        .get("content")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({ "kind": "memory_agent_fact", "text": fact }));
+    if let Value::Object(map) = &mut content {
+        map.insert(
+            "sensitivity".to_string(),
+            Value::String(sensitivity.clone()),
+        );
+        map.insert(
+            "requiresConfirmation".to_string(),
+            Value::Bool(requires_confirmation),
+        );
+    }
+    let status = requires_confirmation.then(|| "pending".to_string());
+    Some(MemoryCandidateMutation {
+        fact,
+        content,
+        category,
+        scope,
+        confidence,
+        source_type,
+        source_ref,
+        proposed_action: "create".to_string(),
+        status,
+        expires_at: candidate
+            .get("expiresAt")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        ..MemoryCandidateMutation::default()
+    })
+}
+
+fn string_field(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn normalize_memory_category(value: Option<&str>) -> String {
+    match value.unwrap_or("other") {
+        "user_profile" | "preference" | "project" | "instruction" | "goal" | "other" => {
+            value.unwrap_or("other").to_string()
+        }
+        _ => "other".to_string(),
+    }
+}
+
+fn normalize_memory_scope(value: Option<&str>) -> String {
+    match value {
+        Some("project") => "project".to_string(),
+        _ => "global".to_string(),
+    }
 }
 
 pub(crate) fn memory_review_candidates(payload: Value) -> AgentRuntimeResult<Value> {
@@ -201,7 +425,7 @@ pub(crate) fn proactive_open_session(payload: Value) -> AgentRuntimeResult<Value
     }))
 }
 
-fn process_extracted_candidate(
+pub(crate) fn process_extracted_candidate(
     root: &Path,
     session_id: &str,
     turn_id: &str,
@@ -372,96 +596,6 @@ fn proactive_enabled_for(trigger_type: &str) -> bool {
         .unwrap_or(true)
 }
 
-fn extract_user_memory_candidates(
-    session_id: &str,
-    turn_id: &str,
-    user_text: &str,
-) -> Vec<MemoryCandidateMutation> {
-    let mut candidates = Vec::new();
-    let source_ref = Some(format!("{session_id}:{turn_id}:user"));
-    if let Some(name) = extract_name(user_text) {
-        candidates.push(MemoryCandidateMutation {
-            fact: format!("用户的名字是{name}"),
-            content: json!({ "kind": "identity", "name": name }),
-            category: "user_profile".to_string(),
-            scope: "global".to_string(),
-            confidence: 1.0,
-            source_type: "user_declaration".to_string(),
-            source_ref: source_ref.clone(),
-            proposed_action: "create".to_string(),
-            ..MemoryCandidateMutation::default()
-        });
-    }
-    if let Some(language) = extract_language_preference(user_text) {
-        candidates.push(MemoryCandidateMutation {
-            fact: format!("用户偏好使用{language}回复"),
-            content: json!({ "kind": "language_preference", "language": language }),
-            category: "preference".to_string(),
-            scope: "global".to_string(),
-            confidence: 1.0,
-            source_type: "user_declaration".to_string(),
-            source_ref: source_ref.clone(),
-            proposed_action: "create".to_string(),
-            ..MemoryCandidateMutation::default()
-        });
-    }
-    if let Some(preference) = extract_general_preference(user_text) {
-        candidates.push(MemoryCandidateMutation {
-            fact: preference.clone(),
-            content: json!({ "kind": "preference", "text": preference }),
-            category: "preference".to_string(),
-            scope: "global".to_string(),
-            confidence: 0.95,
-            source_type: "user_declaration".to_string(),
-            source_ref: source_ref.clone(),
-            proposed_action: "create".to_string(),
-            ..MemoryCandidateMutation::default()
-        });
-    }
-    if let Some(decision) = extract_project_decision(user_text) {
-        candidates.push(MemoryCandidateMutation {
-            fact: decision.clone(),
-            content: json!({ "kind": "project_decision", "text": decision }),
-            category: "project".to_string(),
-            scope: "project".to_string(),
-            confidence: 0.9,
-            source_type: "project_fact".to_string(),
-            source_ref,
-            proposed_action: "create".to_string(),
-            ..MemoryCandidateMutation::default()
-        });
-    }
-    candidates
-}
-
-fn extract_agent_inference_candidates(
-    session_id: &str,
-    turn_id: &str,
-    assistant_text: &str,
-) -> Vec<MemoryCandidateMutation> {
-    let lower = assistant_text.to_lowercase();
-    if !(lower.contains("i infer") || lower.contains("it seems") || assistant_text.contains("推断"))
-    {
-        return Vec::new();
-    }
-    let fact = sentence_prefix(assistant_text, 160);
-    if fact.trim().is_empty() {
-        return Vec::new();
-    }
-    vec![MemoryCandidateMutation {
-        fact: fact.clone(),
-        content: json!({ "kind": "agent_inference", "text": fact }),
-        category: "other".to_string(),
-        scope: "global".to_string(),
-        confidence: 0.55,
-        source_type: "agent_inference".to_string(),
-        source_ref: Some(format!("{session_id}:{turn_id}:assistant")),
-        proposed_action: "create".to_string(),
-        status: Some("pending".to_string()),
-        ..MemoryCandidateMutation::default()
-    }]
-}
-
 fn memory_candidate_conflicts(
     candidate: &MemoryCandidateMutation,
     record: &LongTermMemoryRecord,
@@ -505,81 +639,6 @@ fn normalized_fact(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect()
-}
-
-fn extract_name(text: &str) -> Option<String> {
-    for marker in ["我的名字是", "我叫", "叫我", "my name is", "call me"] {
-        if let Some(index) = text.to_lowercase().find(marker) {
-            let start = index + marker.len();
-            let candidate = take_until_boundary(&text[start..], 32);
-            if !candidate.is_empty() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-fn extract_language_preference(text: &str) -> Option<String> {
-    let lower = text.to_lowercase();
-    if text.contains("以后用英文")
-        || text.contains("用英文回复")
-        || lower.contains("reply in english")
-    {
-        return Some("英文".to_string());
-    }
-    if text.contains("以后用中文")
-        || text.contains("用中文回复")
-        || lower.contains("reply in chinese")
-    {
-        return Some("中文".to_string());
-    }
-    None
-}
-
-fn extract_general_preference(text: &str) -> Option<String> {
-    for marker in ["我希望", "我偏好", "我喜欢", "I prefer", "I want"] {
-        if let Some(index) = text.find(marker) {
-            let value = sentence_prefix(&text[index..], 160);
-            if value.chars().count() >= 8 {
-                return Some(value);
-            }
-        }
-    }
-    None
-}
-
-fn extract_project_decision(text: &str) -> Option<String> {
-    let mentions_project = text.contains("Lyra") || text.contains("项目") || text.contains("架构");
-    let decision = text.contains("决定")
-        || text.contains("方案")
-        || text.contains("协议")
-        || text.to_lowercase().contains("we will");
-    if mentions_project && decision {
-        return Some(sentence_prefix(text, 220));
-    }
-    None
-}
-
-fn take_until_boundary(text: &str, max_chars: usize) -> String {
-    text.trim_start()
-        .chars()
-        .take_while(|character| !matches!(character, '。' | '，' | ',' | '.' | '\n' | ';' | '；'))
-        .take(max_chars)
-        .collect::<String>()
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .to_string()
-}
-
-fn sentence_prefix(text: &str, max_chars: usize) -> String {
-    text.trim()
-        .chars()
-        .take(max_chars)
-        .collect::<String>()
-        .trim()
-        .to_string()
 }
 
 fn ensure_state_proactive_triggers(

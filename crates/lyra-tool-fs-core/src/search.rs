@@ -54,6 +54,11 @@ pub(crate) fn score_manifest_search(
     if score <= 0.0 {
         return None;
     }
+    let intent_adjustment = search_intent_adjustment(manifest, query, &normalized_query);
+    if intent_adjustment.score != 0.0 {
+        score += intent_adjustment.score;
+        reasons.push(intent_adjustment.reason);
+    }
     if scene_domain_order(scene)
         .first()
         .is_some_and(|domain| *domain == manifest.domain)
@@ -90,6 +95,164 @@ pub(crate) fn score_manifest_search(
         matched_fields,
         match_reason: reasons.join("; "),
     })
+}
+
+#[derive(Clone, Debug, Default)]
+struct IntentAdjustment {
+    score: f64,
+    reason: String,
+}
+
+fn search_intent_adjustment(
+    manifest: &ToolManifest,
+    raw_query: &str,
+    normalized_query: &str,
+) -> IntentAdjustment {
+    let query = raw_query.to_lowercase();
+    let path = manifest.path.as_str();
+    let operation = manifest.operation.as_str();
+    let title = manifest.title.to_lowercase();
+
+    if is_open_url_intent(&query, normalized_query) {
+        if is_browser_navigate_tool(path, operation) || is_software_open_url_tool(path, &title) {
+            return IntentAdjustment {
+                score: 32.0,
+                reason: "open-url intent boost".to_string(),
+            };
+        }
+        if is_browser_act_tool(path, operation) || is_page_search_tool(path, operation) {
+            return IntentAdjustment {
+                score: -24.0,
+                reason: "open-url intent penalty".to_string(),
+            };
+        }
+    }
+
+    if is_web_search_intent(&query, normalized_query) {
+        if is_software_browser_search_tool(path) || path == "/tools/web/search" {
+            return IntentAdjustment {
+                score: 30.0,
+                reason: "web-search intent boost".to_string(),
+            };
+        }
+        if is_page_search_tool(path, operation) {
+            return IntentAdjustment {
+                score: -28.0,
+                reason: "web-search intent penalty for page-find tools".to_string(),
+            };
+        }
+    }
+
+    if is_page_search_intent(&query, normalized_query) {
+        if is_page_search_tool(path, operation) {
+            return IntentAdjustment {
+                score: 26.0,
+                reason: "page-search intent boost".to_string(),
+            };
+        }
+        if is_software_browser_search_tool(path) || path == "/tools/web/search" {
+            return IntentAdjustment {
+                score: -18.0,
+                reason: "page-search intent penalty for web search".to_string(),
+            };
+        }
+    }
+
+    if is_semantic_locate_intent(&query, normalized_query) && path == "/tools/browser/locate" {
+        return IntentAdjustment {
+            score: 24.0,
+            reason: "semantic-locate intent boost".to_string(),
+        };
+    }
+
+    IntentAdjustment::default()
+}
+
+fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {
+    query.contains("http://")
+        || query.contains("https://")
+        || query.contains("www.")
+        || normalized_query.contains("open url")
+        || normalized_query.contains("go to url")
+        || normalized_query.contains("navigate url")
+        || normalized_query.contains("open website")
+        || normalized_query.contains("open webpage")
+        || normalized_query.contains("visit site")
+        || query.contains("打开网页")
+        || query.contains("打开网站")
+        || query.contains("进入网站")
+        || query.contains("访问网址")
+        || query.contains("跳转网址")
+}
+
+fn is_web_search_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("google search")
+        || normalized_query.contains("search google")
+        || normalized_query.contains("browser search google")
+        || normalized_query.contains("web search")
+        || normalized_query.contains("internet search")
+        || query.contains("用google搜索")
+        || query.contains("google搜索")
+        || query.contains("谷歌搜索")
+        || query.contains("搜索一下")
+        || query.contains("搜一下")
+}
+
+fn is_page_search_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("search in page")
+        || normalized_query.contains("find in page")
+        || normalized_query.contains("find current page")
+        || normalized_query.contains("search current page")
+        || normalized_query.contains("page search")
+        || query.contains("页内搜索")
+        || query.contains("页面搜索")
+        || query.contains("当前页面查找")
+        || query.contains("搜索当前页")
+        || query.contains("搜索当前网页")
+        || query.contains("查找页面")
+}
+
+fn is_semantic_locate_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("semantic locate")
+        || normalized_query.contains("locate section")
+        || normalized_query.contains("locate text")
+        || normalized_query.contains("nearby controls")
+        || query.contains("语义定位")
+        || query.contains("定位页面")
+        || query.contains("定位文本")
+        || query.contains("附近控件")
+}
+
+fn is_browser_navigate_tool(path: &str, operation: &str) -> bool {
+    path == "/tools/browser/navigate"
+        || (path.starts_with("/tools/browser/") && operation == "navigate")
+}
+
+fn is_software_open_url_tool(path: &str, title: &str) -> bool {
+    let path = path.to_lowercase();
+    path.ends_with(".openurl")
+        || path.ends_with(".open_url")
+        || path.ends_with("/openurl")
+        || title == "open url"
+}
+
+fn is_browser_act_tool(path: &str, operation: &str) -> bool {
+    path == "/tools/browser/act" || (path.starts_with("/tools/browser/") && operation == "act")
+}
+
+fn is_page_search_tool(path: &str, operation: &str) -> bool {
+    let path = path.to_lowercase();
+    path == "/tools/browser/find"
+        || path == "/tools/browser/locate"
+        || path.ends_with(".searchinpage")
+        || operation == "find"
+        || operation == "locate"
+}
+
+fn is_software_browser_search_tool(path: &str) -> bool {
+    let path = path.to_lowercase();
+    path.ends_with("browser-search.search")
+        || path.ends_with("browser-search/browser-search.search")
 }
 
 #[derive(Clone, Debug)]

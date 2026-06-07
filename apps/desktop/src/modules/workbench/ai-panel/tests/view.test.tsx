@@ -841,7 +841,7 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("Lyra")).toBeInTheDocument();
   });
 
-  test("new sessions inherit the current bound project directory", async () => {
+  test("new sessions do not inherit the current bound project directory", async () => {
     const { api, createSession, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshotWithConversation,
@@ -855,8 +855,7 @@ describe("AiPanelSurface", () => {
 
     await waitFor(() => {
       expect(createSession).toHaveBeenCalledWith({
-        title: "新会话",
-        workingDir: "/Users/petehsu/Documents/Lyra"
+        title: "新会话"
       });
     });
   });
@@ -2081,7 +2080,7 @@ describe("AiPanelSurface", () => {
     expect(container.querySelector(".ai-session-tab-title")).not.toBeNull();
   });
 
-  test("creates a session through the tab button and inherits the current project", async () => {
+  test("creates an unbound session through the tab button", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     const onCreateSessionTab = vi.fn(async (request) => ({
       ...snapshot,
@@ -2142,8 +2141,7 @@ describe("AiPanelSurface", () => {
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "新会话",
-        workingDir: "/Users/petehsu/Documents/Lyra"
+        title: "新会话"
       });
     });
     expect(await screen.findByRole("tab", { name: "Bound follow-up" }))
@@ -2237,8 +2235,7 @@ describe("AiPanelSurface", () => {
 
     await waitFor(() => {
       expect(onCreateSessionTab).toHaveBeenCalledWith({
-        title: "新会话",
-        workingDir: "/Users/petehsu/Documents/Lyra"
+        title: "新会话"
       });
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-2",

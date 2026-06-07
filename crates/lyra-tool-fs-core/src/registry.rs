@@ -170,10 +170,12 @@ impl ToolFsRegistry {
                 domain: entry.manifest.domain.clone(),
                 operation: entry.manifest.operation.clone(),
                 summary: entry.manifest.summary.clone(),
+                run_hint: run_hint_for_manifest(&entry.manifest),
+                mini_schema: mini_schema_for_manifest(&entry.manifest),
                 score: round_score(entry.score),
                 matched_fields: entry.matched_fields.clone(),
                 match_reason: entry.match_reason.clone(),
-                recommended_next_action: "Call tool_fs_inspect for the schema, then tool_fs_run with this path or handle.".to_string(),
+                recommended_next_action: "If miniSchema covers the needed arguments, call tool_fs_run directly with this path or handle; call tool_fs_inspect only when argument details are unclear.".to_string(),
             })
             .collect::<Vec<_>>();
         let fallback_list_path = if let Some(domain) = domain.as_deref()
@@ -454,6 +456,90 @@ impl ToolFsRegistry {
                 .then_with(|| left.path.cmp(&right.path))
         });
     }
+}
+
+fn run_hint_for_manifest(manifest: &ToolManifest) -> String {
+    let target = manifest
+        .handle
+        .as_deref()
+        .map(|handle| format!("toolHandle: {handle}"))
+        .unwrap_or_else(|| format!("path: {}", manifest.path));
+    format!(
+        "tool_fs_run with {target}; operation: {}; provide args matching miniSchema.",
+        manifest.operation
+    )
+}
+
+fn mini_schema_for_manifest(manifest: &ToolManifest) -> Value {
+    let schema = &manifest.input_schema;
+    let mut required = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    required.sort();
+    let required_set = required.iter().cloned().collect::<HashSet<_>>();
+    let properties = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .map(|properties| {
+            let mut entries = properties
+                .iter()
+                .map(|(name, value)| (name.as_str(), value))
+                .collect::<Vec<_>>();
+            entries.sort_by(|left, right| {
+                required_set
+                    .contains(left.0)
+                    .cmp(&required_set.contains(right.0))
+                    .reverse()
+                    .then_with(|| left.0.cmp(right.0))
+            });
+            entries
+                .into_iter()
+                .take(12)
+                .map(|(name, value)| {
+                    let mut summary = serde_json::Map::new();
+                    summary.insert("name".to_string(), Value::String(name.to_string()));
+                    summary.insert(
+                        "required".to_string(),
+                        Value::Bool(required_set.contains(name)),
+                    );
+                    if let Some(kind) = value.get("type") {
+                        summary.insert("type".to_string(), kind.clone());
+                    }
+                    if let Some(default) = value.get("default") {
+                        summary.insert("default".to_string(), default.clone());
+                    }
+                    if let Some(enum_values) = value.get("enum") {
+                        summary.insert("enum".to_string(), enum_values.clone());
+                    }
+                    if let Some(description) = value
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(|description| description.chars().take(160).collect::<String>())
+                    {
+                        summary.insert("description".to_string(), Value::String(description));
+                    }
+                    Value::Object(summary)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "type": schema.get("type").cloned().unwrap_or_else(|| Value::String("object".to_string())),
+        "required": required,
+        "parameters": properties,
+        "truncated": schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_some_and(|properties| properties.len() > 12),
+    })
 }
 
 pub fn normalize_tool_path(path: &str) -> String {

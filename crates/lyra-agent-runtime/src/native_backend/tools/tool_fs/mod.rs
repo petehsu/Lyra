@@ -32,4 +32,6 @@ pub(crate) use registry::{
     runtime_manifest_source_summary, runtime_registry, runtime_registry_with_dispatcher,
 };
 pub(crate) use target::{RuntimeToolTarget, path_for_activity, runtime_target_for_manifest};
-pub(crate) use usage_cache::cached_handles_for_scene;
+pub(crate) use usage_cache::{
+    cached_handles_for_scene, inspected_descriptors_for_session, presearch_hints_for_message,
+};

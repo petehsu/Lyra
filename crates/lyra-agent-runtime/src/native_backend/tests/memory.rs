@@ -563,55 +563,116 @@ fn memory_search_uses_fts_and_lazily_repairs_missing_embedding_rows() {
 }
 
 #[test]
-fn memory_extraction_creates_auto_applied_declarations_and_pending_inferences() {
+fn memory_extraction_uses_background_memory_agent_without_tools() {
     let temp = tempfile::tempdir().expect("tempdir");
     let session_id = format!("session-{}", Uuid::new_v4());
     let turn_id = format!("turn-{}", Uuid::new_v4());
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind provider");
+    let address = listener.local_addr().expect("provider address");
+    let (request_tx, request_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept provider request");
+        let request = read_http_json_body(&mut stream);
+        request_tx.send(request).expect("send provider request");
+        let assistant_content = json!({
+            "candidates": [{
+                "fact": "用户的联系邮箱是 yuanhao@example.com",
+                "category": "user_profile",
+                "scope": "global",
+                "confidence": 0.92,
+                "sensitivity": "personal",
+                "sourceType": "user_declaration",
+                "requiresConfirmation": true,
+                "content": {
+                    "kind": "contact_email",
+                    "email": "yuanhao@example.com"
+                },
+                "expiresAt": null
+            }]
+        })
+        .to_string();
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": assistant_content
+                }
+            }]
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write provider response");
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        state.config.memory_agent_provider = Some("memory-agent-test".to_string());
+        state.config.memory_agent_model = Some("memory-agent-model".to_string());
+        state.config.providers.insert(
+            "memory-agent-test".to_string(),
+            NativeProviderProfile {
+                id: "memory-agent-test".to_string(),
+                label: "Memory Agent Test".to_string(),
+                provider_type: "openai-compatible".to_string(),
+                base_url: Some(format!("http://{address}/v1")),
+                default_model: Some("memory-agent-model".to_string()),
+                api_key: Some("test-key".to_string()),
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: vec![NativeProviderModel {
+                    id: "memory-agent-model".to_string(),
+                    label: None,
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: false,
+                    supports_streaming: false,
+                }],
+            },
+        );
+    }
     let result = run_post_turn_memory_extraction(
         temp.path(),
         &session_id,
         &turn_id,
-        "我的名字是徐远豪。以后用英文回复。",
-        Some("I infer the user may be reviewing memory autonomy behavior."),
+        "等会发我账单就行，我的邮箱是 yuanhao@example.com。",
+        Some("好的。"),
     )
     .expect("extract memories");
     assert!(
         result["candidates"]
             .as_array()
-            .is_some_and(|items| items.len() >= 3)
+            .is_some_and(|items| items.len() == 1)
     );
+    let request = request_rx.recv().expect("provider request");
+    assert_eq!(request["model"], "memory-agent-model");
+    assert!(request["tools"].as_array().is_none_or(Vec::is_empty));
 
-    let auto_applied =
-        list_memory_candidates(temp.path(), Some("auto_applied"), 20).expect("auto candidates");
-    assert!(
-        auto_applied
-            .iter()
-            .any(|candidate| candidate.fact.contains("徐远豪"))
-    );
-    assert!(auto_applied.iter().any(|candidate| {
-        candidate.content.get("kind").and_then(Value::as_str) == Some("language_preference")
-    }));
     let pending =
         list_memory_candidates(temp.path(), Some("pending"), 20).expect("pending candidates");
-    assert!(pending.iter().any(|candidate| {
-        candidate.source_type == "agent_inference" && candidate.confidence < 0.7
-    }));
+    let candidate = pending
+        .iter()
+        .find(|candidate| candidate.fact.contains("yuanhao@example.com"))
+        .expect("email candidate");
+    assert_eq!(candidate.category, "user_profile");
+    assert_eq!(candidate.source_type, "memory_agent_inference");
 
     let memories = list_long_term_memory(
         temp.path(),
         MemoryQuery {
-            query: Some("徐远豪 英文".to_string()),
+            query: Some("yuanhao@example.com".to_string()),
             include_archived: true,
             limit: 20,
             ..MemoryQuery::default()
         },
     )
     .expect("list memories");
-    assert!(memories.iter().any(|record| record.fact.contains("徐远豪")));
-    assert!(memories.iter().all(|record| {
-        record.source_type != "agent_inference"
-            || record.tags.iter().any(|tag| tag == "auto_extracted")
-    }));
+    assert!(memories.is_empty());
 }
 
 #[test]
@@ -632,8 +693,23 @@ fn memory_conflict_auto_supersedes_low_confidence_and_confirms_high_confidence()
     .expect("create low confidence memory");
     let session_id = format!("session-{}", Uuid::new_v4());
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    run_post_turn_memory_extraction(temp.path(), &session_id, &turn_id, "以后用英文回复。", None)
-        .expect("extract conflict");
+    process_extracted_candidate(
+        temp.path(),
+        &session_id,
+        &turn_id,
+        MemoryCandidateMutation {
+            fact: "用户偏好使用英文回复".to_string(),
+            content: json!({ "kind": "language_preference", "language": "英文" }),
+            category: "preference".to_string(),
+            scope: "global".to_string(),
+            confidence: 1.0,
+            source_type: "user_declaration".to_string(),
+            source_ref: Some(format!("{session_id}:{turn_id}:memory_agent")),
+            proposed_action: "create".to_string(),
+            ..MemoryCandidateMutation::default()
+        },
+    )
+    .expect("process conflict");
     let superseded = list_long_term_memory(
         temp.path(),
         MemoryQuery {
@@ -668,8 +744,23 @@ fn memory_conflict_auto_supersedes_low_confidence_and_confirms_high_confidence()
             .proactive_disabled_triggers
             .remove("memory_conflict");
     }
-    run_post_turn_memory_extraction(temp.path(), &session_id, &turn_id, "以后用英文回复。", None)
-        .expect("extract high conflict");
+    process_extracted_candidate(
+        temp.path(),
+        &session_id,
+        &turn_id,
+        MemoryCandidateMutation {
+            fact: "用户偏好使用英文回复".to_string(),
+            content: json!({ "kind": "language_preference", "language": "英文" }),
+            category: "preference".to_string(),
+            scope: "global".to_string(),
+            confidence: 1.0,
+            source_type: "user_declaration".to_string(),
+            source_ref: Some(format!("{session_id}:{turn_id}:memory_agent")),
+            proposed_action: "create".to_string(),
+            ..MemoryCandidateMutation::default()
+        },
+    )
+    .expect("process high conflict");
     let candidates = list_memory_candidates(temp.path(), Some("needs_user_confirmation"), 20)
         .expect("review candidates");
     let candidate = candidates
@@ -842,6 +933,180 @@ fn shared_memory_injection_rotates_records() {
             .skip(3)
             .all(|record| record.access_count == 1)
     );
+}
+
+#[test]
+fn system_recall_selects_long_term_memory_with_source_markers() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = create_long_term_memory(
+        temp.path(),
+        MemoryMutation {
+            scope: Some("global".to_string()),
+            category: Some("user_profile".to_string()),
+            fact: Some("用户的联系邮箱是 yuanhao@example.com".to_string()),
+            content: Some(json!({ "kind": "contact_email", "email": "yuanhao@example.com" })),
+            confidence: Some(0.95),
+            source_type: Some("user_declaration".to_string()),
+            ..MemoryMutation::default()
+        },
+    )
+    .expect("create memory");
+
+    let recall = select_system_recall_for_injection(
+        temp.path(),
+        "我的邮箱是什么",
+        None,
+        &[json!({ "role": "user", "text": "我的邮箱是什么" })],
+    )
+    .expect("select recall");
+
+    assert_eq!(recall.len(), 1);
+    assert_eq!(recall[0].item.source_kind, "long_term_memory");
+    assert_eq!(recall[0].item.source_id, created.id);
+    let rendered = system_recall_json(&recall);
+    assert_eq!(
+        rendered["records"][0]["systemRecalled"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        rendered["records"][0]["sourceKind"].as_str(),
+        Some("long_term_memory")
+    );
+    assert!(
+        rendered["records"][0]["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("yuanhao@example.com")
+    );
+}
+
+#[test]
+fn system_recall_indexes_session_messages_and_dedupes_current_context() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mut old_session = new_session(Some("Old Session".to_string()), None, "normal");
+    old_session.id = format!("session-{}", Uuid::new_v4());
+    push_array(
+        &mut old_session.snapshot,
+        "messages",
+        json!({
+            "id": format!("message-{}", Uuid::new_v4()),
+            "role": "user",
+            "text": "我叫徐远豪",
+            "createdAt": now()
+        }),
+    );
+    index_session_messages_for_recall(temp.path(), &old_session).expect("index session");
+    let rebuilt = rebuild_system_recall_index(temp.path(), &[old_session.clone()])
+        .expect("rebuild recall index");
+    assert_eq!(rebuilt["sessionItems"].as_u64(), Some(1));
+
+    let recall = select_system_recall_for_injection(
+        temp.path(),
+        "我叫什么你还记得吗？",
+        None,
+        &[json!({ "role": "user", "text": "我叫什么你还记得吗？" })],
+    )
+    .expect("select recall");
+    assert!(
+        recall
+            .iter()
+            .any(|record| record.item.source_kind == "session_message"
+                && record.item.text.contains("徐远豪"))
+    );
+
+    let duplicate = select_system_recall_for_injection(
+        temp.path(),
+        "我叫什么你还记得吗？",
+        None,
+        &[
+            json!({ "role": "user", "text": "我叫徐远豪" }),
+            json!({ "role": "user", "text": "我叫什么你还记得吗？" }),
+        ],
+    )
+    .expect("select duplicate");
+    assert!(duplicate.is_empty());
+}
+
+#[test]
+fn system_recall_dedupes_repeated_session_facts() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    for _ in 0..2 {
+        let mut session = new_session(Some("Repeated Fact".to_string()), None, "normal");
+        session.id = format!("session-{}", Uuid::new_v4());
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            json!({
+                "id": format!("message-{}", Uuid::new_v4()),
+                "role": "user",
+                "text": "我叫徐远豪",
+                "createdAt": now()
+            }),
+        );
+        index_session_messages_for_recall(temp.path(), &session).expect("index session");
+    }
+
+    let recall = select_system_recall_for_injection(
+        temp.path(),
+        "我叫什么",
+        None,
+        &[json!({ "role": "user", "text": "我叫什么" })],
+    )
+    .expect("select recall");
+    let matching = recall
+        .iter()
+        .filter(|record| record.item.text.contains("徐远豪"))
+        .count();
+    assert_eq!(matching, 1);
+}
+
+#[test]
+fn model_request_includes_system_recall_without_llm_lookup() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Recall Request Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let mut old_session = new_session(Some("Archived Identity".to_string()), None, "normal");
+    old_session.id = format!("session-{}", Uuid::new_v4());
+    push_array(
+        &mut old_session.snapshot,
+        "messages",
+        json!({
+            "id": format!("message-{}", Uuid::new_v4()),
+            "role": "user",
+            "text": "我叫徐远豪",
+            "createdAt": now()
+        }),
+    );
+    {
+        let mut state = state().lock().expect("state lock");
+        let root = state.root.clone();
+        index_session_messages_for_recall(&root, &old_session).expect("index old session");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            json!({
+                "id": format!("message-{}", Uuid::new_v4()),
+                "role": "user",
+                "text": "我叫什么你还记得吗？",
+                "createdAt": now()
+            }),
+        );
+        touch_session(session);
+        state.save_state().expect("save state");
+    }
+
+    let request = build_model_request(&session_id).expect("model request");
+    let system_prompt = request.messages[0]["content"]
+        .as_str()
+        .expect("system prompt");
+    assert!(system_prompt.contains("System-recalled Lyra context"));
+    assert!(system_prompt.contains("我叫徐远豪"));
 }
 
 #[test]

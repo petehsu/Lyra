@@ -237,7 +237,7 @@ pub(crate) fn build_runtime_context(
         "software": software,
         "memory": memory,
         "tools": if capabilities.supports_tool_calling { model_tool_names(false) } else { Vec::new() },
-        "toolFilesystem": tool_filesystem_runtime_context("general", dispatcher),
+        "toolFilesystem": tool_filesystem_runtime_context("general", None, dispatcher),
         "network": network_runtime_context(),
         "sensitiveValues": {
             "refKind": "lyra-sensitive-value-ref",
@@ -292,19 +292,32 @@ pub(crate) fn infer_tool_filesystem_scene(
 
 pub(crate) fn tool_filesystem_runtime_context(
     scene: &str,
+    session_id: Option<&str>,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
     json!({
         "scene": scene,
         "pinnedHandles": tools::tool_fs::pinned_handles_for_scene(scene, dispatcher),
         "cachedHandles": tools::tool_fs::cached_handles_for_scene(scene, dispatcher),
+        "inspectedDescriptors": session_id
+            .map(|session_id| tools::tool_fs::inspected_descriptors_for_session(session_id, dispatcher))
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+        "presearchHints": Value::Array(Vec::new()),
+        "presearchPolicy": {
+            "source": "latestUserMessage",
+            "useWhen": "Use presearchHints only when the user is asking the agent to perform an action that clearly needs tools.",
+            "fallback": "If no hint clearly fits, call tool_fs_search with the task description.",
+            "priority": "Prefer inspectedDescriptors first, then presearchHints, then cachedHandles, then manual tool_fs_search."
+        },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
         "policy": {
             "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
-            "discovery": "Use tool_fs_search first with a natural-language task description. Use cachedHandles only when they clearly fit. If search misses, call tool_fs_list as a directory fallback. Use tool_fs_inspect for a target schema, then tool_fs_run with path or handle.",
+            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles directly when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
+            "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
+            "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
             "sceneBehavior": "Scene changes only reorder directories and pinned handles; every built-in tool remains discoverable under /tools.",
             "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors."
         }

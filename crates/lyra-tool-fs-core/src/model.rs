@@ -88,6 +88,8 @@ pub struct ToolSearchResult {
     pub domain: String,
     pub operation: String,
     pub summary: String,
+    pub run_hint: String,
+    pub mini_schema: Value,
     pub score: f64,
     pub matched_fields: Vec<String>,
     pub match_reason: String,

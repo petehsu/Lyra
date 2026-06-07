@@ -17,6 +17,8 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) cancelled_turns: HashSet<String>,
     pub(crate) active_cancellations: HashMap<String, Arc<AtomicBool>>,
     pub(crate) suppressed_tool_usage_by_turn: HashMap<String, HashSet<String>>,
+    pub(crate) inspected_tool_descriptors_by_session:
+        HashMap<String, HashMap<String, ToolDescriptorCacheEntry>>,
     pub(crate) event_callback: Option<Arc<EventCallback>>,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
 }
@@ -91,6 +93,19 @@ pub(crate) struct ToolUsageSceneStats {
     pub(crate) last_used_at: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ToolDescriptorCacheEntry {
+    pub(crate) tool_path: String,
+    pub(crate) handle: Option<String>,
+    pub(crate) title: String,
+    pub(crate) domain: String,
+    pub(crate) operation: String,
+    pub(crate) inspected_at: String,
+    pub(crate) run_hint: String,
+    pub(crate) mini_schema: Value,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NativeSession {
@@ -130,6 +145,10 @@ pub(crate) struct FileReadStateEntry {
 pub(crate) struct NativeConfig {
     pub(crate) default_provider: Option<String>,
     pub(crate) default_model: Option<String>,
+    #[serde(default)]
+    pub(crate) memory_agent_provider: Option<String>,
+    #[serde(default)]
+    pub(crate) memory_agent_model: Option<String>,
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) service_tier: Option<String>,
     #[serde(default)]
@@ -265,6 +284,29 @@ pub(crate) struct RankedMemoryRecord {
     pub(crate) record: LongTermMemoryRecord,
     pub(crate) score: f64,
     pub(crate) breakdown: MemoryScoreBreakdown,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SystemRecallItem {
+    pub(crate) id: String,
+    pub(crate) source_kind: String,
+    pub(crate) source_id: String,
+    pub(crate) session_id: Option<String>,
+    pub(crate) turn_id: Option<String>,
+    pub(crate) role: Option<String>,
+    pub(crate) text: String,
+    pub(crate) summary: Option<String>,
+    pub(crate) content_hash: String,
+    pub(crate) source_path: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RankedSystemRecallItem {
+    pub(crate) item: SystemRecallItem,
+    pub(crate) score: f64,
+    pub(crate) reason: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

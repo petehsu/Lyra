@@ -18,10 +18,20 @@ pub(super) fn tool_fs_content(raw: &Value) -> String {
                 .get("results")
                 .and_then(Value::as_array)
                 .and_then(|results| results.first())
+                .cloned();
+            let first_path = first
+                .as_ref()
                 .and_then(|result| result.get("path"))
                 .and_then(Value::as_str)
                 .unwrap_or("no result");
-            format!("Searched Tool-FS for `{query}`: {total} matches. Top result: {first}.")
+            let run_hint = first
+                .as_ref()
+                .and_then(|result| result.get("runHint"))
+                .and_then(Value::as_str)
+                .unwrap_or("inspect if argument details are unclear");
+            format!(
+                "Searched Tool-FS for `{query}`: {total} matches. Top result: {first_path}. Search results include miniSchema/runHint; {run_hint}."
+            )
         }
         Some("tool_fs_directory") => {
             let path = raw.get("path").and_then(Value::as_str).unwrap_or("/tools");

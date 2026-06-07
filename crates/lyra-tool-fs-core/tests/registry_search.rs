@@ -172,6 +172,102 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             .iter()
             .any(|result| result.path == "/tools/browser/locate")
     );
+    assert!(
+        browser_locate
+            .results
+            .iter()
+            .any(|result| result.run_hint.contains("tool_fs_run")
+                && result.mini_schema.get("parameters").is_some())
+    );
+
+    let browser_navigation = registry
+        .search(
+            "打开网页 进入网站 go to url",
+            None,
+            0,
+            5,
+            ToolScene::Browser,
+        )
+        .expect("browser navigation search");
+    assert_eq!(
+        browser_navigation
+            .results
+            .first()
+            .map(|result| result.path.as_str()),
+        Some("/tools/browser/navigate")
+    );
+    assert!(
+        browser_navigation
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/browser/navigate")
+    );
+
+    let browser_open_url = registry
+        .search("open URL in browser tab", None, 0, 5, ToolScene::Browser)
+        .expect("browser open url search");
+    assert_eq!(
+        browser_open_url
+            .results
+            .first()
+            .map(|result| result.path.as_str()),
+        Some("/tools/browser/navigate")
+    );
+    assert!(
+        browser_open_url
+            .results
+            .first()
+            .is_some_and(|result| result.match_reason.contains("open-url intent boost"))
+    );
+
+    let browser_actions = registry
+        .search("点按钮 click button", None, 0, 5, ToolScene::Browser)
+        .expect("browser act search");
+    assert!(
+        browser_actions.results.iter().any(
+            |result| result.path == "/tools/browser/act" || result.path == "/tools/browser/map"
+        )
+    );
+
+    let browser_page_search = registry
+        .search(
+            "页面搜索 搜索当前页 find text",
+            None,
+            0,
+            5,
+            ToolScene::Browser,
+        )
+        .expect("browser page search");
+    assert!(browser_page_search.results.iter().any(|result| {
+        result.path == "/tools/browser/find" || result.path == "/tools/browser/locate"
+    }));
+
+    let browser_google_search = registry
+        .search("browser search Google", None, 0, 5, ToolScene::Browser)
+        .expect("browser google search");
+    assert_eq!(
+        browser_google_search
+            .results
+            .first()
+            .map(|result| result.path.as_str()),
+        Some("/tools/web/search")
+    );
+
+    let browser_read_current = registry
+        .search(
+            "读取当前页 read current page",
+            None,
+            0,
+            5,
+            ToolScene::Browser,
+        )
+        .expect("browser read current page");
+    assert!(
+        browser_read_current
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/browser/read")
+    );
 
     let browser_scroll = registry
         .search(

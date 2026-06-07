@@ -119,6 +119,47 @@ pub(super) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {
           created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS recall_items (
+          id TEXT PRIMARY KEY,
+          source_kind TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          session_id TEXT,
+          turn_id TEXT,
+          role TEXT,
+          text TEXT NOT NULL,
+          summary TEXT,
+          content_hash TEXT NOT NULL,
+          source_path TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS recall_fts USING fts5(
+          recall_id UNINDEXED,
+          text,
+          summary,
+          source_kind
+        );
+
+        CREATE TABLE IF NOT EXISTS recall_embeddings (
+          recall_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          dimension INTEGER NOT NULL,
+          vector BLOB NOT NULL,
+          content_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (recall_id) REFERENCES recall_items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_recall_items_source
+          ON recall_items(source_kind, source_id);
+        CREATE INDEX IF NOT EXISTS idx_recall_items_content_hash
+          ON recall_items(content_hash);
+        CREATE INDEX IF NOT EXISTS idx_recall_items_session_turn
+          ON recall_items(session_id, turn_id);
+
         CREATE TABLE IF NOT EXISTS proactive_events (
           id TEXT PRIMARY KEY,
           trigger_type TEXT NOT NULL,
@@ -425,6 +466,7 @@ pub(super) fn decay_metrics(
 pub(super) fn base_half_life_days(record: &LongTermMemoryRecord) -> f64 {
     let base: f64 = match record.source_type.as_str() {
         "agent_inference" => 14.0,
+        "memory_agent_inference" => 45.0,
         "tool_observation" => 7.0,
         _ => match record.category.as_str() {
             "user_profile" => 365.0,
@@ -497,6 +539,7 @@ pub(super) fn insert_memory_record(
         replace_memory_tags(conn, &record.id, &record.tags)?;
         replace_memory_relations(conn, &record.related_to)?;
         upsert_memory_fts(conn, record)?;
+        sync_memory_record_to_recall(conn, record)?;
         if let Err(error) = try_upsert_memory_embedding(conn, record) {
             write_memory_event(
                 conn,
@@ -562,6 +605,7 @@ pub(super) fn replace_memory_record(
         upsert_memory_relation(conn, relation)?;
     }
     upsert_memory_fts(conn, record)?;
+    sync_memory_record_to_recall(conn, record)?;
     if let Err(error) = try_upsert_memory_embedding(conn, record) {
         write_memory_event(
             conn,
@@ -1091,7 +1135,276 @@ pub(super) fn delete_memory_indexes(conn: &Connection, memory_id: &str) -> Agent
         params![memory_id],
     )
     .map_err(sql_error)?;
+    delete_recall_by_source(conn, "long_term_memory", memory_id)?;
     Ok(())
+}
+
+pub(super) fn sync_memory_record_to_recall(
+    conn: &Connection,
+    record: &LongTermMemoryRecord,
+) -> AgentRuntimeResult<()> {
+    if record.status != "active" || is_expired(record) {
+        delete_recall_by_source(conn, "long_term_memory", &record.id)?;
+        return Ok(());
+    }
+    let text = format!(
+        "{}\n{}",
+        record.fact,
+        serde_json::to_string(&record.content).unwrap_or_default()
+    );
+    let item = SystemRecallItem {
+        id: format!("recall-memory-{}", record.id),
+        source_kind: "long_term_memory".to_string(),
+        source_id: record.id.clone(),
+        session_id: None,
+        turn_id: None,
+        role: None,
+        text: text.clone(),
+        summary: Some(record.fact.clone()),
+        content_hash: stable_hash(&text),
+        source_path: Some(format!("memory.sqlite#{}", record.id)),
+        created_at: record.created_at.clone(),
+        updated_at: record.updated_at.clone(),
+    };
+    upsert_recall_item(conn, &item)
+}
+
+pub(super) fn upsert_recall_item(
+    conn: &Connection,
+    item: &SystemRecallItem,
+) -> AgentRuntimeResult<()> {
+    conn.execute(
+        "INSERT INTO recall_items
+          (id, source_kind, source_id, session_id, turn_id, role, text, summary, content_hash, source_path, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT(id) DO UPDATE SET
+           source_kind = excluded.source_kind,
+           source_id = excluded.source_id,
+           session_id = excluded.session_id,
+           turn_id = excluded.turn_id,
+           role = excluded.role,
+           text = excluded.text,
+           summary = excluded.summary,
+           content_hash = excluded.content_hash,
+           source_path = excluded.source_path,
+           updated_at = excluded.updated_at",
+        params![
+            item.id,
+            item.source_kind,
+            item.source_id,
+            item.session_id,
+            item.turn_id,
+            item.role,
+            item.text,
+            item.summary,
+            item.content_hash,
+            item.source_path,
+            item.created_at,
+            item.updated_at,
+        ],
+    )
+    .map_err(sql_error)?;
+    upsert_recall_fts(conn, item)?;
+    try_upsert_recall_embedding(conn, item)?;
+    Ok(())
+}
+
+pub(super) fn delete_recall_by_source(
+    conn: &Connection,
+    source_kind: &str,
+    source_id: &str,
+) -> AgentRuntimeResult<()> {
+    let mut statement = conn
+        .prepare("SELECT id FROM recall_items WHERE source_kind = ?1 AND source_id = ?2")
+        .map_err(sql_error)?;
+    let ids = statement
+        .query_map(params![source_kind, source_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?;
+    for id in ids {
+        delete_recall_item_indexes(conn, &id)?;
+    }
+    conn.execute(
+        "DELETE FROM recall_items WHERE source_kind = ?1 AND source_id = ?2",
+        params![source_kind, source_id],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(super) fn delete_recall_item_indexes(
+    conn: &Connection,
+    recall_id: &str,
+) -> AgentRuntimeResult<()> {
+    conn.execute(
+        "DELETE FROM recall_fts WHERE recall_id = ?1",
+        params![recall_id],
+    )
+    .map_err(sql_error)?;
+    conn.execute(
+        "DELETE FROM recall_embeddings WHERE recall_id = ?1",
+        params![recall_id],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(super) fn upsert_recall_fts(
+    conn: &Connection,
+    item: &SystemRecallItem,
+) -> AgentRuntimeResult<()> {
+    conn.execute(
+        "DELETE FROM recall_fts WHERE recall_id = ?1",
+        params![item.id],
+    )
+    .map_err(sql_error)?;
+    let text = recall_index_text(item);
+    conn.execute(
+        "INSERT INTO recall_fts (recall_id, text, summary, source_kind)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![item.id, text, item.summary, item.source_kind],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(super) fn try_upsert_recall_embedding(
+    conn: &Connection,
+    item: &SystemRecallItem,
+) -> AgentRuntimeResult<Option<()>> {
+    let Some(provider) = embedding_provider() else {
+        return Ok(None);
+    };
+    let text = recall_embedding_text(item);
+    let content_hash = stable_hash(&text);
+    let existing_hash = conn
+        .query_row(
+            "SELECT content_hash FROM recall_embeddings WHERE recall_id = ?1",
+            params![item.id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    if existing_hash.as_deref() == Some(content_hash.as_str()) {
+        return Ok(Some(()));
+    }
+    let vector = provider.embed(&text)?;
+    let timestamp = now();
+    conn.execute(
+        "INSERT INTO recall_embeddings
+          (recall_id, provider, model, dimension, vector, content_hash, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+         ON CONFLICT(recall_id) DO UPDATE SET
+           provider = excluded.provider,
+           model = excluded.model,
+           dimension = excluded.dimension,
+           vector = excluded.vector,
+           content_hash = excluded.content_hash,
+           updated_at = excluded.updated_at",
+        params![
+            item.id,
+            provider.provider(),
+            provider.model(),
+            provider.dimension() as i64,
+            vector_to_blob(&vector),
+            content_hash,
+            timestamp,
+        ],
+    )
+    .map_err(sql_error)?;
+    Ok(Some(()))
+}
+
+pub(super) fn recall_fts_score_map(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> AgentRuntimeResult<HashMap<String, f64>> {
+    let Some(fts_query) = fts_query(query) else {
+        return Ok(HashMap::new());
+    };
+    let mut statement = conn
+        .prepare(
+            "SELECT recall_id, bm25(recall_fts) AS rank
+             FROM recall_fts
+             WHERE recall_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map(params![fts_query, limit as i64], |row| {
+            let id: String = row.get(0)?;
+            let rank: f64 = row.get(1)?;
+            Ok((id, 1.0 / (1.0 + rank.abs())))
+        })
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?;
+    Ok(rows.into_iter().collect())
+}
+
+pub(super) fn load_recall_items(
+    conn: &Connection,
+    ids: &[String],
+) -> AgentRuntimeResult<Vec<SystemRecallItem>> {
+    let mut items = Vec::new();
+    for id in ids {
+        if let Some(item) = conn
+            .query_row(
+                "SELECT id, source_kind, source_id, session_id, turn_id, role, text, summary, content_hash, source_path, created_at, updated_at
+                 FROM recall_items WHERE id = ?1",
+                params![id],
+                recall_item_from_row,
+            )
+            .optional()
+            .map_err(sql_error)?
+        {
+            items.push(item);
+        }
+    }
+    Ok(items)
+}
+
+pub(super) fn load_recall_embedding_map(
+    conn: &Connection,
+    ids: &[String],
+) -> AgentRuntimeResult<HashMap<String, Vec<f32>>> {
+    let mut embeddings = HashMap::new();
+    for id in ids {
+        if let Some(vector) = conn
+            .query_row(
+                "SELECT vector FROM recall_embeddings WHERE recall_id = ?1",
+                params![id],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()
+            .map_err(sql_error)?
+        {
+            embeddings.insert(id.clone(), blob_to_vector(&vector));
+        }
+    }
+    Ok(embeddings)
+}
+
+fn recall_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SystemRecallItem> {
+    Ok(SystemRecallItem {
+        id: row.get(0)?,
+        source_kind: row.get(1)?,
+        source_id: row.get(2)?,
+        session_id: row.get(3)?,
+        turn_id: row.get(4)?,
+        role: row.get(5)?,
+        text: row.get(6)?,
+        summary: row.get(7)?,
+        content_hash: row.get(8)?,
+        source_path: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
 }
 
 pub(super) fn try_upsert_memory_embedding(
@@ -1224,6 +1537,32 @@ pub(super) fn memory_embedding_text(record: &LongTermMemoryRecord) -> String {
     )
 }
 
+pub(super) fn recall_index_text(item: &SystemRecallItem) -> String {
+    let summary = item.summary.as_deref().unwrap_or_default();
+    let token_text = search_terms(&format!(
+        "{} {} {} {}",
+        item.text,
+        summary,
+        item.source_kind,
+        item.role.as_deref().unwrap_or_default()
+    ))
+    .join(" ");
+    format!(
+        "{}\n{}\n{}\n{}",
+        item.text, summary, item.source_kind, token_text
+    )
+}
+
+pub(super) fn recall_embedding_text(item: &SystemRecallItem) -> String {
+    format!(
+        "source_kind: {}\nrole: {}\ntext: {}\nsummary: {}",
+        item.source_kind,
+        item.role.as_deref().unwrap_or_default(),
+        item.text,
+        item.summary.as_deref().unwrap_or_default()
+    )
+}
+
 pub(super) fn local_hash_embedding(text: &str, dimension: usize) -> Vec<f32> {
     let mut vector = vec![0.0_f32; dimension];
     for term in search_terms(text) {
@@ -1286,12 +1625,36 @@ pub(super) fn search_terms(text: &str) -> Vec<String> {
         .filter(|term| term.chars().count() >= 2)
         .map(str::to_string)
         .collect::<Vec<_>>();
+    let cjk_chars = lower
+        .chars()
+        .filter(|character| is_cjk_character(*character))
+        .collect::<Vec<_>>();
+    for width in [2_usize, 3] {
+        if cjk_chars.len() >= width {
+            for window in cjk_chars.windows(width) {
+                terms.push(window.iter().collect());
+            }
+        }
+    }
     if terms.is_empty() && lower.chars().count() >= 2 {
         terms.push(lower);
     }
     terms.sort();
     terms.dedup();
     terms
+}
+
+pub(super) fn is_cjk_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x3400..=0x4DBF
+            | 0x4E00..=0x9FFF
+            | 0xF900..=0xFAFF
+            | 0x20000..=0x2A6DF
+            | 0x2A700..=0x2B73F
+            | 0x2B740..=0x2B81F
+            | 0x2B820..=0x2CEAF
+    )
 }
 
 pub(super) fn stable_hash(text: &str) -> String {
@@ -1779,8 +2142,13 @@ pub(super) fn normalize_category(value: &str) -> String {
 
 pub(super) fn normalize_source_type(value: &str) -> String {
     match value.trim() {
-        "user_declaration" | "agent_inference" | "tool_observation" | "project_fact"
-        | "goal_sync" | "imported" => value.trim().to_string(),
+        "user_declaration"
+        | "agent_inference"
+        | "memory_agent_inference"
+        | "tool_observation"
+        | "project_fact"
+        | "goal_sync"
+        | "imported" => value.trim().to_string(),
         _ => "agent_inference".to_string(),
     }
 }
@@ -1856,6 +2224,7 @@ pub(super) fn default_confidence(source_type: &str) -> f64 {
         "user_declaration" => 1.0,
         "project_fact" => 0.9,
         "tool_observation" => 0.85,
+        "memory_agent_inference" => 0.7,
         "goal_sync" => 1.0,
         "imported" => 0.75,
         _ => 0.65,

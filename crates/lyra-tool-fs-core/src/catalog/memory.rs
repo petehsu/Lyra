@@ -1,0 +1,86 @@
+use crate::model::ToolManifest;
+
+pub(super) fn manifests() -> Vec<ToolManifest> {
+    vec![
+        super::s(
+            "/tools/memory/search",
+            "memory",
+            "search",
+            "Search memory",
+            "Search Lyra long-term shared memory.",
+            Some("memory_search"),
+        ),
+        super::s(
+            "/tools/memory/remember",
+            "memory",
+            "remember",
+            "Remember",
+            "Write a durable Lyra memory.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/update",
+            "memory",
+            "update",
+            "Update memory",
+            "Update an existing memory record.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/forget",
+            "memory",
+            "forget",
+            "Forget memory",
+            "Archive or delete a memory record.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/list",
+            "memory",
+            "list",
+            "List memory",
+            "List memory summaries.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/link",
+            "memory",
+            "link",
+            "Link memory",
+            "Create a memory relation.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/review_candidates",
+            "memory",
+            "review_candidates",
+            "Review memory candidates",
+            "Review pending memory candidates.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/apply_candidate",
+            "memory",
+            "apply_candidate",
+            "Apply memory candidate",
+            "Apply a memory candidate.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/reject_candidate",
+            "memory",
+            "reject_candidate",
+            "Reject memory candidate",
+            "Reject a memory candidate.",
+            None,
+        ),
+        super::s(
+            "/tools/memory/explain_injection",
+            "memory",
+            "explain_injection",
+            "Explain memory injection",
+            "Explain injected memories.",
+            None,
+        ),
+    ]
+}

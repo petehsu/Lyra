@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,6 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use once_cell::sync::Lazy;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shell::{
     configure_shell_command, configure_shell_environment, make_shell_candidates, shell_exists,
@@ -20,12 +19,16 @@ use shell_integration::ShellIntegrationEventKind;
 
 pub mod attachments;
 pub mod command_tracker;
+mod events;
 pub mod input_controller;
+mod live_output;
 mod memory;
+mod memory_api;
 mod memory_writer;
 pub mod permissions;
 pub mod process_model;
 mod protocol;
+mod query;
 mod screen;
 pub mod sensitive_input;
 mod shell;
@@ -42,13 +45,20 @@ pub use attachments::{
     TerminalAttachmentResumeRequest, TerminalAttachmentSnapshot, TerminalAttachmentWriteRequest,
     TerminalAttachmentWriteResponse,
 };
+pub(crate) use events::emit_command_completion;
+use events::{emit_event, NativeEvent, RustEventCallback};
+use live_output::{
+    append_output, live_output_projection, mark_session_exit, new_running_state,
+    SessionOutputState, SessionStateHandle, Utf8StreamDecoder,
+};
+use memory_writer::{TerminalMemoryTask, TerminalMemoryWriter};
+pub use protocol::*;
+use query::*;
 pub use screen::{
     TerminalScreenCell, TerminalScreenCursorPosition, TerminalScreenInputModes, TerminalScreenLink,
     TerminalScreenRegion, TerminalScreenSnapshot, TerminalScreenState, TerminalScreenStyle,
     TerminalScreenVisibleRow,
 };
-pub use protocol::*;
-use memory_writer::{TerminalMemoryTask, TerminalMemoryWriter};
 pub use terminal_agents::{
     TerminalAgentLaunchRequest, TerminalAgentLaunchResponse, TerminalAgentRelation,
 };
@@ -96,54 +106,6 @@ static SESSIONS: Lazy<Mutex<HashMap<String, Arc<SessionRuntime>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 static OBSERVED_SESSIONS: Lazy<Mutex<HashMap<String, Arc<ObservedSessionRuntime>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
-static RUST_EVENT_CALLBACK: Lazy<Mutex<Option<RustEventCallback>>> = Lazy::new(|| Mutex::new(None));
-static LIVE_ANSI_CSI_RE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").expect("valid CSI regex"));
-static LIVE_ANSI_OSC_RE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\x1b\][^\x07]*(?:\x07|\x1b\\)").expect("valid OSC regex"));
-
-type RustEventCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
-type SessionStateHandle = Arc<(Mutex<SessionOutputState>, Condvar)>;
-
-#[cfg_attr(not(feature = "node-api"), allow(dead_code))]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeCommandCompletionEvent {
-    terminal_session_id: String,
-    command_id: String,
-    command_text: Option<String>,
-    status: String,
-    exit_code: Option<i32>,
-    signal: Option<String>,
-    actor: Value,
-    correlation: Value,
-    output_text_range: Value,
-    raw_output_range: Value,
-    artifact_root_path: String,
-    command_meta_path: String,
-    command_output_text_path: String,
-    command_raw_output_path: String,
-    command_events_path: String,
-    command_summary_path: String,
-    completed_at: String,
-}
-
-#[cfg_attr(not(feature = "node-api"), allow(dead_code))]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeEvent {
-    kind: String,
-    session_id: String,
-    data: Option<String>,
-    exit_code: Option<i32>,
-    error: Option<String>,
-    source: Option<String>,
-    mode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    command_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    command: Option<NativeCommandCompletionEvent>,
-}
 
 struct SessionRuntime {
     session_id: String,
@@ -183,81 +145,6 @@ struct ObservedSessionRuntime {
     shell_parser: Arc<Mutex<shell_integration::ShellIntegrationParser>>,
 }
 
-#[derive(Default)]
-struct SessionOutputState {
-    buffer: Vec<u8>,
-    retained_start: u64,
-    total_bytes: u64,
-    text_buffer: Vec<u8>,
-    text_retained_start: u64,
-    total_text_bytes: u64,
-    text_decoder: Utf8StreamDecoder,
-    running: bool,
-    exit_code: Option<i32>,
-}
-
-#[derive(Default)]
-struct Utf8StreamDecoder {
-    pending: Vec<u8>,
-}
-
-impl Utf8StreamDecoder {
-    fn decode(&mut self, chunk: &[u8]) -> String {
-        if self.pending.is_empty() {
-            return decode_utf8_prefix(chunk, &mut self.pending);
-        }
-        let mut bytes = Vec::with_capacity(self.pending.len() + chunk.len());
-        bytes.extend_from_slice(&self.pending);
-        bytes.extend_from_slice(chunk);
-        self.pending.clear();
-        decode_utf8_prefix(&bytes, &mut self.pending)
-    }
-
-    fn finish(&mut self) -> String {
-        if self.pending.is_empty() {
-            return String::new();
-        }
-        let text = String::from_utf8_lossy(&self.pending).to_string();
-        self.pending.clear();
-        text
-    }
-}
-
-fn decode_utf8_prefix(bytes: &[u8], pending: &mut Vec<u8>) -> String {
-    let mut output = String::new();
-    let mut cursor = 0;
-    while cursor < bytes.len() {
-        match std::str::from_utf8(&bytes[cursor..]) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid_end = cursor + error.valid_up_to();
-                if valid_end > cursor {
-                    output.push_str(
-                        std::str::from_utf8(&bytes[cursor..valid_end])
-                            .expect("valid prefix from UTF-8 error"),
-                    );
-                }
-                match error.error_len() {
-                    Some(invalid_len) => {
-                        output.push('\u{FFFD}');
-                        cursor = valid_end + invalid_len;
-                    }
-                    None => {
-                        pending.extend_from_slice(&bytes[valid_end..]);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    output
-}
-
-
-
 fn now_iso_like() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -271,7 +158,7 @@ fn next_session_id() -> String {
     format!("terminal-session-{value}")
 }
 
-fn to_error(message: impl Into<String>) -> Error {
+pub(crate) fn to_error(message: impl Into<String>) -> Error {
     Error::new(Status::InvalidArg, message.into())
 }
 
@@ -280,24 +167,6 @@ fn number_to_byte_offset(value: f64) -> u64 {
         return 0;
     }
     value.floor().min(u64::MAX as f64) as u64
-}
-
-fn optional_number_to_u64(value: Option<f64>) -> Option<u64> {
-    value.map(number_to_byte_offset)
-}
-
-fn optional_number_to_i64(value: Option<f64>) -> Option<i64> {
-    value.and_then(|value| {
-        if !value.is_finite() {
-            None
-        } else if value <= i64::MIN as f64 {
-            Some(i64::MIN)
-        } else if value >= i64::MAX as f64 {
-            Some(i64::MAX)
-        } else {
-            Some(value.floor() as i64)
-        }
-    })
 }
 
 fn normalize_source(source: Option<&str>) -> String {
@@ -347,70 +216,12 @@ fn normalize_observer_persist(persist: Option<bool>, source: &str) -> bool {
     persist.unwrap_or(source != "ai")
 }
 
-fn emit_event(event: NativeEvent) {
-    if let Ok(guard) = RUST_EVENT_CALLBACK.lock() {
-        if let Some(callback) = guard.as_ref() {
-            if let Ok(payload) = serde_json::to_string(&event) {
-                callback(payload);
-            }
-        }
-    }
-}
-
-fn native_command_completion(
-    completion: memory::CommandCompletionProjection,
-) -> NativeCommandCompletionEvent {
-    NativeCommandCompletionEvent {
-        terminal_session_id: completion.terminal_session_id,
-        command_id: completion.command_id,
-        command_text: completion.command_text,
-        status: completion.status,
-        exit_code: completion.exit_code,
-        signal: completion.signal,
-        actor: completion.actor,
-        correlation: completion.correlation,
-        output_text_range: completion.output_text_range,
-        raw_output_range: completion.raw_output_range,
-        artifact_root_path: completion.artifact_root_path,
-        command_meta_path: completion.command_meta_path,
-        command_output_text_path: completion.command_output_text_path,
-        command_raw_output_path: completion.command_raw_output_path,
-        command_events_path: completion.command_events_path,
-        command_summary_path: completion.command_summary_path,
-        completed_at: completion.completed_at,
-    }
-}
-
-pub(crate) fn emit_command_completion(
-    session_id: &str,
-    source: &str,
-    mode: &str,
-    completion: memory::CommandCompletionProjection,
-) {
-    let command_id = completion.command_id.clone();
-    emit_event(NativeEvent {
-        kind: "commandCompleted".to_string(),
-        session_id: session_id.to_string(),
-        data: None,
-        exit_code: completion.exit_code,
-        error: None,
-        source: Some(source.to_string()),
-        mode: Some(mode.to_string()),
-        command_id: Some(command_id),
-        command: Some(native_command_completion(completion)),
-    });
-}
-
 pub fn register_rust_event_callback(callback: RustEventCallback) {
-    if let Ok(mut guard) = RUST_EVENT_CALLBACK.lock() {
-        *guard = Some(callback);
-    }
+    events::register_rust_event_callback(callback);
 }
 
 pub fn clear_rust_event_callback() {
-    if let Ok(mut guard) = RUST_EVENT_CALLBACK.lock() {
-        *guard = None;
-    }
+    events::clear_rust_event_callback();
 }
 
 fn output_state(runtime: &SessionRuntime) -> Result<std::sync::MutexGuard<'_, SessionOutputState>> {
@@ -467,60 +278,6 @@ fn snapshot_from_observed_runtime(
         running: state.running,
         exit_code: state.exit_code,
     })
-}
-
-fn append_output(state_handle: &SessionStateHandle, data: &[u8]) {
-    let (lock, condvar) = &**state_handle;
-    if let Ok(mut state) = lock.lock() {
-        state.buffer.extend_from_slice(data);
-        state.total_bytes = state.total_bytes.saturating_add(data.len() as u64);
-        if state.buffer.len() > MAX_SESSION_BUFFER_BYTES {
-            let excess = state.buffer.len() - MAX_SESSION_BUFFER_BYTES;
-            state.buffer.drain(0..excess);
-            state.retained_start = state.retained_start.saturating_add(excess as u64);
-        }
-        let decoded = state.text_decoder.decode(data);
-        let text = strip_live_terminal_control_sequences(&decoded);
-        state.text_buffer.extend_from_slice(text.as_bytes());
-        state.total_text_bytes = state.total_text_bytes.saturating_add(text.len() as u64);
-        if state.text_buffer.len() > MAX_SESSION_BUFFER_BYTES {
-            let excess = state.text_buffer.len() - MAX_SESSION_BUFFER_BYTES;
-            state.text_buffer.drain(0..excess);
-            state.text_retained_start = state.text_retained_start.saturating_add(excess as u64);
-        }
-        condvar.notify_all();
-    }
-}
-
-fn strip_live_terminal_control_sequences(text: &str) -> String {
-    let without_osc = LIVE_ANSI_OSC_RE.replace_all(text, "");
-    LIVE_ANSI_CSI_RE.replace_all(&without_osc, "").to_string()
-}
-
-fn live_output_projection(
-    state: &SessionOutputState,
-    requested_cursor: u64,
-    max_bytes: usize,
-) -> (u64, String, bool) {
-    let available_start = requested_cursor.max(state.text_retained_start);
-    let start_offset = available_start
-        .saturating_sub(state.text_retained_start)
-        .min(state.text_buffer.len() as u64) as usize;
-    let end_offset = (start_offset + max_bytes).min(state.text_buffer.len());
-    let output = String::from_utf8_lossy(&state.text_buffer[start_offset..end_offset]).to_string();
-    let cursor = state.text_retained_start.saturating_add(end_offset as u64);
-    let truncated = requested_cursor < state.text_retained_start || cursor < state.total_text_bytes;
-    (cursor, output, truncated)
-}
-
-
-fn mark_session_exit(state_handle: &SessionStateHandle, exit_code: i32) {
-    let (lock, condvar) = &**state_handle;
-    if let Ok(mut state) = lock.lock() {
-        state.running = false;
-        state.exit_code = Some(exit_code);
-        condvar.notify_all();
-    }
 }
 
 fn run_close_session(session_id: &str) {
@@ -879,13 +636,7 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
             .try_clone_reader()
             .map_err(|error| to_error(format!("failed to clone pty reader: {error}")))?;
 
-        let state = Arc::new((
-            Mutex::new(SessionOutputState {
-                running: true,
-                ..SessionOutputState::default()
-            }),
-            Condvar::new(),
-        ));
+        let state = new_running_state();
         let memory_writer = storage_root.as_ref().map(|root| {
             TerminalMemoryWriter::new(
                 root.clone(),
@@ -1031,13 +782,7 @@ pub fn create_observer_session(
     let persist = normalize_observer_persist(request.persist, &source);
     let cols = request.cols.max(1);
     let rows = request.rows.max(1);
-    let state = Arc::new((
-        Mutex::new(SessionOutputState {
-            running: true,
-            ..SessionOutputState::default()
-        }),
-        Condvar::new(),
-    ));
+    let state = new_running_state();
     let runtime = Arc::new(ObservedSessionRuntime {
         session_id: session_id.clone(),
         title: title.clone(),
@@ -1850,211 +1595,6 @@ fn runtime_process_id(runtime: &SessionRuntime) -> Option<u32> {
         .lock()
         .ok()
         .and_then(|child| child.process_id())
-}
-
-fn memory_json(storage_root: &str, session_id: &str, truncated: bool) -> Option<String> {
-    memory::metadata_for_session(storage_root, session_id, truncated).ok()
-}
-
-fn correlation_permission_id(correlation_json: Option<&str>) -> Option<String> {
-    correlation_json
-        .and_then(|value| serde_json::from_str::<Value>(value).ok())
-        .and_then(|value| {
-            value
-                .get("permissionId")
-                .or_else(|| value.get("permission_id"))
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-}
-
-fn value_string(value: &Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
-}
-
-fn value_i32(value: &Value, key: &str) -> Option<i32> {
-    value
-        .get(key)
-        .and_then(Value::as_i64)
-        .and_then(|value| i32::try_from(value).ok())
-}
-
-fn value_u64(value: &Value, key: &str) -> Option<u64> {
-    value.get(key).and_then(Value::as_u64)
-}
-
-fn value_f64(value: &Value, key: &str) -> Option<f64> {
-    value.get(key).and_then(Value::as_f64).or_else(|| {
-        value
-            .get(key)
-            .and_then(Value::as_u64)
-            .map(|value| value as f64)
-    })
-}
-
-fn range_from_value(value: Option<&Value>) -> Option<TerminalNumberRange> {
-    let value = value?;
-    Some(TerminalNumberRange {
-        start: value_f64(value, "start")?,
-        end: value_f64(value, "end")?,
-    })
-}
-
-fn command_records(storage_root: &str, session_id: &str) -> Result<Vec<Value>> {
-    let raw = memory::read_commands(memory::CommandsReadInput {
-        storage_root: storage_root.to_string(),
-        session_id: session_id.to_string(),
-        cursor: None,
-        limit: Some(500),
-        status: None,
-        audit: None,
-        actor_json: None,
-        correlation_json: None,
-    })
-    .map_err(to_error)?;
-    let value: Value = serde_json::from_str(&raw).map_err(|error| to_error(error.to_string()))?;
-    Ok(value
-        .get("items")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default())
-}
-
-fn latest_command_record(
-    storage_root: &str,
-    session_id: &str,
-    command_id: Option<&str>,
-) -> Result<Option<Value>> {
-    let mut records = command_records(storage_root, session_id)?;
-    records.sort_by_key(|record| value_u64(record, "commandSeq").unwrap_or(0));
-    Ok(records.into_iter().rev().find(|record| {
-        command_id
-            .map(|command_id| value_string(record, "commandId").as_deref() == Some(command_id))
-            .unwrap_or(true)
-    }))
-}
-
-fn command_snapshot_from_record(
-    record: &Value,
-    fallback_session_id: &str,
-) -> Option<TerminalCommandSnapshot> {
-    Some(TerminalCommandSnapshot {
-        command_id: value_string(record, "commandId")?,
-        session_id: value_string(record, "terminalSessionId")
-            .unwrap_or_else(|| fallback_session_id.to_string()),
-        command_text: value_string(record, "commandText"),
-        normalized_command_text: value_string(record, "normalizedCommandText"),
-        status: value_string(record, "status").unwrap_or_else(|| "unknown".to_string()),
-        exit_code: value_i32(record, "exitCode"),
-        signal: value_string(record, "signal"),
-        submitted_at: value_string(record, "submittedAt"),
-        started_at: value_string(record, "startedAt"),
-        completed_at: value_string(record, "completedAt"),
-        duration_ms: value_f64(record, "durationMs"),
-        cwd_before: value_string(record, "cwdBefore"),
-        cwd_after: value_string(record, "cwdAfter"),
-        output_range: range_from_value(record.get("outputTextRange")),
-        raw_output_range: range_from_value(record.get("rawOutputRange")),
-        screen_version_range: range_from_value(record.get("screenVersionRange")),
-        artifact_root_path: value_string(record, "artifactRootPath"),
-        command_meta_path: value_string(record, "commandMetaPath"),
-        command_output_text_path: value_string(record, "commandOutputTextPath"),
-        command_raw_output_path: value_string(record, "commandRawOutputPath"),
-        command_events_path: value_string(record, "commandEventsPath"),
-        command_summary_path: value_string(record, "commandSummaryPath"),
-        confidence: record.get("confidence").and_then(Value::as_f64),
-    })
-}
-
-fn status_is_terminal(status: &str) -> bool {
-    matches!(status, "completed" | "failed" | "cancelled")
-}
-
-fn status_matches(actual: &str, desired: Option<&str>) -> bool {
-    match desired.unwrap_or("any") {
-        "any" => status_is_terminal(actual),
-        "notRunning" => status_is_terminal(actual) || actual == "unknown",
-        desired => actual == desired,
-    }
-}
-
-fn text_projection_matches(text: &str, needle: Option<&str>, regex: Option<&str>) -> bool {
-    if let Some(needle) = needle.map(str::trim).filter(|value| !value.is_empty()) {
-        if text.contains(needle) {
-            return true;
-        }
-    }
-    if let Some(pattern) = regex.map(str::trim).filter(|value| !value.is_empty()) {
-        if regex::Regex::new(pattern)
-            .ok()
-            .is_some_and(|compiled| compiled.is_match(text))
-        {
-            return true;
-        }
-    }
-    needle.is_none_or(str::is_empty) && regex.is_none_or(str::is_empty) && !text.is_empty()
-}
-
-fn event_ref(kind: &str) -> TerminalContractEventRef {
-    TerminalContractEventRef {
-        event_id: None,
-        kind: kind.to_string(),
-        seq: None,
-    }
-}
-
-fn write_semantic_payload(
-    session_id: &str,
-    storage_root: Option<String>,
-    actor_json: Option<String>,
-    correlation_json: Option<String>,
-    text: Option<String>,
-    keys: Option<Vec<String>>,
-    append_newline: bool,
-) -> Result<()> {
-    write_session(TerminalWriteRequest {
-        session_id: session_id.to_string(),
-        data: None,
-        text,
-        keys,
-        append_newline: Some(append_newline),
-        source: Some("agent".to_string()),
-        storage_root,
-        actor_json,
-        correlation_json,
-    })
-}
-
-fn tui_plan_correlation(correlation_json: Option<String>, plan: &TuiActPlan) -> Option<String> {
-    let mut correlation = correlation_json
-        .as_deref()
-        .and_then(|value| serde_json::from_str::<Value>(value).ok())
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
-    if let Some(region_id) = plan.region_id.as_deref() {
-        correlation
-            .entry("regionId".to_string())
-            .or_insert_with(|| Value::String(region_id.to_string()));
-    }
-    correlation
-        .entry("screenCursor".to_string())
-        .or_insert_with(|| Value::String(plan.screen_cursor.clone()));
-    correlation.insert(
-        "terminalAct".to_string(),
-        serde_json::json!({
-            "regionId": plan.region_id.clone(),
-            "screenCursor": plan.screen_cursor,
-            "risk": plan.risk,
-            "target": plan.target.clone(),
-            "reason": plan.reason.clone()
-        }),
-    );
-    Some(Value::Object(correlation).to_string())
 }
 
 fn execute_tui_plan(
@@ -3053,174 +2593,67 @@ pub fn shutdown() -> Result<()> {
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn read_memory_timeline(request: TerminalMemoryTimelineReadRequest) -> Result<String> {
-    memory::read_timeline(memory::TimelineReadInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        cursor: request.cursor,
-        limit: request.limit,
-        kinds: request.kinds,
-        actors: request.actors,
-        command_id: request.command_id,
-        tool_call_id: request.tool_call_id,
-        agent_session_id: request.agent_session_id,
-        seq_start: optional_number_to_u64(request.seq_start),
-        seq_end: optional_number_to_u64(request.seq_end),
-        time_start_ms: optional_number_to_i64(request.time_start_ms),
-        time_end_ms: optional_number_to_i64(request.time_end_ms),
-        audit: request.audit,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::read_memory_timeline(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn read_events(request: TerminalEventsReadRequest) -> Result<String> {
-    memory::read_events(memory::EventsReadInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        cursor: request.cursor,
-        limit: request.limit,
-        kinds: request.kinds,
-        actors: request.actors,
-        audit: request.audit,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::read_events(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn read_commands(request: TerminalCommandsReadRequest) -> Result<String> {
-    memory::read_commands(memory::CommandsReadInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        cursor: request.cursor,
-        limit: request.limit,
-        status: request.status,
-        audit: request.audit,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::read_commands(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn read_output_range(request: TerminalOutputRangeReadRequest) -> Result<String> {
-    memory::read_output_range(memory::OutputRangeReadInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        start: number_to_byte_offset(request.start),
-        end: number_to_byte_offset(request.end),
-        raw: request.raw.unwrap_or(false),
-        audit: request.audit,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::read_output_range(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn list_artifacts(request: TerminalArtifactsListRequest) -> Result<String> {
-    memory::list_artifacts(memory::ArtifactsListInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        audit: request.audit,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::list_artifacts(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn read_stored_sessions(request: TerminalStoredSessionsReadRequest) -> Result<String> {
-    memory::read_stored_sessions(&request.storage_root).map_err(to_error)
-}
-
-fn map_permission_event_request(
-    request: TerminalPermissionEventRequest,
-) -> memory::PermissionEventInput {
-    memory::PermissionEventInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        permission_id: request.permission_id,
-        action: request.action,
-        risk: request.risk,
-        summary: request.summary,
-        title: request.title,
-        detail: request.detail,
-        command_id: request.command_id,
-        input_id: request.input_id,
-        agent_session_id: request.agent_session_id,
-        runtime_turn_id: request.runtime_turn_id,
-        tool_call_id: request.tool_call_id,
-        decision: request.decision,
-        reason: request.reason,
-        expires_at: request.expires_at,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    }
+    memory_api::read_stored_sessions(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_permission_requested(request: TerminalPermissionEventRequest) -> Result<()> {
-    memory::record_permission_requested(map_permission_event_request(request)).map_err(to_error)
+    memory_api::record_permission_requested(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_permission_granted(request: TerminalPermissionEventRequest) -> Result<()> {
-    memory::record_permission_granted(map_permission_event_request(request)).map_err(to_error)
+    memory_api::record_permission_granted(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_permission_denied(request: TerminalPermissionEventRequest) -> Result<()> {
-    memory::record_permission_denied(map_permission_event_request(request)).map_err(to_error)
+    memory_api::record_permission_denied(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_permission_expired(request: TerminalPermissionEventRequest) -> Result<()> {
-    memory::record_permission_expired(map_permission_event_request(request)).map_err(to_error)
-}
-
-fn map_handoff_event_request(request: TerminalHandoffEventRequest) -> memory::HandoffEventInput {
-    memory::HandoffEventInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        handoff_id: request.handoff_id,
-        from_actor_json: request.from_actor_json,
-        to_actor_json: request.to_actor_json,
-        reason: request.reason,
-        summary: request.summary,
-        status: request.status,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    }
+    memory_api::record_permission_expired(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_handoff_started(request: TerminalHandoffEventRequest) -> Result<()> {
-    memory::record_handoff_started(map_handoff_event_request(request)).map_err(to_error)
+    memory_api::record_handoff_started(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn record_handoff_completed(request: TerminalHandoffEventRequest) -> Result<()> {
-    memory::record_handoff_completed(map_handoff_event_request(request)).map_err(to_error)
+    memory_api::record_handoff_completed(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]
 pub fn mark_output_policy(request: TerminalOutputPolicyMarkerRequest) -> Result<()> {
-    memory::mark_output_policy(memory::OutputPolicyMarkerInput {
-        storage_root: request.storage_root,
-        session_id: request.session_id,
-        start: number_to_byte_offset(request.start),
-        end: number_to_byte_offset(request.end),
-        policy: request.policy,
-        reason: request.reason,
-        encrypted_ref: request.encrypted_ref,
-        actor_json: request.actor_json,
-        correlation_json: request.correlation_json,
-    })
-    .map_err(to_error)
+    memory_api::mark_output_policy(request)
 }
 
 #[cfg_attr(feature = "node-api", napi)]

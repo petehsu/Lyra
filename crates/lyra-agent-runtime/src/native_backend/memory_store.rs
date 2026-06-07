@@ -12,6 +12,11 @@ const EMBEDDING_PROVIDER: &str = "lyra-local";
 const EMBEDDING_MODEL: &str = "lyra-hash-embedding-v1";
 const EMBEDDING_DIMENSION: usize = 64;
 const CLEANUP_DEFAULT_LIMIT: usize = 50;
+const SYSTEM_RECALL_LIMIT: usize = 5;
+const SYSTEM_RECALL_CANDIDATE_LIMIT: usize = 80;
+const SYSTEM_RECALL_TOTAL_CHAR_BUDGET: usize = 4_000;
+const SYSTEM_RECALL_ITEM_CHAR_BUDGET: usize = 720;
+const SYSTEM_RECALL_DEADLINE_MS: u64 = 200;
 static QUERY_EMBEDDING_CACHE: OnceLock<Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
 
 mod internal;
@@ -384,15 +389,29 @@ pub(crate) fn rebuild_long_term_memory_index(root: &Path) -> AgentRuntimeResult<
         .map_err(sql_error)?;
     conn.execute("DELETE FROM memory_embeddings", [])
         .map_err(sql_error)?;
+    conn.execute("DELETE FROM recall_fts WHERE recall_id IN (SELECT id FROM recall_items WHERE source_kind = 'long_term_memory')", [])
+        .map_err(sql_error)?;
+    conn.execute("DELETE FROM recall_embeddings WHERE recall_id IN (SELECT id FROM recall_items WHERE source_kind = 'long_term_memory')", [])
+        .map_err(sql_error)?;
+    conn.execute(
+        "DELETE FROM recall_items WHERE source_kind = 'long_term_memory'",
+        [],
+    )
+    .map_err(sql_error)?;
     let records = load_all_memory_records(&conn)?;
     let mut fts = 0_usize;
     let mut embeddings = 0_usize;
+    let mut recall = 0_usize;
     for record in &records {
         upsert_memory_fts(&conn, record)?;
+        sync_memory_record_to_recall(&conn, record)?;
         if try_upsert_memory_embedding(&conn, record)?.is_some() {
             embeddings += 1;
         }
         fts += 1;
+        if record.status == "active" {
+            recall += 1;
+        }
     }
     write_memory_event(
         &conn,
@@ -401,12 +420,355 @@ pub(crate) fn rebuild_long_term_memory_index(root: &Path) -> AgentRuntimeResult<
         json!({
             "ftsRecords": fts,
             "embeddingRecords": embeddings,
+            "recallItems": recall,
         }),
     )?;
     Ok(json!({
         "ftsRecords": fts,
         "embeddingRecords": embeddings,
+        "recallItems": recall,
     }))
+}
+
+pub(crate) fn index_session_messages_for_recall(
+    root: &Path,
+    session: &NativeSession,
+) -> AgentRuntimeResult<Value> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    let session_id = session.id.clone();
+    let session_path = root
+        .join("sessions")
+        .join(format!("{session_id}.json"))
+        .display()
+        .to_string();
+    let messages = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut indexed = 0_usize;
+    for (index, message) in messages.iter().enumerate() {
+        let role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !matches!(role, "user" | "assistant") {
+            continue;
+        }
+        let text = message
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if text.chars().count() < 4 {
+            continue;
+        }
+        let message_id = message
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{session_id}:message-{index}"));
+        let created_at = message
+            .get("createdAt")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(now);
+        let turn_id = message
+            .get("turnId")
+            .or_else(|| message.pointer("/metadata/turnId"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let item = SystemRecallItem {
+            id: format!("recall-session-{message_id}"),
+            source_kind: "session_message".to_string(),
+            source_id: message_id,
+            session_id: Some(session_id.clone()),
+            turn_id,
+            role: Some(role.to_string()),
+            text: text.to_string(),
+            summary: None,
+            content_hash: stable_hash(&normalized_recall_text(text)),
+            source_path: Some(session_path.clone()),
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        };
+        upsert_recall_item(&conn, &item)?;
+        indexed += 1;
+    }
+    Ok(json!({ "sessionId": session_id, "indexed": indexed }))
+}
+
+pub(crate) fn rebuild_system_recall_index(
+    root: &Path,
+    sessions: &[NativeSession],
+) -> AgentRuntimeResult<Value> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    conn.execute("DELETE FROM recall_fts", [])
+        .map_err(sql_error)?;
+    conn.execute("DELETE FROM recall_embeddings", [])
+        .map_err(sql_error)?;
+    conn.execute("DELETE FROM recall_items", [])
+        .map_err(sql_error)?;
+    let memories = load_all_memory_records(&conn)?;
+    let mut memory_count = 0_usize;
+    for record in &memories {
+        sync_memory_record_to_recall(&conn, record)?;
+        if record.status == "active" {
+            memory_count += 1;
+        }
+    }
+    let mut session_count = 0_usize;
+    for session in sessions {
+        session_count += index_session_messages_for_recall(root, session)?
+            .get("indexed")
+            .and_then(Value::as_u64)
+            .unwrap_or(0) as usize;
+    }
+    Ok(json!({
+        "memoryItems": memory_count,
+        "sessionItems": session_count,
+    }))
+}
+
+pub(crate) fn select_system_recall_for_injection(
+    root: &Path,
+    latest_user_text: &str,
+    working_dir: Option<&str>,
+    current_messages: &[Value],
+) -> AgentRuntimeResult<Vec<RankedSystemRecallItem>> {
+    let query = [Some(latest_user_text), working_dir]
+        .into_iter()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if query.trim().chars().count() < 2 || search_terms(&query).is_empty() {
+        return Ok(Vec::new());
+    }
+    let deadline = Instant::now() + Duration::from_millis(SYSTEM_RECALL_DEADLINE_MS);
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    if Instant::now() >= deadline {
+        return Ok(Vec::new());
+    }
+    let fts_scores = recall_fts_score_map(&conn, &query, SYSTEM_RECALL_CANDIDATE_LIMIT)?;
+    if fts_scores.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut ids = fts_scores.keys().cloned().collect::<Vec<_>>();
+    ids.sort();
+    let items = load_recall_items(&conn, &ids)?;
+    if Instant::now() >= deadline {
+        return Ok(Vec::new());
+    }
+    let embeddings = load_recall_embedding_map(&conn, &ids)?;
+    let query_vector = query_embedding(&query);
+    let current_fingerprints = current_context_recall_fingerprints(current_messages);
+    let mut ranked = Vec::new();
+    for item in items {
+        if Instant::now() >= deadline {
+            return Ok(Vec::new());
+        }
+        if current_context_contains_recall(&current_fingerprints, &item) {
+            continue;
+        }
+        let fts_score = fts_scores.get(&item.id).copied().unwrap_or(0.0);
+        let vector_score = query_vector
+            .as_ref()
+            .and_then(|query_vector| {
+                embeddings
+                    .get(&item.id)
+                    .map(|vector| cosine(query_vector, vector))
+            })
+            .unwrap_or(0.0);
+        let metadata_boost = match item.source_kind.as_str() {
+            "long_term_memory" => 0.18,
+            "session_message" => 0.08,
+            _ => 0.0,
+        };
+        let score = (fts_score * 0.45 + vector_score * 0.37 + metadata_boost).min(1.0);
+        if score < 0.16 {
+            continue;
+        }
+        let reason = if vector_score > fts_score {
+            "local_hash_embedding_rerank"
+        } else {
+            "fts_bm25_match"
+        }
+        .to_string();
+        ranked.push(RankedSystemRecallItem {
+            item,
+            score,
+            reason,
+        });
+    }
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                recall_source_priority(&left.item).cmp(&recall_source_priority(&right.item))
+            })
+            .then_with(|| right.item.updated_at.cmp(&left.item.updated_at))
+    });
+    Ok(dedupe_and_budget_recall(ranked))
+}
+
+pub(crate) fn system_recall_prompt(records: &[RankedSystemRecallItem]) -> String {
+    if records.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec![
+        "System-recalled Lyra context. These snippets were added by local deterministic retrieval from Lyra storage, not by the user in this turn. Treat them as source-marked evidence and prefer the latest user message if there is conflict.".to_string(),
+    ];
+    for (index, record) in records.iter().enumerate() {
+        lines.push(format!(
+            "{}. systemRecalled=true sourceKind={} sourceId={} sessionId={} turnId={} sourcePath={} score={:.3} reason={} content={}",
+            index + 1,
+            record.item.source_kind,
+            record.item.source_id,
+            record.item.session_id.as_deref().unwrap_or(""),
+            record.item.turn_id.as_deref().unwrap_or(""),
+            record.item.source_path.as_deref().unwrap_or(""),
+            record.score,
+            record.reason,
+            truncate_recall_text(&record.item.text, SYSTEM_RECALL_ITEM_CHAR_BUDGET)
+        ));
+    }
+    lines.join("\n")
+}
+
+pub(crate) fn system_recall_json(records: &[RankedSystemRecallItem]) -> Value {
+    json!({
+        "selectedCount": records.len(),
+        "budget": {
+            "maxItems": SYSTEM_RECALL_LIMIT,
+            "totalCharBudget": SYSTEM_RECALL_TOTAL_CHAR_BUDGET,
+            "perItemCharBudget": SYSTEM_RECALL_ITEM_CHAR_BUDGET,
+            "deadlineMs": SYSTEM_RECALL_DEADLINE_MS,
+        },
+        "records": records.iter().map(|record| {
+            json!({
+                "systemRecalled": true,
+                "sourceKind": record.item.source_kind,
+                "sourceId": record.item.source_id,
+                "sessionId": record.item.session_id,
+                "turnId": record.item.turn_id,
+                "role": record.item.role,
+                "sourcePath": record.item.source_path,
+                "score": record.score,
+                "reason": record.reason,
+                "content": truncate_recall_text(&record.item.text, SYSTEM_RECALL_ITEM_CHAR_BUDGET),
+            })
+        }).collect::<Vec<_>>()
+    })
+}
+
+fn current_context_recall_fingerprints(messages: &[Value]) -> Vec<(String, HashSet<String>)> {
+    messages
+        .iter()
+        .rev()
+        .take(24)
+        .filter_map(|message| message.get("text").and_then(Value::as_str))
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| {
+            let normalized = normalized_recall_text(text);
+            let terms = search_terms(&normalized)
+                .into_iter()
+                .collect::<HashSet<_>>();
+            (stable_hash(&normalized), terms)
+        })
+        .collect()
+}
+
+fn current_context_contains_recall(
+    fingerprints: &[(String, HashSet<String>)],
+    item: &SystemRecallItem,
+) -> bool {
+    let normalized = normalized_recall_text(&item.text);
+    let hash = stable_hash(&normalized);
+    if fingerprints
+        .iter()
+        .any(|(current_hash, _)| current_hash == &hash || current_hash == &item.content_hash)
+    {
+        return true;
+    }
+    let terms = search_terms(&normalized)
+        .into_iter()
+        .collect::<HashSet<_>>();
+    if terms.len() < 4 {
+        return false;
+    }
+    fingerprints
+        .iter()
+        .any(|(_, current_terms)| jaccard_overlap(&terms, current_terms) >= 0.82)
+}
+
+fn dedupe_and_budget_recall(ranked: Vec<RankedSystemRecallItem>) -> Vec<RankedSystemRecallItem> {
+    let mut selected = Vec::new();
+    let mut seen_content = HashSet::new();
+    let mut seen_sources = HashSet::new();
+    let mut total_chars = 0_usize;
+    for mut record in ranked {
+        let source_key = format!("{}:{}", record.item.source_kind, record.item.source_id);
+        if !seen_content.insert(record.item.content_hash.clone())
+            || !seen_sources.insert(source_key)
+        {
+            continue;
+        }
+        let snippet = truncate_recall_text(&record.item.text, SYSTEM_RECALL_ITEM_CHAR_BUDGET);
+        let chars = snippet.chars().count();
+        if total_chars + chars > SYSTEM_RECALL_TOTAL_CHAR_BUDGET {
+            break;
+        }
+        record.item.text = snippet;
+        total_chars += chars;
+        selected.push(record);
+        if selected.len() >= SYSTEM_RECALL_LIMIT {
+            break;
+        }
+    }
+    selected
+}
+
+fn recall_source_priority(item: &SystemRecallItem) -> usize {
+    match item.source_kind.as_str() {
+        "long_term_memory" => 0,
+        "session_message" => 1,
+        _ => 2,
+    }
+}
+
+fn normalized_recall_text(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
+}
+
+fn truncate_recall_text(text: &str, max_chars: usize) -> String {
+    let mut output = text.trim().chars().take(max_chars).collect::<String>();
+    if text.trim().chars().count() > max_chars {
+        output.push_str("...");
+    }
+    output
+}
+
+fn jaccard_overlap(left: &HashSet<String>, right: &HashSet<String>) -> f64 {
+    if left.is_empty() || right.is_empty() {
+        return 0.0;
+    }
+    let intersection = left.intersection(right).count();
+    let union = left.union(right).count();
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
 }
 
 pub(crate) fn cleanup_long_term_memory_candidates(

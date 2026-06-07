@@ -107,6 +107,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
+        inspected_tool_descriptors_by_session: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -426,6 +427,7 @@ fn native_state_persists_only_live_pending_requests() {
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
+        inspected_tool_descriptors_by_session: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -785,10 +787,27 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
             .iter()
             .any(|result| result["path"] == "/tools/shell/run_command")
     );
+    let top_result = output["raw"]["results"]
+        .as_array()
+        .expect("search results")
+        .first()
+        .expect("top search result");
+    assert!(
+        top_result
+            .get("runHint")
+            .and_then(Value::as_str)
+            .is_some_and(|hint| hint.contains("tool_fs_run"))
+    );
+    assert!(
+        top_result
+            .pointer("/miniSchema/parameters")
+            .and_then(Value::as_array)
+            .is_some_and(|parameters| !parameters.is_empty())
+    );
     assert!(
         output["content"]
             .as_str()
-            .is_some_and(|content| content.contains("Searched Tool-FS"))
+            .is_some_and(|content| content.contains("miniSchema/runHint"))
     );
     assert!(
         output["trace"]
@@ -810,6 +829,86 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
     assert_eq!(
         invalid.pointer("/error/code").and_then(Value::as_str),
         Some("invalid_tool_search_query")
+    );
+}
+
+#[test]
+fn tool_fs_inspect_populates_session_descriptor_cache_context() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tool Descriptor Cache Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.inspected_tool_descriptors_by_session.clear();
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "inspect-browser-map".to_string(),
+            name: "tool_fs_inspect".to_string(),
+            arguments: json!({ "path": "/tools/browser/map" }),
+        },
+    );
+    assert_eq!(output["status"].as_str(), Some("completed"));
+
+    let context = tool_filesystem_runtime_context("browser", Some(&session_id), None);
+    let descriptors = context["inspectedDescriptors"]
+        .as_array()
+        .expect("inspected descriptors");
+    let browser_map = descriptors
+        .iter()
+        .find(|entry| entry["path"] == "/tools/browser/map")
+        .expect("browser map descriptor cache entry");
+    assert!(
+        browser_map["runHint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("tool_fs_run"))
+    );
+    assert!(
+        browser_map
+            .pointer("/miniSchema/parameters")
+            .and_then(Value::as_array)
+            .is_some_and(|parameters| !parameters.is_empty())
+    );
+}
+
+#[test]
+fn tool_fs_presearch_hints_use_latest_user_message() {
+    let hints = tools::tool_fs::presearch_hints_for_message(
+        "打开网页 https://www.google.com",
+        "browser",
+        None,
+        None,
+    );
+    let hints = hints.as_array().expect("presearch hints");
+    let navigate = hints
+        .iter()
+        .find(|hint| hint["path"] == "/tools/browser/navigate")
+        .expect("navigate hint");
+    assert!(
+        navigate["runHint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("tool_fs_run"))
+    );
+    assert!(
+        navigate
+            .pointer("/miniSchema/parameters")
+            .and_then(Value::as_array)
+            .is_some_and(|parameters| !parameters.is_empty())
+    );
+    assert_eq!(
+        navigate["source"].as_str(),
+        Some("latestUserMessagePresearch")
     );
 }
 
@@ -860,7 +959,7 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         assert_eq!(entry.handle.as_deref(), Some("read_file"));
     }
 
-    let context = tool_filesystem_runtime_context("project-code", None);
+    let context = tool_filesystem_runtime_context("project-code", None, None);
     assert!(
         context["cachedHandles"]
             .as_array()
@@ -933,7 +1032,7 @@ fn model_request_injects_lyra_identity_and_tools() {
         .as_str()
         .expect("system prompt");
     assert!(system_prompt.contains("You are Lyra Agent"));
-    assert!(system_prompt.contains("not a plain text assistant"));
+    assert!(system_prompt.contains("answer directly when no external Lyra capability is needed"));
     let names = request
         .tools
         .iter()
@@ -951,6 +1050,45 @@ fn model_request_injects_lyra_identity_and_tools() {
     assert!(!request.tools.iter().any(|tool| {
         tool.pointer("/function/name").and_then(Value::as_str) == Some("lyra_design_search_styles")
     }));
+}
+
+#[test]
+fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tool Presearch Prompt Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    state().lock().expect("state lock").active_skills.clear();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["messages"]
+            .as_array_mut()
+            .expect("messages")
+            .push(user_message(
+                "打开网页 https://www.google.com".to_string(),
+                Vec::new(),
+                now(),
+            ));
+    }
+
+    let request = build_model_request(&session_id).expect("model request");
+    let names = request
+        .tools
+        .iter()
+        .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    assert_eq!(names, expected_provider_tool_names());
+    let system_prompt = request.messages[0]["content"]
+        .as_str()
+        .expect("system prompt");
+    assert!(system_prompt.contains("/tools/browser/navigate"));
+    assert!(!system_prompt.contains("\"toolDiscoverySuppressed\": true"));
 }
 
 #[test]
@@ -1036,7 +1174,7 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
         .root_summary_for_scene(lyra_tool_fs_core::ToolScene::Automation)["toolCount"]
         .as_u64()
         .expect("static tool count");
-    let context = tool_filesystem_runtime_context("automation", Some(&dispatcher));
+    let context = tool_filesystem_runtime_context("automation", None, Some(&dispatcher));
     assert_eq!(
         context["policy"]["providerVisibleTools"],
         json!(expected_provider_tool_names())

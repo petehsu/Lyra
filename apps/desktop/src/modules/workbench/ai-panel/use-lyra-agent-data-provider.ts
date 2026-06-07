@@ -567,24 +567,12 @@ export const useLyraAgentDataProvider = (
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
   const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
-    const stateWorkingDir =
-      state.session?.projectBound === true && typeof state.session.workingDir === "string"
-        ? state.session.workingDir.trim()
-        : "";
     const draftWorkingDir = activeDraftWorkingDir?.trim() ?? "";
-    const workingDir = stateWorkingDir.length > 0
-      ? stateWorkingDir
-      : draftWorkingDir.length > 0
-        ? draftWorkingDir
-        : null;
+    const workingDir = draftWorkingDir.length > 0 ? draftWorkingDir : null;
     return workingDir === null
       ? { title: "新会话" }
       : { title: "新会话", workingDir };
-  }, [
-    activeDraftWorkingDir,
-    state.session?.projectBound,
-    state.session?.workingDir
-  ]);
+  }, [activeDraftWorkingDir]);
 
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
     if (desktopApi?.agent === undefined) return null;
