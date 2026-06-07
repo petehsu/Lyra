@@ -1,6 +1,6 @@
 import type {
+  WorkspaceSearchEngineSelection,
   WorkspaceAppTabOpenRequest,
-  WorkspaceSearchMode,
   WorkspaceTab,
   WorkspaceTabsConfig
 } from "./types";
@@ -37,9 +37,7 @@ export const createSearchTabWithId = (
   inputValue: "",
   displayAddress: config.homeSearchAddress,
   faviconUrl: undefined,
-  query: undefined,
-  searchMode: "standard",
-  resultMode: "standard"
+  query: undefined
 });
 
 export const createSearchTab = (
@@ -57,9 +55,7 @@ export const createSettingsTabWithId = (
   inputValue: "",
   displayAddress: SETTINGS_ADDRESS,
   faviconUrl: undefined,
-  query: undefined,
-  searchMode: "standard",
-  resultMode: "standard"
+  query: undefined
 });
 
 export const createSettingsTab = (
@@ -79,8 +75,6 @@ export const createTerminalTabWithId = (
   displayAddress: `lyra://terminal/${terminalTabId}`,
   faviconUrl: undefined,
   query: undefined,
-  searchMode: "standard",
-  resultMode: "standard",
   terminalTabId
 });
 
@@ -101,8 +95,6 @@ export const createAppTabWithId = (
   displayAddress: `lyra://app/${request.appId}/${request.appInstanceId}`,
   faviconUrl: undefined,
   query: undefined,
-  searchMode: "standard",
-  resultMode: "standard",
   appId: request.appId,
   appInstanceId: request.appInstanceId,
   appIconKey: request.iconKey,
@@ -121,7 +113,13 @@ export const createAppTab = (
 export const createPageTabWithId = (
   id: string,
   address: string,
-  title?: string
+  title?: string,
+  search?: {
+    readonly query: string;
+    readonly source: "web";
+    readonly engineId?: string;
+    readonly selection?: WorkspaceSearchEngineSelection;
+  }
 ): WorkspaceTab => ({
   id,
   title: title?.trim().length ? title.trim() : toPageTitle(address),
@@ -130,8 +128,19 @@ export const createPageTabWithId = (
   displayAddress: address,
   faviconUrl: undefined,
   query: undefined,
-  searchMode: "standard",
-  resultMode: "standard"
+  ...(search === undefined
+    ? {}
+    : {
+        searchQuery: search.query,
+        searchSource: search.source,
+        ...(search.engineId === undefined ? {} : { searchEngineId: search.engineId }),
+        ...(search.selection === undefined
+          ? {}
+          : {
+              searchEngineSelectionMode: search.selection.mode,
+              searchSelectedEngineIds: search.selection.engineIds
+            })
+      })
 });
 
 export const createPageTab = (
@@ -140,11 +149,51 @@ export const createPageTab = (
   title?: string
 ): WorkspaceTab => createPageTabWithId(createTabId(serial), address, title);
 
+export const createWebSearchTabWithId = (
+  id: string,
+  query: string,
+  address: string,
+  config: WorkspaceTabsConfig,
+  engineId?: string,
+  title?: string,
+  selection?: WorkspaceSearchEngineSelection
+): WorkspaceTab =>
+  createPageTabWithId(
+    id,
+    address,
+    title?.trim().length ? title : toSearchTitle(query, config.maxSearchTitleLength),
+    {
+      query,
+      source: "web",
+      ...(engineId === undefined ? {} : { engineId }),
+      ...(selection === undefined ? {} : { selection })
+    }
+  );
+
+export const createWebSearchTab = (
+  serial: number,
+  query: string,
+  address: string,
+  config: WorkspaceTabsConfig,
+  engineId?: string,
+  title?: string,
+  selection?: WorkspaceSearchEngineSelection
+): WorkspaceTab =>
+  createWebSearchTabWithId(
+    createTabId(serial),
+    query,
+    address,
+    config,
+    engineId,
+    title,
+    selection
+  );
+
 export const createResultsTabWithId = (
   id: string,
   query: string,
   config: WorkspaceTabsConfig,
-  mode: WorkspaceSearchMode
+  selection?: WorkspaceSearchEngineSelection
 ): WorkspaceTab => ({
   id,
   title: toSearchTitle(query, config.maxSearchTitleLength),
@@ -153,13 +202,19 @@ export const createResultsTabWithId = (
   displayAddress: `${config.homeSearchAddress}?q=${encodeURIComponent(query)}`,
   faviconUrl: undefined,
   query,
-  searchMode: "standard",
-  resultMode: mode
+  searchQuery: query,
+  searchSource: "local",
+  ...(selection === undefined
+    ? {}
+    : {
+        searchEngineSelectionMode: selection.mode,
+        searchSelectedEngineIds: selection.engineIds
+      })
 });
 
 export const createResultsTab = (
   serial: number,
   query: string,
   config: WorkspaceTabsConfig,
-  mode: WorkspaceSearchMode
-): WorkspaceTab => createResultsTabWithId(createTabId(serial), query, config, mode);
+  selection?: WorkspaceSearchEngineSelection
+): WorkspaceTab => createResultsTabWithId(createTabId(serial), query, config, selection);

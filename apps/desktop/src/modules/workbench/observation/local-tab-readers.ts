@@ -1,11 +1,5 @@
-import type {
-  BrowserSearchPayload,
-  DeepSearchViewState
-} from "../browser-search/types";
-import {
-  getDeepSearchSnapshot,
-  getStandardSearchSnapshot
-} from "../browser-search/store";
+import type { BrowserSearchPayload } from "../browser-search/types";
+import { getStandardSearchSnapshot } from "../browser-search/store";
 import type { FileManagerEntry } from "../../../shared/file-manager";
 import type {
   WorkbenchObservedTabDescriptor,
@@ -54,7 +48,6 @@ const summarizeStandardResults = (
   return {
     kind: "search-results" as const,
     query,
-    searchMode: "standard" as const,
     webStatus: state?.web.status ?? "idle",
     localStatus: state?.local.status ?? "idle",
     blendedResults: blended.slice(0, maxEntries).map((entry) => ({
@@ -70,34 +63,6 @@ const summarizeStandardResults = (
     truncated: blended.length > maxEntries || local.length > maxEntries
   };
 };
-
-const summarizeDeepResults = (
-  state: DeepSearchViewState | null,
-  query: string,
-  maxEntries: number
-) => ({
-  kind: "deep-search-results" as const,
-  query,
-  budgetPreset: state?.budgetPreset ?? "medium",
-  status: state?.status ?? "idle",
-  done: state?.done ?? false,
-  nodeCount: state?.snapshot.nodes.length ?? 0,
-  edgeCount: state?.snapshot.edges.length ?? 0,
-  nodes: (state?.snapshot.nodes ?? []).slice(0, maxEntries).map((node) => ({
-    id: node.id,
-    kind: node.kind,
-    title: node.title
-  })),
-  edges: (state?.snapshot.edges ?? []).slice(0, maxEntries).map((edge) => ({
-    id: edge.id,
-    kind: edge.kind,
-    from: edge.sourceId,
-    to: edge.targetId
-  })),
-  truncated:
-    (state?.snapshot.nodes.length ?? 0) > maxEntries
-    || (state?.snapshot.edges.length ?? 0) > maxEntries
-});
 
 const summarizeEntries = (
   entries: readonly FileManagerEntry[],
@@ -197,12 +162,10 @@ export const listObservedTabs = (
     const observationKind =
       tab.pageKind === "page"
         ? "page"
-        : tab.pageKind === "search"
-          ? "search-home"
+          : tab.pageKind === "search"
+            ? "search-home"
           : tab.pageKind === "results"
-            ? ((tab.resultMode ?? tab.searchMode ?? "standard") === "deep"
-                ? "deep-search-results"
-                : "search-results")
+            ? "search-results"
             : tab.pageKind === "terminal"
               ? "terminal"
               : tab.pageKind === "app" && tab.appId === "file-editor"
@@ -358,7 +321,6 @@ export const readObservedLocalTab = (
       observation: {
         kind: "search-home",
         inputValue: tab.inputValue,
-        searchMode: tab.searchMode ?? "standard",
         hasResults: false
       }
     };
@@ -369,17 +331,6 @@ export const readObservedLocalTab = (
       tab: descriptor,
       observation: summarizeStandardResults(
         getStandardSearchSnapshot(tab.id),
-        tab.query ?? tab.inputValue,
-        maxEntries
-      )
-    };
-  }
-
-  if (descriptor.observationKind === "deep-search-results") {
-    return {
-      tab: descriptor,
-      observation: summarizeDeepResults(
-        getDeepSearchSnapshot(tab.id),
         tab.query ?? tab.inputValue,
         maxEntries
       )

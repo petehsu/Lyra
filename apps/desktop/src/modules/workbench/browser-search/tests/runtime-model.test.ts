@@ -1,11 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  applyCancelledDeepSearchState,
   buildBrowserSearchSettingsCacheKey,
-  createLoadingDeepSearchState,
   createLoadingSearchPayload,
-  markDeepSearchStateExpanding,
   resolveActiveBrowserSearchCacheKeys
 } from "../runtime-model";
 import type { BrowserSearchSettings } from "../runtime-types";
@@ -21,21 +18,15 @@ const searchSettings: BrowserSearchSettings = {
     }
   ],
   resultsPerEngine: 5,
-  localProjectRoot: "/tmp/project",
-  deepBudgetPreset: "medium",
-  deepSiteExpansionEnabled: true,
-  deepProactiveDomainGuessingEnabled: false,
-  deepCrawlPolicy: "accessibility_only"
+  localProjectRoot: "/tmp/project"
 };
 
 describe("browser search runtime model", () => {
-  test("builds a stable settings cache key from web, context, and deep settings", () => {
+  test("builds a stable settings cache key from web and context settings", () => {
     const parsed = JSON.parse(buildBrowserSearchSettingsCacheKey(searchSettings)) as {
       readonly engines: readonly { readonly id: string; readonly endpoint: string | null }[];
       readonly localLimit: number;
       readonly localProjectRoot: string | null;
-      readonly deepBudgetPreset: string;
-      readonly deepSiteExpansionEnabled: boolean;
     };
 
     expect(parsed.engines).toEqual([
@@ -44,8 +35,6 @@ describe("browser search runtime model", () => {
     ]);
     expect(parsed.localLimit).toBe(60);
     expect(parsed.localProjectRoot).toBe("/tmp/project");
-    expect(parsed.deepBudgetPreset).toBe("medium");
-    expect(parsed.deepSiteExpansionEnabled).toBe(true);
   });
 
   test("resolves active cache keys only for non-empty result tabs", () => {
@@ -53,86 +42,34 @@ describe("browser search runtime model", () => {
       resolveActiveBrowserSearchCacheKeys({
         activeTabId: "tab-1",
         activeTabPageKind: "search",
-        currentResultMode: "standard",
         activeTabQuery: "lyra",
         settingsCacheKey: "settings"
       })
     ).toEqual({
-      activeStandardCacheKey: null,
-      activeDeepCacheKey: null
+      activeStandardCacheKey: null
     });
 
     expect(
       resolveActiveBrowserSearchCacheKeys({
         activeTabId: "tab-1",
         activeTabPageKind: "results",
-        currentResultMode: "standard",
         activeTabQuery: " lyra ",
         settingsCacheKey: "settings"
       }).activeStandardCacheKey
     ).toBe("tab-1:standard:lyra:settings");
-
-    expect(
-      resolveActiveBrowserSearchCacheKeys({
-        activeTabId: "tab-1",
-        activeTabPageKind: "results",
-        currentResultMode: "deep",
-        activeTabQuery: "lyra",
-        settingsCacheKey: "settings"
-      }).activeDeepCacheKey
-    ).toBe("tab-1:deep:lyra:settings");
   });
 
-  test("creates loading states with request id, scope, and budget metadata", () => {
+  test("creates loading states with request id and scope metadata", () => {
     const standard = createLoadingSearchPayload({
       query: " lyra ",
       requestId: "request-1",
       scopePreset: "home"
     });
-    const deep = createLoadingDeepSearchState({
-      query: " lyra ",
-      requestId: "request-2",
-      scopePreset: "workspace",
-      budgetPreset: "high"
-    });
 
     expect(standard.query).toBe("lyra");
     expect(standard.queryRequestId).toBe("request-1");
-    expect(standard.web.status).toBe("loading");
+    expect(standard.web.status).toBe("idle");
     expect(standard.local.status).toBe("loading");
     expect(standard.local.payload.scopePreset).toBe("home");
-
-    expect(deep.query).toBe("lyra");
-    expect(deep.queryRequestId).toBe("request-2");
-    expect(deep.status).toBe("loading");
-    expect(deep.budgetPreset).toBe("high");
-    expect(deep.snapshot.local.scopePreset).toBe("workspace");
-  });
-
-  test("marks deep search state for expansion and cancellation", () => {
-    const loading = createLoadingDeepSearchState({
-      query: "lyra",
-      requestId: "request-1",
-      scopePreset: "home",
-      budgetPreset: "medium"
-    });
-
-    const expanding = markDeepSearchStateExpanding({
-      ...loading,
-      status: "error",
-      done: true,
-      snapshot: {
-        ...loading.snapshot,
-        phase: "error"
-      }
-    });
-    expect(expanding.status).toBe("loading");
-    expect(expanding.done).toBe(false);
-    expect(expanding.snapshot.phase).toBe("streaming");
-
-    const cancelled = applyCancelledDeepSearchState(expanding);
-    expect(cancelled.status).toBe("ready");
-    expect(cancelled.done).toBe(true);
-    expect(cancelled.snapshot.phase).toBe("completed");
   });
 });

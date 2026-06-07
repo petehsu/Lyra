@@ -10,7 +10,19 @@ export type WorkspaceTabPageKind =
   | "terminal"
   | "app";
 
-export type WorkspaceSearchMode = "standard" | "deep";
+export type WorkspaceSearchSource = "web" | "local";
+export type WorkspaceSearchEngineSelectionMode = "auto" | "manual";
+
+export type WorkspaceSearchEngineSelection = {
+  readonly mode: WorkspaceSearchEngineSelectionMode;
+  readonly engineIds: readonly string[];
+};
+
+export type WorkspaceWebSearchTarget = {
+  readonly address: string;
+  readonly engineId: string;
+  readonly title?: string;
+};
 
 export type WorkspaceTab = {
   readonly id: string;
@@ -20,8 +32,6 @@ export type WorkspaceTab = {
   readonly displayAddress: string;
   readonly faviconUrl: string | undefined;
   readonly query: string | undefined;
-  readonly searchMode?: WorkspaceSearchMode;
-  readonly resultMode?: WorkspaceSearchMode;
   readonly terminalTabId?: string;
   readonly appId?: WorkbenchAppId;
   readonly appInstanceId?: string;
@@ -30,6 +40,11 @@ export type WorkspaceTab = {
   readonly fileSessionId?: string;
   readonly isDirty?: boolean;
   readonly browserRestoreState?: WorkbenchBrowserPageRestoreState;
+  readonly searchQuery?: string;
+  readonly searchSource?: WorkspaceSearchSource;
+  readonly searchEngineId?: string;
+  readonly searchEngineSelectionMode?: WorkspaceSearchEngineSelectionMode;
+  readonly searchSelectedEngineIds?: readonly string[];
 };
 
 export type WorkspaceTabPageMeta = {
@@ -51,11 +66,27 @@ export type WorkspaceResolvedNavigation =
   | {
       readonly kind: "page";
       readonly address: string;
+      readonly title?: string;
+      readonly searchQuery?: string;
+      readonly searchSource?: WorkspaceSearchSource;
+      readonly searchEngineId?: string;
     }
   | {
       readonly kind: "search";
       readonly query: string;
-      readonly mode: WorkspaceSearchMode;
+    }
+  | {
+      readonly kind: "web-search";
+      readonly query: string;
+      readonly address: string;
+      readonly engineId?: string;
+      readonly title?: string;
+      readonly selection?: WorkspaceSearchEngineSelection;
+    }
+  | {
+      readonly kind: "local-search";
+      readonly query: string;
+      readonly selection?: WorkspaceSearchEngineSelection;
     };
 
 export type WorkspaceNavigationTarget = "active-tab" | "new-tab";
@@ -145,6 +176,25 @@ export type WorkspaceTabsActions = {
     tabId: string,
     state: WorkspaceTabPageRuntimeState
   ) => void;
+  readonly openWebSearchTabs: (
+    request: {
+      readonly query: string;
+      readonly targets: readonly WorkspaceWebSearchTarget[];
+      readonly selection: WorkspaceSearchEngineSelection;
+    },
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ) => readonly string[];
+  readonly openLocalSearchTab: (
+    request: {
+      readonly query: string;
+      readonly selection?: WorkspaceSearchEngineSelection;
+    },
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ) => string;
   readonly navigateResolvedInput: (
     request: WorkspaceResolvedNavigation,
     options?: {
@@ -152,7 +202,6 @@ export type WorkspaceTabsActions = {
     }
   ) => string;
   readonly updateActiveInput: (value: string) => void;
-  readonly setActiveSearchMode: (mode: WorkspaceSearchMode) => void;
   readonly commitActiveInput: () => void;
 };
 

@@ -32,6 +32,8 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly activeTab: WorkspaceTab | undefined;
   readonly tabsModel: WorkspaceTabsModel;
   readonly browserSearchModel: BrowserSearchModel;
+  readonly searchEngines: readonly SearchEngineDefinition[];
+  readonly autoSearchEngines: readonly SearchEngineDefinition[];
   readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
   readonly onPageHostChange: (tabId: string, element: HTMLElement | null) => void;
   readonly terminalModel: TerminalDockModel;
@@ -86,6 +88,8 @@ export const useWorkspaceSurfaceRouterProps = ({
   activeTab,
   tabsModel,
   browserSearchModel,
+  searchEngines,
+  autoSearchEngines,
   engineById,
   onPageHostChange,
   terminalModel,
@@ -124,6 +128,8 @@ export const useWorkspaceSurfaceRouterProps = ({
     tabsModel,
     logoUrl: LOGO_URL,
     browserSearchModel,
+    searchEngines,
+    autoSearchEngines,
     engineById,
     onOpenSearchResult: tabsModel.openPageInNewTab,
     onPageHostChange,

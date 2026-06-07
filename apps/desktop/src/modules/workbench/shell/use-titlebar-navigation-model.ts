@@ -14,6 +14,8 @@ import type { FileEditorAppState } from "../file-editor";
 import type { FileManagerAppState } from "../file-manager";
 import type { WorkbenchOmniboxNonBrowserSubmitTarget } from "../preferences";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
+import type { SearchEngineDefinition } from "../browser-search/types";
+import { resolveWebSearchTarget } from "../browser-search/service";
 import { filterBrowserHistoryEntries, readBrowserHistoryEntries } from "../browser-history/service";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
 import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
@@ -112,9 +114,11 @@ type UseTitlebarNavigationModelOptions = {
   readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
   readonly activeFileEditorState: FileEditorAppState | null;
   readonly activeFileManagerState: FileManagerAppState | null;
+  readonly searchEngines: readonly SearchEngineDefinition[];
+  readonly autoSearchEngines: readonly SearchEngineDefinition[];
   readonly tabsModel: Pick<
     WorkspaceTabsModel,
-    "navigateResolvedInput" | "updateActiveInput"
+    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
   >;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly placeholder: string;
@@ -298,6 +302,8 @@ export const useTitlebarNavigationModel = ({
   activePageRuntimeState,
   activeFileEditorState,
   activeFileManagerState,
+  searchEngines,
+  autoSearchEngines,
   tabsModel,
   omniboxNonBrowserSubmitTarget,
   placeholder,
@@ -678,10 +684,35 @@ export const useTitlebarNavigationModel = ({
           setSessionHistory(curr => [...new Set([...curr, resolution.address])]);
           return;
         case "search":
-          tabsModel.navigateResolvedInput(
-            { kind: "search", query: resolution.query, mode: "standard" },
-            { target: "active-tab" }
-          );
+          {
+            const target = await resolveWebSearchTarget({
+              desktopApi,
+              query: resolution.query,
+              searchEngines: autoSearchEngines
+            });
+            if (target === null) {
+              tabsModel.openLocalSearchTab(
+                {
+                  query: resolution.query,
+                  selection: { mode: "auto", engineIds: [] }
+                },
+                { target: "active-tab" }
+              );
+            } else {
+              tabsModel.openWebSearchTabs(
+                {
+                  query: resolution.query,
+                  targets: [{
+                    address: target.searchUrl,
+                    engineId: target.engine.id,
+                    title: target.engine.label
+                  }],
+                  selection: { mode: "auto", engineIds: [] }
+                },
+                { target: "active-tab" }
+              );
+            }
+          }
           return;
         case "file":
           onOpenFilePath(resolution.path);
@@ -715,15 +746,44 @@ export const useTitlebarNavigationModel = ({
         clearDraft(activeTabId);
         return;
       case "search":
-        tabsModel.navigateResolvedInput(
-          { kind: "search", query: resolution.query, mode: "standard" },
-          {
-            target:
-              omniboxNonBrowserSubmitTarget === "replace_active_tab"
-                ? "active-tab"
-                : "new-tab"
+        {
+          const target = await resolveWebSearchTarget({
+            desktopApi,
+            query: resolution.query,
+            searchEngines: autoSearchEngines
+          });
+          const targetMode =
+            omniboxNonBrowserSubmitTarget === "replace_active_tab"
+              ? "active-tab"
+              : "new-tab";
+          if (target === null) {
+            tabsModel.openLocalSearchTab(
+              {
+                query: resolution.query,
+                selection: { mode: "auto", engineIds: [] }
+              },
+              { target: targetMode }
+            );
+          } else {
+            tabsModel.openWebSearchTabs(
+              {
+                query: resolution.query,
+                targets: [{
+                  address: target.searchUrl,
+                  engineId: target.engine.id,
+                  title: target.engine.label
+                }],
+                selection: { mode: "auto", engineIds: [] }
+              },
+              {
+              target:
+                omniboxNonBrowserSubmitTarget === "replace_active_tab"
+                  ? "active-tab"
+                  : "new-tab"
+              }
+            );
           }
-        );
+        }
         clearDraft(activeTabId);
         return;
       case "file":
@@ -739,10 +799,12 @@ export const useTitlebarNavigationModel = ({
     activeTab,
     activeTabId,
     clearDraft,
+    desktopApi,
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,
     onRunTerminalCommand,
+    searchEngines,
     tabsModel
   ]);
 

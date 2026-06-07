@@ -45,12 +45,6 @@ export const createBrowserSettingsSurfaceProps = (
   searchCategoryLabel: "Search",
   searchWebEnginesLabel: "Web engines",
   searchSearxngEndpointLabel: "SearXNG endpoint",
-  searchDeepBudgetLabel: "Deep search budget",
-  deepSearchRestoreViewportLabel: "Restore viewport",
-  deepSearchLocalOpenBehaviorLabel: "Local open behavior",
-  deepSearchSiteExpansionLabel: "Site expansion",
-  deepSearchProactiveGuessLabel: "Proactive guessing",
-  deepSearchCrawlPolicyLabel: "Crawl policy",
   omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationModeOffLabel: "Off",
@@ -100,12 +94,6 @@ export const createBrowserSettingsSurfaceProps = (
   forceWebPageThemingValue: false,
   searchWebEngineIds: ["google"],
   searchSearxngEndpointValue: "",
-  searchDeepBudgetValue: "medium",
-  deepSearchRestoreViewportValue: true,
-  deepSearchLocalOpenBehaviorValue: "open_file",
-  deepSearchSiteExpansionValue: true,
-  deepSearchProactiveGuessValue: false,
-  deepSearchCrawlPolicyValue: "accessibility_only",
   omniboxNonBrowserSubmitTargetValue: "new_tab",
   systemNotificationModeValue: "background",
   systemNotificationClickBehaviorValue: "open_center",
@@ -134,17 +122,6 @@ export const createBrowserSettingsSurfaceProps = (
   splitOverflowPolicyOptions: [
     { value: "block_with_notice", label: "Block" },
     { value: "replace_oldest", label: "Replace oldest" }
-  ],
-  searchDeepBudgetOptions: [
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" }
-  ],
-  deepSearchLocalOpenBehaviorOptions: [
-    { value: "open_file", label: "Open file" },
-    { value: "reveal_in_manager", label: "Reveal" }
-  ],
-  deepSearchCrawlPolicyOptions: [
-    { value: "accessibility_only", label: "Accessibility only" }
   ],
   searchWebEngineOptions: [
     { value: "google", label: "Google" },
@@ -183,12 +160,6 @@ export const createBrowserSettingsSurfaceProps = (
   onForceWebPageThemingChange: noop,
   onSearchWebEnginesChange: noop,
   onSearchSearxngEndpointChange: noop,
-  onSearchDeepBudgetChange: noop,
-  onDeepSearchRestoreViewportChange: noop,
-  onDeepSearchLocalOpenBehaviorChange: noop,
-  onDeepSearchSiteExpansionChange: noop,
-  onDeepSearchProactiveGuessChange: noop,
-  onDeepSearchCrawlPolicyChange: noop,
   onOmniboxNonBrowserSubmitTargetChange: noop,
   onSystemNotificationModeChange: noop,
   onSystemNotificationClickBehaviorChange: noop,

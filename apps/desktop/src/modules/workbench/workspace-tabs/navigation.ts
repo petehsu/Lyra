@@ -4,7 +4,9 @@ import {
   createResultsTab,
   createResultsTabWithId,
   createSearchTab,
-  createSearchTabWithId
+  createSearchTabWithId,
+  createWebSearchTab,
+  createWebSearchTabWithId
 } from "./tab-factory";
 import type {
   WorkspaceResolvedNavigation,
@@ -50,9 +52,38 @@ export const resolveReplacementTab = (
     case "home":
       return createSearchTabWithId(current.id, config);
     case "page":
-      return createPageTabWithId(current.id, request.address);
+      return createPageTabWithId(
+        current.id,
+        request.address,
+        request.title,
+        request.searchQuery === undefined || request.searchSource !== "web"
+          ? undefined
+          : {
+              query: request.searchQuery,
+              source: "web",
+              ...(request.searchEngineId === undefined
+                ? {}
+                : { engineId: request.searchEngineId })
+            }
+      );
     case "search":
-      return createResultsTabWithId(current.id, request.query, config, request.mode);
+    case "local-search":
+      return createResultsTabWithId(
+        current.id,
+        request.query,
+        config,
+        request.kind === "local-search" ? request.selection : undefined
+      );
+    case "web-search":
+      return createWebSearchTabWithId(
+        current.id,
+        request.query,
+        request.address,
+        config,
+        request.engineId,
+        request.title,
+        request.selection
+      );
   }
 };
 
@@ -65,8 +96,24 @@ export const createNavigationTab = (
     case "home":
       return createSearchTab(serial, config);
     case "page":
-      return createPageTab(serial, request.address);
+      return createPageTab(serial, request.address, request.title);
     case "search":
-      return createResultsTab(serial, request.query, config, request.mode);
+    case "local-search":
+      return createResultsTab(
+        serial,
+        request.query,
+        config,
+        request.kind === "local-search" ? request.selection : undefined
+      );
+    case "web-search":
+      return createWebSearchTab(
+        serial,
+        request.query,
+        request.address,
+        config,
+        request.engineId,
+        request.title,
+        request.selection
+      );
   }
 };

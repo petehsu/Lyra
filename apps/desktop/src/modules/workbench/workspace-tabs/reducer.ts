@@ -22,7 +22,6 @@ import type {
   WorkspaceAppTabMetaRequest,
   WorkspaceAppTabOpenRequest,
   WorkspaceResolvedNavigation,
-  WorkspaceSearchMode,
   WorkspaceTab,
   WorkspaceTabPageMeta,
   WorkspaceTabPageRuntimeState,
@@ -72,16 +71,23 @@ export type WorkspaceTabsReducerAction =
       readonly type: "sync-page-runtime-state";
       readonly tabId: string;
       readonly pageState: WorkspaceTabPageRuntimeState;
-    }
-  | { readonly type: "update-active-input"; readonly value: string }
-  | { readonly type: "set-active-search-mode"; readonly mode: WorkspaceSearchMode }
-  | {
+ 	    }
+ 	  | { readonly type: "update-active-input"; readonly value: string }
+ 	  | {
       readonly type: "navigate-active-tab";
       readonly request: WorkspaceResolvedNavigation;
     }
   | {
       readonly type: "open-navigation-tab";
       readonly tab: WorkspaceTab;
+    }
+  | {
+      readonly type: "open-search-tabs";
+      readonly tabs: readonly WorkspaceTab[];
+    }
+  | {
+      readonly type: "replace-active-search-tabs";
+      readonly tabs: readonly WorkspaceTab[];
     }
   | {
       readonly type: "restore-session";
@@ -126,6 +132,69 @@ const insertTabAfterActive = (
   return keepSplitGroupContiguous(
     insertTabAt(state.tabs, tab, targetIndex),
     state.splitGroupTabIds
+  );
+};
+
+const insertTabsAfterActive = (
+  state: WorkspaceTabsRuntimeState,
+  tabs: readonly WorkspaceTab[]
+): readonly WorkspaceTab[] => {
+  const activeIndex = state.tabs.findIndex((candidate) => candidate.id === state.activeTabId);
+  const targetIndex = activeIndex < 0 ? state.tabs.length : activeIndex + 1;
+  let next = state.tabs;
+  tabs.forEach((tab, index) => {
+    next = insertTabAt(next, tab, targetIndex + index);
+  });
+  return keepSplitGroupContiguous(next, state.splitGroupTabIds);
+};
+
+const resolveActiveSearchReplacementIds = (
+  state: WorkspaceTabsRuntimeState
+): readonly string[] => {
+  const activeTab = findActiveTab(state);
+  if (activeTab === undefined) {
+    return [];
+  }
+  if (activeTab.searchQuery === undefined) {
+    return [activeTab.id];
+  }
+  const candidateIds =
+    state.splitGroupTabIds.includes(activeTab.id)
+      ? state.splitGroupTabIds
+      : [activeTab.id];
+  return candidateIds.filter((tabId) => {
+    const tab = state.tabs.find((candidate) => candidate.id === tabId);
+    return tab?.searchQuery === activeTab.searchQuery;
+  });
+};
+
+const replaceActiveSearchTabs = (
+  state: WorkspaceTabsRuntimeState,
+  tabs: readonly WorkspaceTab[],
+  config: WorkspaceTabsConfig
+): WorkspaceTabsRuntimeState => {
+  if (tabs.length === 0) {
+    return state;
+  }
+  const replacementIds = resolveActiveSearchReplacementIds(state);
+  const firstReplacementIndex = Math.max(
+    0,
+    state.tabs.findIndex((tab) => replacementIds.includes(tab.id))
+  );
+  const remainingTabs = state.tabs.filter((tab) => replacementIds.includes(tab.id) === false);
+  const nextTabs = insertTabAt(remainingTabs, tabs[0]!, firstReplacementIndex);
+  const withRest = tabs.slice(1).reduce(
+    (current, tab, index) => insertTabAt(current, tab, firstReplacementIndex + index + 1),
+    nextTabs
+  );
+  return resolveRuntimeState(
+    {
+      tabs: withRest,
+      activeTabId: tabs[0]!.id,
+      splitGroupTabIds: tabs.length >= 2 ? tabs.map((tab) => tab.id) : [],
+      focusedSplitTabId: tabs.length >= 2 ? tabs[0]!.id : null
+    },
+    config
   );
 };
 
@@ -586,25 +655,6 @@ export const reduceWorkspaceTabsState = (
       );
     }
 
-    case "set-active-search-mode": {
-      const activeTab = findActiveTab(state);
-      if (activeTab === undefined) {
-        return unchanged(state);
-      }
-
-      return changed({
-        ...state,
-        tabs: state.tabs.map((tab) =>
-          tab.id === activeTab.id
-            ? {
-                ...tab,
-                searchMode: action.mode
-              }
-            : tab
-        )
-      });
-    }
-
     case "navigate-active-tab": {
       const activeTab = findActiveTab(state);
       if (activeTab === undefined) {
@@ -637,6 +687,38 @@ export const reduceWorkspaceTabsState = (
           latestInputValue: action.tab.inputValue
         }
       );
+
+    case "open-search-tabs": {
+      if (action.tabs.length === 0) {
+        return unchanged(state);
+      }
+      return changed(
+        {
+          ...state,
+          tabs: insertTabsAfterActive(state, action.tabs),
+          activeTabId: action.tabs[0]!.id,
+          splitGroupTabIds: action.tabs.length >= 2 ? action.tabs.map((tab) => tab.id) : [],
+          focusedSplitTabId: action.tabs.length >= 2 ? action.tabs[0]!.id : null
+        },
+        {
+          consumedSerial: true,
+          latestInputValue: action.tabs[0]!.inputValue
+        }
+      );
+    }
+
+    case "replace-active-search-tabs": {
+      if (action.tabs.length === 0) {
+        return unchanged(state);
+      }
+      return changed(
+        replaceActiveSearchTabs(state, action.tabs, context.config),
+        {
+          consumedSerial: true,
+          latestInputValue: action.tabs[0]!.inputValue
+        }
+      );
+    }
 
     case "restore-session": {
       const restored = sanitizePersistedSnapshot(action.snapshot, context.config);

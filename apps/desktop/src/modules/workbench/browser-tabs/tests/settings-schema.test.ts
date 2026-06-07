@@ -21,16 +21,11 @@ const createSchemaInput = (
   aiStopBehaviorLabel: "Stop behavior",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
-  forceWebPageThemingLabel: "Web page theming",
-  searchCategoryLabel: "Search",
-  searchWebEnginesLabel: "Web engines",
-  searchSearxngEndpointLabel: "SearXNG endpoint",
-  searchDeepBudgetLabel: "Deep budget",
-  deepSearchRestoreViewportLabel: "Restore viewport",
-  deepSearchLocalOpenBehaviorLabel: "Local open behavior",
-  deepSearchSiteExpansionLabel: "Site expansion",
-  deepSearchCrawlPolicyLabel: "Crawl policy",
-  omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
+	  forceWebPageThemingLabel: "Web page theming",
+	  searchCategoryLabel: "Search",
+	  searchWebEnginesLabel: "Web engines",
+	  searchSearxngEndpointLabel: "SearXNG endpoint",
+	  omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationClickBehaviorLabel: "Notification click behavior",
   systemNotificationActionsLabel: "Notification actions",
@@ -72,16 +67,11 @@ describe("createWorkbenchSettingsSchema", () => {
     const schema = createWorkbenchSettingsSchema(createSchemaInput(2));
     const searchCategory = schema.categories.find((category) => category.id === "search");
 
-    expect(searchCategory?.sectionIds).toEqual([
-      "omniboxNonBrowserSubmitTarget",
-      "searchWebEngines",
-      "searchDeepBudget",
-      "deepSearchRestoreViewport",
-      "deepSearchLocalOpenBehavior",
-      "deepSearchSiteExpansion",
-      "deepSearchCrawlPolicy",
-      "searchSearxngEndpoint"
-    ]);
+	    expect(searchCategory?.sectionIds).toEqual([
+	      "omniboxNonBrowserSubmitTarget",
+	      "searchWebEngines",
+	      "searchSearxngEndpoint"
+	    ]);
   });
 
   test("hides the UI style field when there is only one pack", () => {

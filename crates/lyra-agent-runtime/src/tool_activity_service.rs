@@ -936,7 +936,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-terminal",
                 "shell_run",
-                "Run one non-interactive command in a checked workspace cwd with timeout and output limits.",
+                "Run one bounded non-interactive command in a local cwd with timeout and output limits. Defaults to the bound project root, or the user home directory when the session is unbound. Prefer this over terminal_run for one-shot checks like git config, pwd, tests, or file-system inspection when an interactive terminal is not required.",
                 "command",
                 "commandPolicy",
                 json!({
@@ -1130,7 +1130,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-terminal",
                 "terminal_run",
-                "Run one semantic command in a persistent terminal and return a budgeted output projection with command correlation.",
+                "Run one semantic command in a persistent interactive terminal and return a budgeted output projection with command correlation. Use shell_run for one-shot non-interactive commands; if a selected terminal is stopped, create or choose a running terminal.",
                 "command",
                 "runtimePolicy",
                 json!({

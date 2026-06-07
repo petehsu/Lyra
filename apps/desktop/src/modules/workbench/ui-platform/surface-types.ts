@@ -7,8 +7,7 @@ import type {
   BrowserSettingsSurfaceProps
 } from "../browser-tabs";
 import type {
-  BrowserResultSurfaceProps,
-  DeepSearchResultSurfaceProps
+  BrowserResultSurfaceProps
 } from "../browser-search";
 import type { FileEditorSurfaceProps } from "../file-editor";
 import type { FileManagerSurfaceProps } from "../file-manager";
@@ -28,7 +27,6 @@ import type {
 export type WorkbenchSurfaceAdapters = {
   readonly searchHome: ComponentType<BrowserSearchSurfaceProps>;
   readonly searchResults: ComponentType<BrowserResultSurfaceProps>;
-  readonly deepSearchResults: ComponentType<DeepSearchResultSurfaceProps>;
   readonly browserPage: ComponentType<BrowserPageSurfaceProps>;
   readonly settings: ComponentType<BrowserSettingsSurfaceProps>;
   readonly terminalWorkspace: ComponentType<TerminalWorkspaceSurfaceProps>;
@@ -47,7 +45,6 @@ export type WorkbenchSurfaceAdapters = {
 export const WORKBENCH_SURFACE_ADAPTER_KEYS = [
   "searchHome",
   "searchResults",
-  "deepSearchResults",
   "browserPage",
   "settings",
   "terminalWorkspace",

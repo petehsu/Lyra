@@ -1,7 +1,9 @@
 import { Search } from "lucide-react";
+import { useMemo } from "react";
 
+import type { SearchEngineDefinition } from "../browser-search/types";
 import { LyraBrandLogo } from "../brand";
-import { LyraListPicker, type LyraListPickerOption } from "../list-picker";
+import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import { SearchSilkBackground } from "./search-silk-background";
 
 export type BrowserSearchSurfaceProps = {
@@ -9,13 +11,13 @@ export type BrowserSearchSurfaceProps = {
   readonly inputValue: string;
   readonly placeholder: string;
   readonly searchActionLabel: string;
-  readonly deepSearchToggleLabel: string;
-  readonly deepSearchEnabled: boolean;
-  readonly deepSearchChipLabel: string;
+  readonly autoSearchLabel?: string;
+  readonly sourceFilterLabel?: string;
+  readonly searchEngines?: readonly SearchEngineDefinition[];
   readonly onPillRef?: (element: HTMLDivElement | null) => void;
   readonly onInputChange: (value: string) => void;
   readonly onSubmit: () => void;
-  readonly onToggleDeepSearch: () => void;
+  readonly onSearchEngineSubmit?: (engineId: string) => void;
 };
 
 export const BrowserSearchSurface = ({
@@ -23,20 +25,57 @@ export const BrowserSearchSurface = ({
   inputValue,
   placeholder,
   searchActionLabel,
-  deepSearchToggleLabel,
-  deepSearchEnabled,
-  deepSearchChipLabel,
+  autoSearchLabel,
+  sourceFilterLabel,
+  searchEngines = [],
   onPillRef,
   onInputChange,
   onSubmit,
-  onToggleDeepSearch
+  onSearchEngineSubmit
 }: BrowserSearchSurfaceProps) => {
-  type SearchMode = "standard" | "deep";
-  const searchMode: SearchMode = deepSearchEnabled ? "deep" : "standard";
-  const searchModeOptions: readonly LyraListPickerOption<SearchMode>[] = [
-    { value: "standard", label: searchActionLabel },
-    { value: "deep", label: deepSearchChipLabel }
-  ];
+  const titlebarContribution = useMemo(
+    () => {
+      if (autoSearchLabel === undefined || sourceFilterLabel === undefined) {
+        return null;
+      }
+      return {
+        ariaLabel: sourceFilterLabel,
+        content: (
+          <div className="lyra-titlebar-context-controls">
+            <button
+              type="button"
+              className="lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+              aria-label={`${sourceFilterLabel}: ${autoSearchLabel}`}
+              onClick={onSubmit}
+            >
+              {autoSearchLabel}
+            </button>
+            {searchEngines.map((engine) => (
+              <button
+                key={engine.id}
+                type="button"
+                className="lyra-titlebar-context-text-button"
+                aria-label={`${sourceFilterLabel}: ${engine.label}`}
+                onClick={() => {
+                  onSearchEngineSubmit?.(engine.id);
+                }}
+              >
+                {engine.label}
+              </button>
+            ))}
+          </div>
+        )
+      };
+    },
+    [
+      autoSearchLabel,
+      onSearchEngineSubmit,
+      onSubmit,
+      searchEngines,
+      sourceFilterLabel
+    ]
+  );
+  useWorkbenchTitlebarContribution(titlebarContribution);
 
   return (
     <div className="lyra-workspace-browser-shell">
@@ -73,20 +112,6 @@ export const BrowserSearchSurface = ({
             <Search size={20} />
           </button>
         </div>
-        <LyraListPicker
-          className="lyra-browser-search-mode-picker"
-          ariaLabel={deepSearchToggleLabel}
-          value={searchMode}
-          options={searchModeOptions}
-          variant="compact"
-          shape="pill"
-          onChange={(nextMode) => {
-            const nextDeepSearchEnabled = nextMode === "deep";
-            if (nextDeepSearchEnabled !== deepSearchEnabled) {
-              onToggleDeepSearch();
-            }
-          }}
-        />
       </div>
     </div>
   );

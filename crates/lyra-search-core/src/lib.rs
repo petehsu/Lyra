@@ -6,7 +6,7 @@ use lyra_local_search::{
 };
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{BufRead, BufReader};
@@ -473,6 +473,7 @@ impl SearchCoreService {
     ) -> SearchLocalResponse {
         let started_at = Instant::now();
         let query = request.query.trim().to_string();
+        let scope_preset = request.scope_preset;
         let roots = vec![normalize_path_string(&self.home_root)];
         let mut all_results = Vec::<SearchLocalResultItem>::new();
         let mut merged_stats = empty_stats();
@@ -551,6 +552,7 @@ impl SearchCoreService {
                     merge_stats(&mut merged_stats, output.stats);
                     let snapshot = build_search_response(
                         &query,
+                        scope_preset,
                         &roots,
                         all_results.clone(),
                         merged_stats.clone(),
@@ -571,6 +573,7 @@ impl SearchCoreService {
 
         build_search_response(
             &query,
+            scope_preset,
             &roots,
             all_results,
             merged_stats,
@@ -612,7 +615,10 @@ fn search_lyra_objects(request: &SearchLocalRequest, query: &str) -> Vec<SearchL
 }
 
 fn search_system_files(query: &str, home_root: &Path, limit: usize) -> Vec<SearchLocalResultItem> {
-    let paths = platform_system_search(query, home_root, limit);
+    let mut paths = platform_system_search(query, home_root, limit);
+    if paths.len() < limit {
+        paths.extend(search_home_paths_by_file_name(query, home_root, limit));
+    }
     paths
         .into_iter()
         .filter_map(|path| {
@@ -633,6 +639,67 @@ fn search_system_files(query: &str, home_root: &Path, limit: usize) -> Vec<Searc
             ))
         })
         .collect()
+}
+
+fn search_home_paths_by_file_name(query: &str, home_root: &Path, limit: usize) -> Vec<PathBuf> {
+    if query.trim().is_empty() {
+        return Vec::new();
+    }
+    let started_at = Instant::now();
+    let mut results = Vec::new();
+    let mut pending = VecDeque::from([home_root.to_path_buf()]);
+
+    while let Some(dir) = pending.pop_front() {
+        if results.len() >= limit || started_at.elapsed() >= CONTENT_PROVIDER_TIMEOUT {
+            break;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if results.len() >= limit || started_at.elapsed() >= CONTENT_PROVIDER_TIMEOUT {
+                break;
+            }
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                if should_skip_file_name_walk_dir(&path) {
+                    continue;
+                }
+                collect_file_name_match(query, &path, &mut results);
+                pending.push_back(path);
+            } else if file_type.is_file() || file_type.is_symlink() {
+                collect_file_name_match(query, &path, &mut results);
+            }
+        }
+    }
+    results.truncate(limit);
+    results
+}
+
+fn should_skip_file_name_walk_dir(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|value| value.to_str()),
+        Some(
+            ".git"
+                | "node_modules"
+                | "target"
+                | "dist"
+                | "build"
+                | ".next"
+                | "Library"
+                | "Caches"
+                | ".cache"
+        )
+    )
+}
+
+fn collect_file_name_match(query: &str, path: &Path, results: &mut Vec<PathBuf>) {
+    if score_path(query, &path, 1_000_000.0).is_some() {
+        results.push(path.to_path_buf());
+    }
 }
 
 fn search_home_index(
@@ -1193,6 +1260,7 @@ fn dedupe_and_rank(
 
 fn build_search_response(
     query: &str,
+    scope_preset: SearchLocalScopePreset,
     roots: &[String],
     results: Vec<SearchLocalResultItem>,
     mut stats: SearchLocalStats,
@@ -1220,7 +1288,7 @@ fn build_search_response(
     );
     SearchLocalResponse {
         query: query.to_string(),
-        scope_preset: SearchLocalScopePreset::FullSystem,
+        scope_preset,
         roots: roots.to_vec(),
         results,
         truncated: truncated || !done,
@@ -1398,13 +1466,14 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
         .min(MAX_RESULT_LIMIT);
     let service = service_for_request(request.storage_root.as_deref())?;
     let roots = vec![normalize_path_string(&service.home_root)];
+    let scope_preset = request.scope_preset;
     let stream_id = format!("search-stream-{}", Uuid::new_v4());
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let stream_state = Arc::new(RwLock::new(SearchStreamState {
         snapshot: SearchLocalStreamReadResponse {
             stream_id: stream_id.clone(),
             query: query.clone(),
-            scope_preset: SearchLocalScopePreset::FullSystem,
+            scope_preset,
             roots: roots.clone(),
             results: Vec::new(),
             truncated: false,
@@ -1438,7 +1507,7 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
     serde_json::to_string(&SearchLocalStreamStartResponse {
         stream_id,
         query,
-        scope_preset: SearchLocalScopePreset::FullSystem,
+        scope_preset,
         roots,
     })
     .map_err(|error| format!("serialize response failed: {error}"))
@@ -1631,6 +1700,23 @@ mod tests {
     }
 
     #[test]
+    fn home_file_name_provider_finds_path_matches_without_content_match() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let file_path = dir.path().join("LyraNotes").join("empty.txt");
+        fs::create_dir_all(file_path.parent().expect("parent"))
+            .unwrap_or_else(|error| panic!("{error}"));
+        fs::write(&file_path, "plain text without query\n")
+            .unwrap_or_else(|error| panic!("{error}"));
+
+        let results = search_home_paths_by_file_name("lyra", dir.path(), 20);
+
+        assert!(
+            results.iter().any(|result| result == &file_path),
+            "expected file-name fallback to find {file_path:?}"
+        );
+    }
+
+    #[test]
     fn build_search_response_marks_partial_snapshots_as_not_final() {
         let item = item_from_path(
             PathBuf::from("/tmp/session-tabs.ts"),
@@ -1643,6 +1729,7 @@ mod tests {
 
         let partial = build_search_response(
             "新会话",
+            SearchLocalScopePreset::Home,
             &["/tmp".to_string()],
             vec![item],
             empty_stats(),
@@ -1653,5 +1740,21 @@ mod tests {
 
         assert!(!partial.results.is_empty());
         assert!(partial.truncated);
+    }
+
+    #[test]
+    fn build_search_response_preserves_requested_scope() {
+        let response = build_search_response(
+            "lyra",
+            SearchLocalScopePreset::Home,
+            &["/tmp".to_string()],
+            Vec::new(),
+            empty_stats(),
+            1,
+            10,
+            true,
+        );
+
+        assert_eq!(response.scope_preset, SearchLocalScopePreset::Home);
     }
 }

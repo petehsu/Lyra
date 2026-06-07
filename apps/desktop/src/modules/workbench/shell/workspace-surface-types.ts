@@ -13,7 +13,6 @@ export type WorkspaceSurfaceRenderContext = Omit<
 export type SurfacePropsByKind = {
   readonly searchHome: ComponentProps<WorkbenchSurfaceAdapters["searchHome"]>;
   readonly searchResults: ComponentProps<WorkbenchSurfaceAdapters["searchResults"]>;
-  readonly deepSearchResults: ComponentProps<WorkbenchSurfaceAdapters["deepSearchResults"]>;
   readonly browserPage: ComponentProps<WorkbenchSurfaceAdapters["browserPage"]>;
   readonly settings: ComponentProps<WorkbenchSurfaceAdapters["settings"]>;
   readonly terminalWorkspace: ComponentProps<WorkbenchSurfaceAdapters["terminalWorkspace"]>;

@@ -22,17 +22,20 @@ import {
   createAppTab,
   createPageTab,
   createPageTabWithId,
+  createResultsTab,
   createSearchTab,
   createSettingsTab,
   createTerminalTab,
+  createWebSearchTab,
   FALLBACK_TERMINAL_TITLE
 } from "./tab-factory";
 import type {
   WorkspaceNavigationTarget,
+  WorkspaceSearchEngineSelection,
+  WorkspaceWebSearchTarget,
   WorkspaceAppTabMetaRequest,
   WorkspaceAppTabOpenRequest,
   WorkspaceResolvedNavigation,
-  WorkspaceSearchMode,
   WorkspaceTabInsertOptions,
   WorkspaceTabPageMeta,
   WorkspaceTabPageRuntimeState,
@@ -322,16 +325,6 @@ export const useWorkspaceTabsModel = (
     [dispatchWorkspaceTabsAction]
   );
 
-  const setActiveSearchMode = useCallback(
-    (mode: WorkspaceSearchMode): void => {
-      dispatchWorkspaceTabsAction({
-        type: "set-active-search-mode",
-        mode
-      });
-    },
-    [dispatchWorkspaceTabsAction]
-  );
-
   const navigateResolvedInput = useCallback((
     request: WorkspaceResolvedNavigation,
     options?: {
@@ -361,6 +354,60 @@ export const useWorkspaceTabsModel = (
     return nextTab.id;
   }, [activeTab, allocateTabSerial, config, dispatchWorkspaceTabsAction]);
 
+  const openWebSearchTabs = useCallback((
+    request: {
+      readonly query: string;
+      readonly targets: readonly WorkspaceWebSearchTarget[];
+      readonly selection: WorkspaceSearchEngineSelection;
+    },
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ): readonly string[] => {
+    const targets = request.targets.slice(0, 4);
+    if (targets.length === 0) {
+      return [];
+    }
+    const tabs = targets.map((target) =>
+      createWebSearchTab(
+        allocateTabSerial(),
+        request.query,
+        target.address,
+        config,
+        target.engineId,
+        target.title,
+        request.selection
+      )
+    );
+    dispatchWorkspaceTabsAction({
+      type: options?.target === "new-tab" ? "open-search-tabs" : "replace-active-search-tabs",
+      tabs
+    });
+    return tabs.map((tab) => tab.id);
+  }, [allocateTabSerial, config, dispatchWorkspaceTabsAction]);
+
+  const openLocalSearchTab = useCallback((
+    request: {
+      readonly query: string;
+      readonly selection?: WorkspaceSearchEngineSelection;
+    },
+    options?: {
+      readonly target?: WorkspaceNavigationTarget;
+    }
+  ): string => {
+    const tab = createResultsTab(
+      allocateTabSerial(),
+      request.query,
+      config,
+      request.selection
+    );
+    dispatchWorkspaceTabsAction({
+      type: options?.target === "new-tab" ? "open-search-tabs" : "replace-active-search-tabs",
+      tabs: [tab]
+    });
+    return tab.id;
+  }, [allocateTabSerial, config, dispatchWorkspaceTabsAction]);
+
   const commitActiveInput = useCallback((): void => {
     const current = activeTab;
     if (current === undefined) {
@@ -389,8 +436,7 @@ export const useWorkspaceTabsModel = (
 
     navigateResolvedInput({
       kind: "search",
-      query: nextInput,
-      mode: current.searchMode ?? "standard"
+      query: nextInput
     });
   }, [activeTab, navigateResolvedInput]);
 
@@ -443,9 +489,10 @@ export const useWorkspaceTabsModel = (
     closeTab,
     updatePageMeta,
     syncPageRuntimeState,
+    openWebSearchTabs,
+    openLocalSearchTab,
     navigateResolvedInput,
     updateActiveInput,
-    setActiveSearchMode,
     commitActiveInput
   };
 };

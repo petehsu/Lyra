@@ -69,6 +69,26 @@ const sanitizeOptionalString = (value: unknown): string | undefined => {
 const sanitizeOptionalBoolean = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
+const sanitizeSearchSource = (
+  value: unknown
+): WorkspaceTab["searchSource"] | undefined =>
+  value === "web" || value === "local" ? value : undefined;
+
+const sanitizeSearchEngineSelectionMode = (
+  value: unknown
+): WorkspaceTab["searchEngineSelectionMode"] | undefined =>
+  value === "auto" || value === "manual" ? value : undefined;
+
+const sanitizeStringArray = (value: unknown): readonly string[] | undefined => {
+  if (Array.isArray(value) === false) {
+    return undefined;
+  }
+  const items = value
+    .map((entry) => sanitizeOptionalString(entry))
+    .filter((entry): entry is string => entry !== undefined);
+  return items.length > 0 ? [...new Set(items)] : undefined;
+};
+
 const isValidWorkspaceAppId = (
   value: string
 ): value is NonNullable<WorkspaceTab["appId"]> =>
@@ -110,6 +130,13 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
   const fileSessionId = sanitizeOptionalString(value.fileSessionId);
   const isDirty = sanitizeOptionalBoolean(value.isDirty);
   const browserRestoreState = sanitizeBrowserPageRestoreState(value.browserRestoreState);
+  const searchQuery = sanitizeOptionalString(value.searchQuery);
+  const searchSource = sanitizeSearchSource(value.searchSource);
+  const searchEngineId = sanitizeOptionalString(value.searchEngineId);
+  const searchEngineSelectionMode = sanitizeSearchEngineSelectionMode(
+    value.searchEngineSelectionMode
+  );
+  const searchSelectedEngineIds = sanitizeStringArray(value.searchSelectedEngineIds);
 
   if (pageKind === "terminal" && terminalTabId === undefined) {
     return null;
@@ -143,7 +170,12 @@ export const sanitizePersistedTab = (value: unknown): WorkspaceTab | null => {
     ...(filePath === undefined ? {} : { filePath }),
     ...(fileSessionId === undefined ? {} : { fileSessionId }),
     ...(isDirty === undefined ? {} : { isDirty }),
-    ...(browserRestoreState === undefined ? {} : { browserRestoreState })
+    ...(browserRestoreState === undefined ? {} : { browserRestoreState }),
+    ...(searchQuery === undefined ? {} : { searchQuery }),
+    ...(searchSource === undefined ? {} : { searchSource }),
+    ...(searchEngineId === undefined ? {} : { searchEngineId }),
+    ...(searchEngineSelectionMode === undefined ? {} : { searchEngineSelectionMode }),
+    ...(searchSelectedEngineIds === undefined ? {} : { searchSelectedEngineIds })
   };
 };
 

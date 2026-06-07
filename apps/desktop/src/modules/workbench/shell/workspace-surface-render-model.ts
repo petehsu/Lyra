@@ -4,9 +4,10 @@ import {
   createTerminalWorkspaceModel
 } from "./workspace-app-surface-models";
 import {
-  createDeepSearchResultsModel,
   createSearchHomeModel,
-  createSearchResultsModel
+  createSearchResultsModel,
+  applySearchEngineSelection,
+  resolveTabSearchSelection
 } from "./workspace-search-surface-models";
 import type {
   WorkspaceSurfaceRenderContext,
@@ -20,17 +21,44 @@ export const createWorkspaceSurfaceRenderModel = (
   context: WorkspaceSurfaceRenderContext
 ): WorkspaceSurfaceRenderModel => {
   if (tab.pageKind === "results") {
-    const resultMode = tab.resultMode ?? tab.searchMode ?? "standard";
-    return resultMode === "deep"
-      ? createDeepSearchResultsModel(tab, context)
-      : createSearchResultsModel(tab, context);
+    return createSearchResultsModel(tab, context);
   }
 
   if (tab.pageKind === "page") {
+    const selection = resolveTabSearchSelection(tab);
     return {
       kind: "browserPage",
       props: {
         tabId: tab.id,
+        ...(tab.searchQuery === undefined
+          ? {}
+          : {
+              searchQuery: tab.searchQuery,
+              searchSource: tab.searchSource,
+              searchEngineSelectionMode: selection.mode,
+              searchSelectedEngineIds: selection.engineIds,
+              searchEngines: context.searchEngines,
+              sourceFilterLabel: context.i18n.resultsSourceFilter,
+              autoSearchLabel: context.i18n.resultsAutoTab,
+              webTabLabel: context.i18n.resultsWebTab,
+              localTabLabel: context.i18n.resultsLocalTab,
+              onSearchEngineSelectionChange: (nextSelection) => {
+                void applySearchEngineSelection(
+                  context,
+                  tab.searchQuery ?? "",
+                  nextSelection
+                );
+              },
+              onSwitchToLocalSearch: () => {
+                context.tabsModel.openLocalSearchTab(
+                  {
+                    query: tab.searchQuery ?? "",
+                    selection
+                  },
+                  { target: "active-tab" }
+                );
+              }
+            }),
         onHostChange: context.onPageHostChange
       }
     };

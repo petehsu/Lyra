@@ -231,10 +231,7 @@ pub(super) fn validate_workspace_scope_for_manifest(
 }
 
 pub(super) fn manifest_requires_workspace_scope(manifest: &ToolManifest) -> bool {
-    matches!(
-        manifest.domain.as_str(),
-        "filesystem" | "code" | "shell" | "git"
-    )
+    matches!(manifest.domain.as_str(), "filesystem" | "code" | "git")
 }
 
 pub(super) fn validate_runtime_turn_for_operation(

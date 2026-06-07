@@ -164,15 +164,8 @@ import {
   type TerminalWaitUntilRequest,
   type TerminalWaitUntilResponse,
   type TerminalWriteRequest,
-  type SearchAggregateRequest,
-  type SearchDeepExpandRequest,
-  type SearchDeepExpandResponse,
-  type SearchDeepStreamCancelRequest,
-  type SearchDeepStreamCancelResponse,
-  type SearchDeepStreamReadRequest,
-  type SearchDeepStreamReadResponse,
-  type SearchDeepStreamStartRequest,
-  type SearchDeepStreamStartResponse,
+  type SearchResolveWebEngineRequest,
+  type SearchResolveWebEngineResponse,
   type SearchLocalRequest,
   type SearchLocalResponse,
   type SearchLocalStreamCancelRequest,
@@ -788,8 +781,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ) as Promise<LinuxCompatRestartResponse>
   },
   search: {
-    aggregate: (request: SearchAggregateRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.aggregateSearch, request),
+    resolveWebSearchEngine: (request: SearchResolveWebEngineRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.resolveWebSearchEngine,
+        request
+      ) as Promise<SearchResolveWebEngineResponse>,
     local: (request: SearchLocalRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.localSearch,
@@ -809,27 +805,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.localSearchStreamCancel,
         request
-      ) as Promise<SearchLocalStreamCancelResponse>,
-    startDeepStream: (request: SearchDeepStreamStartRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchDeepStreamStart,
-        request
-      ) as Promise<SearchDeepStreamStartResponse>,
-    readDeepStream: (request: SearchDeepStreamReadRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchDeepStreamRead,
-        request
-      ) as Promise<SearchDeepStreamReadResponse>,
-    cancelDeepStream: (request: SearchDeepStreamCancelRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchDeepStreamCancel,
-        request
-      ) as Promise<SearchDeepStreamCancelResponse>,
-    expandDeepNode: (request: SearchDeepExpandRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchDeepExpand,
-        request
-      ) as Promise<SearchDeepExpandResponse>
+      ) as Promise<SearchLocalStreamCancelResponse>
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,

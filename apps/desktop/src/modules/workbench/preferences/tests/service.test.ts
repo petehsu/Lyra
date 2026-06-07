@@ -24,12 +24,6 @@ const defaults: WorkbenchPreferences = {
   preventSleepEnabled: true,
   forceWebPageThemingEnabled: true,
   searchWebEngineIds: ["bing", "brave", "duckduckgo"],
-  deepSearchDefaultBudget: "medium",
-  deepSearchRestoreViewport: false,
-  deepSearchLocalOpenBehavior: "open_file",
-  deepSearchSiteExpansionEnabled: true,
-  deepSearchProactiveDomainGuessingEnabled: true,
-  deepSearchCrawlPolicy: "accessibility_only",
   searchResultsSourceFilter: "all",
   omniboxNonBrowserSubmitTarget: "new_tab",
   systemNotificationMode: "background",
@@ -184,30 +178,18 @@ describe("workbench preferences", () => {
     });
   });
 
-  test("updates web and deep search preferences via model and persists", () => {
+  test("updates web search preferences via model and persists", () => {
     const { result } = renderHook(() => useWorkbenchPreferencesModel(defaults));
 
     act(() => {
       result.current.setSearchWebEngineIds(["bing", "searxng"]);
       result.current.setSearchSearxngEndpoint("https://searx.example/search");
-      result.current.setDeepSearchDefaultBudget("high");
-      result.current.setDeepSearchRestoreViewport(true);
-      result.current.setDeepSearchLocalOpenBehavior("reveal_in_manager");
-      result.current.setDeepSearchSiteExpansionEnabled(false);
-      result.current.setDeepSearchProactiveDomainGuessingEnabled(false);
-      result.current.setDeepSearchCrawlPolicy("accessibility_only");
     });
 
     expect(result.current.preferences).toEqual({
       ...defaults,
       searchWebEngineIds: ["bing", "searxng"],
-      searchSearxngEndpoint: "https://searx.example/search",
-      deepSearchDefaultBudget: "high",
-      deepSearchRestoreViewport: true,
-      deepSearchLocalOpenBehavior: "reveal_in_manager",
-      deepSearchSiteExpansionEnabled: false,
-      deepSearchProactiveDomainGuessingEnabled: false,
-      deepSearchCrawlPolicy: "accessibility_only"
+      searchSearxngEndpoint: "https://searx.example/search"
     });
   });
 

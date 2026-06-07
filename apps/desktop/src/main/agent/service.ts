@@ -1242,6 +1242,84 @@ export const createAgentIpcBridge = ({
     );
   };
 
+  const hasExplicitTerminalTarget = (payload: Record<string, unknown>): boolean =>
+    readOptionalTerminalId(payload, "sessionId") !== undefined
+    || readOptionalTerminalId(payload, "terminalTabId") !== undefined
+    || readOptionalTerminalId(payload, "paneId") !== undefined;
+
+  const readTerminalRunningState = async (
+    target: TerminalToolTarget
+  ): Promise<boolean | null> => {
+    try {
+      const response = await terminalBridge.readObservation({
+        sessionId: target.sessionId,
+        maxBytes: 1,
+        waitMs: 0
+      });
+      return response.running;
+    } catch (error) {
+      if (isSessionNotFoundError(error)) {
+        return false;
+      }
+      throw error;
+    }
+  };
+
+  const openReplacementUiTerminal = async (
+    payload: Record<string, unknown>
+  ): Promise<TerminalToolTarget> => {
+    const service = getWorkbenchObservationService();
+    if (service === null) {
+      throw new Error("Workbench terminal capability is not available");
+    }
+    const title = readOptionalStringField(payload, "title");
+    const cwd = readOptionalStringField(payload, "cwd");
+    const pane = await service.openTerminalPane({
+      placement: "dock",
+      title: title ?? "Agent Terminal",
+      ...(cwd === undefined ? {} : { cwd })
+    });
+    await waitForTerminalSessionReady(pane.sessionId);
+    try {
+      const focused = await service.focusTerminalPane({
+        terminalTabId: pane.terminalTabId,
+        paneId: pane.paneId
+      });
+      return targetFromUiPane(focused);
+    } catch {
+      return targetFromUiPane(pane);
+    }
+  };
+
+  const ensureWritableTerminalTarget = async (
+    agentSessionId: string,
+    payload: Record<string, unknown>,
+    target: TerminalToolTarget,
+    targetPreference: TerminalTargetPreference
+  ): Promise<TerminalToolTarget> => {
+    const running = await readTerminalRunningState(target);
+    if (running !== false) {
+      return target;
+    }
+    const explicitTarget = hasExplicitTerminalTarget(payload);
+    if (explicitTarget) {
+      throw new Error(
+        `terminal_session_not_running: ${target.sessionId} is stopped. Call terminal_create or choose a running terminal before writing input.`
+      );
+    }
+    if (target.type === "ui") {
+      if (targetPreference === "ui" || (targetPreference === "auto" && browserFollowModeEnabled)) {
+        return await openReplacementUiTerminal(payload);
+      }
+    } else if (targetPreference !== "ui") {
+      privateTerminalsByAgentSession.get(agentSessionId)?.delete(target.sessionId);
+      return (await createPrivateTerminal(agentSessionId, payload)).target;
+    }
+    throw new Error(
+      `terminal_session_not_running: ${target.sessionId} is stopped. Call terminal_create or choose a running terminal before writing input.`
+    );
+  };
+
   const terminalInlineOutputByteLimit = 16_000;
 
   const truncateUtf8 = (value: string, maxBytes: number): string => {
@@ -2628,8 +2706,14 @@ export const createAgentIpcBridge = ({
       const useUi = preference === "ui"
         || (preference === "auto" && browserFollowModeEnabled);
       if (useUi) {
-        const target = await resolveUiTerminal(request, true);
+        let target = await resolveUiTerminal(request, true);
         await waitForTerminalSessionReady(target.sessionId);
+        target = await ensureWritableTerminalTarget(
+          agentSessionId,
+          request,
+          target,
+          preference
+        );
         const commandStartCursor = command === undefined
           ? undefined
           : await readTerminalEofCursor(target.sessionId);
@@ -2780,12 +2864,18 @@ export const createAgentIpcBridge = ({
       const request = normalizePayload(payload);
       const agentSessionId = readRuntimeSessionId(request);
       const targetPreference = readTerminalTargetPreference(request);
-      const target = await resolveTerminalTarget(agentSessionId, request, {
+      let target = await resolveTerminalTarget(agentSessionId, request, {
         privateCreateIfMissing:
           targetPreference !== "ui"
           && !browserFollowModeEnabled,
         uiOpenIfMissing: targetPreference === "ui"
       });
+      target = await ensureWritableTerminalTarget(
+        agentSessionId,
+        request,
+        target,
+        targetPreference
+      );
       const data = typeof request.data === "string" ? request.data : undefined;
       const text = typeof request.text === "string" ? request.text : undefined;
       const keys = Array.isArray(request.keys)
@@ -2997,12 +3087,18 @@ export const createAgentIpcBridge = ({
       const request = normalizePayload(payload);
       const agentSessionId = readRuntimeSessionId(request);
       const targetPreference = readTerminalTargetPreference(request);
-      const target = await resolveTerminalTarget(agentSessionId, request, {
+      let target = await resolveTerminalTarget(agentSessionId, request, {
         privateCreateIfMissing:
           targetPreference !== "ui"
           && !browserFollowModeEnabled,
         uiOpenIfMissing: targetPreference === "ui"
       });
+      target = await ensureWritableTerminalTarget(
+        agentSessionId,
+        request,
+        target,
+        targetPreference
+      );
       const toolAction = readOptionalStringField(request, "action") ?? "input";
       const semanticAction = terminalSemanticInputActionForToolAction(toolAction, request);
       const terminalToolName = terminalAgentToolNameForAction(toolAction) ?? "terminal_input";

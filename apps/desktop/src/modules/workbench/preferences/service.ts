@@ -2,8 +2,6 @@ import { useState } from "react";
 
 import { WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
 import type {
-  SearchDeepCrawlPolicy,
-  SearchDeepBudgetPreset,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -47,14 +45,6 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
   value === "turn_only" || value === "turn_and_background";
-const isSearchDeepBudgetPreset = (value: unknown): value is SearchDeepBudgetPreset =>
-  value === "low" || value === "medium" || value === "high";
-const isSearchDeepCrawlPolicy = (value: unknown): value is SearchDeepCrawlPolicy =>
-  value === "accessibility_only";
-const isDeepSearchLocalOpenBehavior = (
-  value: unknown
-): value is "open_file" | "reveal_in_manager" =>
-  value === "open_file" || value === "reveal_in_manager";
 const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
   value === "all" || value === "web" || value === "local";
 const isWorkbenchOmniboxNonBrowserSubmitTarget = (
@@ -96,16 +86,10 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly aiRichRenderingEnabled?: unknown;
       readonly aiStopBehavior?: unknown;
       readonly preventSleepEnabled?: unknown;
-      readonly forceWebPageThemingEnabled?: unknown;
-      readonly searchWebEngineIds?: unknown;
-      readonly searchSearxngEndpoint?: unknown;
-      readonly deepSearchDefaultBudget?: unknown;
-      readonly deepSearchRestoreViewport?: unknown;
-      readonly deepSearchLocalOpenBehavior?: unknown;
-      readonly deepSearchSiteExpansionEnabled?: unknown;
-      readonly deepSearchProactiveDomainGuessingEnabled?: unknown;
-      readonly deepSearchCrawlPolicy?: unknown;
-      readonly searchResultsSourceFilter?: unknown;
+	      readonly forceWebPageThemingEnabled?: unknown;
+	      readonly searchWebEngineIds?: unknown;
+	      readonly searchSearxngEndpoint?: unknown;
+	      readonly searchResultsSourceFilter?: unknown;
       readonly omniboxNonBrowserSubmitTarget?: unknown;
       readonly systemNotificationMode?: unknown;
       readonly systemNotificationClickBehavior?: unknown;
@@ -147,28 +131,10 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
         ? parsed.forceWebPageThemingEnabled
         : defaults.forceWebPageThemingEnabled,
       searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
-      ...(normalizedSearxngEndpoint === undefined
-        ? {}
-        : { searchSearxngEndpoint: normalizedSearxngEndpoint }),
-      deepSearchDefaultBudget: isSearchDeepBudgetPreset(parsed.deepSearchDefaultBudget)
-        ? parsed.deepSearchDefaultBudget
-        : defaults.deepSearchDefaultBudget,
-      deepSearchRestoreViewport: isBoolean(parsed.deepSearchRestoreViewport)
-        ? parsed.deepSearchRestoreViewport
-        : defaults.deepSearchRestoreViewport,
-      deepSearchLocalOpenBehavior: isDeepSearchLocalOpenBehavior(parsed.deepSearchLocalOpenBehavior)
-        ? parsed.deepSearchLocalOpenBehavior
-        : defaults.deepSearchLocalOpenBehavior,
-      deepSearchSiteExpansionEnabled: isBoolean(parsed.deepSearchSiteExpansionEnabled)
-        ? parsed.deepSearchSiteExpansionEnabled
-        : defaults.deepSearchSiteExpansionEnabled,
-      deepSearchProactiveDomainGuessingEnabled: isBoolean(parsed.deepSearchProactiveDomainGuessingEnabled)
-        ? parsed.deepSearchProactiveDomainGuessingEnabled
-        : defaults.deepSearchProactiveDomainGuessingEnabled,
-      deepSearchCrawlPolicy: isSearchDeepCrawlPolicy(parsed.deepSearchCrawlPolicy)
-        ? parsed.deepSearchCrawlPolicy
-        : defaults.deepSearchCrawlPolicy,
-      searchResultsSourceFilter: isSearchResultsSourceFilter(parsed.searchResultsSourceFilter)
+	      ...(normalizedSearxngEndpoint === undefined
+	        ? {}
+	        : { searchSearxngEndpoint: normalizedSearxngEndpoint }),
+	      searchResultsSourceFilter: isSearchResultsSourceFilter(parsed.searchResultsSourceFilter)
         ? parsed.searchResultsSourceFilter
         : defaults.searchResultsSourceFilter,
       omniboxNonBrowserSubmitTarget: isWorkbenchOmniboxNonBrowserSubmitTarget(parsed.omniboxNonBrowserSubmitTarget)
@@ -300,43 +266,7 @@ export const useWorkbenchPreferencesModel = (
             })
       }));
     },
-    setDeepSearchDefaultBudget: (deepSearchDefaultBudget) => {
-      commit((current) => ({
-        ...current,
-        deepSearchDefaultBudget
-      }));
-    },
-    setDeepSearchRestoreViewport: (deepSearchRestoreViewport) => {
-      commit((current) => ({
-        ...current,
-        deepSearchRestoreViewport
-      }));
-    },
-    setDeepSearchLocalOpenBehavior: (deepSearchLocalOpenBehavior) => {
-      commit((current) => ({
-        ...current,
-        deepSearchLocalOpenBehavior
-      }));
-    },
-    setDeepSearchSiteExpansionEnabled: (deepSearchSiteExpansionEnabled) => {
-      commit((current) => ({
-        ...current,
-        deepSearchSiteExpansionEnabled
-      }));
-    },
-    setDeepSearchProactiveDomainGuessingEnabled: (deepSearchProactiveDomainGuessingEnabled) => {
-      commit((current) => ({
-        ...current,
-        deepSearchProactiveDomainGuessingEnabled
-      }));
-    },
-    setDeepSearchCrawlPolicy: (deepSearchCrawlPolicy) => {
-      commit((current) => ({
-        ...current,
-        deepSearchCrawlPolicy
-      }));
-    },
-    setSearchResultsSourceFilter: (searchResultsSourceFilter) => {
+	    setSearchResultsSourceFilter: (searchResultsSourceFilter) => {
       commit((current) => ({
         ...current,
         searchResultsSourceFilter

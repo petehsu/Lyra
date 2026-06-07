@@ -7,6 +7,8 @@ import type { BrowserSearchSettings } from "../browser-search";
 
 export type WorkbenchSearchSettingsFacade = {
   readonly allSearchEngines: readonly SearchEngineDefinition[];
+  readonly integratedSearchEngines: readonly SearchEngineDefinition[];
+  readonly registeredSearchEngines: readonly SearchEngineDefinition[];
   readonly activeSearchEngines: readonly SearchEngineDefinition[];
   readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
   readonly browserSearchSettings: BrowserSearchSettings;
@@ -24,12 +26,28 @@ export const useWorkbenchSearchSettings = (
           id: "searxng",
           label: "SearXNG",
           accentColor: "#4F8F5B",
-          endpoint: searxngEndpoint
+          endpoint: searxngEndpoint,
+          searchUrlTemplate: searxngEndpoint
         });
       }
       return engines;
     },
     [preferences.searchSearxngEndpoint]
+  );
+
+  const integratedSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
+    () => WORKBENCH_CONFIG.browser.searchEngines,
+    []
+  );
+
+  const registeredSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
+    () => {
+      const lookup = new Map(allSearchEngines.map((engine) => [engine.id, engine]));
+      return preferences.searchWebEngineIds
+        .map((id) => lookup.get(id))
+        .filter((engine): engine is SearchEngineDefinition => engine !== undefined);
+    },
+    [allSearchEngines, preferences.searchWebEngineIds]
   );
 
   const activeSearchEngines = useMemo<readonly SearchEngineDefinition[]>(
@@ -53,24 +71,16 @@ export const useWorkbenchSearchSettings = (
 
   const browserSearchSettings = useMemo<BrowserSearchSettings>(
     () => ({
-      searchEngines: activeSearchEngines,
-      resultsPerEngine: WORKBENCH_CONFIG.browser.resultsPerEngine,
-      deepBudgetPreset: preferences.deepSearchDefaultBudget,
-      deepSiteExpansionEnabled: preferences.deepSearchSiteExpansionEnabled,
-      deepProactiveDomainGuessingEnabled: preferences.deepSearchProactiveDomainGuessingEnabled,
-      deepCrawlPolicy: preferences.deepSearchCrawlPolicy
+      searchEngines: integratedSearchEngines,
+      resultsPerEngine: WORKBENCH_CONFIG.browser.resultsPerEngine
     }),
-    [
-      activeSearchEngines,
-      preferences.deepSearchCrawlPolicy,
-      preferences.deepSearchDefaultBudget,
-      preferences.deepSearchProactiveDomainGuessingEnabled,
-      preferences.deepSearchSiteExpansionEnabled
-    ]
+    [integratedSearchEngines]
   );
 
   return {
     allSearchEngines,
+    integratedSearchEngines,
+    registeredSearchEngines,
     activeSearchEngines,
     engineById,
     browserSearchSettings

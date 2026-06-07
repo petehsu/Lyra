@@ -1,9 +1,5 @@
 import type {
-  SearchDeepBudgetPreset,
-  SearchDeepEdge,
-  SearchDeepNode,
-  SearchOfficialCategory,
-  SearchDeepSnapshot
+  SearchOfficialCategory
 } from "../../../shared/desktop-bridge";
 
 export type SearchEngineDefinition = {
@@ -11,6 +7,13 @@ export type SearchEngineDefinition = {
   readonly label: string;
   readonly accentColor: string;
   readonly endpoint?: string;
+  readonly searchUrlTemplate?: string;
+  readonly probeUrlTemplate?: string;
+  readonly enabledByDefault?: boolean;
+};
+
+export type WebSearchEngineDefinition = SearchEngineDefinition & {
+  readonly searchUrlTemplate: string;
 };
 
 export type AggregatedSearchResult = {
@@ -121,21 +124,4 @@ export type BrowserSearchPayload = {
     readonly payload: LocalSearchPayload;
     readonly error?: string;
   };
-};
-
-export type DeepSearchNodeKind = SearchDeepNode["kind"];
-export type DeepSearchEdgeKind = SearchDeepEdge["kind"];
-export type DeepSearchEdgeKindFilter = "all" | DeepSearchEdgeKind;
-export type DeepSearchEdgeDirectionFilter = "both" | "incoming" | "outgoing";
-export type DeepSearchViewportPolicy = "focus_ring" | "restore_if_enabled";
-
-export type DeepSearchViewState = {
-  readonly query: string;
-  readonly queryRequestId: string;
-  readonly streamId?: string;
-  readonly budgetPreset: SearchDeepBudgetPreset;
-  readonly status: SearchChannelStatus;
-  readonly snapshot: SearchDeepSnapshot;
-  readonly done: boolean;
-  readonly error?: string;
 };

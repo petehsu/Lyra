@@ -468,6 +468,133 @@ describe("terminal agent tools", () => {
     bridge.dispose();
   });
 
+  test("ui terminal run opens a replacement when the active pane is stopped", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const stoppedPane = {
+      terminalTabId: "terminal-tab-old",
+      paneId: "pane-old",
+      sessionId: "ui-terminal-stopped",
+      title: "Task",
+      placement: "dock" as const
+    };
+    const replacementPane = {
+      terminalTabId: "terminal-tab-new",
+      paneId: "pane-new",
+      sessionId: "ui-terminal-new",
+      title: "Agent Terminal",
+      placement: "dock" as const
+    };
+    const terminalBridge = createTerminalBridgeMock({
+      readObservation: vi.fn(async (request: { readonly sessionId: string }) => ({
+        sessionId: request.sessionId,
+        cursor: "12",
+        output: request.sessionId === stoppedPane.sessionId ? "npm error ENOENT" : "ready",
+        running: request.sessionId !== stoppedPane.sessionId,
+        exitCode: request.sessionId === stoppedPane.sessionId ? 1 : null,
+        truncated: false,
+        source: "agent",
+        mode: "shell",
+        memory: terminalMemory
+      }))
+    });
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({
+        active: stoppedPane,
+        panes: [stoppedPane]
+      })),
+      openTerminalPane: vi.fn(async () => replacementPane),
+      focusTerminalPane: vi.fn(async (request: { readonly paneId: string }) =>
+        request.paneId === replacementPane.paneId ? replacementPane : stoppedPane
+      )
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("terminal.input.execute")?.({
+      target: "ui",
+      action: "run",
+      command: "git config --global --list",
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-run" }
+    })).resolves.toMatchObject({
+      target: {
+        type: "ui",
+        sessionId: replacementPane.sessionId,
+        terminalTabId: replacementPane.terminalTabId,
+        paneId: replacementPane.paneId
+      },
+      command: "git config --global --list"
+    });
+    expect(observationService.openTerminalPane).toHaveBeenCalledWith(expect.objectContaining({
+      placement: "dock",
+      title: "Agent Terminal"
+    }));
+    expect(terminalBridge.executeInput).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: replacementPane.sessionId,
+      action: "runCommand",
+      command: "git config --global --list"
+    }));
+
+    bridge.dispose();
+  });
+
+  test("explicit stopped ui terminal target fails before writing", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const stoppedPane = {
+      terminalTabId: "terminal-tab-old",
+      paneId: "pane-old",
+      sessionId: "ui-terminal-stopped",
+      title: "Task",
+      placement: "dock" as const
+    };
+    const terminalBridge = createTerminalBridgeMock({
+      readObservation: vi.fn(async (request: { readonly sessionId: string }) => ({
+        sessionId: request.sessionId,
+        cursor: "12",
+        output: "npm error ENOENT",
+        running: false,
+        exitCode: 1,
+        truncated: false,
+        source: "agent",
+        mode: "shell",
+        memory: terminalMemory
+      }))
+    });
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({
+        active: stoppedPane,
+        panes: [stoppedPane]
+      })),
+      openTerminalPane: vi.fn(),
+      focusTerminalPane: vi.fn(async () => stoppedPane)
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService
+    });
+
+    await expect(registered.get("terminal.input.execute")?.({
+      target: "ui",
+      sessionId: stoppedPane.sessionId,
+      action: "run",
+      command: "git config --global --list",
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-run" }
+    })).rejects.toThrow(/terminal_session_not_running/);
+    expect(observationService.openTerminalPane).not.toHaveBeenCalled();
+    expect(terminalBridge.executeInput).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
+
   test("CLI follow keeps terminal tools private for inline CLI mirroring", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const runtimeClient = createRuntimeClient(registered);

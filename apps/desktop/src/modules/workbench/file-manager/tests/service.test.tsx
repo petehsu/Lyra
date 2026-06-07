@@ -377,13 +377,17 @@ const createDesktopApi = (): {
       requestRestart: async () => ({ ok: true as const })
     },
     search: {
-      aggregate: async () => ({
-        query: "",
-        blendedResults: [],
-        engineBuckets: [],
-        fetchedAt: new Date().toISOString(),
-        elapsedMs: 0
-      }),
+      resolveWebSearchEngine: async (request) => {
+        const engine = request.engines[0]!;
+        return {
+          engine,
+          searchUrl: engine.searchUrlTemplate.replace(
+            "{searchTerms}",
+            encodeURIComponent(request.query)
+          ),
+          fallbackUsed: false
+        };
+      },
       local: async () => ({
         query: "",
         scopePreset: "home" as const,
@@ -428,86 +432,6 @@ const createDesktopApi = (): {
       }),
       cancelLocalStream: async () => ({
         removed: true
-      }),
-      startDeepStream: async () => ({
-        streamId: "deep-stream-1",
-        snapshot: {
-          query: "",
-          budgetPreset: "medium" as const,
-          phase: "bootstrapping" as const,
-          nodes: [],
-          edges: [],
-          web: {
-            status: "loading" as const,
-            engineBuckets: [],
-            blendedCount: 0
-          },
-          local: {
-            status: "loading" as const,
-            scopePreset: "home" as const,
-            roots: [],
-            elapsedMs: 0,
-            stats: {
-              scannedFiles: 0,
-              scannedDirs: 0,
-              contentScannedFiles: 0,
-              matchedFiles: 0,
-              skippedUnreadable: 0,
-              skippedBinaryOrTooLarge: 0,
-              usedIndex: false
-            }
-          },
-          stats: {
-            dedupedResults: 0,
-            derivedQueries: 0,
-            expansionRounds: 0
-          },
-          lastUpdatedAt: new Date().toISOString()
-        }
-      }),
-      readDeepStream: async () => ({
-        streamId: "deep-stream-1",
-        snapshot: {
-          query: "",
-          budgetPreset: "medium" as const,
-          phase: "completed" as const,
-          nodes: [],
-          edges: [],
-          web: {
-            status: "ready" as const,
-            engineBuckets: [],
-            blendedCount: 0
-          },
-          local: {
-            status: "ready" as const,
-            scopePreset: "home" as const,
-            roots: [],
-            elapsedMs: 0,
-            stats: {
-              scannedFiles: 0,
-              scannedDirs: 0,
-              contentScannedFiles: 0,
-              matchedFiles: 0,
-              skippedUnreadable: 0,
-              skippedBinaryOrTooLarge: 0,
-              usedIndex: false
-            }
-          },
-          stats: {
-            dedupedResults: 0,
-            derivedQueries: 0,
-            expansionRounds: 0
-          },
-          lastUpdatedAt: new Date().toISOString()
-        },
-        done: true
-      }),
-      cancelDeepStream: async () => ({
-        removed: true
-      }),
-      expandDeepNode: async () => ({
-        streamId: "deep-stream-1",
-        accepted: true
       })
     },
     workbenchBrowser: {

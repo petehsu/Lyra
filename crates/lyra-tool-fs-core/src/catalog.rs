@@ -828,7 +828,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
     let string = |description: &str| json!({ "type": "string", "description": description });
     let working_dir = json!({
         "type": "string",
-        "description": "Defaults to the current Lyra session workingDir when available."
+        "description": "Defaults to the current Lyra session workingDir when available; shell falls back to the user home directory when the session is unbound."
     });
     let schema = match (domain, operation) {
         ("runtime", "read") => object_schema(

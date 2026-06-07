@@ -10,8 +10,6 @@ export type WorkbenchObservationPageKind =
   | "terminal"
   | "app";
 
-export type WorkbenchObservationSearchMode = "standard" | "deep";
-
 export type WorkbenchObservationDetail = "summary" | "full";
 
 export type WorkbenchObservationErrorCode =
@@ -32,7 +30,6 @@ export type WorkbenchObservationKind =
   | "page"
   | "search-home"
   | "search-results"
-  | "deep-search-results"
   | "file-editor"
   | "file-manager"
   | "image-viewer"
@@ -309,14 +306,12 @@ export type TerminalObservation = {
 export type SearchHomeObservation = {
   readonly kind: "search-home";
   readonly inputValue: string;
-  readonly searchMode: WorkbenchObservationSearchMode;
   readonly hasResults: false;
 };
 
 export type SearchResultsObservation = {
   readonly kind: "search-results";
   readonly query: string;
-  readonly searchMode: "standard";
   readonly webStatus: string;
   readonly localStatus: string;
   readonly blendedResults: readonly {
@@ -332,28 +327,6 @@ export type SearchResultsObservation = {
   readonly truncated: boolean;
 };
 
-export type DeepSearchObservation = {
-  readonly kind: "deep-search-results";
-  readonly query: string;
-  readonly budgetPreset: string;
-  readonly status: string;
-  readonly done: boolean;
-  readonly nodeCount: number;
-  readonly edgeCount: number;
-  readonly nodes: readonly {
-    readonly id: string;
-    readonly kind: string;
-    readonly title: string;
-  }[];
-  readonly edges: readonly {
-    readonly id: string;
-    readonly kind: string;
-    readonly from: string;
-    readonly to: string;
-  }[];
-  readonly truncated: boolean;
-};
-
 export type WorkbenchTabObservation =
   | BrowserTabObservation
   | FileEditorObservation
@@ -361,8 +334,7 @@ export type WorkbenchTabObservation =
   | ImageViewerObservation
   | TerminalObservation
   | SearchHomeObservation
-  | SearchResultsObservation
-  | DeepSearchObservation;
+  | SearchResultsObservation;
 
 export type WorkbenchTabObservationResult = {
   readonly tab: WorkbenchObservedTabDescriptor;

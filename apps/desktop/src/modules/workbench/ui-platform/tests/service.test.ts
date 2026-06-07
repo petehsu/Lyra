@@ -33,7 +33,6 @@ describe("workbench ui platform service", () => {
       "agentSelfDev",
       "agentSessionHistory",
       "browserPage",
-      "deepSearchResults",
       "fileEditor",
       "fileManager",
       "imageViewer",

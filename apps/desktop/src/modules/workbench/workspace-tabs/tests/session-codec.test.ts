@@ -235,6 +235,50 @@ describe("workspace browser session codec", () => {
     });
   });
 
+  test("opens selected web search engines as a split search group", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(config));
+
+    act(() => {
+      result.current.openWebSearchTabs({
+        query: "lyra docs",
+        targets: [
+          {
+            address: "https://www.google.com/search?q=lyra%20docs",
+            engineId: "google",
+            title: "Google"
+          },
+          {
+            address: "https://www.bing.com/search?q=lyra%20docs",
+            engineId: "bing",
+            title: "Bing"
+          },
+          {
+            address: "https://duckduckgo.com/?q=lyra%20docs",
+            engineId: "duckduckgo",
+            title: "DuckDuckGo"
+          }
+        ],
+        selection: {
+          mode: "manual",
+          engineIds: ["google", "bing", "duckduckgo"]
+        }
+      });
+    });
+
+    const searchTabs = result.current.tabs.filter((tab) => tab.searchQuery === "lyra docs");
+    expect(searchTabs).toHaveLength(3);
+    expect(searchTabs.map((tab) => tab.searchEngineId)).toEqual([
+      "google",
+      "bing",
+      "duckduckgo"
+    ]);
+    expect(result.current.splitGroupTabIds).toEqual(searchTabs.map((tab) => tab.id));
+    expect(searchTabs.every((tab) => tab.searchEngineSelectionMode === "manual")).toBe(true);
+    expect(searchTabs.every((tab) =>
+      tab.searchSelectedEngineIds?.join(",") === "google,bing,duckduckgo"
+    )).toBe(true);
+  });
+
   test("migrates legacy browser session snapshots to the schema-versioned model", () => {
     const migrated = sanitizeBrowserSessionSnapshot({
       schemaVersion: 0,

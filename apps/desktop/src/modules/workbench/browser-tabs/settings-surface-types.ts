@@ -2,8 +2,6 @@ import type {
   LinuxCompatConfig,
   LinuxCompatProfile,
   LinuxCompatReadStatusResponse,
-  SearchDeepBudgetPreset,
-  SearchDeepCrawlPolicy,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -81,12 +79,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly searchCategoryLabel: string;
   readonly searchWebEnginesLabel: string;
   readonly searchSearxngEndpointLabel: string;
-  readonly searchDeepBudgetLabel: string;
-  readonly deepSearchRestoreViewportLabel: string;
-  readonly deepSearchLocalOpenBehaviorLabel: string;
-  readonly deepSearchSiteExpansionLabel: string;
-  readonly deepSearchProactiveGuessLabel: string;
-  readonly deepSearchCrawlPolicyLabel: string;
   readonly omniboxNonBrowserSubmitTargetLabel: string;
   readonly systemNotificationModeLabel: string;
   readonly systemNotificationModeOffLabel: string;
@@ -136,12 +128,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly forceWebPageThemingValue: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpointValue: string;
-  readonly searchDeepBudgetValue: SearchDeepBudgetPreset;
-  readonly deepSearchRestoreViewportValue: boolean;
-  readonly deepSearchLocalOpenBehaviorValue: "open_file" | "reveal_in_manager";
-  readonly deepSearchSiteExpansionValue: boolean;
-  readonly deepSearchProactiveGuessValue: boolean;
-  readonly deepSearchCrawlPolicyValue: SearchDeepCrawlPolicy;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly systemNotificationModeValue: SystemNotificationMode;
   readonly systemNotificationClickBehaviorValue: SystemNotificationClickBehavior;
@@ -156,9 +142,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly splitTriggerModeOptions: readonly SettingsOption<WorkbenchSplitTriggerMode>[];
   readonly splitThreePaneLayoutOptions: readonly SettingsOption<WorkbenchSplitThreePaneLayout>[];
   readonly splitOverflowPolicyOptions: readonly SettingsOption<WorkbenchSplitOverflowPolicy>[];
-  readonly searchDeepBudgetOptions: readonly SettingsOption<SearchDeepBudgetPreset>[];
-  readonly deepSearchLocalOpenBehaviorOptions: readonly SettingsOption<"open_file" | "reveal_in_manager">[];
-  readonly deepSearchCrawlPolicyOptions: readonly SettingsOption<SearchDeepCrawlPolicy>[];
   readonly searchWebEngineOptions: readonly SettingsOption<string>[];
   readonly omniboxNonBrowserSubmitTargetOptions: readonly SettingsOption<WorkbenchOmniboxNonBrowserSubmitTarget>[];
   readonly systemNotificationModeOptions: readonly SettingsOption<SystemNotificationMode>[];
@@ -179,12 +162,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onForceWebPageThemingChange: (value: boolean) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
   readonly onSearchSearxngEndpointChange: (value: string) => void;
-  readonly onSearchDeepBudgetChange: (value: SearchDeepBudgetPreset) => void;
-  readonly onDeepSearchRestoreViewportChange: (value: boolean) => void;
-  readonly onDeepSearchLocalOpenBehaviorChange: (value: "open_file" | "reveal_in_manager") => void;
-  readonly onDeepSearchSiteExpansionChange: (value: boolean) => void;
-  readonly onDeepSearchProactiveGuessChange: (value: boolean) => void;
-  readonly onDeepSearchCrawlPolicyChange: (value: SearchDeepCrawlPolicy) => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;
   readonly onSystemNotificationModeChange: (value: SystemNotificationMode) => void;
   readonly onSystemNotificationClickBehaviorChange: (

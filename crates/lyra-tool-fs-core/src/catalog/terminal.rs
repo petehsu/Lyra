@@ -11,7 +11,11 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
         ("close", "Close terminal session", None),
         ("events", "Read terminal events", None),
         ("read_until", "Read terminal until", None),
-        ("run", "Run terminal command", Some("terminal_run")),
+        (
+            "run",
+            "Run persistent terminal command; prefer shell for one-shot commands",
+            Some("terminal_run"),
+        ),
         ("input", "Submit terminal input", Some("terminal_input")),
         ("keys", "Press terminal keys", None),
         ("resize", "Resize terminal", None),

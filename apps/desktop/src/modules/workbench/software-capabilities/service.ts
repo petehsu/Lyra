@@ -39,7 +39,8 @@ import {
 import type { SoftwareStoreLabels } from "../software-store/types";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
-import type { WorkspaceSearchMode } from "../workspace-tabs/types";
+import { resolveWebSearchTarget } from "../browser-search/service";
+import { WORKBENCH_CONFIG } from "../config";
 import type { SoftwareCapabilitiesRegistryModel } from "./types";
 
 type ExternalHandlerRegistration = {
@@ -276,8 +277,7 @@ const createBuiltinSoftware = (
             type: "object",
             required: ["query"],
             properties: {
-              query: { type: "string" },
-              mode: { type: "string", enum: ["standard", "deep"] }
+              query: { type: "string" }
             }
           }
         }),
@@ -852,7 +852,6 @@ export const useSoftwareCapabilitiesRegistry = ({
         tabId: tab.id,
         title: tab.title,
         query: tab.query ?? tab.inputValue,
-        mode: tab.resultMode ?? tab.searchMode ?? "standard",
         active: tab.id === tabsModel.activeTabId
       })),
     downloadAwareness: {
@@ -986,16 +985,29 @@ export const useSoftwareCapabilitiesRegistry = ({
         }
       };
     });
-    handlers.set("browser-search.search", (input) => {
+    handlers.set("browser-search.search", async (input) => {
       const query = requiredString(input, "query");
-      const rawMode = optionalString(input, "mode");
-      const mode: WorkspaceSearchMode = rawMode === "deep" ? "deep" : "standard";
-      const tabId = tabsModel.navigateResolvedInput({
-        kind: "search",
+      const target = await resolveWebSearchTarget({
+        desktopApi,
         query,
-        mode
-      }, { target: "new-tab" });
-      return { opened: true, tabId, query, mode };
+        searchEngines: WORKBENCH_CONFIG.browser.searchEngines
+      });
+      const selection = { mode: "auto" as const, engineIds: [] };
+      const tabId = target === null
+        ? tabsModel.openLocalSearchTab({ query, selection }, { target: "new-tab" })
+        : tabsModel.openWebSearchTabs(
+            {
+              query,
+              targets: [{
+                address: target.searchUrl,
+                engineId: target.engine.id,
+                title: target.engine.label
+              }],
+              selection
+            },
+            { target: "new-tab" }
+          )[0] ?? "";
+      return { opened: true, tabId, query };
     });
     handlers.set("browser-search.readState", () =>
       readSoftwareState({ softwareId: "browser-search" }));

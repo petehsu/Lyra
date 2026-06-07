@@ -4,7 +4,6 @@ import type {
   FileManagerObservation,
   SearchHomeObservation,
   SearchResultsObservation,
-  DeepSearchObservation,
   TerminalObservation,
   ImageViewerObservation,
   WorkbenchObservedTabDescriptor,
@@ -26,7 +25,6 @@ export type RendererTabObservation =
   | FileManagerObservation
   | SearchHomeObservation
   | SearchResultsObservation
-  | DeepSearchObservation
   | ImageViewerObservation
   | TerminalObservation;
 

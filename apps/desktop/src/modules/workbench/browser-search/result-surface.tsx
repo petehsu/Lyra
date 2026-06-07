@@ -4,30 +4,23 @@ import type {
   BrowserSearchPayload,
   SearchEngineDefinition
 } from "./types";
-import { ResultEngineOverview } from "./result-engine-overview";
 import { ResultLocalSection } from "./result-local-section";
 import {
   resolveLocalSearchStatusLabel,
-  resolveSearchResultChannelVisibility,
-  type SearchResultOfficialCategoryLabels,
   type SearchResultsSourceFilter
 } from "./result-surface-model";
 import { resolveLocalSearchErrorLabel } from "./local-search-errors";
-import { ResultWebSection } from "./result-web-section";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { resolveNextSearchEngineSelection } from "./service";
 
 export type BrowserResultSurfaceProps = {
   readonly logoUrl: string;
   readonly inputValue: string;
   readonly placeholder: string;
   readonly searchActionLabel: string;
-  readonly deepSearchToggleLabel: string;
-  readonly deepSearchEnabled: boolean;
-  readonly deepSearchChipLabel: string;
   readonly headingLabel: string;
-  readonly blendLabel: string;
-  readonly engineOverviewLabel: string;
   readonly sourceFilterLabel: string;
+  readonly autoSearchLabel: string;
   readonly officialResultLabel: string;
   readonly officialHomepageLabel: string;
   readonly officialSubsiteLabel: string;
@@ -59,11 +52,19 @@ export type BrowserResultSurfaceProps = {
   readonly sourceFilter: SearchResultsSourceFilter;
   readonly payload: BrowserSearchPayload;
   readonly sharedStartRect?: DOMRect | null;
-  readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
+  readonly searchEngineSelectionMode?: "auto" | "manual";
+  readonly searchSelectedEngineIds?: readonly string[];
+  readonly searchEngines: readonly SearchEngineDefinition[];
   readonly onInputChange: (value: string) => void;
   readonly onSubmit: () => void;
-  readonly onToggleDeepSearch: () => void;
   readonly onSourceFilterChange: (value: SearchResultsSourceFilter) => void;
+  readonly onSearchEngineSelectionChange: (
+    selection: {
+      readonly mode: "auto" | "manual";
+      readonly engineIds: readonly string[];
+    }
+  ) => void;
+  readonly onSwitchToWebSearch: () => void;
   readonly onOpenUrl?: (url: string, title: string) => void;
   readonly onSharedAnimationDone?: () => void;
 };
@@ -73,13 +74,9 @@ export const BrowserResultSurface = ({
   inputValue,
   placeholder,
   searchActionLabel,
-  deepSearchToggleLabel,
-  deepSearchEnabled,
-  deepSearchChipLabel,
   headingLabel,
-  blendLabel,
-  engineOverviewLabel,
   sourceFilterLabel,
+  autoSearchLabel,
   officialResultLabel,
   officialHomepageLabel,
   officialSubsiteLabel,
@@ -111,16 +108,17 @@ export const BrowserResultSurface = ({
   sourceFilter,
   payload,
   sharedStartRect,
-  engineById,
+  searchEngineSelectionMode = "auto",
+  searchSelectedEngineIds = [],
+  searchEngines,
   onInputChange,
   onSubmit,
-  onToggleDeepSearch,
   onSourceFilterChange,
+  onSearchEngineSelectionChange,
+  onSwitchToWebSearch,
   onOpenUrl,
   onSharedAnimationDone
 }: BrowserResultSurfaceProps) => {
-  const { showWebResults, showLocalResults } =
-    resolveSearchResultChannelVisibility(sourceFilter);
   const localStatusLabel = resolveLocalSearchStatusLabel(payload.local.status, {
     idle: channelIdleLabel,
     loading: channelLoadingLabel,
@@ -131,72 +129,74 @@ export const BrowserResultSurface = ({
     streamTimeout: localTimedOutLabel
   });
   const localErrorProps = localErrorLabel === undefined ? {} : { error: localErrorLabel };
-  const officialCategoryLabels: SearchResultOfficialCategoryLabels = {
-    fallback: officialResultLabel,
-    homepage: officialHomepageLabel,
-    subsite: officialSubsiteLabel,
-    docs: officialDocsLabel,
-    login: officialLoginLabel,
-    download: officialDownloadLabel,
-    support: officialSupportLabel
-  };
   const titlebarContribution = useMemo(
     () => ({
       ariaLabel: headingLabel,
       content: (
         <>
-          <span className="lyra-titlebar-context-chip">{payload.query}</span>
-          <div className="lyra-titlebar-context-controls">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={deepSearchEnabled}
-              className={
-                deepSearchEnabled
-                  ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
-                  : "lyra-titlebar-context-text-button"
-              }
-              aria-label={deepSearchToggleLabel}
-              onClick={onToggleDeepSearch}
-            >
-              {deepSearchChipLabel}
-            </button>
-            {([
-              ["all", allTabLabel],
-              ["web", webTabLabel],
-              ["local", localTabLabel]
-            ] as const).map(([value, label]) => (
+            <span className="lyra-titlebar-context-chip">{payload.query}</span>
+            <div className="lyra-titlebar-context-controls">
               <button
-                key={value}
+                type="button"
+                className="lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                aria-label={`${sourceFilterLabel}: ${localTabLabel}`}
+                onClick={() => {
+                  onSourceFilterChange("local");
+                }}
+              >
+                {localTabLabel}
+              </button>
+              <button
                 type="button"
                 className={
-                  sourceFilter === value
+                  searchEngineSelectionMode !== "manual"
                     ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
                     : "lyra-titlebar-context-text-button"
                 }
-                aria-label={`${sourceFilterLabel}: ${label}`}
-                onClick={() => {
-                  onSourceFilterChange(value);
-                }}
+                aria-label={`${sourceFilterLabel}: ${autoSearchLabel}`}
+                onClick={onSwitchToWebSearch}
               >
-                {label}
+                {autoSearchLabel}
               </button>
-            ))}
+              {searchEngines.map((engine) => (
+                <button
+                  key={engine.id}
+                  type="button"
+                  className={
+                    searchEngineSelectionMode === "manual" &&
+                    searchSelectedEngineIds.includes(engine.id)
+                      ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                      : "lyra-titlebar-context-text-button"
+                  }
+                  aria-label={`${sourceFilterLabel}: ${engine.label}`}
+                  onClick={() => {
+                    onSearchEngineSelectionChange(
+                      resolveNextSearchEngineSelection({
+                        currentMode: searchEngineSelectionMode,
+                        currentEngineIds: searchSelectedEngineIds,
+                        clickedEngineId: engine.id
+                      })
+                    );
+                  }}
+                >
+                  {engine.label}
+                </button>
+              ))}
           </div>
         </>
       )
     }),
     [
-      allTabLabel,
-      deepSearchChipLabel,
-      deepSearchEnabled,
-      deepSearchToggleLabel,
       headingLabel,
       localTabLabel,
+      autoSearchLabel,
+      onSearchEngineSelectionChange,
+      onSwitchToWebSearch,
       onSourceFilterChange,
-      onToggleDeepSearch,
       payload.query,
-      sourceFilter,
+      searchEngineSelectionMode,
+      searchEngines,
+      searchSelectedEngineIds,
       sourceFilterLabel,
       webTabLabel
     ]
@@ -205,64 +205,47 @@ export const BrowserResultSurface = ({
 
   void inputValue;
   void logoUrl;
+  void localStatusLabel;
   void onInputChange;
+  void onOpenUrl;
   void onSharedAnimationDone;
   void onSubmit;
   void placeholder;
   void searchActionLabel;
   void sharedStartRect;
+  void sourceFilter;
+  void allTabLabel;
+  void officialResultLabel;
+  void officialHomepageLabel;
+  void officialSubsiteLabel;
+  void officialDocsLabel;
+  void officialLoginLabel;
+  void officialDownloadLabel;
+  void officialSupportLabel;
+  void emptyLabel;
+  void engineErrorLabel;
+  void localPanelTitleLabel;
+  void localScopeLabel;
+  void localScannedFilesLabel;
+  void localScannedDirsLabel;
+  void localContentScansLabel;
+  void localMatchedLabel;
 
   return (
     <section className="lyra-results-shell" aria-label="search-results-surface">
-      <div className="lyra-results-grid">
-        <section className="lyra-results-main">
-          {showWebResults ? (
-            <ResultWebSection
-              payload={payload.web.payload}
-              status={payload.web.status}
-              blendLabel={blendLabel}
-              emptyLabel={emptyLabel}
-              engineById={engineById}
-              officialCategoryLabels={officialCategoryLabels}
-              onOpenUrl={onOpenUrl}
-            />
-          ) : null}
-
-          {showLocalResults ? (
-            <ResultLocalSection
-              payload={payload.local.payload}
-              status={payload.local.status}
-              showWebResults={showWebResults}
-              localTitleLabel={localTitleLabel}
-              localNoMatchesLabel={localNoMatchesLabel}
-              localSearchingMoreLabel={localSearchingMoreLabel}
-              localScoreLabel={localScoreLabel}
-              localLineLabel={localLineLabel}
-              {...localErrorProps}
-            />
-          ) : null}
-        </section>
-
-        <ResultEngineOverview
-          payload={payload}
-          sourceFilter={sourceFilter}
-          localStatusLabel={localStatusLabel}
-          engineOverviewLabel={engineOverviewLabel}
-          sourceFilterLabel={sourceFilterLabel}
-          allTabLabel={allTabLabel}
-          webTabLabel={webTabLabel}
-          localTabLabel={localTabLabel}
-          engineErrorLabel={engineErrorLabel}
-          localPanelTitleLabel={localPanelTitleLabel}
-          localScopeLabel={localScopeLabel}
-          localScannedFilesLabel={localScannedFilesLabel}
-          localScannedDirsLabel={localScannedDirsLabel}
-          localContentScansLabel={localContentScansLabel}
-          localMatchedLabel={localMatchedLabel}
-          {...(localErrorLabel === undefined ? {} : { localErrorLabel })}
-          onSourceFilterChange={onSourceFilterChange}
+      <section className="lyra-results-main lyra-results-main-local">
+        <ResultLocalSection
+          payload={payload.local.payload}
+          status={payload.local.status}
+          showWebResults={false}
+          localTitleLabel={localTitleLabel}
+          localNoMatchesLabel={localNoMatchesLabel}
+          localSearchingMoreLabel={localSearchingMoreLabel}
+          localScoreLabel={localScoreLabel}
+          localLineLabel={localLineLabel}
+          {...localErrorProps}
         />
-      </div>
+      </section>
     </section>
   );
 };

@@ -1,5 +1,4 @@
 import type {
-  DeepSearchObservation,
   FileEditorObservation,
   FileManagerObservation,
   ImageViewerObservation,
@@ -96,7 +95,6 @@ const flattenTerminal = (observation: TerminalObservation): string => {
 const flattenSearchHome = (observation: SearchHomeObservation): string =>
   [
     "Search home",
-    `Mode: ${observation.searchMode}`,
     `Input: ${observation.inputValue}`
   ].join("\n");
 
@@ -129,27 +127,6 @@ const flattenSearchResults = (observation: SearchResultsObservation): string => 
   return lines.join("\n").trim();
 };
 
-const flattenDeepSearch = (observation: DeepSearchObservation): string => {
-  const lines = [
-    `Query: ${observation.query}`,
-    `Budget: ${observation.budgetPreset}`,
-    `Status: ${observation.status}`,
-    `Done: ${observation.done ? "yes" : "no"}`,
-    `Nodes: ${observation.nodeCount}`,
-    `Edges: ${observation.edgeCount}`,
-    "",
-    "Nodes:"
-  ];
-  for (const node of observation.nodes) {
-    lines.push(`- [${node.kind}] ${node.title} (${node.id})`);
-  }
-  lines.push("", "Edges:");
-  for (const edge of observation.edges) {
-    lines.push(`- [${edge.kind}] ${edge.from} -> ${edge.to} (${edge.id})`);
-  }
-  return lines.join("\n");
-};
-
 const flattenObservation = (observation: WorkbenchTabObservation): string => {
   switch (observation.kind) {
     case "file-editor":
@@ -164,8 +141,6 @@ const flattenObservation = (observation: WorkbenchTabObservation): string => {
       return flattenSearchHome(observation);
     case "search-results":
       return flattenSearchResults(observation);
-    case "deep-search-results":
-      return flattenDeepSearch(observation);
     case "page":
       return observation.mainTextExcerpt;
   }

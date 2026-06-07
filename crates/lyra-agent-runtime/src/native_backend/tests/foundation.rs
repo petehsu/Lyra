@@ -495,6 +495,25 @@ fn native_backend_requires_explicit_project_binding_for_workspace_tools() {
                 )
             })
     );
+
+    let shell = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-shell-unbound",
+            "/tools/shell/run_command",
+            json!({ "command": "printf shell-ok" }),
+        ),
+    );
+    assert_eq!(shell["status"].as_str(), Some("completed"));
+    assert_eq!(shell["raw"]["success"].as_bool(), Some(true));
+    assert_eq!(shell["raw"]["stdout"].as_str(), Some("shell-ok"));
+    assert_ne!(
+        shell.pointer("/error/code").and_then(Value::as_str),
+        Some("workspace_unbound")
+    );
 }
 
 #[test]
@@ -4020,6 +4039,7 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
 fn native_shell_code_lsp_and_budget_guards_are_structured() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside tempdir");
     fs::create_dir_all(temp.path().join("src")).expect("create src");
     fs::write(
         temp.path().join("src").join("lib.rs"),
@@ -4033,6 +4053,11 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
+    let project_root = temp.path().canonicalize().expect("canonical project root");
+    let outside_root = outside
+        .path()
+        .canonicalize()
+        .expect("canonical outside root");
     let failed = tool_shell_run(
         &session_id,
         "turn-shell-direct",
@@ -4086,6 +4111,85 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     )
     .expect_err("risk");
     assert_eq!(dangerous.code, "permission_required");
+    let default_bound = tool_shell_run(
+        &session_id,
+        "turn-shell-direct",
+        "tool-shell-default-bound",
+        &json!({ "command": "pwd" }),
+    )
+    .expect("bound shell default cwd");
+    assert_eq!(
+        default_bound.raw["cwd"].as_str(),
+        Some(project_root.to_str().expect("project root utf-8"))
+    );
+    let outside_bound = tool_shell_run(
+        &session_id,
+        "turn-shell-direct",
+        "tool-shell-outside-bound",
+        &json!({ "command": "pwd", "cwd": outside_root.display().to_string() }),
+    )
+    .expect("bound shell can run outside project");
+    assert_eq!(
+        outside_bound.raw["cwd"].as_str(),
+        Some(outside_root.to_str().expect("outside root utf-8"))
+    );
+    let bad_cwd = tool_shell_run(
+        &session_id,
+        "turn-shell-direct",
+        "tool-shell-bad-cwd",
+        &json!({ "command": "pwd", "cwd": outside_root.join("missing").display().to_string() }),
+    )
+    .expect_err("missing cwd fails");
+    assert_eq!(bad_cwd.code, "bad_cwd");
+    let unbound = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Unbound Shell" }))
+        .expect("create unbound session");
+    let unbound_session_id = unbound["id"]
+        .as_str()
+        .expect("unbound session id")
+        .to_string();
+    let home = dirs::home_dir()
+        .expect("home directory")
+        .canonicalize()
+        .expect("canonical home");
+    let default_unbound = tool_shell_run(
+        &unbound_session_id,
+        "turn-shell-direct",
+        "tool-shell-default-unbound",
+        &json!({ "command": "pwd" }),
+    )
+    .expect("unbound shell default cwd");
+    assert_eq!(
+        default_unbound.raw["cwd"].as_str(),
+        Some(home.to_str().expect("home utf-8"))
+    );
+    let outside_unbound = tool_shell_run(
+        &unbound_session_id,
+        "turn-shell-direct",
+        "tool-shell-outside-unbound",
+        &json!({ "command": "pwd", "cwd": outside_root.display().to_string() }),
+    )
+    .expect("unbound shell can use absolute cwd");
+    assert_eq!(
+        outside_unbound.raw["cwd"].as_str(),
+        Some(outside_root.to_str().expect("outside root utf-8"))
+    );
+    let unbound_git_global = tool_shell_run(
+        &unbound_session_id,
+        "turn-shell-direct",
+        "tool-shell-git-global-unbound",
+        &json!({ "command": "git config --global --list >/dev/null 2>&1 || true" }),
+    )
+    .expect("unbound shell can run global git config check");
+    assert_eq!(unbound_git_global.raw["success"].as_bool(), Some(true));
+    let unbound_dangerous = tool_shell_run(
+        &unbound_session_id,
+        "turn-shell-direct",
+        "tool-shell-dangerous-unbound",
+        &json!({ "command": "rm file.txt", "cwd": outside_root.display().to_string() }),
+    )
+    .expect_err("unbound high-risk shell still needs permission");
+    assert_eq!(unbound_dangerous.code, "permission_required");
     let text = tool_code_search_text(&session_id, &json!({ "query": "build_widget" }))
         .expect("text search");
     assert!(text.content.contains("src/lib.rs:2"));
@@ -4509,6 +4613,54 @@ fn permission_request_denies_and_allows_native_file_write() {
         Some("user_prompt")
     );
     assert!(!allowed_shell_path.exists());
+    let unbound_shell_path = temp.path().join("unbound-shell.txt");
+    fs::write(&unbound_shell_path, "keep").expect("write unbound shell file");
+    let unbound = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Unbound Shell Permission" }),
+        )
+        .expect("create unbound shell session");
+    let unbound_session_id = unbound["id"]
+        .as_str()
+        .expect("unbound session id")
+        .to_string();
+    let unbound_turn_id = start_test_runtime_turn(&unbound_session_id);
+    let unbound_shell_session_id = unbound_session_id.clone();
+    let unbound_cwd = temp.path().display().to_string();
+    let unbound_shell_handle = thread::spawn(move || {
+        execute_model_tool(
+            &unbound_shell_session_id,
+            &unbound_turn_id,
+            &None,
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-shell-unbound-denied",
+                "/tools/shell/run_command",
+                json!({
+                    "command": "rm unbound-shell.txt",
+                    "cwd": unbound_cwd
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&unbound_session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": unbound_session_id, "permissionId": permission_id, "allowed": false }),
+        )
+        .expect("deny unbound shell permission");
+    let unbound_shell_output = unbound_shell_handle
+        .join()
+        .expect("join unbound denied shell");
+    assert_eq!(
+        unbound_shell_output
+            .pointer("/error/code")
+            .and_then(Value::as_str),
+        Some("permission_denied")
+    );
+    assert!(unbound_shell_path.exists());
 }
 
 #[test]

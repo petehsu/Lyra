@@ -15,12 +15,10 @@ const createWorkspaceTabsJson = (
   tabs: tabIds.map((id) => ({
     id,
     title: "首页",
-    pageKind: "search",
-    inputValue: "",
-    displayAddress: "lyra://search",
-    searchMode: "standard",
-    resultMode: "standard"
-  })),
+	    pageKind: "search",
+	    inputValue: "",
+	    displayAddress: "lyra://search"
+	  })),
   activeTabId,
   splitGroupTabIds: [],
   focusedSplitTabId: null
@@ -62,11 +60,10 @@ describe("workspace surface performance sync", () => {
           id: "search-results",
           title: "结果",
           pageKind: "results",
-          inputValue: "rust",
-          query: "rust",
-          displayAddress: "lyra://search?q=rust",
-          resultMode: "standard"
-        },
+	          inputValue: "rust",
+	          query: "rust",
+	          displayAddress: "lyra://search?q=rust"
+	        },
         {
           id: "web-page",
           title: "Example",

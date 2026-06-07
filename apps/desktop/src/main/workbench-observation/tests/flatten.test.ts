@@ -34,10 +34,9 @@ describe("createExtractedObservationText", () => {
       cursor: 0,
       maxChars: 10_000,
       observation: {
-        kind: "search-results",
-        query: "gpt-5.4",
-        searchMode: "standard",
-        webStatus: "done",
+	        kind: "search-results",
+	        query: "gpt-5.4",
+	        webStatus: "done",
         localStatus: "done",
         blendedResults: [],
         localResults: [],

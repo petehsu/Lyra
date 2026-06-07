@@ -7,6 +7,7 @@ import type {
   WorkbenchBrowserPageRuntimeState
 } from "../../../../shared/desktop-bridge";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../../workspace-tabs";
+import type { SearchEngineDefinition } from "../../browser-search";
 import {
   parseOpenSearchSuggestionPayload,
   useTitlebarNavigationModel
@@ -14,10 +15,12 @@ import {
 
 const createTabsModel = (): Pick<
   WorkspaceTabsModel,
-  "navigateResolvedInput" | "updateActiveInput"
+  "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
 > => ({
   navigateResolvedInput: vi.fn(() => "browser-tab-1"),
-  updateActiveInput: vi.fn()
+  updateActiveInput: vi.fn(),
+  openWebSearchTabs: vi.fn(() => ["browser-tab-1"]),
+  openLocalSearchTab: vi.fn(() => "browser-tab-1")
 });
 
 const createPageTab = (overrides: Partial<WorkspaceTab> = {}): WorkspaceTab => ({
@@ -77,19 +80,30 @@ const renderModel = ({
   onReload = vi.fn(),
   onHistoryAppReload,
   onHistoryAppSuggestionSelect,
-  onRunTerminalCommand
+  onRunTerminalCommand,
+  searchEngines = [
+    {
+      id: "google",
+      label: "Google",
+      accentColor: "#4285F4",
+      searchUrlTemplate: "https://www.google.com/search?q={searchTerms}"
+    }
+  ],
+  autoSearchEngines = searchEngines
 }: {
   readonly activeTab: WorkspaceTab;
   readonly desktopApi?: LyraDesktopApi | null;
   readonly activePageRuntimeState?: WorkbenchBrowserPageRuntimeState | null;
   readonly tabsModel?: Pick<
     WorkspaceTabsModel,
-    "navigateResolvedInput" | "updateActiveInput"
+    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
   >;
   readonly onReload?: () => void;
   readonly onHistoryAppReload?: () => void;
   readonly onHistoryAppSuggestionSelect?: Parameters<typeof useTitlebarNavigationModel>[0]["onHistoryAppSuggestionSelect"];
   readonly onRunTerminalCommand?: (command: string) => void;
+  readonly searchEngines?: readonly SearchEngineDefinition[];
+  readonly autoSearchEngines?: readonly SearchEngineDefinition[];
 }) => renderHook(() =>
   useTitlebarNavigationModel({
     desktopApi,
@@ -97,6 +111,8 @@ const renderModel = ({
     activePageRuntimeState,
     activeFileEditorState: null,
     activeFileManagerState: null,
+    searchEngines,
+    autoSearchEngines,
     tabsModel,
     omniboxNonBrowserSubmitTarget: "new_tab",
     placeholder: "Search",
@@ -249,8 +265,78 @@ describe("useTitlebarNavigationModel", () => {
     });
 
     expect(onReload).not.toHaveBeenCalled();
-    expect(tabsModel.navigateResolvedInput).toHaveBeenCalledWith(
-      { kind: "search", query: "lyra docs", mode: "standard" },
+    expect(tabsModel.openWebSearchTabs).toHaveBeenCalledWith(
+      {
+        query: "lyra docs",
+        targets: [{
+          address: "https://www.google.com/search?q=lyra%20docs",
+          engineId: "google",
+          title: "Google"
+        }],
+        selection: { mode: "auto", engineIds: [] }
+      },
+      { target: "active-tab" }
+    );
+  });
+
+  test("uses automatic search engines for plain titlebar searches independently of registered buttons", async () => {
+    const tabsModel = createTabsModel();
+    const resolveWebSearchEngine = vi.fn(async (request: {
+      readonly engines: readonly SearchEngineDefinition[];
+    }) => ({
+      engine: request.engines[0]!,
+      searchUrl: "https://www.google.com/search?q=lyra%20docs",
+      fallbackUsed: false
+    }));
+    const { result } = renderModel({
+      activeTab: createPageTab({
+        inputValue: "lyra docs"
+      }),
+      desktopApi: {
+        search: {
+          resolveWebSearchEngine
+        }
+      } as unknown as LyraDesktopApi,
+      tabsModel,
+      searchEngines: [
+        {
+          id: "bing",
+          label: "Bing",
+          accentColor: "#008373",
+          searchUrlTemplate: "https://www.bing.com/search?q={searchTerms}"
+        }
+      ],
+      autoSearchEngines: [
+        {
+          id: "google",
+          label: "Google",
+          accentColor: "#4285F4",
+          searchUrlTemplate: "https://www.google.com/search?q={searchTerms}"
+        }
+      ]
+    });
+
+    await act(async () => {
+      await result.current.onSubmit();
+    });
+
+    expect(resolveWebSearchEngine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engines: [
+          expect.objectContaining({
+            id: "google"
+          })
+        ]
+      })
+    );
+    expect(tabsModel.openWebSearchTabs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targets: [
+          expect.objectContaining({
+            engineId: "google"
+          })
+        ]
+      }),
       { target: "active-tab" }
     );
   });

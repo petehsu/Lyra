@@ -5,7 +5,7 @@ import {
   BrowserSettingsSurface,
   ClassicWorkspaceTabsAdapter
 } from "../browser-tabs";
-import { BrowserResultSurface, DeepSearchResultSurface } from "../browser-search";
+import { BrowserResultSurface } from "../browser-search";
 import { FileEditorSurface } from "../file-editor";
 import { FileManagerSurface } from "../file-manager";
 import { ImageViewerSurface } from "../image-viewer";
@@ -57,7 +57,6 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
     surfaces: {
       searchHome: BrowserSearchSurface,
       searchResults: BrowserResultSurface,
-      deepSearchResults: DeepSearchResultSurface,
       browserPage: BrowserPageSurface,
       settings: BrowserSettingsSurface,
       terminalWorkspace: TerminalWorkspaceSurface,

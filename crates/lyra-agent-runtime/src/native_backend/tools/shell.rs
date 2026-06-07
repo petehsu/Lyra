@@ -65,17 +65,10 @@ pub(crate) fn tool_shell_run(
         )
         .with_detail(json!({ "command": command, "commandKind": command_kind })));
     }
-    let cwd = value_string(input, "cwd")
-        .or_else(|| value_string(input, "workingDir"))
-        .unwrap_or_else(|| ".".to_string());
-    let cwd = resolve_workspace_path(session_id, &cwd, false)?;
-    if !cwd.absolute.is_dir() {
-        return Err(NativeToolFailure::new(
-            "bad_cwd",
-            "cwd must be a workspace directory",
-            "Retry with a directory inside the workspace.",
-        ));
-    }
+    let cwd = resolve_shell_cwd(
+        session_id,
+        value_string(input, "cwd").or_else(|| value_string(input, "workingDir")),
+    )?;
     let timeout_ms = value_u64(
         input,
         "timeoutMs",
@@ -146,7 +139,7 @@ pub(crate) fn tool_shell_run(
         "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
         command,
         value_string(input, "description").unwrap_or_default(),
-        cwd.relative,
+        cwd.display,
         command_kind,
         exit_code,
         timed_out,
@@ -175,7 +168,7 @@ pub(crate) fn tool_shell_run(
         content,
         raw: json!({
             "command": command,
-            "cwd": cwd.relative,
+            "cwd": cwd.display,
             "exitCode": exit_code,
             "success": status.success() && !timed_out,
             "timedOut": timed_out,
@@ -200,6 +193,103 @@ pub(crate) fn tool_shell_run(
         } else {
             Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
         },
+    })
+}
+
+struct ShellCwd {
+    absolute: PathBuf,
+    display: String,
+}
+
+fn resolve_shell_cwd(
+    session_id: &str,
+    raw_cwd: Option<String>,
+) -> Result<ShellCwd, NativeToolFailure> {
+    let candidate = match raw_cwd
+        .as_deref()
+        .map(str::trim)
+        .filter(|cwd| !cwd.is_empty())
+    {
+        Some(cwd) => {
+            if cwd.contains('\0') {
+                return Err(NativeToolFailure::new(
+                    "bad_cwd",
+                    "cwd contains a NUL byte",
+                    "Retry with a valid directory path.",
+                ));
+            }
+            let path = PathBuf::from(cwd);
+            if path.is_absolute() {
+                path
+            } else {
+                shell_base_dir(session_id)?.join(path)
+            }
+        }
+        None => shell_base_dir(session_id)?,
+    };
+    let absolute = candidate.canonicalize().map_err(|error| {
+        NativeToolFailure::new(
+            "bad_cwd",
+            format!("failed to resolve cwd: {error}"),
+            "Retry with an existing directory.",
+        )
+    })?;
+    if !absolute.is_dir() {
+        return Err(NativeToolFailure::new(
+            "bad_cwd",
+            "cwd must be an existing directory",
+            "Retry with an existing directory.",
+        )
+        .with_detail(json!({ "cwd": absolute.display().to_string() })));
+    }
+    Ok(ShellCwd {
+        display: absolute.display().to_string(),
+        absolute,
+    })
+}
+
+fn shell_base_dir(session_id: &str) -> Result<PathBuf, NativeToolFailure> {
+    let session_root = state()
+        .lock()
+        .map_err(|_| {
+            NativeToolFailure::new(
+                "runtime_state_unavailable",
+                "agent runtime state lock failed",
+                "Retry the tool call.",
+            )
+        })?
+        .sessions
+        .get(session_id)
+        .and_then(|session| {
+            let project_bound = session
+                .snapshot
+                .get("projectBound")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let working_dir = session
+                .snapshot
+                .get("workingDir")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            (project_bound && !working_dir.is_empty()).then(|| PathBuf::from(working_dir))
+        });
+    let base = match session_root {
+        Some(root) => root,
+        None => dirs::home_dir().ok_or_else(|| {
+            NativeToolFailure::new(
+                "cwd_unavailable",
+                "failed to resolve user home directory",
+                "Pass an explicit cwd and retry.",
+            )
+        })?,
+    };
+    base.canonicalize().map_err(|error| {
+        NativeToolFailure::new(
+            "bad_cwd",
+            format!("failed to resolve default cwd: {error}"),
+            "Bind the session to an existing project root or pass an existing cwd.",
+        )
     })
 }
 

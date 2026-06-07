@@ -1,8 +1,7 @@
-import type { BrowserSearchPayload, DeepSearchViewState } from "./types";
+import type { BrowserSearchPayload } from "./types";
 
 type SearchTabSnapshot = {
   readonly standard?: BrowserSearchPayload;
-  readonly deep?: DeepSearchViewState;
 };
 
 const snapshotsByTabId = new Map<string, SearchTabSnapshot>();
@@ -29,21 +28,8 @@ export const setStandardSearchSnapshot = (
   }));
 };
 
-export const setDeepSearchSnapshot = (
-  tabId: string,
-  payload: DeepSearchViewState
-): void => {
-  updateSnapshot(tabId, (current) => ({
-    ...current,
-    deep: payload
-  }));
-};
-
 export const getStandardSearchSnapshot = (tabId: string): BrowserSearchPayload | null =>
   snapshotsByTabId.get(tabId)?.standard ?? null;
-
-export const getDeepSearchSnapshot = (tabId: string): DeepSearchViewState | null =>
-  snapshotsByTabId.get(tabId)?.deep ?? null;
 
 export const retainSearchSnapshots = (tabIds: readonly string[]): void => {
   const validIds = new Set(tabIds.map((tabId) => tabId.trim()).filter((tabId) => tabId.length > 0));

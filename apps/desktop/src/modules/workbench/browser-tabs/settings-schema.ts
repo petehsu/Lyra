@@ -31,11 +31,6 @@ export type SettingsFieldId =
   | "linuxCompatRestart"
   | "omniboxNonBrowserSubmitTarget"
   | "searchWebEngines"
-  | "searchDeepBudget"
-  | "deepSearchRestoreViewport"
-  | "deepSearchLocalOpenBehavior"
-  | "deepSearchSiteExpansion"
-  | "deepSearchCrawlPolicy"
   | "searchSearxngEndpoint"
   | "jsRepl"
   | "aiRichRender"
@@ -92,11 +87,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "searchCategoryLabel"
   | "searchWebEnginesLabel"
   | "searchSearxngEndpointLabel"
-  | "searchDeepBudgetLabel"
-  | "deepSearchRestoreViewportLabel"
-  | "deepSearchLocalOpenBehaviorLabel"
-  | "deepSearchSiteExpansionLabel"
-  | "deepSearchCrawlPolicyLabel"
   | "omniboxNonBrowserSubmitTargetLabel"
   | "systemNotificationModeLabel"
   | "systemNotificationClickBehaviorLabel"
@@ -147,11 +137,6 @@ export const createWorkbenchSettingsSchema = (
     createField("linuxCompatRestart", "linux", props.linuxCompatRestartLabel, "action", props.linuxCompatVisible),
     createField("omniboxNonBrowserSubmitTarget", "search", props.omniboxNonBrowserSubmitTargetLabel, "choice"),
     createField("searchWebEngines", "search", props.searchWebEnginesLabel, "multi-choice"),
-    createField("searchDeepBudget", "search", props.searchDeepBudgetLabel, "choice"),
-    createField("deepSearchRestoreViewport", "search", props.deepSearchRestoreViewportLabel, "boolean-choice"),
-    createField("deepSearchLocalOpenBehavior", "search", props.deepSearchLocalOpenBehaviorLabel, "choice"),
-    createField("deepSearchSiteExpansion", "search", props.deepSearchSiteExpansionLabel, "boolean-choice"),
-    createField("deepSearchCrawlPolicy", "search", props.deepSearchCrawlPolicyLabel, "choice"),
     createField("searchSearxngEndpoint", "search", props.searchSearxngEndpointLabel, "text"),
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),

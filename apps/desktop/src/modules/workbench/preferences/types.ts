@@ -2,8 +2,6 @@ import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
-  SearchDeepCrawlPolicy,
-  SearchDeepBudgetPreset,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -39,12 +37,6 @@ export type WorkbenchPreferences = {
   readonly forceWebPageThemingEnabled: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpoint?: string;
-  readonly deepSearchDefaultBudget: SearchDeepBudgetPreset;
-  readonly deepSearchRestoreViewport: boolean;
-  readonly deepSearchLocalOpenBehavior: "open_file" | "reveal_in_manager";
-  readonly deepSearchSiteExpansionEnabled: boolean;
-  readonly deepSearchProactiveDomainGuessingEnabled: boolean;
-  readonly deepSearchCrawlPolicy: SearchDeepCrawlPolicy;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly systemNotificationMode: SystemNotificationMode;
@@ -66,12 +58,6 @@ export type WorkbenchPreferencesModel = {
   readonly setForceWebPageThemingEnabled: (enabled: boolean) => void;
   readonly setSearchWebEngineIds: (value: readonly string[]) => void;
   readonly setSearchSearxngEndpoint: (value?: string) => void;
-  readonly setDeepSearchDefaultBudget: (value: SearchDeepBudgetPreset) => void;
-  readonly setDeepSearchRestoreViewport: (value: boolean) => void;
-  readonly setDeepSearchLocalOpenBehavior: (value: "open_file" | "reveal_in_manager") => void;
-  readonly setDeepSearchSiteExpansionEnabled: (value: boolean) => void;
-  readonly setDeepSearchProactiveDomainGuessingEnabled: (value: boolean) => void;
-  readonly setDeepSearchCrawlPolicy: (value: SearchDeepCrawlPolicy) => void;
   readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;
   readonly setOmniboxNonBrowserSubmitTarget: (
     value: WorkbenchOmniboxNonBrowserSubmitTarget

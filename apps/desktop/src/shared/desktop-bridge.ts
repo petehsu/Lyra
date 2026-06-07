@@ -363,7 +363,6 @@ export type {
 } from "./workbench-browser";
 export type {
   BrowserTabObservation,
-  DeepSearchObservation,
   FileEditorObservation,
   FileManagerObservation,
   ImageViewerObservation,
@@ -483,15 +482,11 @@ export const LYRA_CHANNELS = {
   linuxCompatUpdateConfig: "lyra:linux-compat/update-config",
   linuxCompatRestart: "lyra:linux-compat/restart",
   windowStateChanged: "lyra:shell/window/state-changed",
-  aggregateSearch: "lyra:search/aggregate",
+  resolveWebSearchEngine: "lyra:search/resolve-web-engine",
   localSearch: "lyra:search/local",
   localSearchStreamStart: "lyra:search/local-stream/start",
   localSearchStreamRead: "lyra:search/local-stream/read",
   localSearchStreamCancel: "lyra:search/local-stream/cancel",
-  searchDeepStreamStart: "lyra:search/deep-stream/start",
-  searchDeepStreamRead: "lyra:search/deep-stream/read",
-  searchDeepStreamCancel: "lyra:search/deep-stream/cancel",
-  searchDeepExpand: "lyra:search/deep-stream/expand",
   filesReadHome: "lyra:files/read-home",
   filesReadDirectory: "lyra:files/read-directory",
   filesSubscribeDirectory: "lyra:files/subscribe-directory",
@@ -910,6 +905,26 @@ export type SearchAggregateEngine = {
   readonly label: string;
   readonly accentColor: string;
   readonly endpoint?: string;
+  readonly searchUrlTemplate?: string;
+  readonly probeUrlTemplate?: string;
+  readonly enabledByDefault?: boolean;
+};
+
+export type SearchWebEngineDefinition = SearchAggregateEngine & {
+  readonly searchUrlTemplate: string;
+};
+
+export type SearchResolveWebEngineRequest = {
+  readonly query: string;
+  readonly engines: readonly SearchWebEngineDefinition[];
+  readonly timeoutMs?: number;
+};
+
+export type SearchResolveWebEngineResponse = {
+  readonly engine: SearchWebEngineDefinition;
+  readonly searchUrl: string;
+  readonly fallbackUsed: boolean;
+  readonly latencyMs?: number;
 };
 
 export type SearchOfficialCategory =
@@ -1063,225 +1078,6 @@ export type SearchLocalStreamCancelRequest = {
 
 export type SearchLocalStreamCancelResponse = {
   readonly removed: boolean;
-};
-
-export type SearchDeepBudgetPreset = "low" | "medium" | "high";
-export type SearchDeepCrawlPolicy = "accessibility_only";
-
-export type SearchDeepNodeKind =
-  | "root_query"
-  | "derived_query"
-  | "site_domain"
-  | "site_subdomain"
-  | "web_page"
-  | "local_result";
-
-export type SearchDeepEdgeKind =
-  | "discovered_from"
-  | "expanded_to"
-  | "hosts_subdomain"
-  | "contains_page"
-  | "related_to";
-
-export type SearchDeepEdgeReasonCode =
-  | "web_match"
-  | "local_match"
-  | "query_expansion"
-  | "semantic_overlap"
-  | "domain_guess"
-  | "domain_verify"
-  | "subdomain_guess"
-  | "sitemap_discovery"
-  | "html_link_discovery"
-  | "redirect_canonical";
-
-export type SearchDeepNodeStatus = "loading" | "ready" | "error";
-
-export type SearchDeepQueryNodeMetadata = {
-  readonly query: string;
-};
-
-export type SearchDeepSiteDomainNodeMetadata = {
-  readonly registrableDomain: string;
-  readonly finalUrl: string;
-  readonly verificationScore: number;
-  readonly verifiedFrom: "result" | "guessed" | "redirect";
-  readonly guessSources: readonly string[];
-  readonly isOfficialResult?: boolean;
-};
-
-export type SearchDeepSiteSubdomainNodeMetadata = {
-  readonly hostname: string;
-  readonly registrableDomain: string;
-  readonly finalUrl: string;
-  readonly verificationScore: number;
-  readonly discoveredBy: "result" | "guess" | "sitemap" | "html";
-  readonly isOfficialResult?: boolean;
-};
-
-export type SearchDeepWebPageNodeMetadata = {
-  readonly url: string;
-  readonly canonicalUrl?: string;
-  readonly hostname: string;
-  readonly registrableDomain: string;
-  readonly snippet?: string;
-  readonly contentPreview?: string;
-  readonly fetchDepth: number;
-  readonly discoveredBy: "search" | "sitemap" | "html" | "redirect";
-  readonly sourceEngineIds?: readonly string[];
-  readonly isOfficialResult?: boolean;
-};
-
-export type SearchDeepLocalNodeMetadata = {
-  readonly path: string;
-  readonly displayPath: string;
-  readonly snippet?: string;
-  readonly line?: number;
-  readonly extension?: string;
-  readonly modifiedAt?: number;
-  readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
-};
-
-export type SearchDeepNodeMetadata = {
-  readonly query?: string;
-  readonly registrableDomain?: string;
-  readonly finalUrl?: string;
-  readonly verificationScore?: number;
-  readonly verifiedFrom?: "result" | "guessed" | "redirect";
-  readonly guessSources?: readonly string[];
-  readonly hostname?: string;
-  readonly discoveredBy?: "result" | "guess" | "sitemap" | "html" | "redirect" | "search";
-  readonly url?: string;
-  readonly canonicalUrl?: string;
-  readonly snippet?: string;
-  readonly contentPreview?: string;
-  readonly fetchDepth?: number;
-  readonly sourceEngineIds?: readonly string[];
-  readonly isOfficialResult?: boolean;
-  readonly officialCategory?: SearchOfficialCategory;
-  readonly path?: string;
-  readonly displayPath?: string;
-  readonly line?: number;
-  readonly extension?: string;
-  readonly modifiedAt?: number;
-  readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
-};
-
-export type SearchDeepNode = {
-  readonly id: string;
-  readonly kind: SearchDeepNodeKind;
-  readonly title: string;
-  readonly subtitle?: string;
-  readonly status: SearchDeepNodeStatus;
-  readonly score?: number;
-  readonly sourceKinds?: readonly ("web" | "local")[];
-  readonly metadata?: SearchDeepNodeMetadata;
-};
-
-export type SearchDeepEdge = {
-  readonly id: string;
-  readonly sourceId: string;
-  readonly targetId: string;
-  readonly kind: SearchDeepEdgeKind;
-  readonly reasonCode?: SearchDeepEdgeReasonCode;
-  readonly metadata?: {
-    readonly sharedTokens?: readonly string[];
-    readonly overlapScore?: number;
-    readonly sourceEngineIds?: readonly string[];
-    readonly matchKind?: "content" | "file_name" | "extension" | "path" | "fuzzy";
-    readonly line?: number;
-    readonly seedQuery?: string;
-    readonly derivedToken?: string;
-    readonly guessSources?: readonly string[];
-    readonly registrableDomain?: string;
-    readonly finalUrl?: string;
-    readonly discoveredBy?: "result" | "guess" | "sitemap" | "html" | "redirect" | "search";
-  };
-};
-
-export type SearchDeepRequest = {
-  readonly query: string;
-  readonly budgetPreset: SearchDeepBudgetPreset;
-  readonly context?: SearchLocalContext;
-  readonly engines: readonly SearchAggregateEngine[];
-  readonly enableSiteExpansion?: boolean;
-  readonly enableProactiveDomainGuessing?: boolean;
-  readonly crawlPolicy?: SearchDeepCrawlPolicy;
-};
-
-export type SearchDeepSnapshot = {
-  readonly query: string;
-  readonly budgetPreset: SearchDeepBudgetPreset;
-  readonly phase: "bootstrapping" | "streaming" | "completed" | "error";
-  readonly nodes: readonly SearchDeepNode[];
-  readonly edges: readonly SearchDeepEdge[];
-  readonly web: {
-    readonly status: "idle" | "loading" | "ready" | "error";
-    readonly engineBuckets: readonly SearchAggregateEngineBucket[];
-    readonly blendedCount: number;
-    readonly siteExpansion?: {
-      readonly status: "idle" | "loading" | "ready" | "error";
-      readonly domainCandidates: number;
-      readonly verifiedDomains: number;
-      readonly discoveredSubdomains: number;
-      readonly visitedPages: number;
-      readonly queuedPages: number;
-      readonly droppedPages: number;
-      readonly guessAttempts: number;
-      readonly error?: string;
-    };
-    readonly error?: string;
-  };
-  readonly local: {
-    readonly status: "idle" | "loading" | "ready" | "error";
-    readonly scopePreset: SearchLocalScopePreset;
-    readonly roots: readonly string[];
-    readonly elapsedMs: number;
-    readonly stats: SearchLocalStats;
-    readonly error?: string;
-  };
-  readonly stats: {
-    readonly dedupedResults: number;
-    readonly derivedQueries: number;
-    readonly expansionRounds: number;
-  };
-  readonly lastUpdatedAt: string;
-};
-
-export type SearchDeepStreamStartRequest = SearchDeepRequest;
-
-export type SearchDeepStreamStartResponse = {
-  readonly streamId: string;
-  readonly snapshot: SearchDeepSnapshot;
-};
-
-export type SearchDeepStreamReadRequest = {
-  readonly streamId: string;
-};
-
-export type SearchDeepStreamReadResponse = {
-  readonly streamId: string;
-  readonly snapshot: SearchDeepSnapshot;
-  readonly done: boolean;
-  readonly error?: string;
-};
-
-export type SearchDeepStreamCancelRequest = {
-  readonly streamId: string;
-};
-
-export type SearchDeepStreamCancelResponse = {
-  readonly removed: boolean;
-};
-
-export type SearchDeepExpandRequest = {
-  readonly streamId: string;
-  readonly nodeId: string;
-};
-
-export type SearchDeepExpandResponse = {
-  readonly streamId: string;
-  readonly accepted: boolean;
 };
 
 export type TerminalSessionId = string;
@@ -2363,7 +2159,9 @@ export type SystemNotificationsApi = {
 };
 
 export type SearchApi = {
-  readonly aggregate: (request: SearchAggregateRequest) => Promise<SearchAggregateResponse>;
+  readonly resolveWebSearchEngine: (
+    request: SearchResolveWebEngineRequest
+  ) => Promise<SearchResolveWebEngineResponse>;
   readonly local: (request: SearchLocalRequest) => Promise<SearchLocalResponse>;
   readonly startLocalStream: (
     request: SearchLocalStreamStartRequest
@@ -2374,18 +2172,6 @@ export type SearchApi = {
   readonly cancelLocalStream: (
     request: SearchLocalStreamCancelRequest
   ) => Promise<SearchLocalStreamCancelResponse>;
-  readonly startDeepStream: (
-    request: SearchDeepStreamStartRequest
-  ) => Promise<SearchDeepStreamStartResponse>;
-  readonly readDeepStream: (
-    request: SearchDeepStreamReadRequest
-  ) => Promise<SearchDeepStreamReadResponse>;
-  readonly cancelDeepStream: (
-    request: SearchDeepStreamCancelRequest
-  ) => Promise<SearchDeepStreamCancelResponse>;
-  readonly expandDeepNode: (
-    request: SearchDeepExpandRequest
-  ) => Promise<SearchDeepExpandResponse>;
 };
 
 export type LinuxCompatApi = {

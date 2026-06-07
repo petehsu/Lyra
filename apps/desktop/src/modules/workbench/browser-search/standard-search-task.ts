@@ -1,7 +1,6 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import {
   cancelLocalSearchStream,
-  fetchAggregatedSearchPayload,
   readLocalSearchStream,
   startLocalSearchStream
 } from "./service";
@@ -17,7 +16,6 @@ import type {
 import type { BrowserSearchPayload } from "./types";
 
 type StandardSearchTaskServices = {
-  readonly fetchAggregatedSearchPayload: typeof fetchAggregatedSearchPayload;
   readonly startLocalSearchStream: typeof startLocalSearchStream;
   readonly readLocalSearchStream: typeof readLocalSearchStream;
   readonly cancelLocalSearchStream: typeof cancelLocalSearchStream;
@@ -26,7 +24,6 @@ type StandardSearchTaskServices = {
 };
 
 const defaultServices: StandardSearchTaskServices = {
-  fetchAggregatedSearchPayload,
   startLocalSearchStream,
   readLocalSearchStream,
   cancelLocalSearchStream,
@@ -87,7 +84,7 @@ export const startStandardSearchTask = ({
   let localStreamPollTimer: ReturnType<typeof setTimeout> | null = null;
   let localStreamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   let localStreamCompleted = false;
-  let pendingCount = 2;
+  let pendingCount = 1;
 
   const clearLocalStreamTimer = (): void => {
     if (localStreamPollTimer !== null) {
@@ -167,37 +164,6 @@ export const startStandardSearchTask = ({
       });
     }
   };
-
-  void services.fetchAggregatedSearchPayload({
-    desktopApi,
-    query,
-    searchEngines: searchSettings.searchEngines,
-    resultsPerEngine: searchSettings.resultsPerEngine
-  })
-    .then((payload) => {
-      updateTaskState((current) => ({
-        ...current,
-        web: {
-          status: "ready",
-          payload
-        }
-      }));
-    })
-    .catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "web search failed";
-      updateTaskError(task.error ?? message);
-      updateTaskState((current) => ({
-        ...current,
-        web: {
-          status: "error",
-          payload: current.web.payload,
-          error: message
-        }
-      }));
-    })
-    .finally(() => {
-      completeOne();
-    });
 
   const beginLocalSearch = async (): Promise<void> => {
     try {

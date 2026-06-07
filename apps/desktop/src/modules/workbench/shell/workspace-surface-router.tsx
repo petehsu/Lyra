@@ -45,8 +45,6 @@ export type WorkspaceSurfaceI18nProps = {
   readonly searchPlaceholder: string;
   readonly searchActionLabel: string;
   readonly resultsHeading: string;
-  readonly resultsBlendTitle: string;
-  readonly resultsEngineOverview: string;
   readonly resultsNoResults: string;
   readonly resultsEngineError: string;
   readonly resultsOfficial: string;
@@ -58,6 +56,7 @@ export type WorkspaceSurfaceI18nProps = {
   readonly resultsOfficialSupport: string;
   readonly resultsSourceFilter: string;
   readonly resultsAllTab: string;
+  readonly resultsAutoTab: string;
   readonly resultsWebTab: string;
   readonly resultsLocalTab: string;
   readonly resultsLocalTitle: string;
@@ -78,61 +77,6 @@ export type WorkspaceSurfaceI18nProps = {
   readonly channelLoading: string;
   readonly channelReady: string;
   readonly channelError: string;
-  readonly deepSearchToggle: string;
-  readonly deepSearchChip: string;
-  readonly deepSearchHeading: string;
-  readonly deepSearchStop: string;
-  readonly deepSearchFitView: string;
-  readonly deepSearchResetLayout: string;
-  readonly deepSearchLoading: string;
-  readonly deepSearchEmpty: string;
-  readonly deepSearchOverview: string;
-  readonly deepSearchSelectedNode: string;
-  readonly deepSearchPhase: string;
-  readonly deepSearchBudget: string;
-  readonly deepSearchWebStatus: string;
-  readonly deepSearchLocalStatus: string;
-  readonly deepSearchDeduped: string;
-  readonly deepSearchDerived: string;
-  readonly deepSearchRounds: string;
-  readonly deepSearchOpen: string;
-  readonly deepSearchExpand: string;
-  readonly deepSearchCenter: string;
-  readonly deepSearchNoSelection: string;
-  readonly deepSearchAll: string;
-  readonly deepSearchSnippet: string;
-  readonly deepSearchSource: string;
-  readonly deepSearchConnectedLinks: string;
-  readonly deepSearchEdgeFilters: string;
-  readonly deepSearchDirection: string;
-  readonly deepSearchIncoming: string;
-  readonly deepSearchOutgoing: string;
-  readonly deepSearchBoth: string;
-  readonly deepSearchDiscovered: string;
-  readonly deepSearchExpanded: string;
-  readonly deepSearchRelated: string;
-  readonly deepSearchHostsSubdomain: string;
-  readonly deepSearchContainsPage: string;
-  readonly deepSearchLineage: string;
-  readonly deepSearchAlternateLinks: string;
-  readonly deepSearchRevealInManager: string;
-  readonly deepSearchMatchKind: string;
-  readonly deepSearchLine: string;
-  readonly deepSearchSharedTerms: string;
-  readonly deepSearchDomain: string;
-  readonly deepSearchSubdomain: string;
-  readonly deepSearchPage: string;
-  readonly deepSearchVerified: string;
-  readonly deepSearchGuessed: string;
-  readonly deepSearchDiscoveredBy: string;
-  readonly deepSearchVerificationScore: string;
-  readonly deepSearchGuessedDomains: string;
-  readonly deepSearchVerifiedDomains: string;
-  readonly deepSearchSubdomains: string;
-  readonly deepSearchVisitedPages: string;
-  readonly deepSearchQueuedPages: string;
-  readonly deepSearchDroppedPages: string;
-  readonly deepSearchSiteExpansionStatus: string;
 };
 
 export type WorkspaceSurfaceRouterProps = {
@@ -141,6 +85,8 @@ export type WorkspaceSurfaceRouterProps = {
   readonly tabsModel: WorkspaceTabsModel;
   readonly logoUrl: string;
   readonly browserSearchModel: BrowserSearchModel;
+  readonly searchEngines: readonly SearchEngineDefinition[];
+  readonly autoSearchEngines: readonly SearchEngineDefinition[];
   readonly engineById: ReadonlyMap<string, SearchEngineDefinition>;
   readonly onOpenSearchResult: (url: string, title: string) => void;
   readonly onPageHostChange: (tabId: string, element: HTMLElement | null) => void;
@@ -228,10 +174,6 @@ const renderSurfaceModel = (
     }
     case "searchResults": {
       const Adapter = surfaceAdapters.searchResults;
-      return <Adapter {...model.props} />;
-    }
-    case "deepSearchResults": {
-      const Adapter = surfaceAdapters.deepSearchResults;
       return <Adapter {...model.props} />;
     }
     case "browserPage": {

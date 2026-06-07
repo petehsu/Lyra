@@ -19,8 +19,6 @@ type WorkspaceTabRecord = {
   readonly inputValue: string;
   readonly displayAddress: string;
   readonly query?: string;
-  readonly searchMode?: string;
-  readonly resultMode?: string;
   readonly terminalTabId?: string;
   readonly appId?: string;
   readonly appInstanceId?: string;
@@ -71,9 +69,6 @@ const readStringArray = (value: unknown): readonly string[] =>
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
 
-const normalizeMode = (value: string | undefined): "standard" | "deep" =>
-  value === "deep" ? "deep" : "standard";
-
 const normalizeWorkspaceTab = (value: unknown): WorkspaceTabRecord | null => {
   if (isRecord(value) === false) {
     return null;
@@ -99,8 +94,6 @@ const normalizeWorkspaceTab = (value: unknown): WorkspaceTabRecord | null => {
     inputValue: readString(value, "inputValue") ?? "",
     displayAddress: readString(value, "displayAddress") ?? "",
     ...(query === undefined ? {} : { query }),
-    searchMode: normalizeMode(readString(value, "searchMode")),
-    resultMode: normalizeMode(readString(value, "resultMode")),
     ...(terminalTabId === undefined ? {} : { terminalTabId }),
     ...(appId === undefined ? {} : { appId }),
     ...(appInstanceId === undefined ? {} : { appInstanceId }),
@@ -165,11 +158,11 @@ const workspaceSurfaceCoreKey = (tab: WorkspaceTabRecord): string => {
     case "search": {
       const input = tab.inputValue.trim();
       return input.length === 0
-        ? `workspace:search:${stableAddress(tab)}:${tab.searchMode}`
+        ? `workspace:search:${stableAddress(tab)}`
         : `workspace:search:draft:${tab.id}`;
     }
     case "results": {
-      return `workspace:results:${tab.resultMode}:${tab.query ?? tab.inputValue}`;
+      return `workspace:results:${tab.query ?? tab.inputValue}`;
     }
     case "settings": {
       return "workspace:settings";
@@ -194,8 +187,6 @@ const workspaceSurfaceSignature = (tab: WorkspaceTabRecord): string =>
     tab.pageKind,
     stableAddress(tab),
     tab.query ?? "",
-    tab.searchMode ?? "",
-    tab.resultMode ?? "",
     tab.appId ?? "",
     tab.filePath ?? ""
   ].join("|");
