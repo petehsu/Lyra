@@ -537,6 +537,9 @@ impl SearchCoreService {
 
     fn root_is_ready_for(&self, root: &Path) -> bool {
         self.root_status_for(root).is_some_and(|root| {
+            if root.indexed_file_count == 0 {
+                return false;
+            }
             matches!(
                 root.state,
                 LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
@@ -552,6 +555,9 @@ impl SearchCoreService {
             status.state,
             LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
         ) {
+            return false;
+        }
+        if status.indexed_file_count == 0 {
             return false;
         }
         if request.enable_content.unwrap_or(true)
@@ -1967,6 +1973,44 @@ mod tests {
         assert_eq!(parsed["indexedFiles"], 3);
         assert_eq!(parsed["snapshotBytes"], 0);
         assert!(search_index_ready(Some(&dir.path().to_string_lossy())).unwrap());
+    }
+
+    #[test]
+    fn disk_index_status_does_not_treat_empty_ready_meta_as_usable() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let native_dir = dir.path().join("search-v3/native");
+        fs::create_dir_all(&native_dir).unwrap_or_else(|error| panic!("{error}"));
+        fs::write(
+            native_dir.join("meta.json"),
+            serde_json::json!({
+                "engineVersion": "native-v3",
+                "snapshotVersion": 4,
+                "phase": "ready",
+                "pendingChanges": 0,
+                "roots": [{
+                    "root": dir.path().to_string_lossy(),
+                    "state": "ready",
+                    "indexedFileCount": 0,
+                    "indexedDirCount": 0,
+                    "indexedContentFileCount": 0,
+                    "contentBytesIndexed": 0,
+                    "skipped": {},
+                    "lastIndexedAt": 1234
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+
+        let status = read_search_index_status_json(
+            serde_json::json!({ "storageRoot": dir.path().to_string_lossy() }).to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&status).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(parsed["state"], "idle");
+        assert_eq!(parsed["roots"][0]["state"], "idle");
+        assert!(!search_index_ready(Some(&dir.path().to_string_lossy())).unwrap());
     }
 
     #[test]
