@@ -63,9 +63,9 @@ const COMMON_PROJECT_ENTRY_NAMES: &[&str] = &[
 ];
 
 const TEXT_EXTENSIONS: &[&str] = &[
-    "bash", "c", "cc", "conf", "cpp", "cs", "css", "csv", "go", "h", "hpp", "html", "java",
-    "js", "json", "jsx", "kt", "lock", "log", "md", "mjs", "py", "rb", "rs", "sh", "sql",
-    "swift", "toml", "ts", "tsx", "txt", "xml", "yaml", "yml", "zsh",
+    "bash", "c", "cc", "conf", "cpp", "cs", "css", "csv", "go", "h", "hpp", "html", "java", "js",
+    "json", "jsx", "kt", "lock", "log", "md", "mjs", "py", "rb", "rs", "sh", "sql", "swift",
+    "toml", "ts", "tsx", "txt", "xml", "yaml", "yml", "zsh",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -506,7 +506,9 @@ impl LocalSearchEngine {
                 .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
             state.state = LocalSearchIndexState::Indexing;
             state.phase = "building".to_string();
-            state.roots.insert(root.clone(), indexing_root_status(&root));
+            state
+                .roots
+                .insert(root.clone(), indexing_root_status(&root));
             write_meta(&state)?;
         }
 
@@ -599,15 +601,11 @@ impl LocalSearchEngine {
             delta_records.push(DeltaRecord::DeleteTree {
                 full_path: path.clone(),
             });
-            delta_records.extend(
-                collected
-                    .entries
-                    .iter()
-                    .cloned()
-                    .map(|entry| DeltaRecord::Upsert {
-                        entry: SnapshotEntry::from(entry),
-                    }),
-            );
+            delta_records.extend(collected.entries.iter().cloned().map(|entry| {
+                DeltaRecord::Upsert {
+                    entry: SnapshotEntry::from(entry),
+                }
+            }));
             collected_entries.extend(collected.entries);
         }
 
@@ -623,11 +621,11 @@ impl LocalSearchEngine {
         rebuild_root_status_from_entries(&mut state, &root);
         if let Some(status) = state.roots.get_mut(&root) {
             status.skipped.add(&skipped);
-            status.content_bytes_indexed =
-                status.content_bytes_indexed.saturating_add(content_bytes_indexed);
-            status.indexed_content_file_count = status
-                .indexed_content_file_count
-                .max(content_file_count);
+            status.content_bytes_indexed = status
+                .content_bytes_indexed
+                .saturating_add(content_bytes_indexed);
+            status.indexed_content_file_count =
+                status.indexed_content_file_count.max(content_file_count);
             status.indexed_file_count = status.indexed_file_count.max(file_count);
             status.indexed_dir_count = status.indexed_dir_count.max(dir_count);
             status.last_indexed_at = Some(unix_seconds_now());
@@ -710,15 +708,17 @@ impl LocalSearchEngine {
             .limit
             .saturating_mul(candidate_multiplier(options.query_mode))
             .max(options.limit);
+        let mut metadata_options = options.clone();
+        metadata_options.content_mode = LocalSearchContentMode::Disabled;
         for entry in &entries {
             if cancel_flag.load(Ordering::Relaxed) {
                 break;
             }
-            if !entry_allowed(entry, &options) {
+            if !entry_allowed(entry, &metadata_options) {
                 continue;
             }
             if let Some((score, match_kind, source, snippet, line)) =
-                score_v3_entry(entry, &options)
+                score_v3_entry(entry, &metadata_options)
             {
                 merge_candidate(
                     &mut candidates,
@@ -730,8 +730,37 @@ impl LocalSearchEngine {
                     line,
                     index_state,
                 );
-                if candidates.len() >= max_candidates && options.query_mode == LocalSearchQueryMode::Fast {
+                if candidates.len() >= max_candidates
+                    && options.query_mode == LocalSearchQueryMode::Fast
+                {
                     break;
+                }
+            }
+        }
+
+        if candidates.len() < max_candidates
+            && should_search_content(options.content_mode, options.query_mode)
+        {
+            for entry in &entries {
+                if cancel_flag.load(Ordering::Relaxed) || candidates.len() >= max_candidates {
+                    break;
+                }
+                if candidates.contains_key(&entry.full_path) || !entry_allowed(entry, &options) {
+                    continue;
+                }
+                if let Some((score, match_kind, source, snippet, line)) =
+                    score_v3_entry(entry, &options)
+                {
+                    merge_candidate(
+                        &mut candidates,
+                        entry,
+                        score,
+                        source,
+                        match_kind,
+                        snippet,
+                        line,
+                        index_state,
+                    );
                 }
             }
         }
@@ -1079,7 +1108,10 @@ fn clear_delta(storage: &V3Storage) -> anyhow::Result<()> {
 }
 
 fn should_compact_delta(storage: &V3Storage) -> bool {
-    let delta_bytes = storage.delta_path().and_then(|path| file_len(&path)).unwrap_or(0);
+    let delta_bytes = storage
+        .delta_path()
+        .and_then(|path| file_len(&path))
+        .unwrap_or(0);
     if delta_bytes >= DELTA_COMPACT_BYTES {
         return true;
     }
@@ -1192,8 +1224,13 @@ fn collect_single_entry(
     content_budget_remaining: &mut u64,
     collected: &mut CollectedRoot,
 ) -> anyhow::Result<()> {
-    match indexed_entry_for_path(path, root, options, content_budget_remaining, &mut collected.skipped)
-    {
+    match indexed_entry_for_path(
+        path,
+        root,
+        options,
+        content_budget_remaining,
+        &mut collected.skipped,
+    ) {
         Ok(Some(entry)) => {
             match entry.kind {
                 LocalSearchKind::File => collected.file_count += 1,
@@ -1201,9 +1238,13 @@ fn collect_single_entry(
             }
             if entry.content_indexed {
                 collected.content_file_count += 1;
-                collected.content_bytes_indexed = collected
-                    .content_bytes_indexed
-                    .saturating_add(entry.content_text.as_ref().map(|text| text.len() as u64).unwrap_or(0));
+                collected.content_bytes_indexed = collected.content_bytes_indexed.saturating_add(
+                    entry
+                        .content_text
+                        .as_ref()
+                        .map(|text| text.len() as u64)
+                        .unwrap_or(0),
+                );
             }
             collected.entries.push(entry);
         }
@@ -1306,7 +1347,11 @@ fn extract_indexable_text(
         return Ok((false, None));
     }
     if !extension
-        .map(|extension| TEXT_EXTENSIONS.iter().any(|item| extension.eq_ignore_ascii_case(item)))
+        .map(|extension| {
+            TEXT_EXTENSIONS
+                .iter()
+                .any(|item| extension.eq_ignore_ascii_case(item))
+        })
         .unwrap_or(false)
     {
         return Ok((false, None));
@@ -1320,7 +1365,9 @@ fn extract_indexable_text(
         return Ok((false, None));
     }
     let mut bytes = Vec::new();
-    fs::File::open(path)?.take(max_file_size_bytes.saturating_add(1)).read_to_end(&mut bytes)?;
+    fs::File::open(path)?
+        .take(max_file_size_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
     if !native::is_probably_text(&bytes) {
         skipped.binary_or_too_large = skipped.binary_or_too_large.saturating_add(1);
         return Ok((false, None));
@@ -1336,7 +1383,13 @@ fn extract_indexable_text(
 fn score_v3_entry(
     entry: &IndexedEntry,
     options: &LocalSearchOptions,
-) -> Option<(u32, LocalSearchMatchKind, LocalSearchSource, Option<String>, Option<u64>)> {
+) -> Option<(
+    u32,
+    LocalSearchMatchKind,
+    LocalSearchSource,
+    Option<String>,
+    Option<u64>,
+)> {
     let query = options.query.trim().to_lowercase();
     if query.is_empty() {
         return initial_entry_score(entry).map(|score| {
@@ -1349,6 +1402,21 @@ fn score_v3_entry(
             )
         });
     }
+    let native_score = native::v3_score_entry(native::V3ScoreInput {
+        query: &query,
+        lower_file_name: &entry.lower_file_name,
+        lower_path: &entry.lower_path,
+        extension: entry.extension.as_deref().unwrap_or(""),
+        content_hit: false,
+        is_directory: entry.kind == LocalSearchKind::Directory,
+        vendor: entry.vendor,
+        enable_fuzzy: options.enable_fuzzy,
+        enable_extension_match: options.enable_extension_match,
+    });
+    if native_score.score > 0 {
+        return Some(score_tuple(native_score, None));
+    }
+
     let content_hit = if should_search_content(options.content_mode, options.query_mode)
         && entry.content_indexed
     {
@@ -1358,21 +1426,31 @@ fn score_v3_entry(
             .and_then(|text| snippet_for_text(text, &query))
     } else {
         None
-    };
-    let native_score = native::v3_score_entry(native::V3ScoreInput {
+    }?;
+    let content_score = native::v3_score_entry(native::V3ScoreInput {
         query: &query,
         lower_file_name: &entry.lower_file_name,
         lower_path: &entry.lower_path,
         extension: entry.extension.as_deref().unwrap_or(""),
-        content_hit: content_hit.is_some(),
+        content_hit: true,
         is_directory: entry.kind == LocalSearchKind::Directory,
         vendor: entry.vendor,
-        enable_fuzzy: options.enable_fuzzy,
-        enable_extension_match: options.enable_extension_match,
+        enable_fuzzy: false,
+        enable_extension_match: false,
     });
-    if native_score.score == 0 {
-        return None;
-    }
+    Some(score_tuple(content_score, Some(content_hit)))
+}
+
+fn score_tuple(
+    native_score: native::V3NativeScore,
+    content_hit: Option<TextHit>,
+) -> (
+    u32,
+    LocalSearchMatchKind,
+    LocalSearchSource,
+    Option<String>,
+    Option<u64>,
+) {
     let match_kind = match native_score.match_kind {
         native::V3_MATCH_FILE_NAME => LocalSearchMatchKind::FileName,
         native::V3_MATCH_PATH => LocalSearchMatchKind::Path,
@@ -1393,7 +1471,7 @@ fn score_v3_entry(
     } else {
         (None, None)
     };
-    Some((native_score.score, match_kind, source, snippet, line))
+    (native_score.score, match_kind, source, snippet, line)
 }
 
 fn initial_entry_score(entry: &IndexedEntry) -> Option<u32> {
@@ -1754,8 +1832,13 @@ fn rebuild_root_status_from_entries(state: &mut LocalSearchState, root: &Path) {
         }
         if entry.content_indexed {
             indexed_content_file_count += 1;
-            content_bytes_indexed = content_bytes_indexed
-                .saturating_add(entry.content_text.as_ref().map(|text| text.len() as u64).unwrap_or(0));
+            content_bytes_indexed = content_bytes_indexed.saturating_add(
+                entry
+                    .content_text
+                    .as_ref()
+                    .map(|text| text.len() as u64)
+                    .unwrap_or(0),
+            );
         }
     }
     let mut skipped = state
@@ -2087,7 +2170,10 @@ mod tests {
     #[test]
     fn local_search_v3_indexes_path_and_content() {
         let dir = tempdir().expect("tempdir");
-        write_file(&dir.path().join("src/main.rs"), "fn main() { println!(\"lyra\"); }\n");
+        write_file(
+            &dir.path().join("src/main.rs"),
+            "fn main() { println!(\"lyra\"); }\n",
+        );
         write_file(&dir.path().join("README.md"), "Lyra native search\n");
         let engine = LocalSearchEngine::new();
         engine.index_root(index_options(dir.path()), None).unwrap();
@@ -2103,7 +2189,12 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert!(by_name.results.iter().any(|result| result.display_path == "src/main.rs"));
+        assert!(
+            by_name
+                .results
+                .iter()
+                .any(|result| result.display_path == "src/main.rs")
+        );
 
         let by_content = engine
             .search(
@@ -2116,7 +2207,10 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(by_content.results[0].match_kind, LocalSearchMatchKind::Content);
+        assert_eq!(
+            by_content.results[0].match_kind,
+            LocalSearchMatchKind::Content
+        );
         assert_eq!(by_content.results[0].line, Some(1));
     }
 
@@ -2134,14 +2228,18 @@ mod tests {
         LocalSearchEngine::with_config(config.clone())
             .index_root(index_options(dir.path()), None)
             .unwrap();
-        assert!(storage
-            .path()
-            .join("search-v3/native/snapshot.lyidx")
-            .exists());
-        assert!(!storage
-            .path()
-            .join("search-v3/native/index.v1.sqlite")
-            .exists());
+        assert!(
+            storage
+                .path()
+                .join("search-v3/native/snapshot.lyidx")
+                .exists()
+        );
+        assert!(
+            !storage
+                .path()
+                .join("search-v3/native/index.v1.sqlite")
+                .exists()
+        );
 
         let response = LocalSearchEngine::with_config(config)
             .search(
@@ -2237,8 +2335,11 @@ mod tests {
         let root = dir.path();
         write_file(&root.join("node_modules/pkg/index.js"), "needle\n");
         write_file(&root.join(".hidden.txt"), "needle\n");
-        fs::write(root.join("large.txt"), vec![b'a'; (DEFAULT_TEXT_LIMIT_BYTES + 1) as usize])
-            .unwrap();
+        fs::write(
+            root.join("large.txt"),
+            vec![b'a'; (DEFAULT_TEXT_LIMIT_BYTES + 1) as usize],
+        )
+        .unwrap();
         write_file(&root.join("visible.txt"), "needle\n");
         let engine = LocalSearchEngine::new();
         let status = engine.index_root(index_options(root), None).unwrap();
