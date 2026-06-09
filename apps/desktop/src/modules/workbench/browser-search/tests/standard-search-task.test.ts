@@ -230,6 +230,9 @@ describe("standard search task", () => {
       request: {
         query: "lyra",
         limit: 60,
+        scopePreset: "home",
+        mode: "normal",
+        enableContent: true,
         context: {
           projectRoot: "/Users/test/project"
         }

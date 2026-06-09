@@ -1,0 +1,33 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Desk Lamps Collection
+
+Compare focused lighting options for reading, sketching, and long work sessions.
+
+## Arc Study Lamp
+
+Arc Study Lamp
+
+Warm dimmable light with a steel arm and weighted base.
+
+View details
+
+## Fold Task Lamp
+
+Fold Task Lamp
+
+Compact folding lamp with USB power and three brightness settings.
+
+View details
+
+
+## References
+[1] View details — https://example.test/products/arc-study
+[2] View details — https://example.test/products/fold-task
+
+
+## Images
+- Arc Study Lamp — https://example.test/images/arc-study.jpg
+- Fold Task Lamp — https://example.test/images/fold-task.jpg

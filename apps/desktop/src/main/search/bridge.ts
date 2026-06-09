@@ -11,7 +11,11 @@ import {
   type SearchLocalStreamReadRequest,
   type SearchLocalStreamReadResponse,
   type SearchLocalStreamStartRequest,
-  type SearchLocalStreamStartResponse
+  type SearchLocalStreamStartResponse,
+  type SearchIndexStatusRequest,
+  type SearchIndexStatusResponse,
+  type SearchRebuildIndexRequest,
+  type SearchRebuildIndexResponse
 } from "../../shared/desktop-bridge";
 import type { LyraRuntimeClient } from "../runtime-client";
 import { resolveWebSearchEngine } from "./web-engine-resolver";
@@ -81,6 +85,30 @@ export const createSearchIpcBridge = (options: {
       })
   );
 
+  ipcMain.handle(
+    LYRA_CHANNELS.searchIndexStatus,
+    async (
+      _event,
+      request?: SearchIndexStatusRequest
+    ): Promise<SearchIndexStatusResponse> =>
+      await requestRuntime<SearchIndexStatusResponse>("search.index.status", {
+        storageRoot: options.storageRoot,
+        ...(request ?? {})
+      })
+  );
+
+  ipcMain.handle(
+    LYRA_CHANNELS.searchIndexRebuild,
+    async (
+      _event,
+      request?: SearchRebuildIndexRequest
+    ): Promise<SearchRebuildIndexResponse> =>
+      await requestRuntime<SearchRebuildIndexResponse>("search.index.rebuild", {
+        storageRoot: options.storageRoot,
+        ...(request ?? {})
+      })
+  );
+
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.resolveWebSearchEngine);
@@ -88,6 +116,8 @@ export const createSearchIpcBridge = (options: {
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamStart);
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamRead);
       ipcMain.removeHandler(LYRA_CHANNELS.localSearchStreamCancel);
+      ipcMain.removeHandler(LYRA_CHANNELS.searchIndexStatus);
+      ipcMain.removeHandler(LYRA_CHANNELS.searchIndexRebuild);
     }
   };
 };

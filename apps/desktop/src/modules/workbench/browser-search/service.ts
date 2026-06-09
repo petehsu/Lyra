@@ -1,5 +1,6 @@
 import type {
   LyraDesktopApi,
+  SearchIndexStatusResponse,
   SearchLocalRequest,
   SearchLocalResponse,
   SearchLocalStreamReadResponse,
@@ -25,6 +26,15 @@ const toEmptyAggregatedPayload = (query: string): AggregatedSearchPayload => ({
 
 const DEFAULT_LOCAL_SCOPE_PRESET: LocalSearchScopePreset = "home";
 const DEFAULT_WEB_SEARCH_RESOLVE_TIMEOUT_MS = 1800;
+
+export const isSearchIndexReady = (
+  status: SearchIndexStatusResponse | null | undefined
+): boolean =>
+  status !== null &&
+  status !== undefined &&
+  status.state === "ready" &&
+  status.indexedFiles > 0 &&
+  status.roots.some((root) => root.state === "ready" && root.indexedFiles > 0);
 
 const toEmptyLocalPayload = (
   query: string,
@@ -175,7 +185,8 @@ const normalizeLocalResponse = (response: SearchLocalResponse): LocalSearchPaylo
   results: response.results,
   truncated: response.truncated,
   elapsedMs: response.elapsedMs,
-  stats: response.stats
+  stats: response.stats,
+  indexStatus: response.indexStatus
 });
 
 export const fetchLocalSearchPayload = async (options: {
@@ -227,7 +238,8 @@ const normalizeStreamReadResponse = (
     results: response.results,
     truncated: response.truncated,
     elapsedMs: response.elapsedMs,
-    stats: response.stats
+    stats: response.stats,
+    indexStatus: response.indexStatus
   }),
   done: response.done,
   ...(typeof response.error === "string" ? { error: response.error } : {})

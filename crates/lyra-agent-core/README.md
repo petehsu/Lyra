@@ -67,7 +67,7 @@ npm --prefix apps/desktop run typecheck
 pnpm lint:agent-boundary
 pnpm lint:no-jcode-public-api
 pnpm lint:structure
-pnpm lint:rust-first
+pnpm lint:native-core
 cargo fmt --all --check
 git diff --check
 ```

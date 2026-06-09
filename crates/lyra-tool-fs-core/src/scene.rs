@@ -171,6 +171,7 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
             "workbench_list_tabs",
             "workbench_read_workspace",
             "workbench_read_tab",
+            "workbench_capture_visual_evidence",
         ],
         ToolScene::Design => vec![
             "design_search_styles",

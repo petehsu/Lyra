@@ -10,10 +10,10 @@ use std::thread;
 
 use serde_json::Value;
 
+use crate::emit_command_completion;
 use crate::memory;
 use crate::shell_integration;
 use crate::MEMORY_WORKER_OUTPUT_BATCH_BYTES;
-use crate::emit_command_completion;
 
 #[derive(Clone)]
 pub(crate) struct TerminalMemoryWriter {
@@ -33,7 +33,12 @@ pub(crate) enum TerminalMemoryTask {
 }
 
 impl TerminalMemoryWriter {
-    pub(crate) fn new(storage_root: String, session_id: String, source: String, mode: String) -> Self {
+    pub(crate) fn new(
+        storage_root: String,
+        session_id: String,
+        source: String,
+        mode: String,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             run_terminal_memory_writer(storage_root, session_id, source, mode, receiver);

@@ -175,6 +175,7 @@ fn activity_artifact_refs(output: &Value) -> Value {
         };
         for key in [
             "artifactRef",
+            "rawArtifactRef",
             "diffArtifactRef",
             "projectionRef",
             "dataRef",
@@ -184,6 +185,8 @@ fn activity_artifact_refs(output: &Value) -> Value {
             "stderrArtifactRef",
             "logArtifactRef",
             "pageArtifactRef",
+            "screenshotArtifactRef",
+            "pageshotArtifactRef",
         ] {
             if let Some(value) = source.get(key).filter(|value| value.is_object()) {
                 refs.push(value.clone());
@@ -391,6 +394,7 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("workbench", "list_tabs") => "Listed Workbench tabs",
         ("workbench", "read_workspace") => "Read Workbench workspace",
         ("workbench", "read_tab") => "Read Workbench tab",
+        ("workbench", "capture_visual_evidence") => "Captured workspace visual evidence",
         ("workbench", "activate_tab") => "Activated Workbench tab",
         ("terminal", "list") => "Listed terminals",
         ("terminal", "create") => "Opened terminal",
@@ -776,10 +780,15 @@ pub(crate) fn format_memory_output(action: &str, value: &Value) -> String {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if records.is_empty() {
+    let session_recall_records = value
+        .pointer("/sessionRecall/records")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if records.is_empty() && session_recall_records.is_empty() {
         return "No matching memory records.".to_string();
     }
-    records
+    let mut lines = records
         .iter()
         .take(10)
         .map(|record| {
@@ -810,8 +819,28 @@ pub(crate) fn format_memory_output(action: &str, value: &Value) -> String {
                 .unwrap_or(0.0);
             format!("{fact} [score={score:.3}; matched={matched_by}; decay={decay:.3}]")
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect::<Vec<_>>();
+    lines.extend(session_recall_records.iter().take(10).map(|record| {
+        let content = record
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or("recalled session message");
+        let role = record
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or("message");
+        let session = record
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown-session");
+        let source = record
+            .get("sourceId")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown-source");
+        let score = record.get("score").and_then(Value::as_f64).unwrap_or(0.0);
+        format!("Session recall ({role}; session={session}; source={source}; score={score:.3}): {content}")
+    }));
+    lines.join("\n")
 }
 
 pub(crate) fn format_workbench_output(action: &str, value: &Value) -> String {
@@ -851,6 +880,20 @@ pub(crate) fn format_workbench_output(action: &str, value: &Value) -> String {
             } else {
                 format!("{header}\n{excerpt}")
             }
+        }
+        "capture_visual_evidence" => {
+            let scope = value
+                .get("scope")
+                .and_then(Value::as_str)
+                .unwrap_or("workspace_window");
+            let width = value.get("width").and_then(Value::as_u64).unwrap_or(0);
+            let height = value.get("height").and_then(Value::as_u64).unwrap_or(0);
+            let artifact = value.get("imageArtifact").unwrap_or(&Value::Null);
+            let path = artifact
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or("visual evidence artifact");
+            format!("Captured {scope} visual evidence ({width}x{height})\n{path}")
         }
         _ => serde_json::to_string_pretty(value).unwrap_or_else(|_| String::new()),
     }

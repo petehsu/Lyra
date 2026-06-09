@@ -53,6 +53,7 @@ mod memory;
 mod memory_autonomy;
 mod memory_store;
 mod network;
+mod permission_policy;
 mod permissions;
 mod projections;
 mod provider;
@@ -70,9 +71,9 @@ mod tests;
 
 use self::{
     actions::*, activity::*, clarifications::*, context::*, helpers::*, memory::*,
-    memory_autonomy::*, memory_store::*, network::*, permissions::*, projections::*, provider::*,
-    provider_config::*, rollback::*, sessions::*, state::*, tools::*, turns::*, types::*,
-    workflows::*,
+    memory_autonomy::*, memory_store::*, network::*, permission_policy::*, permissions::*,
+    projections::*, provider::*, provider_config::*, rollback::*, sessions::*, state::*, tools::*,
+    turns::*, types::*, workflows::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
@@ -126,6 +127,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.rollback.preview" => rollback_preview(payload),
             "agent.rollback.restore" => rollback_restore(payload),
             "agent.permission.respond" => respond_permission(payload),
+            "agent.permissionPolicy.read" => read_permission_policy(),
+            "agent.permissionPolicy.setMode" => set_permission_policy_mode(payload),
             "agent.clarification.respond" => respond_clarification(payload),
             "agent.config.read" => read_config(),
             "agent.config.update" => update_config(payload),

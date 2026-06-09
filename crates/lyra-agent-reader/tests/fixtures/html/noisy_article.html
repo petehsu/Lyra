@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Noisy Article With Ads</title>
+  <meta property="og:site_name" content="Fixture Daily">
+</head>
+<body>
+  <header class="site-header">
+    <nav>
+      <a href="/home">Home</a>
+      <a href="/topics">Topics</a>
+      <a href="/subscribe">Subscribe</a>
+    </nav>
+  </header>
+  <aside class="ad">Sponsored module with tracking copy that should be excluded from the readable article.</aside>
+  <main>
+    <article>
+      <h1>Noisy Article With Ads</h1>
+      <p>The page contains real article text surrounded by navigation, advertising, and footer clutter.</p>
+      <p>The cleaner should remove obvious chrome while retaining the central narrative and useful source links.</p>
+      <h2>What Matters</h2>
+      <p>The meaningful section explains how a static HTML reader should prefer paragraphs, lists, and article bodies.</p>
+      <ul>
+        <li>Keep the primary article body.</li>
+        <li>Drop repeated site navigation.</li>
+        <li>Keep relevant inline links such as <a href="/analysis">analysis notes</a>.</li>
+      </ul>
+    </article>
+  </main>
+  <footer>
+    <p>Footer links: <a href="/privacy">Privacy</a> <a href="/ads">Ads</a></p>
+  </footer>
+  <script>window.__ads = true;</script>
+</body>
+</html>

@@ -30,6 +30,7 @@ export type UseBrowserSearchModelArgs = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly tabsModel: WorkspaceTabsModel;
   readonly searchSettings: BrowserSearchSettings;
+  readonly localSearchReady?: boolean;
 };
 
 export type StandardSearchTask = {

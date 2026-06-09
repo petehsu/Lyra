@@ -1,0 +1,16 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: "serde_json::to_string_pretty(&stable_summary(&result)).expect(\"summary json\")"
+---
+{
+  "chunkCount": 1,
+  "extractionMethod": "readability",
+  "fallbackUsed": false,
+  "format": "html",
+  "hasImagesFooter": true,
+  "hasReferencesFooter": true,
+  "imageCount": 2,
+  "linkCount": 2,
+  "title": "Desk Lamps Collection",
+  "warningCodes": []
+}

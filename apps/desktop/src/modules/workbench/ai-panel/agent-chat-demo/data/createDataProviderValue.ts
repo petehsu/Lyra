@@ -5,6 +5,7 @@ import type {
   AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
+  ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
   PermissionRequest,
@@ -25,6 +26,7 @@ export interface CreateDataProviderValueInput {
   decisions?: DecisionQuestion[];
   permissions?: PermissionRequest[];
   modelControls?: ComposerModelControls | null;
+  permissionModeControls?: ComposerPermissionModeControls | null;
   openModelSettings?: () => Promise<void>;
   browserFollowModeEnabled?: boolean;
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
@@ -94,6 +96,7 @@ export function createDataProviderValue({
   decisions = [],
   permissions = [],
   modelControls = null,
+  permissionModeControls = null,
   openModelSettings = () => resolved,
   browserFollowModeEnabled = false,
   setBrowserFollowMode = () => resolved,
@@ -155,6 +158,7 @@ export function createDataProviderValue({
     decisions,
     permissions,
     modelControls,
+    permissionModeControls,
     openModelSettings,
     browserFollowModeEnabled,
     setBrowserFollowMode,

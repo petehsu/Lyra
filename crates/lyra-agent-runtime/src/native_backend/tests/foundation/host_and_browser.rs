@@ -1,0 +1,1356 @@
+use super::*;
+
+#[test]
+fn host_unavailable_failure_has_not_run_reason() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Host Unavailable Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-host-unavailable",
+            "/tools/workbench/list_tabs",
+            json!({}),
+        ),
+    );
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(output["notRunReason"].as_str(), Some("host_unavailable"));
+    assert!(
+        output["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .all(|record| {
+                !matches!(
+                    record.get("phase").and_then(Value::as_str),
+                    Some("permission_checked" | "executing")
+                )
+            })
+    );
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
+}
+
+#[test]
+fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Host Permission Denied Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        panic!("host dispatcher should not be called after permission denial: {method}")
+    });
+    let run_session_id = session_id.clone();
+    let run_dispatcher = dispatcher.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &turn_id,
+            &Some(run_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-host-permission-denied",
+                "/tools/browser/submit",
+                json!({ "elementId": 9, "targetMode": "live" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": false }),
+        )
+        .expect("deny host permission");
+    let output = handle.join().expect("join host permission denied");
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("permissionDenied")
+    );
+    assert_eq!(output["notRunReason"].as_str(), Some("permissionDenied"));
+    assert!(
+        output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
+}
+
+#[test]
+fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_request() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Permission Cancellation Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        panic!("host dispatcher should not be called after permission wait cancellation: {method}")
+    });
+    let run_session_id = session_id.clone();
+    let run_turn_id = turn_id.clone();
+    let run_cancellation = cancellation.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &run_turn_id,
+            &Some(dispatcher),
+            &run_cancellation,
+            tool_fs_run_call(
+                "tool-permission-cancelled",
+                "/tools/browser/submit",
+                json!({ "elementId": 9, "targetMode": "live" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    cancellation.store(true, Ordering::SeqCst);
+    let output = handle.join().expect("join cancelled permission wait");
+    assert_eq!(output["status"].as_str(), Some("cancelled"));
+    assert_eq!(output["notRunReason"].as_str(), Some("cancelled"));
+    assert!(
+        output["trace"]
+            .as_array()
+            .expect("trace")
+            .iter()
+            .any(|record| record.get("phase").and_then(Value::as_str) == Some("cancelled"))
+    );
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_permissions
+            .get(&permission_id)
+            .is_none()
+    );
+}
+
+#[test]
+fn model_tool_execution_bridges_lumen_and_software_tools() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        match method.as_str() {
+            "lyraLumen.see" => {
+                assert_eq!(input["action"], "see");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenSee",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "width": 800,
+                    "height": 600,
+                    "imageBase64": "large-inline-image",
+                    "screenshot": {
+                        "mediaType": "image/png",
+                        "data": "large-inline-image"
+                    },
+                    "imageArtifact": {
+                        "id": "artifact-1",
+                        "path": "/tmp/artifact-1.png",
+                        "width": 800,
+                        "height": 600
+                    }
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.submit" => {
+                assert_eq!(input["action"], "submit");
+                assert_eq!(input["elementId"], 9);
+                assert_eq!(input["targetMode"], "live");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenActionResult",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "elementId": 9,
+                    "submitted": true,
+                    "message": "Submitted element 9 with Chromium virtual keyboard."
+                }))
+                .expect("json"))
+            }
+            "software.inspectCapability" => {
+                assert_eq!(input["softwareId"], "image-viewer");
+                assert_eq!(input["capabilityId"], "image-viewer.readMetadata");
+                Ok(serde_json::to_string(&json!({
+                    "software": {
+                        "id": "image-viewer",
+                        "title": "Image Viewer",
+                        "actions": []
+                    },
+                    "action": {
+                        "id": "image-viewer.readMetadata",
+                        "title": "Read Image Metadata",
+                        "risk": "read",
+                        "inputSchema": { "type": "object" }
+                    },
+                    "handlerRegistered": true,
+                    "readableState": { "available": true }
+                }))
+                .expect("json"))
+            }
+            other => panic!("unexpected method {other}"),
+        }
+    });
+    let see_output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-see",
+            "/tools/browser/see",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+    assert!(
+        see_output["content"]
+            .as_str()
+            .expect("content")
+            .contains("/tmp/artifact-1.png")
+    );
+    assert!(see_output["raw"].get("imageBase64").is_none());
+    assert!(see_output["raw"]["screenshot"].get("data").is_none());
+    let submit_turn_id = start_test_runtime_turn(&session_id);
+    let submit_session_id = session_id.clone();
+    let submit_dispatcher = dispatcher.clone();
+    let submit_handle = thread::spawn(move || {
+        execute_model_tool(
+            &submit_session_id,
+            &submit_turn_id,
+            &Some(submit_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-submit",
+                "/tools/browser/submit",
+                json!({ "elementId": 9, "targetMode": "live" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow submit permission");
+    let submit_output = submit_handle.join().expect("join submit");
+    assert!(
+        submit_output["content"]
+            .as_str()
+            .expect("content")
+            .contains("Submitted element 9")
+    );
+    assert_eq!(
+        submit_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert!(
+        submit_output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "browser"
+                    && change["operation"] == "submit"
+                    && change["reversible"] == false
+            }))
+    );
+    let inspect_turn_id = start_test_runtime_turn(&session_id);
+    let inspect_output = execute_model_tool(
+        &session_id,
+        &inspect_turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-inspect",
+            "/tools/software/inspect_capability",
+            json!({
+                "softwareId": "image-viewer",
+                "capabilityId": "image-viewer.readMetadata"
+            }),
+        ),
+    );
+    assert!(
+        inspect_output["content"]
+            .as_str()
+            .expect("content")
+            .contains("Read Image Metadata")
+    );
+}
+
+#[test]
+fn browser_inline_screenshot_is_materialized_as_artifact_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Inline Browser Screenshot Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.see");
+        assert_eq!(input["action"], "see");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenSee",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "width": 1,
+            "height": 1,
+            "imageBase64": "iVBORw0KGgo=",
+            "screenshot": {
+                "mediaType": "image/png",
+                "data": "iVBORw0KGgo="
+            }
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-inline-see",
+            "/tools/browser/see",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert!(output["raw"].get("imageBase64").is_none());
+    assert!(output["raw"]["screenshot"].get("data").is_none());
+    assert_eq!(
+        output
+            .pointer("/raw/screenshotArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("browser_screenshot")
+    );
+    assert_eq!(
+        output.pointer("/raw/providerImage/path"),
+        output.pointer("/raw/imageArtifact/path")
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|artifact| {
+                artifact["kind"] == "browser_screenshot"
+                    && artifact["mimeType"] == "image/png"
+                    && artifact["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".png"))
+            }))
+    );
+}
+
+#[test]
+fn workbench_capture_visual_evidence_materializes_provider_image() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Workbench Visual Evidence Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "workbench.captureVisualEvidence");
+        assert_eq!(input["action"], "capture_visual_evidence");
+        assert_eq!(input["scope"], "workspace_window");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "workbenchVisualEvidence",
+            "scope": "workspace_window",
+            "capture": {
+                "tabId": "lyra-workspace-window",
+                "mimeType": "image/png",
+                "imageBase64": "iVBORw0KGgo=",
+                "width": 1440,
+                "height": 900,
+                "visibleOnly": true
+            },
+            "mimeType": "image/png",
+            "width": 1440,
+            "height": 900,
+            "visibleOnly": true
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-workbench-visual-evidence",
+            "/tools/workbench/capture_visual_evidence",
+            json!({ "scope": "workspace_window" }),
+        ),
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert!(output.pointer("/raw/capture/imageBase64").is_none());
+    assert_eq!(
+        output.pointer("/raw/imageEvidenceArtifactRef/kind"),
+        Some(&json!("image_evidence"))
+    );
+    assert_eq!(
+        output.pointer("/raw/providerImage/path"),
+        output.pointer("/raw/imageArtifact/path")
+    );
+    assert_eq!(
+        output.pointer("/raw/providerImage/mediaType"),
+        Some(&json!("image/png"))
+    );
+    assert_eq!(
+        output.pointer("/raw/imageArtifact/visibleOnly"),
+        Some(&json!(true))
+    );
+}
+
+#[test]
+fn image_viewer_vision_fallback_materializes_local_image_as_provider_image() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let source_image = temp.path().join("viewer-source.png");
+    fs::write(
+        &source_image,
+        b"\x89PNG\r\n\x1a\nlyra-image-viewer-evidence",
+    )
+    .expect("write source image");
+
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Image Viewer Vision Fallback Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let source_image_text = source_image.display().to_string();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "software.invokeCapability");
+        assert_eq!(input["softwareId"], "image-viewer");
+        assert_eq!(input["capabilityId"], "image-viewer.prepareVisionFallback");
+        Ok(serde_json::to_string(&json!({
+            "softwareId": "image-viewer",
+            "actionId": "image-viewer.prepareVisionFallback",
+            "output": {
+                "available": true,
+                "fallback": "model-vision",
+                "imageArtifact": {
+                    "id": "image-viewer-active",
+                    "kind": "image",
+                    "mediaType": "image/png",
+                    "path": source_image_text,
+                    "width": 320,
+                    "height": 240
+                },
+                "nextRecommendedAction": "attach_image_to_model_vision_input"
+            }
+        }))
+        .expect("json"))
+    });
+    let run_session_id = session_id.clone();
+    let run_turn_id = turn_id.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &run_turn_id,
+            &Some(dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-image-viewer-vision-fallback",
+                "/tools/software/invoke_capability",
+                json!({
+                    "softwareId": "image-viewer",
+                    "capabilityId": "image-viewer.prepareVisionFallback",
+                    "input": {}
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow software invocation permission");
+    let output = handle.join().expect("join software run");
+
+    assert_eq!(output["status"], "completed");
+    assert_eq!(
+        output.pointer("/raw/imageEvidenceArtifactRef/kind"),
+        Some(&json!("image_evidence"))
+    );
+    let provider_path = output
+        .pointer("/raw/providerImage/path")
+        .and_then(Value::as_str)
+        .expect("provider image path");
+    assert_ne!(provider_path, source_image.display().to_string());
+    assert!(provider_path.contains("/artifacts/"));
+    assert_eq!(
+        output.pointer("/raw/providerImage/mediaType"),
+        Some(&json!("image/png"))
+    );
+    assert_eq!(
+        output.pointer("/raw/imageArtifact/path"),
+        output.pointer("/raw/providerImage/path")
+    );
+    assert_eq!(
+        output.pointer("/raw/imageArtifact/source/path"),
+        Some(&json!(source_image.display().to_string()))
+    );
+    assert!(std::path::Path::new(provider_path).exists());
+}
+
+#[test]
+fn browser_large_page_text_is_materialized_as_web_page_artifact_ref() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Large Browser Page Artifact Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let large_text = "Large browser page line.\n".repeat(1_000);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.read");
+        assert_eq!(input["action"], "read");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenRead",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "title": "Large Page",
+            "url": "https://example.test/large",
+            "content": large_text
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-large-browser-read",
+            "/tools/browser/read",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output
+            .pointer("/raw/pageArtifactRef/kind")
+            .and_then(Value::as_str),
+        Some("web_page")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/pageTextTruncated")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert!(
+        output
+            .pointer("/raw/content")
+            .and_then(Value::as_str)
+            .is_some_and(
+                |content| content.contains("pageArtifactRef") && content.chars().count() < 13_000
+            )
+    );
+    assert!(
+        output["artifactRefs"]
+            .as_array()
+            .is_some_and(|refs| refs.iter().any(|artifact| {
+                artifact["kind"] == "web_page"
+                    && artifact["mimeType"] == "text/plain; charset=utf-8"
+                    && artifact["path"]
+                        .as_str()
+                        .is_some_and(|path| path.ends_with(".txt"))
+            }))
+    );
+}
+
+#[test]
+fn browser_tool_fs_task_chain_maps_types_submits_waits_and_reads() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser Chain Tool-FS Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let calls = Arc::new(Mutex::new(Vec::<String>::new()));
+    let calls_for_dispatch = calls.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        calls_for_dispatch
+            .lock()
+            .expect("calls lock")
+            .push(method.clone());
+        match method.as_str() {
+            "lyraLumen.map" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenMap",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "observationId": "obs-1",
+                "title": "Login",
+                "url": "https://example.test/login",
+                "elements": [{
+                    "id": 1,
+                    "role": "textbox",
+                    "label": "Email",
+                    "targetRef": "target-email"
+                }, {
+                    "id": 2,
+                    "role": "button",
+                    "label": "Continue",
+                    "targetRef": "target-continue"
+                }]
+            }))
+            .expect("json")),
+            "lyraLumen.type" => {
+                assert_eq!(input["targetRef"], "target-email");
+                assert_eq!(input["text"], "lyra@example.test");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenActionResult",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-email",
+                    "typed": true,
+                    "message": "typed email"
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.submit" => {
+                assert_eq!(input["targetRef"], "target-continue");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenActionResult",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-continue",
+                    "submitted": true,
+                    "message": "submitted form"
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.wait" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenWait",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "content": "Dashboard loaded"
+            }))
+            .expect("json")),
+            "lyraLumen.read" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenRead",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "title": "Dashboard",
+                "url": "https://example.test/app",
+                "content": "Welcome to the dashboard"
+            }))
+            .expect("json")),
+            other => panic!("unexpected browser host method {other}"),
+        }
+    });
+    let cancellation = Arc::new(AtomicBool::new(false));
+
+    let map = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-map",
+            "/tools/browser/map",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+        ),
+    );
+    assert_eq!(map["status"].as_str(), Some("completed"));
+    assert_eq!(map["toolPath"].as_str(), Some("/tools/browser/map"));
+    assert!(
+        map["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("target-email"))
+    );
+
+    let type_session_id = session_id.clone();
+    let type_turn_id = turn_id.clone();
+    let type_dispatcher = dispatcher.clone();
+    let type_cancellation = cancellation.clone();
+    let type_handle = thread::spawn(move || {
+        execute_model_tool(
+            &type_session_id,
+            &type_turn_id,
+            &Some(type_dispatcher),
+            &type_cancellation,
+            tool_fs_run_call(
+                "tool-browser-chain-type",
+                "/tools/browser/type",
+                json!({
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-email",
+                    "text": "lyra@example.test"
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow type permission");
+    let typed = type_handle.join().expect("join type");
+    assert_eq!(typed["status"].as_str(), Some("completed"));
+    assert!(typed["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["kind"] == "browser" && change["operation"] == "type")
+    }));
+
+    let submit_session_id = session_id.clone();
+    let submit_turn_id = turn_id.clone();
+    let submit_dispatcher = dispatcher.clone();
+    let submit_cancellation = cancellation.clone();
+    let submit_handle = thread::spawn(move || {
+        execute_model_tool(
+            &submit_session_id,
+            &submit_turn_id,
+            &Some(submit_dispatcher),
+            &submit_cancellation,
+            tool_fs_run_call(
+                "tool-browser-chain-submit",
+                "/tools/browser/submit",
+                json!({
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "targetRef": "target-continue"
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow submit permission");
+    let submitted = submit_handle.join().expect("join submit");
+    assert_eq!(submitted["status"].as_str(), Some("completed"));
+    assert!(submitted["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["kind"] == "browser" && change["operation"] == "submit")
+    }));
+
+    let waited = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-wait",
+            "/tools/browser/wait",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live", "timeoutMs": 1000 }),
+        ),
+    );
+    assert_eq!(waited["status"].as_str(), Some("completed"));
+    assert!(
+        waited["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("Dashboard loaded"))
+    );
+
+    let read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &cancellation,
+        tool_fs_run_call(
+            "tool-browser-chain-read",
+            "/tools/browser/read",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+        ),
+    );
+    assert_eq!(read["status"].as_str(), Some("completed"));
+    assert!(
+        read["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("Welcome to the dashboard"))
+    );
+    assert_eq!(
+        calls.lock().expect("calls lock").as_slice(),
+        [
+            "lyraLumen.map",
+            "lyraLumen.type",
+            "lyraLumen.submit",
+            "lyraLumen.wait",
+            "lyraLumen.read"
+        ]
+    );
+}
+
+#[test]
+fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Dynamic Software Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let captured_invocation = Arc::new(Mutex::new(None::<Value>));
+    let captured_for_dispatch = captured_invocation.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        match method.as_str() {
+            "software.listCapabilities" => {
+                assert_eq!(input["includeSchemas"], true);
+                Ok(serde_json::to_string(&json!({
+                    "software": [{
+                        "id": "image-viewer",
+                        "title": "Image Viewer",
+                        "description": "Inspect local image files.",
+                        "source": "builtin",
+                        "actions": [{
+                            "id": "image-viewer.readMetadata",
+                            "title": "Read Image Metadata",
+                            "description": "Read metadata for one image file.",
+                            "risk": "read",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "path": { "type": "string" }
+                                },
+                                "required": ["path"]
+                            }
+                        }, {
+                            "id": "image-viewer.applyFilter",
+                            "title": "Apply Image Filter",
+                            "description": "Apply a filter to the active image.",
+                            "risk": "write",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "path": { "type": "string" },
+                                    "filter": { "type": "string" }
+                                },
+                                "required": ["path", "filter"]
+                            }
+                        }]
+                    }]
+                }))
+                .expect("json"))
+            }
+            "software.invokeCapability" => {
+                *captured_for_dispatch
+                    .lock()
+                    .expect("captured invocation lock") = Some(input.clone());
+                if input["actionId"] == "image-viewer.applyFilter" {
+                    Ok(serde_json::to_string(&json!({
+                        "softwareId": "image-viewer",
+                        "actionId": "image-viewer.applyFilter",
+                        "ok": true,
+                        "output": {
+                            "applied": true,
+                            "filter": input["input"]["filter"].clone()
+                        }
+                    }))
+                    .expect("json"))
+                } else {
+                    Ok(serde_json::to_string(&json!({
+                        "softwareId": "image-viewer",
+                        "actionId": "image-viewer.readMetadata",
+                        "output": {
+                            "width": 640,
+                            "height": 480
+                        }
+                    }))
+                    .expect("json"))
+                }
+            }
+            other => panic!("unexpected method {other}"),
+        }
+    });
+    let dynamic_path = "/tools/software/capability/image-viewer/image-viewer.readMetadata";
+    let mutation_path = "/tools/software/capability/image-viewer/image-viewer.applyFilter";
+    let list_output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-list".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({
+                "path": "/tools/software/capability"
+            }),
+        },
+    );
+    assert!(
+        list_output
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools
+                .iter()
+                .any(|tool| tool.get("path").and_then(Value::as_str) == Some(dynamic_path)))
+    );
+    let inspect_output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher.clone()),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-inspect".to_string(),
+            name: "tool_fs_inspect".to_string(),
+            arguments: json!({
+                "path": dynamic_path
+            }),
+        },
+    );
+    assert_eq!(
+        inspect_output.pointer("/raw/title").and_then(Value::as_str),
+        Some("Read Image Metadata")
+    );
+    assert_eq!(
+        inspect_output
+            .pointer("/raw/inputSchema/$id")
+            .and_then(Value::as_str),
+        Some(
+            "lyra-tool-fs://schema/tools/software/capability/image-viewer/image-viewer.readMetadata/input"
+        )
+    );
+    let run_session_id = session_id.clone();
+    let run_turn_id = turn_id.clone();
+    let run_dispatcher = dispatcher.clone();
+    let run_handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &run_turn_id,
+            &Some(run_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-software-run",
+                dynamic_path,
+                json!({ "path": "photo.png" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow software invocation permission");
+    let run_output = run_handle.join().expect("join software run");
+    assert_eq!(run_output["status"], "completed");
+    assert_eq!(run_output["toolPath"], dynamic_path);
+    assert_eq!(run_output["manifestTitle"], "Read Image Metadata");
+    assert!(
+        run_output["changes"]
+            .as_array()
+            .is_none_or(|changes| changes.is_empty())
+    );
+    let invocation = captured_invocation
+        .lock()
+        .expect("captured invocation lock")
+        .clone()
+        .expect("captured invocation");
+    assert_eq!(invocation["softwareId"], "image-viewer");
+    assert_eq!(invocation["actionId"], "image-viewer.readMetadata");
+    assert_eq!(invocation["input"]["path"], "photo.png");
+    assert!(invocation["input"].get("toolPath").is_none());
+
+    let mutation_session_id = session_id.clone();
+    let mutation_turn_id = start_test_runtime_turn(&session_id);
+    let mutation_dispatcher = dispatcher.clone();
+    let mutation_handle = thread::spawn(move || {
+        execute_model_tool(
+            &mutation_session_id,
+            &mutation_turn_id,
+            &Some(mutation_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-software-mutation",
+                mutation_path,
+                json!({ "path": "photo.png", "filter": "sharpen" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow software mutation permission");
+    let mutation_output = mutation_handle.join().expect("join software mutation");
+    assert_eq!(mutation_output["status"], "completed");
+    assert_eq!(mutation_output["toolPath"], mutation_path);
+    assert_eq!(
+        mutation_output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("user_prompt")
+    );
+    assert!(
+        mutation_output["changes"]
+            .as_array()
+            .is_some_and(|changes| changes.iter().any(|change| {
+                change["kind"] == "external"
+                    && change["operation"] == "invoke_capability"
+                    && change["path"] == mutation_path
+                    && change["reversible"] == false
+            }))
+    );
+}
+
+#[test]
+fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Dynamic Software Provider Diagnostics Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/software/capability" }),
+        },
+    );
+    assert_eq!(no_host["status"].as_str(), Some("completed"));
+    assert_eq!(no_host["raw"]["path"], "/tools/software/capability");
+    assert_eq!(no_host["raw"]["tools"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+
+    let failing_dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, _payload| {
+        assert_eq!(method, "software.listCapabilities");
+        Err("software registry offline".to_string())
+    });
+    let provider_failed = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(failing_dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-software-provider-failed".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/software/capability" }),
+        },
+    );
+    assert_eq!(provider_failed["status"].as_str(), Some("completed"));
+    assert_eq!(
+        provider_failed
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("dynamic_provider_failed")
+    );
+    assert!(
+        provider_failed
+            .pointer("/raw/diagnostics/0/message")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("software registry offline"))
+    );
+
+    let browser_no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-browser-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/browser" }),
+        },
+    );
+    assert_eq!(browser_no_host["status"].as_str(), Some("completed"));
+    assert!(
+        browser_no_host
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    );
+    assert_eq!(
+        browser_no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(
+        browser_no_host
+            .pointer("/raw/diagnostics/0/domain")
+            .and_then(Value::as_str),
+        Some("browser")
+    );
+
+    let workbench_no_host = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-workbench-no-host".to_string(),
+            name: "tool_fs_list".to_string(),
+            arguments: json!({ "path": "/tools/workbench" }),
+        },
+    );
+    assert_eq!(workbench_no_host["status"].as_str(), Some("completed"));
+    assert!(
+        workbench_no_host
+            .pointer("/raw/tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    );
+    assert_eq!(
+        workbench_no_host
+            .pointer("/raw/diagnostics/0/code")
+            .and_then(Value::as_str),
+        Some("host_unavailable")
+    );
+    assert_eq!(
+        workbench_no_host
+            .pointer("/raw/diagnostics/0/domain")
+            .and_then(Value::as_str),
+        Some("workbench")
+    );
+}
+
+#[test]
+fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally() {
+    let service = ToolActivityService::default();
+    assert_eq!(
+        service.model_tool_names(),
+        vec![
+            "tool_fs_search".to_string(),
+            "tool_fs_list".to_string(),
+            "tool_fs_read_doc".to_string(),
+            "tool_fs_inspect".to_string(),
+            "tool_fs_run".to_string()
+        ]
+    );
+    let names = service
+        .model_tool_descriptors()
+        .into_iter()
+        .map(|descriptor| descriptor.name)
+        .collect::<Vec<_>>();
+    let provider_tool_names = expected_provider_tool_names();
+    for required in [
+        "file_read",
+        "file_list",
+        "file_glob",
+        "file_write",
+        "file_edit",
+        "file_multiedit",
+        "apply_patch",
+        "shell_run",
+        "terminal_list",
+        "terminal_create",
+        "terminal_read",
+        "terminal_screen",
+        "terminal_wait",
+        "terminal_write",
+        "terminal_close",
+        "project_search",
+        "code_search_text",
+        "code_search_symbol",
+        "code_graph_expand",
+        "lsp_query",
+        "web_search",
+        "web_fetch",
+        "render_surface",
+        "todo_read",
+        "todo_write",
+    ] {
+        assert!(names.contains(&required.to_string()), "{required} exposed");
+        assert!(
+            service.can_dispatch_model_tool(required),
+            "{required} dispatchable"
+        );
+        assert!(
+            !provider_tool_names.iter().any(|name| name == required),
+            "{required} must stay out of provider-visible schema"
+        );
+    }
+    let registry = tool_fs::runtime_registry();
+    let root_summary = registry.root_summary();
+    let registry_domains = root_summary["domains"]
+        .as_array()
+        .expect("registry domains")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    for domain in [
+        "filesystem",
+        "code",
+        "shell",
+        "terminal",
+        "git",
+        "workbench",
+        "browser",
+        "software",
+        "web",
+        "render",
+        "todo",
+        "memory",
+        "design",
+        "skills",
+        "mcp",
+    ] {
+        assert!(
+            registry_domains.contains(&domain),
+            "/tools must expose {domain} as a public discovery domain"
+        );
+    }
+    for manifest in registry.manifests() {
+        assert!(
+            manifest.path.starts_with("/tools/"),
+            "{} path must stay under /tools",
+            manifest.path
+        );
+        assert!(
+            !manifest.title.trim().is_empty(),
+            "{} title must be present",
+            manifest.path
+        );
+        assert!(
+            !manifest.summary.trim().is_empty(),
+            "{} summary must be present",
+            manifest.path
+        );
+        assert_eq!(
+            manifest.input_schema.get("type").and_then(Value::as_str),
+            Some("object"),
+            "{} input schema must be an object",
+            manifest.path
+        );
+        assert_eq!(
+            manifest.input_schema.get("$id").and_then(Value::as_str),
+            Some(lyra_tool_fs_core::schema_id_for_path(&manifest.path).as_str()),
+            "{} input schema must expose stable Tool-FS schema id",
+            manifest.path
+        );
+        assert!(
+            tool_fs::runtime_target_for_manifest(manifest).is_some(),
+            "Tool-FS manifest lacks runtime target: {}",
+            manifest.path
+        );
+        assert!(
+            !manifest.permission_policy.trim().is_empty(),
+            "{} permission policy must be explicit",
+            manifest.path
+        );
+        assert!(
+            !manifest.risk_level.trim().is_empty(),
+            "{} risk level must be explicit",
+            manifest.path
+        );
+        assert!(
+            !manifest.activity_kind.trim().is_empty() && !manifest.renderer_hint.trim().is_empty(),
+            "{} activity projection hints must be explicit",
+            manifest.path
+        );
+    }
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Unknown Tool Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "tool-missing".to_string(),
+            name: "missing_tool".to_string(),
+            arguments: json!({}),
+        },
+    );
+    assert_eq!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
+    assert_eq!(output["truncated"], false);
+}

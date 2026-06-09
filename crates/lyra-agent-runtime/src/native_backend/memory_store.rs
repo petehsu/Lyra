@@ -19,7 +19,9 @@ const SYSTEM_RECALL_ITEM_CHAR_BUDGET: usize = 720;
 const SYSTEM_RECALL_DEADLINE_MS: u64 = 200;
 static QUERY_EMBEDDING_CACHE: OnceLock<Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
 
+mod embedding_tail;
 mod internal;
+use embedding_tail::*;
 use internal::*;
 pub(crate) use internal::{memory_candidate_json, proactive_event_json};
 
@@ -498,6 +500,105 @@ pub(crate) fn index_session_messages_for_recall(
         indexed += 1;
     }
     Ok(json!({ "sessionId": session_id, "indexed": indexed }))
+}
+
+pub(crate) fn index_reader_result_for_recall(
+    root: &Path,
+    session_id: &str,
+    turn_id: &str,
+    reader: &lyra_agent_reader::ReaderResult,
+) -> AgentRuntimeResult<Value> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    let source_url = reader
+        .final_url
+        .as_deref()
+        .or(reader.frontmatter.source_url.as_deref())
+        .or(reader.frontmatter.url.as_deref())
+        .unwrap_or("reader://unknown");
+    let source_id = reader
+        .cache_key
+        .clone()
+        .unwrap_or_else(|| stable_hash(source_url));
+    delete_recall_by_source(&conn, "agent_reader", &source_id)?;
+    let timestamp = now();
+    let title = reader
+        .metadata
+        .title
+        .as_deref()
+        .or(reader.frontmatter.title.as_deref())
+        .unwrap_or(source_url);
+    let mut indexed = 0_usize;
+    if reader.chunks.is_empty() {
+        let text = nonempty_text(&reader.raw_markdown, &reader.compact_text);
+        if !text.is_empty() {
+            let item = SystemRecallItem {
+                id: format!(
+                    "recall-reader-{}",
+                    stable_hash(&format!("{source_id}:body"))
+                ),
+                source_kind: "agent_reader".to_string(),
+                source_id: source_id.clone(),
+                session_id: Some(session_id.to_string()),
+                turn_id: Some(turn_id.to_string()),
+                role: Some("tool".to_string()),
+                text: text.clone(),
+                summary: Some(title.to_string()),
+                content_hash: stable_hash(&normalized_recall_text(&text)),
+                source_path: Some(source_url.to_string()),
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+            };
+            upsert_recall_item(&conn, &item)?;
+            indexed += 1;
+        }
+    } else {
+        for chunk in &reader.chunks {
+            let text = nonempty_text(&chunk.markdown, &chunk.plain_text);
+            if text.is_empty() {
+                continue;
+            }
+            let heading = if chunk.heading_path.is_empty() {
+                title.to_string()
+            } else {
+                format!("{} / {}", title, chunk.heading_path.join(" / "))
+            };
+            let item = SystemRecallItem {
+                id: format!(
+                    "recall-reader-{}",
+                    stable_hash(&format!("{source_id}:{}", chunk.id))
+                ),
+                source_kind: "agent_reader".to_string(),
+                source_id: source_id.clone(),
+                session_id: Some(session_id.to_string()),
+                turn_id: Some(turn_id.to_string()),
+                role: Some("tool".to_string()),
+                text: text.clone(),
+                summary: Some(heading),
+                content_hash: stable_hash(&normalized_recall_text(&text)),
+                source_path: Some(source_url.to_string()),
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+            };
+            upsert_recall_item(&conn, &item)?;
+            indexed += 1;
+        }
+    }
+    Ok(json!({
+        "sourceKind": "agent_reader",
+        "sourceId": source_id,
+        "sourceUrl": source_url,
+        "indexed": indexed,
+    }))
+}
+
+fn nonempty_text(primary: &str, fallback: &str) -> String {
+    let primary = primary.trim();
+    if primary.is_empty() {
+        fallback.trim().to_string()
+    } else {
+        primary.to_string()
+    }
 }
 
 pub(crate) fn rebuild_system_recall_index(

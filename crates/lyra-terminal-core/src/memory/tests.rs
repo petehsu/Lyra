@@ -1,13 +1,12 @@
 use super::{
     list_artifacts, mark_output_policy, metadata_for_session, read_commands, read_events,
-    read_output_projection, read_output_range, read_stored_sessions, read_timeline,
-    record_close, record_exit, record_handoff_completed, record_handoff_started, record_output,
-    record_permission_granted, record_permission_requested, record_process_started,
-    record_resize, record_session_created, record_shell_integration_event, record_write,
-    replay_screen_snapshot, ArtifactsListInput, CloseInput, CommandsReadInput, EventsReadInput,
-    HandoffEventInput, MemoryContext, OutputPolicyMarkerInput, OutputRangeReadInput,
-    PermissionEventInput, ProcessStartedInput, ResizeInput, SessionCreatedInput,
-    TimelineReadInput, WriteInput,
+    read_output_projection, read_output_range, read_stored_sessions, read_timeline, record_close,
+    record_exit, record_handoff_completed, record_handoff_started, record_output,
+    record_permission_granted, record_permission_requested, record_process_started, record_resize,
+    record_session_created, record_shell_integration_event, record_write, replay_screen_snapshot,
+    ArtifactsListInput, CloseInput, CommandsReadInput, EventsReadInput, HandoffEventInput,
+    MemoryContext, OutputPolicyMarkerInput, OutputRangeReadInput, PermissionEventInput,
+    ProcessStartedInput, ResizeInput, SessionCreatedInput, TimelineReadInput, WriteInput,
 };
 use crate::shell_integration::{ShellIntegrationEvent, ShellIntegrationEventKind};
 use serde_json::{json, Value};
@@ -60,14 +59,12 @@ fn terminal_memory_records_output_indexes_and_timeline() {
         session_id: session_id.clone(),
     };
     record_output(&context, b"hello\r\n").expect("record output");
-    record_output(&context, "\x1b[31mred\x1b[0m\nError: boom".as_bytes())
-        .expect("record output");
+    record_output(&context, "\x1b[31mred\x1b[0m\nError: boom".as_bytes()).expect("record output");
     record_exit(&context, 1).expect("record exit");
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     assert_eq!(
         fs::read_to_string(memory["rawOutputPath"].as_str().expect("raw path"))
             .expect("raw output"),
@@ -175,10 +172,9 @@ fn terminal_memory_records_agent_command_correlation() {
     })
     .expect("record close");
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let events = jsonl(memory["eventLogPath"].as_str().expect("event path"));
     assert_eq!(events[1]["kind"], "input_text");
     assert_eq!(events[1]["actor"]["kind"], "agent");
@@ -626,10 +622,9 @@ fn command_completion_writes_command_artifact_files_without_breaking_session_out
     assert_eq!(summary["firstOutputPreview"], "one");
     assert_eq!(summary["eventCount"], command_events.len() as u64);
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     assert!(memory["commandArtifactsRootPath"]
         .as_str()
         .expect("command artifact root")
@@ -676,10 +671,9 @@ fn empty_shell_command_start_does_not_create_command_or_artifact() {
     .expect("record empty command");
     assert!(completion.is_none());
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let commands = jsonl(memory["commandsPath"].as_str().expect("commands path"));
     assert!(commands.is_empty());
     let command_root = memory["commandArtifactsRootPath"]
@@ -691,8 +685,7 @@ fn empty_shell_command_start_does_not_create_command_or_artifact() {
     assert_eq!(child_count, 0);
     let events = jsonl(memory["eventLogPath"].as_str().expect("events path"));
     assert!(events.iter().any(|event| {
-        event["kind"] == "shell_integration"
-            && event["payload"]["ignoredReason"] == "empty_command"
+        event["kind"] == "shell_integration" && event["payload"]["ignoredReason"] == "empty_command"
     }));
     fs::remove_dir_all(root).ok();
 }
@@ -885,10 +878,9 @@ fn terminal_memory_skips_corrupt_jsonl_lines_and_records_repair_warning() {
     let root = temp_root("corrupt-events");
     let session_id = format!("session-{}", uuid::Uuid::new_v4());
     record_session_created(create_input(&root, &session_id)).expect("record create");
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let event_path = memory["eventLogPath"].as_str().expect("event path");
     let mut events_file = fs::OpenOptions::new()
         .append(true)
@@ -922,17 +914,15 @@ fn output_projection_reads_large_artifact_by_range_and_clamps_utf8_cursor() {
     let root = temp_root("large-projection");
     let session_id = format!("session-{}", uuid::Uuid::new_v4());
     record_session_created(create_input(&root, &session_id)).expect("record create");
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let output_path = memory["outputTextPath"].as_str().expect("output path");
     let mut large = "éclair\n".repeat(1024);
     large.push_str(&"x".repeat(2 * 1024 * 1024));
     fs::write(output_path, large).expect("write large output");
 
-    let first =
-        read_output_projection(&root, &session_id, 0, 8).expect("read first projection");
+    let first = read_output_projection(&root, &session_id, 0, 8).expect("read first projection");
     assert_eq!(first.output, "éclair\n");
     assert_eq!(first.cursor, 8);
     assert!(first.truncated);
@@ -954,8 +944,7 @@ fn output_projection_reads_100mb_fixture_without_loading_full_file() {
     let file = fs::File::create(&paths.output_text_path).expect("create sparse output");
     file.set_len(100 * 1024 * 1024).expect("set sparse length");
 
-    let projection =
-        read_output_projection(&root, &session_id, 0, 16).expect("read projection");
+    let projection = read_output_projection(&root, &session_id, 0, 16).expect("read projection");
     assert_eq!(projection.output.len(), 16);
     assert_eq!(projection.cursor, 16);
     assert!(projection.truncated);
@@ -971,10 +960,9 @@ fn terminal_memory_rebuilds_output_indexes_from_text_artifact() {
         .expect("create output dir");
     fs::write(&paths.output_text_path, "first\nError: recovered\nlast").expect("write output");
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     assert_eq!(memory["lineCount"], 3);
     assert_eq!(memory["errorCount"], 1);
     assert_eq!(memory["latestOutputPreview"], "last");
@@ -1051,10 +1039,9 @@ fn permission_events_link_to_commands_and_audit_projection_answers_approval() {
     })
     .expect("record write");
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let permissions = jsonl(
         memory["permissionsPath"]
             .as_str()
@@ -1137,9 +1124,7 @@ fn audit_read_handoff_policy_indexes_and_screen_replay_are_recoverable() {
         storage_root: root.clone(),
         session_id: session_id.clone(),
         handoff_id: Some("handoff-1".to_string()),
-        from_actor_json: Some(
-            json!({ "kind": "agent", "agentSessionId": "agent-1" }).to_string(),
-        ),
+        from_actor_json: Some(json!({ "kind": "agent", "agentSessionId": "agent-1" }).to_string()),
         to_actor_json: Some(json!({ "kind": "human_user" }).to_string()),
         reason: Some("user_takeover".to_string()),
         summary: Some("Agent handed terminal control to user".to_string()),
@@ -1152,9 +1137,7 @@ fn audit_read_handoff_policy_indexes_and_screen_replay_are_recoverable() {
         storage_root: root.clone(),
         session_id: session_id.clone(),
         handoff_id: Some("handoff-1".to_string()),
-        from_actor_json: Some(
-            json!({ "kind": "agent", "agentSessionId": "agent-1" }).to_string(),
-        ),
+        from_actor_json: Some(json!({ "kind": "agent", "agentSessionId": "agent-1" }).to_string()),
         to_actor_json: Some(json!({ "kind": "human_user" }).to_string()),
         reason: Some("user_takeover".to_string()),
         summary: Some("User accepted terminal control".to_string()),
@@ -1188,10 +1171,9 @@ fn audit_read_handoff_policy_indexes_and_screen_replay_are_recoverable() {
     })
     .expect("audit read");
 
-    let memory: Value = serde_json::from_str(
-        &metadata_for_session(&root, &session_id, false).expect("metadata"),
-    )
-    .expect("parse metadata");
+    let memory: Value =
+        serde_json::from_str(&metadata_for_session(&root, &session_id, false).expect("metadata"))
+            .expect("parse metadata");
     let events = jsonl(memory["eventLogPath"].as_str().expect("events path"));
     let kinds = events
         .iter()
@@ -1303,8 +1285,7 @@ fn replay_from_events_rebuilds_timeline_output_indexes_and_v2_indexes() {
     fs::remove_file(&paths.index_manifest_path).expect("remove index manifest");
     fs::remove_file(&paths.index_events_path).expect("remove event index");
 
-    super::rebuild_output_indexes_from_text(&paths, &session_id)
-        .expect("rebuild output indexes");
+    super::rebuild_output_indexes_from_text(&paths, &session_id).expect("rebuild output indexes");
     super::rebuild_index_store_from_paths(&session_id, &paths).expect("rebuild v2 indexes");
     let timeline: Value = serde_json::from_str(
         &read_timeline(TimelineReadInput {

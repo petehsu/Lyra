@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lyra-docs-core = { path = "../lyra-docs-core" }
+lyra-agent-reader = { path = "../lyra-agent-reader", default-features = false }
 base64 = "0.22.1"
 napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
 napi-derive = "2.16.13"

@@ -19,6 +19,14 @@ const coerceNumberList = (value: unknown): readonly number[] | undefined => {
   return numbers.length > 0 ? numbers : undefined;
 };
 
+const isDocumentFormat = (value: unknown): value is WorkbenchBrowserFrameDomProbeCandidate["formatHint"] =>
+  value === "pdf" ||
+  value === "docx" ||
+  value === "xlsx" ||
+  value === "pptx" ||
+  value === "image" ||
+  value === "unknown";
+
 const coerceCandidate = (value: unknown): WorkbenchBrowserFrameDomProbeCandidate | null => {
   if (value === null || typeof value !== "object") {
     return null;
@@ -35,7 +43,7 @@ const coerceCandidate = (value: unknown): WorkbenchBrowserFrameDomProbeCandidate
     sourceKind,
     ...(documentUrl === undefined ? {} : { documentUrl }),
     ...(mimeHint === undefined ? {} : { mimeHint }),
-    formatHint: record.formatHint === "pdf" ? "pdf" : "unknown",
+    formatHint: isDocumentFormat(record.formatHint) ? record.formatHint : "unknown",
     visibleRatio: Math.max(0, Math.min(1, coerceNumber(record.visibleRatio) ?? 0)),
     ...(titleHint === undefined ? {} : { titleHint })
   };
@@ -83,9 +91,40 @@ export const buildFrameDomProbeScript = ({
     const inferFormat = (url, mimeHint) => {
       const lowerUrl = typeof url === "string" ? url.toLowerCase() : "";
       const lowerMime = typeof mimeHint === "string" ? mimeHint.toLowerCase() : "";
-      return lowerMime.includes("application/pdf") || lowerUrl.endsWith(".pdf") || lowerUrl.includes(".pdf?")
-        ? "pdf"
-        : "unknown";
+      if (lowerMime.includes("application/pdf") || lowerUrl.endsWith(".pdf") || lowerUrl.includes(".pdf?")) {
+        return "pdf";
+      }
+      if (
+        lowerMime.includes("wordprocessingml.document") ||
+        lowerMime.includes("application/msword") ||
+        lowerUrl.endsWith(".docx") ||
+        lowerUrl.includes(".docx?")
+      ) {
+        return "docx";
+      }
+      if (
+        lowerMime.includes("spreadsheetml.sheet") ||
+        lowerMime.includes("application/vnd.ms-excel") ||
+        lowerUrl.endsWith(".xlsx") ||
+        lowerUrl.includes(".xlsx?")
+      ) {
+        return "xlsx";
+      }
+      if (
+        lowerMime.includes("presentationml.presentation") ||
+        lowerMime.includes("application/vnd.ms-powerpoint") ||
+        lowerUrl.endsWith(".pptx") ||
+        lowerUrl.includes(".pptx?")
+      ) {
+        return "pptx";
+      }
+      if (
+        lowerMime.startsWith("image/") ||
+        /\\.(png|jpe?g|webp|gif|bmp|tiff?|svg)(\\?|#|$)/.test(lowerUrl)
+      ) {
+        return "image";
+      }
+      return "unknown";
     };
     const embeddedDocuments = [];
     for (const node of Array.from(document.querySelectorAll("iframe[src], embed[src], object[data]"))) {

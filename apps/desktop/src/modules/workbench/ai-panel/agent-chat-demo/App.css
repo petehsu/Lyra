@@ -8,6 +8,7 @@
  */
 
 .lyra-ai-panel-agent-chat {
+  container-type: inline-size;
   --lyra-ai-session-content-bg:
     color-mix(in srgb, var(--lyra-bg-surface) 82%, var(--lyra-bg-editor) 18%);
   /* Legacy aliases — forward to canonical tokens defined in tokens.css */
@@ -4130,6 +4131,7 @@
 .composer-attach-menu-wrap {
   position: relative;
   flex: 0 0 auto;
+  order: 0;
 }
 
 .composer-attach-menu {
@@ -4174,17 +4176,22 @@
 .composer-bottom {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: var(--composer-toolbar-group-gap);
   margin-top: 7px;
   min-height: var(--composer-toolbar-control-size);
+  min-width: 0;
 }
 
 .composer-model-controls {
   min-width: 0;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: var(--composer-toolbar-gap);
   flex: 1 1 auto;
+  order: 1;
+  max-width: 100%;
 }
 
 .composer-mini-select {
@@ -4201,7 +4208,8 @@
   outline: none;
 }
 
-.composer-model-picker {
+.composer-model-picker,
+.composer-permission-mode-picker {
   --lyra-list-picker-row-height: var(--composer-toolbar-control-size);
   --lyra-list-picker-option-height: var(--composer-toolbar-control-size);
   --lyra-list-picker-option-gap: var(--space-1);
@@ -4210,22 +4218,53 @@
   --lyra-list-picker-expanded-radius: var(--space-4);
   --lyra-list-picker-font-size: var(--fs-sm);
   --lyra-list-picker-padding-inline: var(--space-4);
-  flex: 1 1 160px;
-  min-width: 92px;
-  max-width: 260px;
+  --lyra-list-picker-width: 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.composer-model-picker .lyra-list-picker-surface {
+.composer-model-picker {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 180px;
+}
+
+.composer-permission-mode-picker {
+  flex: 0 1 96px;
+  min-width: 0;
+  max-width: 96px;
+}
+
+.composer-model-picker .lyra-list-picker-surface,
+.composer-permission-mode-picker .lyra-list-picker-surface {
   border-color: var(--color-border-subtle);
   background: var(--color-surface-2);
   box-shadow: none;
+  z-index: 45;
 }
 
-.composer-model-picker.lyra-list-picker-open .lyra-list-picker-surface {
+.composer-model-picker .lyra-list-picker-trigger,
+.composer-permission-mode-picker .lyra-list-picker-trigger {
+  min-width: 0;
+  width: 100%;
+}
+
+.composer-model-picker .lyra-list-picker-trigger-label,
+.composer-permission-mode-picker .lyra-list-picker-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-picker.lyra-list-picker-open .lyra-list-picker-surface,
+.composer-permission-mode-picker.lyra-list-picker-open .lyra-list-picker-surface {
   border-color: color-mix(in srgb, var(--color-border-subtle) 58%, var(--text-dim));
 }
 
-.composer-model-picker .lyra-list-picker-options {
+.composer-model-picker .lyra-list-picker-options,
+.composer-permission-mode-picker .lyra-list-picker-options {
   max-height: calc(
     (var(--lyra-list-picker-option-count) * var(--lyra-list-picker-option-height)) +
     ((var(--lyra-list-picker-option-count) - 1) * var(--lyra-list-picker-option-gap)) +
@@ -4235,13 +4274,16 @@
   overscroll-behavior: contain;
 }
 
-.composer-model-picker .lyra-list-picker-option {
+.composer-model-picker .lyra-list-picker-option,
+.composer-permission-mode-picker .lyra-list-picker-option {
   color: var(--text-dim);
   border-radius: var(--composer-toolbar-radius);
 }
 
 .composer-model-picker .lyra-list-picker-option:hover,
-.composer-model-picker .lyra-list-picker-option-active {
+.composer-model-picker .lyra-list-picker-option-active,
+.composer-permission-mode-picker .lyra-list-picker-option:hover,
+.composer-permission-mode-picker .lyra-list-picker-option-active {
   color: var(--text);
   background: var(--color-surface-3);
 }
@@ -4351,6 +4393,7 @@
 
 .composer-primary-actions {
   margin-left: auto;
+  order: 2;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -4558,6 +4601,7 @@
 
   .composer-model-controls {
     gap: var(--composer-toolbar-gap);
+    flex: 1 1 calc(100% - (var(--composer-toolbar-control-size) * 3));
   }
 
   .composer-mini-select {
@@ -4668,6 +4712,42 @@
   .composer-input {
     height: 48px;
     min-height: 48px;
+  }
+
+  .composer-bottom {
+    display: grid;
+    grid-template-columns:
+      var(--composer-toolbar-control-size)
+      minmax(0, 1fr)
+      minmax(var(--lyra-unit-72), var(--lyra-unit-86))
+      auto;
+    align-items: center;
+    column-gap: var(--composer-toolbar-gap);
+  }
+
+  .composer-model-controls {
+    display: contents;
+  }
+
+  .composer-attach-menu-wrap {
+    grid-column: 1;
+  }
+
+  .composer-permission-mode-picker {
+    grid-column: 3;
+    width: 100%;
+    max-width: none;
+  }
+
+  .composer-primary-actions {
+    grid-column: 4;
+    min-width: max-content;
+  }
+
+  .composer-model-picker {
+    grid-column: 2;
+    width: 100%;
+    max-width: none;
   }
 
   .msg-user .msg-bubble {

@@ -42,6 +42,8 @@ export const createWorkspaceSurfaceRenderModel = (
               autoSearchLabel: context.i18n.resultsAutoTab,
               webTabLabel: context.i18n.resultsWebTab,
               localTabLabel: context.i18n.resultsLocalTab,
+              localIndexNotReadyLabel: context.i18n.resultsLocalIndexNotReady,
+              localSearchReady: context.localSearchReady,
               onSearchEngineSelectionChange: (nextSelection) => {
                 void applySearchEngineSelection(
                   context,
@@ -50,6 +52,9 @@ export const createWorkspaceSurfaceRenderModel = (
                 );
               },
               onSwitchToLocalSearch: () => {
+                if (!context.localSearchReady) {
+                  return;
+                }
                 context.tabsModel.openLocalSearchTab(
                   {
                     query: tab.searchQuery ?? "",

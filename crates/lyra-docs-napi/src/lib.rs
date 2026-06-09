@@ -40,6 +40,23 @@ struct JsonSearchRequest {
     max_matches: Option<usize>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsonAgentReadRequest {
+    bytes_base64: String,
+    mime_hint: Option<String>,
+    url_hint: Option<String>,
+    preset: Option<String>,
+    format: Option<String>,
+    mode: Option<String>,
+    query_focus: Option<String>,
+    user_task: Option<String>,
+    max_chars: Option<usize>,
+    max_tokens: Option<usize>,
+    include_raw: Option<bool>,
+    chunking: Option<bool>,
+}
+
 fn parse_json<T: DeserializeOwned>(input: &str) -> Result<T> {
     serde_json::from_str(input)
         .map_err(|error| Error::new(Status::InvalidArg, format!("invalid JSON payload: {error}")))
@@ -116,4 +133,87 @@ pub fn search_document_text_json(input: String) -> Result<String> {
     let result = search_document_text(request)
         .map_err(|error| docs_error(error.code(), error.to_string()))?;
     stringify_json(&result)
+}
+
+#[napi]
+pub fn read_agent_document_json(input: String) -> Result<String> {
+    let request: JsonAgentReadRequest = parse_json(&input)?;
+    let mut options = lyra_agent_reader::ReaderOptions {
+        preset: preset_from_opt(request.preset.as_deref()),
+        output_format: output_format_from_opt(request.format.as_deref()),
+        mode: mode_from_opt(request.mode.as_deref()),
+        query_focus: request.query_focus,
+        user_task: request.user_task,
+        max_chars: request.max_chars,
+        max_tokens: request.max_tokens,
+        include_raw: request.include_raw.unwrap_or(false),
+        trusted_local: true,
+        max_bytes: Some(64 * 1024 * 1024),
+        ..lyra_agent_reader::ReaderOptions::default()
+    };
+    if options.query_focus.is_some() || options.user_task.is_some() {
+        options.content_filter = lyra_agent_reader::ContentFilterMode::Hybrid;
+    }
+    if request.chunking.unwrap_or(true) {
+        options.chunking.mode = lyra_agent_reader::ChunkingMode::Block;
+    }
+    options.apply_preset_defaults();
+    let reader_request = lyra_agent_reader::ReaderRequest {
+        input: lyra_agent_reader::ReaderInput::Bytes {
+            bytes: decode_bytes(&request.bytes_base64)?,
+            mime: request.mime_hint,
+            base_url: request.url_hint,
+        },
+        options,
+    };
+    let no_fetch = NoFetchProvider;
+    let result = lyra_agent_reader::read(&reader_request, &no_fetch)
+        .map_err(|error| docs_error("agent_reader_failed", error.to_string()))?;
+    stringify_json(&result)
+}
+
+struct NoFetchProvider;
+
+impl lyra_agent_reader::FetchProvider for NoFetchProvider {
+    fn fetch(
+        &self,
+        request: &lyra_agent_reader::FetchRequest<'_>,
+    ) -> std::result::Result<lyra_agent_reader::FetchResponse, lyra_agent_reader::ReaderError> {
+        Err(lyra_agent_reader::ReaderError::Fetch {
+            message: "docs NAPI does not perform network fetches".to_string(),
+            final_url: Some(request.url.to_string()),
+            status: None,
+        })
+    }
+}
+
+fn preset_from_opt(value: Option<&str>) -> lyra_agent_reader::ReaderPreset {
+    match value {
+        Some("research") => lyra_agent_reader::ReaderPreset::Research,
+        Some("index") => lyra_agent_reader::ReaderPreset::Index,
+        Some("reader") => lyra_agent_reader::ReaderPreset::Reader,
+        Some("raw") => lyra_agent_reader::ReaderPreset::Raw,
+        _ => lyra_agent_reader::ReaderPreset::Agent,
+    }
+}
+
+fn output_format_from_opt(value: Option<&str>) -> lyra_agent_reader::ReaderOutputFormat {
+    match value {
+        Some("text") => lyra_agent_reader::ReaderOutputFormat::Text,
+        Some("json") => lyra_agent_reader::ReaderOutputFormat::Json,
+        Some("chunks") => lyra_agent_reader::ReaderOutputFormat::Chunks,
+        Some("frontmatter+markdown") | Some("frontmatterMarkdown") => {
+            lyra_agent_reader::ReaderOutputFormat::FrontmatterMarkdown
+        }
+        _ => lyra_agent_reader::ReaderOutputFormat::Markdown,
+    }
+}
+
+fn mode_from_opt(value: Option<&str>) -> lyra_agent_reader::ExtractionMode {
+    match value {
+        Some("full") => lyra_agent_reader::ExtractionMode::Full,
+        Some("text") => lyra_agent_reader::ExtractionMode::Text,
+        Some("raw") => lyra_agent_reader::ExtractionMode::Raw,
+        _ => lyra_agent_reader::ExtractionMode::Main,
+    }
 }

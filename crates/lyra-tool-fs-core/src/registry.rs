@@ -36,7 +36,23 @@ impl ToolFsRegistry {
     pub fn try_with_providers(
         providers: &[&dyn ToolManifestProvider],
     ) -> Result<Self, ToolFsError> {
+        Self::try_with_builtin_filter_and_providers(|_| true, providers)
+    }
+
+    pub fn with_builtin_filter_and_providers(
+        include_builtin: impl FnMut(&ToolManifest) -> bool,
+        providers: &[&dyn ToolManifestProvider],
+    ) -> Self {
+        Self::try_with_builtin_filter_and_providers(include_builtin, providers)
+            .unwrap_or_else(|_| Self::builtin())
+    }
+
+    pub fn try_with_builtin_filter_and_providers(
+        mut include_builtin: impl FnMut(&ToolManifest) -> bool,
+        providers: &[&dyn ToolManifestProvider],
+    ) -> Result<Self, ToolFsError> {
         let mut manifests = builtin_manifests();
+        manifests.retain(|manifest| include_builtin(manifest));
         for provider in providers {
             manifests.extend(provider.tool_manifests());
         }

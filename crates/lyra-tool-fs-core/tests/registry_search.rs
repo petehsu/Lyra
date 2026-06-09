@@ -62,11 +62,11 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
         .read_doc("/tools/shell/run_command")
         .expect("tool doc");
     assert_eq!(tool_doc["path"], "/tools/shell/run_command");
-    assert_eq!(tool_doc["title"], "Run command");
+    assert_eq!(tool_doc["title"], "Run one-shot shell command");
     assert!(
         tool_doc["content"]
             .as_str()
-            .is_some_and(|content| content.contains("bounded shell command"))
+            .is_some_and(|content| content.contains("bounded non-interactive shell command"))
     );
 
     let by_path = registry
@@ -104,6 +104,89 @@ fn provider_visible_names_include_search_first() {
             "tool_fs_run".to_string(),
         ]
     );
+}
+
+#[test]
+fn web_research_tool_is_discoverable_with_schema() {
+    let registry = ToolFsRegistry::default();
+    let research = registry
+        .search(
+            "web search research deep read rust ownership",
+            Some("web"),
+            0,
+            5,
+            ToolScene::General,
+        )
+        .expect("web research search");
+    assert_eq!(
+        research.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/research")
+    );
+    assert!(
+        research
+            .results
+            .first()
+            .is_some_and(|result| result.match_reason.contains("web-research intent boost"))
+    );
+
+    let manifest = registry
+        .inspect_path("/tools/web/research")
+        .expect("web research manifest");
+    assert_eq!(manifest.handle.as_deref(), Some("web_research"));
+    assert_eq!(manifest.input_schema["required"], json!(["query"]));
+    assert!(manifest.input_schema["properties"]["query"].is_object());
+    assert!(manifest.input_schema["properties"]["readTopN"].is_object());
+    assert!(manifest.input_schema["properties"]["maxCharsPerResult"].is_object());
+
+    let resolved = registry
+        .resolve_run_input(&json!({
+            "path": "/tools/web/research",
+            "args": {
+                "query": "rust ownership",
+                "readTopN": 2,
+                "maxCharsPerResult": 1000
+            }
+        }))
+        .expect("resolved web research input");
+    assert_eq!(resolved.manifest.path, "/tools/web/research");
+}
+
+#[test]
+fn web_fetch_schema_exposes_browser_engine_options() {
+    let registry = ToolFsRegistry::default();
+    let manifest = registry
+        .inspect_path("/tools/web/fetch")
+        .expect("web fetch manifest");
+    let properties = &manifest.input_schema["properties"];
+    assert_eq!(
+        properties["engine"]["enum"],
+        json!(["auto", "http", "browser"])
+    );
+    assert!(properties["waitForSelector"].is_object());
+    assert_eq!(
+        properties["browserMode"]["enum"],
+        json!(["matchingOrNewTab", "activeTab", "newTab"])
+    );
+    assert!(properties["includeScreenshot"].is_object());
+    assert!(properties["viewport"].is_object());
+    assert!(properties["mobile"].is_object());
+    assert!(properties["includeIframes"].is_object());
+    assert!(properties["includeShadowDom"].is_object());
+    assert!(properties["includePageshot"].is_object());
+    assert!(properties["includeMedia"].is_object());
+    assert_eq!(
+        properties["retainMedia"]["enum"],
+        json!(["link", "text", "summary", "html", "none"])
+    );
+    assert_eq!(properties["headingStyle"]["enum"], json!(["atx", "setext"]));
+    assert_eq!(
+        properties["citationFormat"]["enum"],
+        json!(["square", "angle", "source"])
+    );
+    assert!(properties["preserveHtmlTags"].is_object());
+    assert!(properties["useOcr"].is_object());
+    assert!(properties["useCaption"].is_object());
+    assert!(properties["includeDebugTrace"].is_object());
 }
 
 #[test]

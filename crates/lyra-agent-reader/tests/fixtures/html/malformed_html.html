@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Malformed Fixture</title>
+</head>
+<body>
+  <main>
+    <article>
+      <h1>Malformed Fixture</h1>
+      <p>This page intentionally omits several closing tags so the parser must recover.
+      <section>
+        <h2>Recovered Section</h2>
+        <p>The reader should still emit useful markdown even when the source markup is imperfect.
+        <ul>
+          <li>First recovered list item
+          <li>Second recovered list item with <a href="/broken">a recovered link</a>
+        </ul>
+    </article
+  </main
+</body>
+</html>

@@ -1,0 +1,26 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Code Heavy Reader Tutorial
+
+This tutorial includes fenced code, inline code, and explanatory prose.
+
+## Configure Chunking
+
+Set `chunking.mode` to block when long documentation needs follow-up reads.
+
+```rust
+let options = ReaderOptions {
+    max_chars: None,
+    ..ReaderOptions::default()
+};
+```
+
+## Render
+
+Call the reader with trusted HTML and inspect markdown, chunks, and warnings.
+
+```ts
+const content = result.compactText ?? result.markdown;
+```

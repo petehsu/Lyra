@@ -32,7 +32,6 @@ static MEMORY_STATES: Lazy<Mutex<HashMap<String, Arc<Mutex<SessionState>>>>> =
 
 type MemoryResult<T> = std::result::Result<T, String>;
 
-
 mod artifacts;
 mod query;
 mod record;

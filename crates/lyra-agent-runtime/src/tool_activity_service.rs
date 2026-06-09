@@ -427,6 +427,28 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-workbench",
+                "workbench_capture_visual_evidence",
+                "Capture visible Lyra workspace visual evidence for model vision. Use workspace_window for app tabs, Image Viewer, file previews, terminal surfaces, and overall workspace screenshots; use active_tab when a browser tab visual capture is specifically needed.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "scope": {
+                            "type": "string",
+                            "enum": ["workspace_window", "active_tab"],
+                            "default": "workspace_window"
+                        },
+                        "tabId": {
+                            "type": "string",
+                            "description": "Required only for active_tab capture."
+                        }
+                    }
+                }),
+                Some("workbench.captureVisualEvidence"),
+            ),
+            capability(
+                "lyra-workbench",
                 "workbench_activate_tab",
                 "Activate a Lyra workbench tab by id.",
                 "action",
@@ -1490,8 +1512,27 @@ impl ToolProvider for BuiltInLyraToolProvider {
             ),
             capability(
                 "lyra-web",
+                "web_research",
+                "Search the web, deep-read top results through Lyra Agent Reader, and return a compact research bundle.",
+                "read",
+                "networkPolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string" },
+                        "limit": { "type": "number", "default": 5 },
+                        "readTopN": { "type": "number", "default": 3 },
+                        "maxCharsPerResult": { "type": "number", "default": 4000 },
+                        "includeFailedReads": { "type": "boolean", "default": true }
+                    },
+                    "required": ["query"]
+                }),
+                None,
+            ),
+            capability(
+                "lyra-web",
                 "web_fetch",
-                "Fetch a URL and return status, title, links, and extracted text within budget.",
+                "Fetch a URL and return agent-friendly markdown, metadata, chunks, links, images, and document recommendations.",
                 "read",
                 "networkPolicy",
                 json!({
@@ -1500,7 +1541,55 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         "url": { "type": "string" },
                         "maxChars": { "type": "number", "default": 12000 },
                         "extractText": { "type": "boolean", "default": true },
-                        "includeLinks": { "type": "boolean", "default": true }
+                        "includeLinks": { "type": "boolean", "default": true },
+                        "engine": { "type": "string", "enum": ["auto", "http", "browser"], "default": "auto" },
+                        "mode": { "type": "string", "enum": ["main", "full", "text"] },
+                        "targetSelector": { "type": "string" },
+                        "removeSelector": {
+                            "oneOf": [
+                                { "type": "string" },
+                                { "type": "array", "items": { "type": "string" } }
+                            ]
+                        },
+                        "maxTokens": { "type": "number" },
+                        "chunking": {
+                            "oneOf": [
+                                { "type": "boolean" },
+                                { "type": "string", "enum": ["disabled", "heading", "block"] },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "mode": { "type": "string", "enum": ["disabled", "heading", "block"] },
+                                        "maxCharsPerChunk": { "type": "number" },
+                                        "overlapChars": { "type": "number" }
+                                    }
+                                }
+                            ]
+                        },
+                        "queryFocus": { "type": "string" },
+                        "retainLinks": { "type": "string", "enum": ["all", "text", "citations", "summary", "none"] },
+                        "retainImages": { "type": "string", "enum": ["all", "alt", "summary", "none"] },
+                        "citations": { "type": "boolean", "default": true },
+                        "includeMetadata": { "type": "boolean", "default": true },
+                        "waitForSelector": { "type": "string" },
+                        "waitUntil": { "type": "string", "enum": ["html", "loadIdle", "textStable", "textChanged", "textContains"], "default": "loadIdle" },
+                        "timeoutMs": { "type": "number", "default": 20000 },
+                        "browserMode": { "type": "string", "enum": ["matchingOrNewTab", "activeTab", "newTab"], "default": "matchingOrNewTab" },
+                        "includeScreenshot": { "type": "boolean", "default": false },
+                        "viewport": {
+                            "type": "object",
+                            "properties": {
+                                "width": { "type": "number" },
+                                "height": { "type": "number" },
+                                "deviceScaleFactor": { "type": "number" }
+                            },
+                            "required": ["width", "height"]
+                        },
+                        "mobile": { "type": "boolean", "default": false },
+                        "includeIframes": { "type": "boolean", "default": false },
+                        "includeShadowDom": { "type": "boolean", "default": false },
+                        "includePageshot": { "type": "boolean", "default": false },
+                        "includeMedia": { "type": "boolean", "default": false }
                     },
                     "required": ["url"]
                 }),

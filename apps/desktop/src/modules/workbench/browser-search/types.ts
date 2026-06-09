@@ -1,4 +1,5 @@
 import type {
+  SearchIndexStatusResponse,
   SearchOfficialCategory
 } from "../../../shared/desktop-bridge";
 
@@ -106,6 +107,7 @@ export type LocalSearchPayload = {
   readonly truncated: boolean;
   readonly elapsedMs: number;
   readonly stats: LocalSearchStats;
+  readonly indexStatus?: SearchIndexStatusResponse;
 };
 
 export type SearchChannelStatus = "idle" | "loading" | "ready" | "error";

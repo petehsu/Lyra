@@ -27,6 +27,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             Some("workbench_read_tab"),
         ),
         super::s(
+            "/tools/workbench/capture_visual_evidence",
+            "workbench",
+            "capture_visual_evidence",
+            "Capture workspace visual evidence",
+            "Capture visible Lyra workspace visual evidence for model vision, including the workspace window, Image Viewer, file previews, terminal surfaces, and browser tab screenshots.",
+            Some("workbench_capture_visual_evidence"),
+        ),
+        super::s(
             "/tools/workbench/activate_tab",
             "workbench",
             "activate_tab",

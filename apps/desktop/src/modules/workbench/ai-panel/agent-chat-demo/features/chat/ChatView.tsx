@@ -109,6 +109,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     approvePermission,
     denyPermission,
     modelControls,
+    permissionModeControls,
     openModelSettings,
     isTurnRunning,
     browserFollowModeEnabled,
@@ -314,6 +315,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           onCaptureBrowserScreenshot={captureBrowserScreenshot}
           onCaptureWindowScreenshot={captureWindowScreenshot}
           modelControls={modelControls ?? null}
+          permissionModeControls={permissionModeControls ?? null}
           onOpenModelSettings={openModelSettings}
           isTurnRunning={isTurnRunning}
           browserFollowModeEnabled={browserFollowModeEnabled}

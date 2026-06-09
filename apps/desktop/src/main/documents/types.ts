@@ -61,10 +61,28 @@ export type NativeDocumentSearchResult = {
   readonly truncated: boolean;
 };
 
+export type NativeAgentDocumentReadRequest = {
+  readonly bytesBase64: string;
+  readonly mimeHint?: string;
+  readonly urlHint?: string;
+  readonly preset?: "agent" | "research" | "index" | "reader" | "raw";
+  readonly format?: "markdown" | "text" | "json" | "chunks" | "frontmatter+markdown";
+  readonly mode?: "main" | "full" | "text" | "raw";
+  readonly queryFocus?: string;
+  readonly userTask?: string;
+  readonly maxChars?: number;
+  readonly maxTokens?: number;
+  readonly includeRaw?: boolean;
+  readonly chunking?: boolean;
+};
+
+export type NativeAgentDocumentReadResult = Record<string, unknown>;
+
 export type DocsNativeBindings = {
   readonly probeDocumentJson: (input: string) => string;
   readonly readDocumentTextJson: (input: string) => string;
   readonly searchDocumentTextJson: (input: string) => string;
+  readonly readAgentDocumentJson: (input: string) => string;
 };
 
 export type DocsNativeLoadResult =

@@ -30,7 +30,8 @@ import {
 export const useBrowserSearchModel = ({
   desktopApi,
   tabsModel,
-  searchSettings
+  searchSettings,
+  localSearchReady = true
 }: UseBrowserSearchModelArgs): BrowserSearchModel => {
   const searchPillRef = useRef<HTMLDivElement | null>(null);
   const standardSearchCacheRef = useRef(new Map<string, BrowserSearchPayload>());
@@ -229,6 +230,9 @@ export const useBrowserSearchModel = ({
       searchEngines: searchSettings.searchEngines
     });
     if (target === null) {
+      if (!localSearchReady) {
+        return;
+      }
       tabsModel.openLocalSearchTab({
         query: input,
         selection: { mode: "auto", engineIds: [] }
@@ -246,7 +250,13 @@ export const useBrowserSearchModel = ({
       ],
       selection: { mode: "auto", engineIds: [] }
     });
-  }, [captureSearchPillRect, desktopApi, searchSettings.searchEngines, tabsModel]);
+  }, [
+    captureSearchPillRect,
+    desktopApi,
+    localSearchReady,
+    searchSettings.searchEngines,
+    tabsModel
+  ]);
 
   const onSharedAnimationDone = useCallback(() => {
     setSharedTransitionRect(null);

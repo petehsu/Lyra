@@ -11,7 +11,10 @@ import {
 } from "./result-surface-model";
 import { resolveLocalSearchErrorLabel } from "./local-search-errors";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import { resolveNextSearchEngineSelection } from "./service";
+import {
+  isSearchIndexReady,
+  resolveNextSearchEngineSelection
+} from "./service";
 
 export type BrowserResultSurfaceProps = {
   readonly logoUrl: string;
@@ -42,8 +45,10 @@ export type BrowserResultSurfaceProps = {
   readonly localScannedDirsLabel: string;
   readonly localContentScansLabel: string;
   readonly localMatchedLabel: string;
+  readonly localIndexLabel: string;
   readonly localScoreLabel: string;
   readonly localLineLabel: string;
+  readonly localIndexNotReadyLabel: string;
   readonly localTimedOutLabel: string;
   readonly channelIdleLabel: string;
   readonly channelLoadingLabel: string;
@@ -51,6 +56,7 @@ export type BrowserResultSurfaceProps = {
   readonly channelErrorLabel: string;
   readonly sourceFilter: SearchResultsSourceFilter;
   readonly payload: BrowserSearchPayload;
+  readonly localSearchReady?: boolean;
   readonly sharedStartRect?: DOMRect | null;
   readonly searchEngineSelectionMode?: "auto" | "manual";
   readonly searchSelectedEngineIds?: readonly string[];
@@ -98,8 +104,10 @@ export const BrowserResultSurface = ({
   localScannedDirsLabel,
   localContentScansLabel,
   localMatchedLabel,
+  localIndexLabel,
   localScoreLabel,
   localLineLabel,
+  localIndexNotReadyLabel,
   localTimedOutLabel,
   channelIdleLabel,
   channelLoadingLabel,
@@ -107,6 +115,7 @@ export const BrowserResultSurface = ({
   channelErrorLabel,
   sourceFilter,
   payload,
+  localSearchReady,
   sharedStartRect,
   searchEngineSelectionMode = "auto",
   searchSelectedEngineIds = [],
@@ -129,6 +138,8 @@ export const BrowserResultSurface = ({
     streamTimeout: localTimedOutLabel
   });
   const localErrorProps = localErrorLabel === undefined ? {} : { error: localErrorLabel };
+  const localIndexReady =
+    localSearchReady ?? isSearchIndexReady(payload.local.payload.indexStatus);
   const titlebarContribution = useMemo(
     () => ({
       ariaLabel: headingLabel,
@@ -138,9 +149,18 @@ export const BrowserResultSurface = ({
             <div className="lyra-titlebar-context-controls">
               <button
                 type="button"
-                className="lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                className={
+                  sourceFilter === "local"
+                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
+                    : "lyra-titlebar-context-text-button"
+                }
                 aria-label={`${sourceFilterLabel}: ${localTabLabel}`}
+                disabled={!localIndexReady}
+                title={localIndexReady ? undefined : localIndexNotReadyLabel}
                 onClick={() => {
+                  if (!localIndexReady) {
+                    return;
+                  }
                   onSourceFilterChange("local");
                 }}
               >
@@ -189,6 +209,8 @@ export const BrowserResultSurface = ({
     [
       headingLabel,
       localTabLabel,
+      localIndexNotReadyLabel,
+      localIndexReady,
       autoSearchLabel,
       onSearchEngineSelectionChange,
       onSwitchToWebSearch,
@@ -197,6 +219,7 @@ export const BrowserResultSurface = ({
       searchEngineSelectionMode,
       searchEngines,
       searchSelectedEngineIds,
+      sourceFilter,
       sourceFilterLabel,
       webTabLabel
     ]
@@ -239,8 +262,15 @@ export const BrowserResultSurface = ({
           status={payload.local.status}
           showWebResults={false}
           localTitleLabel={localTitleLabel}
+          localPanelTitleLabel={localPanelTitleLabel}
           localNoMatchesLabel={localNoMatchesLabel}
           localSearchingMoreLabel={localSearchingMoreLabel}
+          localScopeLabel={localScopeLabel}
+          localScannedFilesLabel={localScannedFilesLabel}
+          localScannedDirsLabel={localScannedDirsLabel}
+          localContentScansLabel={localContentScansLabel}
+          localMatchedLabel={localMatchedLabel}
+          localIndexLabel={localIndexLabel}
           localScoreLabel={localScoreLabel}
           localLineLabel={localLineLabel}
           {...localErrorProps}

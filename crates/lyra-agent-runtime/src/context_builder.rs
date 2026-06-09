@@ -348,8 +348,8 @@ struct RetentionPolicy {
     has_explicit_context_window: bool,
 }
 
-const DEFAULT_RETENTION_CONTEXT_TOKENS: usize = 128_000;
-const RETENTION_TRIM_TRIGGER_CAP_TOKENS: usize = 128_000;
+const DEFAULT_RETENTION_CONTEXT_TOKENS: usize = 100_000;
+const RETENTION_TRIM_TRIGGER_CAP_TOKENS: usize = 100_000;
 const TARGET_MIN_RETAINED_TOKENS: usize = 100_000;
 const RECENT_PROTECTED_TOKENS: usize = 50_000;
 const CONTEXT_GUARD_TOKENS: usize = 128;
@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn retention_policy_uses_128k_default_trigger() {
+    fn retention_policy_uses_100k_default_trigger() {
         let policy = RetentionPolicy::from_context(&[], &ProviderContextOptions::default());
         assert_eq!(
             policy.trim_trigger_tokens,

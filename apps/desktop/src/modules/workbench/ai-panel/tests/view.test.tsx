@@ -2197,6 +2197,7 @@ describe("AiPanelSurface", () => {
           }}
           onCreateSessionTab={async (request) => {
             const next = await onCreateSessionTab(request);
+            setReadSnapshot(next);
             setTabs((current) =>
               current.map((tab) =>
                 tab.tabId === activeSessionTabId
@@ -2228,6 +2229,16 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByRole("tab", { name: "新会话" }))
       .toHaveAttribute("aria-selected", "true");
 
+    fireEvent.click(await screen.findByLabelText("Model controls"));
+    fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
+
+    await waitFor(() => {
+      expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
+        sessionId: null,
+        model: "gpt-5"
+      });
+    });
+
     fireEvent.change(screen.getByPlaceholderText("Send a message to Lyra"), {
       target: { value: "Start for real" }
     });
@@ -2240,6 +2251,16 @@ describe("AiPanelSurface", () => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-2",
         text: "Start for real"
+      });
+    });
+
+    fireEvent.click(await screen.findByLabelText("Model controls"));
+    fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
+
+    await waitFor(() => {
+      expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({
+        sessionId: "session-2",
+        model: "gpt-5"
       });
     });
   });

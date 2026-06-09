@@ -4,6 +4,7 @@ import type { I18nKey } from "../i18n";
 import type { WorkbenchPreferences } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { GlobalDialogModel } from "../global-dialog";
 import type { AiPanelSide } from "./use-panel-layout";
 import type { AiPanelSurfaceProps } from "../ai-panel";
 
@@ -46,6 +47,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }
   ) => void) | undefined;
+  readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
 };
 
@@ -63,6 +65,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onOpenUrlInWorkbench,
   onOpenTerminalLiveSession,
   onOpenFile,
+  openDialog,
   t
 }: UseWorkbenchSidebarAiSurfacePropsParams): AiPanelSurfaceProps =>
   useMemo(
@@ -82,6 +85,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenUrlInWorkbench,
       onOpenTerminalLiveSession,
       onOpenFile,
+      ...(openDialog === undefined ? {} : { openDialog }),
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
       movePanelToRightLabel: t("ai.movePanelToRight"),
       emptyThreadLabel: t("ai.startBySending"),
@@ -99,6 +103,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onOpenUrlInWorkbench,
       onOpenTerminalLiveSession,
       onOpenFile,
+      openDialog,
       preferences.locale,
       t,
     ]

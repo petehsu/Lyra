@@ -80,6 +80,7 @@ const normalizeInput = (
   return {
     id,
     label,
+    ...(input.type === "password" ? { type: "password" as const } : {}),
     value: input.value ?? "",
     ...(placeholder === undefined ? {} : { placeholder }),
     ...(submitActionId === undefined ? {} : { submitActionId })

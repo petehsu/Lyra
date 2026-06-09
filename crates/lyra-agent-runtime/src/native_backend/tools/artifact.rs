@@ -15,6 +15,7 @@ pub(crate) enum ToolArtifactKind {
     Snapshot,
     WebPage,
     BrowserScreenshot,
+    ImageEvidence,
 }
 
 impl ToolArtifactKind {
@@ -30,6 +31,7 @@ impl ToolArtifactKind {
             Self::Snapshot => "snapshot",
             Self::WebPage => "web_page",
             Self::BrowserScreenshot => "browser_screenshot",
+            Self::ImageEvidence => "image_evidence",
         }
     }
 
@@ -38,7 +40,7 @@ impl ToolArtifactKind {
             Self::RawData => "txt",
             Self::Stdout | Self::Stderr | Self::Log | Self::Diff => "log",
             Self::Projection | Self::Snapshot | Self::ToolOutput | Self::WebPage => "txt",
-            Self::BrowserScreenshot => "png",
+            Self::BrowserScreenshot | Self::ImageEvidence => "png",
         }
     }
 }
@@ -204,6 +206,7 @@ fn artifact_open_label(kind: ToolArtifactKind) -> &'static str {
         ToolArtifactKind::Snapshot => "Open snapshot",
         ToolArtifactKind::WebPage => "Open page artifact",
         ToolArtifactKind::BrowserScreenshot => "Open screenshot",
+        ToolArtifactKind::ImageEvidence => "Open image evidence",
         ToolArtifactKind::ToolOutput => "Open tool output",
     }
 }
@@ -325,7 +328,7 @@ fn mime_type_for_kind(kind: ToolArtifactKind) -> &'static str {
         | ToolArtifactKind::Diff
         | ToolArtifactKind::Snapshot
         | ToolArtifactKind::WebPage => "text/plain; charset=utf-8",
-        ToolArtifactKind::BrowserScreenshot => "image/png",
+        ToolArtifactKind::BrowserScreenshot | ToolArtifactKind::ImageEvidence => "image/png",
     }
 }
 

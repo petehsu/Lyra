@@ -1,0 +1,22 @@
+[package]
+name = "lyra-hardware-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "lyra_hardware_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serialport.workspace = true
+thiserror.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true

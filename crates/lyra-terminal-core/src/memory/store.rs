@@ -124,7 +124,10 @@ pub(super) fn append_repair_warning(
     let _ = append_json_line(repair_log_path, &warning);
 }
 
-pub(super) fn read_jsonl_with_repair_log(path: &Path, repair_log_path: Option<&Path>) -> Vec<Value> {
+pub(super) fn read_jsonl_with_repair_log(
+    path: &Path,
+    repair_log_path: Option<&Path>,
+) -> Vec<Value> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(_) => return Vec::new(),
@@ -349,7 +352,10 @@ pub(super) fn write_retention_manifest(session_id: &str, paths: &SessionPaths) -
     )
 }
 
-pub(super) fn write_output_policy_manifests(session_id: &str, paths: &SessionPaths) -> MemoryResult<()> {
+pub(super) fn write_output_policy_manifests(
+    session_id: &str,
+    paths: &SessionPaths,
+) -> MemoryResult<()> {
     if file_size(&paths.output_compaction_path) == 0 {
         write_json_pretty(
             &paths.output_compaction_path,
@@ -367,7 +373,10 @@ pub(super) fn write_output_policy_manifests(session_id: &str, paths: &SessionPat
     ensure_file(&paths.output_redactions_path)
 }
 
-pub(super) fn write_index_store_manifest(session_id: &str, paths: &SessionPaths) -> MemoryResult<()> {
+pub(super) fn write_index_store_manifest(
+    session_id: &str,
+    paths: &SessionPaths,
+) -> MemoryResult<()> {
     write_json_pretty(
         &paths.index_manifest_path,
         &json!({
@@ -398,7 +407,10 @@ pub(super) fn write_index_store_manifest(session_id: &str, paths: &SessionPaths)
     )
 }
 
-pub(super) fn rebuild_output_indexes_from_text(paths: &SessionPaths, session_id: &str) -> MemoryResult<()> {
+pub(super) fn rebuild_output_indexes_from_text(
+    paths: &SessionPaths,
+    session_id: &str,
+) -> MemoryResult<()> {
     let output_size = file_size(&paths.output_text_path);
     if output_size == 0 || file_size(&paths.line_index_path) > 0 {
         return Ok(());
@@ -629,7 +641,13 @@ pub(super) fn output_projection_recommendation(output_size: u64) -> &'static str
     }
 }
 
-pub(super) fn artifact_record(label: &str, path: &Path, kind: &str, media_type: &str, role: &str) -> Value {
+pub(super) fn artifact_record(
+    label: &str,
+    path: &Path,
+    kind: &str,
+    media_type: &str,
+    role: &str,
+) -> Value {
     json!({
         "artifactId": format!("terminal-artifact-{}", safe_segment(label)),
         "label": label,
@@ -938,7 +956,10 @@ pub(super) fn append_agent_link_index(paths: &SessionPaths, record: &Value) -> M
     )
 }
 
-pub(super) fn refresh_output_artifact_index(session_id: &str, state: &SessionState) -> MemoryResult<()> {
+pub(super) fn refresh_output_artifact_index(
+    session_id: &str,
+    state: &SessionState,
+) -> MemoryResult<()> {
     truncate_jsonl(&state.paths.index_output_artifacts_path)?;
     for artifact in artifact_records(state) {
         append_json_line(
@@ -989,7 +1010,10 @@ pub(super) fn restoration_state_json() -> Value {
     })
 }
 
-pub(super) fn refresh_session_index_from_paths(session_id: &str, paths: &SessionPaths) -> MemoryResult<()> {
+pub(super) fn refresh_session_index_from_paths(
+    session_id: &str,
+    paths: &SessionPaths,
+) -> MemoryResult<()> {
     truncate_jsonl(&paths.index_sessions_path)?;
     let created = session_created_record(paths, session_id);
     let payload = created
@@ -1019,7 +1043,10 @@ pub(super) fn refresh_session_index_from_paths(session_id: &str, paths: &Session
     )
 }
 
-pub(super) fn rebuild_index_store_from_paths(session_id: &str, paths: &SessionPaths) -> MemoryResult<()> {
+pub(super) fn rebuild_index_store_from_paths(
+    session_id: &str,
+    paths: &SessionPaths,
+) -> MemoryResult<()> {
     for path in [
         &paths.index_sessions_path,
         &paths.index_events_path,

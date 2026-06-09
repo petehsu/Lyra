@@ -88,6 +88,11 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             host("workbench.readWorkspace", "workbench", "read_workspace")
         }
         "/tools/workbench/read_tab" => host("workbench.readTab", "workbench", "read_tab"),
+        "/tools/workbench/capture_visual_evidence" => host(
+            "workbench.captureVisualEvidence",
+            "workbench",
+            "capture_visual_evidence",
+        ),
         "/tools/workbench/activate_tab" => {
             host("workbench.activateTab", "workbench", "activate_tab")
         }
@@ -146,10 +151,36 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/code/graph_expand" => native("code_graph_expand", "code", "graph_expand"),
         "/tools/code/lsp_query" => native("lsp_query", "lsp", "query"),
         "/tools/shell/run_command" => native("shell_run", "shell", "run"),
+        "/tools/hardware/list" => native("hardware_list", "hardware", "list"),
+        "/tools/hardware/inspect" => native("hardware_inspect", "hardware", "inspect"),
+        "/tools/hardware/capabilities" => {
+            native("hardware_capabilities", "hardware", "capabilities")
+        }
+        "/tools/hardware/os_status" => native("hardware_os_status", "hardware", "os_status"),
+        "/tools/hardware/permissions_request" => native(
+            "hardware_permissions_request",
+            "hardware",
+            "permissions_request",
+        ),
+        "/tools/hardware/session_open" => {
+            native("hardware_session_open", "hardware", "session_open")
+        }
+        "/tools/hardware/session_read" => {
+            native("hardware_session_read", "hardware", "session_read")
+        }
+        "/tools/hardware/session_write" => {
+            native("hardware_session_write", "hardware", "session_write")
+        }
+        "/tools/hardware/session_close" => {
+            native("hardware_session_close", "hardware", "session_close")
+        }
+        "/tools/hardware/invoke" => native("hardware_invoke", "hardware", "invoke"),
+        "/tools/hardware/run_action" => native("hardware_run_action", "hardware", "run_action"),
         "/tools/git/status" | "/tools/git/diff" | "/tools/git/stage" | "/tools/git/unstage"
         | "/tools/git/discard" | "/tools/git/log" | "/tools/git/show" | "/tools/git/branch" => git,
         "/tools/network/status" => native("network_status", "network", "status"),
         "/tools/web/search" => native("web_search", "web", "search"),
+        "/tools/web/research" => native("web_research", "web", "research"),
         "/tools/web/fetch" => native("web_fetch", "web", "fetch"),
         "/tools/render/surface" => native("render_surface", "render", "surface"),
         "/tools/todo/read" => native("todo_read", "todo", "read"),
@@ -178,6 +209,9 @@ pub(super) fn validate_runtime_target_availability(
     target: &RuntimeToolTarget,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Result<(), NativeToolFailure> {
+    if is_local_code_search_tool_path(&manifest.path) && !local_code_search_tools_available() {
+        return Err(local_code_search_unavailable_failure(&manifest.path));
+    }
     if matches!(
         target,
         RuntimeToolTarget::HostAdapter { .. } | RuntimeToolTarget::SoftwareCapability { .. }

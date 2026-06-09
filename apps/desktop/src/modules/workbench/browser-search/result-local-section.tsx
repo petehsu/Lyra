@@ -7,11 +7,46 @@ type ResultLocalSectionProps = {
   readonly status: SearchChannelStatus;
   readonly showWebResults: boolean;
   readonly localTitleLabel: string;
+  readonly localPanelTitleLabel: string;
   readonly localNoMatchesLabel: string;
   readonly localSearchingMoreLabel: string;
+  readonly localScopeLabel: string;
+  readonly localScannedFilesLabel: string;
+  readonly localScannedDirsLabel: string;
+  readonly localContentScansLabel: string;
+  readonly localMatchedLabel: string;
+  readonly localIndexLabel: string;
   readonly localScoreLabel: string;
   readonly localLineLabel: string;
   readonly error?: string;
+};
+
+const formatCompactBytes = (bytes: number): string => {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  }
+  return `${bytes} B`;
+};
+
+const formatSkippedSummary = (
+  skipped: NonNullable<LocalSearchPayload["indexStatus"]>["skipped"]
+): string => {
+  const total =
+    skipped.hidden +
+    skipped.vendor +
+    skipped.binaryOrTooLarge +
+    skipped.unreadable +
+    skipped.contentBudget;
+  if (total === 0) {
+    return "skipped 0";
+  }
+  return `skipped ${total.toLocaleString()}`;
 };
 
 export const ResultLocalSection = ({
@@ -19,17 +54,50 @@ export const ResultLocalSection = ({
   status,
   showWebResults,
   localTitleLabel,
+  localPanelTitleLabel,
   localNoMatchesLabel,
   localSearchingMoreLabel,
+  localScopeLabel,
+  localScannedFilesLabel,
+  localScannedDirsLabel,
+  localContentScansLabel,
+  localMatchedLabel,
+  localIndexLabel,
   localScoreLabel,
   localLineLabel,
   error
 }: ResultLocalSectionProps) => {
   const localHasResults = payload.results.length > 0;
+  const indexStatus = payload.indexStatus;
 
   return (
     <>
       <h3 className={showWebResults ? "lyra-results-local-heading" : undefined}>{localTitleLabel}</h3>
+      {indexStatus === undefined ? null : (
+        <div className="lyra-results-local-index-panel" aria-label={localPanelTitleLabel}>
+          <span>
+            <strong>{localIndexLabel}</strong> {indexStatus.state} · {indexStatus.engineVersion} ·{" "}
+            {formatCompactBytes(indexStatus.storageBytes)}
+          </span>
+          <span>
+            snapshot {formatCompactBytes(indexStatus.snapshotBytes)} · delta{" "}
+            {formatCompactBytes(indexStatus.deltaBytes)} · pending{" "}
+            {indexStatus.pendingChanges.toLocaleString()}
+          </span>
+          <span>
+            {localScopeLabel}: {payload.scopePreset} · roots {payload.roots.length.toLocaleString()}
+          </span>
+          <span>
+            {localScannedFilesLabel}: {indexStatus.indexedFiles.toLocaleString()} ·{" "}
+            {localScannedDirsLabel}: {indexStatus.indexedDirs.toLocaleString()} ·{" "}
+            {localContentScansLabel}: {indexStatus.indexedContentFiles.toLocaleString()}
+          </span>
+          <span>
+            {localMatchedLabel}: {payload.stats.matchedFiles.toLocaleString()} ·{" "}
+            {formatSkippedSummary(indexStatus.skipped)}
+          </span>
+        </div>
+      )}
       {status === "loading" && !localHasResults ? (
         <ul className="lyra-results-skeleton-list" aria-label="local-search-loading-skeleton">
           {SKELETON_RESULT_CARDS.map((skeletonId) => (

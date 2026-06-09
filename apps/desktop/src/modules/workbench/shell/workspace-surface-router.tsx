@@ -135,6 +135,7 @@ export type WorkspaceSurfaceRouterProps = {
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly settings: WorkspaceSurfaceSettingsProps;
   readonly searchResultsSourceFilter: "all" | "web" | "local";
+  readonly localSearchReady: boolean;
   readonly onSearchResultsSourceFilterChange: (value: "all" | "web" | "local") => void;
   readonly i18n: WorkspaceSurfaceI18nProps;
   readonly notifications: {

@@ -1,17 +1,15 @@
 use lyra_local_search::{
-    LocalSearchContentMode, LocalSearchEngine, LocalSearchEngineConfig,
-    LocalSearchIndexRootOptions, LocalSearchIndexState, LocalSearchKind, LocalSearchMatchKind,
-    LocalSearchOptions, LocalSearchResult, LocalSearchSource, LocalSearchStatus,
-    LocalSearchStorageMode,
+    LocalSearchApplyChangesOptions, LocalSearchContentMode, LocalSearchEngine,
+    LocalSearchEngineConfig, LocalSearchIndexRootOptions, LocalSearchIndexState, LocalSearchKind,
+    LocalSearchMatchKind, LocalSearchOptions, LocalSearchQueryMode, LocalSearchResult,
+    LocalSearchSkippedStats, LocalSearchSource, LocalSearchStatus, LocalSearchStorageMode,
 };
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock, RwLock};
@@ -23,14 +21,11 @@ const DEFAULT_RESULT_LIMIT: usize = 48;
 const MAX_RESULT_LIMIT: usize = 300;
 const STREAM_RESULT_LIMIT_DEFAULT: usize = 120;
 const STREAM_MAX_ACTIVE: usize = 64;
-const BACKGROUND_TEXT_SCAN_BYTES: u64 = 1_000_000;
-const SYSTEM_PROVIDER_TIMEOUT: Duration = Duration::from_millis(700);
-const CONTENT_PROVIDER_TIMEOUT: Duration = Duration::from_millis(2_400);
+const BACKGROUND_TEXT_SCAN_BYTES: u64 = 256 * 1024;
 const PROVIDER_JOIN_TIMEOUT: Duration = Duration::from_millis(2_750);
-const WATCHER_REINDEX_DEBOUNCE: Duration = Duration::from_secs(8);
-const SEARCH_V2_STORAGE_DIR: &str = "search-v2";
-const CONTENT_PROVIDER_MAX_LINES: usize = 240;
-const CONTENT_PROVIDER_MAX_MATCHES_PER_FILE: usize = 4;
+const WATCHER_APPLY_DEBOUNCE: Duration = Duration::from_secs(2);
+const WATCHER_REBUILD_EVENT_THRESHOLD: usize = 1_000;
+const SEARCH_V3_STORAGE_DIR: &str = "search-v3";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -44,6 +39,20 @@ pub enum SearchLocalScopePreset {
 impl Default for SearchLocalScopePreset {
     fn default() -> Self {
         Self::Home
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchLocalMode {
+    Fast,
+    Normal,
+    Full,
+}
+
+impl Default for SearchLocalMode {
+    fn default() -> Self {
+        Self::Normal
     }
 }
 
@@ -100,6 +109,8 @@ pub struct SearchLocalRequest {
     pub custom_roots: Vec<String>,
     #[serde(default)]
     pub project_root: Option<String>,
+    #[serde(default)]
+    pub mode: SearchLocalMode,
     #[serde(default)]
     pub include_hidden: Option<bool>,
     #[serde(default)]
@@ -184,6 +195,7 @@ pub struct SearchLocalResponse {
     pub truncated: bool,
     pub elapsed_ms: u64,
     pub stats: SearchLocalStats,
+    pub index_status: SearchIndexStatusResponse,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -219,6 +231,7 @@ pub struct SearchLocalStreamReadResponse {
     pub truncated: bool,
     pub elapsed_ms: u64,
     pub stats: SearchLocalStats,
+    pub index_status: SearchIndexStatusResponse,
     pub done: bool,
     pub error: Option<String>,
 }
@@ -233,11 +246,44 @@ pub struct SearchLocalStreamCancelResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SearchIndexStatusResponse {
     pub state: SearchIndexState,
+    pub engine_version: String,
+    pub phase: String,
     pub indexed_files: u64,
     pub indexed_dirs: u64,
+    pub indexed_content_files: u64,
+    pub storage_bytes: u64,
+    pub snapshot_bytes: u64,
+    pub delta_bytes: u64,
+    pub pending_changes: u64,
+    pub skipped: SearchIndexSkippedStats,
+    pub roots: Vec<SearchIndexRootStatus>,
     pub last_built_at: Option<String>,
     pub progress: Option<f64>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchIndexRootStatus {
+    pub root: String,
+    pub state: SearchIndexState,
+    pub indexed_files: u64,
+    pub indexed_dirs: u64,
+    pub indexed_content_files: u64,
+    pub content_bytes_indexed: u64,
+    pub skipped: SearchIndexSkippedStats,
+    pub last_built_at: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchIndexSkippedStats {
+    pub hidden: u64,
+    pub vendor: u64,
+    pub binary_or_too_large: u64,
+    pub unreadable: u64,
+    pub content_budget: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +371,14 @@ fn default_storage_root() -> PathBuf {
     home_directory()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
         .join(".lyra")
+        .join("modules")
+        .join("search")
+}
+
+fn engine_storage_root_for(storage_root: Option<&str>) -> PathBuf {
+    normalize_storage_root(storage_root)
+        .unwrap_or_else(default_storage_root)
+        .join(SEARCH_V3_STORAGE_DIR)
 }
 
 fn normalize_path_string(path: &Path) -> String {
@@ -342,15 +396,85 @@ fn normalize_path_key(path: &Path) -> String {
     }
 }
 
+fn normalize_existing_path(raw: &str) -> Option<PathBuf> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    let candidate = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir().ok()?.join(path)
+    };
+    candidate.canonicalize().ok()
+}
+
+fn system_search_roots(_home_root: &Path) -> Vec<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        vec![
+            _home_root
+                .components()
+                .next()
+                .map(|component| PathBuf::from(component.as_os_str()))
+                .unwrap_or_else(|| _home_root.to_path_buf()),
+        ]
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![PathBuf::from("/")]
+    }
+}
+
+fn event_paths(event: notify::Result<Event>) -> Vec<PathBuf> {
+    event.map(|event| event.paths).unwrap_or_default()
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for path in paths {
+        let key = normalize_path_key(&path);
+        if seen.insert(key) {
+            deduped.push(path);
+        }
+    }
+    deduped
+}
+
+fn local_query_mode(mode: SearchLocalMode) -> LocalSearchQueryMode {
+    match mode {
+        SearchLocalMode::Fast => LocalSearchQueryMode::Fast,
+        SearchLocalMode::Normal => LocalSearchQueryMode::Normal,
+        SearchLocalMode::Full => LocalSearchQueryMode::Full,
+    }
+}
+
+fn search_mode_multiplier(mode: SearchLocalMode) -> usize {
+    match mode {
+        SearchLocalMode::Fast => 2,
+        SearchLocalMode::Normal => 3,
+        SearchLocalMode::Full => 5,
+    }
+}
+
 fn service_for_request(storage_root: Option<&str>) -> Result<Arc<SearchCoreService>, String> {
+    service_for_request_with_background(storage_root, true)
+}
+
+fn service_for_request_with_background(
+    storage_root: Option<&str>,
+    start_background: bool,
+) -> Result<Arc<SearchCoreService>, String> {
     let home_root = home_directory().ok_or_else(|| "home directory is unavailable".to_string())?;
-    let base_storage_root =
-        normalize_storage_root(storage_root).unwrap_or_else(default_storage_root);
-    let engine_storage_root = base_storage_root.join(SEARCH_V2_STORAGE_DIR);
+    let engine_storage_root = engine_storage_root_for(storage_root);
     let key = normalize_path_string(&engine_storage_root);
     if let Ok(guard) = service_store().read() {
         if let Some(service) = guard.get(&key) {
-            service.ensure_background_started();
+            if start_background {
+                service.ensure_background_started();
+            }
             return Ok(service.clone());
         }
     }
@@ -368,12 +492,26 @@ fn service_for_request(storage_root: Option<&str>) -> Result<Arc<SearchCoreServi
         index_running: AtomicBool::new(false),
         watcher_started: AtomicBool::new(false),
     });
-    service.ensure_background_started();
+    if start_background {
+        service.ensure_background_started();
+    }
 
     let mut guard = service_store()
         .write()
         .map_err(|_| "search service state lock poisoned".to_string())?;
-    Ok(guard.entry(key).or_insert_with(|| service).clone())
+    let service = guard.entry(key).or_insert_with(|| service).clone();
+    if start_background {
+        service.ensure_background_started();
+    }
+    Ok(service)
+}
+
+fn existing_service_for_request(storage_root: Option<&str>) -> Option<Arc<SearchCoreService>> {
+    let key = normalize_path_string(&engine_storage_root_for(storage_root));
+    service_store()
+        .read()
+        .ok()
+        .and_then(|guard| guard.get(&key).cloned())
 }
 
 impl SearchCoreService {
@@ -387,23 +525,57 @@ impl SearchCoreService {
         }
 
         if !self.root_is_ready() {
-            self.spawn_index_job();
+            self.spawn_index_job_for_root(self.home_root.clone());
         }
         self.spawn_watcher();
     }
 
     fn root_is_ready(&self) -> bool {
-        let root_key = normalize_path_key(&self.home_root);
-        self.engine.status().roots.iter().any(|root| {
-            normalize_path_key(&root.root) == root_key
-                && matches!(
-                    root.state,
-                    LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
-                )
+        self.root_is_ready_for(&self.home_root)
+    }
+
+    fn root_is_ready_for(&self, root: &Path) -> bool {
+        self.root_status_for(root).is_some_and(|root| {
+            matches!(
+                root.state,
+                LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
+            )
         })
     }
 
+    fn root_is_ready_for_request(&self, root: &Path, request: &SearchLocalRequest) -> bool {
+        let Some(status) = self.root_status_for(root) else {
+            return false;
+        };
+        if !matches!(
+            status.state,
+            LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
+        ) {
+            return false;
+        }
+        if request.enable_content.unwrap_or(true)
+            && status.indexed_file_count > 0
+            && status.indexed_content_file_count == 0
+        {
+            return false;
+        }
+        true
+    }
+
+    fn root_status_for(&self, root: &Path) -> Option<lyra_local_search::LocalSearchRootStatus> {
+        let root_key = normalize_path_key(root);
+        self.engine
+            .status()
+            .roots
+            .into_iter()
+            .find(|root| normalize_path_key(&root.root) == root_key)
+    }
+
     fn spawn_index_job(self: &Arc<Self>) {
+        self.spawn_index_job_for_root(self.home_root.clone());
+    }
+
+    fn spawn_index_job_for_root(self: &Arc<Self>, root: PathBuf) {
         if self
             .index_running
             .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -416,7 +588,7 @@ impl SearchCoreService {
             let _ = fs::create_dir_all(&service.engine_storage_root);
             let _ = service.engine.index_root(
                 LocalSearchIndexRootOptions {
-                    root: service.home_root.clone(),
+                    root,
                     include_hidden: false,
                     include_vendor: false,
                     respect_gitignore: true,
@@ -427,6 +599,42 @@ impl SearchCoreService {
             );
             service.index_running.store(false, Ordering::Relaxed);
         });
+    }
+
+    fn index_roots_blocking(
+        &self,
+        roots: &[PathBuf],
+        request: &SearchLocalRequest,
+    ) -> Result<(), String> {
+        for root in roots {
+            if self.root_is_ready_for_request(root, request) {
+                continue;
+            }
+            let owns_running_flag = self
+                .index_running
+                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok();
+            let result = self.engine.index_root(
+                LocalSearchIndexRootOptions {
+                    root: root.clone(),
+                    include_hidden: request.include_hidden.unwrap_or(false),
+                    include_vendor: false,
+                    respect_gitignore: true,
+                    content_mode: if request.enable_content.unwrap_or(true) {
+                        LocalSearchContentMode::Auto
+                    } else {
+                        LocalSearchContentMode::Disabled
+                    },
+                    max_file_size_bytes: BACKGROUND_TEXT_SCAN_BYTES,
+                },
+                None,
+            );
+            if owns_running_flag {
+                self.index_running.store(false, Ordering::Relaxed);
+            }
+            result.map_err(|error| format!("native search index failed: {error}"))?;
+        }
+        Ok(())
     }
 
     fn spawn_watcher(self: &Arc<Self>) {
@@ -453,20 +661,42 @@ impl SearchCoreService {
                 return;
             }
 
-            while rx.recv().is_ok() {
-                thread::sleep(WATCHER_REINDEX_DEBOUNCE);
-                while rx.try_recv().is_ok() {}
-                service.spawn_index_job();
+            while let Ok(first) = rx.recv() {
+                let mut paths = event_paths(first);
+                thread::sleep(WATCHER_APPLY_DEBOUNCE);
+                while let Ok(event) = rx.try_recv() {
+                    paths.extend(event_paths(event));
+                }
+                paths = dedupe_paths(paths);
+                if paths.is_empty() {
+                    continue;
+                }
+                if paths.len() >= WATCHER_REBUILD_EVENT_THRESHOLD {
+                    service.spawn_index_job();
+                    continue;
+                }
+                let _ = service.engine.apply_changes(
+                    LocalSearchApplyChangesOptions {
+                        root: service.home_root.clone(),
+                        paths,
+                        include_hidden: false,
+                        include_vendor: false,
+                        respect_gitignore: true,
+                        content_mode: LocalSearchContentMode::Auto,
+                        max_file_size_bytes: BACKGROUND_TEXT_SCAN_BYTES,
+                    },
+                    None,
+                );
             }
         });
     }
 
-    fn search(&self, request: &SearchLocalRequest, limit: usize) -> SearchLocalResponse {
+    fn search(self: &Arc<Self>, request: &SearchLocalRequest, limit: usize) -> SearchLocalResponse {
         self.search_with_updates(request, limit, |_| {})
     }
 
     fn search_with_updates(
-        &self,
+        self: &Arc<Self>,
         request: &SearchLocalRequest,
         limit: usize,
         mut on_update: impl FnMut(SearchLocalResponse),
@@ -474,7 +704,16 @@ impl SearchCoreService {
         let started_at = Instant::now();
         let query = request.query.trim().to_string();
         let scope_preset = request.scope_preset;
-        let roots = vec![normalize_path_string(&self.home_root)];
+        let search_roots = self.roots_for_request(request);
+        for root in &search_roots {
+            if !self.root_is_ready_for_request(root, request) {
+                self.spawn_index_job_for_root(root.clone());
+            }
+        }
+        let roots = search_roots
+            .iter()
+            .map(|root| normalize_path_string(root))
+            .collect::<Vec<_>>();
         let mut all_results = Vec::<SearchLocalResultItem>::new();
         let mut merged_stats = empty_stats();
         let (tx, rx) = mpsc::channel::<SearchProviderOutput>();
@@ -489,50 +728,16 @@ impl SearchCoreService {
 
         {
             let provider_tx = tx.clone();
-            let home_root = self.home_root.clone();
-            let query = query.clone();
-            thread::spawn(move || {
-                let provider_started = Instant::now();
-                let results = search_system_files(&query, &home_root, limit);
-                let mut stats = empty_stats();
-                stats.matched_files = results.len() as u64;
-                let _ = provider_tx.send(SearchProviderOutput {
-                    results,
-                    stats,
-                    elapsed_ms: provider_started.elapsed().as_millis() as u64,
-                });
-            });
-        }
-
-        if self.root_is_ready() {
-            let provider_tx = tx.clone();
             let engine = self.engine.clone();
-            let home_root = self.home_root.clone();
+            let roots = search_roots.clone();
+            let request = request.clone();
             let query = query.clone();
             thread::spawn(move || {
                 let provider_started = Instant::now();
-                let output = search_home_index(engine, home_root, query, limit);
+                let output = search_local_index(engine, roots, &request, query, limit);
                 let mut output = output;
                 output.elapsed_ms = provider_started.elapsed().as_millis() as u64;
                 let _ = provider_tx.send(output);
-            });
-        }
-
-        {
-            let provider_tx = tx.clone();
-            let home_root = self.home_root.clone();
-            let query = query.clone();
-            thread::spawn(move || {
-                let provider_started = Instant::now();
-                let results = search_home_content(&query, &home_root, limit);
-                let mut stats = empty_stats();
-                stats.content_scanned_files = results.len() as u64;
-                stats.matched_files = results.len() as u64;
-                let _ = provider_tx.send(SearchProviderOutput {
-                    results,
-                    stats,
-                    elapsed_ms: provider_started.elapsed().as_millis() as u64,
-                });
             });
         }
         drop(tx);
@@ -559,6 +764,7 @@ impl SearchCoreService {
                         started_at.elapsed().as_millis() as u64,
                         limit,
                         false,
+                        self.index_status(),
                     );
                     on_update(snapshot);
                 }
@@ -580,7 +786,32 @@ impl SearchCoreService {
             started_at.elapsed().as_millis() as u64,
             limit,
             true,
+            self.index_status(),
         )
+    }
+
+    fn roots_for_request(&self, request: &SearchLocalRequest) -> Vec<PathBuf> {
+        let roots = match request.scope_preset {
+            SearchLocalScopePreset::Home => vec![self.home_root.clone()],
+            SearchLocalScopePreset::Workspace => request
+                .context
+                .project_root
+                .as_deref()
+                .or(request.project_root.as_deref())
+                .map(|root| vec![PathBuf::from(root)])
+                .unwrap_or_else(|| vec![self.home_root.clone()]),
+            SearchLocalScopePreset::Custom => request
+                .custom_roots
+                .iter()
+                .filter_map(|root| normalize_existing_path(root))
+                .collect::<Vec<_>>(),
+            SearchLocalScopePreset::FullSystem => system_search_roots(&self.home_root),
+        };
+        if roots.is_empty() {
+            vec![self.home_root.clone()]
+        } else {
+            roots
+        }
     }
 
     fn index_status(&self) -> SearchIndexStatusResponse {
@@ -614,97 +845,10 @@ fn search_lyra_objects(request: &SearchLocalRequest, query: &str) -> Vec<SearchL
     candidates
 }
 
-fn search_system_files(query: &str, home_root: &Path, limit: usize) -> Vec<SearchLocalResultItem> {
-    let mut paths = platform_system_search(query, home_root, limit);
-    if paths.len() < limit {
-        paths.extend(search_home_paths_by_file_name(query, home_root, limit));
-    }
-    paths
-        .into_iter()
-        .filter_map(|path| {
-            let metadata = fs::metadata(&path).ok();
-            let kind = if metadata.as_ref().is_some_and(fs::Metadata::is_dir) {
-                SearchResultKind::Directory
-            } else {
-                SearchResultKind::File
-            };
-            let score = score_path(query, &path, 1_050_000.0)?;
-            Some(item_from_path(
-                path,
-                SearchResultSourceKind::File,
-                kind,
-                "system",
-                score,
-                query,
-            ))
-        })
-        .collect()
-}
-
-fn search_home_paths_by_file_name(query: &str, home_root: &Path, limit: usize) -> Vec<PathBuf> {
-    if query.trim().is_empty() {
-        return Vec::new();
-    }
-    let started_at = Instant::now();
-    let mut results = Vec::new();
-    let mut pending = VecDeque::from([home_root.to_path_buf()]);
-
-    while let Some(dir) = pending.pop_front() {
-        if results.len() >= limit || started_at.elapsed() >= CONTENT_PROVIDER_TIMEOUT {
-            break;
-        }
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if results.len() >= limit || started_at.elapsed() >= CONTENT_PROVIDER_TIMEOUT {
-                break;
-            }
-            let path = entry.path();
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_dir() {
-                if should_skip_file_name_walk_dir(&path) {
-                    continue;
-                }
-                collect_file_name_match(query, &path, &mut results);
-                pending.push_back(path);
-            } else if file_type.is_file() || file_type.is_symlink() {
-                collect_file_name_match(query, &path, &mut results);
-            }
-        }
-    }
-    results.truncate(limit);
-    results
-}
-
-fn should_skip_file_name_walk_dir(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|value| value.to_str()),
-        Some(
-            ".git"
-                | "node_modules"
-                | "target"
-                | "dist"
-                | "build"
-                | ".next"
-                | "Library"
-                | "Caches"
-                | ".cache"
-        )
-    )
-}
-
-fn collect_file_name_match(query: &str, path: &Path, results: &mut Vec<PathBuf>) {
-    if score_path(query, &path, 1_000_000.0).is_some() {
-        results.push(path.to_path_buf());
-    }
-}
-
-fn search_home_index(
+fn search_local_index(
     engine: Arc<LocalSearchEngine>,
-    home_root: PathBuf,
+    roots: Vec<PathBuf>,
+    request: &SearchLocalRequest,
     query: String,
     limit: usize,
 ) -> SearchProviderOutput {
@@ -718,7 +862,7 @@ fn search_home_index(
         skipped_binary_or_too_large: 0,
         used_index: false,
     };
-    let content_mode = if status.sqlite_fts_available && status.indexed_content_file_count > 0 {
+    let content_mode = if request.enable_content.unwrap_or(true) {
         LocalSearchContentMode::Auto
     } else {
         LocalSearchContentMode::Disabled
@@ -727,17 +871,20 @@ fn search_home_index(
         .search(
             LocalSearchOptions {
                 query: query.clone(),
-                roots: vec![home_root],
+                roots,
                 kinds: vec![LocalSearchKind::File, LocalSearchKind::Directory],
                 extensions: Vec::new(),
-                limit: limit.saturating_mul(3).min(MAX_RESULT_LIMIT),
-                include_hidden: false,
+                limit: limit
+                    .saturating_mul(search_mode_multiplier(request.mode))
+                    .min(MAX_RESULT_LIMIT),
+                include_hidden: request.include_hidden.unwrap_or(false),
                 include_vendor: false,
                 respect_gitignore: true,
                 content_mode,
                 max_file_size_bytes: BACKGROUND_TEXT_SCAN_BYTES,
-                enable_fuzzy: true,
-                enable_extension_match: true,
+                enable_fuzzy: request.enable_fuzzy.unwrap_or(true),
+                enable_extension_match: request.enable_extension_match.unwrap_or(true),
+                query_mode: local_query_mode(request.mode),
             },
             None,
         )
@@ -756,282 +903,6 @@ fn search_home_index(
         stats,
         elapsed_ms: 0,
     }
-}
-
-fn search_home_content(query: &str, home_root: &Path, limit: usize) -> Vec<SearchLocalResultItem> {
-    if query.trim().is_empty() {
-        return Vec::new();
-    }
-    let max_lines = limit
-        .saturating_mul(CONTENT_PROVIDER_MAX_MATCHES_PER_FILE)
-        .max(CONTENT_PROVIDER_MAX_LINES.min(limit.max(1)));
-    run_command_lines_limited(
-        "rg",
-        &[
-            "--color=never",
-            "--line-number",
-            "--column",
-            "--no-heading",
-            "--smart-case",
-            "--fixed-strings",
-            "--max-count",
-            &CONTENT_PROVIDER_MAX_MATCHES_PER_FILE.to_string(),
-            "--max-filesize",
-            "1M",
-            "--glob",
-            "!**/.git/**",
-            "--glob",
-            "!**/node_modules/**",
-            "--glob",
-            "!**/target/**",
-            "--glob",
-            "!**/dist/**",
-            "--glob",
-            "!**/build/**",
-            "--glob",
-            "!**/.next/**",
-            "--glob",
-            "!**/Library/**",
-            "--glob",
-            "!**/Caches/**",
-            "--glob",
-            "!**/.cache/**",
-            query,
-            &normalize_path_string(home_root),
-        ],
-        CONTENT_PROVIDER_TIMEOUT,
-        max_lines,
-    )
-    .into_iter()
-    .filter_map(|line| item_from_rg_line(&line, home_root, query))
-    .collect()
-}
-
-#[cfg(target_os = "macos")]
-fn platform_system_search(query: &str, _home_root: &Path, limit: usize) -> Vec<PathBuf> {
-    run_command_lines_limited(
-        "mdfind",
-        &[query],
-        SYSTEM_PROVIDER_TIMEOUT,
-        limit.saturating_mul(2).max(1),
-    )
-    .into_iter()
-    .take(limit)
-    .map(PathBuf::from)
-    .collect()
-}
-
-#[cfg(target_os = "windows")]
-fn platform_system_search(query: &str, _home_root: &Path, limit: usize) -> Vec<PathBuf> {
-    let escaped_query = query.replace('\'', "''");
-    let script = format!(
-        "$c=New-Object -ComObject ADODB.Connection;\
-         $c.Open('Provider=Search.CollatorDSO;Extended Properties=\"Application=Windows\";');\
-         $sql=\"SELECT TOP {limit} System.ItemPathDisplay FROM SYSTEMINDEX \
-         WHERE System.FileName LIKE '%{escaped_query}%'\";\
-         $r=New-Object -ComObject ADODB.Recordset;\
-         $r.Open($sql,$c);\
-         while(-not $r.EOF){{ $r.Fields.Item('System.ItemPathDisplay').Value; $r.MoveNext() }};\
-         $r.Close();$c.Close();"
-    );
-    run_command_lines_limited(
-        "powershell.exe",
-        &[
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ],
-        SYSTEM_PROVIDER_TIMEOUT,
-        limit.saturating_mul(2).max(1),
-    )
-    .into_iter()
-    .take(limit)
-    .map(PathBuf::from)
-    .collect()
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn platform_system_search(query: &str, _home_root: &Path, limit: usize) -> Vec<PathBuf> {
-    let tracker = run_command_lines_limited(
-        "tracker3",
-        &[
-            "search",
-            "--files",
-            "--disable-snippets",
-            "--limit",
-            &limit.to_string(),
-            query,
-        ],
-        SYSTEM_PROVIDER_TIMEOUT,
-        limit.saturating_mul(2).max(1),
-    )
-    .into_iter()
-    .map(|line| match line.strip_prefix("file://") {
-        Some(path) => path.to_string(),
-        None => line,
-    })
-    .map(PathBuf::from)
-    .take(limit)
-    .collect::<Vec<_>>();
-    if !tracker.is_empty() {
-        return tracker;
-    }
-
-    run_command_lines_limited(
-        "locate",
-        &["-i", "-l", &limit.to_string(), query],
-        SYSTEM_PROVIDER_TIMEOUT,
-        limit.saturating_mul(2).max(1),
-    )
-    .into_iter()
-    .map(PathBuf::from)
-    .take(limit)
-    .collect()
-}
-
-#[cfg(not(any(unix, windows)))]
-fn platform_system_search(_query: &str, _home_root: &Path, _limit: usize) -> Vec<PathBuf> {
-    Vec::new()
-}
-
-fn run_command_lines_limited(
-    program: &str,
-    args: &[&str],
-    timeout: Duration,
-    max_lines: usize,
-) -> Vec<String> {
-    let mut child = match Command::new(program)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(_) => return Vec::new(),
-    };
-
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Vec::new();
-    };
-    let (line_tx, line_rx) = mpsc::channel::<String>();
-    thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if line_tx.send(line).is_err() {
-                break;
-            }
-        }
-    });
-
-    let started_at = Instant::now();
-    let mut lines = Vec::new();
-    loop {
-        for line in line_rx.try_iter() {
-            let line = line.trim().to_string();
-            if !line.is_empty() {
-                lines.push(line);
-            }
-            if lines.len() >= max_lines {
-                let _ = child.kill();
-                let _ = child.wait();
-                return lines;
-            }
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    return Vec::new();
-                }
-                for line in line_rx.try_iter() {
-                    let line = line.trim().to_string();
-                    if !line.is_empty() {
-                        lines.push(line);
-                    }
-                    if lines.len() >= max_lines {
-                        break;
-                    }
-                }
-                return lines;
-            }
-            Ok(None) if started_at.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                for line in line_rx.try_iter() {
-                    let line = line.trim().to_string();
-                    if !line.is_empty() {
-                        lines.push(line);
-                    }
-                    if lines.len() >= max_lines {
-                        break;
-                    }
-                }
-                return lines;
-            }
-            Ok(None) => thread::sleep(Duration::from_millis(12)),
-            Err(_) => return Vec::new(),
-        }
-    }
-}
-
-fn item_from_rg_line(line: &str, home_root: &Path, query: &str) -> Option<SearchLocalResultItem> {
-    let mut parts = line.rsplitn(4, ':');
-    let text = parts.next()?.trim().to_string();
-    let column = parts.next()?.parse::<usize>().ok().unwrap_or(1);
-    let line_number = parts.next()?.parse::<u64>().ok()?;
-    let raw_path = parts.next()?.trim();
-    if raw_path.is_empty() {
-        return None;
-    }
-    let path = {
-        let path = PathBuf::from(raw_path);
-        if path.is_absolute() {
-            path
-        } else {
-            home_root.join(path)
-        }
-    };
-    let line_weight = line_number.clamp(1, 1_000) as u32;
-    let score = score_path(query, &path, 880_000.0).unwrap_or(910_000.0)
-        + (10_000.0 / f64::from(line_weight));
-    let mut item = item_from_path(
-        path,
-        SearchResultSourceKind::File,
-        SearchResultKind::File,
-        "content",
-        score,
-        query,
-    );
-    item.match_kind = "content".to_string();
-    item.snippet = Some(text.clone());
-    item.line = Some(line_number);
-    item.match_ranges = match_ranges_for_content(&item.title, &text, query, column);
-    Some(item)
-}
-
-fn match_ranges_for_content(
-    title: &str,
-    snippet: &str,
-    query: &str,
-    column: usize,
-) -> Vec<SearchMatchRange> {
-    let mut ranges = match_ranges_for_title(title, query);
-    let snippet_lower = snippet.to_lowercase();
-    let query_lower = query.trim().to_lowercase();
-    if !query_lower.is_empty() {
-        let start = snippet_lower
-            .find(&query_lower)
-            .unwrap_or_else(|| column.saturating_sub(1).min(snippet.len()));
-        ranges.push(SearchMatchRange {
-            field: "snippet".to_string(),
-            start,
-            end: start.saturating_add(query_lower.len()).min(snippet.len()),
-        });
-    }
-    ranges
 }
 
 fn item_from_index_result(result: LocalSearchResult, query: &str) -> SearchLocalResultItem {
@@ -1066,6 +937,7 @@ fn item_from_index_result(result: LocalSearchResult, query: &str) -> SearchLocal
     item.extension = extension;
     item.match_kind = match_kind;
     item.snippet = result.snippet;
+    item.line = result.line;
     item.modified_at = modified_at;
     item
 }
@@ -1121,7 +993,7 @@ fn stable_result_id(source: SearchResultSourceKind, key: &str) -> String {
     let mut hasher = DefaultHasher::new();
     source.hash(&mut hasher);
     key.hash(&mut hasher);
-    format!("search-v2-{:x}", hasher.finish())
+    format!("search-v3-{:x}", hasher.finish())
 }
 
 fn actions_for_kind(kind: SearchResultKind) -> Vec<SearchResultAction> {
@@ -1267,6 +1139,7 @@ fn build_search_response(
     elapsed_ms: u64,
     limit: usize,
     done: bool,
+    index_status: SearchIndexStatusResponse,
 ) -> SearchLocalResponse {
     let mut results = dedupe_and_rank(results, limit);
     let truncated = results.len() > limit;
@@ -1294,6 +1167,7 @@ fn build_search_response(
         truncated: truncated || !done,
         elapsed_ms,
         stats,
+        index_status,
     }
 }
 
@@ -1349,14 +1223,320 @@ fn to_index_status(status: LocalSearchStatus, index_running: bool) -> SearchInde
         SearchIndexState::Ready => Some(1.0),
         SearchIndexState::Idle | SearchIndexState::Failed => None,
     };
+    let roots = status
+        .roots
+        .iter()
+        .map(|root| SearchIndexRootStatus {
+            root: normalize_path_string(&root.root),
+            state: to_search_index_state(root.state, false),
+            indexed_files: root.indexed_file_count,
+            indexed_dirs: root.indexed_dir_count,
+            indexed_content_files: root.indexed_content_file_count,
+            content_bytes_indexed: root.content_bytes_indexed,
+            skipped: to_search_skipped(&root.skipped),
+            last_built_at: root.last_indexed_at.map(|value| value.to_string()),
+            error: root.error.clone(),
+        })
+        .collect();
     SearchIndexStatusResponse {
         state,
+        engine_version: status.engine_version,
+        phase: status.phase,
         indexed_files: status.indexed_file_count,
         indexed_dirs: status.indexed_dir_count,
+        indexed_content_files: status.indexed_content_file_count,
+        storage_bytes: status.storage_bytes,
+        snapshot_bytes: status.snapshot_bytes,
+        delta_bytes: status.delta_bytes,
+        pending_changes: status.pending_changes,
+        skipped: to_search_skipped(&status.skipped),
+        roots,
         last_built_at,
         progress,
         error,
     }
+}
+
+fn to_search_index_state(state: LocalSearchIndexState, index_running: bool) -> SearchIndexState {
+    if index_running {
+        return SearchIndexState::Building;
+    }
+    match state {
+        LocalSearchIndexState::Ready | LocalSearchIndexState::Partial => SearchIndexState::Ready,
+        LocalSearchIndexState::Indexing => SearchIndexState::Building,
+        LocalSearchIndexState::Failed => SearchIndexState::Failed,
+        LocalSearchIndexState::Empty | LocalSearchIndexState::Walker => SearchIndexState::Idle,
+    }
+}
+
+fn to_search_skipped(skipped: &LocalSearchSkippedStats) -> SearchIndexSkippedStats {
+    SearchIndexSkippedStats {
+        hidden: skipped.hidden,
+        vendor: skipped.vendor,
+        binary_or_too_large: skipped.binary_or_too_large,
+        unreadable: skipped.unreadable,
+        content_budget: skipped.content_budget,
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DiskSearchIndexMeta {
+    #[serde(default, alias = "engineVersion")]
+    engine_version: Option<String>,
+    #[serde(default)]
+    phase: Option<String>,
+    #[serde(default)]
+    roots: Vec<DiskSearchIndexRootStatus>,
+    #[serde(default, alias = "pendingChanges")]
+    pending_changes: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiskSearchIndexRootStatus {
+    root: PathBuf,
+    state: String,
+    #[serde(default)]
+    indexed_file_count: u64,
+    #[serde(default)]
+    indexed_dir_count: u64,
+    #[serde(default)]
+    indexed_content_file_count: u64,
+    #[serde(default)]
+    content_bytes_indexed: u64,
+    #[serde(default)]
+    skipped: DiskSearchIndexSkippedStats,
+    #[serde(default)]
+    last_indexed_at: Option<u64>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiskSearchIndexSkippedStats {
+    #[serde(default)]
+    hidden: u64,
+    #[serde(default)]
+    vendor: u64,
+    #[serde(default)]
+    binary_or_too_large: u64,
+    #[serde(default)]
+    unreadable: u64,
+    #[serde(default)]
+    content_budget: u64,
+}
+
+fn disk_search_state(state: &str) -> SearchIndexState {
+    match state {
+        "ready" | "partial" => SearchIndexState::Ready,
+        "indexing" => SearchIndexState::Building,
+        "failed" => SearchIndexState::Failed,
+        _ => SearchIndexState::Idle,
+    }
+}
+
+fn aggregate_disk_search_state(roots: &[DiskSearchIndexRootStatus]) -> SearchIndexState {
+    if roots
+        .iter()
+        .any(|root| disk_search_state(&root.state) == SearchIndexState::Building)
+    {
+        return SearchIndexState::Building;
+    }
+    if roots
+        .iter()
+        .any(|root| disk_search_state(&root.state) == SearchIndexState::Ready)
+    {
+        return SearchIndexState::Ready;
+    }
+    if roots
+        .iter()
+        .any(|root| disk_search_state(&root.state) == SearchIndexState::Failed)
+    {
+        return SearchIndexState::Failed;
+    }
+    SearchIndexState::Idle
+}
+
+fn empty_search_skipped_stats() -> SearchIndexSkippedStats {
+    SearchIndexSkippedStats {
+        hidden: 0,
+        vendor: 0,
+        binary_or_too_large: 0,
+        unreadable: 0,
+        content_budget: 0,
+    }
+}
+
+fn add_disk_skipped_stats(
+    target: &mut SearchIndexSkippedStats,
+    next: &DiskSearchIndexSkippedStats,
+) {
+    target.hidden = target.hidden.saturating_add(next.hidden);
+    target.vendor = target.vendor.saturating_add(next.vendor);
+    target.binary_or_too_large = target
+        .binary_or_too_large
+        .saturating_add(next.binary_or_too_large);
+    target.unreadable = target.unreadable.saturating_add(next.unreadable);
+    target.content_budget = target.content_budget.saturating_add(next.content_budget);
+}
+
+fn disk_file_bytes(path: &Path) -> u64 {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+}
+
+fn disk_storage_bytes(native_dir: &Path) -> u64 {
+    fs::read_dir(native_dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.metadata().ok())
+        .filter(|metadata| metadata.is_file())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+fn disk_status_error(storage_root: Option<&str>, error: String) -> SearchIndexStatusResponse {
+    let native_dir = engine_storage_root_for(storage_root).join("native");
+    let snapshot_bytes = disk_file_bytes(&native_dir.join("snapshot.lyidx"));
+    let delta_bytes = disk_file_bytes(&native_dir.join("delta.lylog"));
+    SearchIndexStatusResponse {
+        state: SearchIndexState::Failed,
+        engine_version: "native-v3".to_string(),
+        phase: "failed".to_string(),
+        indexed_files: 0,
+        indexed_dirs: 0,
+        indexed_content_files: 0,
+        storage_bytes: disk_storage_bytes(&native_dir),
+        snapshot_bytes,
+        delta_bytes,
+        pending_changes: 0,
+        skipped: empty_search_skipped_stats(),
+        roots: Vec::new(),
+        last_built_at: None,
+        progress: None,
+        error: Some(error),
+    }
+}
+
+fn read_disk_search_index_status(storage_root: Option<&str>) -> Option<SearchIndexStatusResponse> {
+    let native_dir = engine_storage_root_for(storage_root).join("native");
+    let meta_path = native_dir.join("meta.json");
+    if !meta_path.exists() {
+        return None;
+    }
+    let text = match fs::read_to_string(&meta_path) {
+        Ok(text) => text,
+        Err(error) => {
+            return Some(disk_status_error(
+                storage_root,
+                format!("local search v3 meta read failed: {error}"),
+            ));
+        }
+    };
+    let meta: DiskSearchIndexMeta = match serde_json::from_str(&text) {
+        Ok(meta) => meta,
+        Err(error) => {
+            return Some(disk_status_error(
+                storage_root,
+                format!("local search v3 meta parse failed: {error}"),
+            ));
+        }
+    };
+    let state = aggregate_disk_search_state(&meta.roots);
+    let progress = match state {
+        SearchIndexState::Building => Some(0.0),
+        SearchIndexState::Ready => Some(1.0),
+        SearchIndexState::Idle | SearchIndexState::Failed => None,
+    };
+    let mut skipped = empty_search_skipped_stats();
+    let indexed_files = meta
+        .roots
+        .iter()
+        .map(|root| root.indexed_file_count)
+        .sum::<u64>();
+    let indexed_dirs = meta
+        .roots
+        .iter()
+        .map(|root| root.indexed_dir_count)
+        .sum::<u64>();
+    let indexed_content_files = meta
+        .roots
+        .iter()
+        .map(|root| root.indexed_content_file_count)
+        .sum::<u64>();
+    let last_built_at = meta
+        .roots
+        .iter()
+        .filter_map(|root| root.last_indexed_at)
+        .max()
+        .map(|value| value.to_string());
+    let error = meta.roots.iter().find_map(|root| root.error.clone());
+    let roots = meta
+        .roots
+        .iter()
+        .map(|root| {
+            add_disk_skipped_stats(&mut skipped, &root.skipped);
+            SearchIndexRootStatus {
+                root: normalize_path_string(&root.root),
+                state: disk_search_state(&root.state),
+                indexed_files: root.indexed_file_count,
+                indexed_dirs: root.indexed_dir_count,
+                indexed_content_files: root.indexed_content_file_count,
+                content_bytes_indexed: root.content_bytes_indexed,
+                skipped: SearchIndexSkippedStats {
+                    hidden: root.skipped.hidden,
+                    vendor: root.skipped.vendor,
+                    binary_or_too_large: root.skipped.binary_or_too_large,
+                    unreadable: root.skipped.unreadable,
+                    content_budget: root.skipped.content_budget,
+                },
+                last_built_at: root.last_indexed_at.map(|value| value.to_string()),
+                error: root.error.clone(),
+            }
+        })
+        .collect();
+    let snapshot_bytes = disk_file_bytes(&native_dir.join("snapshot.lyidx"));
+    let delta_bytes = disk_file_bytes(&native_dir.join("delta.lylog"));
+    Some(SearchIndexStatusResponse {
+        state,
+        engine_version: meta
+            .engine_version
+            .unwrap_or_else(|| "native-v3".to_string()),
+        phase: meta.phase.unwrap_or_else(|| {
+            match state {
+                SearchIndexState::Idle => "idle",
+                SearchIndexState::Building => "indexing",
+                SearchIndexState::Ready => "ready",
+                SearchIndexState::Failed => "failed",
+            }
+            .to_string()
+        }),
+        indexed_files,
+        indexed_dirs,
+        indexed_content_files,
+        storage_bytes: disk_storage_bytes(&native_dir),
+        snapshot_bytes,
+        delta_bytes,
+        pending_changes: meta.pending_changes,
+        skipped,
+        roots,
+        last_built_at,
+        progress,
+        error,
+    })
+}
+
+pub fn search_index_status_is_ready(status: &SearchIndexStatusResponse) -> bool {
+    status.state == SearchIndexState::Ready
+        && status.indexed_files > 0
+        && status
+            .roots
+            .iter()
+            .any(|root| root.state == SearchIndexState::Ready && root.indexed_files > 0)
 }
 
 fn empty_stats() -> SearchLocalStats {
@@ -1435,6 +1615,7 @@ fn run_stream_worker(
             guard.snapshot.truncated = payload.truncated;
             guard.snapshot.elapsed_ms = payload.elapsed_ms;
             guard.snapshot.stats = payload.stats;
+            guard.snapshot.index_status = payload.index_status;
             guard.snapshot.done = false;
             guard.snapshot.error = None;
         }
@@ -1447,6 +1628,7 @@ fn run_stream_worker(
         guard.snapshot.truncated = result.truncated;
         guard.snapshot.elapsed_ms = result.elapsed_ms;
         guard.snapshot.stats = result.stats;
+        guard.snapshot.index_status = result.index_status;
         guard.snapshot.done = true;
         guard.snapshot.error = None;
     }
@@ -1464,11 +1646,16 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
         .unwrap_or(STREAM_RESULT_LIMIT_DEFAULT)
         .max(1)
         .min(MAX_RESULT_LIMIT);
-    let service = service_for_request(request.storage_root.as_deref())?;
-    let roots = vec![normalize_path_string(&service.home_root)];
+    let service = service_for_request_with_background(request.storage_root.as_deref(), false)?;
+    let roots = service
+        .roots_for_request(&request)
+        .iter()
+        .map(|root| normalize_path_string(root))
+        .collect::<Vec<_>>();
     let scope_preset = request.scope_preset;
     let stream_id = format!("search-stream-{}", Uuid::new_v4());
     let cancel_flag = Arc::new(AtomicBool::new(false));
+    let index_status = service.index_status();
     let stream_state = Arc::new(RwLock::new(SearchStreamState {
         snapshot: SearchLocalStreamReadResponse {
             stream_id: stream_id.clone(),
@@ -1479,6 +1666,7 @@ pub fn search_local_stream_start_json(request_json: String) -> Result<String, St
             truncated: false,
             elapsed_ms: 0,
             stats: empty_stats(),
+            index_status,
             done: false,
             error: None,
         },
@@ -1567,12 +1755,46 @@ pub fn search_local_stream_cancel_json(request_json: String) -> Result<String, S
     .map_err(|error| format!("serialize response failed: {error}"))
 }
 
+pub fn search_local_blocking_json(request_json: String) -> Result<String, String> {
+    let request: SearchLocalRequest =
+        serde_json::from_str(&request_json).map_err(|error| format!("invalid request: {error}"))?;
+    if request.query.trim().is_empty() {
+        return Err("query is required".to_string());
+    }
+    let service = service_for_request_with_background(request.storage_root.as_deref(), false)?;
+    let roots = service.roots_for_request(&request);
+    service.index_roots_blocking(&roots, &request)?;
+    let response = service.search(&request, clamp_limit(request.limit));
+    serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
+}
+
 pub fn read_search_index_status_json(request_json: String) -> Result<String, String> {
     let request: SearchIndexStatusRequest = serde_json::from_str(&request_json)
         .unwrap_or(SearchIndexStatusRequest { storage_root: None });
+    if let Some(service) = existing_service_for_request(request.storage_root.as_deref()) {
+        return serde_json::to_string(&service.index_status())
+            .map_err(|error| format!("serialize response failed: {error}"));
+    }
+    if let Some(status) = read_disk_search_index_status(request.storage_root.as_deref())
+        && (status.state != SearchIndexState::Idle
+            || status.snapshot_bytes > 0
+            || !status.roots.is_empty())
+    {
+        return serde_json::to_string(&status)
+            .map_err(|error| format!("serialize response failed: {error}"));
+    }
     let service = service_for_request(request.storage_root.as_deref())?;
     serde_json::to_string(&service.index_status())
         .map_err(|error| format!("serialize response failed: {error}"))
+}
+
+pub fn search_index_ready(storage_root: Option<&str>) -> Result<bool, String> {
+    if let Some(service) = existing_service_for_request(storage_root) {
+        return Ok(search_index_status_is_ready(&service.index_status()));
+    }
+    Ok(read_disk_search_index_status(storage_root)
+        .as_ref()
+        .is_some_and(search_index_status_is_ready))
 }
 
 pub fn rebuild_search_index_json(request_json: String) -> Result<String, String> {
@@ -1655,6 +1877,7 @@ mod tests {
                 truncated: false,
                 elapsed_ms: 0,
                 stats: empty_stats(),
+                index_status: empty_index_status(),
                 done: false,
                 error: None,
             },
@@ -1676,43 +1899,159 @@ mod tests {
     }
 
     #[test]
-    fn home_content_provider_finds_unicode_text_without_project_context() {
-        if Command::new("rg").arg("--version").output().is_err() {
-            return;
-        }
+    fn disk_index_status_reads_v3_meta_without_snapshot() {
+        let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
+        let native_dir = dir.path().join("search-v3/native");
+        fs::create_dir_all(&native_dir).unwrap_or_else(|error| panic!("{error}"));
+        fs::write(
+            native_dir.join("meta.json"),
+            serde_json::json!({
+                "engineVersion": "native-v3",
+                "snapshotVersion": 3,
+                "phase": "ready",
+                "pendingChanges": 0,
+                "roots": [{
+                    "root": dir.path().to_string_lossy(),
+                    "state": "ready",
+                    "indexedFileCount": 3,
+                    "indexedDirCount": 1,
+                    "indexedContentFileCount": 2,
+                    "contentBytesIndexed": 42,
+                    "skipped": {},
+                    "lastIndexedAt": 1234
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+
+        let status = read_search_index_status_json(
+            serde_json::json!({ "storageRoot": dir.path().to_string_lossy() }).to_string(),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&status).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(parsed["state"], "ready");
+        assert_eq!(parsed["indexedFiles"], 3);
+        assert_eq!(parsed["snapshotBytes"], 0);
+        assert!(search_index_ready(Some(&dir.path().to_string_lossy())).unwrap());
+    }
+
+    #[test]
+    fn v3_index_provider_finds_unicode_content() {
         let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
         let file_path = dir.path().join("session-tabs.ts");
         fs::write(&file_path, "const DEFAULT_SESSION_TITLE = \"新会话\";\n")
             .unwrap_or_else(|error| panic!("{error}"));
+        let engine = Arc::new(LocalSearchEngine::new());
+        engine
+            .index_root(
+                LocalSearchIndexRootOptions {
+                    root: dir.path().to_path_buf(),
+                    include_hidden: false,
+                    include_vendor: false,
+                    respect_gitignore: true,
+                    content_mode: LocalSearchContentMode::Auto,
+                    max_file_size_bytes: BACKGROUND_TEXT_SCAN_BYTES,
+                },
+                None,
+            )
+            .unwrap_or_else(|error| panic!("{error}"));
 
-        let results = search_home_content("新会话", dir.path(), 20);
+        let output = search_local_index(
+            engine,
+            vec![dir.path().to_path_buf()],
+            &SearchLocalRequest {
+                query: "新会话".to_string(),
+                limit: Some(20),
+                context: SearchContext::default(),
+                scope_preset: SearchLocalScopePreset::Home,
+                custom_roots: Vec::new(),
+                project_root: None,
+                mode: SearchLocalMode::Normal,
+                include_hidden: None,
+                enable_fuzzy: None,
+                enable_content: None,
+                enable_extension_match: None,
+                storage_root: None,
+            },
+            "新会话".to_string(),
+            20,
+        );
+        let expected_path = normalize_path_string(
+            &file_path
+                .canonicalize()
+                .unwrap_or_else(|_| file_path.clone()),
+        );
 
         assert!(
-            results
+            output
+                .results
                 .iter()
-                .any(|result| result.path == normalize_path_string(&file_path)
+                .any(|result| result.path == expected_path
                     && result
                         .snippet
                         .as_deref()
                         .is_some_and(|snippet| snippet.contains("新会话"))),
-            "expected rg-backed content provider to find 新会话 in {file_path:?}"
+            "expected V3 content index to find 新会话 in {file_path:?}"
         );
     }
 
     #[test]
-    fn home_file_name_provider_finds_path_matches_without_content_match() {
+    fn v3_index_provider_finds_path_matches_without_content_match() {
         let dir = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
         let file_path = dir.path().join("LyraNotes").join("empty.txt");
         fs::create_dir_all(file_path.parent().expect("parent"))
             .unwrap_or_else(|error| panic!("{error}"));
         fs::write(&file_path, "plain text without query\n")
             .unwrap_or_else(|error| panic!("{error}"));
+        let engine = Arc::new(LocalSearchEngine::new());
+        engine
+            .index_root(
+                LocalSearchIndexRootOptions {
+                    root: dir.path().to_path_buf(),
+                    include_hidden: false,
+                    include_vendor: false,
+                    respect_gitignore: true,
+                    content_mode: LocalSearchContentMode::Auto,
+                    max_file_size_bytes: BACKGROUND_TEXT_SCAN_BYTES,
+                },
+                None,
+            )
+            .unwrap_or_else(|error| panic!("{error}"));
 
-        let results = search_home_paths_by_file_name("lyra", dir.path(), 20);
+        let output = search_local_index(
+            engine,
+            vec![dir.path().to_path_buf()],
+            &SearchLocalRequest {
+                query: "lyra".to_string(),
+                limit: Some(20),
+                context: SearchContext::default(),
+                scope_preset: SearchLocalScopePreset::Home,
+                custom_roots: Vec::new(),
+                project_root: None,
+                mode: SearchLocalMode::Fast,
+                include_hidden: None,
+                enable_fuzzy: None,
+                enable_content: Some(false),
+                enable_extension_match: None,
+                storage_root: None,
+            },
+            "lyra".to_string(),
+            20,
+        );
+        let expected_path = normalize_path_string(
+            &file_path
+                .canonicalize()
+                .unwrap_or_else(|_| file_path.clone()),
+        );
 
         assert!(
-            results.iter().any(|result| result == &file_path),
-            "expected file-name fallback to find {file_path:?}"
+            output
+                .results
+                .iter()
+                .any(|result| result.path == expected_path),
+            "expected V3 path index to find {file_path:?}"
         );
     }
 
@@ -1736,6 +2075,7 @@ mod tests {
             12,
             10,
             false,
+            empty_index_status(),
         );
 
         assert!(!partial.results.is_empty());
@@ -1753,8 +2093,35 @@ mod tests {
             1,
             10,
             true,
+            empty_index_status(),
         );
 
         assert_eq!(response.scope_preset, SearchLocalScopePreset::Home);
+    }
+
+    fn empty_index_status() -> SearchIndexStatusResponse {
+        SearchIndexStatusResponse {
+            state: SearchIndexState::Idle,
+            engine_version: "native-v3".to_string(),
+            phase: "idle".to_string(),
+            indexed_files: 0,
+            indexed_dirs: 0,
+            indexed_content_files: 0,
+            storage_bytes: 0,
+            snapshot_bytes: 0,
+            delta_bytes: 0,
+            pending_changes: 0,
+            skipped: SearchIndexSkippedStats {
+                hidden: 0,
+                vendor: 0,
+                binary_or_too_large: 0,
+                unreadable: 0,
+                content_budget: 0,
+            },
+            roots: Vec::new(),
+            last_built_at: None,
+            progress: None,
+            error: None,
+        }
     }
 }

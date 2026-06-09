@@ -676,10 +676,37 @@ pub(crate) fn long_term_memory_create(payload: Value) -> AgentRuntimeResult<Valu
 pub(crate) fn long_term_memory_search(payload: Value) -> AgentRuntimeResult<Value> {
     let root = runtime_root_for_memory()?;
     let query = memory_query_from_payload(&payload, true);
+    let query_text = query.query.clone();
+    let working_dir =
+        string_opt(&payload, "workingDir").or_else(|| string_opt(&payload, "working_dir"));
     let explain = query.explain;
     let records = search_ranked_long_term_memory(&root, query)?;
+    let session_recall = query_text
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|text| {
+            match select_system_recall_for_injection(&root, text, working_dir.as_deref(), &[]) {
+                Ok(mut recall) => {
+                    recall.retain(|record| record.item.source_kind == "session_message");
+                    system_recall_json(&recall)
+                }
+                Err(error) => json!({
+                    "selectedCount": 0,
+                    "records": [],
+                    "error": error.to_string(),
+                }),
+            }
+        })
+        .unwrap_or_else(|| {
+            json!({
+                "selectedCount": 0,
+                "records": [],
+            })
+        });
     Ok(json!({
         "records": records.iter().map(|record| ranked_memory_json(record, explain)).collect::<Vec<_>>(),
+        "sessionRecall": session_recall,
     }))
 }
 

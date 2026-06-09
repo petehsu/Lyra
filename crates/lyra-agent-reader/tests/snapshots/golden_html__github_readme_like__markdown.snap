@@ -1,0 +1,25 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# agent-reader
+
+A README-like page with project overview, installation notes, and a task list.
+
+## Install
+
+```sh
+cargo add lyra-agent-reader
+```
+
+## Features
+
+- [x] HTML to markdown
+- [x] PDF routing
+- [ ] Optional OCR
+
+Read the contributing guide before adding fixtures.
+
+
+## References
+[1] contributing guide — https://example.test/readme/contributing

@@ -56,6 +56,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
   readonly notificationModel: WorkbenchNotificationModel;
+  readonly localSearchReady: boolean;
   readonly labels: WorkbenchLabels;
   readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
@@ -112,6 +113,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   preferencesModel,
   settings,
   notificationModel,
+  localSearchReady,
   labels,
   softwareCapabilities,
   onOpenFileFromManager,
@@ -176,6 +178,7 @@ export const useWorkspaceSurfaceRouterProps = ({
     },
     splitThreePaneLayout: preferences.splitThreePaneLayout,
     searchResultsSourceFilter: preferences.searchResultsSourceFilter,
+    localSearchReady,
     onSearchResultsSourceFilterChange: preferencesModel.setSearchResultsSourceFilter,
     settings,
     onOpenFileFromManager,

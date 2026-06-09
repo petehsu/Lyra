@@ -3,6 +3,8 @@ import type {
   WorkbenchDocumentInspectResult,
   WorkbenchDocumentReadRequest,
   WorkbenchDocumentReadResult,
+  WorkbenchAgentDocumentReadRequest,
+  WorkbenchAgentDocumentReadResult,
   WorkbenchDocumentSearchRequest,
   WorkbenchDocumentSearchResult,
   WorkbenchEmbeddedDocumentCandidate
@@ -14,7 +16,9 @@ import type {
   NativeDocumentReadRequest,
   NativeDocumentReadResult,
   NativeDocumentSearchRequest,
-  NativeDocumentSearchResult
+  NativeDocumentSearchResult,
+  NativeAgentDocumentReadRequest,
+  NativeAgentDocumentReadResult
 } from "../documents/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { WorkbenchDocumentsCache } from "./cache";
@@ -109,6 +113,20 @@ const invokeSearchNative = ({
 }): NativeDocumentSearchResult => {
   try {
     return readJson<NativeDocumentSearchResult>(() => bindings.searchDocumentTextJson(JSON.stringify(request)));
+  } catch (error) {
+    throw parseDocsNativeError(error);
+  }
+};
+
+const invokeAgentReadNative = ({
+  bindings,
+  request
+}: {
+  readonly bindings: DocsNativeBindings;
+  readonly request: NativeAgentDocumentReadRequest;
+}): NativeAgentDocumentReadResult => {
+  try {
+    return readJson<NativeAgentDocumentReadResult>(() => bindings.readAgentDocumentJson(JSON.stringify(request)));
   } catch (error) {
     throw parseDocsNativeError(error);
   }
@@ -387,6 +405,97 @@ export const createWorkbenchDocumentsService = ({
         const result = await buildFallback(code);
         cache.parsed.write(parsedCacheKey, result);
         return result;
+      }
+    },
+    readAgentDocument: async (request: WorkbenchAgentDocumentReadRequest): Promise<WorkbenchAgentDocumentReadResult> => {
+      const target = await resolveTarget({
+        browserBridge,
+        cache,
+        ...(request.tabId === undefined ? {} : { tabId: request.tabId })
+      });
+      const maxChars = Math.max(1, Math.round(request.maxChars ?? DEFAULT_MAX_CHARS));
+
+      const buildFallback = async (reason: string): Promise<WorkbenchAgentDocumentReadResult> => {
+        const fallback = await readDocumentFallback({
+          browserBridge,
+          target,
+          cursor: 0,
+          maxChars
+        });
+        if (fallback === null) {
+          throw Object.assign(new Error("Document text is unavailable."), {
+            code: "document_text_unavailable"
+          });
+        }
+        return {
+          tabId: target.tabId,
+          documentId: target.candidate.candidateId,
+          format: target.candidate.formatHint,
+          sourceKind: target.candidate.sourceKind,
+          ...(target.candidate.titleHint === undefined ? {} : { title: target.candidate.titleHint }),
+          ...(target.candidate.documentUrl === undefined ? {} : { sourceUrl: target.candidate.documentUrl }),
+          reader: {
+            format: target.candidate.formatHint,
+            markdownWithCitations: fallback.text,
+            compactText: fallback.text,
+            plainText: fallback.text,
+            warnings: [{ code: "browser_recommended", message: reason }],
+            extraction: { method: fallback.extractionMethod, fallbackUsed: true }
+          },
+          fallbackUsed: true,
+          fallbackReason: reason || fallback.fallbackReason
+        };
+      };
+
+      try {
+        if (target.candidate.documentUrl === undefined) {
+          return await buildFallback("document-source-dom-fallback");
+        }
+        const bytesCacheKey = buildBytesCacheKey(target.tabId, target.candidate.documentUrl);
+        const cachedBytes = cache.bytes.read(bytesCacheKey) as CachedDocumentBytes | null;
+        const bytes = cachedBytes ?? await fetchDocumentBytes({
+          browserBridge,
+          tabId: target.tabId,
+          url: target.candidate.documentUrl,
+          ...(target.candidate.frameUrl === undefined ? {} : { referrer: target.candidate.frameUrl })
+        });
+        if (cachedBytes === null) {
+          cache.bytes.write(bytesCacheKey, bytes);
+        }
+        const reader = invokeAgentReadNative({
+          bindings: docsNativeBindings,
+          request: {
+            bytesBase64: bytes.body.toString("base64"),
+            ...(bytes.mimeType === undefined ? {} : { mimeHint: bytes.mimeType }),
+            urlHint: bytes.finalUrl,
+            ...(request.preset === undefined ? {} : { preset: request.preset }),
+            ...(request.format === undefined ? {} : { format: request.format }),
+            ...(request.mode === undefined ? {} : { mode: request.mode }),
+            ...(request.queryFocus === undefined ? {} : { queryFocus: request.queryFocus }),
+            ...(request.userTask === undefined ? {} : { userTask: request.userTask }),
+            maxChars,
+            ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
+            ...(request.includeRaw === undefined ? {} : { includeRaw: request.includeRaw }),
+            chunking: true
+          }
+        });
+        return {
+          tabId: target.tabId,
+          documentId: target.candidate.candidateId,
+          format: String(reader.format ?? target.candidate.formatHint),
+          sourceKind: target.candidate.sourceKind,
+          ...(target.candidate.titleHint === undefined ? {} : { title: target.candidate.titleHint }),
+          sourceUrl: bytes.finalUrl,
+          ...(bytes.mimeType === undefined ? {} : { mimeType: bytes.mimeType }),
+          reader,
+          fallbackUsed: false
+        };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === "document_unsupported_format") {
+          throw error;
+        }
+        return await buildFallback(code ?? "agent-document-reader-fallback");
       }
     },
     searchDocument: async (request: WorkbenchDocumentSearchRequest): Promise<WorkbenchDocumentSearchResult> => {

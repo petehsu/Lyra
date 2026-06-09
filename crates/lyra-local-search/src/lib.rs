@@ -299,21 +299,60 @@ pub async fn run_main<T: Reporter>(
         }
     };
 
-    let FileSearchResults {
-        total_match_count,
-        matches,
-    } = run(
-        &pattern_text,
-        vec![search_directory.to_path_buf()],
-        FileSearchOptions {
-            limit,
-            exclude,
-            threads,
-            compute_indices,
+    let _ = threads;
+    let engine = LocalSearchEngine::new();
+    engine.index_root(
+        LocalSearchIndexRootOptions {
+            root: search_directory.to_path_buf(),
+            include_hidden: false,
+            include_vendor: false,
             respect_gitignore: true,
+            content_mode: LocalSearchContentMode::Auto,
+            max_file_size_bytes: 256 * 1024,
         },
-        /*cancel_flag*/ None,
+        None,
     )?;
+    let response = engine.search(
+        LocalSearchOptions {
+            query: pattern_text.clone(),
+            roots: vec![search_directory.to_path_buf()],
+            kinds: vec![LocalSearchKind::File, LocalSearchKind::Directory],
+            extensions: Vec::new(),
+            limit: limit.get(),
+            include_hidden: false,
+            include_vendor: false,
+            respect_gitignore: true,
+            content_mode: LocalSearchContentMode::Auto,
+            max_file_size_bytes: 256 * 1024,
+            enable_fuzzy: true,
+            enable_extension_match: true,
+            query_mode: LocalSearchQueryMode::Normal,
+        },
+        None,
+    )?;
+    let total_match_count = response.total_match_count;
+    let mut matches = Vec::new();
+    for result in response.results {
+        let relative = result
+            .path
+            .strip_prefix(&search_directory)
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|_| result.path.clone());
+        let relative_text = relative.to_string_lossy();
+        if exclude.iter().any(|pattern| relative_text.contains(pattern)) {
+            continue;
+        }
+        matches.push(FileMatch {
+            score: result.score,
+            path: relative,
+            match_type: match result.kind {
+                LocalSearchKind::File => MatchType::File,
+                LocalSearchKind::Directory => MatchType::Directory,
+            },
+            root: search_directory.to_path_buf(),
+            indices: compute_indices.then(Vec::new),
+        });
+    }
     let match_count = matches.len();
     let matches_truncated = total_match_count > match_count;
 

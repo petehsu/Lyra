@@ -2,7 +2,10 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { ContextMenuModel } from "../../context-menu";
-import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  SearchIndexStatusResponse
+} from "../../../../shared/desktop-bridge";
 import { createBrowserStorageStateRef } from "../../../../shared/workbench-browser";
 import type {
   FileManagerDirectoryPatch,
@@ -168,6 +171,27 @@ const labels: FileManagerSurfaceLabels = {
   chooserBindProjectLabel: "绑定当前目录",
   chooserSelectDirectoryPlaceholder: "先进入一个目录"
 };
+
+const emptySearchIndexStatus = (): SearchIndexStatusResponse => ({
+  state: "idle",
+  engineVersion: "native-v3",
+  phase: "idle",
+  indexedFiles: 0,
+  indexedDirs: 0,
+  indexedContentFiles: 0,
+  storageBytes: 0,
+  snapshotBytes: 0,
+  deltaBytes: 0,
+  pendingChanges: 0,
+  skipped: {
+    hidden: 0,
+    vendor: 0,
+    binaryOrTooLarge: 0,
+    unreadable: 0,
+    contentBudget: 0
+  },
+  roots: []
+});
 
 const homeResponse: FileManagerReadHomeResponse = {
   location: {
@@ -403,7 +427,8 @@ const createDesktopApi = (): {
           skippedUnreadable: 0,
           skippedBinaryOrTooLarge: 0,
           usedIndex: false
-        }
+        },
+        indexStatus: emptySearchIndexStatus()
       }),
       startLocalStream: async () => ({
         streamId: "stream-1",
@@ -428,10 +453,17 @@ const createDesktopApi = (): {
           skippedBinaryOrTooLarge: 0,
           usedIndex: false
         },
+        indexStatus: emptySearchIndexStatus(),
         done: true
       }),
       cancelLocalStream: async () => ({
         removed: true
+      }),
+      readIndexStatus: async () => emptySearchIndexStatus(),
+      rebuildIndex: async () => ({
+        status: emptySearchIndexStatus(),
+        scopePreset: "home" as const,
+        roots: []
       })
     },
     workbenchBrowser: {

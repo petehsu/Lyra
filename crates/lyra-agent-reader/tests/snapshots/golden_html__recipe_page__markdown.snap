@@ -1,0 +1,19 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Lemon Herb Rice Bowl
+
+A synthetic recipe fixture with lists, ordered steps, and nutrition notes.
+
+## Ingredients
+
+- Two cups cooked rice
+- One cup roasted vegetables
+- Lemon juice and chopped herbs
+
+## Steps
+
+1. Warm the rice in a shallow pan.
+2. Fold in vegetables, lemon juice, and herbs.
+3. Serve with a spoon of yogurt.

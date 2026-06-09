@@ -70,7 +70,23 @@ export type LyraSensitiveValueRevealResponse = {
   readonly value: string;
 };
 
+export type LyraSensitiveValueStoreRequest = {
+  readonly owner?: LyraSensitiveValueOwner;
+  readonly valueKind?: LyraSensitiveValueKind;
+  readonly label: string;
+  readonly description?: string;
+  readonly value: string;
+  readonly capabilities?: readonly LyraSensitiveValueCapability[];
+};
+
+export type LyraSensitiveValueStoreResponse = {
+  readonly ref: LyraSensitiveValueRef;
+};
+
 export type LyraSensitiveValueApi = {
+  readonly store: (
+    request: LyraSensitiveValueStoreRequest
+  ) => Promise<LyraSensitiveValueStoreResponse>;
   readonly revealToUser: (
     request: LyraSensitiveValueRevealRequest
   ) => Promise<LyraSensitiveValueRevealResponse>;
@@ -135,6 +151,43 @@ export const createLoginManagerPasswordRef = ({
     "reveal_to_user",
     "copy_to_clipboard"
   ],
+  modelVisibility: "metadata_only",
+  plaintextVisibility: "user_reveal_only"
+});
+
+export const createOpaqueSensitiveValueRef = ({
+  id,
+  owner,
+  valueKind,
+  label,
+  description,
+  displayHint,
+  ownerName,
+  capabilities
+}: {
+  readonly id: string;
+  readonly owner: LyraSensitiveValueOwner;
+  readonly valueKind: LyraSensitiveValueKind;
+  readonly label: string;
+  readonly description?: string;
+  readonly displayHint: string;
+  readonly ownerName: string;
+  readonly capabilities: readonly LyraSensitiveValueCapability[];
+}): LyraSensitiveValueRef => ({
+  kind: "lyra-sensitive-value-ref",
+  id: `${owner}:opaque:${id}`,
+  owner,
+  valueKind,
+  ownership: "user_owned",
+  label,
+  ...(description === undefined ? {} : { description }),
+  displayHint,
+  ownerRef: {
+    kind: "opaque",
+    owner: ownerName,
+    valueId: id
+  },
+  capabilities,
   modelVisibility: "metadata_only",
   plaintextVisibility: "user_reveal_only"
 });

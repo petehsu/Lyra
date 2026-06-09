@@ -1,0 +1,16 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: "serde_json::to_string_pretty(&stable_summary(&result)).expect(\"summary json\")"
+---
+{
+  "chunkCount": 1,
+  "extractionMethod": "readability",
+  "fallbackUsed": false,
+  "format": "html",
+  "hasImagesFooter": false,
+  "hasReferencesFooter": true,
+  "imageCount": 0,
+  "linkCount": 1,
+  "title": "City Opens New Research Library",
+  "warningCodes": []
+}

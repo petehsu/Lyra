@@ -18,6 +18,8 @@ import {
   type AgentMemorySharedUpdateRequest,
   type AgentMemorySnapshot,
   type AgentMemoryTrimRunRequest,
+  type AgentPermissionPolicySetModeRequest,
+  type AgentPermissionPolicySnapshot,
   type AgentPermissionRespondRequest,
   type AgentRollbackPreviewResponse,
   type AgentRollbackRequest,
@@ -174,6 +176,10 @@ import {
   type SearchLocalStreamReadResponse,
   type SearchLocalStreamStartRequest,
   type SearchLocalStreamStartResponse,
+  type SearchIndexStatusRequest,
+  type SearchIndexStatusResponse,
+  type SearchRebuildIndexRequest,
+  type SearchRebuildIndexResponse,
   type SystemNotificationAccessRequestResult,
   type SystemNotificationActivation,
   type SystemNotificationOpenSettingsResult,
@@ -199,6 +205,8 @@ import {
   type LoginManagerUpdateSessionRequest,
   type LyraSensitiveValueRevealRequest,
   type LyraSensitiveValueRevealResponse,
+  type LyraSensitiveValueStoreRequest,
+  type LyraSensitiveValueStoreResponse,
   type UiuxInstallFromGitRequest,
   type UiuxInstallFromLocalRequest,
   type UiuxInstallFromNpmRequest,
@@ -805,7 +813,17 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.localSearchStreamCancel,
         request
-      ) as Promise<SearchLocalStreamCancelResponse>
+      ) as Promise<SearchLocalStreamCancelResponse>,
+    readIndexStatus: (request?: SearchIndexStatusRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchIndexStatus,
+        request ?? {}
+      ) as Promise<SearchIndexStatusResponse>,
+    rebuildIndex: (request?: SearchRebuildIndexRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.searchIndexRebuild,
+        request ?? {}
+      ) as Promise<SearchRebuildIndexResponse>
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,
@@ -972,6 +990,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserSetElementPickerMode,
         request
       ) as Promise<void>,
+    setModalOcclusion: (request: { readonly active: boolean }) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserSetModalOcclusion,
+        request
+      ) as Promise<void>,
     applyWebTheme: (snapshot: WorkbenchBrowserWebThemeSnapshot) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
@@ -1031,6 +1054,13 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   sensitiveValues: {
+    store: async (
+      request: LyraSensitiveValueStoreRequest
+    ): Promise<LyraSensitiveValueStoreResponse> =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.sensitiveValuesStore,
+        request
+      ) as Promise<LyraSensitiveValueStoreResponse>,
     revealToUser: async (
       request: LyraSensitiveValueRevealRequest
     ): Promise<LyraSensitiveValueRevealResponse> =>
@@ -1366,6 +1396,15 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.agentClarificationRespond, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
+    readPermissionPolicy: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPermissionPolicyRead
+      ) as Promise<AgentPermissionPolicySnapshot>,
+    setPermissionPolicyMode: (request: AgentPermissionPolicySetModeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPermissionPolicySetMode,
+        request
+      ) as Promise<AgentPermissionPolicySnapshot>,
     readAgentConfig: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentConfigRead) as Promise<AgentConfigSnapshot>,
     updateAgentConfig: (request: AgentConfigUpdateRequest) =>

@@ -110,7 +110,15 @@ const createDocsBindings = ({
       ...searchResult,
       _request: JSON.parse(input)
     });
-  })
+  }),
+  readAgentDocumentJson: vi.fn((input) => JSON.stringify({
+    format: "pdf",
+    markdownWithCitations: "Agent reader body",
+    compactText: "Agent reader body",
+    chunks: [],
+    warnings: [],
+    _request: JSON.parse(input)
+  }))
 });
 
 describe("workbench document service", () => {

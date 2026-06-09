@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import type {
   AgentModelCatalogSnapshot,
+  AgentPermissionPolicySnapshot,
   AgentRuntimeEvent,
   AgentSessionCreateRequest,
   AgentSessionSnapshot
@@ -11,6 +12,7 @@ import type {
   LyraSensitiveValueRef
 } from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
+import type { GlobalDialogModel } from "../global-dialog";
 import { APP_CONFIG } from "./agent-chat-demo/core/config";
 import type {
   AgentGoalItem,
@@ -311,6 +313,7 @@ type LyraAgentDataProviderCallbacks = {
     readonly terminalTabId?: string | null;
     readonly paneId?: string | null;
   }) => Promise<void> | void) | undefined;
+  readonly openDialog?: GlobalDialogModel["openDialog"] | undefined;
   readonly locale?: Locale | undefined;
 };
 
@@ -342,6 +345,7 @@ export const useLyraAgentDataProvider = (
     onOpenUrlInWorkbench,
     onOpenFile,
     onOpenTerminalLiveSession,
+    openDialog,
     locale
   } = callbacks;
   if (locale !== undefined) {
@@ -351,6 +355,8 @@ export const useLyraAgentDataProvider = (
   const [state, dispatch] = useReducer(reducer, initialState);
   const [modelState, setModelState] = useState<AgentModelCatalogSnapshot | null>(null);
   const [modelBusy, setModelBusy] = useState<"refresh" | "switch" | null>(null);
+  const [permissionPolicy, setPermissionPolicy] = useState<AgentPermissionPolicySnapshot | null>(null);
+  const [permissionPolicyBusy, setPermissionPolicyBusy] = useState(false);
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
@@ -520,9 +526,32 @@ export const useLyraAgentDataProvider = (
   }, [desktopApi]);
 
   useEffect(() => {
-    if (desktopApi?.agent === undefined || state.session === null) return;
+    if (
+      desktopApi?.agent === undefined
+      || typeof desktopApi.agent.readPermissionPolicy !== "function"
+    ) {
+      setPermissionPolicy(null);
+      return;
+    }
     let disposed = false;
-    void desktopApi.agent.listAgentModels({ sessionId: state.session.id })
+    void desktopApi.agent.readPermissionPolicy()
+      .then((snapshot) => {
+        if (!disposed) setPermissionPolicy(snapshot);
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, [desktopApi]);
+
+  useEffect(() => {
+    if (desktopApi?.agent === undefined) return;
+    const sessionId = state.session?.id ?? activeSessionId ?? null;
+    const canLoadCatalog =
+      sessionId !== null || (deferInitialSessionCreation && activeSessionId === null);
+    if (!canLoadCatalog) return;
+    let disposed = false;
+    void desktopApi.agent.listAgentModels({ sessionId })
       .then((response) => {
         if (!disposed) setModelState(response);
       })
@@ -530,7 +559,13 @@ export const useLyraAgentDataProvider = (
     return () => {
       disposed = true;
     };
-  }, [desktopApi, modelConfigSignature, state.session?.id]);
+  }, [
+    activeSessionId,
+    deferInitialSessionCreation,
+    desktopApi,
+    modelConfigSignature,
+    state.session?.id
+  ]);
 
   useEffect(() => {
     if (
@@ -655,6 +690,120 @@ export const useLyraAgentDataProvider = (
     const snapshot = await desktopApi.agent.updateBrowserFollowMode({ enabled });
     setBrowserFollowModeEnabled(snapshot.enabled);
   }, [desktopApi]);
+
+  const confirmFullAutoMode = useCallback(async (): Promise<boolean> => {
+    const description = t("permissionPolicy.fullAutoWarningDescription");
+    if (openDialog === undefined) {
+      return window.confirm(description);
+    }
+    return new Promise<boolean>((resolve) => {
+      openDialog({
+        title: t("permissionPolicy.fullAutoWarningTitle"),
+        description,
+        source: {
+          title: "Lyra Agent",
+          subtitle: t("permissionPolicy.dialogSourceSubtitle"),
+          iconLabel: "LA",
+          iconTone: "danger"
+        },
+        actions: [
+          {
+            id: "cancel",
+            label: t("permissionPolicy.cancel"),
+            onSelect: () => resolve(false)
+          },
+          {
+            id: "continue",
+            label: t("permissionPolicy.continue"),
+            tone: "danger",
+            onSelect: () => resolve(true)
+          }
+        ]
+      });
+    });
+  }, [locale, openDialog]);
+
+  const requestAdminPassword = useCallback(async (): Promise<string | null> => {
+    const description = t("permissionPolicy.adminCredentialDescription");
+    if (openDialog === undefined) {
+      const value = window.prompt(description);
+      return value !== null && value.length > 0 ? value : null;
+    }
+    return new Promise<string | null>((resolve) => {
+      openDialog({
+        title: t("permissionPolicy.adminCredentialTitle"),
+        description,
+        source: {
+          title: "Lyra Agent",
+          subtitle: t("permissionPolicy.sensitiveValueSubtitle"),
+          iconLabel: "KEY",
+          iconTone: "accent"
+        },
+        input: {
+          id: "admin-password",
+          label: t("permissionPolicy.adminPasswordLabel"),
+          type: "password",
+          submitActionId: "save"
+        },
+        actions: [
+          {
+            id: "cancel",
+            label: t("permissionPolicy.cancel"),
+            onSelect: () => resolve(null)
+          },
+          {
+            id: "save",
+            label: t("permissionPolicy.saveAndEnable"),
+            tone: "danger",
+            onSelect: ({ inputValue }) => {
+              const password = inputValue ?? "";
+              resolve(password.length > 0 ? password : null);
+            }
+          }
+        ]
+      });
+    });
+  }, [locale, openDialog]);
+
+  const switchPermissionMode = useCallback(async (
+    mode: "approval" | "full_auto"
+  ): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const sensitiveValues = desktopApi.sensitiveValues;
+    if (mode === "full_auto" && sensitiveValues === undefined) return;
+    if (mode === "approval") {
+      setPermissionPolicyBusy(true);
+      try {
+        setPermissionPolicy(await desktopApi.agent.setPermissionPolicyMode({ mode }));
+      } finally {
+        setPermissionPolicyBusy(false);
+      }
+      return;
+    }
+
+    const confirmed = await confirmFullAutoMode();
+    if (!confirmed) return;
+    const password = await requestAdminPassword();
+    if (password === null) return;
+    if (sensitiveValues === undefined) return;
+    setPermissionPolicyBusy(true);
+    try {
+      const credential = await sensitiveValues.store({
+        owner: "system",
+        valueKind: "credential",
+        label: t("permissionPolicy.adminCredentialLabel"),
+        description: t("permissionPolicy.adminCredentialStorageDescription"),
+        value: password,
+        capabilities: ["list_metadata", "use"]
+      });
+      setPermissionPolicy(await desktopApi.agent.setPermissionPolicyMode({
+        mode,
+        elevationCredentialRef: credential.ref
+      }));
+    } finally {
+      setPermissionPolicyBusy(false);
+    }
+  }, [confirmFullAutoMode, desktopApi, locale, requestAdminPassword]);
 
   const previewRollback = useCallback(async (messageId: string) => {
     if (desktopApi?.agent === undefined || state.session === null) {
@@ -1178,6 +1327,13 @@ export const useLyraAgentDataProvider = (
       updateReasoningEffort,
       updateServiceTier
     };
+    const permissionModeControls = desktopApi?.agent === undefined ? null : {
+      currentMode: permissionPolicy?.mode ?? "approval",
+      isSwitching: permissionPolicyBusy,
+      warning: permissionPolicy?.warning ?? null,
+      configPath: permissionPolicy?.configPath ?? null,
+      switchMode: switchPermissionMode
+    };
     const input: CreateDataProviderValueInput = {
       session: agentSessionToSessionMeta(state.session),
       messages: agentSessionToChatMessages(state.session, {
@@ -1195,6 +1351,7 @@ export const useLyraAgentDataProvider = (
       decisions: pendingClarifications.slice(0, 1),
       permissions: pendingPermissions,
       modelControls,
+      permissionModeControls,
       openModelSettings,
       browserFollowModeEnabled,
       setBrowserFollowMode,
@@ -1246,6 +1403,7 @@ export const useLyraAgentDataProvider = (
     captureBrowserScreenshot,
     captureWindowScreenshot,
     createSession,
+    desktopApi,
     denyPermission,
     browserFollowModeEnabled,
     setBrowserFollowMode,
@@ -1262,6 +1420,8 @@ export const useLyraAgentDataProvider = (
     loadEarlierMessages,
     modelBusy,
     modelState,
+    permissionPolicy,
+    permissionPolicyBusy,
     pendingClarifications,
     pendingPermissions,
     previewRollback,
@@ -1288,6 +1448,7 @@ export const useLyraAgentDataProvider = (
     updateAutomation,
     pokeTodos,
     submitDecisions,
+    switchPermissionMode,
     switchModel,
     updateReasoningEffort,
     updateServiceTier,

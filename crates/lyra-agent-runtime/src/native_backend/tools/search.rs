@@ -1,5 +1,7 @@
 use super::*;
 
+const NATIVE_AGENT_SEARCH_CANDIDATE_LIMIT: usize = 500;
+
 pub(crate) fn execute_code_tool_adapter(
     session_id: &str,
     turn_id: &str,
@@ -30,18 +32,18 @@ pub(crate) fn tool_project_search(session_id: &str, input: &Value) -> NativeTool
     let workspace_path = resolve_workspace_path(session_id, &root, false)?;
     let include_hidden = value_bool(input, "includeHidden", false);
     let limit = value_usize(input, "limit", DEFAULT_SEARCH_LIMIT, 500);
-    let max_file_bytes = value_usize(input, "maxFileBytes", 1_000_000, 5_000_000);
-    let results = search_workspace_text(
-        &workspace_path.root,
-        &workspace_path.absolute,
-        &query,
-        None,
+    let results = search_workspace_native(NativeWorkspaceSearchOptions {
+        workspace_root: &workspace_path.root,
+        root: &workspace_path.absolute,
+        query: &query,
+        glob: None,
         include_hidden,
         limit,
-        max_file_bytes,
-        false,
-        false,
-    )?;
+        case_sensitive: false,
+        source_only: false,
+        enable_content: false,
+        mode: "fast",
+    })?;
     let content = format_search_results(&results);
     Ok(NativeToolSuccess {
         content,
@@ -186,116 +188,22 @@ pub(crate) fn search_workspace_text(
     glob: Option<&str>,
     include_hidden: bool,
     limit: usize,
-    max_file_bytes: usize,
+    _max_file_bytes: usize,
     case_sensitive: bool,
     source_only: bool,
 ) -> Result<Vec<Value>, NativeToolFailure> {
-    let compiled_glob = match glob {
-        Some(pattern) => Some(Pattern::new(pattern).map_err(|error| {
-            NativeToolFailure::new(
-                "bad_glob",
-                format!("invalid glob pattern: {error}"),
-                "Retry with a valid source glob such as **/*.rs.",
-            )
-        })?),
-        None => None,
-    };
-    let mut files = Vec::new();
-    collect_workspace_files(
+    search_workspace_native(NativeWorkspaceSearchOptions {
         workspace_root,
         root,
+        query,
+        glob,
         include_hidden,
-        MAX_SEARCH_FILES,
-        &mut files,
-    )?;
-    let needle = if case_sensitive {
-        query.to_string()
-    } else {
-        query.to_lowercase()
-    };
-    let mut results = Vec::new();
-    for path in files {
-        if results.len() >= limit {
-            break;
-        }
-        let relative = path
-            .strip_prefix(workspace_root)
-            .map(|path| path.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| path.display().to_string());
-        if let Some(pattern) = compiled_glob.as_ref()
-            && !pattern.matches(&relative)
-        {
-            continue;
-        }
-        if source_only && !looks_like_source_file(&path) {
-            continue;
-        }
-        let file_name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("");
-        let haystack_name = if case_sensitive {
-            file_name.to_string()
-        } else {
-            file_name.to_lowercase()
-        };
-        if haystack_name.contains(&needle) {
-            let (start_char, end_char) = match_range(file_name, &query, case_sensitive)
-                .unwrap_or((0, file_name.chars().count()));
-            results.push(json!({
-                "path": relative,
-                "line": Value::Null,
-                "matchKind": "file_name",
-                "snippet": file_name,
-                "matchRanges": [{
-                    "startChar": start_char,
-                    "endChar": end_char,
-                }],
-            }));
-            if results.len() >= limit {
-                break;
-            }
-        }
-        let metadata = match fs::metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(_) => continue,
-        };
-        if metadata.len() as usize > max_file_bytes {
-            continue;
-        }
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(_) => continue,
-        };
-        if bytes.contains(&0) {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&bytes);
-        for (index, line) in text.lines().enumerate() {
-            let haystack = if case_sensitive {
-                line.to_string()
-            } else {
-                line.to_lowercase()
-            };
-            if haystack.contains(&needle) {
-                let (start_char, end_char) =
-                    match_range(line, query, case_sensitive).unwrap_or((0, line.chars().count()));
-                results.push(json!({
-                    "path": relative,
-                    "line": index + 1,
-                    "matchKind": "content",
-                    "snippet": line.trim(),
-                    "matchRanges": [{
-                        "line": index + 1,
-                        "startChar": start_char,
-                        "endChar": end_char,
-                    }],
-                }));
-                break;
-            }
-        }
-    }
-    Ok(results)
+        limit,
+        case_sensitive,
+        source_only,
+        enable_content: true,
+        mode: "normal",
+    })
 }
 
 pub(crate) fn search_workspace_symbols(
@@ -305,23 +213,35 @@ pub(crate) fn search_workspace_symbols(
     include_hidden: bool,
     limit: usize,
 ) -> Result<Vec<Value>, NativeToolFailure> {
-    let mut files = Vec::new();
-    collect_workspace_files(
+    let needle = query.to_lowercase();
+    let candidates = search_workspace_native(NativeWorkspaceSearchOptions {
         workspace_root,
         root,
+        query,
+        glob: None,
         include_hidden,
-        MAX_SEARCH_FILES,
-        &mut files,
-    )?;
-    let needle = query.to_lowercase();
+        limit: limit
+            .saturating_mul(5)
+            .max(limit)
+            .min(NATIVE_AGENT_SEARCH_CANDIDATE_LIMIT),
+        case_sensitive: false,
+        source_only: true,
+        enable_content: true,
+        mode: "full",
+    })?;
+    let mut seen_paths = HashSet::new();
     let mut results = Vec::new();
-    for path in files {
+    for candidate in candidates {
         if results.len() >= limit {
             break;
         }
-        if !looks_like_source_file(&path) {
+        let Some(relative) = candidate.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        if !seen_paths.insert(relative.to_string()) {
             continue;
         }
+        let path = workspace_root.join(relative);
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(_) => continue,
@@ -330,10 +250,6 @@ pub(crate) fn search_workspace_symbols(
             continue;
         }
         let text = String::from_utf8_lossy(&bytes);
-        let relative = path
-            .strip_prefix(workspace_root)
-            .map(|path| path.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| path.display().to_string());
         for (index, line) in text.lines().enumerate() {
             let trimmed = line.trim();
             if !trimmed.to_lowercase().contains(&needle) || !looks_like_symbol_line(trimmed) {
@@ -357,6 +273,163 @@ pub(crate) fn search_workspace_symbols(
         }
     }
     Ok(results)
+}
+
+struct NativeWorkspaceSearchOptions<'a> {
+    workspace_root: &'a Path,
+    root: &'a Path,
+    query: &'a str,
+    glob: Option<&'a str>,
+    include_hidden: bool,
+    limit: usize,
+    case_sensitive: bool,
+    source_only: bool,
+    enable_content: bool,
+    mode: &'a str,
+}
+
+fn search_workspace_native(
+    options: NativeWorkspaceSearchOptions<'_>,
+) -> Result<Vec<Value>, NativeToolFailure> {
+    let compiled_glob = compile_optional_glob(options.glob)?;
+    let native_limit = options
+        .limit
+        .saturating_mul(if options.enable_content { 4 } else { 2 })
+        .max(options.limit)
+        .min(NATIVE_AGENT_SEARCH_CANDIDATE_LIMIT);
+    let request = json!({
+        "query": options.query,
+        "limit": native_limit,
+        "scopePreset": "custom",
+        "customRoots": [options.root.display().to_string()],
+        "mode": options.mode,
+        "includeHidden": options.include_hidden,
+        "enableContent": options.enable_content,
+        "enableFuzzy": true,
+        "enableExtensionMatch": true,
+    });
+    let response_text =
+        lyra_search_core::search_local_blocking_json(request.to_string()).map_err(|error| {
+            NativeToolFailure::new(
+                "search_failed",
+                format!("native local search failed: {error}"),
+                "Retry with a narrower root or a more specific query.",
+            )
+        })?;
+    let response: Value = serde_json::from_str(&response_text).map_err(|error| {
+        NativeToolFailure::new(
+            "search_failed",
+            format!("native local search returned invalid JSON: {error}"),
+            "Retry the search.",
+        )
+    })?;
+    let mut results = Vec::new();
+    for result in response
+        .get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if results.len() >= options.limit {
+            break;
+        }
+        let Some(path_text) = result.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let absolute = PathBuf::from(path_text);
+        if options.source_only && !looks_like_source_file(&absolute) {
+            continue;
+        }
+        let relative = absolute
+            .strip_prefix(options.workspace_root)
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| path_text.replace('\\', "/"));
+        if let Some(pattern) = compiled_glob.as_ref() {
+            let file_name = absolute
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("");
+            if !pattern.matches(&relative) && !pattern.matches(file_name) {
+                continue;
+            }
+        }
+        let file_name = result
+            .get("fileName")
+            .and_then(Value::as_str)
+            .or_else(|| absolute.file_name().and_then(|value| value.to_str()))
+            .unwrap_or("");
+        let match_kind = result
+            .get("matchKind")
+            .and_then(Value::as_str)
+            .unwrap_or("path");
+        let snippet = result
+            .get("snippet")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| {
+                if match_kind == "file_name" {
+                    file_name
+                } else {
+                    &relative
+                }
+            });
+        if options.case_sensitive
+            && !native_case_sensitive_match(
+                match_kind,
+                options.query,
+                file_name,
+                &relative,
+                snippet,
+            )
+        {
+            continue;
+        }
+        let line = result.get("line").and_then(Value::as_u64);
+        let (start_char, end_char) = match_range(snippet, options.query, options.case_sensitive)
+            .unwrap_or((0, snippet.chars().count()));
+        let mut range = json!({
+            "startChar": start_char,
+            "endChar": end_char,
+        });
+        if let Some(line) = line {
+            range["line"] = json!(line);
+        }
+        results.push(json!({
+            "path": relative,
+            "line": line.map(Value::from).unwrap_or(Value::Null),
+            "matchKind": match_kind,
+            "snippet": snippet,
+            "matchRanges": [range],
+        }));
+    }
+    Ok(results)
+}
+
+fn compile_optional_glob(glob: Option<&str>) -> Result<Option<Pattern>, NativeToolFailure> {
+    match glob {
+        Some(pattern) => Pattern::new(pattern).map(Some).map_err(|error| {
+            NativeToolFailure::new(
+                "bad_glob",
+                format!("invalid glob pattern: {error}"),
+                "Retry with a valid source glob such as **/*.rs.",
+            )
+        }),
+        None => Ok(None),
+    }
+}
+
+fn native_case_sensitive_match(
+    match_kind: &str,
+    query: &str,
+    file_name: &str,
+    relative: &str,
+    snippet: &str,
+) -> bool {
+    match match_kind {
+        "content" => snippet.contains(query),
+        "file_name" => file_name.contains(query),
+        _ => relative.contains(query) || snippet.contains(query),
+    }
 }
 
 fn match_range(haystack: &str, needle: &str, case_sensitive: bool) -> Option<(usize, usize)> {

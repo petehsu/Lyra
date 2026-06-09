@@ -12,6 +12,7 @@ mod code;
 mod design;
 mod filesystem;
 mod git;
+mod hardware;
 mod mcp;
 mod memory;
 mod network;
@@ -148,6 +149,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(code::manifests());
     entries.extend(shell::manifests());
     entries.extend(git::manifests());
+    entries.extend(hardware::manifests());
     entries.extend(network::manifests());
     entries.extend(web::manifests());
     entries.extend(render::manifests());
@@ -238,6 +240,15 @@ fn description_for(
         ("shell", "run") => {
             "Use when the agent needs to run a bounded non-interactive shell command, test, build, lint, typecheck, or inspect the system."
         }
+        ("hardware", "list" | "inspect") => {
+            "Use when the agent needs to discover connected serial hardware, development boards, protocols, or missing toolchains."
+        }
+        ("hardware", "session_open" | "session_read" | "session_write" | "session_close") => {
+            "Use when the agent needs an audited serial hardware session for board logs, REPLs, or AT-style commands."
+        }
+        ("hardware", "run_action") => {
+            "Use when the agent needs to run a declared hardware capability action such as serial.write_line, micropython.repl, esp.flash, or toolchain.install."
+        }
         ("terminal", "run" | "input" | "write" | "keys" | "act") => {
             "Use when the agent needs to operate an interactive terminal session or terminal UI."
         }
@@ -280,7 +291,12 @@ fn description_for(
         ("web", "search") => {
             "Use when the agent needs current web search results from the network."
         }
-        ("web", "fetch") => "Use when the agent needs to download or inspect a known URL.",
+        ("web", "research") => {
+            "Use when the agent needs current web results plus reader-backed deep summaries from top sources."
+        }
+        ("web", "fetch") => {
+            "Use when the agent needs to fetch a known URL as agent-friendly markdown, metadata, chunks, or document/image recommendations."
+        }
         ("memory", "search" | "list" | "explain_injection") => {
             "Use when the agent needs stored Lyra memory, user preferences, project facts, or memory injection diagnostics."
         }
@@ -605,7 +621,17 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             ],
             ("workbench", _) => vec!["workspace tabs", "active tab", "工作区", "标签页"],
             ("web", "search") => vec!["internet search", "search web", "联网搜索", "网页搜索"],
+            ("web", "research") => {
+                vec!["research web", "deep read search", "联网调研", "搜索并阅读"]
+            }
             ("web", "fetch") => vec!["fetch url", "download page", "读取链接", "抓取网页"],
+            ("hardware", _) => vec![
+                "development board",
+                "serial device",
+                "firmware flash",
+                "开发板",
+                "串口",
+            ],
             ("memory", _) => vec![
                 "memory",
                 "remember user",
@@ -653,6 +679,20 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "查找函数定义。",
         ],
         ("shell", "run") => vec!["Run cargo test or npm typecheck.", "执行测试命令。"],
+        ("hardware", "list" | "inspect") => vec![
+            "Find connected serial development boards.",
+            "查看已连接开发板和串口能力。",
+        ],
+        ("hardware", "session_open" | "session_read" | "session_write" | "session_close") => {
+            vec![
+                "Open a serial console and interact with a board REPL.",
+                "打开串口会话并读取开发板日志。",
+            ]
+        }
+        ("hardware", "run_action") => vec![
+            "Run a hardware capability action such as serial.write_line or esp.flash.",
+            "执行开发板动作，例如写串口或准备刷写固件。",
+        ],
         ("git", "status") => vec![
             "Check whether the repo has uncommitted changes.",
             "查看 Git 状态。",
@@ -696,6 +736,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "查看当前工作区标签页。",
         ],
         ("web", "search") => vec!["Search the web for recent documentation.", "联网搜索资料。"],
+        ("web", "research") => vec![
+            "Research a topic by searching and deep-reading top results.",
+            "联网搜索并阅读多个来源。",
+        ],
         ("web", "fetch") => vec!["Fetch a known documentation URL.", "读取指定网页。"],
         ("memory", "search") => vec![
             "Find saved user preferences or project facts.",
@@ -724,6 +768,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "filesystem" => vec!["file", "workspace", "code"],
             "code" => vec!["search", "source", "symbol"],
             "shell" => vec!["command", "test", "build"],
+            "hardware" => vec!["device", "serial", "board"],
             "terminal" => vec!["interactive", "process", "pane"],
             "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
@@ -761,6 +806,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ("terminal", "run" | "write" | "input" | "keys" | "resize" | "signal" | "act") => {
             "terminal"
         }
+        ("hardware", "session_write" | "run_action") => "hardware",
         ("git", "stage" | "unstage" | "discard") => "git_mutation",
         ("browser", "act" | "type" | "press" | "submit" | "navigate" | "elevate") => "browser",
         (
@@ -781,6 +827,7 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
         | ("shell", "run")
+        | ("hardware", "session_write" | "run_action")
         | ("git", "stage" | "unstage" | "discard")
         | ("browser", "elevate") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
@@ -803,6 +850,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("filesystem", _) => "read",
         ("code", _) => "search",
         ("shell", _) => "shell",
+        ("hardware", _) => "hardware",
         ("terminal", _) => "terminal",
         ("browser", _) | ("web", _) => "web",
         ("workbench", _) => "workbench",
@@ -966,6 +1014,81 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &["command"],
         ),
+        ("hardware", "list") => object_schema(
+            [(
+                "filter",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "transport": { "type": "string", "enum": ["serial", "usb", "hid", "bluetooth", "network", "storage", "debug_probe"] },
+                        "includeSystem": { "type": "boolean", "default": false }
+                    }
+                }),
+            )],
+            &[],
+        ),
+        ("hardware", "inspect") => object_schema(
+            [("deviceId", string("Hardware device id or path."))],
+            &["deviceId"],
+        ),
+        ("hardware", "session_open") => object_schema(
+            [
+                ("deviceId", string("Hardware device id.")),
+                ("path", string("Serial device path.")),
+                (
+                    "baudRate",
+                    json!({ "type": "integer", "minimum": 300, "maximum": 4000000, "default": 115200 }),
+                ),
+                (
+                    "mode",
+                    string("Optional capability mode such as serial.uart or micropython.repl."),
+                ),
+            ],
+            &["deviceId", "path"],
+        ),
+        ("hardware", "session_read") => object_schema(
+            [
+                ("sessionId", string("Hardware session id.")),
+                (
+                    "maxBytes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 64000, "default": 8192 }),
+                ),
+            ],
+            &["sessionId"],
+        ),
+        ("hardware", "session_write") => object_schema(
+            [
+                ("sessionId", string("Hardware session id.")),
+                ("text", string("Raw text bytes to write.")),
+                ("line", string("Line to write with CRLF.")),
+            ],
+            &["sessionId"],
+        ),
+        ("hardware", "session_close") => object_schema(
+            [("sessionId", string("Hardware session id."))],
+            &["sessionId"],
+        ),
+        ("hardware", "run_action") => object_schema(
+            [
+                ("deviceId", string("Optional hardware device id.")),
+                ("sessionId", string("Optional hardware session id.")),
+                (
+                    "capabilityId",
+                    string(
+                        "Capability id such as serial.uart, micropython.repl, esp.flash, or toolchain.install.",
+                    ),
+                ),
+                (
+                    "action",
+                    string("Capability action such as write_line, flash, or install."),
+                ),
+                (
+                    "args",
+                    json!({ "type": "object", "additionalProperties": true }),
+                ),
+            ],
+            &["capabilityId", "action"],
+        ),
         ("git", "status" | "branch") => object_schema([("workingDir", working_dir.clone())], &[]),
         ("git", "diff") => object_schema(
             [
@@ -1110,13 +1233,271 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 ("query", string("Web search query.")),
                 (
+                    "provider",
+                    json!({ "type": "string", "enum": ["duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"] }),
+                ),
+                (
                     "limit",
                     json!({ "type": "integer", "minimum": 1, "maximum": 20 }),
                 ),
             ],
             &["query"],
         ),
-        ("web", "fetch") => object_schema([("url", string("URL to fetch."))], &["url"]),
+        ("web", "research") => object_schema(
+            [
+                ("query", string("Web research query.")),
+                (
+                    "provider",
+                    json!({ "type": "string", "enum": ["duckduckgo", "searxng", "brave", "serpapi", "tavily", "exa"] }),
+                ),
+                (
+                    "limit",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }),
+                ),
+                (
+                    "readTopN",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 5, "default": 3 }),
+                ),
+                (
+                    "maxCharsPerResult",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 20000, "default": 4000 }),
+                ),
+                (
+                    "includeFailedReads",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                ("indexResult", json!({ "type": "boolean", "default": true })),
+            ],
+            &["query"],
+        ),
+        ("web", "fetch") => object_schema(
+            [
+                ("url", string("URL to fetch.")),
+                (
+                    "maxChars",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 100000, "default": 12000 }),
+                ),
+                ("extractText", json!({ "type": "boolean", "default": true })),
+                (
+                    "includeLinks",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "engine",
+                    json!({ "type": "string", "enum": ["auto", "http", "browser"], "default": "auto" }),
+                ),
+                (
+                    "mode",
+                    json!({ "type": "string", "enum": ["main", "full", "text", "raw"] }),
+                ),
+                (
+                    "format",
+                    json!({ "type": "string", "enum": ["markdown", "text", "json", "chunks", "frontmatter+markdown"] }),
+                ),
+                (
+                    "preset",
+                    json!({ "type": "string", "enum": ["agent", "research", "index", "reader", "raw"], "default": "agent" }),
+                ),
+                (
+                    "targetSelector",
+                    string("CSS selector to render as the root."),
+                ),
+                (
+                    "removeSelector",
+                    json!({
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string" } }
+                        ]
+                    }),
+                ),
+                (
+                    "includeTags",
+                    json!({
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string" } }
+                        ]
+                    }),
+                ),
+                (
+                    "excludeTags",
+                    json!({
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string" } }
+                        ]
+                    }),
+                ),
+                ("maxTokens", json!({ "type": "integer", "minimum": 1 })),
+                (
+                    "chunking",
+                    json!({
+                        "oneOf": [
+                            { "type": "boolean" },
+                            { "type": "string", "enum": ["disabled", "heading", "block"] },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "mode": { "type": "string", "enum": ["disabled", "heading", "block"] },
+                                    "maxCharsPerChunk": { "type": "integer", "minimum": 1 },
+                                    "overlapChars": { "type": "integer", "minimum": 0 }
+                                }
+                            }
+                        ]
+                    }),
+                ),
+                (
+                    "queryFocus",
+                    string("Query used to build focused fit markdown."),
+                ),
+                (
+                    "userTask",
+                    string("User task text used as a secondary query-focus signal."),
+                ),
+                (
+                    "retainLinks",
+                    json!({ "type": "string", "enum": ["all", "text", "citations", "summary", "none"] }),
+                ),
+                (
+                    "retainImages",
+                    json!({ "type": "string", "enum": ["all", "alt", "summary", "none"] }),
+                ),
+                (
+                    "retainMedia",
+                    json!({ "type": "string", "enum": ["link", "text", "summary", "html", "none"] }),
+                ),
+                (
+                    "headingStyle",
+                    json!({ "type": "string", "enum": ["atx", "setext"], "default": "atx" }),
+                ),
+                (
+                    "citationFormat",
+                    json!({ "type": "string", "enum": ["square", "angle", "source"], "default": "square" }),
+                ),
+                (
+                    "preserveHtmlTags",
+                    json!({
+                        "oneOf": [
+                            { "type": "string" },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["mark", "sub", "sup", "kbd", "abbr", "small", "u", "ins"]
+                                }
+                            }
+                        ]
+                    }),
+                ),
+                ("citations", json!({ "type": "boolean", "default": true })),
+                (
+                    "includeMetadata",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                ("includeRaw", json!({ "type": "boolean", "default": false })),
+                (
+                    "cachePolicy",
+                    json!({ "type": "string", "enum": ["auto", "noStore", "readWrite", "cacheOnly"], "default": "auto" }),
+                ),
+                (
+                    "trustedLocal",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "allowPrivateNetwork",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "maxDomBytes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 64000000, "default": 16000000 }),
+                ),
+                (
+                    "maxExtractedChars",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 5000000, "default": 1000000 }),
+                ),
+                ("indexResult", json!({ "type": "boolean", "default": true })),
+                ("useOcr", json!({ "type": "boolean", "default": true })),
+                ("useCaption", json!({ "type": "boolean", "default": true })),
+                (
+                    "waitForSelector",
+                    string("CSS selector to wait for before browser snapshot."),
+                ),
+                (
+                    "waitUntil",
+                    json!({ "type": "string", "enum": ["html", "loadIdle", "textStable", "textChanged", "textContains"], "default": "loadIdle" }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000, "default": 20000 }),
+                ),
+                (
+                    "browserMode",
+                    json!({ "type": "string", "enum": ["matchingOrNewTab", "activeTab", "newTab"], "default": "matchingOrNewTab" }),
+                ),
+                (
+                    "includeScreenshot",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "viewport",
+                    json!({
+                        "type": "object",
+                        "properties": {
+                            "width": { "type": "integer", "minimum": 240, "maximum": 5000 },
+                            "height": { "type": "integer", "minimum": 240, "maximum": 10000 },
+                            "deviceScaleFactor": { "type": "number", "minimum": 0.5, "maximum": 4 }
+                        },
+                        "required": ["width", "height"]
+                    }),
+                ),
+                ("mobile", json!({ "type": "boolean", "default": false })),
+                (
+                    "includeIframes",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeShadowDom",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includePageshot",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeMedia",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeDebugTrace",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "X-Respond-With",
+                    string("Jina Reader compatible response format alias."),
+                ),
+                (
+                    "X-Target-Selector",
+                    string("Jina Reader compatible target selector alias."),
+                ),
+                (
+                    "X-Remove-Selector",
+                    string("Jina Reader compatible remove selector alias."),
+                ),
+                (
+                    "X-Wait-For-Selector",
+                    string("Jina Reader compatible wait selector alias."),
+                ),
+                ("X-With-Generated-Alt", json!({ "type": "boolean" })),
+                ("X-With-Links-Summary", json!({ "type": "boolean" })),
+                ("X-No-Cache", json!({ "type": "boolean" })),
+                (
+                    "X-Cache-Tolerance",
+                    string("Jina Reader compatible cache tolerance alias."),
+                ),
+            ],
+            &["url"],
+        ),
         ("todo", "write") => object_schema(
             [(
                 "todos",

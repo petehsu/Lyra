@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Code Heavy Reader Tutorial</title>
+</head>
+<body>
+  <main>
+    <article>
+      <h1>Code Heavy Reader Tutorial</h1>
+      <p>This tutorial includes fenced code, inline code, and explanatory prose.</p>
+      <h2>Configure Chunking</h2>
+      <p>Set <code>chunking.mode</code> to block when long documentation needs follow-up reads.</p>
+      <pre><code data-lang="rust">let options = ReaderOptions {
+    max_chars: None,
+    ..ReaderOptions::default()
+};</code></pre>
+      <h2>Render</h2>
+      <p>Call the reader with trusted HTML and inspect markdown, chunks, and warnings.</p>
+      <pre><code class="language-ts">const content = result.compactText ?? result.markdown;</code></pre>
+    </article>
+  </main>
+</body>
+</html>

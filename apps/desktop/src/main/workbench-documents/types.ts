@@ -3,6 +3,8 @@ import type {
   WorkbenchDocumentInspectResult,
   WorkbenchDocumentReadRequest,
   WorkbenchDocumentReadResult,
+  WorkbenchAgentDocumentReadRequest,
+  WorkbenchAgentDocumentReadResult,
   WorkbenchDocumentSearchRequest,
   WorkbenchDocumentSearchResult,
   WorkbenchEmbeddedDocumentCandidate
@@ -13,6 +15,7 @@ export type WorkbenchDocumentsService = {
   readonly detectActiveDocument: (tabId?: string) => Promise<WorkbenchEmbeddedDocumentCandidate | null>;
   readonly inspectDocument: (request: WorkbenchDocumentInspectRequest) => Promise<WorkbenchDocumentInspectResult>;
   readonly readDocument: (request: WorkbenchDocumentReadRequest) => Promise<WorkbenchDocumentReadResult>;
+  readonly readAgentDocument: (request: WorkbenchAgentDocumentReadRequest) => Promise<WorkbenchAgentDocumentReadResult>;
   readonly searchDocument: (request: WorkbenchDocumentSearchRequest) => Promise<WorkbenchDocumentSearchResult>;
 };
 

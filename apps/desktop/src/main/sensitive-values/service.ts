@@ -1,11 +1,23 @@
-import { ipcMain } from "electron";
+import { ipcMain, safeStorage } from "electron";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import {
   LYRA_CHANNELS,
   type LyraSensitiveValueRevealRequest,
-  type LyraSensitiveValueRevealResponse
+  type LyraSensitiveValueRevealResponse,
+  type LyraSensitiveValueStoreRequest,
+  type LyraSensitiveValueStoreResponse
 } from "../../shared/desktop-bridge";
-import { isLyraSensitiveValueRef } from "../../shared/sensitive-value";
+import {
+  createOpaqueSensitiveValueRef,
+  isLyraSensitiveValueRef,
+  type LyraSensitiveValueCapability,
+  type LyraSensitiveValueKind,
+  type LyraSensitiveValueOwner
+} from "../../shared/sensitive-value";
 import type { LoginManagerIpcBridge } from "../login-manager";
 
 type SensitiveValuesIpcBridgeParams = {
@@ -14,9 +26,64 @@ type SensitiveValuesIpcBridgeParams = {
 
 export type SensitiveValuesIpcBridge = {
   readonly dispose: () => void;
+  readonly store: (
+    request: LyraSensitiveValueStoreRequest
+  ) => Promise<LyraSensitiveValueStoreResponse>;
   readonly revealToUser: (
     request: LyraSensitiveValueRevealRequest
   ) => Promise<LyraSensitiveValueRevealResponse>;
+};
+
+type StoredSensitiveValue = {
+  readonly id: string;
+  readonly owner: LyraSensitiveValueOwner;
+  readonly valueKind: LyraSensitiveValueKind;
+  readonly label: string;
+  readonly description?: string;
+  readonly ciphertextBase64: string;
+  readonly capabilities: readonly LyraSensitiveValueCapability[];
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+type SensitiveValuesStore = {
+  readonly values: readonly StoredSensitiveValue[];
+};
+
+const SENSITIVE_VALUES_PATH = join(homedir(), ".lyra", "agent", "sensitive-values.json");
+
+const readStore = (): SensitiveValuesStore => {
+  if (!existsSync(SENSITIVE_VALUES_PATH)) {
+    return { values: [] };
+  }
+  const parsed = JSON.parse(readFileSync(SENSITIVE_VALUES_PATH, "utf8")) as Partial<SensitiveValuesStore>;
+  return {
+    values: Array.isArray(parsed.values)
+      ? parsed.values.filter((value): value is StoredSensitiveValue =>
+        value !== null
+        && typeof value === "object"
+        && typeof value.id === "string"
+        && typeof value.owner === "string"
+        && typeof value.valueKind === "string"
+        && typeof value.label === "string"
+        && typeof value.ciphertextBase64 === "string"
+        && Array.isArray(value.capabilities)
+        && typeof value.createdAt === "string"
+        && typeof value.updatedAt === "string")
+      : []
+  };
+};
+
+const writeStore = (store: SensitiveValuesStore): void => {
+  mkdirSync(join(homedir(), ".lyra", "agent"), { recursive: true });
+  writeFileSync(SENSITIVE_VALUES_PATH, `${JSON.stringify(store, null, 2)}\n`);
+};
+
+const encryptValue = (value: string): string => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Electron safeStorage encryption is not available.");
+  }
+  return safeStorage.encryptString(value).toString("base64");
 };
 
 const normalizeRevealRequest = (
@@ -40,6 +107,54 @@ const normalizeRevealRequest = (
 export const createSensitiveValuesIpcBridge = ({
   loginManager
 }: SensitiveValuesIpcBridgeParams): SensitiveValuesIpcBridge => {
+  const store = async (
+    request: LyraSensitiveValueStoreRequest
+  ): Promise<LyraSensitiveValueStoreResponse> => {
+    if (request === null || typeof request !== "object" || Array.isArray(request)) {
+      throw new Error("Sensitive value store request must be an object.");
+    }
+    const value = typeof request.value === "string" ? request.value : "";
+    const label = typeof request.label === "string" ? request.label.trim() : "";
+    if (value.length === 0) {
+      throw new Error("Sensitive value cannot be empty.");
+    }
+    if (label.length === 0) {
+      throw new Error("Sensitive value label is required.");
+    }
+    const now = new Date().toISOString();
+    const id = `${Date.now()}-${randomUUID()}`;
+    const owner = request.owner ?? "system";
+    const valueKind = request.valueKind ?? "credential";
+    const capabilities = request.capabilities ?? ["list_metadata", "use"];
+    const record: StoredSensitiveValue = {
+      id,
+      owner,
+      valueKind,
+      label,
+      ...(typeof request.description === "string" && request.description.trim().length > 0
+        ? { description: request.description.trim() }
+        : {}),
+      ciphertextBase64: encryptValue(value),
+      capabilities,
+      createdAt: now,
+      updatedAt: now
+    };
+    const current = readStore();
+    writeStore({ values: [...current.values, record] });
+    return {
+      ref: createOpaqueSensitiveValueRef({
+        id,
+        owner,
+        valueKind,
+        label,
+        ...(record.description === undefined ? {} : { description: record.description }),
+        displayHint: "••••••••",
+        ownerName: "sensitive-values",
+        capabilities
+      })
+    };
+  };
+
   const revealToUser = async (
     request: LyraSensitiveValueRevealRequest
   ): Promise<LyraSensitiveValueRevealResponse> => {
@@ -67,11 +182,15 @@ export const createSensitiveValuesIpcBridge = ({
 
   ipcMain.handle(LYRA_CHANNELS.sensitiveValuesRevealToUser, async (_event, request: unknown) =>
     await revealToUser(normalizeRevealRequest(request)));
+  ipcMain.handle(LYRA_CHANNELS.sensitiveValuesStore, async (_event, request: unknown) =>
+    await store(request as LyraSensitiveValueStoreRequest));
 
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesRevealToUser);
+      ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesStore);
     },
+    store,
     revealToUser
   };
 };

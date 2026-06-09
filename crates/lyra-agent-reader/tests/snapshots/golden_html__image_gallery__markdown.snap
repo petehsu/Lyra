@@ -1,0 +1,22 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Image Gallery Field Notes
+
+This gallery fixture verifies that image metadata and summaries stay attached to readable content.
+
+Field setup with portable scanner
+
+Portable scanner setup used for archive capture.
+
+Result card preview
+
+Preview card generated after a document read.
+
+The prose should remain useful even when the image markdown is summarized.
+
+
+## Images
+- Field setup with portable scanner — https://example.test/media/field-setup.jpg
+- Result card preview — https://example.test/media/result-card.png

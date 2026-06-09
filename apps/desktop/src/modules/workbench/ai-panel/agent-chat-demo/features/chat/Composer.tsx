@@ -18,7 +18,11 @@ import {
 } from "lucide-react";
 import { LyraListPicker } from "../../../../list-picker";
 import { t } from "../../core/i18n";
-import type { AgentImageAttachment, ComposerModelControls } from "../../core/types";
+import type {
+  AgentImageAttachment,
+  ComposerModelControls,
+  ComposerPermissionModeControls
+} from "../../core/types";
 
 const MIN_HEIGHT = 64;
 const MAX_HEIGHT = 200;
@@ -32,6 +36,7 @@ const LYRA_COMPOSER_SEND_LOGO_URL = new URL(
 const SEND_LOGO_STYLE = {
   "--composer-send-logo-url": `url("${LYRA_COMPOSER_SEND_LOGO_URL}")`
 } as CSSProperties;
+type PermissionPickerValue = "approval" | "full_auto" | "custom";
 
 const attachmentId = (prefix: string): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -67,6 +72,7 @@ export function Composer({
   onCaptureBrowserScreenshot,
   onCaptureWindowScreenshot,
   modelControls,
+  permissionModeControls,
   onOpenModelSettings,
   disabledReason,
   isTurnRunning,
@@ -78,6 +84,7 @@ export function Composer({
   onCaptureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
   onCaptureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
   modelControls?: ComposerModelControls | null;
+  permissionModeControls?: ComposerPermissionModeControls | null;
   onOpenModelSettings?: () => Promise<void>;
   disabledReason?: string | undefined;
   isTurnRunning: boolean;
@@ -200,6 +207,28 @@ export function Composer({
     label: model.label
   }));
   const selectedModelValue = selectedModel?.id ?? modelPickerOptions[0]?.value ?? "";
+  const permissionModeOptions = permissionModeControls === null || permissionModeControls === undefined
+    ? []
+    : [
+        {
+          value: "approval" as const,
+          label: t("composer.permissionModeApproval")
+        },
+        {
+          value: "full_auto" as const,
+          label: t("composer.permissionModeFullAuto")
+        },
+        ...(permissionModeControls.currentMode === "custom"
+          ? [{
+              value: "custom" as const,
+              label: t("composer.permissionModeCustom"),
+              disabled: true
+            }]
+          : [])
+      ];
+  const selectedPermissionModeOption = permissionModeOptions.find(
+    (option) => option.value === permissionModeControls?.currentMode
+  );
   const fastValue = modelControls?.serviceTier.current ?? "default";
 
   return (
@@ -346,6 +375,28 @@ export function Composer({
                   </option>
                 ))}
               </select>
+            ) : null}
+            {permissionModeControls !== null && permissionModeControls !== undefined ? (
+              <LyraListPicker<PermissionPickerValue>
+                className="composer-permission-mode-picker"
+                variant="compact"
+                shape="rounded"
+                ariaLabel={t("composer.permissionMode")}
+                listAriaLabel={t("composer.permissionModeList")}
+                value={permissionModeControls.currentMode}
+                displayLabel={
+                  selectedPermissionModeOption?.label
+                  ?? t("composer.permissionModeApproval")
+                }
+                options={permissionModeOptions}
+                visibleOptionCount={permissionModeOptions.length}
+                disabled={permissionModeControls.isSwitching}
+                onChange={(nextMode) => {
+                  if (nextMode === "approval" || nextMode === "full_auto") {
+                    void permissionModeControls.switchMode(nextMode);
+                  }
+                }}
+              />
             ) : null}
             {modelPickerOptions.length > 0 && modelControls.serviceTier.supported ? (
               <select

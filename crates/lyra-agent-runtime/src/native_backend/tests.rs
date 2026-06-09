@@ -133,27 +133,81 @@ fn wait_for_pending_clarification(session_id: &str) -> String {
 }
 
 fn serve_http_once(status_line: &str, content_type: &str, body: &str) -> String {
+    serve_http_bytes_once(status_line, content_type, body.as_bytes())
+}
+
+fn serve_http_bytes_once(status_line: &str, content_type: &str, body: &[u8]) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local test server");
     let address = listener.local_addr().expect("local address");
     let status_line = status_line.to_string();
     let content_type = content_type.to_string();
-    let body = body.to_string();
+    let body = body.to_vec();
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept local request");
         let mut buffer = [0_u8; 1024];
         let _ = stream.read(&mut buffer);
         let response = format!(
-            "{status_line}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            "{status_line}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
             body.len()
         );
         stream
             .write_all(response.as_bytes())
             .expect("write local response");
+        stream.write_all(&body).expect("write local response body");
     });
     format!("http://{address}/index.html")
 }
 
+fn serve_http_redirect_once(location: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local redirect server");
+    let address = listener.local_addr().expect("local address");
+    let location = location.to_string();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept local redirect request");
+        let mut buffer = [0_u8; 1024];
+        let _ = stream.read(&mut buffer);
+        let response = format!(
+            "HTTP/1.1 302 Found\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write local redirect response");
+    });
+    format!("http://{address}/redirect")
+}
+
+fn build_simple_pdf(text: &str) -> Vec<u8> {
+    let stream = format!("BT /F1 24 Tf 72 720 Td ({}) Tj ET", text);
+    let objects = vec![
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string(),
+        "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n".to_string(),
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n".to_string(),
+        format!(
+            "4 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+            stream.len(),
+            stream
+        ),
+        "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n".to_string(),
+    ];
+    let mut pdf = String::from("%PDF-1.4\n");
+    let mut offsets = vec![0usize];
+    for object in &objects {
+        offsets.push(pdf.len());
+        pdf.push_str(object);
+    }
+    let xref_offset = pdf.len();
+    pdf.push_str("xref\n0 6\n");
+    pdf.push_str("0000000000 65535 f \n");
+    for offset in offsets.iter().skip(1) {
+        pdf.push_str(&format!("{:010} 00000 n \n", offset));
+    }
+    pdf.push_str("trailer\n<< /Root 1 0 R /Size 6 >>\n");
+    pdf.push_str(&format!("startxref\n{}\n%%EOF\n", xref_offset));
+    pdf.into_bytes()
+}
+
 mod foundation;
+mod hardware_tools;
 mod memory;
 mod provider_loop;
 mod terminal_tools;

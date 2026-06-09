@@ -214,6 +214,8 @@ export type {
   AgentOvernightRunSnapshot,
   AgentOvernightStartRequest,
   AgentOvernightStartResponse,
+  AgentPermissionPolicySetModeRequest,
+  AgentPermissionPolicySnapshot,
   AgentProviderOptionState,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
@@ -445,7 +447,9 @@ export type {
   LyraSensitiveValuePlaintextVisibility,
   LyraSensitiveValueRef,
   LyraSensitiveValueRevealRequest,
-  LyraSensitiveValueRevealResponse
+  LyraSensitiveValueRevealResponse,
+  LyraSensitiveValueStoreRequest,
+  LyraSensitiveValueStoreResponse
 } from "./sensitive-value";
 export type {
   BuiltinUiuxPackSummary,
@@ -487,6 +491,8 @@ export const LYRA_CHANNELS = {
   localSearchStreamStart: "lyra:search/local-stream/start",
   localSearchStreamRead: "lyra:search/local-stream/read",
   localSearchStreamCancel: "lyra:search/local-stream/cancel",
+  searchIndexStatus: "lyra:search/index/status",
+  searchIndexRebuild: "lyra:search/index/rebuild",
   filesReadHome: "lyra:files/read-home",
   filesReadDirectory: "lyra:files/read-directory",
   filesSubscribeDirectory: "lyra:files/subscribe-directory",
@@ -547,6 +553,7 @@ export const LYRA_CHANNELS = {
   workbenchBrowserSearchInPage: "lyra:workbench-browser/search-in-page",
   workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
+  workbenchBrowserSetModalOcclusion: "lyra:workbench-browser/set-modal-occlusion",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
   workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
@@ -559,6 +566,7 @@ export const LYRA_CHANNELS = {
   loginManagerClearSite: "lyra:login-manager/clear-site",
   loginManagerEvent: "lyra:login-manager/event",
   sensitiveValuesRevealToUser: "lyra:sensitive-values/reveal-to-user",
+  sensitiveValuesStore: "lyra:sensitive-values/store",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
   lspSaveDocument: "lyra:lsp/save-document",
@@ -641,6 +649,8 @@ export const LYRA_CHANNELS = {
   agentGitDiscard: "lyra:agent/git/discard",
   agentClarificationRespond: "lyra:agent/clarification/respond",
   agentPermissionRespond: "lyra:agent/permission/respond",
+  agentPermissionPolicyRead: "lyra:agent/permission-policy/read",
+  agentPermissionPolicySetMode: "lyra:agent/permission-policy/set-mode",
   agentConfigRead: "lyra:agent/config/read",
   agentConfigUpdate: "lyra:agent/config/update",
   agentProviderProfileSave: "lyra:agent/provider/profile/save",
@@ -968,6 +978,8 @@ export type SearchAggregateResponse = {
 };
 
 export type SearchLocalScopePreset = "home" | "full_system" | "workspace" | "custom";
+export type SearchLocalMode = "fast" | "normal" | "full";
+export type SearchIndexState = "idle" | "building" | "ready" | "failed";
 
 export type SearchLocalContext = {
   readonly projectRoot?: string;
@@ -979,6 +991,14 @@ export type SearchLocalRequest = {
   readonly query: string;
   readonly limit?: number;
   readonly context?: SearchLocalContext;
+  readonly scopePreset?: SearchLocalScopePreset;
+  readonly customRoots?: readonly string[];
+  readonly projectRoot?: string;
+  readonly mode?: SearchLocalMode;
+  readonly includeHidden?: boolean;
+  readonly enableFuzzy?: boolean;
+  readonly enableContent?: boolean;
+  readonly enableExtensionMatch?: boolean;
 };
 
 export type SearchLocalResultSource =
@@ -1043,6 +1063,7 @@ export type SearchLocalResponse = {
   readonly truncated: boolean;
   readonly elapsedMs: number;
   readonly stats: SearchLocalStats;
+  readonly indexStatus: SearchIndexStatusResponse;
 };
 
 export type SearchLocalStreamStartRequest = SearchLocalRequest;
@@ -1068,6 +1089,7 @@ export type SearchLocalStreamReadResponse = {
   readonly truncated: boolean;
   readonly elapsedMs: number;
   readonly stats: SearchLocalStats;
+  readonly indexStatus: SearchIndexStatusResponse;
   readonly done: boolean;
   readonly error?: string;
 };
@@ -1078,6 +1100,54 @@ export type SearchLocalStreamCancelRequest = {
 
 export type SearchLocalStreamCancelResponse = {
   readonly removed: boolean;
+};
+
+export type SearchIndexStatusRequest = Record<string, never>;
+
+export type SearchIndexSkippedStats = {
+  readonly hidden: number;
+  readonly vendor: number;
+  readonly binaryOrTooLarge: number;
+  readonly unreadable: number;
+  readonly contentBudget: number;
+};
+
+export type SearchIndexRootStatus = {
+  readonly root: string;
+  readonly state: SearchIndexState;
+  readonly indexedFiles: number;
+  readonly indexedDirs: number;
+  readonly indexedContentFiles: number;
+  readonly contentBytesIndexed: number;
+  readonly skipped: SearchIndexSkippedStats;
+  readonly lastBuiltAt?: string;
+  readonly error?: string;
+};
+
+export type SearchIndexStatusResponse = {
+  readonly state: SearchIndexState;
+  readonly engineVersion: string;
+  readonly phase: string;
+  readonly indexedFiles: number;
+  readonly indexedDirs: number;
+  readonly indexedContentFiles: number;
+  readonly storageBytes: number;
+  readonly snapshotBytes: number;
+  readonly deltaBytes: number;
+  readonly pendingChanges: number;
+  readonly skipped: SearchIndexSkippedStats;
+  readonly roots: readonly SearchIndexRootStatus[];
+  readonly lastBuiltAt?: string;
+  readonly progress?: number;
+  readonly error?: string;
+};
+
+export type SearchRebuildIndexRequest = Record<string, never>;
+
+export type SearchRebuildIndexResponse = {
+  readonly status: SearchIndexStatusResponse;
+  readonly scopePreset: SearchLocalScopePreset;
+  readonly roots: readonly string[];
 };
 
 export type TerminalSessionId = string;
@@ -2172,6 +2242,12 @@ export type SearchApi = {
   readonly cancelLocalStream: (
     request: SearchLocalStreamCancelRequest
   ) => Promise<SearchLocalStreamCancelResponse>;
+  readonly readIndexStatus: (
+    request?: SearchIndexStatusRequest
+  ) => Promise<SearchIndexStatusResponse>;
+  readonly rebuildIndex: (
+    request?: SearchRebuildIndexRequest
+  ) => Promise<SearchRebuildIndexResponse>;
 };
 
 export type LinuxCompatApi = {
@@ -2282,6 +2358,9 @@ export type WorkbenchBrowserApi = {
   ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
+  ) => Promise<void>;
+  readonly setModalOcclusion?: (
+    request: { readonly active: boolean }
   ) => Promise<void>;
   readonly applyWebTheme: (
     snapshot: WorkbenchBrowserWebThemeSnapshot

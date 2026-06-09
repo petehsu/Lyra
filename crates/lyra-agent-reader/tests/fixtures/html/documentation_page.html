@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lyra Reader API Documentation</title>
+</head>
+<body>
+  <aside class="sidebar">
+    <a href="/docs/start">Start</a>
+    <a href="/docs/api">API</a>
+    <a href="/docs/examples">Examples</a>
+  </aside>
+  <main>
+    <article>
+      <h1>Reader API</h1>
+      <p>The reader converts supported inputs into markdown, metadata, chunks, and warnings for agents.</p>
+      <h2>read_html</h2>
+      <p>Use <code>read_html</code> when the caller already has a trusted HTML string.</p>
+      <pre><code class="language-rust">let result = read_html(html, Some(base_url), &options)?;</code></pre>
+      <h2>Options</h2>
+      <p>Options control extraction mode, link retention, image retention, chunking, and query focus.</p>
+      <table>
+        <thead><tr><th>Option</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td>target_selector</td><td>Limit rendering to one CSS selector.</td></tr>
+          <tr><td>remove_selectors</td><td>Remove page noise before extraction.</td></tr>
+        </tbody>
+      </table>
+    </article>
+  </main>
+</body>
+</html>

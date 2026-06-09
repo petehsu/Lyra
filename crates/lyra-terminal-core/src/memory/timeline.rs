@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn command_summary_records(state: &SessionState, output_size: u64, raw_size: u64) -> Vec<Value> {
+pub(super) fn command_summary_records(
+    state: &SessionState,
+    output_size: u64,
+    raw_size: u64,
+) -> Vec<Value> {
     let mut commands = Vec::<Value>::new();
     let mut index_by_id = HashMap::<String, usize>::new();
     for record in read_jsonl_with_repair_log(
@@ -254,7 +258,11 @@ pub(super) fn metadata_from_state(state: &SessionState, truncated: bool) -> Valu
     })
 }
 
-pub(super) fn write_summary(session_id: &str, state: &SessionState, truncated: bool) -> MemoryResult<()> {
+pub(super) fn write_summary(
+    session_id: &str,
+    state: &SessionState,
+    truncated: bool,
+) -> MemoryResult<()> {
     write_output_summary(session_id, state, truncated)?;
     write_retention_manifest(session_id, &state.paths)?;
     write_output_policy_manifests(session_id, &state.paths)?;
@@ -1070,7 +1078,10 @@ pub(super) fn stored_event_from_record(record: &Value) -> Option<StoredEvent> {
     })
 }
 
-pub(super) fn rebuild_timeline_projection(session_id: &str, state: &mut SessionState) -> MemoryResult<()> {
+pub(super) fn rebuild_timeline_projection(
+    session_id: &str,
+    state: &mut SessionState,
+) -> MemoryResult<()> {
     let mut events =
         read_jsonl_with_repair_log(&state.paths.events_path, Some(&state.paths.repair_log_path))
             .into_iter()

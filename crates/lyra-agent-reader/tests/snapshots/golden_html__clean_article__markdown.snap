@@ -1,0 +1,21 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Clean Article About Agent Reading
+
+Agent readers work best when the page has a clear article root, useful headings, and focused paragraphs.
+
+This fixture keeps navigation and decoration out of the body so the renderer can produce stable markdown.
+
+## Readable Structure
+
+The article includes a short section with a related guide and a direct citation target.
+
+> Stable extraction is easier when meaningful content is grouped under headings.
+
+The final paragraph gives the reader enough body text to avoid weak article scoring.
+
+
+## References
+[1] related guide — https://example.test/guide

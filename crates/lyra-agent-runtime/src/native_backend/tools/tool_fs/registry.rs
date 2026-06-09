@@ -3,11 +3,23 @@ use super::*;
 pub(crate) struct RuntimeToolManifestProvider {
     manifests: Vec<ToolManifest>,
     sources: Vec<Value>,
+    local_code_search_available: bool,
 }
 
 impl RuntimeToolManifestProvider {
     fn from_runtime(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Self {
-        let builtin_registry = ToolFsRegistry::builtin();
+        let local_code_search_available = local_code_search_tools_available();
+        let builtin_registry = ToolFsRegistry::with_builtin_filter_and_providers(
+            |manifest| {
+                local_code_search_available || !is_local_code_search_tool_path(&manifest.path)
+            },
+            &[],
+        );
+        let builtin_diagnostics = if local_code_search_available {
+            Vec::new()
+        } else {
+            local_code_search_unavailable_diagnostics()
+        };
         let mut sources = vec![runtime_manifest_source(
             "core_builtin",
             "static",
@@ -30,7 +42,7 @@ impl RuntimeToolManifestProvider {
                 "runtime",
             ],
             builtin_registry.manifests().len(),
-            Vec::new(),
+            builtin_diagnostics,
         )];
         for (name, domains) in [
             ("terminal_action_specs", &["terminal"][..]),
@@ -76,11 +88,16 @@ impl RuntimeToolManifestProvider {
         Self {
             manifests: software_manifests,
             sources,
+            local_code_search_available,
         }
     }
 
     fn source_summary(&self) -> Value {
         Value::Array(self.sources.clone())
+    }
+
+    fn include_builtin_manifest(&self, manifest: &ToolManifest) -> bool {
+        self.local_code_search_available || !is_local_code_search_tool_path(&manifest.path)
     }
 }
 
@@ -98,7 +115,10 @@ pub(crate) fn runtime_registry_with_dispatcher(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> ToolFsRegistry {
     let provider = RuntimeToolManifestProvider::from_runtime(dispatcher);
-    ToolFsRegistry::with_providers(&[&provider])
+    ToolFsRegistry::with_builtin_filter_and_providers(
+        |manifest| provider.include_builtin_manifest(manifest),
+        &[&provider],
+    )
 }
 
 pub(crate) fn runtime_manifest_source_summary(

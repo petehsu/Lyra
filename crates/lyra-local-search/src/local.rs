@@ -1,53 +1,46 @@
-use crate::FileSearchOptions;
 use crate::native;
-use crate::run;
+use anyhow::Context;
 use ignore::WalkBuilder;
-use rusqlite::Connection;
-use rusqlite::params;
-use serde::Serialize;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
+use std::io::{Read, Write};
 use std::num::NonZero;
-use std::path::Component;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+const ENGINE_VERSION: &str = "native-v3";
+const SNAPSHOT_MAGIC: &[u8; 8] = b"LYRAIDX3";
+const SNAPSHOT_VERSION: u32 = 3;
 const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 500;
-const DEFAULT_TEXT_LIMIT_BYTES: u64 = 1_000_000;
+const DEFAULT_TEXT_LIMIT_BYTES: u64 = 256 * 1024;
 const READ_RESULT_MAX_BYTES: usize = 2_000_000;
+const ROOT_CONTENT_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+const DELTA_COMPACT_BYTES: u64 = 128 * 1024 * 1024;
 const SNIPPET_MAX_CHARS: usize = 240;
-const FTS_CONTENT_SCORE: u32 = 950_000;
-const CONTENT_SCAN_SCORE: u32 = 900_000;
-const EXTENSION_SCORE: u32 = 860_000;
-const FILENAME_EXACT_SCORE: u32 = 1_200_000;
-const FILENAME_PREFIX_SCORE: u32 = 1_080_000;
-const FILENAME_SUBSTRING_SCORE: u32 = 1_000_000;
-const PATH_SUBSTRING_SCORE: u32 = 760_000;
-const FUZZY_SCORE_BASE: u32 = 420_000;
-const VENDOR_PENALTY: u32 = 220_000;
-const DIRECTORY_PENALTY: u32 = 40_000;
+const SEARCH_CANDIDATE_MULTIPLIER_FAST: usize = 2;
+const SEARCH_CANDIDATE_MULTIPLIER_NORMAL: usize = 3;
+const SEARCH_CANDIDATE_MULTIPLIER_FULL: usize = 5;
 
-const VENDOR_DIRECTORY_NAMES: &[&str] = &[
+const SKIPPED_DIRECTORY_NAMES: &[&str] = &[
     ".git",
     ".hg",
     ".svn",
     ".cache",
+    ".next",
+    ".trash",
     ".turbo",
+    ".venv",
+    "__pycache__",
     "build",
+    "caches",
     "coverage",
+    "deriveddata",
     "dist",
+    "library",
     "node_modules",
     "target",
     "vendor",
@@ -70,19 +63,19 @@ const COMMON_PROJECT_ENTRY_NAMES: &[&str] = &[
 ];
 
 const TEXT_EXTENSIONS: &[&str] = &[
-    "bash", "c", "cc", "conf", "cpp", "cs", "css", "csv", "go", "h", "hpp", "html", "java", "js",
-    "json", "jsx", "kt", "lock", "log", "md", "mjs", "py", "rb", "rs", "sh", "sql", "swift",
-    "toml", "ts", "tsx", "txt", "xml", "yaml", "yml", "zsh",
+    "bash", "c", "cc", "conf", "cpp", "cs", "css", "csv", "go", "h", "hpp", "html", "java",
+    "js", "json", "jsx", "kt", "lock", "log", "md", "mjs", "py", "rb", "rs", "sh", "sql",
+    "swift", "toml", "ts", "tsx", "txt", "xml", "yaml", "yml", "zsh",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LocalSearchKind {
     File,
     Directory,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LocalSearchSource {
     Index,
@@ -91,7 +84,7 @@ pub enum LocalSearchSource {
     Symbol,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LocalSearchMatchKind {
     Initial,
@@ -103,7 +96,7 @@ pub enum LocalSearchMatchKind {
     Fuzzy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LocalSearchIndexState {
     Empty,
@@ -114,13 +107,44 @@ pub enum LocalSearchIndexState {
     Walker,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LocalSearchContentMode {
     Disabled,
     #[default]
     Auto,
     Required,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalSearchQueryMode {
+    Fast,
+    #[default]
+    Normal,
+    Full,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalSearchSkippedStats {
+    pub hidden: u64,
+    pub vendor: u64,
+    pub binary_or_too_large: u64,
+    pub unreadable: u64,
+    pub content_budget: u64,
+}
+
+impl LocalSearchSkippedStats {
+    fn add(&mut self, next: &Self) {
+        self.hidden = self.hidden.saturating_add(next.hidden);
+        self.vendor = self.vendor.saturating_add(next.vendor);
+        self.binary_or_too_large = self
+            .binary_or_too_large
+            .saturating_add(next.binary_or_too_large);
+        self.unreadable = self.unreadable.saturating_add(next.unreadable);
+        self.content_budget = self.content_budget.saturating_add(next.content_budget);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -149,6 +173,8 @@ pub struct LocalSearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<LocalSearchMetadata>,
     pub index_state: LocalSearchIndexState,
 }
@@ -164,7 +190,7 @@ pub struct LocalSearchResponse {
     pub index_state: LocalSearchIndexState,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalSearchRootStatus {
     pub root: PathBuf,
@@ -172,6 +198,8 @@ pub struct LocalSearchRootStatus {
     pub indexed_file_count: u64,
     pub indexed_dir_count: u64,
     pub indexed_content_file_count: u64,
+    pub content_bytes_indexed: u64,
+    pub skipped: LocalSearchSkippedStats,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_indexed_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,11 +210,18 @@ pub struct LocalSearchRootStatus {
 #[serde(rename_all = "camelCase")]
 pub struct LocalSearchStatus {
     pub state: LocalSearchIndexState,
+    pub engine_version: String,
+    pub phase: String,
     pub roots: Vec<LocalSearchRootStatus>,
     pub indexed_file_count: u64,
     pub indexed_dir_count: u64,
     pub indexed_content_file_count: u64,
-    pub sqlite_fts_available: bool,
+    pub content_bytes_indexed: u64,
+    pub storage_bytes: u64,
+    pub snapshot_bytes: u64,
+    pub delta_bytes: u64,
+    pub pending_changes: u64,
+    pub skipped: LocalSearchSkippedStats,
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +248,45 @@ impl Default for LocalSearchIndexRootOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct LocalSearchApplyChangesOptions {
+    pub root: PathBuf,
+    pub paths: Vec<PathBuf>,
+    pub include_hidden: bool,
+    pub include_vendor: bool,
+    pub respect_gitignore: bool,
+    pub content_mode: LocalSearchContentMode,
+    pub max_file_size_bytes: u64,
+}
+
+impl Default for LocalSearchApplyChangesOptions {
+    fn default() -> Self {
+        Self {
+            root: PathBuf::new(),
+            paths: Vec::new(),
+            include_hidden: false,
+            include_vendor: false,
+            respect_gitignore: true,
+            content_mode: LocalSearchContentMode::Auto,
+            max_file_size_bytes: DEFAULT_TEXT_LIMIT_BYTES,
+        }
+    }
+}
+
+impl From<LocalSearchIndexRootOptions> for LocalSearchApplyChangesOptions {
+    fn from(options: LocalSearchIndexRootOptions) -> Self {
+        Self {
+            root: options.root,
+            paths: Vec::new(),
+            include_hidden: options.include_hidden,
+            include_vendor: options.include_vendor,
+            respect_gitignore: options.respect_gitignore,
+            content_mode: options.content_mode,
+            max_file_size_bytes: options.max_file_size_bytes,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LocalSearchOptions {
     pub query: String,
     pub roots: Vec<PathBuf>,
@@ -226,6 +300,7 @@ pub struct LocalSearchOptions {
     pub max_file_size_bytes: u64,
     pub enable_fuzzy: bool,
     pub enable_extension_match: bool,
+    pub query_mode: LocalSearchQueryMode,
 }
 
 impl Default for LocalSearchOptions {
@@ -243,6 +318,7 @@ impl Default for LocalSearchOptions {
             max_file_size_bytes: DEFAULT_TEXT_LIMIT_BYTES,
             enable_fuzzy: true,
             enable_extension_match: true,
+            query_mode: LocalSearchQueryMode::Normal,
         }
     }
 }
@@ -303,23 +379,48 @@ pub enum LocalSearchStorageMode {
     Persistent { storage_root: PathBuf },
 }
 
+#[derive(Debug)]
 struct LocalSearchState {
     entries: Vec<IndexedEntry>,
     roots: BTreeMap<PathBuf, LocalSearchRootStatus>,
-    sqlite: Option<SqliteIndex>,
+    storage: V3Storage,
     state: LocalSearchIndexState,
+    phase: String,
+    pending_changes: u64,
+    load_error: Option<String>,
 }
 
-impl Default for LocalSearchEngine {
-    fn default() -> Self {
-        Self::with_config(LocalSearchEngineConfig::default())
-    }
+#[derive(Debug, Clone)]
+struct V3Storage {
+    native_dir: Option<PathBuf>,
 }
 
-struct SqliteIndex {
-    conn: Connection,
-    fts_available: bool,
-    persistent: bool,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct V3Meta {
+    engine_version: String,
+    snapshot_version: u32,
+    phase: String,
+    roots: Vec<LocalSearchRootStatus>,
+    pending_changes: u64,
+    last_written_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotEntry {
+    root: PathBuf,
+    relative_path: PathBuf,
+    full_path: PathBuf,
+    display_path: String,
+    kind: LocalSearchKind,
+    extension: Option<String>,
+    size_bytes: u64,
+    modified_at: Option<u64>,
+    created_at: Option<u64>,
+    hidden: bool,
+    vendor: bool,
+    content_indexed: bool,
+    content_text: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -338,6 +439,7 @@ struct IndexedEntry {
     hidden: bool,
     vendor: bool,
     content_indexed: bool,
+    content_text: Option<String>,
 }
 
 #[derive(Debug)]
@@ -347,12 +449,28 @@ struct CollectedRoot {
     file_count: u64,
     dir_count: u64,
     content_file_count: u64,
+    content_bytes_indexed: u64,
+    skipped: LocalSearchSkippedStats,
     truncated: bool,
 }
 
 #[derive(Debug, Clone)]
 struct Candidate {
     result: LocalSearchResult,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum DeltaRecord {
+    Upsert { entry: SnapshotEntry },
+    Delete { full_path: PathBuf },
+    DeleteTree { full_path: PathBuf },
+}
+
+impl Default for LocalSearchEngine {
+    fn default() -> Self {
+        Self::with_config(LocalSearchEngineConfig::default())
+    }
 }
 
 impl LocalSearchEngine {
@@ -387,18 +505,9 @@ impl LocalSearchEngine {
                 .lock()
                 .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
             state.state = LocalSearchIndexState::Indexing;
-            state.roots.insert(
-                root.clone(),
-                LocalSearchRootStatus {
-                    root: root.clone(),
-                    state: LocalSearchIndexState::Indexing,
-                    indexed_file_count: 0,
-                    indexed_dir_count: 0,
-                    indexed_content_file_count: 0,
-                    last_indexed_at: None,
-                    error: None,
-                },
-            );
+            state.phase = "building".to_string();
+            state.roots.insert(root.clone(), indexing_root_status(&root));
+            write_meta(&state)?;
         }
 
         let collected = collect_root_entries(&root, &options, &cancel_flag)?;
@@ -408,7 +517,7 @@ impl LocalSearchEngine {
             .lock()
             .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
         state.entries.retain(|entry| entry.root != collected.root);
-        state.entries.extend(collected.entries.clone());
+        state.entries.extend(collected.entries);
         let root_state = if collected.truncated {
             LocalSearchIndexState::Partial
         } else {
@@ -422,13 +531,119 @@ impl LocalSearchEngine {
                 indexed_file_count: collected.file_count,
                 indexed_dir_count: collected.dir_count,
                 indexed_content_file_count: collected.content_file_count,
+                content_bytes_indexed: collected.content_bytes_indexed,
+                skipped: collected.skipped,
                 last_indexed_at: Some(unix_seconds_now()),
                 error: None,
             },
         );
         state.state = aggregate_root_state(state.roots.values());
-        let entries = state.entries.clone();
-        rebuild_sqlite(&mut state, &entries);
+        state.phase = "ready".to_string();
+        state.pending_changes = 0;
+        write_snapshot(&state)?;
+        clear_delta(&state.storage)?;
+        write_meta(&state)?;
+        Ok(status_from_state(&state))
+    }
+
+    pub fn apply_changes(
+        &self,
+        mut options: LocalSearchApplyChangesOptions,
+        cancel_flag: Option<Arc<AtomicBool>>,
+    ) -> anyhow::Result<LocalSearchStatus> {
+        let cancel_flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let root = normalize_existing_root(&options.root)?;
+        options.root = root.clone();
+        let paths = normalize_change_paths(&root, &options.paths)?;
+        if paths.is_empty() {
+            return Ok(self.status());
+        }
+
+        let mut collected_entries = Vec::new();
+        let mut delta_records = Vec::new();
+        let mut skipped = LocalSearchSkippedStats::default();
+        let mut content_bytes_indexed = 0_u64;
+        let mut content_file_count = 0_u64;
+        let mut file_count = 0_u64;
+        let mut dir_count = 0_u64;
+
+        for path in &paths {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+            if !path.exists() {
+                delta_records.push(DeltaRecord::DeleteTree {
+                    full_path: path.clone(),
+                });
+                continue;
+            }
+            let collected = collect_path_entries(
+                &root,
+                path,
+                &LocalSearchIndexRootOptions {
+                    root: root.clone(),
+                    include_hidden: options.include_hidden,
+                    include_vendor: options.include_vendor,
+                    respect_gitignore: options.respect_gitignore,
+                    content_mode: options.content_mode,
+                    max_file_size_bytes: options.max_file_size_bytes,
+                },
+                &cancel_flag,
+            )?;
+            file_count = file_count.saturating_add(collected.file_count);
+            dir_count = dir_count.saturating_add(collected.dir_count);
+            content_file_count = content_file_count.saturating_add(collected.content_file_count);
+            content_bytes_indexed =
+                content_bytes_indexed.saturating_add(collected.content_bytes_indexed);
+            skipped.add(&collected.skipped);
+            delta_records.push(DeltaRecord::DeleteTree {
+                full_path: path.clone(),
+            });
+            delta_records.extend(
+                collected
+                    .entries
+                    .iter()
+                    .cloned()
+                    .map(|entry| DeltaRecord::Upsert {
+                        entry: SnapshotEntry::from(entry),
+                    }),
+            );
+            collected_entries.extend(collected.entries);
+        }
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
+        for path in &paths {
+            remove_path_or_descendants(&mut state.entries, path);
+        }
+        state.entries.extend(collected_entries);
+        append_delta(&state.storage, &delta_records)?;
+        rebuild_root_status_from_entries(&mut state, &root);
+        if let Some(status) = state.roots.get_mut(&root) {
+            status.skipped.add(&skipped);
+            status.content_bytes_indexed =
+                status.content_bytes_indexed.saturating_add(content_bytes_indexed);
+            status.indexed_content_file_count = status
+                .indexed_content_file_count
+                .max(content_file_count);
+            status.indexed_file_count = status.indexed_file_count.max(file_count);
+            status.indexed_dir_count = status.indexed_dir_count.max(dir_count);
+            status.last_indexed_at = Some(unix_seconds_now());
+            status.state = LocalSearchIndexState::Ready;
+        }
+        state.pending_changes = state
+            .pending_changes
+            .saturating_add(delta_records.len() as u64);
+        state.state = aggregate_root_state(state.roots.values());
+        state.phase = "ready".to_string();
+        if should_compact_delta(&state.storage) {
+            write_snapshot(&state)?;
+            clear_delta(&state.storage)?;
+            state.pending_changes = 0;
+        }
+        write_meta(&state)?;
         Ok(status_from_state(&state))
     }
 
@@ -454,36 +669,18 @@ impl LocalSearchEngine {
         mut options: LocalSearchOptions,
         cancel_flag: Option<Arc<AtomicBool>>,
     ) -> anyhow::Result<LocalSearchResponse> {
-        let limit = clamp_limit(options.limit);
-        options.limit = limit;
+        options.limit = clamp_limit(options.limit);
         let cancel_flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
         let roots = normalize_search_roots(&options.roots)?;
 
-        let (entries, indexed_roots, index_state, content_hits, sqlite_fts_available) = {
+        let (entries, indexed_roots, index_state) = {
             let state = self
                 .state
                 .lock()
                 .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
             let indexed_roots = state.roots.keys().cloned().collect::<HashSet<_>>();
             let scoped_entries = scope_entries(&state.entries, &roots);
-            let content_hits = if should_search_content(options.content_mode)
-                && !options.query.trim().is_empty()
-            {
-                query_fts(&state, &options.query)?
-            } else {
-                Vec::new()
-            };
-            (
-                scoped_entries,
-                indexed_roots,
-                state.state,
-                content_hits,
-                state
-                    .sqlite
-                    .as_ref()
-                    .map(|sqlite| sqlite.fts_available)
-                    .unwrap_or(false),
-            )
+            (scoped_entries, indexed_roots, state.state)
         };
 
         let roots_for_response = if roots.is_empty() {
@@ -497,13 +694,22 @@ impl LocalSearchEngine {
         } else {
             roots.iter().all(|root| indexed_roots.contains(root))
         };
-
         if !has_index_for_scope {
-            return fallback_search(options, roots, cancel_flag);
+            return Ok(LocalSearchResponse {
+                query: options.query,
+                roots: roots_for_response,
+                results: Vec::new(),
+                total_match_count: 0,
+                truncated: false,
+                index_state,
+            });
         }
 
         let mut candidates = HashMap::<PathBuf, Candidate>::new();
-        let content_hit_set = content_hits.into_iter().collect::<HashSet<_>>();
+        let max_candidates = options
+            .limit
+            .saturating_mul(candidate_multiplier(options.query_mode))
+            .max(options.limit);
         for entry in &entries {
             if cancel_flag.load(Ordering::Relaxed) {
                 break;
@@ -511,8 +717,8 @@ impl LocalSearchEngine {
             if !entry_allowed(entry, &options) {
                 continue;
             }
-            if let Some((score, match_kind, source, snippet)) =
-                score_indexed_entry(entry, &options, &content_hit_set, sqlite_fts_available)
+            if let Some((score, match_kind, source, snippet, line)) =
+                score_v3_entry(entry, &options)
             {
                 merge_candidate(
                     &mut candidates,
@@ -521,15 +727,13 @@ impl LocalSearchEngine {
                     source,
                     match_kind,
                     snippet,
+                    line,
                     index_state,
                 );
+                if candidates.len() >= max_candidates && options.query_mode == LocalSearchQueryMode::Fast {
+                    break;
+                }
             }
-        }
-
-        if should_scan_content(options.content_mode, sqlite_fts_available)
-            && !options.query.trim().is_empty()
-        {
-            scan_content_candidates(&entries, &options, &cancel_flag, &mut candidates);
         }
 
         let total_match_count = candidates.len();
@@ -538,9 +742,8 @@ impl LocalSearchEngine {
             .map(|candidate| candidate.result)
             .collect::<Vec<_>>();
         results.sort_by(result_rank_order);
-        let truncated = results.len() > limit;
-        results.truncate(limit);
-
+        let truncated = results.len() > options.limit;
+        results.truncate(options.limit);
         Ok(LocalSearchResponse {
             query: options.query,
             roots: roots_for_response,
@@ -586,323 +789,305 @@ impl LocalSearchEngine {
 
 impl LocalSearchState {
     fn from_config(config: LocalSearchEngineConfig) -> Self {
-        let sqlite = match open_sqlite_index(&config.storage_mode) {
-            Ok(sqlite) => sqlite,
-            Err(error) => {
-                let message = format!("local search sqlite open failed: {error}");
-                return Self {
-                    entries: Vec::new(),
-                    roots: BTreeMap::new(),
-                    sqlite: None,
-                    state: LocalSearchIndexState::Failed,
-                }
-                .with_error(message);
-            }
-        };
+        let storage = V3Storage::from_mode(&config.storage_mode);
         let mut state = Self {
             entries: Vec::new(),
             roots: BTreeMap::new(),
-            sqlite,
+            storage,
             state: LocalSearchIndexState::Empty,
+            phase: "idle".to_string(),
+            pending_changes: 0,
+            load_error: None,
         };
-        load_sqlite_state(&mut state);
+        if let Err(error) = load_v3_state(&mut state) {
+            state.state = LocalSearchIndexState::Failed;
+            state.phase = "failed".to_string();
+            state.load_error = Some(format!("local search v3 load failed: {error}"));
+        }
         state
     }
+}
 
-    fn with_error(mut self, message: String) -> Self {
-        self.roots.insert(
-            PathBuf::new(),
-            LocalSearchRootStatus {
-                root: PathBuf::new(),
-                state: LocalSearchIndexState::Failed,
-                indexed_file_count: 0,
-                indexed_dir_count: 0,
-                indexed_content_file_count: 0,
-                last_indexed_at: None,
-                error: Some(message),
+impl V3Storage {
+    fn from_mode(mode: &LocalSearchStorageMode) -> Self {
+        match mode {
+            LocalSearchStorageMode::Memory => Self { native_dir: None },
+            LocalSearchStorageMode::Persistent { storage_root } => Self {
+                native_dir: Some(storage_root.join("native")),
             },
-        );
-        self
-    }
-}
-
-fn open_sqlite_index(storage_mode: &LocalSearchStorageMode) -> anyhow::Result<Option<SqliteIndex>> {
-    let (conn, persistent) = match storage_mode {
-        LocalSearchStorageMode::Memory => (Connection::open_in_memory()?, false),
-        LocalSearchStorageMode::Persistent { storage_root } => {
-            let index_dir = storage_root.join("local-search");
-            fs::create_dir_all(&index_dir)?;
-            (Connection::open(index_dir.join("index.v1.sqlite"))?, true)
         }
-    };
-    if persistent {
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             PRAGMA temp_store=MEMORY;",
-        )?;
-    } else {
-        conn.execute_batch("PRAGMA temp_store=MEMORY;")?;
     }
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS roots (
-            root TEXT PRIMARY KEY,
-            state TEXT NOT NULL,
-            indexed_file_count INTEGER NOT NULL,
-            indexed_dir_count INTEGER NOT NULL,
-            indexed_content_file_count INTEGER NOT NULL,
-            last_indexed_at INTEGER,
-            error TEXT
-        );
-        CREATE TABLE IF NOT EXISTS files (
-            full_path TEXT PRIMARY KEY,
-            root TEXT NOT NULL,
-            relative_path TEXT NOT NULL,
-            kind TEXT NOT NULL,
-            extension TEXT,
-            size_bytes INTEGER NOT NULL,
-            modified_at INTEGER,
-            created_at INTEGER,
-            hidden INTEGER NOT NULL,
-            vendor INTEGER NOT NULL DEFAULT 0,
-            content_indexed INTEGER NOT NULL DEFAULT 0
-        );",
-    )?;
-    let _ = conn.execute_batch("ALTER TABLE files ADD COLUMN vendor INTEGER NOT NULL DEFAULT 0;");
-    let _ = conn
-        .execute_batch("ALTER TABLE files ADD COLUMN content_indexed INTEGER NOT NULL DEFAULT 0;");
-    let fts_available = conn
-        .execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(full_path UNINDEXED, body);",
-        )
-        .is_ok();
-    Ok(Some(SqliteIndex {
-        conn,
-        fts_available,
-        persistent,
-    }))
+
+    fn snapshot_path(&self) -> Option<PathBuf> {
+        self.native_dir
+            .as_ref()
+            .map(|dir| dir.join("snapshot.lyidx"))
+    }
+
+    fn delta_path(&self) -> Option<PathBuf> {
+        self.native_dir.as_ref().map(|dir| dir.join("delta.lylog"))
+    }
+
+    fn meta_path(&self) -> Option<PathBuf> {
+        self.native_dir.as_ref().map(|dir| dir.join("meta.json"))
+    }
 }
 
-fn load_sqlite_state(state: &mut LocalSearchState) {
-    let Some(sqlite) = state.sqlite.as_ref() else {
-        return;
+impl From<IndexedEntry> for SnapshotEntry {
+    fn from(entry: IndexedEntry) -> Self {
+        Self {
+            root: entry.root,
+            relative_path: entry.relative_path,
+            full_path: entry.full_path,
+            display_path: entry.display_path,
+            kind: entry.kind,
+            extension: entry.extension,
+            size_bytes: entry.size_bytes,
+            modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            hidden: entry.hidden,
+            vendor: entry.vendor,
+            content_indexed: entry.content_indexed,
+            content_text: entry.content_text,
+        }
+    }
+}
+
+impl From<SnapshotEntry> for IndexedEntry {
+    fn from(entry: SnapshotEntry) -> Self {
+        let lower_file_name = entry
+            .full_path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| entry.display_path.to_lowercase());
+        let lower_path = entry.display_path.to_lowercase();
+        Self {
+            root: entry.root,
+            relative_path: entry.relative_path,
+            full_path: entry.full_path,
+            display_path: entry.display_path,
+            kind: entry.kind,
+            extension: entry.extension,
+            lower_file_name,
+            lower_path,
+            size_bytes: entry.size_bytes,
+            modified_at: entry.modified_at,
+            created_at: entry.created_at,
+            hidden: entry.hidden,
+            vendor: entry.vendor,
+            content_indexed: entry.content_indexed,
+            content_text: entry.content_text,
+        }
+    }
+}
+
+fn load_v3_state(state: &mut LocalSearchState) -> anyhow::Result<()> {
+    let Some(snapshot_path) = state.storage.snapshot_path() else {
+        return Ok(());
     };
-    if !sqlite.persistent {
-        return;
+    if !snapshot_path.exists() {
+        return Ok(());
     }
-
-    if let Ok(mut stmt) = sqlite.conn.prepare(
-        "SELECT root, relative_path, full_path, kind, extension, size_bytes, modified_at,
-                created_at, hidden, vendor, content_indexed
-         FROM files",
-    ) && let Ok(rows) = stmt.query_map([], |row| {
-        let root = PathBuf::from(row.get::<_, String>(0)?);
-        let relative_path = PathBuf::from(row.get::<_, String>(1)?);
-        let full_path = PathBuf::from(row.get::<_, String>(2)?);
-        let kind_value = row.get::<_, String>(3)?;
-        let kind = if kind_value == "directory" {
-            LocalSearchKind::Directory
-        } else {
-            LocalSearchKind::File
-        };
-        let extension = row.get::<_, Option<String>>(4)?;
-        let size_bytes = i64_to_u64(row.get::<_, i64>(5)?);
-        let modified_at = row.get::<_, Option<i64>>(6)?.map(i64_to_u64);
-        let created_at = row.get::<_, Option<i64>>(7)?.map(i64_to_u64);
-        let hidden = row.get::<_, i64>(8)? != 0;
-        let vendor = row.get::<_, i64>(9)? != 0;
-        let content_indexed = row.get::<_, i64>(10)? != 0;
-        let display_path = normalize_path_for_display(&relative_path);
-        Ok(IndexedEntry {
-            root,
-            relative_path,
-            full_path,
-            display_path: display_path.clone(),
-            kind,
-            extension,
-            lower_file_name: display_path
-                .rsplit('/')
-                .next()
-                .unwrap_or(display_path.as_str())
-                .to_lowercase(),
-            lower_path: display_path.to_lowercase(),
-            size_bytes,
-            modified_at,
-            created_at,
-            hidden,
-            vendor,
-            content_indexed,
-        })
-    }) {
-        state.entries = rows.flatten().collect();
+    state.entries = read_snapshot(&snapshot_path)?;
+    if let Some(meta_path) = state.storage.meta_path() {
+        if meta_path.exists() {
+            if let Ok(text) = fs::read_to_string(&meta_path) {
+                if let Ok(meta) = serde_json::from_str::<V3Meta>(&text) {
+                    state.roots = meta
+                        .roots
+                        .into_iter()
+                        .map(|root| (root.root.clone(), root))
+                        .collect();
+                    state.pending_changes = meta.pending_changes;
+                    state.phase = meta.phase;
+                }
+            }
+        }
     }
-
-    if let Ok(mut stmt) = sqlite.conn.prepare(
-        "SELECT root, state, indexed_file_count, indexed_dir_count,
-                indexed_content_file_count, last_indexed_at, error
-         FROM roots",
-    ) && let Ok(rows) = stmt.query_map([], |row| {
-        let root = PathBuf::from(row.get::<_, String>(0)?);
-        let state_value = row.get::<_, String>(1)?;
-        Ok(LocalSearchRootStatus {
-            root,
-            state: index_state_from_storage(&state_value),
-            indexed_file_count: i64_to_u64(row.get::<_, i64>(2)?),
-            indexed_dir_count: i64_to_u64(row.get::<_, i64>(3)?),
-            indexed_content_file_count: i64_to_u64(row.get::<_, i64>(4)?),
-            last_indexed_at: row.get::<_, Option<i64>>(5)?.map(i64_to_u64),
-            error: row.get::<_, Option<String>>(6)?,
-        })
-    }) {
-        state.roots = rows
-            .flatten()
-            .map(|status| (status.root.clone(), status))
-            .collect();
-    }
-
+    replay_delta(state)?;
     if state.roots.is_empty() && !state.entries.is_empty() {
-        rebuild_root_statuses_from_entries(state);
+        rebuild_all_root_statuses(state);
     }
     state.state = aggregate_root_state(state.roots.values());
+    if state.state == LocalSearchIndexState::Empty && !state.entries.is_empty() {
+        state.state = LocalSearchIndexState::Ready;
+    }
+    Ok(())
 }
 
-fn rebuild_root_statuses_from_entries(state: &mut LocalSearchState) {
-    let mut counts = BTreeMap::<PathBuf, (u64, u64, u64)>::new();
-    for entry in &state.entries {
-        let root_counts = counts.entry(entry.root.clone()).or_default();
-        match entry.kind {
-            LocalSearchKind::File => root_counts.0 += 1,
-            LocalSearchKind::Directory => root_counts.1 += 1,
-        }
-        if entry.content_indexed {
-            root_counts.2 += 1;
-        }
+fn read_snapshot(path: &Path) -> anyhow::Result<Vec<IndexedEntry>> {
+    let mut file = fs::File::open(path)?;
+    let mut magic = [0_u8; 8];
+    file.read_exact(&mut magic)?;
+    if &magic != SNAPSHOT_MAGIC {
+        anyhow::bail!("invalid snapshot magic");
     }
-    state.roots = counts
-        .into_iter()
-        .map(
-            |(root, (indexed_file_count, indexed_dir_count, indexed_content_file_count))| {
-                (
-                    root.clone(),
-                    LocalSearchRootStatus {
-                        root,
-                        state: LocalSearchIndexState::Ready,
-                        indexed_file_count,
-                        indexed_dir_count,
-                        indexed_content_file_count,
-                        last_indexed_at: None,
-                        error: None,
-                    },
-                )
+    let version = read_u32(&mut file)?;
+    if version != SNAPSHOT_VERSION {
+        anyhow::bail!("unsupported snapshot version {version}");
+    }
+    let count = read_u64(&mut file)?;
+    let mut entries = Vec::new();
+    for _ in 0..count {
+        let snapshot = SnapshotEntry {
+            root: PathBuf::from(read_string(&mut file)?),
+            relative_path: PathBuf::from(read_string(&mut file)?),
+            full_path: PathBuf::from(read_string(&mut file)?),
+            display_path: read_string(&mut file)?,
+            kind: if read_u8(&mut file)? == 1 {
+                LocalSearchKind::Directory
+            } else {
+                LocalSearchKind::File
             },
-        )
-        .collect();
+            extension: read_optional_string(&mut file)?,
+            size_bytes: read_u64(&mut file)?,
+            modified_at: read_optional_u64(&mut file)?,
+            created_at: read_optional_u64(&mut file)?,
+            hidden: read_u8(&mut file)? != 0,
+            vendor: read_u8(&mut file)? != 0,
+            content_indexed: read_u8(&mut file)? != 0,
+            content_text: read_optional_string(&mut file)?,
+        };
+        entries.push(IndexedEntry::from(snapshot));
+    }
+    Ok(entries)
 }
 
-fn rebuild_sqlite(state: &mut LocalSearchState, entries: &[IndexedEntry]) {
-    let root_statuses = state.roots.values().cloned().collect::<Vec<_>>();
-    let Some(sqlite) = state.sqlite.as_mut() else {
-        return;
+fn write_snapshot(state: &LocalSearchState) -> anyhow::Result<()> {
+    let Some(snapshot_path) = state.storage.snapshot_path() else {
+        return Ok(());
     };
-    let Ok(tx) = sqlite.conn.transaction() else {
-        return;
+    let native_dir = snapshot_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("snapshot path has no parent"))?;
+    fs::create_dir_all(native_dir)?;
+    let tmp_path = snapshot_path.with_extension("lyidx.tmp");
+    let mut file = fs::File::create(&tmp_path)?;
+    file.write_all(SNAPSHOT_MAGIC)?;
+    write_u32(&mut file, SNAPSHOT_VERSION)?;
+    write_u64(&mut file, state.entries.len() as u64)?;
+    for entry in &state.entries {
+        write_string(&mut file, &normalize_path_for_display(&entry.root))?;
+        write_string(&mut file, &normalize_path_for_display(&entry.relative_path))?;
+        write_string(&mut file, &normalize_path_for_display(&entry.full_path))?;
+        write_string(&mut file, &entry.display_path)?;
+        write_u8(
+            &mut file,
+            if entry.kind == LocalSearchKind::Directory {
+                1
+            } else {
+                0
+            },
+        )?;
+        write_optional_string(&mut file, entry.extension.as_deref())?;
+        write_u64(&mut file, entry.size_bytes)?;
+        write_optional_u64(&mut file, entry.modified_at)?;
+        write_optional_u64(&mut file, entry.created_at)?;
+        write_u8(&mut file, u8::from(entry.hidden))?;
+        write_u8(&mut file, u8::from(entry.vendor))?;
+        write_u8(&mut file, u8::from(entry.content_indexed))?;
+        write_optional_string(&mut file, entry.content_text.as_deref())?;
+    }
+    file.flush()?;
+    fs::rename(tmp_path, snapshot_path)?;
+    Ok(())
+}
+
+fn write_meta(state: &LocalSearchState) -> anyhow::Result<()> {
+    let Some(meta_path) = state.storage.meta_path() else {
+        return Ok(());
     };
-    let _ = tx.execute_batch("DELETE FROM files; DELETE FROM roots;");
-    if sqlite.fts_available {
-        let _ = tx.execute_batch("DELETE FROM content_fts;");
+    let native_dir = meta_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("meta path has no parent"))?;
+    fs::create_dir_all(native_dir)?;
+    let tmp_path = meta_path.with_extension("json.tmp");
+    let meta = V3Meta {
+        engine_version: ENGINE_VERSION.to_string(),
+        snapshot_version: SNAPSHOT_VERSION,
+        phase: state.phase.clone(),
+        roots: state.roots.values().cloned().collect(),
+        pending_changes: state.pending_changes,
+        last_written_at: Some(unix_seconds_now()),
+    };
+    fs::write(&tmp_path, serde_json::to_vec_pretty(&meta)?)?;
+    fs::rename(tmp_path, meta_path)?;
+    Ok(())
+}
+
+fn replay_delta(state: &mut LocalSearchState) -> anyhow::Result<()> {
+    let Some(delta_path) = state.storage.delta_path() else {
+        return Ok(());
+    };
+    if !delta_path.exists() {
+        return Ok(());
     }
-    for root in root_statuses {
-        let _ = tx.execute(
-            "INSERT OR REPLACE INTO roots
-             (root, state, indexed_file_count, indexed_dir_count, indexed_content_file_count,
-              last_indexed_at, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                root.root.to_string_lossy(),
-                index_state_to_storage(root.state),
-                u64_to_i64_saturating(root.indexed_file_count),
-                u64_to_i64_saturating(root.indexed_dir_count),
-                u64_to_i64_saturating(root.indexed_content_file_count),
-                root.last_indexed_at.and_then(u64_to_i64),
-                root.error,
-            ],
-        );
+    let text = fs::read_to_string(&delta_path)?;
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let record: DeltaRecord = serde_json::from_str(line)?;
+        apply_delta_record(&mut state.entries, record);
+        state.pending_changes = state.pending_changes.saturating_add(1);
     }
-    for entry in entries {
-        let kind = match entry.kind {
-            LocalSearchKind::File => "file",
-            LocalSearchKind::Directory => "directory",
-        };
-        let modified_at = entry.modified_at.and_then(u64_to_i64);
-        let created_at = entry.created_at.and_then(u64_to_i64);
-        let _ = tx.execute(
-            "INSERT OR REPLACE INTO files
-             (full_path, root, relative_path, kind, extension, size_bytes, modified_at,
-              created_at, hidden, vendor, content_indexed)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                entry.full_path.to_string_lossy(),
-                entry.root.to_string_lossy(),
-                entry.relative_path.to_string_lossy(),
-                kind,
-                entry.extension,
-                u64_to_i64_saturating(entry.size_bytes),
-                modified_at,
-                created_at,
-                if entry.hidden { 1_i64 } else { 0_i64 },
-                if entry.vendor { 1_i64 } else { 0_i64 },
-                if entry.content_indexed { 1_i64 } else { 0_i64 },
-            ],
-        );
-        if sqlite.fts_available
-            && entry.content_indexed
-            && let Ok(Some((text, _truncated))) =
-                read_text_file_with_limit(&entry.full_path, DEFAULT_TEXT_LIMIT_BYTES)
-        {
-            let _ = tx.execute(
-                "INSERT INTO content_fts (full_path, body) VALUES (?1, ?2)",
-                params![entry.full_path.to_string_lossy(), text],
-            );
+    Ok(())
+}
+
+fn apply_delta_record(entries: &mut Vec<IndexedEntry>, record: DeltaRecord) {
+    match record {
+        DeltaRecord::Upsert { entry } => {
+            let entry = IndexedEntry::from(entry);
+            entries.retain(|existing| existing.full_path != entry.full_path);
+            entries.push(entry);
+        }
+        DeltaRecord::Delete { full_path } => {
+            entries.retain(|entry| entry.full_path != full_path);
+        }
+        DeltaRecord::DeleteTree { full_path } => {
+            remove_path_or_descendants(entries, &full_path);
         }
     }
-    let _ = tx.commit();
 }
 
-fn query_fts(state: &LocalSearchState, query: &str) -> anyhow::Result<Vec<PathBuf>> {
-    let Some(sqlite) = state.sqlite.as_ref() else {
-        return Ok(Vec::new());
-    };
-    if !sqlite.fts_available {
-        return Ok(Vec::new());
+fn append_delta(storage: &V3Storage, records: &[DeltaRecord]) -> anyhow::Result<()> {
+    if records.is_empty() {
+        return Ok(());
     }
-    let Some(fts_query) = build_fts_query(query) else {
-        return Ok(Vec::new());
+    let Some(delta_path) = storage.delta_path() else {
+        return Ok(());
     };
-    let mut stmt = sqlite
-        .conn
-        .prepare("SELECT full_path FROM content_fts WHERE content_fts MATCH ?1 LIMIT 500")?;
-    let rows = match stmt.query_map(params![fts_query], |row| row.get::<_, String>(0)) {
-        Ok(rows) => rows,
-        Err(_) => return Ok(Vec::new()),
-    };
-    let mut paths = Vec::new();
-    for path in rows.flatten() {
-        paths.push(PathBuf::from(path));
+    if let Some(native_dir) = delta_path.parent() {
+        fs::create_dir_all(native_dir)?;
     }
-    Ok(paths)
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(delta_path)?;
+    for record in records {
+        serde_json::to_writer(&mut file, record)?;
+        file.write_all(b"\n")?;
+    }
+    Ok(())
 }
 
-fn build_fts_query(query: &str) -> Option<String> {
-    let tokens = native::query_token_spans(query, 8)
-        .into_iter()
-        .filter(|token| !token.is_empty())
-        .map(|token| format!("{}*", token.to_lowercase()))
-        .collect::<Vec<_>>();
-    if tokens.is_empty() {
-        None
-    } else {
-        Some(tokens.join(" AND "))
+fn clear_delta(storage: &V3Storage) -> anyhow::Result<()> {
+    if let Some(delta_path) = storage.delta_path() {
+        if let Some(parent) = delta_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(delta_path, [])?;
     }
+    Ok(())
+}
+
+fn should_compact_delta(storage: &V3Storage) -> bool {
+    let delta_bytes = storage.delta_path().and_then(|path| file_len(&path)).unwrap_or(0);
+    if delta_bytes >= DELTA_COMPACT_BYTES {
+        return true;
+    }
+    let snapshot_bytes = storage
+        .snapshot_path()
+        .and_then(|path| file_len(&path))
+        .unwrap_or(0);
+    snapshot_bytes > 0 && delta_bytes > snapshot_bytes / 10
 }
 
 fn collect_root_entries(
@@ -910,29 +1095,49 @@ fn collect_root_entries(
     options: &LocalSearchIndexRootOptions,
     cancel_flag: &AtomicBool,
 ) -> anyhow::Result<CollectedRoot> {
-    let mut file_count = 0_u64;
-    let mut dir_count = 0_u64;
-    let mut content_file_count = 0_u64;
-    let mut entries = Vec::new();
-    let root = root.to_path_buf();
+    collect_path_entries(root, root, options, cancel_flag)
+}
 
-    if root.is_file() {
-        if let Some(entry) = indexed_entry_for_path(&root, &root, options)? {
-            file_count += 1;
-            content_file_count += u64::from(entry.content_indexed);
-            entries.push(entry);
-        }
-        return Ok(CollectedRoot {
-            root,
-            entries,
-            file_count,
-            dir_count,
-            content_file_count,
-            truncated: false,
-        });
+fn collect_path_entries(
+    root: &Path,
+    path: &Path,
+    options: &LocalSearchIndexRootOptions,
+    cancel_flag: &AtomicBool,
+) -> anyhow::Result<CollectedRoot> {
+    let root = normalize_existing_root(root)?;
+    let path = if path.exists() {
+        normalize_existing_root(path)?
+    } else {
+        path.to_path_buf()
+    };
+    let mut collected = CollectedRoot {
+        root: root.clone(),
+        entries: Vec::new(),
+        file_count: 0,
+        dir_count: 0,
+        content_file_count: 0,
+        content_bytes_indexed: 0,
+        skipped: LocalSearchSkippedStats::default(),
+        truncated: false,
+    };
+    let mut content_budget_remaining = ROOT_CONTENT_BUDGET_BYTES;
+
+    if path.is_file() {
+        collect_single_entry(
+            &path,
+            &root,
+            options,
+            &mut content_budget_remaining,
+            &mut collected,
+        )?;
+        return Ok(collected);
     }
 
-    let mut builder = WalkBuilder::new(&root);
+    if !path.is_dir() {
+        return Ok(collected);
+    }
+
+    let mut builder = WalkBuilder::new(&path);
     builder
         .hidden(!options.include_hidden)
         .follow_links(false)
@@ -945,63 +1150,84 @@ fn collect_root_entries(
             .ignore(false)
             .parents(false);
     }
-    if !options.include_vendor {
-        builder.filter_entry(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .map(|name| !is_vendor_directory_name(name))
-                .unwrap_or(true)
-        });
-    }
-
     for entry in builder.build() {
         if cancel_flag.load(Ordering::Relaxed) {
             break;
         }
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => continue,
+            Err(_) => {
+                collected.skipped.unreadable = collected.skipped.unreadable.saturating_add(1);
+                continue;
+            }
         };
-        let path = entry.path();
-        if path == root {
+        let entry_path = entry.path();
+        if entry_path == root {
             continue;
         }
-        let file_type = match entry.file_type() {
-            Some(file_type) => file_type,
-            None => continue,
-        };
-        if file_type.is_dir() {
-            dir_count += 1;
-        } else if file_type.is_file() {
-            file_count += 1;
-        } else {
+        let relative = relative_display_path(entry_path, &root);
+        if !options.include_hidden && path_has_hidden_component(&relative) {
+            collected.skipped.hidden = collected.skipped.hidden.saturating_add(1);
             continue;
         }
-        if let Some(indexed) = indexed_entry_for_path(path, &root, options)? {
-            content_file_count += u64::from(indexed.content_indexed);
-            entries.push(indexed);
+        if !options.include_vendor && path_has_vendor_component(&relative) {
+            collected.skipped.vendor = collected.skipped.vendor.saturating_add(1);
+            continue;
+        }
+        collect_single_entry(
+            entry_path,
+            &root,
+            options,
+            &mut content_budget_remaining,
+            &mut collected,
+        )?;
+    }
+    Ok(collected)
+}
+
+fn collect_single_entry(
+    path: &Path,
+    root: &Path,
+    options: &LocalSearchIndexRootOptions,
+    content_budget_remaining: &mut u64,
+    collected: &mut CollectedRoot,
+) -> anyhow::Result<()> {
+    match indexed_entry_for_path(path, root, options, content_budget_remaining, &mut collected.skipped)
+    {
+        Ok(Some(entry)) => {
+            match entry.kind {
+                LocalSearchKind::File => collected.file_count += 1,
+                LocalSearchKind::Directory => collected.dir_count += 1,
+            }
+            if entry.content_indexed {
+                collected.content_file_count += 1;
+                collected.content_bytes_indexed = collected
+                    .content_bytes_indexed
+                    .saturating_add(entry.content_text.as_ref().map(|text| text.len() as u64).unwrap_or(0));
+            }
+            collected.entries.push(entry);
+        }
+        Ok(None) => {}
+        Err(_) => {
+            collected.skipped.unreadable = collected.skipped.unreadable.saturating_add(1);
         }
     }
-
-    Ok(CollectedRoot {
-        root,
-        entries,
-        file_count,
-        dir_count,
-        content_file_count,
-        truncated: false,
-    })
+    Ok(())
 }
 
 fn indexed_entry_for_path(
     path: &Path,
     root: &Path,
     options: &LocalSearchIndexRootOptions,
+    content_budget_remaining: &mut u64,
+    skipped: &mut LocalSearchSkippedStats,
 ) -> anyhow::Result<Option<IndexedEntry>> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return Ok(None),
+        Err(_) => {
+            skipped.unreadable = skipped.unreadable.saturating_add(1);
+            return Ok(None);
+        }
     };
     let kind = if metadata.is_dir() {
         LocalSearchKind::Directory
@@ -1015,32 +1241,36 @@ fn indexed_entry_for_path(
     if display_path.is_empty() {
         return Ok(None);
     }
-    let extension = normalized_extension(path);
     let hidden = path_has_hidden_component(&relative_path);
     if hidden && !options.include_hidden {
+        skipped.hidden = skipped.hidden.saturating_add(1);
         return Ok(None);
     }
     let vendor = path_has_vendor_component(&relative_path);
     if vendor && !options.include_vendor {
+        skipped.vendor = skipped.vendor.saturating_add(1);
         return Ok(None);
     }
-    let content_indexed = should_extract_entry_text(
+    let extension = normalized_extension(path);
+    let (content_indexed, content_text) = extract_indexable_text(
+        path,
         kind,
         extension.as_deref(),
         metadata.len(),
         options.content_mode,
         options.max_file_size_bytes,
-    );
-    let full_path = path.to_path_buf();
+        content_budget_remaining,
+        skipped,
+    )?;
     let lower_path = display_path.to_lowercase();
     let lower_file_name = path
         .file_name()
         .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| display_path.to_lowercase());
+        .unwrap_or_else(|| lower_path.clone());
     Ok(Some(IndexedEntry {
         root: root.to_path_buf(),
         relative_path,
-        full_path,
+        full_path: path.to_path_buf(),
         display_path,
         kind,
         extension,
@@ -1058,108 +1288,112 @@ fn indexed_entry_for_path(
         hidden,
         vendor,
         content_indexed,
+        content_text,
     }))
 }
 
-fn relative_display_path(path: &Path, root: &Path) -> PathBuf {
-    match path.strip_prefix(root) {
-        Ok(relative) if !relative.as_os_str().is_empty() => relative.to_path_buf(),
-        _ => path
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| path.to_path_buf()),
+fn extract_indexable_text(
+    path: &Path,
+    kind: LocalSearchKind,
+    extension: Option<&str>,
+    size_bytes: u64,
+    mode: LocalSearchContentMode,
+    max_file_size_bytes: u64,
+    content_budget_remaining: &mut u64,
+    skipped: &mut LocalSearchSkippedStats,
+) -> anyhow::Result<(bool, Option<String>)> {
+    if kind != LocalSearchKind::File || mode == LocalSearchContentMode::Disabled {
+        return Ok((false, None));
     }
+    if !extension
+        .map(|extension| TEXT_EXTENSIONS.iter().any(|item| extension.eq_ignore_ascii_case(item)))
+        .unwrap_or(false)
+    {
+        return Ok((false, None));
+    }
+    if size_bytes > max_file_size_bytes {
+        skipped.binary_or_too_large = skipped.binary_or_too_large.saturating_add(1);
+        return Ok((false, None));
+    }
+    if size_bytes > *content_budget_remaining {
+        skipped.content_budget = skipped.content_budget.saturating_add(1);
+        return Ok((false, None));
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(path)?.take(max_file_size_bytes.saturating_add(1)).read_to_end(&mut bytes)?;
+    if !native::is_probably_text(&bytes) {
+        skipped.binary_or_too_large = skipped.binary_or_too_large.saturating_add(1);
+        return Ok((false, None));
+    }
+    if bytes.len() as u64 > max_file_size_bytes {
+        skipped.binary_or_too_large = skipped.binary_or_too_large.saturating_add(1);
+        return Ok((false, None));
+    }
+    *content_budget_remaining = (*content_budget_remaining).saturating_sub(bytes.len() as u64);
+    Ok((true, Some(String::from_utf8_lossy(&bytes).to_string())))
 }
 
-fn score_indexed_entry(
+fn score_v3_entry(
     entry: &IndexedEntry,
     options: &LocalSearchOptions,
-    content_hit_set: &HashSet<PathBuf>,
-    sqlite_fts_available: bool,
-) -> Option<(u32, LocalSearchMatchKind, LocalSearchSource, Option<String>)> {
+) -> Option<(u32, LocalSearchMatchKind, LocalSearchSource, Option<String>, Option<u64>)> {
     let query = options.query.trim().to_lowercase();
     if query.is_empty() {
         return initial_entry_score(entry).map(|score| {
             (
-                apply_entry_penalties(score, entry),
+                score,
                 LocalSearchMatchKind::Initial,
                 LocalSearchSource::Index,
+                None,
                 None,
             )
         });
     }
-    if should_search_content(options.content_mode)
-        && sqlite_fts_available
-        && content_hit_set.contains(&entry.full_path)
+    let content_hit = if should_search_content(options.content_mode, options.query_mode)
+        && entry.content_indexed
     {
-        return Some((
-            apply_entry_penalties(FTS_CONTENT_SCORE, entry),
-            LocalSearchMatchKind::Content,
-            LocalSearchSource::Content,
-            snippet_for_file(&entry.full_path, &query, options.max_file_size_bytes),
-        ));
-    }
-    if options.enable_extension_match
-        && let Some(extension_query) = extension_query(&query, &options.extensions)
-        && entry
-            .extension
+        entry
+            .content_text
             .as_deref()
-            .map(|extension| extension == extension_query)
-            .unwrap_or(false)
-    {
-        return Some((
-            apply_entry_penalties(EXTENSION_SCORE, entry),
-            LocalSearchMatchKind::Extension,
-            LocalSearchSource::Index,
-            None,
-        ));
+            .and_then(|text| snippet_for_text(text, &query))
+    } else {
+        None
+    };
+    let native_score = native::v3_score_entry(native::V3ScoreInput {
+        query: &query,
+        lower_file_name: &entry.lower_file_name,
+        lower_path: &entry.lower_path,
+        extension: entry.extension.as_deref().unwrap_or(""),
+        content_hit: content_hit.is_some(),
+        is_directory: entry.kind == LocalSearchKind::Directory,
+        vendor: entry.vendor,
+        enable_fuzzy: options.enable_fuzzy,
+        enable_extension_match: options.enable_extension_match,
+    });
+    if native_score.score == 0 {
+        return None;
     }
-    if entry.lower_file_name == query {
-        return Some((
-            apply_entry_penalties(FILENAME_EXACT_SCORE, entry),
-            LocalSearchMatchKind::FileName,
-            LocalSearchSource::Index,
-            None,
-        ));
-    }
-    if entry.lower_file_name.starts_with(&query) {
-        return Some((
-            apply_entry_penalties(FILENAME_PREFIX_SCORE, entry),
-            LocalSearchMatchKind::FileName,
-            LocalSearchSource::Index,
-            None,
-        ));
-    }
-    if entry.lower_file_name.contains(&query) {
-        return Some((
-            apply_entry_penalties(FILENAME_SUBSTRING_SCORE, entry),
-            LocalSearchMatchKind::FileName,
-            LocalSearchSource::Index,
-            None,
-        ));
-    }
-    if entry.lower_path.contains(&query) {
-        return Some((
-            apply_entry_penalties(PATH_SUBSTRING_SCORE, entry),
-            LocalSearchMatchKind::Path,
-            LocalSearchSource::Index,
-            None,
-        ));
-    }
-    if options.enable_fuzzy {
-        let basename_fuzzy = native::subsequence_score(&entry.lower_file_name, &query);
-        let path_fuzzy = native::subsequence_score(&entry.lower_path, &query);
-        let fuzzy = basename_fuzzy.max(path_fuzzy / 2);
-        if fuzzy > 900 {
-            return Some((
-                apply_entry_penalties(FUZZY_SCORE_BASE.saturating_add(fuzzy), entry),
-                LocalSearchMatchKind::Fuzzy,
-                LocalSearchSource::Index,
-                None,
-            ));
-        }
-    }
-    None
+    let match_kind = match native_score.match_kind {
+        native::V3_MATCH_FILE_NAME => LocalSearchMatchKind::FileName,
+        native::V3_MATCH_PATH => LocalSearchMatchKind::Path,
+        native::V3_MATCH_EXTENSION => LocalSearchMatchKind::Extension,
+        native::V3_MATCH_CONTENT => LocalSearchMatchKind::Content,
+        native::V3_MATCH_FUZZY => LocalSearchMatchKind::Fuzzy,
+        _ => LocalSearchMatchKind::Metadata,
+    };
+    let source = if native_score.source == native::V3_SOURCE_CONTENT {
+        LocalSearchSource::Content
+    } else {
+        LocalSearchSource::Index
+    };
+    let (snippet, line) = if match_kind == LocalSearchMatchKind::Content {
+        content_hit
+            .map(|hit| (Some(hit.snippet), Some(hit.line)))
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
+    Some((native_score.score, match_kind, source, snippet, line))
 }
 
 fn initial_entry_score(entry: &IndexedEntry) -> Option<u32> {
@@ -1188,202 +1422,32 @@ fn initial_entry_score(entry: &IndexedEntry) -> Option<u32> {
     None
 }
 
-fn scan_content_candidates(
-    entries: &[IndexedEntry],
-    options: &LocalSearchOptions,
-    cancel_flag: &AtomicBool,
-    candidates: &mut HashMap<PathBuf, Candidate>,
-) {
-    let query = options.query.trim().to_lowercase();
-    for entry in entries {
-        if cancel_flag.load(Ordering::Relaxed) {
-            break;
-        }
-        if !entry_allowed(entry, options) || entry.kind != LocalSearchKind::File {
-            continue;
-        }
-        if let Some(snippet) =
-            snippet_for_file(&entry.full_path, &query, options.max_file_size_bytes)
-        {
-            merge_candidate(
-                candidates,
-                entry,
-                apply_entry_penalties(CONTENT_SCAN_SCORE, entry),
-                LocalSearchSource::Content,
-                LocalSearchMatchKind::Content,
-                Some(snippet),
-                LocalSearchIndexState::Ready,
-            );
-        }
-    }
+#[derive(Debug)]
+struct TextHit {
+    line: u64,
+    snippet: String,
 }
 
-fn fallback_search(
-    options: LocalSearchOptions,
-    roots: Vec<PathBuf>,
-    cancel_flag: Arc<AtomicBool>,
-) -> anyhow::Result<LocalSearchResponse> {
-    let search_roots = if roots.is_empty() {
-        match std::env::current_dir() {
-            Ok(current_dir) => vec![current_dir],
-            Err(_) => Vec::new(),
-        }
-    } else {
-        roots
-    };
-    if search_roots.is_empty() {
-        return Ok(LocalSearchResponse {
-            query: options.query,
-            roots: Vec::new(),
-            results: Vec::new(),
-            total_match_count: 0,
-            truncated: false,
-            index_state: LocalSearchIndexState::Empty,
-        });
-    }
-
-    let limit = clamp_limit(options.limit);
-    let search_limit =
-        NonZero::new(limit).ok_or_else(|| anyhow::anyhow!("limit must be non-zero"))?;
-    let threads = std::thread::available_parallelism()
-        .map(NonZero::get)
-        .unwrap_or(1)
-        .max(1);
-    let threads =
-        NonZero::new(threads).ok_or_else(|| anyhow::anyhow!("threads must be non-zero"))?;
-    let mut candidates = HashMap::<PathBuf, Candidate>::new();
-    if options.content_mode != LocalSearchContentMode::Required {
-        let result = run(
-            &options.query,
-            search_roots.clone(),
-            FileSearchOptions {
-                limit: search_limit,
-                threads,
-                compute_indices: false,
-                respect_gitignore: options.respect_gitignore,
-                ..Default::default()
-            },
-            Some(cancel_flag.clone()),
-        )?;
-        for file_match in result.matches {
-            let full_path = file_match.root.join(&file_match.path);
-            if let Some(entry) = fallback_entry_from_path(&full_path, &file_match.root, &options) {
-                let score = apply_entry_penalties(file_match.score, &entry);
-                merge_candidate(
-                    &mut candidates,
-                    &entry,
-                    score,
-                    LocalSearchSource::Walker,
-                    LocalSearchMatchKind::Path,
-                    None,
-                    LocalSearchIndexState::Walker,
-                );
-            }
+fn snippet_for_text(text: &str, query_lower: &str) -> Option<TextHit> {
+    for (index, line) in text.lines().enumerate() {
+        if line.to_lowercase().contains(query_lower) {
+            return Some(TextHit {
+                line: index as u64 + 1,
+                snippet: clip_snippet(line, SNIPPET_MAX_CHARS),
+            });
         }
     }
-
-    if options.enable_extension_match
-        && extension_query(&options.query.trim().to_lowercase(), &options.extensions).is_some()
-    {
-        let extension_entries =
-            collect_fallback_content_entries(&search_roots, &options, cancel_flag.as_ref())?;
-        let empty_content_hits = HashSet::new();
-        for entry in &extension_entries {
-            if cancel_flag.load(Ordering::Relaxed) {
-                break;
-            }
-            if !entry_allowed(entry, &options) {
-                continue;
-            }
-            if let Some((score, match_kind, source, snippet)) =
-                score_indexed_entry(entry, &options, &empty_content_hits, false)
-            {
-                merge_candidate(
-                    &mut candidates,
-                    entry,
-                    score,
-                    source,
-                    match_kind,
-                    snippet,
-                    LocalSearchIndexState::Walker,
-                );
-            }
-        }
-    }
-
-    if should_search_content(options.content_mode) && !options.query.trim().is_empty() {
-        let content_entries =
-            collect_fallback_content_entries(&search_roots, &options, cancel_flag.as_ref())?;
-        scan_content_candidates(
-            &content_entries,
-            &options,
-            cancel_flag.as_ref(),
-            &mut candidates,
-        );
-    }
-
-    let total_match_count = candidates.len();
-    let mut results = candidates
-        .into_values()
-        .map(|candidate| candidate.result)
-        .collect::<Vec<_>>();
-    results.sort_by(result_rank_order);
-    let truncated = results.len() > limit;
-    results.truncate(limit);
-    Ok(LocalSearchResponse {
-        query: options.query,
-        roots: search_roots,
-        results,
-        total_match_count,
-        truncated,
-        index_state: LocalSearchIndexState::Walker,
-    })
+    None
 }
 
-fn collect_fallback_content_entries(
-    roots: &[PathBuf],
-    options: &LocalSearchOptions,
-    cancel_flag: &AtomicBool,
-) -> anyhow::Result<Vec<IndexedEntry>> {
-    let mut entries = Vec::new();
-    for root in roots {
-        if cancel_flag.load(Ordering::Relaxed) {
-            break;
-        }
-        let mut root_options = LocalSearchIndexRootOptions {
-            root: root.clone(),
-            include_hidden: options.include_hidden,
-            include_vendor: options.include_vendor,
-            respect_gitignore: options.respect_gitignore,
-            content_mode: options.content_mode,
-            max_file_size_bytes: options.max_file_size_bytes,
-        };
-        root_options.root = root.clone();
-        let collected = collect_root_entries(root, &root_options, cancel_flag)?;
-        entries.extend(collected.entries);
-        if entries.len() >= MAX_LIMIT {
-            break;
-        }
+fn clip_snippet(line: &str, max_chars: usize) -> String {
+    let trimmed = line.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
     }
-    Ok(entries)
-}
-
-fn fallback_entry_from_path(
-    full_path: &Path,
-    root: &Path,
-    options: &LocalSearchOptions,
-) -> Option<IndexedEntry> {
-    let root_options = LocalSearchIndexRootOptions {
-        root: root.to_path_buf(),
-        include_hidden: options.include_hidden,
-        include_vendor: options.include_vendor,
-        respect_gitignore: options.respect_gitignore,
-        content_mode: options.content_mode,
-        max_file_size_bytes: options.max_file_size_bytes,
-    };
-    indexed_entry_for_path(full_path, root, &root_options)
-        .ok()
-        .flatten()
+    let mut clipped = trimmed.chars().take(max_chars).collect::<String>();
+    clipped.push_str("...");
+    clipped
 }
 
 fn merge_candidate(
@@ -1393,6 +1457,7 @@ fn merge_candidate(
     source: LocalSearchSource,
     match_kind: LocalSearchMatchKind,
     snippet: Option<String>,
+    line: Option<u64>,
     index_state: LocalSearchIndexState,
 ) {
     let result = LocalSearchResult {
@@ -1404,6 +1469,7 @@ fn merge_candidate(
         source,
         match_kind,
         snippet,
+        line,
         metadata: Some(LocalSearchMetadata {
             extension: entry.extension.clone(),
             size_bytes: entry.size_bytes,
@@ -1419,6 +1485,7 @@ fn merge_candidate(
         }
         Some(existing) if existing.result.snippet.is_none() && result.snippet.is_some() => {
             existing.result.snippet = result.snippet;
+            existing.result.line = result.line;
             if result.match_kind == LocalSearchMatchKind::Content {
                 existing.result.match_kind = LocalSearchMatchKind::Content;
                 existing.result.source = LocalSearchSource::Content;
@@ -1454,72 +1521,16 @@ fn entry_allowed(entry: &IndexedEntry, options: &LocalSearchOptions) -> bool {
     true
 }
 
-fn apply_entry_penalties(score: u32, entry: &IndexedEntry) -> u32 {
-    let vendor_adjusted = if entry.vendor {
-        score.saturating_sub(VENDOR_PENALTY)
-    } else {
-        score
-    };
-    if entry.kind == LocalSearchKind::Directory {
-        vendor_adjusted.saturating_sub(DIRECTORY_PENALTY)
-    } else {
-        vendor_adjusted
+fn should_search_content(mode: LocalSearchContentMode, query_mode: LocalSearchQueryMode) -> bool {
+    mode != LocalSearchContentMode::Disabled && query_mode != LocalSearchQueryMode::Fast
+}
+
+fn candidate_multiplier(mode: LocalSearchQueryMode) -> usize {
+    match mode {
+        LocalSearchQueryMode::Fast => SEARCH_CANDIDATE_MULTIPLIER_FAST,
+        LocalSearchQueryMode::Normal => SEARCH_CANDIDATE_MULTIPLIER_NORMAL,
+        LocalSearchQueryMode::Full => SEARCH_CANDIDATE_MULTIPLIER_FULL,
     }
-}
-
-fn should_search_content(mode: LocalSearchContentMode) -> bool {
-    mode != LocalSearchContentMode::Disabled
-}
-
-fn should_scan_content(mode: LocalSearchContentMode, sqlite_fts_available: bool) -> bool {
-    mode == LocalSearchContentMode::Required
-        || (mode == LocalSearchContentMode::Auto && !sqlite_fts_available)
-}
-
-fn should_extract_entry_text(
-    kind: LocalSearchKind,
-    extension: Option<&str>,
-    size_bytes: u64,
-    mode: LocalSearchContentMode,
-    max_file_size_bytes: u64,
-) -> bool {
-    if kind != LocalSearchKind::File || mode == LocalSearchContentMode::Disabled {
-        return false;
-    }
-    if size_bytes > max_file_size_bytes {
-        return false;
-    }
-    extension
-        .map(|extension| {
-            TEXT_EXTENSIONS
-                .iter()
-                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        })
-        .unwrap_or(false)
-}
-
-fn snippet_for_file(path: &Path, query_lower: &str, max_bytes: u64) -> Option<String> {
-    let (text, _truncated) = read_text_file_with_limit(path, max_bytes).ok()??;
-    snippet_for_text(&text, query_lower)
-}
-
-fn snippet_for_text(text: &str, query_lower: &str) -> Option<String> {
-    for line in text.lines() {
-        if line.to_lowercase().contains(query_lower) {
-            return Some(clip_snippet(line, SNIPPET_MAX_CHARS));
-        }
-    }
-    None
-}
-
-fn clip_snippet(line: &str, max_chars: usize) -> String {
-    let trimmed = line.trim();
-    if trimmed.chars().count() <= max_chars {
-        return trimmed.to_string();
-    }
-    let mut clipped = trimmed.chars().take(max_chars).collect::<String>();
-    clipped.push_str("...");
-    clipped
 }
 
 fn read_text_at_offset(
@@ -1529,7 +1540,8 @@ fn read_text_at_offset(
 ) -> anyhow::Result<(String, bool, usize)> {
     let mut file = fs::File::open(path)?;
     let metadata = file.metadata()?;
-    file.seek(SeekFrom::Start(offset))?;
+    use std::io::Seek;
+    file.seek(std::io::SeekFrom::Start(offset))?;
     let mut bytes = Vec::new();
     let mut reader = file.take((max_bytes as u64).saturating_add(1));
     reader.read_to_end(&mut bytes)?;
@@ -1552,10 +1564,11 @@ fn read_text_file_with_limit(
         return Ok(None);
     }
     let limit = max_bytes.min(READ_RESULT_MAX_BYTES as u64);
-    let file = fs::File::open(path)?;
     let mut bytes = Vec::new();
-    file.take(limit.saturating_add(1)).read_to_end(&mut bytes)?;
-    if bytes.contains(&0) {
+    fs::File::open(path)?
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if !native::is_probably_text(&bytes) {
         return Ok(None);
     }
     let truncated = bytes.len() as u64 > limit || metadata.len() > limit;
@@ -1610,6 +1623,26 @@ fn normalize_search_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     Ok(normalized)
 }
 
+fn normalize_change_paths(root: &Path, paths: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+    for path in paths {
+        let candidate = if path.is_absolute() {
+            path.clone()
+        } else {
+            root.join(path)
+        };
+        let normalized_path = normalize_existing_or_missing_path(&candidate);
+        if !normalized_path.starts_with(root) {
+            continue;
+        }
+        if seen.insert(normalize_path_for_display(&normalized_path)) {
+            normalized.push(normalized_path);
+        }
+    }
+    Ok(normalized)
+}
+
 fn normalize_existing_root(root: &Path) -> anyhow::Result<PathBuf> {
     let path = if root.as_os_str().is_empty() {
         std::env::current_dir()?
@@ -1619,6 +1652,31 @@ fn normalize_existing_root(root: &Path) -> anyhow::Result<PathBuf> {
         std::env::current_dir()?.join(root)
     };
     Ok(path.canonicalize()?)
+}
+
+fn normalize_existing_or_missing_path(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+    let mut ancestor = path;
+    let mut tail = Vec::new();
+    while !ancestor.as_os_str().is_empty() && !ancestor.exists() {
+        let Some(name) = ancestor.file_name() else {
+            break;
+        };
+        tail.push(name.to_os_string());
+        let Some(parent) = ancestor.parent() else {
+            break;
+        };
+        ancestor = parent;
+    }
+    let mut normalized = ancestor
+        .canonicalize()
+        .unwrap_or_else(|_| ancestor.to_path_buf());
+    for component in tail.into_iter().rev() {
+        normalized.push(component);
+    }
+    normalized
 }
 
 fn normalize_path_for_display(path: &Path) -> String {
@@ -1636,23 +1694,14 @@ fn normalize_extension_filter(value: &str) -> String {
     value.trim().trim_start_matches('.').to_lowercase()
 }
 
-fn extension_query<'a>(query_lower: &'a str, extensions: &'a [String]) -> Option<&'a str> {
-    if !extensions.is_empty() {
-        return None;
+fn relative_display_path(path: &Path, root: &Path) -> PathBuf {
+    match path.strip_prefix(root) {
+        Ok(relative) if !relative.as_os_str().is_empty() => relative.to_path_buf(),
+        _ => path
+            .file_name()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf()),
     }
-    if let Some(value) = query_lower.strip_prefix("ext:") {
-        let normalized = value.trim().trim_start_matches('.');
-        if !normalized.is_empty() {
-            return Some(normalized);
-        }
-    }
-    if query_lower.starts_with('.') && !query_lower.contains(char::is_whitespace) {
-        let normalized = query_lower.trim_start_matches('.');
-        if !normalized.is_empty() {
-            return Some(normalized);
-        }
-    }
-    None
 }
 
 fn path_has_hidden_component(path: &Path) -> bool {
@@ -1664,59 +1713,90 @@ fn path_has_hidden_component(path: &Path) -> bool {
 
 fn path_has_vendor_component(path: &Path) -> bool {
     path.components().any(|component| match component {
-        Component::Normal(value) => value.to_str().is_some_and(is_vendor_directory_name),
+        Component::Normal(value) => value
+            .to_str()
+            .is_some_and(|value| is_skipped_directory_name(value)),
         _ => false,
     })
 }
 
-fn is_vendor_directory_name(name: &str) -> bool {
-    VENDOR_DIRECTORY_NAMES
+fn is_skipped_directory_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    SKIPPED_DIRECTORY_NAMES
         .iter()
-        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+        .any(|candidate| *candidate == name)
 }
 
-fn system_time_to_unix_seconds(value: SystemTime) -> Option<u64> {
-    value
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_secs())
+fn remove_path_or_descendants(entries: &mut Vec<IndexedEntry>, path: &Path) {
+    entries.retain(|entry| entry.full_path != path && !entry.full_path.starts_with(path));
 }
 
-fn unix_seconds_now() -> u64 {
-    system_time_to_unix_seconds(SystemTime::now()).unwrap_or(0)
-}
-
-fn u64_to_i64(value: u64) -> Option<i64> {
-    i64::try_from(value).ok()
-}
-
-fn u64_to_i64_saturating(value: u64) -> i64 {
-    i64::try_from(value).unwrap_or(i64::MAX)
-}
-
-fn i64_to_u64(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
-}
-
-fn index_state_to_storage(state: LocalSearchIndexState) -> &'static str {
-    match state {
-        LocalSearchIndexState::Empty => "empty",
-        LocalSearchIndexState::Indexing => "indexing",
-        LocalSearchIndexState::Ready => "ready",
-        LocalSearchIndexState::Partial => "partial",
-        LocalSearchIndexState::Failed => "failed",
-        LocalSearchIndexState::Walker => "walker",
+fn rebuild_all_root_statuses(state: &mut LocalSearchState) {
+    let roots = state
+        .entries
+        .iter()
+        .map(|entry| entry.root.clone())
+        .collect::<HashSet<_>>();
+    for root in roots {
+        rebuild_root_status_from_entries(state, &root);
     }
 }
 
-fn index_state_from_storage(value: &str) -> LocalSearchIndexState {
-    match value {
-        "indexing" => LocalSearchIndexState::Indexing,
-        "ready" => LocalSearchIndexState::Ready,
-        "partial" => LocalSearchIndexState::Partial,
-        "failed" => LocalSearchIndexState::Failed,
-        "walker" => LocalSearchIndexState::Walker,
-        _ => LocalSearchIndexState::Empty,
+fn rebuild_root_status_from_entries(state: &mut LocalSearchState, root: &Path) {
+    let mut indexed_file_count = 0_u64;
+    let mut indexed_dir_count = 0_u64;
+    let mut indexed_content_file_count = 0_u64;
+    let mut content_bytes_indexed = 0_u64;
+    for entry in state.entries.iter().filter(|entry| entry.root == root) {
+        match entry.kind {
+            LocalSearchKind::File => indexed_file_count += 1,
+            LocalSearchKind::Directory => indexed_dir_count += 1,
+        }
+        if entry.content_indexed {
+            indexed_content_file_count += 1;
+            content_bytes_indexed = content_bytes_indexed
+                .saturating_add(entry.content_text.as_ref().map(|text| text.len() as u64).unwrap_or(0));
+        }
+    }
+    let mut skipped = state
+        .roots
+        .get(root)
+        .map(|status| status.skipped.clone())
+        .unwrap_or_default();
+    if indexed_file_count == 0 && indexed_dir_count == 0 {
+        skipped = LocalSearchSkippedStats::default();
+    }
+    state.roots.insert(
+        root.to_path_buf(),
+        LocalSearchRootStatus {
+            root: root.to_path_buf(),
+            state: if indexed_file_count == 0 && indexed_dir_count == 0 {
+                LocalSearchIndexState::Empty
+            } else {
+                LocalSearchIndexState::Ready
+            },
+            indexed_file_count,
+            indexed_dir_count,
+            indexed_content_file_count,
+            content_bytes_indexed,
+            skipped,
+            last_indexed_at: Some(unix_seconds_now()),
+            error: None,
+        },
+    );
+}
+
+fn indexing_root_status(root: &Path) -> LocalSearchRootStatus {
+    LocalSearchRootStatus {
+        root: root.to_path_buf(),
+        state: LocalSearchIndexState::Indexing,
+        indexed_file_count: 0,
+        indexed_dir_count: 0,
+        indexed_content_file_count: 0,
+        content_bytes_indexed: 0,
+        skipped: LocalSearchSkippedStats::default(),
+        last_indexed_at: None,
+        error: None,
     }
 }
 
@@ -1750,7 +1830,22 @@ fn aggregate_root_state<'a>(
 }
 
 fn status_from_state(state: &LocalSearchState) -> LocalSearchStatus {
-    let roots = state.roots.values().cloned().collect::<Vec<_>>();
+    let mut roots = state.roots.values().cloned().collect::<Vec<_>>();
+    if roots.is_empty() {
+        if let Some(load_error) = &state.load_error {
+            roots.push(LocalSearchRootStatus {
+                root: PathBuf::new(),
+                state: LocalSearchIndexState::Failed,
+                indexed_file_count: 0,
+                indexed_dir_count: 0,
+                indexed_content_file_count: 0,
+                content_bytes_indexed: 0,
+                skipped: LocalSearchSkippedStats::default(),
+                last_indexed_at: None,
+                error: Some(load_error.clone()),
+            });
+        }
+    }
     let indexed_file_count = roots
         .iter()
         .map(|root| root.indexed_file_count)
@@ -1760,36 +1855,64 @@ fn status_from_state(state: &LocalSearchState) -> LocalSearchStatus {
         .iter()
         .map(|root| root.indexed_content_file_count)
         .sum::<u64>();
+    let content_bytes_indexed = roots
+        .iter()
+        .map(|root| root.content_bytes_indexed)
+        .sum::<u64>();
+    let mut skipped = LocalSearchSkippedStats::default();
+    for root in &roots {
+        skipped.add(&root.skipped);
+    }
     LocalSearchStatus {
         state: state.state,
+        engine_version: ENGINE_VERSION.to_string(),
+        phase: state.phase.clone(),
         roots,
         indexed_file_count,
         indexed_dir_count,
         indexed_content_file_count,
-        sqlite_fts_available: state
-            .sqlite
-            .as_ref()
-            .map(|sqlite| sqlite.fts_available)
-            .unwrap_or(false),
+        content_bytes_indexed,
+        storage_bytes: storage_size(&state.storage),
+        snapshot_bytes: state
+            .storage
+            .snapshot_path()
+            .and_then(|path| file_len(&path))
+            .unwrap_or(0),
+        delta_bytes: state
+            .storage
+            .delta_path()
+            .and_then(|path| file_len(&path))
+            .unwrap_or(0),
+        pending_changes: state.pending_changes,
+        skipped,
     }
 }
 
 fn failed_status(message: &str) -> LocalSearchStatus {
     LocalSearchStatus {
         state: LocalSearchIndexState::Failed,
+        engine_version: ENGINE_VERSION.to_string(),
+        phase: "failed".to_string(),
         roots: vec![LocalSearchRootStatus {
             root: PathBuf::new(),
             state: LocalSearchIndexState::Failed,
             indexed_file_count: 0,
             indexed_dir_count: 0,
             indexed_content_file_count: 0,
+            content_bytes_indexed: 0,
+            skipped: LocalSearchSkippedStats::default(),
             last_indexed_at: None,
             error: Some(message.to_string()),
         }],
         indexed_file_count: 0,
         indexed_dir_count: 0,
         indexed_content_file_count: 0,
-        sqlite_fts_available: false,
+        content_bytes_indexed: 0,
+        storage_bytes: 0,
+        snapshot_bytes: 0,
+        delta_bytes: 0,
+        pending_changes: 0,
+        skipped: LocalSearchSkippedStats::default(),
     }
 }
 
@@ -1805,6 +1928,136 @@ fn clamp_limit(limit: usize) -> usize {
     limit.clamp(1, MAX_LIMIT)
 }
 
+fn storage_size(storage: &V3Storage) -> u64 {
+    let Some(native_dir) = &storage.native_dir else {
+        return 0;
+    };
+    directory_size(native_dir)
+}
+
+fn directory_size(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| {
+            let path = entry.path();
+            match entry.metadata() {
+                Ok(metadata) if metadata.is_dir() => directory_size(&path),
+                Ok(metadata) => metadata.len(),
+                Err(_) => 0,
+            }
+        })
+        .sum()
+}
+
+fn file_len(path: &Path) -> Option<u64> {
+    fs::metadata(path).ok().map(|metadata| metadata.len())
+}
+
+fn system_time_to_unix_seconds(value: SystemTime) -> Option<u64> {
+    value
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+fn unix_seconds_now() -> u64 {
+    system_time_to_unix_seconds(SystemTime::now()).unwrap_or(0)
+}
+
+fn read_u8(reader: &mut impl Read) -> anyhow::Result<u8> {
+    let mut bytes = [0_u8; 1];
+    reader.read_exact(&mut bytes)?;
+    Ok(bytes[0])
+}
+
+fn write_u8(writer: &mut impl Write, value: u8) -> anyhow::Result<()> {
+    writer.write_all(&[value])?;
+    Ok(())
+}
+
+fn read_u32(reader: &mut impl Read) -> anyhow::Result<u32> {
+    let mut bytes = [0_u8; 4];
+    reader.read_exact(&mut bytes)?;
+    Ok(u32::from_le_bytes(bytes))
+}
+
+fn write_u32(writer: &mut impl Write, value: u32) -> anyhow::Result<()> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn read_u64(reader: &mut impl Read) -> anyhow::Result<u64> {
+    let mut bytes = [0_u8; 8];
+    reader.read_exact(&mut bytes)?;
+    Ok(u64::from_le_bytes(bytes))
+}
+
+fn write_u64(writer: &mut impl Write, value: u64) -> anyhow::Result<()> {
+    writer.write_all(&value.to_le_bytes())?;
+    Ok(())
+}
+
+fn read_optional_u64(reader: &mut impl Read) -> anyhow::Result<Option<u64>> {
+    if read_u8(reader)? == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(read_u64(reader)?))
+    }
+}
+
+fn write_optional_u64(writer: &mut impl Write, value: Option<u64>) -> anyhow::Result<()> {
+    match value {
+        Some(value) => {
+            write_u8(writer, 1)?;
+            write_u64(writer, value)?;
+        }
+        None => write_u8(writer, 0)?,
+    }
+    Ok(())
+}
+
+fn read_string(reader: &mut impl Read) -> anyhow::Result<String> {
+    let len = read_u32(reader)? as usize;
+    let mut bytes = vec![0_u8; len];
+    reader.read_exact(&mut bytes)?;
+    String::from_utf8(bytes).context("snapshot string is not utf-8")
+}
+
+fn write_string(writer: &mut impl Write, value: &str) -> anyhow::Result<()> {
+    let bytes = value.as_bytes();
+    let len = u32::try_from(bytes.len()).context("snapshot string too large")?;
+    write_u32(writer, len)?;
+    writer.write_all(bytes)?;
+    Ok(())
+}
+
+fn read_optional_string(reader: &mut impl Read) -> anyhow::Result<Option<String>> {
+    if read_u8(reader)? == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(read_string(reader)?))
+    }
+}
+
+fn write_optional_string(writer: &mut impl Write, value: Option<&str>) -> anyhow::Result<()> {
+    match value {
+        Some(value) => {
+            write_u8(writer, 1)?;
+            write_string(writer, value)?;
+        }
+        None => write_u8(writer, 0)?,
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn nonzero(value: usize) -> NonZero<usize> {
+    NonZero::new(value.max(1)).expect("value is forced non-zero")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -1813,202 +2066,211 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
 
+    fn write_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
+    }
+
+    fn index_options(root: &Path) -> LocalSearchIndexRootOptions {
+        LocalSearchIndexRootOptions {
+            root: root.to_path_buf(),
+            include_hidden: false,
+            include_vendor: false,
+            respect_gitignore: true,
+            content_mode: LocalSearchContentMode::Auto,
+            max_file_size_bytes: DEFAULT_TEXT_LIMIT_BYTES,
+        }
+    }
+
     #[test]
-    fn local_search_indexes_path_and_content() {
+    fn local_search_v3_indexes_path_and_content() {
         let dir = tempdir().expect("tempdir");
-        fs::create_dir_all(dir.path().join("src")).expect("src");
-        fs::write(dir.path().join("README.md"), "hello lyra search").expect("readme");
-        fs::write(dir.path().join("src/main.rs"), "fn main() {}").expect("main");
-
+        write_file(&dir.path().join("src/main.rs"), "fn main() { println!(\"lyra\"); }\n");
+        write_file(&dir.path().join("README.md"), "Lyra native search\n");
         let engine = LocalSearchEngine::new();
-        let status = engine
-            .index_root(
-                LocalSearchIndexRootOptions {
-                    root: dir.path().to_path_buf(),
-                    include_hidden: true,
-                    include_vendor: true,
-                    ..Default::default()
-                },
-                None,
-            )
-            .expect("index");
+        engine.index_root(index_options(dir.path()), None).unwrap();
 
-        assert_eq!(status.state, LocalSearchIndexState::Ready);
-        assert!(status.indexed_file_count >= 2);
-
-        let path_results = engine
+        let by_name = engine
             .search(
                 LocalSearchOptions {
                     query: "main".to_string(),
                     roots: vec![dir.path().to_path_buf()],
+                    limit: 10,
                     ..Default::default()
                 },
                 None,
             )
-            .expect("search");
-        assert!(
-            path_results
-                .results
-                .iter()
-                .any(|result| result.display_path == "src/main.rs")
-        );
+            .unwrap();
+        assert!(by_name.results.iter().any(|result| result.display_path == "src/main.rs"));
 
-        let content_results = engine
+        let by_content = engine
             .search(
                 LocalSearchOptions {
-                    query: "lyra search".to_string(),
+                    query: "native search".to_string(),
                     roots: vec![dir.path().to_path_buf()],
-                    content_mode: LocalSearchContentMode::Required,
+                    limit: 10,
                     ..Default::default()
                 },
                 None,
             )
-            .expect("content search");
-        assert!(
-            content_results
-                .results
-                .iter()
-                .any(|result| result.display_path == "README.md"
-                    && result.match_kind == LocalSearchMatchKind::Content)
-        );
+            .unwrap();
+        assert_eq!(by_content.results[0].match_kind, LocalSearchMatchKind::Content);
+        assert_eq!(by_content.results[0].line, Some(1));
     }
 
     #[test]
-    fn local_search_falls_back_to_walker_without_index() {
-        let dir = tempdir().expect("tempdir");
-        fs::write(dir.path().join("package.json"), "{}").expect("package");
-
-        let engine = LocalSearchEngine::new();
-        let results = engine
-            .search(
-                LocalSearchOptions {
-                    query: "package".to_string(),
-                    roots: vec![dir.path().to_path_buf()],
-                    ..Default::default()
-                },
-                None,
-            )
-            .expect("search");
-
-        assert_eq!(results.index_state, LocalSearchIndexState::Walker);
-        assert!(
-            results
-                .results
-                .iter()
-                .any(|result| result.display_path == "package.json")
-        );
-    }
-
-    #[test]
-    fn local_search_fallback_matches_extension_query_without_index() {
-        let dir = tempdir().expect("tempdir");
-        fs::create_dir_all(dir.path().join("src")).expect("src");
-        fs::write(dir.path().join("src/app.ts"), "export {};").expect("app");
-
-        let engine = LocalSearchEngine::new();
-        let results = engine
-            .search(
-                LocalSearchOptions {
-                    query: "ext:ts".to_string(),
-                    roots: vec![dir.path().to_path_buf()],
-                    content_mode: LocalSearchContentMode::Disabled,
-                    ..Default::default()
-                },
-                None,
-            )
-            .expect("search");
-
-        assert_eq!(results.index_state, LocalSearchIndexState::Walker);
-        assert!(results.results.iter().any(|result| {
-            result.display_path == "src/app.ts"
-                && result.match_kind == LocalSearchMatchKind::Extension
-        }));
-    }
-
-    #[test]
-    fn read_result_rejects_path_outside_root() {
-        let dir = tempdir().expect("tempdir");
-        let outside = tempdir().expect("outside");
-        fs::write(outside.path().join("secret.txt"), "secret").expect("secret");
-        let engine = LocalSearchEngine::new();
-
-        let result = engine.read_result(LocalSearchReadOptions {
-            root: Some(dir.path().to_path_buf()),
-            path: outside.path().join("secret.txt"),
-            offset: 0,
-            max_bytes: 100,
-        });
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn read_result_reads_from_offset_and_reports_truncation() {
-        let dir = tempdir().expect("tempdir");
-        fs::write(dir.path().join("sample.txt"), "0123456789").expect("sample");
-        let engine = LocalSearchEngine::new();
-
-        let result = engine
-            .read_result(LocalSearchReadOptions {
-                root: Some(dir.path().to_path_buf()),
-                path: PathBuf::from("sample.txt"),
-                offset: 2,
-                max_bytes: 3,
-            })
-            .expect("read");
-
-        assert_eq!(result.contents, "234");
-        assert_eq!(result.bytes_read, 3);
-        assert!(result.truncated);
-    }
-
-    #[test]
-    fn persistent_storage_reuses_index_across_engine_instances() {
+    fn local_search_v3_persists_snapshot_across_engine_instances() {
         let dir = tempdir().expect("tempdir");
         let storage = tempdir().expect("storage");
-        fs::write(dir.path().join("persisted.txt"), "needle contents").expect("sample");
+        write_file(&dir.path().join("Cargo.toml"), "[package]\nname='lyra'\n");
 
         let config = LocalSearchEngineConfig {
             storage_mode: LocalSearchStorageMode::Persistent {
-                storage_root: storage.path().to_path_buf(),
+                storage_root: storage.path().join("search-v3"),
             },
         };
-        let first_engine = LocalSearchEngine::with_config(config.clone());
-        first_engine
-            .index_root(
-                LocalSearchIndexRootOptions {
-                    root: dir.path().to_path_buf(),
-                    include_hidden: true,
-                    include_vendor: true,
-                    content_mode: LocalSearchContentMode::Auto,
-                    ..Default::default()
-                },
-                None,
-            )
-            .expect("index");
+        LocalSearchEngine::with_config(config.clone())
+            .index_root(index_options(dir.path()), None)
+            .unwrap();
+        assert!(storage
+            .path()
+            .join("search-v3/native/snapshot.lyidx")
+            .exists());
+        assert!(!storage
+            .path()
+            .join("search-v3/native/index.v1.sqlite")
+            .exists());
 
-        let second_engine = LocalSearchEngine::with_config(config);
-        let status = second_engine.status();
-        assert_eq!(status.state, LocalSearchIndexState::Ready);
-        assert!(storage.path().join("local-search/index.v1.sqlite").exists());
-
-        let results = second_engine
+        let response = LocalSearchEngine::with_config(config)
             .search(
                 LocalSearchOptions {
-                    query: "persisted".to_string(),
+                    query: "cargo".to_string(),
                     roots: vec![dir.path().to_path_buf()],
-                    content_mode: LocalSearchContentMode::Disabled,
+                    limit: 10,
                     ..Default::default()
                 },
                 None,
             )
-            .expect("search");
-        assert_eq!(results.index_state, LocalSearchIndexState::Ready);
-        assert!(
-            results
-                .results
-                .iter()
-                .any(|result| result.display_path == "persisted.txt")
-        );
+            .unwrap();
+        assert_eq!(response.results.len(), 1);
+    }
+
+    #[test]
+    fn local_search_v3_replays_delta_and_compacts() {
+        let dir = tempdir().expect("tempdir");
+        let storage = tempdir().expect("storage");
+        let root = dir.path();
+        write_file(&root.join("alpha.txt"), "alpha text\n");
+        let config = LocalSearchEngineConfig {
+            storage_mode: LocalSearchStorageMode::Persistent {
+                storage_root: storage.path().join("search-v3"),
+            },
+        };
+        let engine = LocalSearchEngine::with_config(config.clone());
+        engine.index_root(index_options(root), None).unwrap();
+        write_file(&root.join("beta.txt"), "beta text\n");
+        engine
+            .apply_changes(
+                LocalSearchApplyChangesOptions {
+                    root: root.to_path_buf(),
+                    paths: vec![root.join("beta.txt")],
+                    ..LocalSearchApplyChangesOptions::from(index_options(root))
+                },
+                None,
+            )
+            .unwrap();
+
+        let delta_path = storage.path().join("search-v3/native/delta.lylog");
+        assert!(delta_path.exists());
+        let response = LocalSearchEngine::with_config(config)
+            .search(
+                LocalSearchOptions {
+                    query: "beta".to_string(),
+                    roots: vec![root.to_path_buf()],
+                    limit: 10,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(response.results.len(), 1);
+    }
+
+    #[test]
+    fn local_search_v3_applies_delete_and_directory_subtree_delete() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        write_file(&root.join("folder/a.txt"), "delete me\n");
+        write_file(&root.join("folder/b.txt"), "delete me too\n");
+        let engine = LocalSearchEngine::new();
+        engine.index_root(index_options(root), None).unwrap();
+        fs::remove_dir_all(root.join("folder")).unwrap();
+        engine
+            .apply_changes(
+                LocalSearchApplyChangesOptions {
+                    root: root.to_path_buf(),
+                    paths: vec![root.join("folder")],
+                    ..LocalSearchApplyChangesOptions::from(index_options(root))
+                },
+                None,
+            )
+            .unwrap();
+        let response = engine
+            .search(
+                LocalSearchOptions {
+                    query: "delete".to_string(),
+                    roots: vec![root.to_path_buf()],
+                    limit: 10,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert!(response.results.is_empty());
+    }
+
+    #[test]
+    fn local_search_v3_skips_home_noise_and_large_binary_content() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        write_file(&root.join("node_modules/pkg/index.js"), "needle\n");
+        write_file(&root.join(".hidden.txt"), "needle\n");
+        fs::write(root.join("large.txt"), vec![b'a'; (DEFAULT_TEXT_LIMIT_BYTES + 1) as usize])
+            .unwrap();
+        write_file(&root.join("visible.txt"), "needle\n");
+        let engine = LocalSearchEngine::new();
+        let status = engine.index_root(index_options(root), None).unwrap();
+        assert_eq!(status.indexed_content_file_count, 1);
+        assert!(status.skipped.binary_or_too_large >= 1);
+        let response = engine
+            .search(
+                LocalSearchOptions {
+                    query: "needle".to_string(),
+                    roots: vec![root.to_path_buf()],
+                    limit: 20,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].display_path, "visible.txt");
+    }
+
+    #[test]
+    fn local_search_v3_detects_corrupt_snapshot() {
+        let storage = tempdir().expect("storage");
+        let native_dir = storage.path().join("search-v3/native");
+        fs::create_dir_all(&native_dir).unwrap();
+        fs::write(native_dir.join("snapshot.lyidx"), b"not lyra").unwrap();
+        let engine = LocalSearchEngine::with_config(LocalSearchEngineConfig {
+            storage_mode: LocalSearchStorageMode::Persistent {
+                storage_root: storage.path().join("search-v3"),
+            },
+        });
+        let status = engine.status();
+        assert_eq!(status.state, LocalSearchIndexState::Failed);
     }
 }

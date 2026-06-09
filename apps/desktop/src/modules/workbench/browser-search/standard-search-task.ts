@@ -172,6 +172,9 @@ export const startStandardSearchTask = ({
         request: {
           query,
           limit: localLimit,
+          scopePreset: "home",
+          mode: "normal",
+          enableContent: true,
           ...(searchSettings.localProjectRoot === undefined
             ? {}
             : { context: { projectRoot: searchSettings.localProjectRoot } })

@@ -36,6 +36,7 @@ import type {
 } from "../agent-session-history";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
+import { useLocalSearchIndexStatus } from "./use-local-search-index-status";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
@@ -179,10 +180,23 @@ resolvedThemeId,
     animationSyncIntervalMs: WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS
   });
   const searchSettingsFacade = useWorkbenchSearchSettings(preferencesModel.preferences);
+  const notificationModel = useWorkbenchNotificationModel();
+  const publishNotification = useWorkbenchSystemNotificationPublisher({
+    desktopApi,
+    notificationModel,
+    preferences: preferencesModel.preferences,
+    t
+  });
+  const localSearchIndexStatus = useLocalSearchIndexStatus({
+    desktopApi,
+    publishNotification,
+    t
+  });
   const browserSearchModel = useBrowserSearchModel({
     desktopApi,
     tabsModel,
-    searchSettings: searchSettingsFacade.browserSearchSettings
+    searchSettings: searchSettingsFacade.browserSearchSettings,
+    localSearchReady: localSearchIndexStatus.ready
   });
   const terminalWorkspaceActions = useTerminalWorkspaceActions({
     desktopApi,
@@ -246,13 +260,6 @@ resolvedThemeId,
     imageViewerModel,
     terminalModel
   });
-  const notificationModel = useWorkbenchNotificationModel();
-  const publishNotification = useWorkbenchSystemNotificationPublisher({
-    desktopApi,
-    notificationModel,
-    preferences: preferencesModel.preferences,
-    t
-  });
   useWorkbenchSystemNotificationPermissionGuard({
     desktopApi,
     preferencesModel
@@ -265,6 +272,11 @@ resolvedThemeId,
     [t]
   );
   const globalDialogModel = useGlobalDialogModel(globalDialogDefaults);
+  useEffect(() => {
+    void desktopApi?.workbenchBrowser?.setModalOcclusion?.({
+      active: globalDialogModel.state.isOpen
+    });
+  }, [desktopApi, globalDialogModel.state.isOpen]);
   const {
     onOpenFileFromManager,
     onRevealPathInFileManager,
@@ -398,6 +410,7 @@ resolvedThemeId,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
     onOpenTerminalLiveSession,
     onOpenFile: onOpenFileFromManager,
+    openDialog: globalDialogModel.openDialog,
     t
   });
   useScrollbarVisibilityGuard(rootRef);
@@ -473,6 +486,7 @@ resolvedThemeId,
     tabsModel,
     searchEngines: searchSettingsFacade.registeredSearchEngines,
     autoSearchEngines: searchSettingsFacade.integratedSearchEngines,
+    localSearchReady: localSearchIndexStatus.ready,
     omniboxNonBrowserSubmitTarget:
       preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
     placeholder: t("navigation.titlebarPlaceholder"),
@@ -589,6 +603,7 @@ resolvedThemeId,
     preferencesModel,
     settings: settingsSurfaceProps,
     notificationModel,
+    localSearchReady: localSearchIndexStatus.ready,
     labels,
     softwareCapabilities,
     onOpenFileFromManager,

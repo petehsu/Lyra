@@ -1,0 +1,19 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Notes on Reliable Extraction
+
+Reliable extraction is less about a single perfect rule and more about layered conservative signals.
+
+Good readers preserve the page's intent while dropping repeated interface text.
+
+## Practical Advice
+
+Use fixtures for pages that look simple, pages that look noisy, and pages that barely have article structure.
+
+## Comments
+
+Reader comment: snapshots help catch regressions.
+
+Another comment: selectors are useful for focused reads.

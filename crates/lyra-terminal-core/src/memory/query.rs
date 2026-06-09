@@ -259,7 +259,11 @@ pub fn list_artifacts(input: ArtifactsListInput) -> MemoryResult<String> {
     Ok(response_text)
 }
 
-pub(super) fn metadata_json(storage_root: &str, session_id: &str, truncated: bool) -> MemoryResult<Value> {
+pub(super) fn metadata_json(
+    storage_root: &str,
+    session_id: &str,
+    truncated: bool,
+) -> MemoryResult<Value> {
     let state = initialize_state(storage_root, session_id)?;
     let guard = state
         .lock()

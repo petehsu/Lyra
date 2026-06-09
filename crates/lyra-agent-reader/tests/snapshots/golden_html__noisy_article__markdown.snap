@@ -1,0 +1,21 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Noisy Article With Ads
+
+The page contains real article text surrounded by navigation, advertising, and footer clutter.
+
+The cleaner should remove obvious chrome while retaining the central narrative and useful source links.
+
+## What Matters
+
+The meaningful section explains how a static HTML reader should prefer paragraphs, lists, and article bodies.
+
+- Keep the primary article body.
+- Drop repeated site navigation.
+- Keep relevant inline links such as analysis notes.
+
+
+## References
+[1] analysis notes — https://example.test/analysis

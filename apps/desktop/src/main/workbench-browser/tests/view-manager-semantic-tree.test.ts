@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const electronMock = vi.hoisted(() => {
   const webContentsQueue: unknown[] = [];
+  const browserWindows: unknown[] = [];
 
   class FakeView {
     readonly children: unknown[] = [];
@@ -57,6 +58,7 @@ const electronMock = vi.hoisted(() => {
 
     constructor() {
       this.webContents = webContentsQueue.shift() ?? {};
+      browserWindows.push(this);
     }
 
     isDestroyed(): boolean {
@@ -90,6 +92,7 @@ const electronMock = vi.hoisted(() => {
 
   return {
     webContentsQueue,
+    browserWindows,
     BrowserWindow: FakeBrowserWindow,
     View: FakeView,
     WebContentsView: FakeWebContentsView,
@@ -155,10 +158,13 @@ type FakeWebContents = {
   executeJavaScript: ReturnType<typeof vi.fn>;
   loadURL: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
   setWindowOpenHandler: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
   once: ReturnType<typeof vi.fn>;
+  emit: (event: string, ...args: unknown[]) => void;
+  listenerCount: (event: string) => number;
   removeAllListeners: ReturnType<typeof vi.fn>;
   insertCSS: ReturnType<typeof vi.fn>;
   findInPage: ReturnType<typeof vi.fn>;
@@ -278,10 +284,25 @@ const createWebContents = (
   mainFrame: FakeFrame,
   options: {
     readonly sendCommand?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+    readonly hangLoad?: boolean;
   } = {}
 ): FakeWebContents => {
   let attached = false;
   const sentInputEvents: Array<Record<string, unknown>> = [];
+  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+  const addListener = (event: string, listener: (...args: unknown[]) => void): void => {
+    const existing = listeners.get(event) ?? new Set();
+    existing.add(listener);
+    listeners.set(event, existing);
+  };
+  const removeListener = (event: string, listener: (...args: unknown[]) => void): void => {
+    listeners.get(event)?.delete(listener);
+  };
+  const emit = (event: string, ...args: unknown[]): void => {
+    for (const listener of [...(listeners.get(event) ?? [])]) {
+      listener(...args);
+    }
+  };
   const debuggerApi = {
     isAttached: vi.fn(() => attached),
     attach: vi.fn(() => {
@@ -340,13 +361,35 @@ const createWebContents = (
     loadURL: vi.fn(async (url: string) => {
       mainFrame.url = url;
       mainFrame.origin = originFromUrl(url);
+      if (options.hangLoad === true) {
+        await new Promise(() => undefined);
+      }
     }),
     close: vi.fn(),
+    stop: vi.fn(),
     setWindowOpenHandler: vi.fn(),
-    on: vi.fn(),
-    off: vi.fn(),
-    once: vi.fn(),
-    removeAllListeners: vi.fn(),
+    on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+      addListener(event, listener);
+    }),
+    off: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+      removeListener(event, listener);
+    }),
+    once: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+      const onceListener = (...args: unknown[]): void => {
+        removeListener(event, onceListener);
+        listener(...args);
+      };
+      addListener(event, onceListener);
+    }),
+    emit,
+    listenerCount: (event: string) => listeners.get(event)?.size ?? 0,
+    removeAllListeners: vi.fn((event?: string) => {
+      if (typeof event === "string") {
+        listeners.delete(event);
+      } else {
+        listeners.clear();
+      }
+    }),
     insertCSS: vi.fn(async () => "css-key"),
     findInPage: vi.fn(),
     stopFindInPage: vi.fn(),
@@ -392,6 +435,12 @@ const createManager = (
   return { manager, webContents };
 };
 
+const createEmptyManager = (): WorkbenchBrowserViewManager =>
+  createWorkbenchBrowserViewManager({
+    getWindow: () => null,
+    publishEvent: vi.fn()
+  });
+
 const findByLabel = (
   elements: readonly WorkbenchBrowserAgentElement[],
   label: string
@@ -404,6 +453,9 @@ const findByLabel = (
 describe("Workbench browser semantic tree fixtures", () => {
   beforeEach(() => {
     electronMock.webContentsQueue.length = 0;
+    electronMock.browserWindows.length = 0;
+    delete process.env.LYRA_BROWSER_ENABLE_CDP_PAGESHOT;
+    delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
   });
 
   test("maps and acts on open shadow root controls", async () => {
@@ -936,6 +988,128 @@ describe("Workbench browser semantic tree fixtures", () => {
     const menuitem = findByLabel(after.elements, "Delete");
     expect(menuitem.role).toBe("menuitem");
     expect(menuitem.actionCapabilities).toEqual(expect.arrayContaining(["menuitem", "click"]));
+  });
+
+  test("cancels stale page-load waits when isolated navigation is superseded", async () => {
+    vi.useFakeTimers();
+    try {
+      const shadowFrame = createFrame({
+        id: 1,
+        url: "about:blank",
+        html: "<!doctype html><title>Shadow</title><main>Loading</main>"
+      });
+      const shadowWebContents = createWebContents(shadowFrame, { hangLoad: true });
+      electronMock.webContentsQueue.push(shadowWebContents);
+      const manager = createEmptyManager();
+
+      const firstNavigation = manager.navigateAgentPage("agent-tab", {
+        targetMode: "isolated",
+        url: "https://app.test/first",
+        timeoutMs: 10_000
+      });
+      await Promise.resolve();
+      expect(shadowWebContents.listenerCount("did-stop-loading")).toBe(2);
+
+      const secondNavigation = manager.navigateAgentPage("agent-tab", {
+        targetMode: "isolated",
+        url: "https://app.test/second",
+        timeoutMs: 1_000
+      });
+      await Promise.resolve();
+
+      expect(shadowWebContents.stop).toHaveBeenCalledTimes(1);
+      expect(shadowWebContents.listenerCount("did-stop-loading")).toBe(2);
+      expect(shadowWebContents.listenerCount("did-fail-load")).toBe(1);
+
+      await expect(firstNavigation).resolves.toMatchObject({
+        targetMode: "isolated"
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(secondNavigation).resolves.toMatchObject({
+        address: "https://app.test/second",
+        targetMode: "isolated"
+      });
+      expect(shadowWebContents.listenerCount("did-stop-loading")).toBe(1);
+      expect(shadowWebContents.listenerCount("did-fail-load")).toBe(0);
+      expect(shadowWebContents.stop).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("degrades pageshot to visible capture without CDP by default", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/snapshot",
+      html: "<!doctype html><title>Snapshot</title><main>Rendered snapshot text</main>"
+    });
+    const { manager, webContents } = createManager(mainFrame);
+
+    const snapshot = await manager.readRenderedSnapshot({
+      url: "https://app.test/snapshot",
+      includePageshot: true,
+      waitUntil: "html"
+    });
+
+    expect(webContents.debugger.attach).not.toHaveBeenCalled();
+    expect(webContents.capturePage).toHaveBeenCalled();
+    expect(snapshot).toMatchObject({
+      ok: true,
+      kind: "workbenchBrowserRenderedSnapshot",
+      finalUrl: "https://app.test/snapshot",
+      pageshot: {
+        mimeType: "image/png",
+        visibleOnly: true
+      },
+      debug: {
+        snapshotMode: "tabRenderer"
+      }
+    });
+    expect((snapshot as { warnings?: Array<{ readonly code: string }> }).warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "browser_pageshot_degraded" })
+      ])
+    );
+  });
+
+  test("keeps viewport/mobile browser snapshots on the tab renderer unless explicitly enabled", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/mobile",
+      html: "<!doctype html><title>Mobile</title><main>Mobile snapshot text</main>"
+    });
+    const { manager, webContents } = createManager(mainFrame);
+    expect(electronMock.browserWindows).toHaveLength(0);
+
+    const snapshot = await manager.readRenderedSnapshot({
+      url: "https://app.test/mobile",
+      includePageshot: true,
+      mobile: true,
+      viewport: { width: 390, height: 844, deviceScaleFactor: 3 },
+      waitUntil: "html"
+    });
+
+    expect(electronMock.browserWindows).toHaveLength(0);
+    expect(webContents.debugger.attach).not.toHaveBeenCalled();
+    expect(webContents.capturePage).toHaveBeenCalled();
+    expect(snapshot).toMatchObject({
+      ok: true,
+      kind: "workbenchBrowserRenderedSnapshot",
+      finalUrl: "https://app.test/mobile",
+      pageshot: {
+        visibleOnly: true
+      },
+      debug: {
+        snapshotMode: "tabRenderer"
+      }
+    });
+    expect((snapshot as { warnings?: Array<{ readonly code: string }> }).warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "browser_temporary_renderer_disabled" }),
+        expect.objectContaining({ code: "browser_pageshot_degraded" })
+      ])
+    );
   });
 
   test("creates target refs for AX-only controls", async () => {

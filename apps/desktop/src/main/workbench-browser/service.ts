@@ -137,11 +137,13 @@ export type WorkbenchBrowserIpcBridge = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly readRenderedSnapshot: (payload: unknown) => Promise<unknown>;
   readonly resolveFrameGlobalBounds: (
     tabId: string,
     frameTreeNodeId: number
   ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
+  readonly setModalOcclusionActive: (active: boolean) => void;
   readonly toggleDevToolsForActivePage: () => boolean;
   readonly observeAgentPage: (
     tabId: string,
@@ -358,6 +360,12 @@ export const createWorkbenchBrowserIpcBridge = ({
     }
   );
   ipcMain.handle(
+    LYRA_CHANNELS.workbenchBrowserSetModalOcclusion,
+    (_event, request: { readonly active?: unknown }) => {
+      manager.setModalOcclusionActive(request?.active === true);
+    }
+  );
+  ipcMain.handle(
     LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
     async (_event, request: unknown) => {
       await manager.applyWebTheme(request as WorkbenchBrowserWebThemeSnapshot);
@@ -406,6 +414,7 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSearchInPage);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetChromePopover);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetModalOcclusion);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserApplyWebTheme);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCapturePage);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCaptureWindow);
@@ -436,8 +445,10 @@ export const createWorkbenchBrowserIpcBridge = ({
     readPageDomSummary: manager.readPageDomSummary,
     extractPageText: manager.extractPageText,
     capturePage: manager.capturePage,
+    readRenderedSnapshot: manager.readRenderedSnapshot,
     resolveFrameGlobalBounds: manager.resolveFrameGlobalBounds,
     reapplyLayout: manager.reapplyLayout,
+    setModalOcclusionActive: manager.setModalOcclusionActive,
     toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage,
     observeAgentPage: manager.observeAgentPage,
     actOnAgentElement: manager.actOnAgentElement,

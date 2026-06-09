@@ -381,6 +381,16 @@ export interface ComposerModelControls {
   updateServiceTier(value: string): Promise<void>;
 }
 
+export type ComposerPermissionMode = "approval" | "full_auto" | "custom";
+
+export interface ComposerPermissionModeControls {
+  currentMode: ComposerPermissionMode;
+  isSwitching: boolean;
+  warning?: string | null;
+  configPath?: string | null;
+  switchMode(mode: Exclude<ComposerPermissionMode, "custom">): Promise<void>;
+}
+
 export interface AgentSidePanelPage {
   id: string;
   title: string;

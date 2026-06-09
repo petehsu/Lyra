@@ -626,6 +626,34 @@
   color: var(--lyra-text-secondary);
 }
 
+.lyra-results-local-index-panel {
+  margin: var(--lyra-unit-8) 0 var(--lyra-unit-12);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lyra-unit-6);
+  min-width: 0;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-11);
+  line-height: 1.35;
+}
+
+.lyra-results-local-index-panel span {
+  max-width: 100%;
+  min-width: 0;
+  padding: var(--lyra-unit-3) var(--lyra-unit-8);
+  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 46%, transparent);
+  border-radius: var(--lyra-unit-6);
+  background: color-mix(in srgb, var(--lyra-bg-surface) 84%, var(--lyra-bg-editor) 16%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-results-local-index-panel strong {
+  color: var(--lyra-text-primary);
+  font-weight: 600;
+}
+
 .lyra-results-side {
   min-height: 0;
   overflow: auto;
@@ -701,6 +729,14 @@
   height: var(--lyra-unit-2);
   border-radius: var(--lyra-unit-999);
   background: color-mix(in srgb, var(--lyra-text-muted) 72%, transparent);
+}
+
+.lyra-deep-search-filter-chip-active {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-deep-search-node-selected {
+  border-color: color-mix(in srgb, var(--lyra-text-primary) 36%, var(--lyra-line-variant));
 }
 
 .lyra-engine-panel-list {

@@ -1,4 +1,4 @@
-export type WorkbenchDocumentFormat = "pdf" | "unknown";
+export type WorkbenchDocumentFormat = "pdf" | "docx" | "xlsx" | "pptx" | "image" | "unknown";
 
 export type WorkbenchEmbeddedDocumentSourceKind =
   | "top_level"
@@ -94,6 +94,32 @@ export type WorkbenchDocumentReadResult = {
     | "viewer:frame-dom"
     | "viewer:visible-dom"
     | "viewer:container-dom";
+  readonly fallbackUsed: boolean;
+  readonly fallbackReason?: string;
+};
+
+export type WorkbenchAgentDocumentReadRequest = {
+  readonly tabId?: string;
+  readonly preset?: "agent" | "research" | "index" | "reader" | "raw";
+  readonly format?: "markdown" | "text" | "json" | "chunks" | "frontmatter+markdown";
+  readonly mode?: "main" | "full" | "text" | "raw";
+  readonly queryFocus?: string;
+  readonly userTask?: string;
+  readonly maxChars?: number;
+  readonly maxTokens?: number;
+  readonly includeRaw?: boolean;
+  readonly indexResult?: boolean;
+};
+
+export type WorkbenchAgentDocumentReadResult = {
+  readonly tabId: string;
+  readonly documentId: string;
+  readonly format: WorkbenchDocumentFormat | string;
+  readonly sourceKind: WorkbenchEmbeddedDocumentSourceKind;
+  readonly title?: string;
+  readonly sourceUrl?: string;
+  readonly mimeType?: string;
+  readonly reader: Record<string, unknown>;
   readonly fallbackUsed: boolean;
   readonly fallbackReason?: string;
 };

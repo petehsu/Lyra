@@ -9,7 +9,15 @@ pub(crate) fn execute_memory_tool_adapter(
     arguments: Value,
     started_at: &str,
 ) -> Value {
-    let input = memory_tool_input(tool_name, arguments);
+    let mut input = memory_tool_input(tool_name, arguments);
+    if let Some(object) = input.as_object_mut() {
+        object
+            .entry("sessionId".to_string())
+            .or_insert_with(|| Value::String(session_id.to_string()));
+        object
+            .entry("turnId".to_string())
+            .or_insert_with(|| Value::String(turn_id.to_string()));
+    }
     record_tool_activity(
         session_id,
         turn_id,

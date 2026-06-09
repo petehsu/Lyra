@@ -252,6 +252,9 @@ impl AgentRuntimeServices {
             "agent.git.unstage" => call_json(git_runtime::git_unstage_json, payload),
             "agent.git.discard" => call_json(git_runtime::git_discard_json, payload),
             "agent.permission.respond" => self.permission.respond_from_payload(payload),
+            "agent.permissionPolicy.read" | "agent.permissionPolicy.setMode" => {
+                self.backend.call(method, payload)
+            }
             "agent.clarification.respond" => self.clarification.respond_from_payload(payload),
             "agent.config.read" => self.provider.read_config(payload),
             "agent.config.update" => self.provider.update_config(payload),

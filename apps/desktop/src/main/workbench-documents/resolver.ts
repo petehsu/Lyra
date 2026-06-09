@@ -21,6 +21,8 @@ const candidateScore = (candidate: WorkbenchEmbeddedDocumentCandidate): number =
   let score = sourceKindWeight(candidate.sourceKind);
   if (candidate.formatHint === "pdf") {
     score += 100;
+  } else if (candidate.formatHint !== "unknown") {
+    score += 80;
   }
   if (typeof candidate.documentUrl === "string" && candidate.documentUrl.length > 0) {
     score += 40;

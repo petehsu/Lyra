@@ -18,6 +18,7 @@ export type GlobalDialogCopyItem = {
 export type GlobalDialogInput = {
   readonly id: string;
   readonly label: string;
+  readonly type?: "text" | "password";
   readonly value?: string;
   readonly placeholder?: string;
   readonly submitActionId?: string;

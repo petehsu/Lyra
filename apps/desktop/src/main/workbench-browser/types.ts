@@ -53,7 +53,7 @@ export type WorkbenchBrowserFrameDomProbeCandidate = {
   readonly sourceKind: "iframe" | "embed" | "object";
   readonly documentUrl?: string;
   readonly mimeHint?: string;
-  readonly formatHint: "pdf" | "unknown";
+  readonly formatHint: "pdf" | "docx" | "xlsx" | "pptx" | "image" | "unknown";
   readonly visibleRatio: number;
   readonly titleHint?: string;
 };
@@ -633,11 +633,13 @@ export type WorkbenchBrowserViewManager = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly readRenderedSnapshot: (payload: unknown) => Promise<unknown>;
   readonly resolveFrameGlobalBounds: (
     tabId: string,
     frameTreeNodeId: number
   ) => Promise<WorkbenchBrowserFrameGlobalBounds | null>;
   readonly reapplyLayout: () => void;
+  readonly setModalOcclusionActive: (active: boolean) => void;
   readonly toggleDevToolsForActivePage: () => boolean;
   readonly observeAgentPage: (
     tabId: string,

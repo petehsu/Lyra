@@ -33,4 +33,4 @@ This audit records the boundary that the agent-core refactor is enforcing.
 - `pnpm lint:agent-boundary` checks Desktop/daemon naming and legacy path leakage.
 - `pnpm lint:agent-boundary` also rejects `lyra-agent-core/src/kernel_legacy.rs`, `lyra-agent-core/src/kernel_legacy/`, removed legacy crate directories, workspace legacy/jcode dependencies, runtime dependencies on core/legacy/jcode crates, and direct legacy module access from the core compatibility facade.
 - `pnpm lint:no-jcode-public-api` checks the public `lyra-agent-core` and Desktop shared contract surfaces.
-- `pnpm check` runs both guards alongside the existing structure, Rust-first, and UI-style guards.
+- `pnpm check` runs both guards alongside the existing structure, native-core, and UI-style guards.

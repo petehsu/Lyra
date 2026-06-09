@@ -451,6 +451,7 @@ export const AiPanelSurface = ({
   onOpenUrlInWorkbench,
   onOpenTerminalLiveSession,
   onOpenFile,
+  openDialog,
   locale,
   title
 }: AiPanelSurfaceProps) => {
@@ -478,6 +479,7 @@ export const AiPanelSurface = ({
       onOpenUrlInWorkbench,
       onOpenFile,
       onOpenTerminalLiveSession,
+      openDialog,
       locale
     }
   );

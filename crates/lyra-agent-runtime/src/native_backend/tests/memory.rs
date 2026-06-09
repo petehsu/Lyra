@@ -1028,6 +1028,87 @@ fn system_recall_indexes_session_messages_and_dedupes_current_context() {
 }
 
 #[test]
+fn system_recall_retrieves_prior_tool_like_session_message() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mut old_session = new_session(Some("Camera Session".to_string()), None, "normal");
+    old_session.id = format!("session-{}", Uuid::new_v4());
+    let message_id = format!("message-{}", Uuid::new_v4());
+    push_array(
+        &mut old_session.snapshot,
+        "messages",
+        json!({
+            "id": message_id,
+            "role": "user",
+            "text": "调用摄像头给我拍一张照片在工作区打开",
+            "createdAt": now()
+        }),
+    );
+    push_array(
+        &mut old_session.snapshot,
+        "messages",
+        json!({
+            "id": format!("message-{}", Uuid::new_v4()),
+            "role": "assistant",
+            "text": "摄像头照片已拍好并打开，保存路径 /Users/petehsu/Desktop/camera_photo.jpg",
+            "createdAt": now()
+        }),
+    );
+    index_session_messages_for_recall(temp.path(), &old_session).expect("index session");
+
+    let recall = select_system_recall_for_injection(
+        temp.path(),
+        "你之前是不是用摄像头给我拍过一张照片",
+        None,
+        &[json!({ "role": "user", "text": "你之前是不是用摄像头给我拍过一张照片" })],
+    )
+    .expect("select recall");
+
+    assert!(recall.iter().any(|record| {
+        record.item.source_kind == "session_message" && record.item.source_id == message_id
+    }));
+}
+
+#[test]
+fn memory_search_surfaces_session_recall_records() {
+    let root = {
+        let state = state().lock().expect("state lock");
+        state.root.clone()
+    };
+    let marker = format!("session-recall-search-{}", Uuid::new_v4());
+    let mut old_session = new_session(Some("Session Recall Search".to_string()), None, "normal");
+    old_session.id = format!("session-{}", Uuid::new_v4());
+    let message_id = format!("message-{}", Uuid::new_v4());
+    push_array(
+        &mut old_session.snapshot,
+        "messages",
+        json!({
+            "id": message_id,
+            "role": "user",
+            "text": format!("调用摄像头给我拍一张照片在工作区打开，验证编号 {marker}"),
+            "createdAt": now()
+        }),
+    );
+    index_session_messages_for_recall(&root, &old_session).expect("index session");
+
+    let result = long_term_memory_search(json!({
+        "query": format!("你之前是不是用摄像头给我拍过一张照片，验证编号 {marker}"),
+        "limit": 10
+    }))
+    .expect("memory search");
+
+    let session_recall_records = result
+        .pointer("/sessionRecall/records")
+        .and_then(Value::as_array)
+        .expect("session recall records");
+    assert!(session_recall_records.iter().any(|record| {
+        record.get("sourceId").and_then(Value::as_str) == Some(message_id.as_str())
+    }));
+    let formatted = format_memory_output("search", &result);
+    assert!(formatted.contains("Session recall"));
+    assert!(formatted.contains(&message_id));
+}
+
+#[test]
 fn system_recall_dedupes_repeated_session_facts() {
     let temp = tempfile::tempdir().expect("tempdir");
     for _ in 0..2 {

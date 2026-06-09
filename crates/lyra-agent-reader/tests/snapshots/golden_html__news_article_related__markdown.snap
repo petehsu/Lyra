@@ -1,0 +1,23 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# City Opens New Research Library
+
+The city opened a public research library with quiet work rooms, archival scanners, and open data desks.
+
+Officials said the building is designed for students, independent researchers, and local policy teams.
+
+## Related Context
+
+The project follows a previous archive modernization plan.
+
+## Related Links
+
+Library map
+
+Open data desk
+
+
+## References
+[1] archive modernization plan — https://example.test/news/archive-modernization

@@ -25,6 +25,8 @@ import type {
   AgentMemorySharedUpdateRequest,
   AgentMemorySnapshot,
   AgentMemoryTrimRunRequest,
+  AgentPermissionPolicySetModeRequest,
+  AgentPermissionPolicySnapshot,
   AgentPermissionRespondRequest,
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
@@ -120,6 +122,7 @@ import type {
   WorkbenchTerminalPaneDescriptor,
   WorkbenchTabExtractTextRequest,
   WorkbenchTabReadRequest,
+  WorkbenchVisualCaptureResult,
   WorkbenchWorkspaceReadRequest
 } from "../../shared/workbench-observation";
 
@@ -675,6 +678,48 @@ export const createAgentIpcBridge = ({
         normalizePayload(payload) as WorkbenchWorkspaceReadRequest
       );
     },
+    "workbench.captureVisualEvidence": async (payload) => {
+      const request = normalizePayload(payload);
+      const scope = request.scope === "active_tab" ? "active_tab" : "workspace_window";
+      let capture: WorkbenchVisualCaptureResult;
+      if (scope === "active_tab") {
+        const service = getWorkbenchObservationService();
+        if (service === null) {
+          throw new Error("Workbench observation capability is not available");
+        }
+        const tabId = readTabId(request);
+        if (tabId === null) {
+          throw new Error("tabId must be a non-empty string for active_tab capture");
+        }
+        capture = await service.captureVisual({ tabId });
+      } else {
+        const window = getWindow();
+        if (window === null || window.isDestroyed()) {
+          throw new Error("renderer_bridge_unavailable");
+        }
+        const image = await window.webContents.capturePage();
+        const size = image.getSize();
+        capture = {
+          tabId: "lyra-workspace-window",
+          mimeType: "image/png",
+          imageBase64: image.toPNG().toString("base64"),
+          width: size.width,
+          height: size.height,
+          visibleOnly: true
+        };
+      }
+      return {
+        ok: true,
+        kind: "workbenchVisualEvidence",
+        scope,
+        capture,
+        mimeType: capture.mimeType,
+        width: capture.width,
+        height: capture.height,
+        visibleOnly: capture.visibleOnly,
+        message: `Captured ${scope === "active_tab" ? "active workbench tab" : "visible workspace window"} visual evidence.`
+      };
+    },
     "workbench.extractTabText": async (payload) => {
       const service = getWorkbenchObservationService();
       if (service === null) {
@@ -937,6 +982,26 @@ export const createAgentIpcBridge = ({
   ): number => {
     const value = readOptionalNumberField(payload, fieldName) ?? fallback;
     return Math.max(min, Math.min(max, Math.round(value)));
+  };
+
+  const runHostCapabilityWithTimeout = async <T>(
+    label: string,
+    timeoutMs: number,
+    execute: () => Promise<T>
+  ): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([execute(), timeout]);
+    } finally {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    }
   };
 
   const readTerminalCommand = (payload: Record<string, unknown>): string | undefined =>
@@ -3472,6 +3537,18 @@ export const createAgentIpcBridge = ({
     }
   };
 
+  const readRenderedSnapshot = async (payload: unknown): Promise<unknown> => {
+    const browser = getBrowserBridge();
+    if (!browser) throw new Error("Browser capability is not available");
+    const request = normalizePayload(payload);
+    const requestedTimeoutMs = readClampedOptionalNumber(request, "timeoutMs", 20_000, 250, 120_000);
+    return await runHostCapabilityWithTimeout(
+      "workbench.browser.readRenderedSnapshot",
+      Math.min(124_000, requestedTimeoutMs + 4_000),
+      () => browser.readRenderedSnapshot(request)
+    );
+  };
+
   const normalizeSoftwarePayload = (payload: unknown): Record<string, unknown> => {
     const request = normalizePayload(payload);
     const capabilityId =
@@ -3498,6 +3575,7 @@ export const createAgentIpcBridge = ({
       if (!browser) throw new Error("Browser session recovery capability is not available");
       return browser.readSessionSnapshot();
     },
+    "workbench.browser.readRenderedSnapshot": readRenderedSnapshot,
     "workbench.browser.readStorageState": async (payload: unknown) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser storage state capability is not available");
@@ -3815,6 +3893,18 @@ export const createAgentIpcBridge = ({
         requestRuntime<unknown>(
           "agent.permission.respond",
           payload as AgentPermissionRespondRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPermissionPolicyRead,
+      () => requestRuntime<AgentPermissionPolicySnapshot>("agent.permissionPolicy.read")
+    ],
+    [
+      LYRA_CHANNELS.agentPermissionPolicySetMode,
+      (_event, payload) =>
+        requestRuntime<AgentPermissionPolicySnapshot>(
+          "agent.permissionPolicy.setMode",
+          (payload as AgentPermissionPolicySetModeRequest | undefined) ?? {}
         )
     ],
     [

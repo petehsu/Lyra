@@ -15,6 +15,8 @@ export type BrowserPageSurfaceProps = {
   readonly autoSearchLabel?: string;
   readonly webTabLabel?: string;
   readonly localTabLabel?: string;
+  readonly localIndexNotReadyLabel?: string;
+  readonly localSearchReady?: boolean;
   readonly onSearchEngineSelectionChange?: (
     selection: {
       readonly mode: "auto" | "manual";
@@ -36,6 +38,8 @@ export const BrowserPageSurface = ({
   autoSearchLabel,
   webTabLabel,
   localTabLabel,
+  localIndexNotReadyLabel,
+  localSearchReady = true,
   onSearchEngineSelectionChange,
   onSwitchToLocalSearch,
   onHostChange
@@ -71,7 +75,14 @@ export const BrowserPageSurface = ({
                     : "lyra-titlebar-context-text-button"
                 }
                 aria-label={`${sourceFilterLabel}: ${localTabLabel}`}
-                onClick={onSwitchToLocalSearch}
+                disabled={!localSearchReady}
+                title={localSearchReady ? undefined : localIndexNotReadyLabel}
+                onClick={() => {
+                  if (!localSearchReady) {
+                    return;
+                  }
+                  onSwitchToLocalSearch?.();
+                }}
               >
                 {localTabLabel}
               </button>
@@ -120,6 +131,8 @@ export const BrowserPageSurface = ({
     },
     [
       localTabLabel,
+      localIndexNotReadyLabel,
+      localSearchReady,
       autoSearchLabel,
       onSearchEngineSelectionChange,
       onSwitchToLocalSearch,

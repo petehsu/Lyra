@@ -129,6 +129,12 @@ fn search_intent_adjustment(
     }
 
     if is_web_search_intent(&query, normalized_query) {
+        if path == "/tools/web/research" && is_web_research_intent(&query, normalized_query) {
+            return IntentAdjustment {
+                score: 34.0,
+                reason: "web-research intent boost".to_string(),
+            };
+        }
         if is_software_browser_search_tool(path) || path == "/tools/web/search" {
             return IntentAdjustment {
                 score: 30.0,
@@ -196,6 +202,14 @@ fn is_web_search_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("谷歌搜索")
         || query.contains("搜索一下")
         || query.contains("搜一下")
+}
+
+fn is_web_research_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("research")
+        || normalized_query.contains("deep read")
+        || normalized_query.contains("read top")
+        || query.contains("调研")
+        || query.contains("搜索并阅读")
 }
 
 fn is_page_search_intent(query: &str, normalized_query: &str) -> bool {

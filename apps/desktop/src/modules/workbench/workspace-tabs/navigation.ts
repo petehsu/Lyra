@@ -14,12 +14,16 @@ import type {
   WorkspaceTabsConfig
 } from "./types";
 
-const URL_OR_DOMAIN_PATTERN = /^(https?:\/\/|[\w.-]+\.[a-z]{2,}(\/|$))/i;
+const URL_OR_DOMAIN_PATTERN = /^(https?:\/\/|file:\/\/|[\w.-]+\.[a-z]{2,}(\/|$))/i;
 
 export const looksLikeUrl = (value: string): boolean => URL_OR_DOMAIN_PATTERN.test(value);
 
 export const normalizeUrl = (value: string): string => {
-  if (value.startsWith("http://") || value.startsWith("https://")) {
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://") ||
+    value.startsWith("file://")
+  ) {
     return value;
   }
   return `https://${value}`;
@@ -29,7 +33,11 @@ export const toSafeAddress = (value: string): string | null => {
   const normalized = normalizeUrl(value.trim());
   try {
     const parsed = new URL(normalized);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+    if (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "file:"
+    ) {
       return parsed.toString();
     }
   } catch (_error) {

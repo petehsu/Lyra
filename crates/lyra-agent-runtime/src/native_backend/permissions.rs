@@ -20,11 +20,17 @@ pub(crate) fn permission_request_for_tool(
         return None;
     }
     let risk = permission_risk(display_name, action, input)?;
+    match evaluate_permission_policy(display_name, action, Some(&risk), input) {
+        PermissionPolicyDecision::Allow => return None,
+        PermissionPolicyDecision::Ask => {}
+        PermissionPolicyDecision::Deny => {}
+    }
     let summary = permission_summary(display_name, action, input);
     let title = match risk.as_str() {
         "shell" => "Run shell command",
         "file" => "Modify workspace files",
         "network" => "Use network or browser action",
+        risk if risk.starts_with("hardware") => "Use hardware device",
         "sensitive" => "Use browser login state",
         _ => "Use high-risk Lyra capability",
     }
@@ -101,6 +107,16 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             .to_string(),
         );
     }
+    if display_name == "hardware" {
+        return match action {
+            "list" | "inspect" | "capabilities" | "os_status" => None,
+            "permissions_request" => Some("hardware.os.permission".to_string()),
+            "session_open" | "session_read" => Some("hardware.read.stream".to_string()),
+            "session_write" => Some("hardware.write.stream".to_string()),
+            "run_action" | "invoke" => Some(hardware_action_risk(input)),
+            _ => Some("hardware.inspect".to_string()),
+        };
+    }
     if matches!(
         (display_name, action),
         ("file", "read")
@@ -115,6 +131,7 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("workbench", "list_tabs")
             | ("workbench", "read_workspace")
             | ("workbench", "read_tab")
+            | ("workbench", "capture_visual_evidence")
             | ("software", "list_capabilities")
             | ("software", "inspect_capability")
             | ("software", "read_state")
@@ -159,6 +176,9 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
     if display_name == "terminal" {
         return terminal_permission_summary(action, input);
     }
+    if display_name == "hardware" {
+        return hardware_permission_summary(action, input);
+    }
     let mut detail = format!("{display_name}.{action}");
     for key in [
         "path",
@@ -181,6 +201,115 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
             && !value.trim().is_empty()
         {
             detail.push_str(&format!(" {key}={value}"));
+        }
+    }
+    detail
+}
+
+fn hardware_action_risk(input: &Value) -> String {
+    let capability = input
+        .get("capabilityId")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let action = input
+        .get("actionId")
+        .or_else(|| input.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    match capability {
+        "input.global_inject" => return "hardware.input.global_inject".to_string(),
+        "hid.input_inject" => return "hardware.input.inject".to_string(),
+        "media.audio.capture" | "media.camera.capture" => {
+            return if matches!(action, "stream_open" | "stream_read" | "stream_close") {
+                "hardware.media.stream".to_string()
+            } else {
+                "hardware.media.capture".to_string()
+            };
+        }
+        "network.interface.configure" => return "hardware.network.configure".to_string(),
+        "storage.volume.write" => return "hardware.storage.write".to_string(),
+        "usb.control_transfer" | "hid.feature_report" | "ble.gatt" => {
+            return "hardware.driver.raw_io".to_string();
+        }
+        "toolchain.install" => return "hardware.toolchain.install".to_string(),
+        "usb.inspect"
+        | "network.interface.inspect"
+        | "storage.volume.inspect"
+        | "debug.probe.inspect" => return "hardware.inspect".to_string(),
+        _ => {}
+    }
+    if capability == "esp.flash" || action == "flash" {
+        return "hardware.flash".to_string();
+    }
+    if capability == "toolchain.install" || action == "install" {
+        return "hardware.toolchain.install".to_string();
+    }
+    "hardware.write.stream".to_string()
+}
+
+fn hardware_permission_summary(action: &str, input: &Value) -> String {
+    let mut detail = format!("hardware.{action}");
+    for key in [
+        "deviceId",
+        "path",
+        "sessionId",
+        "capabilityId",
+        "action",
+        "actionId",
+        "providerId",
+        "transportPath",
+        "platform",
+        "permissionId",
+        "osPermission",
+        "baudRate",
+        "vendorId",
+        "productId",
+        "mac",
+        "uuid",
+    ] {
+        if let Some(value) = input.get(key) {
+            if let Some(text) = value.as_str().filter(|value| !value.trim().is_empty()) {
+                detail.push_str(&format!(" {key}={text}"));
+            } else if value.is_number() || value.is_boolean() {
+                detail.push_str(&format!(" {key}={value}"));
+            }
+        }
+    }
+    if let Some(args) = input.get("args") {
+        for key in [
+            "firmwarePath",
+            "tool",
+            "path",
+            "text",
+            "payload",
+            "reason",
+            "targetDescription",
+            "events",
+        ] {
+            if let Some(value) = args.get(key).and_then(Value::as_str)
+                && !value.trim().is_empty()
+            {
+                if matches!(key, "text" | "payload" | "reason" | "targetDescription") {
+                    detail.push_str(&format!(" {key}Bytes={}", value.len()));
+                } else {
+                    detail.push_str(&format!(" {key}={value}"));
+                }
+            }
+        }
+        for key in ["durationMs", "durationLimitMs", "eventLimit", "maxBytes"] {
+            if let Some(value) = args.get(key)
+                && (value.is_number() || value.is_boolean())
+            {
+                detail.push_str(&format!(" {key}={value}"));
+            }
+        }
+        if let Some(events) = args.get("events").and_then(Value::as_array) {
+            detail.push_str(&format!(" eventCount={}", events.len()));
+        }
+    }
+    for key in ["text", "line"] {
+        if let Some(value) = input.get(key).and_then(Value::as_str) {
+            detail.push_str(&format!(" {key}Bytes={}", value.len()));
         }
     }
     detail

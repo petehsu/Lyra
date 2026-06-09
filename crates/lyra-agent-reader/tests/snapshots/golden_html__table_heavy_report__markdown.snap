@@ -1,0 +1,15 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Quarterly Metrics Report
+
+This report fixture stresses table rendering and compact markdown output.
+
+| Metric | Q1 | Q2 | Change |
+| --- | --- | --- | --- |
+| Reader runs | 1200 | 1640 | +37% |
+| Chunk requests | 310 | 620 | +100% |
+| Browser fallbacks | 42 | 55 | +31% |
+
+The summary should remain after the table and provide enough prose for extraction scoring.

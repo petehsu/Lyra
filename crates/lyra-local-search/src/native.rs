@@ -1,8 +1,37 @@
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct TokenSpan {
     offset: usize,
     length: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct V3NativeScore {
+    pub(crate) score: u32,
+    pub(crate) match_kind: u32,
+    pub(crate) source: u32,
+}
+
+pub(crate) const V3_MATCH_FILE_NAME: u32 = 1;
+pub(crate) const V3_MATCH_PATH: u32 = 2;
+pub(crate) const V3_MATCH_EXTENSION: u32 = 3;
+pub(crate) const V3_MATCH_CONTENT: u32 = 4;
+pub(crate) const V3_MATCH_FUZZY: u32 = 5;
+
+pub(crate) const V3_SOURCE_CONTENT: u32 = 1;
+
+pub(crate) struct V3ScoreInput<'a> {
+    pub(crate) query: &'a str,
+    pub(crate) lower_file_name: &'a str,
+    pub(crate) lower_path: &'a str,
+    pub(crate) extension: &'a str,
+    pub(crate) content_hit: bool,
+    pub(crate) is_directory: bool,
+    pub(crate) vendor: bool,
+    pub(crate) enable_fuzzy: bool,
+    pub(crate) enable_extension_match: bool,
 }
 
 unsafe extern "C" {
@@ -28,8 +57,27 @@ unsafe extern "C" {
         needle: *const u8,
         needle_len: usize,
     ) -> u32;
+
+    fn lyra_local_search_v3_score_entry(
+        query: *const u8,
+        query_len: usize,
+        name: *const u8,
+        name_len: usize,
+        path: *const u8,
+        path_len: usize,
+        extension: *const u8,
+        extension_len: usize,
+        content_hit: i32,
+        is_directory: i32,
+        vendor: i32,
+        enable_fuzzy: i32,
+        enable_extension_match: i32,
+    ) -> V3NativeScore;
+
+    fn lyra_local_search_v3_is_probably_text(bytes: *const u8, len: usize) -> i32;
 }
 
+#[allow(dead_code)]
 pub(crate) fn subsequence_score(haystack: &str, needle: &str) -> u32 {
     if haystack.is_empty() || needle.is_empty() {
         return 0;
@@ -58,6 +106,35 @@ pub(crate) fn subsequence_score(haystack: &str, needle: &str) -> u32 {
     }
 }
 
+pub(crate) fn v3_score_entry(input: V3ScoreInput<'_>) -> V3NativeScore {
+    // SAFETY: The native scorer reads the supplied byte slices for the exact
+    // lengths provided here and does not retain any pointer.
+    unsafe {
+        lyra_local_search_v3_score_entry(
+            input.query.as_ptr(),
+            input.query.len(),
+            input.lower_file_name.as_ptr(),
+            input.lower_file_name.len(),
+            input.lower_path.as_ptr(),
+            input.lower_path.len(),
+            input.extension.as_ptr(),
+            input.extension.len(),
+            i32::from(input.content_hit),
+            i32::from(input.is_directory),
+            i32::from(input.vendor),
+            i32::from(input.enable_fuzzy),
+            i32::from(input.enable_extension_match),
+        )
+    }
+}
+
+pub(crate) fn is_probably_text(bytes: &[u8]) -> bool {
+    // SAFETY: The native text detector reads the supplied byte slice for the
+    // exact length provided here and does not retain the pointer.
+    unsafe { lyra_local_search_v3_is_probably_text(bytes.as_ptr(), bytes.len()) != 0 }
+}
+
+#[allow(dead_code)]
 pub(crate) fn query_token_spans(query: &str, max_spans: usize) -> Vec<&str> {
     if query.is_empty() || max_spans == 0 {
         return Vec::new();

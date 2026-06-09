@@ -10,7 +10,10 @@ pub(super) fn command_text_for_id(state: &SessionState, command_id: &str) -> Opt
     .find_map(|record| string_field(&record, "commandText"))
 }
 
-pub(super) fn latest_command_record_for_id(state: &SessionState, command_id: &str) -> Option<Value> {
+pub(super) fn latest_command_record_for_id(
+    state: &SessionState,
+    command_id: &str,
+) -> Option<Value> {
     read_jsonl_with_repair_log(
         &state.paths.commands_path,
         Some(&state.paths.repair_log_path),
@@ -20,7 +23,10 @@ pub(super) fn latest_command_record_for_id(state: &SessionState, command_id: &st
     .find(|record| string_field(record, "commandId").as_deref() == Some(command_id))
 }
 
-pub(super) fn latest_command_status_for_id(state: &SessionState, command_id: &str) -> Option<String> {
+pub(super) fn latest_command_status_for_id(
+    state: &SessionState,
+    command_id: &str,
+) -> Option<String> {
     latest_command_record_for_id(state, command_id)
         .and_then(|record| string_field(&record, "status"))
 }
@@ -42,7 +48,10 @@ pub(super) struct CommandArtifactPaths {
     summary: PathBuf,
 }
 
-pub(super) fn command_artifact_paths(state: &SessionState, command_id: &str) -> CommandArtifactPaths {
+pub(super) fn command_artifact_paths(
+    state: &SessionState,
+    command_id: &str,
+) -> CommandArtifactPaths {
     let root = state
         .paths
         .command_artifacts_root_path

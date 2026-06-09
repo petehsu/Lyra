@@ -228,6 +228,7 @@ export const GlobalDialogHost = ({
             <input
               id={`global-dialog-${state.input.id}`}
               autoFocus
+              type={state.input.type ?? "text"}
               value={inputValue}
               placeholder={state.input.placeholder}
               onChange={(event) => {

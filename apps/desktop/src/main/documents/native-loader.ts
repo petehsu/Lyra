@@ -18,7 +18,8 @@ type NodeAddonModule = NodeModule & {
 const requiredMethods: readonly (keyof DocsNativeBindings)[] = [
   "probeDocumentJson",
   "readDocumentTextJson",
-  "searchDocumentTextJson"
+  "searchDocumentTextJson",
+  "readAgentDocumentJson"
 ];
 
 export const resolveDocsNativeCandidates = (cwd: string): readonly string[] => {

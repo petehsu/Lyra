@@ -3,6 +3,7 @@ import type {
   AgentSessionSnapshot
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
 import type { SettingsAiModel } from "../settings-ai";
 import type { AiPanelSessionTab } from "./session-tabs";
@@ -52,6 +53,7 @@ export type AiPanelSurfaceProps = {
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }
   ) => void) | undefined;
+  readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly locale?: WorkbenchLocale;
   readonly title: string;
   readonly emptyThreadLabel: string;

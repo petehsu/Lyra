@@ -1298,6 +1298,74 @@ describe("Agent IPC bridge", () => {
     };
     const browserBridge = {
       readSessionSnapshot: vi.fn(() => snapshot),
+      readActiveTabId: vi.fn(() => snapshot.activeTabId),
+      navigate: vi.fn(async () => ({
+        address: "https://example.com/app",
+        tabId: "browser-tab-1",
+        title: "Example App"
+      })),
+      executeFrameScript: vi.fn(async (_tabId: string, request: { readonly script: string }) => {
+        if (request.script.includes("document.documentElement")) {
+          return {
+            html: "<html><body><main id=\"app\">Rendered app text</main></body></html>",
+            htmlTruncated: false,
+            bodyText: "Rendered app text",
+            title: "Example App",
+            finalUrl: "https://example.com/app",
+            links: [],
+            images: []
+          };
+        }
+        return { matched: true, elapsedMs: 20 };
+      }),
+      capturePage: vi.fn(async () => ({
+        tabId: "browser-tab-1",
+        mimeType: "image/png",
+        imageBase64: "AAAA",
+        width: 1,
+        height: 1,
+        visibleOnly: true
+      })),
+      readRenderedSnapshot: vi.fn(async (payload: unknown) => ({
+        ok: true,
+        kind: "workbenchBrowserRenderedSnapshot",
+        tabId: "browser-tab-1",
+        requestedUrl: (payload as { readonly url?: string }).url,
+        finalUrl: "https://example.com/app",
+        title: "Example App",
+        html: "<html><body><main id=\"app\">Rendered app text</main></body></html>",
+        bodyText: "Rendered app text",
+        selectedElement: {
+          selector: "#app",
+          html: "<main id=\"app\">Rendered app text</main>",
+          text: "Rendered app text"
+        },
+        media: [
+          {
+            kind: "video",
+            url: "https://example.com/video.mp4",
+            title: "Demo"
+          }
+        ],
+        viewport: { width: 390, height: 844, deviceScaleFactor: 3 },
+        links: [],
+        images: [],
+        warnings: [{ code: "browser_pageshot_failed", message: "pageshot fallback" }],
+        screenshot: {
+          mimeType: "image/png",
+          imageBase64: "AAAA",
+          width: 1,
+          height: 1,
+          visibleOnly: true
+        },
+        pageshot: {
+          mimeType: "image/png",
+          imageBase64: "BBBB",
+          width: 390,
+          height: 1200,
+          visibleOnly: false
+        }
+      })),
       readStorageState: vi.fn(async () => storageState),
       clearSiteData: vi.fn(async () => clearResult)
     };
@@ -1331,8 +1399,91 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.clearSiteData).toHaveBeenLastCalledWith({
       origin: "https://example.com"
     });
+    await expect(
+      registered.get("workbench.browser.readRenderedSnapshot")?.({
+        url: "https://example.com/app",
+        waitForSelector: "#app",
+        includeScreenshot: true,
+        includePageshot: true,
+        includeMedia: true,
+        targetSelector: "#app",
+        mobile: true
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: "workbenchBrowserRenderedSnapshot",
+      tabId: "browser-tab-1",
+      finalUrl: "https://example.com/app",
+      title: "Example App",
+      bodyText: "Rendered app text",
+      screenshot: {
+        imageBase64: "AAAA",
+        mimeType: "image/png"
+      },
+      pageshot: {
+        imageBase64: "BBBB",
+        mimeType: "image/png"
+      },
+      selectedElement: {
+        selector: "#app"
+      }
+    });
+    expect(browserBridge.readRenderedSnapshot).toHaveBeenCalledWith({
+      url: "https://example.com/app",
+      waitForSelector: "#app",
+      includeScreenshot: true,
+      includePageshot: true,
+      includeMedia: true,
+      targetSelector: "#app",
+      mobile: true
+    });
 
     bridge.dispose();
+  });
+
+  test("rendered snapshot host capability has a hard timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const registered = new Map<string, (payload: unknown) => unknown>();
+      const browserBridge = {
+        readRenderedSnapshot: vi.fn(() => new Promise(() => undefined)),
+        readSessionSnapshot: vi.fn(() => ({ tabs: [] })),
+        readActiveTabId: vi.fn(() => null)
+      };
+      const bridge = createAgentIpcBridge({
+        runtimeClient: {
+          request: vi.fn(),
+          subscribe: vi.fn(() => vi.fn()),
+          registerRequestHandler: vi.fn((method, handler) => {
+            registered.set(method, handler);
+          }),
+          unregisterRequestHandler: vi.fn()
+        } as unknown as LyraRuntimeClient,
+        storageRoot: "/tmp/lyra-agent-test",
+        terminalBridge: createTerminalBridgeMock() as never,
+        getWindow: () => null,
+        getBrowserBridge: () => browserBridge as never,
+        getWorkbenchObservationService: () => null
+      });
+
+      const promise = registered.get("workbench.browser.readRenderedSnapshot")?.({
+        url: "https://example.com/app",
+        timeoutMs: 250
+      });
+      const rejection = expect(promise).rejects.toThrow(
+        "workbench.browser.readRenderedSnapshot timed out after 4250ms"
+      );
+      await vi.advanceTimersByTimeAsync(4_250);
+      await rejection;
+      expect(browserBridge.readRenderedSnapshot).toHaveBeenCalledWith({
+        url: "https://example.com/app",
+        timeoutMs: 250
+      });
+
+      bridge.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("lyraLumen map uses page tabs and legacy browser handlers are not registered", async () => {

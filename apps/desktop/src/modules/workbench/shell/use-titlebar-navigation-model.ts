@@ -116,6 +116,7 @@ type UseTitlebarNavigationModelOptions = {
   readonly activeFileManagerState: FileManagerAppState | null;
   readonly searchEngines: readonly SearchEngineDefinition[];
   readonly autoSearchEngines: readonly SearchEngineDefinition[];
+  readonly localSearchReady?: boolean;
   readonly tabsModel: Pick<
     WorkspaceTabsModel,
     "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
@@ -304,6 +305,7 @@ export const useTitlebarNavigationModel = ({
   activeFileManagerState,
   searchEngines,
   autoSearchEngines,
+  localSearchReady = true,
   tabsModel,
   omniboxNonBrowserSubmitTarget,
   placeholder,
@@ -691,6 +693,9 @@ export const useTitlebarNavigationModel = ({
               searchEngines: autoSearchEngines
             });
             if (target === null) {
+              if (!localSearchReady) {
+                return;
+              }
               tabsModel.openLocalSearchTab(
                 {
                   query: resolution.query,
@@ -757,6 +762,9 @@ export const useTitlebarNavigationModel = ({
               ? "active-tab"
               : "new-tab";
           if (target === null) {
+            if (!localSearchReady) {
+              return;
+            }
             tabsModel.openLocalSearchTab(
               {
                 query: resolution.query,
@@ -798,8 +806,10 @@ export const useTitlebarNavigationModel = ({
   }, [
     activeTab,
     activeTabId,
+    autoSearchEngines,
     clearDraft,
     desktopApi,
+    localSearchReady,
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,

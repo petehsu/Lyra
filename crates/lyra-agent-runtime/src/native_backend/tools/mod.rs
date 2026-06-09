@@ -7,8 +7,10 @@ mod clarification_adapter;
 mod design_adapter;
 mod file;
 mod git_adapter;
+mod hardware;
 mod mcp_adapter;
 mod memory_adapter;
+mod native_helpers;
 mod render;
 mod search;
 mod shell;
@@ -22,8 +24,9 @@ mod workbench_adapter;
 
 pub(crate) use self::{
     artifact::*, browser_adapter::*, clarification_adapter::*, design_adapter::*, file::*,
-    git_adapter::*, mcp_adapter::*, memory_adapter::*, render::*, search::*, shell::*,
-    skill_adapter::*, software_adapter::*, terminal::*, todo::*, web::*, workbench_adapter::*,
+    git_adapter::*, hardware::*, mcp_adapter::*, memory_adapter::*, native_helpers::*, render::*,
+    search::*, shell::*, skill_adapter::*, software_adapter::*, terminal::*, todo::*, web::*,
+    workbench_adapter::*,
 };
 
 const MIN_TOOL_TIMEOUT_MS: u64 = 250;
@@ -33,6 +36,7 @@ const DEFAULT_BROWSER_WAIT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS: u64 = 30_000;
 const MAX_TOOL_TIMEOUT_MS: u64 = 120_000;
 const MAX_BROWSER_PAGE_INLINE_CHARS: usize = 12_000;
+const MAX_IMAGE_EVIDENCE_TOOL_BYTES: u64 = 8 * 1024 * 1024;
 
 fn needs_user_action_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
     value.get("needsUserAction").and_then(Value::as_object)
@@ -662,6 +666,7 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 "web" => execute_web_tool_adapter(
                     context.session_id,
                     context.turn_id,
+                    context.dispatcher,
                     context.cancellation,
                     context.tool_call_id,
                     tool_name,
@@ -793,6 +798,18 @@ pub(crate) fn auto_approval_policy_decision(
     })
 }
 
+fn policy_denial_decision(display_name: &str, action: &str, input: &Value, risk: &str) -> Value {
+    json!({
+        "recordType": "policy_decision",
+        "mode": "local_policy",
+        "outcome": "denied",
+        "risk": risk,
+        "action": action,
+        "summary": permission_summary(display_name, action, input),
+        "recordedAt": now(),
+    })
+}
+
 pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &Value) -> bool {
     match (display_name, action) {
         ("file", "write" | "edit" | "multiedit" | "apply_patch") => true,
@@ -802,6 +819,7 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &V
             .and_then(Value::as_str)
             .is_some_and(|value| !value.trim().is_empty()),
         ("terminal", terminal_action) => terminal_action_requires_policy(terminal_action),
+        ("hardware", "session_open" | "session_read" | "session_write" | "run_action") => true,
         ("git", "stage" | "unstage" | "discard") => true,
         ("lyra_lumen", "act" | "type" | "press" | "submit" | "navigate" | "elevate") => true,
         ("software", "invoke_capability") => true,
@@ -878,6 +896,37 @@ fn execute_host_tool_adapter(
         ),
         "toolStarted",
     );
+    if let Some(risk) = permission_risk(display_name, action, &input)
+        && evaluate_permission_policy(display_name, action, Some(&risk), &input)
+            == PermissionPolicyDecision::Deny
+    {
+        let output = attach_policy_decision_to_output(
+            json!({
+                "content": "This tool call was denied by the local Lyra Agent permission policy.",
+                "error": {
+                    "code": "permissionPolicyDenied",
+                    "message": "The local permission policy denied this tool request.",
+                }
+            }),
+            Some(policy_denial_decision(display_name, action, &input, &risk)),
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
+                "failed",
+                input,
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
     if let Some(permission) = permission_request_for_tool(
         session_id,
         turn_id,
@@ -1046,12 +1095,29 @@ fn execute_host_tool_adapter(
                 action,
                 &mut value,
             );
+            attach_workbench_visual_evidence_artifact(
+                session_id,
+                turn_id,
+                tool_call_id,
+                display_name,
+                action,
+                &mut value,
+            );
             attach_lumen_page_artifact(
                 session_id,
                 turn_id,
                 tool_call_id,
                 display_name,
                 action,
+                &mut value,
+            );
+            attach_software_image_evidence_artifact(
+                session_id,
+                turn_id,
+                tool_call_id,
+                display_name,
+                action,
+                &input,
                 &mut value,
             );
             let activity_input = resolved_tool_activity_input(input.clone(), &value);
@@ -1246,11 +1312,13 @@ fn attach_lumen_screenshot_artifact(
     if display_name != "lyra_lumen" || action != "see" {
         return;
     }
-    if value
+    if let Some(path) = value
         .pointer("/imageArtifact/path")
         .and_then(Value::as_str)
-        .is_some_and(|path| !path.trim().is_empty())
+        .filter(|path| !path.trim().is_empty())
+        .map(str::to_string)
     {
+        attach_provider_image_for_existing_artifact(value, &path);
         return;
     }
     let Some(image_data) = value
@@ -1335,6 +1403,298 @@ fn attach_lumen_screenshot_artifact(
             }),
         );
     }
+}
+
+fn attach_workbench_visual_evidence_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    value: &mut Value,
+) {
+    if display_name != "workbench" || action != "capture_visual_evidence" {
+        return;
+    }
+    if value
+        .pointer("/providerImage/path")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty())
+    {
+        return;
+    }
+    let Some(image_data) = value
+        .pointer("/capture/imageBase64")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("imageBase64").and_then(Value::as_str))
+        .filter(|data| !data.trim().is_empty())
+    else {
+        if let Some(path) = value
+            .pointer("/imageArtifact/path")
+            .and_then(Value::as_str)
+            .filter(|path| !path.trim().is_empty())
+            .map(str::to_string)
+        {
+            attach_provider_image_for_existing_artifact(value, &path);
+        }
+        return;
+    };
+    let image_data = image_data
+        .trim()
+        .strip_prefix("data:")
+        .and_then(|data_url| data_url.split_once(',').map(|(_, data)| data))
+        .unwrap_or(image_data.trim());
+    let Ok(bytes) = BASE64_STANDARD.decode(image_data) else {
+        return;
+    };
+    if bytes.is_empty() || bytes.len() as u64 > MAX_IMAGE_EVIDENCE_TOOL_BYTES {
+        return;
+    }
+    let media_type = value
+        .pointer("/capture/mimeType")
+        .or_else(|| value.get("mimeType"))
+        .and_then(Value::as_str)
+        .unwrap_or("image/png")
+        .to_string();
+    if !media_type
+        .split(';')
+        .next()
+        .unwrap_or(&media_type)
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("image/")
+    {
+        return;
+    }
+    let extension = image_extension_for_media_type(&media_type);
+    let Some(artifact_ref) = write_tool_artifact_bytes_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-workspace-visual-evidence"),
+        ToolArtifactKind::ImageEvidence,
+        extension,
+        &media_type,
+        &bytes,
+    ) else {
+        return;
+    };
+    let width = value
+        .get("width")
+        .or_else(|| value.pointer("/capture/width"))
+        .and_then(Value::as_u64);
+    let height = value
+        .get("height")
+        .or_else(|| value.pointer("/capture/height"))
+        .and_then(Value::as_u64);
+    let visible_only = value
+        .get("visibleOnly")
+        .or_else(|| value.pointer("/capture/visibleOnly"))
+        .and_then(Value::as_bool);
+    let path = artifact_ref
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let id = artifact_ref
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("workspace_visual_evidence")
+        .to_string();
+    if let Some(object) = value.as_object_mut() {
+        if let Some(capture) = object.get_mut("capture").and_then(Value::as_object_mut) {
+            capture.remove("imageBase64");
+        }
+        object.remove("imageBase64");
+        object.insert("imageEvidenceArtifactRef".to_string(), artifact_ref);
+        object.insert(
+            "providerImage".to_string(),
+            json!({
+                "path": path,
+                "mediaType": media_type,
+                "bytes": bytes.len(),
+            }),
+        );
+        object.insert(
+            "imageArtifact".to_string(),
+            json!({
+                "id": id,
+                "kind": "image",
+                "mediaType": media_type,
+                "path": path,
+                "width": width,
+                "height": height,
+                "visibleOnly": visible_only,
+                "openTarget": {
+                    "kind": "file",
+                    "path": path,
+                    "mediaType": media_type,
+                },
+            }),
+        );
+    }
+}
+
+fn attach_provider_image_for_existing_artifact(value: &mut Value, path: &str) {
+    if value
+        .pointer("/providerImage/path")
+        .and_then(Value::as_str)
+        .is_some_and(|path| !path.trim().is_empty())
+    {
+        return;
+    }
+    let Ok(Some(artifact)) = resolve_lyra_artifact_path(path) else {
+        return;
+    };
+    let Ok(metadata) = fs::metadata(&artifact.absolute) else {
+        return;
+    };
+    if metadata.len() == 0 || metadata.len() > MAX_IMAGE_EVIDENCE_TOOL_BYTES {
+        return;
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "providerImage".to_string(),
+            json!({
+                "path": path,
+                "mediaType": artifact.media_type,
+                "bytes": metadata.len(),
+            }),
+        );
+    }
+}
+
+fn attach_software_image_evidence_artifact(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    input: &Value,
+    value: &mut Value,
+) {
+    if display_name != "software"
+        || action != "invoke_capability"
+        || !software_image_viewer_vision_fallback(input, value)
+        || value
+            .pointer("/providerImage/path")
+            .and_then(Value::as_str)
+            .is_some_and(|path| !path.trim().is_empty())
+    {
+        return;
+    }
+    let Some(image_artifact) = value
+        .pointer("/imageArtifact")
+        .or_else(|| value.pointer("/output/imageArtifact"))
+        .filter(|artifact| artifact.is_object())
+    else {
+        return;
+    };
+    let Some(source_path) = image_artifact
+        .get("path")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    else {
+        return;
+    };
+    let media_type = image_artifact
+        .get("mediaType")
+        .or_else(|| image_artifact.get("mimeType"))
+        .and_then(Value::as_str)
+        .unwrap_or("image/png")
+        .trim()
+        .to_string();
+    if !media_type
+        .split(';')
+        .next()
+        .unwrap_or(&media_type)
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("image/")
+    {
+        return;
+    }
+    let source = PathBuf::from(source_path);
+    let Ok(metadata) = fs::metadata(&source) else {
+        return;
+    };
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_IMAGE_EVIDENCE_TOOL_BYTES
+    {
+        return;
+    }
+    let Ok(bytes) = fs::read(&source) else {
+        return;
+    };
+    if bytes.is_empty() {
+        return;
+    }
+    let extension = image_extension_for_media_type(&media_type);
+    let Some(artifact_ref) = write_tool_artifact_bytes_with_kind(
+        session_id,
+        turn_id,
+        &format!("{tool_call_id}-image-evidence"),
+        ToolArtifactKind::ImageEvidence,
+        extension,
+        &media_type,
+        &bytes,
+    ) else {
+        return;
+    };
+    let path = artifact_ref
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let id = artifact_ref
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("image_evidence")
+        .to_string();
+    let width = image_artifact.get("width").and_then(Value::as_u64);
+    let height = image_artifact.get("height").and_then(Value::as_u64);
+    let source_artifact = image_artifact.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.insert("imageEvidenceArtifactRef".to_string(), artifact_ref);
+        object.insert(
+            "providerImage".to_string(),
+            json!({
+                "path": path,
+                "mediaType": media_type,
+                "bytes": bytes.len(),
+            }),
+        );
+        object.insert(
+            "imageArtifact".to_string(),
+            json!({
+                "id": id,
+                "kind": "image",
+                "mediaType": media_type,
+                "path": path,
+                "width": width,
+                "height": height,
+                "openTarget": {
+                    "kind": "file",
+                    "path": path,
+                    "mediaType": media_type,
+                },
+                "source": source_artifact,
+            }),
+        );
+    }
+}
+
+fn software_image_viewer_vision_fallback(input: &Value, value: &Value) -> bool {
+    let software_id = input
+        .get("softwareId")
+        .or_else(|| value.get("softwareId"))
+        .and_then(Value::as_str);
+    let action_id = input
+        .get("actionId")
+        .or_else(|| input.get("capabilityId"))
+        .or_else(|| value.get("actionId"))
+        .or_else(|| value.get("capabilityId"))
+        .and_then(Value::as_str);
+    software_id == Some("image-viewer") && action_id == Some("image-viewer.prepareVisionFallback")
 }
 
 fn image_extension_for_media_type(media_type: &str) -> &'static str {
@@ -1573,6 +1933,33 @@ fn execute_native_tool_adapter(
     arguments: Value,
     started_at: &str,
 ) -> Value {
+    execute_native_tool_adapter_with_dispatcher(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_native_tool_adapter_with_dispatcher(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> Value {
     let mut input = native_tool_input(action, arguments);
     let mut policy_decision = None;
     record_tool_activity(
@@ -1605,6 +1992,36 @@ fn execute_native_tool_adapter(
                 display_name,
                 &tool_label(display_name, action),
                 "cancelled",
+                input,
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
+    if let Some(risk) = permission_risk(display_name, action, &input)
+        && evaluate_permission_policy(display_name, action, Some(&risk), &input)
+            == PermissionPolicyDecision::Deny
+    {
+        let output = attach_policy_decision_to_output(
+            tool_failure_output(
+                "permission_policy_denied",
+                "The local Lyra Agent permission policy denied this native tool request.",
+                "Do not execute this tool call. Explain the limitation or choose a safer alternative.",
+                None,
+            ),
+            Some(policy_denial_decision(display_name, action, &input, &risk)),
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
+                "failed",
                 input,
                 Some(output.clone()),
                 started_at,
@@ -1700,7 +2117,14 @@ fn execute_native_tool_adapter(
         policy_decision = Some(auto_approval_policy_decision(display_name, action, &input));
     }
 
-    let result = run_native_tool(session_id, turn_id, tool_name, tool_call_id, &input);
+    let result = run_native_tool_with_dispatcher(
+        session_id,
+        turn_id,
+        tool_name,
+        tool_call_id,
+        &input,
+        dispatcher,
+    );
     let (status, output) = match result {
         Ok(success) => {
             let output = budgeted_tool_output(
@@ -1809,12 +2233,24 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
     shell_command_requires_permission(command)
 }
 
+#[allow(dead_code)]
 pub(crate) fn run_native_tool(
     session_id: &str,
     turn_id: &str,
     tool_name: &str,
     tool_call_id: &str,
     input: &Value,
+) -> NativeToolResult {
+    run_native_tool_with_dispatcher(session_id, turn_id, tool_name, tool_call_id, input, None)
+}
+
+pub(crate) fn run_native_tool_with_dispatcher(
+    session_id: &str,
+    turn_id: &str,
+    tool_name: &str,
+    tool_call_id: &str,
+    input: &Value,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> NativeToolResult {
     match tool_name {
         "artifact_read" => tool_artifact_read(session_id, turn_id, tool_call_id, input),
@@ -1827,6 +2263,17 @@ pub(crate) fn run_native_tool(
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
         "apply_patch" => tool_apply_patch(session_id, turn_id, tool_call_id, input),
         "shell_run" => tool_shell_run(session_id, turn_id, tool_call_id, input),
+        "hardware_list" => tool_hardware_list(input),
+        "hardware_inspect" => tool_hardware_inspect(input),
+        "hardware_capabilities" => tool_hardware_capabilities(input),
+        "hardware_os_status" => tool_hardware_os_status(input),
+        "hardware_permissions_request" => tool_hardware_permissions_request(input),
+        "hardware_session_open" => tool_hardware_session_open(input),
+        "hardware_session_read" => tool_hardware_session_read(input),
+        "hardware_session_write" => tool_hardware_session_write(input),
+        "hardware_session_close" => tool_hardware_session_close(input),
+        "hardware_invoke" => tool_hardware_invoke(input),
+        "hardware_run_action" => tool_hardware_run_action(input),
         "project_search" => tool_project_search(session_id, input),
         "code_search_text" => tool_code_search_text(session_id, input),
         "code_search_symbol" => tool_code_search_symbol(session_id, input),
@@ -1834,7 +2281,14 @@ pub(crate) fn run_native_tool(
         "lsp_query" => tool_lsp_query(session_id, input),
         "network_status" => tool_network_status(),
         "web_search" => tool_web_search(input),
-        "web_fetch" => tool_web_fetch(turn_id, tool_call_id, input),
+        "web_research" => tool_web_research(session_id, turn_id, input),
+        "web_fetch" => tool_web_fetch_with_browser_for_session(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            dispatcher,
+        ),
         "render_surface" => tool_render_surface(turn_id, tool_call_id, input),
         "todo_read" => tool_todo_read(session_id),
         "todo_write" => tool_todo_write(session_id, turn_id, input),
@@ -1844,244 +2298,4 @@ pub(crate) fn run_native_tool(
             "Call one of the tools listed in the current Lyra runtime context.",
         )),
     }
-}
-
-pub(crate) fn budgeted_tool_output(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    content: String,
-    raw: Value,
-    recommended_next_action: Option<String>,
-) -> Value {
-    let content_char_count = content.chars().count();
-    let (content, truncated, artifact_ref, truncated_reason) =
-        if content_char_count > DEFAULT_TOOL_CONTENT_CHARS {
-            let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
-            (
-                truncate_chars(&content, DEFAULT_TOOL_CONTENT_CHARS),
-                true,
-                artifact_ref,
-                Some(format!(
-                    "tool output exceeded {DEFAULT_TOOL_CONTENT_CHARS} characters"
-                )),
-            )
-        } else {
-            (content, false, None, None)
-        };
-    json!({
-        "content": content,
-        "raw": raw,
-        "truncated": truncated,
-        "artifactRef": artifact_ref,
-        "truncatedReason": truncated_reason,
-        "recommendedNextAction": recommended_next_action,
-    })
-}
-
-pub(crate) fn tool_failure_output(
-    code: &str,
-    message: &str,
-    recommended_next_action: &str,
-    detail: Option<Value>,
-) -> Value {
-    json!({
-        "content": format!("Lyra tool failed: {message}"),
-        "error": {
-            "code": code,
-            "message": message,
-            "detail": detail,
-        },
-        "truncated": false,
-        "artifactRef": Value::Null,
-        "recommendedNextAction": recommended_next_action,
-    })
-}
-
-pub(crate) fn truncate_chars(value: &str, max_chars: usize) -> String {
-    let mut output = value.chars().take(max_chars).collect::<String>();
-    output.push_str("\n\n[truncated]");
-    output
-}
-
-pub(crate) fn value_string(input: &Value, key: &str) -> Option<String> {
-    input
-        .get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-}
-
-pub(crate) fn required_value_string(input: &Value, key: &str) -> Result<String, NativeToolFailure> {
-    value_string(input, key).ok_or_else(|| {
-        NativeToolFailure::new(
-            "bad_request",
-            format!("{key} is required"),
-            "Retry the tool call with the required input field.",
-        )
-    })
-}
-
-pub(crate) fn value_bool(input: &Value, key: &str, default: bool) -> bool {
-    input.get(key).and_then(Value::as_bool).unwrap_or(default)
-}
-
-pub(crate) fn value_usize(input: &Value, key: &str, default: usize, max: usize) -> usize {
-    input
-        .get(key)
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .unwrap_or(default)
-        .max(1)
-        .min(max)
-}
-
-pub(crate) fn value_u64(input: &Value, key: &str, default: u64, max: u64) -> u64 {
-    input
-        .get(key)
-        .and_then(Value::as_u64)
-        .unwrap_or(default)
-        .max(1)
-        .min(max)
-}
-
-pub(crate) fn session_workspace_root(session_id: &str) -> Result<PathBuf, NativeToolFailure> {
-    let (project_bound, working_dir) = state()
-        .lock()
-        .map_err(|_| {
-            NativeToolFailure::new(
-                "runtime_state_unavailable",
-                "agent runtime state lock failed",
-                "Retry the tool call.",
-            )
-        })?
-        .sessions
-        .get(session_id)
-        .map(|session| {
-            let project_bound = session
-                .snapshot
-                .get("projectBound")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let working_dir = session
-                .snapshot
-                .get("workingDir")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            (project_bound, working_dir)
-        })
-        .unwrap_or((false, String::new()));
-    if !project_bound || working_dir.is_empty() {
-        return Err(NativeToolFailure::new(
-            "workspace_unbound",
-            "session is not bound to a project",
-            "Bind the session to an existing project root and retry.",
-        ));
-    }
-    let root = PathBuf::from(working_dir);
-    let root = if root.exists() {
-        root.canonicalize().map_err(|error| {
-            NativeToolFailure::new(
-                "workspace_root_unavailable",
-                format!("failed to canonicalize workspace root: {error}"),
-                "Bind the session to an existing project root and retry.",
-            )
-        })?
-    } else {
-        return Err(NativeToolFailure::new(
-            "workspace_root_unavailable",
-            format!("workspace root does not exist: {}", root.display()),
-            "Bind the session to an existing project root and retry.",
-        ));
-    };
-    Ok(root)
-}
-
-pub(crate) fn resolve_workspace_path(
-    session_id: &str,
-    raw_path: &str,
-    allow_missing_leaf: bool,
-) -> Result<WorkspacePath, NativeToolFailure> {
-    if raw_path.contains('\0') {
-        return Err(NativeToolFailure::new(
-            "permission_denied",
-            "path contains a NUL byte",
-            "Retry with a normal workspace-relative path.",
-        ));
-    }
-    let root = session_workspace_root(session_id)?;
-    let candidate = PathBuf::from(raw_path);
-    let candidate = if candidate.is_absolute() {
-        candidate
-    } else {
-        root.join(candidate)
-    };
-    let absolute = if candidate.exists() {
-        candidate.canonicalize().map_err(|error| {
-            NativeToolFailure::new(
-                "path_unavailable",
-                format!("failed to canonicalize path: {error}"),
-                "Retry with a readable workspace path.",
-            )
-        })?
-    } else if allow_missing_leaf {
-        let parent = candidate.parent().ok_or_else(|| {
-            NativeToolFailure::new(
-                "bad_request",
-                "path has no parent directory",
-                "Retry with a file path inside the workspace.",
-            )
-        })?;
-        let parent = parent.canonicalize().map_err(|error| {
-            NativeToolFailure::new(
-                "path_unavailable",
-                format!("failed to canonicalize parent directory: {error}"),
-                "Create the parent directory first or choose an existing parent.",
-            )
-        })?;
-        let file_name = candidate.file_name().ok_or_else(|| {
-            NativeToolFailure::new(
-                "bad_request",
-                "path has no file name",
-                "Retry with a file path inside the workspace.",
-            )
-        })?;
-        parent.join(file_name)
-    } else {
-        return Err(NativeToolFailure::new(
-            "path_not_found",
-            format!("path does not exist: {}", candidate.display()),
-            "Retry with an existing workspace path.",
-        ));
-    };
-    if !absolute.starts_with(&root) {
-        return Err(NativeToolFailure::new(
-            "permission_denied",
-            format!(
-                "path is outside the session workspace: {}",
-                absolute.display()
-            ),
-            "Use a path inside the bound project workspace.",
-        )
-        .with_detail(json!({
-            "workspaceRoot": root.display().to_string(),
-            "path": absolute.display().to_string(),
-        })));
-    }
-    let relative = absolute
-        .strip_prefix(&root)
-        .map(|path| path.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| absolute.display().to_string());
-    Ok(WorkspacePath {
-        root,
-        absolute,
-        relative: if relative.is_empty() {
-            ".".to_string()
-        } else {
-            relative
-        },
-    })
 }

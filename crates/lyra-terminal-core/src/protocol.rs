@@ -8,8 +8,8 @@ use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 
 use crate::screen::{
-    TerminalScreenCell, TerminalScreenCursorPosition, TerminalScreenInputModes,
-    TerminalScreenLink, TerminalScreenRegion, TerminalScreenStyle, TerminalScreenVisibleRow,
+    TerminalScreenCell, TerminalScreenCursorPosition, TerminalScreenInputModes, TerminalScreenLink,
+    TerminalScreenRegion, TerminalScreenStyle, TerminalScreenVisibleRow,
 };
 use crate::tui_act::TuiActPlan;
 

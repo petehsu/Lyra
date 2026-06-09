@@ -21,6 +21,7 @@ import type {
   AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
+  ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
   PermissionRequest,
@@ -63,6 +64,9 @@ export interface DataProviderValue {
 
   /** Lyra Agent-backed model and provider controls rendered in the composer toolbar. */
   modelControls?: ComposerModelControls | null;
+
+  /** Local-config-backed Lyra Agent permission mode controls rendered in the composer toolbar. */
+  permissionModeControls?: ComposerPermissionModeControls | null;
 
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;

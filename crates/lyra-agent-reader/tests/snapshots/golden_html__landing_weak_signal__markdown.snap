@@ -1,0 +1,17 @@
+---
+source: crates/lyra-agent-reader/tests/golden_html.rs
+expression: normalize_snapshot_text(&result.markdown_with_citations)
+---
+# Northstar Notes
+
+A compact workspace for turning messy research into readable project notes.
+
+Start trial
+
+## What It Does
+
+Capture sources, extract clean text, organize links, and export notes for review.
+
+## Why Teams Use It
+
+Teams use it when they need a small, repeatable reading workflow instead of a heavy research suite.

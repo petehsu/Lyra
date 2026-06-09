@@ -740,6 +740,25 @@ export type AgentPermissionRespondRequest = {
   readonly allowed: boolean;
 };
 
+export type AgentPermissionPolicyMode = "approval" | "full_auto" | "custom";
+
+export type AgentPermissionPolicyEffectiveMode = "approval" | "full_auto";
+
+export type AgentPermissionPolicySnapshot = {
+  readonly mode: AgentPermissionPolicyMode;
+  readonly effectiveMode: AgentPermissionPolicyEffectiveMode;
+  readonly valid: boolean;
+  readonly configPath: string;
+  readonly exists: boolean;
+  readonly warning?: string | null;
+  readonly elevationCredentialRef?: unknown;
+};
+
+export type AgentPermissionPolicySetModeRequest = {
+  readonly mode: AgentPermissionPolicyEffectiveMode;
+  readonly elevationCredentialRef?: unknown;
+};
+
 export type AgentRuntimeEvent =
   | {
       readonly kind: "sessionSnapshot";
@@ -1132,6 +1151,10 @@ export type AgentApi = {
     request: AgentClarificationRespondRequest
   ) => Promise<unknown>;
   readonly respondPermission: (request: AgentPermissionRespondRequest) => Promise<unknown>;
+  readonly readPermissionPolicy: () => Promise<AgentPermissionPolicySnapshot>;
+  readonly setPermissionPolicyMode: (
+    request: AgentPermissionPolicySetModeRequest
+  ) => Promise<AgentPermissionPolicySnapshot>;
   readonly readAgentConfig: () => Promise<AgentConfigSnapshot>;
   readonly updateAgentConfig: (
     request: AgentConfigUpdateRequest
