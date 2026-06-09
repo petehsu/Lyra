@@ -319,6 +319,7 @@ struct SearchCoreService {
 static SEARCH_SERVICES: OnceLock<RwLock<HashMap<String, Arc<SearchCoreService>>>> = OnceLock::new();
 static SEARCH_STREAMS: OnceLock<RwLock<HashMap<String, Arc<RwLock<SearchStreamState>>>>> =
     OnceLock::new();
+static SEARCH_WARMUPS: OnceLock<RwLock<HashSet<String>>> = OnceLock::new();
 
 fn service_store() -> &'static RwLock<HashMap<String, Arc<SearchCoreService>>> {
     SEARCH_SERVICES.get_or_init(|| RwLock::new(HashMap::new()))
@@ -326,6 +327,10 @@ fn service_store() -> &'static RwLock<HashMap<String, Arc<SearchCoreService>>> {
 
 fn stream_store() -> &'static RwLock<HashMap<String, Arc<RwLock<SearchStreamState>>>> {
     SEARCH_STREAMS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn warmup_store() -> &'static RwLock<HashSet<String>> {
+    SEARCH_WARMUPS.get_or_init(|| RwLock::new(HashSet::new()))
 }
 
 fn clamp_limit(value: Option<usize>) -> usize {
@@ -513,6 +518,27 @@ fn existing_service_for_request(storage_root: Option<&str>) -> Option<Arc<Search
         .read()
         .ok()
         .and_then(|guard| guard.get(&key).cloned())
+}
+
+fn spawn_service_warmup(storage_root: Option<String>) {
+    let key = normalize_path_string(&engine_storage_root_for(storage_root.as_deref()));
+    if existing_service_for_request(storage_root.as_deref()).is_some() {
+        return;
+    }
+    {
+        let Ok(mut warmups) = warmup_store().write() else {
+            return;
+        };
+        if !warmups.insert(key.clone()) {
+            return;
+        }
+    }
+    thread::spawn(move || {
+        let _ = service_for_request_with_background(storage_root.as_deref(), true);
+        if let Ok(mut warmups) = warmup_store().write() {
+            warmups.remove(&key);
+        }
+    });
 }
 
 impl SearchCoreService {
@@ -1818,6 +1844,9 @@ pub fn read_search_index_status_json(request_json: String) -> Result<String, Str
             || status.snapshot_bytes > 0
             || !status.roots.is_empty())
     {
+        if status.snapshot_bytes > 0 && search_index_status_is_ready(&status) {
+            spawn_service_warmup(request.storage_root.clone());
+        }
         return serde_json::to_string(&status)
             .map_err(|error| format!("serialize response failed: {error}"));
     }

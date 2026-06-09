@@ -20,6 +20,7 @@ const DEFAULT_TEXT_LIMIT_BYTES: u64 = 256 * 1024;
 const READ_RESULT_MAX_BYTES: usize = 2_000_000;
 const ROOT_CONTENT_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
 const DELTA_COMPACT_BYTES: u64 = 128 * 1024 * 1024;
+const DELTA_REPLAY_RECORD_LIMIT: usize = 256;
 const SNIPPET_MAX_CHARS: usize = 240;
 const SEARCH_CANDIDATE_MULTIPLIER_FAST: usize = 2;
 const SEARCH_CANDIDATE_MULTIPLIER_NORMAL: usize = 3;
@@ -783,11 +784,11 @@ impl LocalSearchEngine {
                 if cancel_flag.load(Ordering::Relaxed) || candidates.len() >= max_candidates {
                     break;
                 }
-                if candidates.contains_key(&entry.full_path) || !entry_allowed(entry, &options) {
+                if !entry_allowed(entry, &options) {
                     continue;
                 }
                 if let Some((score, match_kind, source, snippet, line)) =
-                    score_v3_entry(entry, &options)
+                    score_v3_entry_content(entry, &options)
                 {
                     merge_candidate(
                         &mut candidates,
@@ -1151,6 +1152,11 @@ fn replay_delta(state: &mut LocalSearchState) -> anyhow::Result<bool> {
         return Ok(false);
     }
     let text = fs::read_to_string(&delta_path)?;
+    let records = text.lines().filter(|line| !line.trim().is_empty()).count();
+    if records > DELTA_REPLAY_RECORD_LIMIT {
+        state.pending_changes = state.pending_changes.saturating_add(records as u64);
+        return Ok(false);
+    }
     let mut replayed = false;
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let record: DeltaRecord = serde_json::from_str(line)?;
@@ -1542,6 +1548,41 @@ fn score_v3_entry(
     Some(score_tuple(content_score, Some(content_hit)))
 }
 
+fn score_v3_entry_content(
+    entry: &IndexedEntry,
+    options: &LocalSearchOptions,
+) -> Option<(
+    u32,
+    LocalSearchMatchKind,
+    LocalSearchSource,
+    Option<String>,
+    Option<u64>,
+)> {
+    let query = options.query.trim().to_lowercase();
+    let content_hit = if should_search_content(options.content_mode, options.query_mode)
+        && entry.content_indexed
+    {
+        entry
+            .content_text
+            .as_deref()
+            .and_then(|text| snippet_for_text(text, &query))
+    } else {
+        None
+    }?;
+    let content_score = native::v3_score_entry(native::V3ScoreInput {
+        query: &query,
+        lower_file_name: &entry.lower_file_name,
+        lower_path: &entry.lower_path,
+        extension: entry.extension.as_deref().unwrap_or(""),
+        content_hit: true,
+        is_directory: entry.kind == LocalSearchKind::Directory,
+        vendor: entry.vendor,
+        enable_fuzzy: false,
+        enable_extension_match: false,
+    });
+    Some(score_tuple(content_score, Some(content_hit)))
+}
+
 fn score_tuple(
     native_score: native::V3NativeScore,
     content_hit: Option<TextHit>,
@@ -1816,9 +1857,9 @@ fn build_content_postings(entries: &[IndexedEntry]) -> HashMap<String, Vec<usize
 fn refresh_content_postings_after_changes(state: &mut LocalSearchState) {
     if state.entries.len() <= CONTENT_INLINE_REBUILD_ENTRY_LIMIT {
         rebuild_content_postings(state);
-    } else {
-        state.content_postings.clear();
     }
+    // Large Home indexes keep the last compacted postings until the next full
+    // snapshot; snippets still verify content hits against the stored text.
 }
 
 fn content_candidate_entries(
@@ -2508,6 +2549,41 @@ mod tests {
         assert_eq!(prefix.results.len(), 1);
         assert_eq!(prefix.results[0].match_kind, LocalSearchMatchKind::Content);
         assert_eq!(prefix.results[0].line, Some(2));
+    }
+
+    #[test]
+    fn local_search_v3_content_can_augment_filename_candidates() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("src/localIndex.ts"),
+            "export const localIndexBuildStartedTitle = 'ready';\n",
+        );
+        let engine = LocalSearchEngine::new();
+        engine.index_root(index_options(dir.path()), None).unwrap();
+
+        let response = engine
+            .search(
+                LocalSearchOptions {
+                    query: "localIndex".to_string(),
+                    roots: vec![dir.path().to_path_buf()],
+                    limit: 10,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(
+            response.results[0].match_kind,
+            LocalSearchMatchKind::Content
+        );
+        assert_eq!(response.results[0].line, Some(1));
+        assert!(
+            response.results[0]
+                .snippet
+                .as_deref()
+                .is_some_and(|snippet| snippet.contains("localIndexBuildStartedTitle"))
+        );
     }
 
     #[test]
