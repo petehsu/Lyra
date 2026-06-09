@@ -23,6 +23,7 @@ const STREAM_RESULT_LIMIT_DEFAULT: usize = 120;
 const STREAM_MAX_ACTIVE: usize = 64;
 const BACKGROUND_TEXT_SCAN_BYTES: u64 = 256 * 1024;
 const PROVIDER_JOIN_TIMEOUT: Duration = Duration::from_millis(2_750);
+const LOCAL_SEARCH_SNAPSHOT_VERSION: u32 = 4;
 const WATCHER_APPLY_DEBOUNCE: Duration = Duration::from_secs(2);
 const WATCHER_REBUILD_EVENT_THRESHOLD: usize = 1_000;
 const SEARCH_V3_STORAGE_DIR: &str = "search-v3";
@@ -1208,6 +1209,13 @@ fn to_index_status(status: LocalSearchStatus, index_running: bool) -> SearchInde
     let error = status.roots.iter().find_map(|root| root.error.clone());
     let state = if index_running {
         SearchIndexState::Building
+    } else if status.indexed_file_count == 0
+        && matches!(
+            status.state,
+            LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
+        )
+    {
+        SearchIndexState::Idle
     } else {
         match status.state {
             LocalSearchIndexState::Ready | LocalSearchIndexState::Partial => {
@@ -1228,7 +1236,15 @@ fn to_index_status(status: LocalSearchStatus, index_running: bool) -> SearchInde
         .iter()
         .map(|root| SearchIndexRootStatus {
             root: normalize_path_string(&root.root),
-            state: to_search_index_state(root.state, false),
+            state: if root.indexed_file_count == 0
+                && matches!(
+                    root.state,
+                    LocalSearchIndexState::Ready | LocalSearchIndexState::Partial
+                ) {
+                SearchIndexState::Idle
+            } else {
+                to_search_index_state(root.state, false)
+            },
             indexed_files: root.indexed_file_count,
             indexed_dirs: root.indexed_dir_count,
             indexed_content_files: root.indexed_content_file_count,
@@ -1283,6 +1299,8 @@ fn to_search_skipped(skipped: &LocalSearchSkippedStats) -> SearchIndexSkippedSta
 struct DiskSearchIndexMeta {
     #[serde(default, alias = "engineVersion")]
     engine_version: Option<String>,
+    #[serde(default, alias = "snapshotVersion")]
+    snapshot_version: Option<u32>,
     #[serde(default)]
     phase: Option<String>,
     #[serde(default)]
@@ -1343,10 +1361,9 @@ fn aggregate_disk_search_state(roots: &[DiskSearchIndexRootStatus]) -> SearchInd
     {
         return SearchIndexState::Building;
     }
-    if roots
-        .iter()
-        .any(|root| disk_search_state(&root.state) == SearchIndexState::Ready)
-    {
+    if roots.iter().any(|root| {
+        root.indexed_file_count > 0 && disk_search_state(&root.state) == SearchIndexState::Ready
+    }) {
         return SearchIndexState::Ready;
     }
     if roots
@@ -1446,6 +1463,15 @@ fn read_disk_search_index_status(storage_root: Option<&str>) -> Option<SearchInd
             ));
         }
     };
+    if meta.snapshot_version != Some(LOCAL_SEARCH_SNAPSHOT_VERSION) {
+        return Some(disk_status_error(
+            storage_root,
+            format!(
+                "local search snapshot version is {:?}, expected {}",
+                meta.snapshot_version, LOCAL_SEARCH_SNAPSHOT_VERSION
+            ),
+        ));
+    }
     let state = aggregate_disk_search_state(&meta.roots);
     let progress = match state {
         SearchIndexState::Building => Some(0.0),
@@ -1482,7 +1508,13 @@ fn read_disk_search_index_status(storage_root: Option<&str>) -> Option<SearchInd
             add_disk_skipped_stats(&mut skipped, &root.skipped);
             SearchIndexRootStatus {
                 root: normalize_path_string(&root.root),
-                state: disk_search_state(&root.state),
+                state: if root.indexed_file_count == 0
+                    && disk_search_state(&root.state) == SearchIndexState::Ready
+                {
+                    SearchIndexState::Idle
+                } else {
+                    disk_search_state(&root.state)
+                },
                 indexed_files: root.indexed_file_count,
                 indexed_dirs: root.indexed_dir_count,
                 indexed_content_files: root.indexed_content_file_count,
@@ -1907,7 +1939,7 @@ mod tests {
             native_dir.join("meta.json"),
             serde_json::json!({
                 "engineVersion": "native-v3",
-                "snapshotVersion": 3,
+                "snapshotVersion": 4,
                 "phase": "ready",
                 "pendingChanges": 0,
                 "roots": [{

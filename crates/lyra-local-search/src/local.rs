@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const ENGINE_VERSION: &str = "native-v3";
 const SNAPSHOT_MAGIC: &[u8; 8] = b"LYRAIDX3";
-const SNAPSHOT_VERSION: u32 = 3;
+const SNAPSHOT_VERSION: u32 = 4;
 const DEFAULT_LIMIT: usize = 50;
 const MAX_LIMIT: usize = 500;
 const DEFAULT_TEXT_LIMIT_BYTES: u64 = 256 * 1024;
@@ -24,6 +24,12 @@ const SNIPPET_MAX_CHARS: usize = 240;
 const SEARCH_CANDIDATE_MULTIPLIER_FAST: usize = 2;
 const SEARCH_CANDIDATE_MULTIPLIER_NORMAL: usize = 3;
 const SEARCH_CANDIDATE_MULTIPLIER_FULL: usize = 5;
+const CONTENT_MAX_TERMS_PER_FILE: usize = 4_096;
+const CONTENT_MAX_POSTINGS_PER_TERM: usize = 16_384;
+const CONTENT_CANDIDATE_SCAN_LIMIT: usize = 4_096;
+const CONTENT_INLINE_REBUILD_ENTRY_LIMIT: usize = 10_000;
+const CONTENT_ASCII_NGRAM_CHARS: usize = 3;
+const CONTENT_UNICODE_NGRAM_CHARS: usize = 2;
 
 const SKIPPED_DIRECTORY_NAMES: &[&str] = &[
     ".git",
@@ -382,6 +388,7 @@ pub enum LocalSearchStorageMode {
 #[derive(Debug)]
 struct LocalSearchState {
     entries: Vec<IndexedEntry>,
+    content_postings: HashMap<String, Vec<usize>>,
     roots: BTreeMap<PathBuf, LocalSearchRootStatus>,
     storage: V3Storage,
     state: LocalSearchIndexState,
@@ -513,19 +520,30 @@ impl LocalSearchEngine {
         }
 
         let collected = collect_root_entries(&root, &options, &cancel_flag)?;
-
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
-        state.entries.retain(|entry| entry.root != collected.root);
-        state.entries.extend(collected.entries);
+        let (storage, mut entries, mut roots) = {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
+            (
+                state.storage.clone(),
+                state
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.root != collected.root)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                state.roots.clone(),
+            )
+        };
+        entries.extend(collected.entries);
+        let content_postings = build_content_postings(&entries);
         let root_state = if collected.truncated {
             LocalSearchIndexState::Partial
         } else {
             LocalSearchIndexState::Ready
         };
-        state.roots.insert(
+        roots.insert(
             collected.root.clone(),
             LocalSearchRootStatus {
                 root: collected.root,
@@ -539,12 +557,20 @@ impl LocalSearchEngine {
                 error: None,
             },
         );
+        write_snapshot_parts(&storage, &entries, &content_postings)?;
+        clear_delta(&storage)?;
+        write_meta_parts(&storage, &roots, 0, "ready")?;
+
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
+        state.entries = entries;
+        state.content_postings = content_postings;
+        state.roots = roots;
         state.state = aggregate_root_state(state.roots.values());
         state.phase = "ready".to_string();
         state.pending_changes = 0;
-        write_snapshot(&state)?;
-        clear_delta(&state.storage)?;
-        write_meta(&state)?;
         Ok(status_from_state(&state))
     }
 
@@ -617,6 +643,7 @@ impl LocalSearchEngine {
             remove_path_or_descendants(&mut state.entries, path);
         }
         state.entries.extend(collected_entries);
+        refresh_content_postings_after_changes(&mut state);
         append_delta(&state.storage, &delta_records)?;
         rebuild_root_status_from_entries(&mut state, &root);
         if let Some(status) = state.roots.get_mut(&root) {
@@ -671,14 +698,25 @@ impl LocalSearchEngine {
         let cancel_flag = cancel_flag.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
         let roots = normalize_search_roots(&options.roots)?;
 
-        let (entries, indexed_roots, index_state) = {
+        let (entries, content_entries, indexed_roots, index_state) = {
             let state = self
                 .state
                 .lock()
                 .map_err(|_| anyhow::anyhow!("local search state lock poisoned"))?;
             let indexed_roots = state.roots.keys().cloned().collect::<HashSet<_>>();
             let scoped_entries = scope_entries(&state.entries, &roots);
-            (scoped_entries, indexed_roots, state.state)
+            let content_entries = if should_search_content(options.content_mode, options.query_mode)
+            {
+                content_candidate_entries(
+                    &state,
+                    &roots,
+                    &options.query,
+                    CONTENT_CANDIDATE_SCAN_LIMIT,
+                )
+            } else {
+                Vec::new()
+            };
+            (scoped_entries, content_entries, indexed_roots, state.state)
         };
 
         let roots_for_response = if roots.is_empty() {
@@ -741,7 +779,7 @@ impl LocalSearchEngine {
         if candidates.len() < max_candidates
             && should_search_content(options.content_mode, options.query_mode)
         {
-            for entry in &entries {
+            for entry in &content_entries {
                 if cancel_flag.load(Ordering::Relaxed) || candidates.len() >= max_candidates {
                     break;
                 }
@@ -821,6 +859,7 @@ impl LocalSearchState {
         let storage = V3Storage::from_mode(&config.storage_mode);
         let mut state = Self {
             entries: Vec::new(),
+            content_postings: HashMap::new(),
             roots: BTreeMap::new(),
             storage,
             state: LocalSearchIndexState::Empty,
@@ -917,7 +956,9 @@ fn load_v3_state(state: &mut LocalSearchState) -> anyhow::Result<()> {
     if !snapshot_path.exists() {
         return Ok(());
     }
-    state.entries = read_snapshot(&snapshot_path)?;
+    let snapshot = read_snapshot(&snapshot_path)?;
+    state.entries = snapshot.entries;
+    state.content_postings = snapshot.content_postings;
     if let Some(meta_path) = state.storage.meta_path() {
         if meta_path.exists() {
             if let Ok(text) = fs::read_to_string(&meta_path) {
@@ -933,7 +974,9 @@ fn load_v3_state(state: &mut LocalSearchState) -> anyhow::Result<()> {
             }
         }
     }
-    replay_delta(state)?;
+    if replay_delta(state)? {
+        refresh_content_postings_after_changes(state);
+    }
     if state.roots.is_empty() && !state.entries.is_empty() {
         rebuild_all_root_statuses(state);
     }
@@ -944,7 +987,12 @@ fn load_v3_state(state: &mut LocalSearchState) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_snapshot(path: &Path) -> anyhow::Result<Vec<IndexedEntry>> {
+struct SnapshotState {
+    entries: Vec<IndexedEntry>,
+    content_postings: HashMap<String, Vec<usize>>,
+}
+
+fn read_snapshot(path: &Path) -> anyhow::Result<SnapshotState> {
     let mut file = fs::File::open(path)?;
     let mut magic = [0_u8; 8];
     file.read_exact(&mut magic)?;
@@ -979,11 +1027,40 @@ fn read_snapshot(path: &Path) -> anyhow::Result<Vec<IndexedEntry>> {
         };
         entries.push(IndexedEntry::from(snapshot));
     }
-    Ok(entries)
+    let posting_count = read_u64(&mut file)?;
+    let mut content_postings = HashMap::new();
+    for _ in 0..posting_count {
+        let term = read_string(&mut file)?;
+        let count = read_u64(&mut file)?;
+        let mut indices = Vec::new();
+        for _ in 0..count {
+            let index = read_u64(&mut file)? as usize;
+            if index < entries.len() {
+                indices.push(index);
+            }
+        }
+        indices.sort_unstable();
+        indices.dedup();
+        if !indices.is_empty() {
+            content_postings.insert(term, indices);
+        }
+    }
+    Ok(SnapshotState {
+        entries,
+        content_postings,
+    })
 }
 
 fn write_snapshot(state: &LocalSearchState) -> anyhow::Result<()> {
-    let Some(snapshot_path) = state.storage.snapshot_path() else {
+    write_snapshot_parts(&state.storage, &state.entries, &state.content_postings)
+}
+
+fn write_snapshot_parts(
+    storage: &V3Storage,
+    entries: &[IndexedEntry],
+    content_postings: &HashMap<String, Vec<usize>>,
+) -> anyhow::Result<()> {
+    let Some(snapshot_path) = storage.snapshot_path() else {
         return Ok(());
     };
     let native_dir = snapshot_path
@@ -994,8 +1071,8 @@ fn write_snapshot(state: &LocalSearchState) -> anyhow::Result<()> {
     let mut file = fs::File::create(&tmp_path)?;
     file.write_all(SNAPSHOT_MAGIC)?;
     write_u32(&mut file, SNAPSHOT_VERSION)?;
-    write_u64(&mut file, state.entries.len() as u64)?;
-    for entry in &state.entries {
+    write_u64(&mut file, entries.len() as u64)?;
+    for entry in entries {
         write_string(&mut file, &normalize_path_for_display(&entry.root))?;
         write_string(&mut file, &normalize_path_for_display(&entry.relative_path))?;
         write_string(&mut file, &normalize_path_for_display(&entry.full_path))?;
@@ -1017,13 +1094,35 @@ fn write_snapshot(state: &LocalSearchState) -> anyhow::Result<()> {
         write_u8(&mut file, u8::from(entry.content_indexed))?;
         write_optional_string(&mut file, entry.content_text.as_deref())?;
     }
+    write_u64(&mut file, content_postings.len() as u64)?;
+    for (term, indices) in content_postings {
+        write_string(&mut file, term)?;
+        write_u64(&mut file, indices.len() as u64)?;
+        for index in indices {
+            write_u64(&mut file, *index as u64)?;
+        }
+    }
     file.flush()?;
     fs::rename(tmp_path, snapshot_path)?;
     Ok(())
 }
 
 fn write_meta(state: &LocalSearchState) -> anyhow::Result<()> {
-    let Some(meta_path) = state.storage.meta_path() else {
+    write_meta_parts(
+        &state.storage,
+        &state.roots,
+        state.pending_changes,
+        &state.phase,
+    )
+}
+
+fn write_meta_parts(
+    storage: &V3Storage,
+    roots: &BTreeMap<PathBuf, LocalSearchRootStatus>,
+    pending_changes: u64,
+    phase: &str,
+) -> anyhow::Result<()> {
+    let Some(meta_path) = storage.meta_path() else {
         return Ok(());
     };
     let native_dir = meta_path
@@ -1034,9 +1133,9 @@ fn write_meta(state: &LocalSearchState) -> anyhow::Result<()> {
     let meta = V3Meta {
         engine_version: ENGINE_VERSION.to_string(),
         snapshot_version: SNAPSHOT_VERSION,
-        phase: state.phase.clone(),
-        roots: state.roots.values().cloned().collect(),
-        pending_changes: state.pending_changes,
+        phase: phase.to_string(),
+        roots: roots.values().cloned().collect(),
+        pending_changes,
         last_written_at: Some(unix_seconds_now()),
     };
     fs::write(&tmp_path, serde_json::to_vec_pretty(&meta)?)?;
@@ -1044,20 +1143,22 @@ fn write_meta(state: &LocalSearchState) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn replay_delta(state: &mut LocalSearchState) -> anyhow::Result<()> {
+fn replay_delta(state: &mut LocalSearchState) -> anyhow::Result<bool> {
     let Some(delta_path) = state.storage.delta_path() else {
-        return Ok(());
+        return Ok(false);
     };
     if !delta_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let text = fs::read_to_string(&delta_path)?;
+    let mut replayed = false;
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let record: DeltaRecord = serde_json::from_str(line)?;
         apply_delta_record(&mut state.entries, record);
         state.pending_changes = state.pending_changes.saturating_add(1);
+        replayed = true;
     }
-    Ok(())
+    Ok(replayed)
 }
 
 fn apply_delta_record(entries: &mut Vec<IndexedEntry>, record: DeltaRecord) {
@@ -1689,6 +1790,159 @@ fn scope_entries(entries: &[IndexedEntry], roots: &[PathBuf]) -> Vec<IndexedEntr
         .collect()
 }
 
+fn rebuild_content_postings(state: &mut LocalSearchState) {
+    state.content_postings = build_content_postings(&state.entries);
+}
+
+fn build_content_postings(entries: &[IndexedEntry]) -> HashMap<String, Vec<usize>> {
+    let mut postings = HashMap::<String, Vec<usize>>::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if !entry.content_indexed {
+            continue;
+        }
+        let Some(text) = entry.content_text.as_deref() else {
+            continue;
+        };
+        for term in content_index_terms(text) {
+            let list = postings.entry(term).or_default();
+            if list.len() < CONTENT_MAX_POSTINGS_PER_TERM {
+                list.push(index);
+            }
+        }
+    }
+    postings
+}
+
+fn refresh_content_postings_after_changes(state: &mut LocalSearchState) {
+    if state.entries.len() <= CONTENT_INLINE_REBUILD_ENTRY_LIMIT {
+        rebuild_content_postings(state);
+    } else {
+        state.content_postings.clear();
+    }
+}
+
+fn content_candidate_entries(
+    state: &LocalSearchState,
+    roots: &[PathBuf],
+    query: &str,
+    limit: usize,
+) -> Vec<IndexedEntry> {
+    let terms = content_query_terms(query);
+    if terms.is_empty() {
+        return Vec::new();
+    }
+    let mut lists = Vec::<&Vec<usize>>::new();
+    for term in &terms {
+        let Some(list) = state.content_postings.get(term) else {
+            return Vec::new();
+        };
+        if list.is_empty() {
+            return Vec::new();
+        }
+        lists.push(list);
+    }
+    lists.sort_by_key(|list| list.len());
+
+    let mut indices = lists[0].iter().copied().collect::<HashSet<_>>();
+    for list in lists.iter().skip(1) {
+        indices.retain(|index| list.binary_search(index).is_ok());
+        if indices.is_empty() {
+            return Vec::new();
+        }
+    }
+
+    let mut indices = indices.into_iter().collect::<Vec<_>>();
+    indices.sort_unstable();
+    indices
+        .into_iter()
+        .filter_map(|index| state.entries.get(index))
+        .filter(|entry| roots.is_empty() || roots.iter().any(|root| &entry.root == root))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn content_index_terms(text: &str) -> HashSet<String> {
+    collect_content_terms(text, CONTENT_MAX_TERMS_PER_FILE)
+}
+
+fn content_query_terms(query: &str) -> Vec<String> {
+    let mut terms = collect_content_terms(query, 64)
+        .into_iter()
+        .collect::<Vec<_>>();
+    terms.sort_by_key(|term| term.chars().count());
+    terms.dedup();
+    terms
+}
+
+fn collect_content_terms(text: &str, limit: usize) -> HashSet<String> {
+    let mut terms = HashSet::new();
+    let mut token = String::new();
+    for ch in text.chars() {
+        if is_content_token_char(ch) {
+            token.extend(ch.to_lowercase());
+            continue;
+        }
+        add_content_token_terms(&token, limit, &mut terms);
+        token.clear();
+        if terms.len() >= limit {
+            return terms;
+        }
+    }
+    add_content_token_terms(&token, limit, &mut terms);
+    terms
+}
+
+fn is_content_token_char(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
+}
+
+fn add_content_token_terms(token: &str, limit: usize, terms: &mut HashSet<String>) {
+    if token.is_empty() || terms.len() >= limit {
+        return;
+    }
+    if token.chars().all(|ch| ch.is_ascii()) {
+        add_ascii_content_terms(token, limit, terms);
+    } else {
+        add_unicode_content_terms(token, limit, terms);
+    }
+}
+
+fn add_ascii_content_terms(token: &str, limit: usize, terms: &mut HashSet<String>) {
+    let chars = token.chars().collect::<Vec<_>>();
+    if (2..CONTENT_ASCII_NGRAM_CHARS).contains(&chars.len()) {
+        terms.insert(token.to_string());
+    }
+    if chars.len() < CONTENT_ASCII_NGRAM_CHARS {
+        return;
+    }
+    for window in chars.windows(CONTENT_ASCII_NGRAM_CHARS) {
+        if terms.len() >= limit {
+            return;
+        }
+        terms.insert(window.iter().collect());
+    }
+}
+
+fn add_unicode_content_terms(token: &str, limit: usize, terms: &mut HashSet<String>) {
+    let chars = token.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return;
+    }
+    if chars.len() < CONTENT_UNICODE_NGRAM_CHARS {
+        terms.insert(token.to_string());
+    }
+    if chars.len() < CONTENT_UNICODE_NGRAM_CHARS {
+        return;
+    }
+    for window in chars.windows(CONTENT_UNICODE_NGRAM_CHARS) {
+        if terms.len() >= limit {
+            return;
+        }
+        terms.insert(window.iter().collect());
+    }
+}
+
 fn normalize_search_roots(roots: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
@@ -2212,6 +2466,48 @@ mod tests {
             LocalSearchMatchKind::Content
         );
         assert_eq!(by_content.results[0].line, Some(1));
+    }
+
+    #[test]
+    fn local_search_v3_uses_content_postings_for_unicode_and_prefix_queries() {
+        let dir = tempdir().expect("tempdir");
+        write_file(
+            &dir.path().join("notes/reader.md"),
+            "默认用于本地可信调用。\nconst localIndexBuildStartedTitle = true;\n",
+        );
+        write_file(&dir.path().join("notes/noise.md"), "unrelated content\n");
+        let engine = LocalSearchEngine::new();
+        engine.index_root(index_options(dir.path()), None).unwrap();
+
+        let unicode = engine
+            .search(
+                LocalSearchOptions {
+                    query: "本地".to_string(),
+                    roots: vec![dir.path().to_path_buf()],
+                    limit: 10,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(unicode.results.len(), 1);
+        assert_eq!(unicode.results[0].match_kind, LocalSearchMatchKind::Content);
+        assert_eq!(unicode.results[0].line, Some(1));
+
+        let prefix = engine
+            .search(
+                LocalSearchOptions {
+                    query: "localIndex".to_string(),
+                    roots: vec![dir.path().to_path_buf()],
+                    limit: 10,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        assert_eq!(prefix.results.len(), 1);
+        assert_eq!(prefix.results[0].match_kind, LocalSearchMatchKind::Content);
+        assert_eq!(prefix.results[0].line, Some(2));
     }
 
     #[test]
