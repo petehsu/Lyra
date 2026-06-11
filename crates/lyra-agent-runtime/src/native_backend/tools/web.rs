@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 pub(crate) fn execute_web_tool_adapter(
     session_id: &str,

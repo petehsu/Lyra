@@ -488,6 +488,24 @@ fn lumen_live_login_state_requires_permission_even_for_read_tools() {
         Some("sensitive".to_string())
     );
 }
+
+#[test]
+fn lumen_visual_act_is_dangerous_and_summarizes_capture_reason() {
+    let input = json!({
+        "tabId": "browser-tab-1",
+        "targetMode": "live",
+        "captureId": "visual-capture-1",
+        "reason": "click rendered canvas button"
+    });
+    assert_eq!(
+        permission_risk("lyra_lumen", "vact", &input),
+        Some("dangerous".to_string())
+    );
+    let summary = permission_summary("lyra_lumen", "vact", &input);
+    assert!(summary.contains("captureId=visual-capture-1"));
+    assert!(summary.contains("reason=click rendered canvas button"));
+}
+
 #[test]
 fn terminal_host_tools_apply_read_and_write_permission_policy() {
     assert_eq!(permission_risk("terminal", "list", &json!({})), None);

@@ -4,11 +4,12 @@
   "packageManager": "pnpm@9.12.0",
   "scripts": {
     "lint:structure": "tsx tools/verify-boundaries.ts",
+    "lint:architecture-health": "tsx tools/verify-architecture-health.ts",
     "lint:agent-boundary": "tsx tools/verify-agent-boundary.ts",
     "lint:no-jcode-public-api": "tsx tools/verify-no-jcode-public-api.ts",
     "lint:native-core": "tsx tools/verify-native-core.ts",
     "lint:ui-style": "tsx tools/verify-workbench-style.ts",
-    "check": "pnpm lint:structure && pnpm lint:agent-boundary && pnpm lint:no-jcode-public-api && pnpm lint:native-core && pnpm lint:ui-style",
+    "check": "pnpm lint:structure && pnpm lint:architecture-health && pnpm lint:agent-boundary && pnpm lint:no-jcode-public-api && pnpm lint:native-core && pnpm lint:ui-style",
     "new:module": "tsx tools/new-module.ts",
     "lsp:bundle:rust-analyzer": "npm --prefix apps/desktop run lsp:bundle:rust-analyzer",
     "lsp:preflight": "npm --prefix apps/desktop run lsp:preflight",

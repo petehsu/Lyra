@@ -3,14 +3,23 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::num::NonZeroUsize;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use lru::LruCache;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+
+pub mod paths;
+pub mod preferences;
+pub mod text_file;
+pub mod workbench_paths;
+
+use paths::{
+    canonical_directory_path, directory_key, file_extension, file_name, folder_state_from_path,
+    is_hidden, path_to_string, seconds_since_epoch, title_for_path,
+};
 
 const DIRECTORY_CACHE_CAPACITY: usize = 96;
 const MAX_INCREMENTAL_PATCHES: usize = 512;
@@ -483,116 +492,11 @@ fn create_watcher(path: PathBuf, tx: Sender<DirectorySignal>) -> Result<Recommen
     Ok(watcher)
 }
 
-fn canonical_directory_path(value: &str) -> Result<PathBuf> {
-    let raw_path = normalize_path(value)?;
-    let canonical_path = raw_path
-        .canonicalize()
-        .map_err(|error| io_error(format!("failed to access {}", raw_path.display()), error))?;
-    let metadata = fs::metadata(&canonical_path).map_err(|error| {
-        io_error(
-            format!("failed to read {}", canonical_path.display()),
-            error,
-        )
-    })?;
-    if !metadata.is_dir() {
-        return Err(FilesCoreError::InvalidArgument(format!(
-            "{} is not a directory",
-            canonical_path.display()
-        )));
-    }
-    Ok(canonical_path)
-}
-
-fn normalize_path(value: &str) -> Result<PathBuf> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(FilesCoreError::InvalidArgument(
-            "path is required".to_string(),
-        ));
-    }
-    Ok(PathBuf::from(trimmed))
-}
-
 fn io_error(context: impl Into<String>, source: std::io::Error) -> FilesCoreError {
     FilesCoreError::Io {
         context: context.into(),
         source,
     }
-}
-
-fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
-}
-
-fn os_to_string(value: &std::ffi::OsStr) -> String {
-    value.to_string_lossy().into_owned()
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(os_to_string)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| path_to_string(path))
-}
-
-fn title_for_path(path: &Path) -> String {
-    let title = file_name(path);
-    if title.is_empty() {
-        path_to_string(path)
-    } else {
-        title
-    }
-}
-
-fn file_extension(path: &Path) -> Option<String> {
-    path.extension()
-        .map(os_to_string)
-        .filter(|value| !value.is_empty())
-}
-
-fn is_hidden(path: &Path) -> bool {
-    path.file_name()
-        .map(|name| name.to_string_lossy().starts_with('.'))
-        .unwrap_or(false)
-}
-
-fn seconds_since_epoch(value: SystemTime) -> Option<String> {
-    value
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_secs().to_string())
-}
-
-fn directory_key(path: &Path) -> String {
-    let normalized = lexical_normalize_path(path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    {
-        normalized.to_lowercase()
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        normalized
-    }
-}
-
-fn lexical_normalize_path(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
-            Component::RootDir => normalized.push(component.as_os_str()),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    normalized.push(component.as_os_str());
-                }
-            }
-            Component::Normal(segment) => normalized.push(segment),
-        }
-    }
-    normalized
 }
 
 fn create_location(
@@ -669,17 +573,6 @@ pub fn read_entry_lazy(path: &Path) -> Result<FileManagerEntry> {
             "complete".to_string()
         },
     })
-}
-
-fn folder_state_from_path(path: &Path) -> String {
-    match fs::read_dir(path) {
-        Ok(mut entries) => match entries.next() {
-            None => "empty".to_string(),
-            Some(Ok(_)) => "non-empty".to_string(),
-            Some(Err(_)) => "unknown".to_string(),
-        },
-        Err(_) => "unknown".to_string(),
-    }
 }
 
 fn sort_entries(entries: &mut [FileManagerEntry]) {
@@ -782,6 +675,7 @@ fn reset_patch_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir() -> PathBuf {
         let root = std::env::temp_dir().join(format!(

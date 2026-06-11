@@ -321,11 +321,12 @@ pub(crate) fn run_model_loop(
                 return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
             }
             emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
-            let output = execute_model_tool(
+            let output = execute_model_tool_with_runtime(
                 session_id,
                 turn_id,
                 &request.host_dispatcher,
                 cancellation,
+                ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
                 call.clone(),
             );
             let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);

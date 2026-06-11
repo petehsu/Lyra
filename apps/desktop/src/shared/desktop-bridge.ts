@@ -996,6 +996,16 @@ export type SearchLocalRequest = {
   readonly projectRoot?: string;
   readonly mode?: SearchLocalMode;
   readonly includeHidden?: boolean;
+  readonly includeVendor?: boolean;
+  readonly respectGitignore?: boolean;
+  readonly followSymlinks?: boolean;
+  readonly includeGlobs?: readonly string[];
+  readonly excludeGlobs?: readonly string[];
+  readonly excludeDirs?: readonly string[];
+  readonly textExtensions?: readonly string[];
+  readonly maxContentFileBytes?: number;
+  readonly contentBudgetBytes?: number;
+  readonly maxCandidates?: number;
   readonly enableFuzzy?: boolean;
   readonly enableContent?: boolean;
   readonly enableExtensionMatch?: boolean;
@@ -1128,6 +1138,9 @@ export type SearchIndexStatusResponse = {
   readonly state: SearchIndexState;
   readonly engineVersion: string;
   readonly phase: string;
+  readonly policyHash?: string;
+  readonly policySource: readonly string[];
+  readonly policyWarnings: readonly string[];
   readonly indexedFiles: number;
   readonly indexedDirs: number;
   readonly indexedContentFiles: number;

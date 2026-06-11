@@ -8,7 +8,8 @@ export type { FileManagerSurfaceActions } from "./surface-view-types";
 export const FileManagerSurfaceView = ({
   renderModel,
   labels,
-  actions
+  actions,
+  searchIndex
 }: FileManagerSurfaceViewProps) => (
   <section className="lyra-file-manager-surface" aria-label="file-manager-surface">
     <section className="lyra-file-manager-layout">
@@ -16,17 +17,20 @@ export const FileManagerSurfaceView = ({
         renderModel={renderModel}
         labels={labels}
         actions={actions}
+        searchIndex={searchIndex}
       />
       <FileManagerContent
         renderModel={renderModel}
         labels={labels}
         actions={actions}
+        searchIndex={searchIndex}
       />
     </section>
     <FileManagerChooserBar
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
   </section>
 );

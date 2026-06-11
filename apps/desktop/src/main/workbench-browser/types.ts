@@ -384,6 +384,11 @@ export type WorkbenchBrowserAgentInteraction =
   | "doubleClick"
   | "rightClick";
 
+export type WorkbenchBrowserAgentVisualInteraction =
+  | WorkbenchBrowserAgentInteraction
+  | "drag"
+  | "scroll";
+
 export type WorkbenchBrowserAgentVerification =
   | "none"
   | "full";
@@ -392,6 +397,21 @@ export type WorkbenchBrowserAgentPoint = {
   readonly x: number;
   readonly y: number;
   readonly reason?: string;
+};
+
+export type WorkbenchBrowserAgentVisualStaleResult = {
+  readonly ok: false;
+  readonly kind: "lyraLumenVactStale";
+  readonly tabId: string;
+  readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+  readonly captureId: string;
+  readonly reason:
+    | "unknown_capture"
+    | "tab_mismatch"
+    | "target_mode_mismatch"
+    | "viewport_resized";
+  readonly message: string;
+  readonly nextRecommendedAction: "lyra_lumen.see";
 };
 
 export type WorkbenchBrowserAgentScrollDirection =
@@ -687,6 +707,22 @@ export type WorkbenchBrowserViewManager = {
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly actOnAgentVisualPoint: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly captureId: string;
+      readonly point: WorkbenchBrowserAgentPoint;
+      readonly interaction: WorkbenchBrowserAgentVisualInteraction;
+      readonly to?: WorkbenchBrowserAgentPoint;
+      readonly scrollDy?: number;
+      readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
+    }
+  ) => Promise<
+    | WorkbenchBrowserAgentActionResult
+    | WorkbenchBrowserAgentScrollResult
+    | WorkbenchBrowserAgentVisualStaleResult
+  >;
   readonly focusAgentPage: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {

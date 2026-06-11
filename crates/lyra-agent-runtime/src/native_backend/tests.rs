@@ -2,7 +2,8 @@ use super::*;
 use std::{
     io::{Read, Write},
     net::TcpListener,
-    sync::mpsc,
+    path::{Path, PathBuf},
+    sync::{OnceLock, mpsc},
 };
 
 fn read_http_json_body(stream: &mut std::net::TcpStream) -> Value {
@@ -70,6 +71,77 @@ fn start_test_runtime_turn(session_id: &str) -> String {
         .active_cancellations
         .insert(turn_id.clone(), cancellation);
     turn_id
+}
+
+fn ensure_test_local_search_index_ready(root: &Path) {
+    static SEARCH_STORAGE: OnceLock<tempfile::TempDir> = OnceLock::new();
+    let storage = SEARCH_STORAGE.get_or_init(|| tempfile::tempdir().expect("search storage"));
+    // Tests run in one process and Lyra search-core reads this hidden override
+    // when no explicit storageRoot is supplied by Agent tools.
+    unsafe {
+        std::env::set_var("LYRA_SEARCH_STORAGE_ROOT", storage.path());
+    }
+    let root = root.canonicalize().expect("canonical search test root");
+    let root_text = root.to_string_lossy().to_string();
+    let _ = lyra_search_core::search_local_stream_start_json(
+        json!({
+            "query": "needle",
+            "scopePreset": "custom",
+            "customRoots": [root_text.clone()],
+            "limit": 1
+        })
+        .to_string(),
+    );
+    for _ in 0..120 {
+        let status = lyra_search_core::read_search_index_status_json(json!({}).to_string())
+            .ok()
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+        if status
+            .as_ref()
+            .and_then(|status| status.get("roots"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|entry| {
+                entry
+                    .get("root")
+                    .and_then(Value::as_str)
+                    .is_some_and(|status_root| test_paths_equivalent(status_root, &root))
+                    && entry.get("state").and_then(Value::as_str) == Some("ready")
+                    && entry
+                        .get("indexedFiles")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0)
+                        > 0
+            })
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!("test local search index did not become ready");
+}
+
+fn test_paths_equivalent(status_root: &str, expected: &Path) -> bool {
+    let status = PathBuf::from(status_root);
+    if status == expected {
+        return true;
+    }
+    status.canonicalize().is_ok_and(|status| status == expected)
+}
+
+fn ensure_test_local_search_tools_available() {
+    static SEARCH_WORKSPACE: OnceLock<tempfile::TempDir> = OnceLock::new();
+    let workspace = SEARCH_WORKSPACE.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("search workspace");
+        fs::create_dir_all(dir.path().join("src")).expect("create search workspace src");
+        fs::write(dir.path().join("README.md"), "needle local search\n")
+            .expect("write search workspace readme");
+        fs::write(dir.path().join("src/lib.rs"), "pub fn build_widget() {}\n")
+            .expect("write search workspace lib");
+        dir
+    });
+    ensure_test_local_search_index_ready(workspace.path());
 }
 
 fn tool_fs_run_call(id: &str, path: &str, args: Value) -> ModelToolCall {

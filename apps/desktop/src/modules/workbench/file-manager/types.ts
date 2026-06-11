@@ -18,7 +18,10 @@ import type {
   DownloadManagerTask
 } from "../../../shared/download-manager";
 import type { ContextMenuModel } from "../context-menu";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  SearchIndexStatusResponse
+} from "../../../shared/desktop-bridge";
 
 export type FileManagerAppId = "file-manager";
 
@@ -284,8 +287,26 @@ export type FileManagerSurfaceLabels = {
   readonly downloadRemoteApiPort: string;
   readonly downloadRemoteApiAllowLan: string;
   readonly downloadRemoteApiToken: string;
+  readonly searchIndexTitle: string;
+  readonly searchIndexReady: string;
+  readonly searchIndexBuilding: string;
+  readonly searchIndexIdle: string;
+  readonly searchIndexFailed: string;
+  readonly searchIndexUnavailable: string;
+  readonly searchIndexNeedsRebuild: string;
+  readonly searchIndexRebuild: string;
+  readonly searchIndexRebuilding: string;
+  readonly searchIndexStats: string;
+  readonly searchIndexPending: string;
+  readonly searchIndexPhase: string;
   readonly chooserBindProjectLabel: string;
   readonly chooserSelectDirectoryPlaceholder: string;
+};
+
+export type FileManagerSearchIndexModel = {
+  readonly status: SearchIndexStatusResponse | null;
+  readonly errorMessage: string | undefined;
+  readonly rebuilding: boolean;
 };
 
 export type FileManagerChooserMode =

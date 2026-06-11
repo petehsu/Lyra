@@ -56,7 +56,11 @@ vi.mock("electron", () => ({
 }));
 
 import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
+import { createLoginManagerFaviconCache } from "../favicon-cache";
+import { parseBridgePayload } from "../page-scripts";
+import { createLoginManagerPasswordVault } from "../password-vault";
 import { createLoginManagerIpcBridge } from "../service";
+import { readLoginManagerStore, STORE_FILE_NAME } from "../store";
 
 type Listener = (...args: unknown[]) => void;
 
@@ -238,6 +242,102 @@ describe("Login Manager IPC bridge", () => {
     bridge.dispose();
     expect(electronMock.ipcMain.removeHandler)
       .toHaveBeenCalledWith(LYRA_CHANNELS.loginManagerList);
+  });
+
+  test("store reader strips public password metadata from persisted credentials", () => {
+    mkdirSync(storageRoot, { recursive: true });
+    writeFileSync(
+      path.join(storageRoot, STORE_FILE_NAME),
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        credentials: [
+          {
+            id: "credential:test",
+            origin: "https://example.com",
+            hostname: "example.com",
+            username: "alice@example.com",
+            authMethod: {
+              kind: "password",
+              label: "Password",
+              source: "observed",
+              confidence: 1
+            },
+            hasPassword: true,
+            passwordAvailable: true,
+            passwordRef: { leaked: true },
+            passwordCiphertextBase64: "ciphertext",
+            createdAt: "2026-05-31T00:00:00.000Z",
+            updatedAt: "2026-05-31T00:00:00.000Z"
+          }
+        ]
+      }),
+      "utf8"
+    );
+
+    const store = readLoginManagerStore(storageRoot);
+
+    expect(store.credentials[0]).toMatchObject({
+      id: "credential:test",
+      passwordCiphertextBase64: "ciphertext"
+    });
+    expect(store.credentials[0]).not.toHaveProperty("hasPassword");
+    expect(store.credentials[0]).not.toHaveProperty("passwordAvailable");
+    expect(store.credentials[0]).not.toHaveProperty("passwordRef");
+  });
+
+  test("password vault reports unavailable safeStorage without encrypting plaintext", () => {
+    electronMock.setEncryptionAvailable(false);
+    const vault = createLoginManagerPasswordVault();
+
+    expect(vault.isAvailable()).toBe(false);
+    expect(vault.encryptPassword("secret")).toBeNull();
+    expect(() => vault.decryptPassword("ciphertext")).toThrow(
+      "Password storage is unavailable on this system."
+    );
+  });
+
+  test("page bridge parser accepts known payloads and ignores unrelated console output", () => {
+    expect(parseBridgePayload("ordinary log line")).toBeNull();
+    expect(parseBridgePayload("__LYRA_LOGIN_MANAGER__:{not-json")).toBeNull();
+    expect(parseBridgePayload(`__LYRA_LOGIN_MANAGER__:${JSON.stringify({
+      type: "fill-request",
+      credentialId: "credential:example"
+    })}`)).toEqual({
+      type: "fill-request",
+      credentialId: "credential:example"
+    });
+  });
+
+  test("favicon cache deduplicates in-flight fetches and returns local preview URLs", async () => {
+    const fetch = vi.fn(async () => new Response(
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      {
+        status: 200,
+        headers: {
+          "content-type": "image/png"
+        }
+      }
+    ));
+    vi.stubGlobal("fetch", fetch);
+    let updates = 0;
+    const cache = createLoginManagerFaviconCache({
+      storageRoot,
+      onCacheUpdated: () => {
+        updates += 1;
+      }
+    });
+
+    expect(cache.urlForSnapshot("https://example.com", "https://example.com/favicon.png"))
+      .toBe("https://example.com/favicon.png");
+    cache.queue("https://example.com", "https://example.com/favicon.png");
+    cache.queue("https://example.com", "https://example.com/favicon.png");
+
+    await waitForTruthy(() => updates === 1);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(cache.urlForSnapshot("https://example.com", "https://example.com/favicon.png"))
+      .toMatch(/^lyra-file:\/\/preview\?/u);
   });
 
   test("keeps session management enabled when safeStorage is unavailable", () => {

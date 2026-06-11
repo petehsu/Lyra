@@ -17,6 +17,7 @@ import type {
   FileManagerDownloadSaveRuleDraft,
   FileManagerDownloadSettingsDraft,
   FileManagerPresentationMode,
+  FileManagerSearchIndexModel,
   FileManagerSurfaceLabels
 } from "./types";
 
@@ -123,10 +124,12 @@ export type FileManagerSurfaceActions = {
   readonly onSaveDownloadSettings: () => void;
   readonly onStartDownloadRemoteApi: () => void;
   readonly onStopDownloadRemoteApi: () => void;
+  readonly onRebuildSearchIndex: () => void;
 };
 
 export type FileManagerSurfaceViewProps = {
   readonly renderModel: FileManagerSurfaceRenderModel;
   readonly labels: FileManagerSurfaceLabels;
   readonly actions: FileManagerSurfaceActions;
+  readonly searchIndex: FileManagerSearchIndexModel;
 };

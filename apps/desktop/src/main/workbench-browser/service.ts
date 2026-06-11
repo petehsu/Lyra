@@ -40,6 +40,8 @@ import type {
   WorkbenchBrowserAgentFocusDirection,
   WorkbenchBrowserAgentFocusResult,
   WorkbenchBrowserAgentInteraction,
+  WorkbenchBrowserAgentVisualInteraction,
+  WorkbenchBrowserAgentVisualStaleResult,
   WorkbenchBrowserAgentLocateResult,
   WorkbenchBrowserAgentObservation,
   WorkbenchBrowserAgentObserveStrategy,
@@ -200,6 +202,23 @@ export type WorkbenchBrowserIpcBridge = {
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly actOnAgentVisualPoint: (
+    tabId: string,
+    request: {
+      readonly captureId: string;
+      readonly point: WorkbenchBrowserAgentPoint;
+      readonly interaction: WorkbenchBrowserAgentVisualInteraction;
+      readonly to?: WorkbenchBrowserAgentPoint;
+      readonly scrollDy?: number;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly verification?: WorkbenchBrowserAgentVerification;
+    }
+  ) => Promise<
+    | WorkbenchBrowserAgentActionResult
+    | WorkbenchBrowserAgentScrollResult
+    | WorkbenchBrowserAgentVisualStaleResult
+  >;
   readonly focusAgentPage: (
     tabId: string,
     request: {
@@ -453,6 +472,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     observeAgentPage: manager.observeAgentPage,
     actOnAgentElement: manager.actOnAgentElement,
     actOnAgentPoint: manager.actOnAgentPoint,
+    actOnAgentVisualPoint: manager.actOnAgentVisualPoint,
     focusAgentPage: manager.focusAgentPage,
     scrollAgentPage: manager.scrollAgentPage,
     typeIntoAgentElement: manager.typeIntoAgentElement,

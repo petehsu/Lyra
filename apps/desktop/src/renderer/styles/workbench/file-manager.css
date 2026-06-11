@@ -140,8 +140,8 @@
   padding: var(--lyra-unit-12) var(--lyra-unit-8);
   border-right: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 48%, transparent);
   background: color-mix(in srgb, var(--lyra-bg-surface) 92%, var(--lyra-bg-editor) 8%);
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: var(--lyra-unit-12);
 }
 
@@ -210,6 +210,102 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.lyra-file-manager-index-status {
+  min-width: 0;
+  align-self: end;
+  display: grid;
+  gap: var(--lyra-unit-6);
+  margin-top: auto;
+  padding: var(--lyra-unit-10) var(--lyra-unit-8);
+  border-top: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-line-default) 42%, transparent);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-file-manager-index-status-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--lyra-unit-8) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-file-manager-index-status-dot {
+  width: var(--lyra-unit-7);
+  height: var(--lyra-unit-7);
+  border-radius: var(--lyra-unit-999);
+  background: var(--lyra-text-muted);
+}
+
+.lyra-file-manager-index-status-ready .lyra-file-manager-index-status-dot {
+  background: var(--lyra-status-success);
+}
+
+.lyra-file-manager-index-status-building .lyra-file-manager-index-status-dot {
+  background: var(--lyra-text-accent);
+}
+
+.lyra-file-manager-index-status-failed .lyra-file-manager-index-status-dot {
+  background: var(--lyra-status-error);
+}
+
+.lyra-file-manager-index-status-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-file-manager-index-status-title,
+.lyra-file-manager-index-status-line,
+.lyra-file-manager-index-status-error {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--lyra-text-size-11);
+}
+
+.lyra-file-manager-index-status-title {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-file-manager-index-status-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+  font-weight: 600;
+}
+
+.lyra-file-manager-index-status-line {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-file-manager-index-status-error {
+  color: var(--lyra-status-error);
+}
+
+.lyra-file-manager-index-status-action {
+  justify-self: start;
+  min-width: 0;
+  height: var(--lyra-unit-24);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-11);
+}
+
+.lyra-file-manager-index-status-action:hover:not(:disabled) {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-file-manager-index-status-action:disabled {
+  color: var(--lyra-text-muted);
+  opacity: 0.62;
 }
 
 .lyra-file-manager-content {

@@ -51,6 +51,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             None,
         ),
         super::s(
+            "/tools/browser/vact",
+            "browser",
+            "vact",
+            "Visually act in browser",
+            "Click, drag, or scroll a browser page using device-pixel coordinates read from the latest see screenshot.",
+            None,
+        ),
+        super::s(
             "/tools/browser/type",
             "browser",
             "type",

@@ -164,6 +164,21 @@ export type WorkbenchVisualCaptureResult = {
   readonly width: number;
   readonly height: number;
   readonly visibleOnly: boolean;
+  readonly visualFrame?: WorkbenchVisualFrame;
+};
+
+export type WorkbenchVisualFrame = {
+  readonly captureId: string;
+  readonly dpr: number;
+  readonly cssViewportWidth: number;
+  readonly cssViewportHeight: number;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+  readonly imageScale: number;
+  readonly scrollX: number;
+  readonly scrollY: number;
+  readonly viewBoundsHash: string;
+  readonly viewBoundsEpoch: number;
 };
 
 export type WorkbenchTabReadRequest = {

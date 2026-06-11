@@ -309,6 +309,7 @@ pub async fn run_main<T: Reporter>(
             respect_gitignore: true,
             content_mode: LocalSearchContentMode::Auto,
             max_file_size_bytes: 256 * 1024,
+            ..Default::default()
         },
         None,
     )?;
@@ -327,6 +328,7 @@ pub async fn run_main<T: Reporter>(
             enable_fuzzy: true,
             enable_extension_match: true,
             query_mode: LocalSearchQueryMode::Normal,
+            ..Default::default()
         },
         None,
     )?;
@@ -339,7 +341,10 @@ pub async fn run_main<T: Reporter>(
             .map(Path::to_path_buf)
             .unwrap_or_else(|_| result.path.clone());
         let relative_text = relative.to_string_lossy();
-        if exclude.iter().any(|pattern| relative_text.contains(pattern)) {
+        if exclude
+            .iter()
+            .any(|pattern| relative_text.contains(pattern))
+        {
             continue;
         }
         matches.push(FileMatch {

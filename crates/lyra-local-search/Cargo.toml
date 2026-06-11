@@ -23,6 +23,7 @@ workspace = true
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 crossbeam-channel = { workspace = true }
+glob.workspace = true
 ignore = { workspace = true }
 nucleo = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

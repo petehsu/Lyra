@@ -31,14 +31,14 @@ import {
   resolveBrowserCoreKey,
   runtimeStateEquals
 } from "./normalizers";
-import type { BrowserAgentFollowSession, BrowserPageEntry, BrowserPageTombstone } from "./types";
+import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
 
 export const createBrowserSessionRuntime = ({
   workbenchState,
   entries,
   tombstones,
-  followSessions,
-  userInputDirtyTabs,
+  hasActiveLiveAgentBrowserTask,
+  hasUserInputDirtyTab,
   publishEvent,
   performanceScheduler,
   readTopology,
@@ -51,8 +51,8 @@ export const createBrowserSessionRuntime = ({
   } | undefined;
   readonly entries: Map<string, BrowserPageEntry>;
   readonly tombstones: Map<string, BrowserPageTombstone>;
-  readonly followSessions: Map<string, BrowserAgentFollowSession>;
-  readonly userInputDirtyTabs: Set<string>;
+  readonly hasActiveLiveAgentBrowserTask: (tabId: string) => boolean;
+  readonly hasUserInputDirtyTab: (tabId: string) => boolean;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler | undefined;
   readonly readTopology: () => WorkbenchBrowserTopologySnapshot;
@@ -288,20 +288,6 @@ const scheduleBrowserSessionSnapshotWrite = (delayMs = BROWSER_SESSION_SNAPSHOT_
   }, Math.max(0, delayMs));
 };
 
-const hasActiveLiveAgentBrowserTask = (tabId: string): boolean => {
-  for (const session of followSessions.values()) {
-    if (
-      session.tabId === tabId
-      && session.targetMode === "live"
-      && session.endedAt === null
-      && (session.status === "running" || session.status === "interrupted")
-    ) {
-      return true;
-    }
-  }
-  return false;
-};
-
 const toPerformanceLifecycle = (
   lifecycle: WorkbenchBrowserPageRuntimeState["lifecycleState"]
 ): LyraPerformanceResourceDescriptor["lifecycle"] => {
@@ -354,7 +340,7 @@ const toPerformanceBrowserResource = (
     visible: runtime.isVisible,
     active: runtime.isActive,
     signals: {
-      hasUserInput: userInputDirtyTabs.has(runtime.tabId),
+      hasUserInput: hasUserInputDirtyTab(runtime.tabId),
       hasFormDraft: (formDraft?.editedFieldCount ?? 0) > 0,
       hasAgentControl: hasActiveLiveAgentBrowserTask(runtime.tabId),
       hasDivergentHistory: historyEntryCount > 1,

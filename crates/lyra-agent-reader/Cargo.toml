@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "lyra-agent-reader"
 path = "src/main.rs"
+required-features = ["fetch-reqwest"]
 
 [lints]
 workspace = true

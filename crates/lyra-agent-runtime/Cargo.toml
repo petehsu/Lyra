@@ -21,6 +21,7 @@ futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
 glob.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
+regex.workspace = true
 rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

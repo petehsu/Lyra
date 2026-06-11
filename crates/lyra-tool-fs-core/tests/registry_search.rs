@@ -367,6 +367,22 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             || result.path == "/tools/browser/scroll"
     }));
 
+    let browser_visual_act = registry
+        .search(
+            "visual click canvas screenshot coordinates",
+            None,
+            0,
+            8,
+            ToolScene::Browser,
+        )
+        .expect("browser visual act search");
+    assert!(
+        browser_visual_act
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/browser/vact")
+    );
+
     let code = registry
         .search(
             "search code snippet 新回话",
@@ -381,6 +397,37 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
         code.results
             .iter()
             .any(|result| result.path == "/tools/code/search_code")
+    );
+
+    let grep = registry
+        .search(
+            "grep exact regex text content",
+            Some("code"),
+            0,
+            5,
+            ToolScene::ProjectCode,
+        )
+        .expect("grep search");
+    assert!(
+        grep.results
+            .iter()
+            .any(|result| result.path == "/tools/code/grep_text")
+    );
+
+    let symbol = registry
+        .search(
+            "find definition symbol component function",
+            Some("code"),
+            0,
+            5,
+            ToolScene::ProjectCode,
+        )
+        .expect("symbol search");
+    assert!(
+        symbol
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/code/search_symbol")
     );
 }
 

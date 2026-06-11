@@ -1,0 +1,165 @@
+import { LumenTargetRegistry } from "../lumen-target-registry";
+import type { WorkbenchBrowserAgentElement, WorkbenchBrowserAgentObservation, WorkbenchBrowserAgentTargetMode } from "../types";
+import type { BrowserAgentCacheEntry } from "./types";
+
+type CachedInputTarget = {
+  readonly observationId?: string;
+  readonly element: WorkbenchBrowserAgentElement;
+  readonly url: string;
+  readonly updatedAt: number;
+};
+
+export const browserAgentCacheKey = (
+  tabId: string,
+  targetMode: WorkbenchBrowserAgentTargetMode
+): string => `${targetMode}:${tabId}`;
+
+export const isAgentEditableElement = (element: WorkbenchBrowserAgentElement): boolean =>
+  element.editable === true || element.actionHint === "type";
+
+export const activeEditableElementFromObservation = (
+  observation: WorkbenchBrowserAgentObservation
+): WorkbenchBrowserAgentElement | null => {
+  if (observation.activeElementId === null) {
+    return null;
+  }
+  const element = observation.elements.find((candidate) => candidate.id === observation.activeElementId);
+  return element !== undefined && isAgentEditableElement(element) ? element : null;
+};
+
+export const createBrowserAgentStateStore = () => {
+  const browserAgentCache = new Map<string, BrowserAgentCacheEntry>();
+  const lumenTargetRegistry = new LumenTargetRegistry();
+  const browserAgentInputTargets = new Map<string, CachedInputTarget>();
+
+  const invalidateBrowserAgentTargets = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    reason: "navigation" | "frameReload" = "navigation"
+  ): void => {
+    browserAgentCache.delete(browserAgentCacheKey(tabId, targetMode));
+    browserAgentInputTargets.delete(browserAgentCacheKey(tabId, targetMode));
+    lumenTargetRegistry.invalidateTab(tabId, targetMode, reason);
+  };
+
+  const rememberBrowserAgentObservation = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    observation: WorkbenchBrowserAgentObservation
+  ): void => {
+    browserAgentCache.set(browserAgentCacheKey(tabId, targetMode), {
+      observationId: observation.observationId,
+      mapEpoch: observation.mapEpoch,
+      elements: observation.elements,
+      elementsById: new Map(observation.elements.map((element) => [element.id, element])),
+      elementsByTargetRef: new Map(observation.elements.map((element) => [element.targetRef, element])),
+      targets: observation.targets,
+      targetsByRef: new Map(observation.targets.map((entry) => [entry.targetRef, entry])),
+      url: observation.url,
+      title: observation.title
+    });
+  };
+
+  const readBrowserAgentCacheEntry = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): BrowserAgentCacheEntry | undefined => browserAgentCache.get(browserAgentCacheKey(tabId, targetMode));
+
+  const nextMapEpoch = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): number => lumenTargetRegistry.nextMapEpoch(tabId, targetMode);
+
+  const targetTtlMs = (): number => lumenTargetRegistry.targetTtlMs();
+
+  const registerTargetObservation = (
+    observation: Parameters<LumenTargetRegistry["registerObservation"]>[0]
+  ): void => {
+    lumenTargetRegistry.registerObservation(observation);
+  };
+
+  const resolveElementId = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    elementId: number,
+    observationId?: string
+  ): ReturnType<LumenTargetRegistry["resolveElementId"]> =>
+    lumenTargetRegistry.resolveElementId(tabId, targetMode, elementId, observationId);
+
+  const resolveTargetRef = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    targetRef: string,
+    now?: number
+  ): ReturnType<LumenTargetRegistry["resolveTargetRef"]> =>
+    lumenTargetRegistry.resolveTargetRef(tabId, targetMode, targetRef, now);
+
+  const explainTargetRef = (
+    request: Parameters<LumenTargetRegistry["explainTargetRef"]>[0]
+  ): ReturnType<LumenTargetRegistry["explainTargetRef"]> => lumenTargetRegistry.explainTargetRef(request);
+
+  const cacheBrowserAgentInputTarget = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    element: WorkbenchBrowserAgentElement,
+    url: string,
+    observationId?: string
+  ): void => {
+    if (!isAgentEditableElement(element)) {
+      return;
+    }
+    browserAgentInputTargets.set(browserAgentCacheKey(tabId, targetMode), {
+      element,
+      url,
+      updatedAt: Date.now(),
+      ...(observationId === undefined ? {} : { observationId })
+    });
+  };
+
+  const readCachedBrowserAgentInputTarget = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    url: string
+  ): {
+    readonly observationId?: string;
+    readonly element: WorkbenchBrowserAgentElement;
+  } | null => {
+    const cached = browserAgentInputTargets.get(browserAgentCacheKey(tabId, targetMode));
+    if (cached === undefined) {
+      return null;
+    }
+    if (cached.url !== url || Date.now() - cached.updatedAt > 5 * 60_000) {
+      browserAgentInputTargets.delete(browserAgentCacheKey(tabId, targetMode));
+      return null;
+    }
+    return {
+      element: cached.element,
+      ...(cached.observationId === undefined ? {} : { observationId: cached.observationId })
+    };
+  };
+
+  const dispose = (): void => {
+    browserAgentInputTargets.clear();
+    browserAgentCache.clear();
+    lumenTargetRegistry.clear();
+  };
+
+  return {
+    activeEditableElementFromObservation,
+    cacheBrowserAgentInputTarget,
+    dispose,
+    explainTargetRef,
+    invalidateBrowserAgentTargets,
+    isAgentEditableElement,
+    nextMapEpoch,
+    readBrowserAgentCacheEntry,
+    readCachedBrowserAgentInputTarget,
+    registerTargetObservation,
+    rememberBrowserAgentObservation,
+    resolveElementId,
+    resolveTargetRef,
+    targetTtlMs
+  };
+};
+
+export type BrowserAgentStateStore = ReturnType<typeof createBrowserAgentStateStore>;

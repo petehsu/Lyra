@@ -48,6 +48,55 @@ fn host_unavailable_failure_has_not_run_reason() {
 }
 
 #[test]
+fn browser_visual_tools_receive_model_image_capability() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser Visual Capability Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.see");
+        assert_eq!(input["action"], "see");
+        assert_eq!(input["targetMode"], "live");
+        assert_eq!(input["modelSupportsImageInput"], false);
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenSeeFallback",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "content": "Visual capture skipped because the model cannot read images.",
+            "nextRecommendedAction": "lyra_lumen.map"
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        ToolExecutionRuntime {
+            supports_image_input: false,
+        },
+        tool_fs_run_call(
+            "tool-see-no-image",
+            "/tools/browser/see",
+            json!({ "targetMode": "live" }),
+        ),
+    );
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output.pointer("/raw/kind").and_then(Value::as_str),
+        Some("lyraLumenSeeFallback")
+    );
+}
+
+#[test]
 fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -1195,6 +1244,7 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
 
 #[test]
 fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally() {
+    ensure_test_local_search_tools_available();
     let service = ToolActivityService::default();
     assert_eq!(
         service.model_tool_names(),

@@ -5,6 +5,7 @@ pub(crate) fn execute_browser_tool_adapter(
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
     cancellation: &Arc<AtomicBool>,
+    runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     host_method: &str,
     action: &str,
@@ -20,7 +21,7 @@ pub(crate) fn execute_browser_tool_adapter(
         host_method,
         "lyra_lumen",
         action,
-        host_adapter_arguments(arguments, action),
+        browser_host_adapter_arguments(arguments, action, runtime),
         started_at,
     )
 }

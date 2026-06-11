@@ -415,12 +415,16 @@ const createWebContents = (
 
 const createManager = (
   mainFrame: FakeFrame,
-  options?: Parameters<typeof createWebContents>[1]
+  options?: Parameters<typeof createWebContents>[1],
+  managerOptions: { readonly withWindow?: boolean } = {}
 ): { readonly manager: WorkbenchBrowserViewManager; readonly webContents: FakeWebContents } => {
   const webContents = createWebContents(mainFrame, options);
+  const browserWindow = managerOptions.withWindow === true
+    ? new electronMock.BrowserWindow()
+    : null;
   electronMock.webContentsQueue.push(webContents);
   const manager = createWorkbenchBrowserViewManager({
-    getWindow: () => null,
+    getWindow: () => browserWindow as never,
     publishEvent: vi.fn()
   });
   manager.syncTopology({
@@ -927,6 +931,8 @@ describe("Workbench browser semantic tree fixtures", () => {
     });
     expect(observation.semanticTree?.coverage.visualCoverage).toBe(1);
     expect(observation.nextRecommendedAction).toBe("lyra_lumen.see");
+    expect(visualTarget?.actionHint).toBe("use_visual_act");
+    expect(visualTarget?.actionCapabilities).toEqual([]);
 
     await expect(
       manager.actOnAgentElement("tab-1", {
@@ -937,10 +943,128 @@ describe("Workbench browser semantic tree fixtures", () => {
     ).resolves.toMatchObject({
       ok: false,
       error: {
-        kind: "visualFallbackRiskReviewRequired"
+        kind: "visualActRequired"
       },
       nextRecommendedAction: "lyra_lumen.see"
     });
+  });
+
+  test("visual point action converts screenshot device pixels to css coordinates", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/visual",
+      html: "<!doctype html><title>Visual</title><button id=\"hit\">Hit</button>"
+    });
+    Object.defineProperty(mainFrame.window, "devicePixelRatio", { configurable: true, value: 2 });
+    const hit = mainFrame.window.document.querySelector("#hit");
+    expect(hit).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    setRect(hit as Element, { x: 90, y: 40, width: 80, height: 40 });
+
+    const { manager, webContents } = createManager(mainFrame, undefined, { withWindow: true });
+    manager.syncLayout({
+      windowWidth: 1_280,
+      windowHeight: 720,
+      layouts: [{
+        tabId: "tab-1",
+        x: 0,
+        y: 0,
+        width: 1_280,
+        height: 720,
+        visible: true,
+        zIndex: 0,
+        isFocusedPane: true
+      }]
+    });
+    webContents.capturePage.mockResolvedValueOnce({
+      getSize: () => ({ width: 2_560, height: 1_440 }),
+      toPNG: () => Buffer.from("visual")
+    });
+    const capture = await manager.captureAgentPage("tab-1", { targetMode: "live" });
+    expect(capture.visualFrame).toMatchObject({
+      dpr: 2,
+      cssViewportWidth: 1_280,
+      cssViewportHeight: 720,
+      imageWidth: 2_560,
+      imageHeight: 1_440
+    });
+
+    const result = await manager.actOnAgentVisualPoint("tab-1", {
+      targetMode: "live",
+      captureId: capture.visualFrame!.captureId,
+      point: { x: 200, y: 100, reason: "hit button" },
+      interaction: "click"
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      kind: "lyraLumenActionResult",
+      x: 100,
+      y: 50
+    });
+    expect(webContents.sentInputEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "mouseUp", x: 100, y: 50 })
+      ])
+    );
+  });
+
+  test("visual point action rejects stale captures after layout resize", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/visual-stale",
+      html: "<!doctype html><title>Visual stale</title><button id=\"hit\">Hit</button>"
+    });
+    Object.defineProperty(mainFrame.window, "devicePixelRatio", { configurable: true, value: 2 });
+    const { manager, webContents } = createManager(mainFrame, undefined, { withWindow: true });
+    manager.syncLayout({
+      windowWidth: 1_280,
+      windowHeight: 720,
+      layouts: [{
+        tabId: "tab-1",
+        x: 0,
+        y: 0,
+        width: 1_280,
+        height: 720,
+        visible: true,
+        zIndex: 0,
+        isFocusedPane: true
+      }]
+    });
+    webContents.capturePage.mockResolvedValueOnce({
+      getSize: () => ({ width: 2_560, height: 1_440 }),
+      toPNG: () => Buffer.from("visual")
+    });
+    const capture = await manager.captureAgentPage("tab-1", { targetMode: "live" });
+
+    manager.syncLayout({
+      windowWidth: 1_280,
+      windowHeight: 720,
+      layouts: [{
+        tabId: "tab-1",
+        x: 0,
+        y: 0,
+        width: 960,
+        height: 540,
+        visible: true,
+        zIndex: 0,
+        isFocusedPane: true
+      }]
+    });
+
+    const result = await manager.actOnAgentVisualPoint("tab-1", {
+      targetMode: "live",
+      captureId: capture.visualFrame!.captureId,
+      point: { x: 200, y: 100, reason: "hit button" },
+      interaction: "click"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      kind: "lyraLumenVactStale",
+      reason: "viewport_resized",
+      nextRecommendedAction: "lyra_lumen.see"
+    });
+    expect(webContents.sentInputEvents).toEqual([]);
   });
 
   test("discovers portal menuitems after hover reveal", async () => {

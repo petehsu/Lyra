@@ -107,6 +107,7 @@ export const createAppSurfaceRenderModel = (
     return {
       kind: "fileManager",
       props: {
+        desktopApi: context.desktopApi,
         state,
         labels: context.fileManagerLabels,
         model: context.fileManagerModel,

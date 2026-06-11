@@ -211,7 +211,7 @@ fn description_for(
             "Use when the agent needs to browse a directory, see file names, or understand project structure."
         }
         ("filesystem", "glob") => {
-            "Use when the agent knows a file name pattern, extension, or glob and needs matching paths."
+            "Use when the agent knows a file name pattern, extension, or glob and only needs matching paths. This is the fastest choice for path discovery."
         }
         ("filesystem", "write") => {
             "Use when the agent must create or replace a whole workspace file."
@@ -225,11 +225,14 @@ fn description_for(
         ("filesystem", "apply_patch") => {
             "Use when the agent must make structured multi-file code or text edits through a patch."
         }
+        ("code", "grep_text") => {
+            "Use first for exact strings, regex, identifiers, labels, call sites, or content inside a known workspace/root. This is the fastest precise content search; prefer it over the Lyra index for grep-like tasks."
+        }
         ("code", "search_text" | "project") => {
-            "Use when the agent needs to find real code snippets, project text, function calls, labels, strings, or file content."
+            "Use when the agent needs Lyra native indexed search: fuzzy file/content recall, broad Home or multi-root lookup, approximate names, or quick candidate discovery before reading files. Prefer grep_text for exact strings or regex."
         }
         ("code", "search_symbol") => {
-            "Use when the agent needs to find classes, functions, components, methods, symbols, or definitions."
+            "Use when the agent needs classes, functions, components, methods, exported constants, symbols, or definitions. Prefer this over grep_text when the query is a symbol/definition rather than arbitrary text."
         }
         ("code", "graph_expand") => {
             "Use when the agent needs related imports, dependency context, call graph clues, or nearby code relationships."
@@ -277,13 +280,16 @@ fn description_for(
             "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements."
         }
         ("browser", "see") => {
-            "Use when the agent needs a visual screenshot or bitmap observation of the browser page."
+            "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact."
         }
         ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => {
             "Use when the agent needs to scroll a browser page, bring an offscreen button or input into view, keep the Agent cursor visible, or recover after a mapped target is outside the viewport."
         }
         ("browser", "act" | "type" | "press" | "submit" | "navigate" | "wait" | "reveal") => {
             "Use when the agent needs to interact with, navigate, type into, click, wait for, or reveal browser page controls."
+        }
+        ("browser", "vact") => {
+            "Use only when DOM mapping is unavailable or unreliable (canvas/WebGL apps, custom-rendered widgets, blocked frames, or when map/act returned no usable targetRef): visually click, drag, or scroll using device-pixel coordinates read directly from the latest see screenshot."
         }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
@@ -338,7 +344,16 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
         match (domain, operation) {
             ("filesystem", "list") => vec!["browse files", "list directory", "查看文件", "列目录"],
             ("filesystem", "read") => vec!["open file", "read source", "查看文件", "读取文件"],
-            ("filesystem", "glob") => vec!["find file", "file pattern", "glob search", "找文件"],
+            ("filesystem", "glob") => {
+                vec![
+                    "find file",
+                    "file pattern",
+                    "glob search",
+                    "fd",
+                    "path search",
+                    "找文件",
+                ]
+            }
             ("filesystem", "write") => vec!["create file", "overwrite file", "写文件", "新建文件"],
             ("filesystem", "strict_edit") => {
                 vec![
@@ -371,22 +386,42 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "打补丁",
                 ]
             }
+            ("code", "grep_text") => {
+                vec![
+                    "grep",
+                    "rg",
+                    "ripgrep",
+                    "regex",
+                    "exact text",
+                    "content search",
+                    "精确搜索",
+                    "正则",
+                    "查文本",
+                ]
+            }
             ("code", "search_text" | "project") => {
                 vec![
-                    "search code",
-                    "find snippet",
-                    "grep",
+                    "indexed search",
+                    "fuzzy code search",
+                    "local index",
+                    "broad search",
+                    "search code candidates",
                     "搜索代码",
-                    "查代码片段",
+                    "索引搜索",
+                    "模糊搜索",
                 ]
             }
             ("code", "search_symbol") => {
                 vec![
                     "find symbol",
                     "find definition",
+                    "search_symbol",
+                    "symbol search",
                     "function search",
+                    "component search",
                     "搜索函数",
                     "查定义",
+                    "查符号",
                 ]
             }
             ("code", "graph_expand") => vec!["related code", "imports", "dependencies", "代码关系"],
@@ -556,6 +591,18 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "操作页面控件",
                 "悬停网页元素",
             ],
+            ("browser", "vact") => vec![
+                "visual click",
+                "click by coordinates",
+                "click screenshot point",
+                "click canvas",
+                "drag on screenshot",
+                "visual scroll",
+                "视觉点击",
+                "按坐标点击",
+                "点击截图位置",
+                "点击画布",
+            ],
             ("browser", "type") => vec![
                 "type in browser",
                 "type text",
@@ -719,6 +766,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "在浏览器里输入并提交。",
             ]
         }
+        ("browser", "vact") => vec![
+            "Click a canvas control by its screenshot coordinates after see.",
+            "用截图坐标点击画布/自定义渲染的控件。",
+        ],
         ("browser", "scroll") => vec![
             "Scroll the browser down one viewport and map again.",
             "页面没有看到目标时先向下滚动。",
@@ -808,7 +859,9 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         }
         ("hardware", "session_write" | "run_action") => "hardware",
         ("git", "stage" | "unstage" | "discard") => "git_mutation",
-        ("browser", "act" | "type" | "press" | "submit" | "navigate" | "elevate") => "browser",
+        ("browser", "act" | "vact" | "type" | "press" | "submit" | "navigate" | "elevate") => {
+            "browser"
+        }
         (
             "memory",
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
@@ -874,6 +927,13 @@ fn renderer_hint(domain: &str, operation: &str) -> &'static str {
 
 fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
     let string = |description: &str| json!({ "type": "string", "description": description });
+    let string_array = |description: &str| {
+        json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "description": description
+        })
+    };
     let working_dir = json!({
         "type": "string",
         "description": "Defaults to the current Lyra session workingDir when available; shell falls back to the user home directory when the session is unbound."
@@ -975,10 +1035,70 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("code", "grep_text") => object_schema(
+            [
+                (
+                    "query",
+                    string("Exact text or regex pattern to search for."),
+                ),
+                ("pattern", string("Alias for query.")),
+                ("path", string("Optional workspace path/root.")),
+                ("root", string("Optional workspace search root.")),
+                ("roots", string_array("Optional workspace search roots.")),
+                ("glob", string("Optional include glob such as **/*.rs.")),
+                (
+                    "includeGlobs",
+                    string_array("Optional include glob patterns."),
+                ),
+                (
+                    "excludeGlobs",
+                    string_array("Optional exclude glob patterns."),
+                ),
+                ("regex", json!({ "type": "boolean", "default": false })),
+                (
+                    "caseSensitive",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeHidden",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                ("maxFileBytes", json!({ "type": "integer", "minimum": 1 })),
+                (
+                    "limit",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 500 }),
+                ),
+            ],
+            &["query"],
+        ),
         ("code", _) => object_schema(
             [
                 ("query", string("Search query.")),
                 ("path", string("Optional workspace path.")),
+                ("root", string("Optional workspace search root.")),
+                ("roots", string_array("Optional workspace search roots.")),
+                ("glob", string("Optional include glob such as **/*.rs.")),
+                (
+                    "includeGlobs",
+                    string_array("Optional include glob patterns."),
+                ),
+                (
+                    "excludeGlobs",
+                    string_array("Optional exclude glob patterns."),
+                ),
+                (
+                    "includeHidden",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                ("enableContent", json!({ "type": "boolean" })),
+                (
+                    "mode",
+                    json!({ "type": "string", "enum": ["fast", "normal", "full"] }),
+                ),
+                (
+                    "caseSensitive",
+                    json!({ "type": "boolean", "default": false }),
+                ),
                 (
                     "limit",
                     json!({ "type": "integer", "minimum": 1, "maximum": 200 }),
@@ -1124,6 +1244,56 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("ref", json!({ "type": "string", "default": "HEAD" })),
             ],
             &[],
+        ),
+        ("browser", "vact") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "captureId",
+                    string(
+                        "captureId from the latest /tools/browser/see VisualFrame these coordinates were read from. Stale ids (after scroll, navigation, or any panel/window resize) are rejected.",
+                    ),
+                ),
+                (
+                    "point",
+                    json!({
+                        "type": "object",
+                        "description": "Device-pixel coordinate read directly off the latest see screenshot (origin = top-left of the screenshot).",
+                        "properties": {
+                            "x": { "type": "number", "description": "Device-pixel X on the see image." },
+                            "y": { "type": "number", "description": "Device-pixel Y on the see image." },
+                            "reason": { "type": "string", "description": "Why this point is the intended target." }
+                        },
+                        "required": ["x", "y"]
+                    }),
+                ),
+                (
+                    "interaction",
+                    json!({ "type": "string", "enum": ["click", "doubleClick", "rightClick", "hover", "drag", "scroll"], "default": "click" }),
+                ),
+                (
+                    "to",
+                    json!({
+                        "type": "object",
+                        "description": "Drag target device-pixel coordinate (for interaction=drag).",
+                        "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+                        "required": ["x", "y"]
+                    }),
+                ),
+                (
+                    "scrollDy",
+                    json!({ "type": "number", "description": "Vertical scroll delta in CSS pixels (for interaction=scroll). Positive scrolls down." }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &["point", "captureId"],
         ),
         ("browser", _) => object_schema(
             [

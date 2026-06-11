@@ -1,0 +1,23 @@
+用 web_fetch engine=browser 读取 https://docs.rs/reqwest/latest/reqwest/ ，waitForSelector=main，includePageshot=true，includeMedia=true，timeoutMs=8000。报告 engineUsed、pageshotArtifactRef/screenshotArtifactRef 是否存在、warnings、正文摘要。即使 pageshot 降级也不能退出。
+
+用 web_fetch engine=browser 读取 https://example.com ，waitForSelector=main，includePageshot=true，includeMedia=true，timeoutMs=8000。告诉我 engineUsed、是否有 screenshot/pageshot artifact、warnings、正文摘要。即使 selector 等不到也不能退出。
+
+先在临时目录创建一个本地 JS 渲染 HTML 页面，并启动本地 HTTP server。页面初始没有 main，2 秒后用 JS 插入 <main>Rendered by JS</main> 和一个 iframe/video 占位。然后用 web_fetch engine=browser 读取该 localhost URL，waitForSelector=main，includePageshot=true，includeMedia=true。报告 engineUsed、artifact、media、正文摘要，最后关闭 server。
+
+用 web_fetch engine=auto 读取一个明显 SPA 或正文很短的网站，includePageshot=true，includeMedia=true，timeoutMs=12000。告诉我是否从 http fallback 到 browser、raw.engineUsed、warnings、recommendedNextAction。
+
+连续执行 3 次 web_fetch engine=browser 读取同一个页面，每次 waitForSelector=main、includePageshot=true、includeMedia=true、timeoutMs=10000。每次只汇报 engineUsed、artifact 是否存在、正文前 300 字，确认 Lyra 不退出。
+
+用 web_fetch engine=browser 读取 https://github.com/trending/rust，targetSelector=main，waitForSelector=main，includePageshot=true，includeMedia=true，chunking=block，maxChars=5000。告诉我 engineUsed、是否有 screenshot/pageshot artifact、warnings、正文摘要。
+
+用 web_fetch 读取 https://docs.rs/reqwest/latest/reqwest/ ，targetSelector=main，queryFocus="redirect policy"，chunking=block，返回 query 相关摘要、chunks 数量、links 摘要。
+
+用 web_research 搜索 “Rust reqwest redirect policy SSRF private network”，readTopN=3，给我 compact research bundle，并列出 failedReads 和 sources。
+
+用 web_fetch 读取 http://127.0.0.1:9/private，不要设置 allowPrivateNetwork。确认它被安全策略拒绝，并说明 recommendedNextAction。
+
+用 web_fetch engine=browser 读取一个 JS 渲染页面，waitForSelector=main，includePageshot=true，includeMedia=true。告诉我 engineUsed、是否有 screenshot/pageshot artifact、正文摘要。
+
+用 web_fetch 读取一个包含 YouTube/Vimeo/Bilibili embed 的页面，includeMedia=true，retainMedia=summary，检查 raw.media 和 ## Media footer 是否去重且 canonical URL 正确。
+
+用 web_fetch 读取一个图片或 SVG URL，分别测试 useOcr=false/useCaption=false 和默认配置；比较 warnings、metadata、OCR/caption 行为差异。

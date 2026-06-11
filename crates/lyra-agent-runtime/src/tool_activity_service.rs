@@ -588,12 +588,44 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_see",
-                "Capture a Lyra browser page as a visual evidence artifact.",
+                "Capture a Lyra browser page as a visual evidence artifact. Returns the screenshot dimensions in real device pixels plus a visualFrame captureId/dpr/viewport metadata block; use that exact captureId with lyra_lumen_vact for visual coordinate actions.",
                 "read",
                 "hostCapability",
                 lumen_target_schema(json!({
                     "timeoutMs": { "type": "number" }
                 })),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_vact",
+                "Visually click, drag, hover, or scroll using REAL device-pixel coordinates read directly from the latest lyra_lumen_see screenshot. Use only when DOM targetRefs are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets or blocked frames. Prefer lyra_lumen_act with a targetRef whenever DOM mapping works. Always call lyra_lumen_see first and pass its captureId; if the page layout, scroll position, or device pixel ratio changed, this tool rejects the stale coordinates and asks for a new screenshot.",
+                "hostCapability",
+                "runtimePolicy",
+                lumen_target_schema(json!({
+                    "captureId": { "type": "string" },
+                    "point": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" },
+                            "reason": { "type": "string" }
+                        },
+                        "required": ["x", "y"]
+                    },
+                    "interaction": { "type": "string", "enum": ["click", "doubleClick", "rightClick", "hover", "drag", "scroll"], "default": "click" },
+                    "to": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" },
+                            "reason": { "type": "string" }
+                        }
+                    },
+                    "scrollDy": { "type": "number" },
+                    "timeoutMs": { "type": "number" }
+                }))
+                .with_required(vec!["captureId", "point"]),
                 Some("browser.operate"),
             ),
             capability(

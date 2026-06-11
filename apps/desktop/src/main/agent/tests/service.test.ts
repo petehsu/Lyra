@@ -1560,6 +1560,19 @@ describe("Agent IPC bridge", () => {
         x: 12,
         y: 34
       })),
+      actOnAgentVisualPoint: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live"; readonly captureId: string }
+      ) => ({
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId: "page-1",
+        inputMode: "chromium",
+        targetMode: request.targetMode ?? "live",
+        captureId: request.captureId,
+        x: 25,
+        y: 50
+      })),
       focusAgentPage: vi.fn(async (
         _tabId: string,
         request: { readonly targetMode?: "isolated" | "live" }
@@ -1625,7 +1638,20 @@ describe("Agent IPC bridge", () => {
         imageBase64: "aGVsbG8=",
         width: 320,
         height: 180,
-        visibleOnly: true
+        visibleOnly: true,
+        visualFrame: {
+          captureId: "visual-capture-1",
+          dpr: 2,
+          cssViewportWidth: 160,
+          cssViewportHeight: 90,
+          imageWidth: 320,
+          imageHeight: 180,
+          imageScale: 1,
+          scrollX: 0,
+          scrollY: 0,
+          viewBoundsHash: "bounds-hash-1",
+          viewBoundsEpoch: 0
+        }
       })),
       showAgentActivity: vi.fn(async (
         _tabId: string,
@@ -2093,6 +2119,12 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenSee",
       width: 320,
       height: 180,
+      visualFrame: {
+        captureId: "visual-capture-1",
+        dpr: 2,
+        imageWidth: 320,
+        imageHeight: 180
+      },
       imageArtifact: expect.objectContaining({
         kind: "image",
         mediaType: "image/png",
@@ -2104,6 +2136,49 @@ describe("Agent IPC bridge", () => {
     await expect(
       registered.get("lyraLumen.see")?.({})
     ).resolves.not.toHaveProperty("imageBase64");
+
+    await expect(
+      registered.get("lyraLumen.vact")?.({
+        captureId: "visual-capture-1",
+        point: { x: 50, y: 100, reason: "visual button" },
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: "lyraLumenActionResult",
+      visual: true,
+      captureId: "visual-capture-1",
+      x: 25,
+      y: 50
+    });
+    expect(browserBridge.actOnAgentVisualPoint).toHaveBeenCalledWith("page-1", {
+      captureId: "visual-capture-1",
+      point: { x: 50, y: 100, reason: "visual button" },
+      interaction: "click",
+      targetMode: "live"
+    });
+
+    browserBridge.readAgentPage.mockClear();
+    browserBridge.actOnAgentVisualPoint.mockClear();
+    await expect(
+      registered.get("lyraLumen.vact")?.({
+        modelSupportsImageInput: false,
+        captureId: "visual-capture-1",
+        point: { x: 50, y: 100, reason: "visual button" },
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      kind: "lyraLumenVactFallback",
+      content: "recent page tail",
+      nextRecommendedAction: "lyra_lumen.map"
+    });
+    expect(browserBridge.actOnAgentVisualPoint).not.toHaveBeenCalled();
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
+      strategy: "focus",
+      targetMode: "live",
+      timeoutMs: 4000
+    });
 
     browserBridge.captureAgentPage.mockRejectedValueOnce(new Error("background_visual_capture_unsupported"));
     browserBridge.readAgentPage.mockClear();

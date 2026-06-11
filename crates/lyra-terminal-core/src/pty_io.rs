@@ -1,0 +1,356 @@
+use std::io::{Read, Write};
+use std::sync::Arc;
+use std::thread;
+
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+
+use crate::events::{emit_event, NativeEvent};
+use crate::input_controller;
+use crate::live_output::{append_output, mark_session_exit, Utf8StreamDecoder};
+use crate::memory_writer::TerminalMemoryTask;
+use crate::protocol::{
+    TerminalShellLaunchEnvPair, TerminalShellLaunchPlanRequest, TerminalShellLaunchPlanResponse,
+    TerminalWriteRequest,
+};
+use crate::screen;
+use crate::session_runtime::SessionRuntime;
+use crate::shell::{
+    configure_shell_command, configure_shell_environment, make_shell_candidates, shell_exists,
+};
+use crate::shell_integration;
+use crate::shell_integration::ShellIntegrationEventKind;
+use crate::{to_error, Result};
+
+pub(crate) struct SpawnedPty {
+    pub(crate) shell: String,
+    pub(crate) process_id: Option<u32>,
+    pub(crate) writer: Box<dyn Write + Send>,
+    pub(crate) reader: Box<dyn Read + Send>,
+    pub(crate) master: Box<dyn MasterPty + Send>,
+    pub(crate) child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+pub(crate) fn spawn_pty(
+    requested_shell: Option<&str>,
+    env: Option<&[TerminalShellLaunchEnvPair]>,
+    rows: u16,
+    cols: u16,
+    cwd: Option<&str>,
+    mode: &str,
+    command_text: Option<&str>,
+) -> Result<SpawnedPty> {
+    let pty_system = native_pty_system();
+    let shell_candidates = make_shell_candidates(requested_shell);
+    let mut spawn_error = String::from("no shell available");
+
+    for shell in shell_candidates {
+        if !shell_exists(&shell) {
+            continue;
+        }
+
+        let pair = match pty_system.openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        }) {
+            Ok(v) => v,
+            Err(error) => {
+                spawn_error = error.to_string();
+                continue;
+            }
+        };
+
+        let mut builder = CommandBuilder::new(shell.clone());
+        apply_shell_cwd(&mut builder, cwd);
+        if mode == "shell" {
+            configure_shell_environment(&mut builder, &shell);
+            configure_shell_command(&mut builder, &shell);
+        } else if let Some(command) = command_text {
+            configure_command_mode(&mut builder, &shell, command);
+        }
+        apply_requested_env(&mut builder, env);
+
+        let child = match pair.slave.spawn_command(builder) {
+            Ok(v) => v,
+            Err(error) => {
+                spawn_error = error.to_string();
+                continue;
+            }
+        };
+        let process_id = child.process_id();
+
+        let writer = pair
+            .master
+            .try_clone_writer()
+            .map_err(|error| to_error(format!("failed to clone pty writer: {error}")))?;
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|error| to_error(format!("failed to clone pty reader: {error}")))?;
+
+        return Ok(SpawnedPty {
+            shell,
+            process_id,
+            writer,
+            reader,
+            master: pair.master,
+            child,
+        });
+    }
+
+    Err(to_error(format!("failed to spawn shell: {spawn_error}")))
+}
+
+fn parse_exit_code(status: portable_pty::ExitStatus) -> i32 {
+    if status.success() {
+        0
+    } else {
+        1
+    }
+}
+
+pub(crate) fn spawn_io_threads(
+    session_id: String,
+    runtime: Arc<SessionRuntime>,
+    mut reader: Box<dyn Read + Send>,
+) {
+    let session_id_for_reader = session_id.clone();
+    let source_for_reader = runtime.source.clone();
+    let mode_for_reader = runtime.mode.clone();
+    let state_for_reader = Arc::clone(&runtime.state);
+    let screen_for_reader = Arc::clone(&runtime.screen);
+    let memory_writer_for_reader = runtime.memory_writer.clone();
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 8192];
+        let mut shell_parser = shell_integration::ShellIntegrationParser::new();
+        let mut event_decoder = Utf8StreamDecoder::default();
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => {
+                    let data = event_decoder.finish();
+                    if !data.is_empty() {
+                        emit_event(NativeEvent {
+                            kind: "data".to_string(),
+                            session_id: session_id_for_reader.clone(),
+                            data: Some(data),
+                            exit_code: None,
+                            error: None,
+                            source: Some(source_for_reader.clone()),
+                            mode: Some(mode_for_reader.clone()),
+                            command_id: None,
+                            command: None,
+                        });
+                    }
+                    break;
+                }
+                Ok(size) => {
+                    let chunk = &buffer[..size];
+                    let shell_events = if memory_writer_for_reader.is_some() {
+                        shell_parser.feed(chunk)
+                    } else {
+                        Vec::new()
+                    };
+                    append_output(&state_for_reader, chunk);
+                    let data = event_decoder.decode(chunk);
+                    if !data.is_empty() {
+                        emit_event(NativeEvent {
+                            kind: "data".to_string(),
+                            session_id: session_id_for_reader.clone(),
+                            data: Some(data),
+                            exit_code: None,
+                            error: None,
+                            source: Some(source_for_reader.clone()),
+                            mode: Some(mode_for_reader.clone()),
+                            command_id: None,
+                            command: None,
+                        });
+                    }
+                    let screen_diff_payload = screen_for_reader
+                        .lock()
+                        .ok()
+                        .map(|mut screen| screen.feed(chunk))
+                        .map(|diff| screen::screen_diff_payload(&diff));
+                    if let Some(writer) = memory_writer_for_reader.as_ref() {
+                        for event in shell_events
+                            .iter()
+                            .filter(|event| event.kind != ShellIntegrationEventKind::CommandEnd)
+                        {
+                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
+                        }
+                        writer.enqueue(TerminalMemoryTask::Output(chunk.to_vec()));
+                        for event in shell_events
+                            .iter()
+                            .filter(|event| event.kind == ShellIntegrationEventKind::CommandEnd)
+                        {
+                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
+                        }
+                        if let Some(payload) = screen_diff_payload {
+                            writer.enqueue(TerminalMemoryTask::ScreenDiff(payload));
+                        }
+                    }
+                }
+                Err(error) => {
+                    if error.kind() == std::io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    if let Some(writer) = memory_writer_for_reader.as_ref() {
+                        writer.enqueue(TerminalMemoryTask::Error(error.to_string()));
+                    }
+                    emit_event(NativeEvent {
+                        kind: "error".to_string(),
+                        session_id: session_id_for_reader.clone(),
+                        data: None,
+                        exit_code: None,
+                        error: Some(error.to_string()),
+                        source: Some(source_for_reader.clone()),
+                        mode: Some(mode_for_reader.clone()),
+                        command_id: None,
+                        command: None,
+                    });
+                    break;
+                }
+            }
+        }
+    });
+
+    let source_for_exit = runtime.source.clone();
+    let mode_for_exit = runtime.mode.clone();
+    let state_for_exit = Arc::clone(&runtime.state);
+    let memory_writer_for_exit = runtime.memory_writer.clone();
+    thread::spawn(move || {
+        let exit_code = if let Ok(mut child) = runtime.child.lock() {
+            child.wait().ok().map(parse_exit_code).unwrap_or(1)
+        } else {
+            1
+        };
+
+        if let Some(writer) = memory_writer_for_exit.as_ref() {
+            writer.enqueue(TerminalMemoryTask::Exit(exit_code));
+        }
+        mark_session_exit(&state_for_exit, exit_code);
+
+        emit_event(NativeEvent {
+            kind: "exit".to_string(),
+            session_id,
+            data: None,
+            exit_code: Some(exit_code),
+            error: None,
+            source: Some(source_for_exit),
+            mode: Some(mode_for_exit),
+            command_id: None,
+            command: None,
+        });
+    });
+}
+
+fn apply_shell_cwd(command: &mut CommandBuilder, cwd: Option<&str>) {
+    if let Some(cwd) = cwd {
+        let cwd_trimmed = cwd.trim();
+        if !cwd_trimmed.is_empty() {
+            command.cwd(cwd_trimmed);
+        }
+    }
+}
+
+fn apply_requested_env(command: &mut CommandBuilder, env: Option<&[TerminalShellLaunchEnvPair]>) {
+    let Some(env) = env else {
+        return;
+    };
+    for pair in env {
+        let key = pair.key.trim();
+        if key.is_empty() || key.contains('=') || key.contains('\0') || pair.value.contains('\0') {
+            continue;
+        }
+        command.env(key, &pair.value);
+    }
+}
+
+fn default_terminal_cwd() -> Option<String> {
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .or_else(|| {
+                let drive = std::env::var("HOMEDRIVE").ok()?;
+                let path = std::env::var("HOMEPATH").ok()?;
+                Some(format!("{drive}{path}"))
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+}
+
+pub(crate) fn normalize_terminal_cwd(cwd: Option<&str>) -> Option<String> {
+    cwd.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(default_terminal_cwd)
+}
+
+fn configure_command_mode(command: &mut CommandBuilder, shell: &str, raw_command: &str) {
+    configure_shell_environment(command, shell);
+    if cfg!(windows) {
+        command.arg("/C");
+        command.arg(raw_command);
+        return;
+    }
+    command.arg("-lc");
+    command.arg(raw_command);
+}
+
+pub(crate) fn compose_write_payload(request: &TerminalWriteRequest) -> Result<String> {
+    let mut payload = String::new();
+    if let Some(data) = request.data.as_deref() {
+        payload.push_str(data);
+    } else if let Some(text) = request.text.as_deref() {
+        payload.push_str(text);
+    }
+    if request.append_newline.unwrap_or(false) {
+        payload.push('\n');
+    }
+    if let Some(keys) = request.keys.as_ref() {
+        for key in keys {
+            let bytes = input_controller::expand_key_stroke(&input_controller::KeyStroke {
+                key: key.clone(),
+                repeat: 1,
+                delay_ms: None,
+            })
+            .map_err(to_error)?;
+            payload.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+
+    if payload.is_empty() {
+        return Err(to_error("terminal write requires data, text, or keys"));
+    }
+    Ok(payload)
+}
+
+pub(crate) fn shell_launch_plan(
+    request: TerminalShellLaunchPlanRequest,
+) -> Result<TerminalShellLaunchPlanResponse> {
+    let shell = request.shell.trim().to_string();
+    if shell.is_empty() {
+        return Err(to_error("shell is required"));
+    }
+    let config = shell_integration::shell_integration_config(&shell, false);
+    Ok(TerminalShellLaunchPlanResponse {
+        shell: shell.clone(),
+        args: crate::shell::shell_startup_args(&shell),
+        env: crate::shell::shell_environment(&shell)
+            .into_iter()
+            .map(|(key, value)| TerminalShellLaunchEnvPair { key, value })
+            .collect(),
+        integration_enabled: config.enabled,
+        integration_family: config.family,
+        integration_script_asset: config.script_asset,
+    })
+}

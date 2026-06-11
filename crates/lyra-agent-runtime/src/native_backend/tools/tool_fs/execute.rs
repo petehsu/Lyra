@@ -5,6 +5,7 @@ pub(crate) fn execute_tool_fs_model_tool(
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
     cancellation: &Arc<AtomicBool>,
+    runtime: ToolExecutionRuntime,
     call: ModelToolCall,
     started_at: &str,
 ) -> Value {
@@ -147,6 +148,7 @@ pub(crate) fn execute_tool_fs_model_tool(
             turn_id,
             dispatcher,
             cancellation,
+            runtime,
             call,
             started_at,
         ),
@@ -362,6 +364,7 @@ pub(super) fn execute_tool_fs_run(
     turn_id: &str,
     dispatcher: &Option<Arc<HostCapabilityDispatcher>>,
     cancellation: &Arc<AtomicBool>,
+    runtime: ToolExecutionRuntime,
     call: ModelToolCall,
     started_at: &str,
 ) -> Value {
@@ -609,6 +612,7 @@ pub(super) fn execute_tool_fs_run(
             turn_id,
             dispatcher,
             cancellation,
+            runtime,
             tool_call_id: &call.id,
             manifest: &manifest,
             operation: &operation_envelope,

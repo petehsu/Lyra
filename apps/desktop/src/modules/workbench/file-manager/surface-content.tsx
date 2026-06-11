@@ -8,7 +8,8 @@ import type { FileManagerSurfaceViewProps } from "./surface-view-types";
 export const FileManagerContent = ({
   renderModel,
   labels,
-  actions
+  actions,
+  searchIndex
 }: FileManagerSurfaceViewProps) => (
   <section
     className="lyra-file-manager-content"
@@ -38,26 +39,31 @@ export const FileManagerContent = ({
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
     <FileManagerFavoritesContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
     <FileManagerDirectoryContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
     <FileManagerTrashContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
     <FileManagerDownloadsContent
       renderModel={renderModel}
       labels={labels}
       actions={actions}
+      searchIndex={searchIndex}
     />
   </section>
 );

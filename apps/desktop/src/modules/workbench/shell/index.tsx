@@ -45,6 +45,7 @@ import {
   useWorkbenchActionApi
 } from "./use-workbench-action-api";
 import { usePanelLayoutModel } from "./use-panel-layout";
+import { useOpenTerminalLiveSession } from "./use-open-terminal-live-session";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
 import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
@@ -363,36 +364,10 @@ resolvedThemeId,
     });
     tabsModel.openTerminalTab(tab.id, tab.title);
   }, [tabsModel, terminalModel]);
-  const onOpenTerminalLiveSession = useCallback((request: {
-    readonly sessionId?: string | null;
-    readonly terminalTabId?: string | null;
-    readonly paneId?: string | null;
-  }): void => {
-    const normalizedSessionId = request.sessionId?.trim();
-    const normalizedTabId = request.terminalTabId?.trim();
-    const normalizedPaneId = request.paneId?.trim();
-    const targetTab =
-      (normalizedTabId === undefined || normalizedTabId.length === 0
-        ? null
-        : terminalModel.findTab(normalizedTabId))
-      ?? terminalModel.state.tabs.find((tab) =>
-        terminalModel.getTabPanes(tab.id).some((pane) =>
-          (normalizedSessionId === undefined || normalizedSessionId.length === 0 || pane.sessionId === normalizedSessionId)
-          && (normalizedPaneId === undefined || normalizedPaneId.length === 0 || pane.id === normalizedPaneId)
-        )
-      )
-      ?? null;
-    if (targetTab === null) {
-      return;
-    }
-    const targetPane = normalizedPaneId === undefined || normalizedPaneId.length === 0
-      ? terminalModel.getTabPanes(targetTab.id)[0]
-      : terminalModel.getTabPanes(targetTab.id).find((pane) => pane.id === normalizedPaneId);
-    if (targetPane !== undefined) {
-      terminalModel.focusPane(targetTab.id, targetPane.id);
-    }
-    terminalWorkspaceActions.openTerminalTabInWorkspace(targetTab.id);
-  }, [terminalModel, terminalWorkspaceActions]);
+  const onOpenTerminalLiveSession = useOpenTerminalLiveSession({
+    terminalModel,
+    terminalWorkspaceActions
+  });
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,

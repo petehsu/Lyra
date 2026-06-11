@@ -157,6 +157,7 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
         (display_name, action),
         ("software", "invoke_capability")
             | ("lyra_lumen", "act")
+            | ("lyra_lumen", "vact")
             | ("lyra_lumen", "type")
             | ("lyra_lumen", "press")
             | ("lyra_lumen", "submit")
@@ -196,6 +197,8 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
         "paneId",
         "target",
         "text",
+        "captureId",
+        "reason",
     ] {
         if let Some(value) = input.get(key).and_then(Value::as_str)
             && !value.trim().is_empty()
