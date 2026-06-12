@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationTopbarLabels, WorkbenchNotificationItem } from "./types";
 
@@ -45,8 +46,9 @@ export const WorkbenchNotificationTopbar = ({
   return (
     <section className="lyra-notification-topbar" aria-label="notification-topbar">
       {preview === null ? null : (
-        <button
-          type="button"
+        <AppButton
+          variant="ghost"
+          size="sm"
           className="lyra-notification-topbar-preview"
           aria-label={labels.openPreview}
           onClick={onOpenPreview}
@@ -56,39 +58,31 @@ export const WorkbenchNotificationTopbar = ({
           </span>
           <span className="lyra-notification-topbar-preview-track">
             <span className="lyra-notification-topbar-preview-marquee">{previewText}</span>
-            <span className="lyra-notification-topbar-preview-marquee" aria-hidden="true">
-              {previewText}
-            </span>
           </span>
-        </button>
+        </AppButton>
       )}
 
       {visibleQuickActions.length === 0 ? null : (
         <div className="lyra-notification-topbar-quick-actions">
           {visibleQuickActions.map((action) => (
-            <button
+            <AppIconButton
               key={action.id}
-              type="button"
               className="lyra-notification-topbar-quick-action"
-              data-tone={action.tone ?? "default"}
+              tone={action.tone === "danger" ? "danger" : "default"}
               aria-label={action.label}
               title={action.label}
               disabled={action.disabled === true}
               onClick={action.onSelect}
             >
               {action.icon}
-            </button>
+            </AppIconButton>
           ))}
         </div>
       )}
 
-      <button
-        type="button"
-        className={
-          preview === null
-            ? "lyra-notification-topbar-entry"
-            : "lyra-notification-topbar-entry lyra-notification-topbar-entry-active"
-        }
+      <AppIconButton
+        className="lyra-notification-topbar-entry"
+        active={preview !== null}
         aria-label={labels.openCenter}
         disabled={!canOpenCenter}
         onClick={onOpenCenter}
@@ -97,7 +91,7 @@ export const WorkbenchNotificationTopbar = ({
         {unreadCount > 0 ? (
           <span className="lyra-notification-topbar-unread-dot" aria-hidden="true" />
         ) : null}
-      </button>
+      </AppIconButton>
     </section>
   );
 };

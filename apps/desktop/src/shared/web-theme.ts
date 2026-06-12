@@ -109,9 +109,9 @@ const pickVar = (
 export const resolveWebThemePalette = (
   vars: LyraThemeVars
 ): WorkbenchBrowserWebThemePalette => ({
-  bgApp: pickVar(vars, "--lyra-bg-app", DEFAULT_WEB_THEME_PALETTE.bgApp),
-  bgSurface: pickVar(vars, "--lyra-bg-surface", DEFAULT_WEB_THEME_PALETTE.bgSurface),
-  bgEditor: pickVar(vars, "--lyra-bg-editor", DEFAULT_WEB_THEME_PALETTE.bgEditor),
+  bgApp: pickVar(vars, "--lyra-app-bg", DEFAULT_WEB_THEME_PALETTE.bgApp),
+  bgSurface: pickVar(vars, "--lyra-app-surface-bg", DEFAULT_WEB_THEME_PALETTE.bgSurface),
+  bgEditor: pickVar(vars, "--lyra-app-panel-bg", DEFAULT_WEB_THEME_PALETTE.bgEditor),
   textPrimary: pickVar(vars, "--lyra-text-primary", DEFAULT_WEB_THEME_PALETTE.textPrimary),
   textSecondary: pickVar(
     vars,
@@ -119,15 +119,15 @@ export const resolveWebThemePalette = (
     DEFAULT_WEB_THEME_PALETTE.textSecondary
   ),
   textMuted: pickVar(vars, "--lyra-text-muted", DEFAULT_WEB_THEME_PALETTE.textMuted),
-  textAccent: pickVar(vars, "--lyra-text-accent", DEFAULT_WEB_THEME_PALETTE.textAccent),
+  textAccent: pickVar(vars, "--lyra-app-primary-button", DEFAULT_WEB_THEME_PALETTE.textAccent),
   lineDefault: pickVar(
     vars,
-    "--lyra-line-default",
+    "--lyra-app-border",
     DEFAULT_WEB_THEME_PALETTE.lineDefault
   ),
   lineFocused: pickVar(
     vars,
-    "--lyra-line-focused",
+    "--lyra-app-border-strong",
     DEFAULT_WEB_THEME_PALETTE.lineFocused
   ),
   statusSuccess: pickVar(

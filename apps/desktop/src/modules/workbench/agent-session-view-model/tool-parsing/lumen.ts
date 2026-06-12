@@ -1,5 +1,5 @@
 import type { AgentToolActivity } from "../../../../shared/agent";
-import type { AgentImageAttachment, ToolActionTarget, ToolDetails, ToolPeek } from "../../ai-panel/agent-chat-demo/core/types";
+import type { AgentImageAttachment, ToolActionTarget, ToolDetails, ToolPeek } from "../../ai-panel/lyra-agents/core/types";
 import {
   asRecord,
   arrayField,

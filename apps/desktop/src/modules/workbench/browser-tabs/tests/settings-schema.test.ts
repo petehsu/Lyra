@@ -8,7 +8,9 @@ const createSchemaInput = (
   generalCategoryLabel: "General",
   appearanceCategoryLabel: "Appearance",
   workspaceCategoryLabel: "Workspace",
-  aiCategoryLabel: "AI",
+  loginManagerCategoryLabel: "Login Manager",
+  softwareStoreCategoryLabel: "Lyra Software",
+  aiCategoryLabel: "Lyra Agents",
   languageLabel: "Language",
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
@@ -21,11 +23,11 @@ const createSchemaInput = (
   aiStopBehaviorLabel: "Stop behavior",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
-	  forceWebPageThemingLabel: "Web page theming",
-	  searchCategoryLabel: "Search",
-	  searchWebEnginesLabel: "Web engines",
-	  searchSearxngEndpointLabel: "SearXNG endpoint",
-	  omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
+  forceWebPageThemingLabel: "Web page theming",
+  searchCategoryLabel: "Search",
+  searchWebEnginesLabel: "Web engines",
+  searchSearxngEndpointLabel: "SearXNG endpoint",
+  omniboxNonBrowserSubmitTargetLabel: "Omnibox target",
   systemNotificationModeLabel: "System notifications",
   systemNotificationClickBehaviorLabel: "Notification click behavior",
   systemNotificationActionsLabel: "Notification actions",
@@ -48,6 +50,8 @@ describe("createWorkbenchSettingsSchema", () => {
       "appearance",
       "workspace",
       "notifications",
+      "loginManager",
+      "softwareStore",
       "linux",
       "search",
       "ai"
@@ -57,9 +61,11 @@ describe("createWorkbenchSettingsSchema", () => {
       "Appearance",
       "Workspace",
       "Notifications",
+      "Login Manager",
+      "Lyra Software",
       "Linux",
       "Search",
-      "AI"
+      "Lyra Agents"
     ]);
   });
 
@@ -67,11 +73,11 @@ describe("createWorkbenchSettingsSchema", () => {
     const schema = createWorkbenchSettingsSchema(createSchemaInput(2));
     const searchCategory = schema.categories.find((category) => category.id === "search");
 
-	    expect(searchCategory?.sectionIds).toEqual([
-	      "omniboxNonBrowserSubmitTarget",
-	      "searchWebEngines",
-	      "searchSearxngEndpoint"
-	    ]);
+    expect(searchCategory?.sectionIds).toEqual([
+      "omniboxNonBrowserSubmitTarget",
+      "searchWebEngines",
+      "searchSearxngEndpoint"
+    ]);
   });
 
   test("hides the UI style field when there is only one pack", () => {

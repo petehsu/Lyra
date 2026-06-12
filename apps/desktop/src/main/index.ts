@@ -55,6 +55,11 @@ import {
   LYRA_UIUX_PACK_SCHEME,
   createUiuxPacksIpcBridge
 } from "./uiux-packs";
+import {
+  applyLyraWindowMaterial,
+  resolveLyraWindowMaterial,
+  type LyraWindowMaterialMode
+} from "./window-material";
 import { createWorkbenchObservationRendererClient } from "./workbench-observation/local-tabs";
 import { createWorkbenchObservationService } from "./workbench-observation/service";
 import type { WorkbenchObservationService } from "./workbench-observation/types";
@@ -120,6 +125,11 @@ let disposeSystemNotificationsBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
+const windowMaterialDecision = resolveLyraWindowMaterial({
+  platform: process.platform,
+  env: process.env
+});
+let activeWindowMaterialMode: LyraWindowMaterialMode = windowMaterialDecision.mode;
 
 const storageRoots = resolveLyraStorageRoots();
 ensureLyraStorageRoots(storageRoots);
@@ -225,6 +235,7 @@ const readAppMetaPayload = (): AppMetaPayload => {
     version: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
+    windowMaterialMode: activeWindowMaterialMode,
     desktopTargetId: desktopTarget.id,
     desktopSupportTier: desktopTarget.supportTier,
     linuxLibc: desktopTarget.libc,
@@ -585,7 +596,7 @@ const createMainWindow = (): BrowserWindow => {
     minHeight: 720,
     fullscreenable: false,
     frame: isMac,
-    backgroundColor: "#dcdcdd",
+    ...windowMaterialDecision.options,
     autoHideMenuBar: true,
     titleBarStyle: isMac ? "hiddenInset" : "default",
     ...(iconPath === null ? {} : { icon: iconPath }),
@@ -597,6 +608,7 @@ const createMainWindow = (): BrowserWindow => {
       disableHtmlFullscreenWindowResize: true
     }
   });
+  activeWindowMaterialMode = applyLyraWindowMaterial(window, windowMaterialDecision);
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (typeof rendererUrl === "string" && rendererUrl.length > 0) {

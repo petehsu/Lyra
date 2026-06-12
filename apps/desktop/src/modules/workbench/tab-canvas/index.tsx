@@ -1,3 +1,4 @@
+import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { Plus, X } from "lucide-react";
 
 import { resolveTabSubtitle } from "./service";
@@ -8,7 +9,9 @@ export const TabCanvas = ({ tabs, activeTabId, onActivateTab, onCloseTab, onCrea
     <div className="lyra-tabs">
       {tabs.map((tab) => (
         <div key={tab.id} className={tab.id === activeTabId ? "lyra-tab lyra-tab-active" : "lyra-tab"}>
-          <button
+          <AppButton
+            variant="ghost"
+            size="sm"
             className="lyra-tab-main"
             onClick={() => {
               onActivateTab(tab.id);
@@ -16,23 +19,23 @@ export const TabCanvas = ({ tabs, activeTabId, onActivateTab, onCloseTab, onCrea
           >
             <span className="lyra-tab-title">{tab.title}</span>
             <span className="lyra-tab-subtitle">{resolveTabSubtitle(tab)}</span>
-          </button>
-          <button
+          </AppButton>
+          <AppIconButton
             className="lyra-tab-close"
             aria-label={`close-${tab.id}`}
             onClick={() => {
               onCloseTab(tab.id);
             }}
           >
-            <X size={12} />
-          </button>
+            <X size={14} aria-hidden="true" />
+          </AppIconButton>
         </div>
       ))}
 
-      <button className="lyra-new-tab" onClick={onCreatePluginTab}>
-        <Plus size={14} />
+      <AppButton variant="ghost" size="sm" className="lyra-new-tab" onClick={onCreatePluginTab}>
+        <Plus size={14} aria-hidden="true" />
         New Tab
-      </button>
+      </AppButton>
     </div>
 
     <div className="lyra-panes">

@@ -1,3 +1,4 @@
+import { AppToolbarButton } from "@renderer/ui/components";
 import { Crosshair } from "lucide-react";
 
 type TitlebarElementPickerButtonProps = {
@@ -15,8 +16,7 @@ export const TitlebarElementPickerButton = ({
   activeDescription,
   onToggle
 }: TitlebarElementPickerButtonProps) => (
-  <button
-    type="button"
+  <AppToolbarButton
     className={
       active
         ? [
@@ -33,6 +33,6 @@ export const TitlebarElementPickerButton = ({
     title={ariaLabel}
     onClick={onToggle}
   >
-    <Crosshair size={14} />
-  </button>
+    <Crosshair size={14} aria-hidden="true" />
+  </AppToolbarButton>
 );

@@ -8,6 +8,7 @@ import type {
   SoftwareCapabilitiesQueryRequest
 } from "../../../../shared/desktop-bridge";
 import { createLoginManagerPasswordRef } from "../../../../shared/sensitive-value";
+import type { BrowserSettingsCategoryId } from "../../browser-tabs/settings-surface-types";
 import { createTranslator } from "../../i18n";
 import { useWorkbenchLabels } from "../../shell/use-workbench-labels";
 import { useSoftwareCapabilitiesRegistry } from "../service";
@@ -23,6 +24,7 @@ type RegistryOverrides = {
   readonly fileManagerModel?: Record<string, unknown>;
   readonly imageViewerModel?: Record<string, unknown>;
   readonly terminalModel?: Record<string, unknown>;
+  readonly onOpenSettingsSection?: (categoryId: BrowserSettingsCategoryId) => void;
 };
 
 const createRegistry = (overrides: RegistryOverrides = {}) => {
@@ -63,7 +65,7 @@ const createRegistry = (overrides: RegistryOverrides = {}) => {
       fileManagerModel: fileManagerModel as never,
       imageViewerModel: overrides.imageViewerModel as never,
       terminalModel: overrides.terminalModel as never,
-      onOpenSettingsSection: vi.fn()
+      onOpenSettingsSection: overrides.onOpenSettingsSection ?? vi.fn()
     })
   );
 };
@@ -621,6 +623,7 @@ describe("software capability registry", () => {
       removed: true
     }));
     const openAppTab = vi.fn();
+    const onOpenSettingsSection = vi.fn();
     const { result } = createRegistry({
       desktopApi: {
         uiux: {
@@ -636,7 +639,8 @@ describe("software capability registry", () => {
       } as unknown as LyraDesktopApi,
       tabsModel: {
         openAppTab
-      }
+      },
+      onOpenSettingsSection
     });
 
     const detail = await query(result, {
@@ -662,9 +666,8 @@ describe("software capability registry", () => {
         }
       }
     });
-    expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
-      appId: "software-store"
-    }));
+    expect(openAppTab).not.toHaveBeenCalled();
+    expect(onOpenSettingsSection).toHaveBeenCalledWith("softwareStore");
 
     const deniedInstall = await query(result, {
       requestId: "install-denied",
@@ -710,6 +713,7 @@ describe("software capability registry", () => {
     expect(installFromGit).toHaveBeenCalledWith({
       url: "https://example.com/acme.git"
     });
+    expect(onOpenSettingsSection).toHaveBeenCalledWith("softwareStore");
 
     const uninstalled = await query(result, {
       requestId: "uninstall",
@@ -773,9 +777,10 @@ describe("software capability registry", () => {
       origin: "https://example.com",
       username: "alice@example.com"
     }));
-    const revealCredential = vi.fn();
-    const openAppTab = vi.fn();
-    const { result } = createRegistry({
+	    const revealCredential = vi.fn();
+	    const openAppTab = vi.fn();
+	    const onOpenSettingsSection = vi.fn();
+	    const { result } = createRegistry({
       desktopApi: {
         loginManager: {
           list,
@@ -787,10 +792,11 @@ describe("software capability registry", () => {
           onEvent: vi.fn(() => vi.fn())
         }
       } as unknown as LyraDesktopApi,
-      tabsModel: {
-        openAppTab
-      }
-    });
+	      tabsModel: {
+	        openAppTab
+	      },
+	      onOpenSettingsSection
+	    });
 
     const listed = await query(result, {
       requestId: "list-login-manager",
@@ -831,9 +837,10 @@ describe("software capability registry", () => {
         }
       }
     });
-    expect(openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+    expect(openAppTab).not.toHaveBeenCalledWith(expect.objectContaining({
       appId: "login-manager"
     }));
+    expect(onOpenSettingsSection).toHaveBeenCalledWith("loginManager");
 
     const state = await query(result, {
       requestId: "read-login-manager",

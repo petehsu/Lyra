@@ -13,13 +13,12 @@ import {
 } from "../agent-session-history";
 import type { AgentProjectTreeModel } from "../agent-project-tree";
 import type { WorkbenchPreferencesModel } from "../preferences";
-import { createSoftwareStoreAppRequest } from "../software-store";
-import { createLoginManagerAppRequest } from "../login-manager";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
 import type { TerminalDockModel } from "../terminal-dock/types";
 import type { WorkspaceTabsModel, WorkspaceTab } from "../workspace-tabs/types";
 import { LOGO_URL } from "./service";
 import type { BrowserSearchModel } from "../browser-search";
+import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
 import type { WorkbenchLabels } from "./use-workbench-labels";
 import type { WorkspaceSurfaceRouterProps } from "./workspace-surface-router";
 
@@ -55,6 +54,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly onUndoEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settings: WorkspaceSurfaceRouterProps["settings"];
+  readonly onOpenSettingsSection: (categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]) => void;
   readonly notificationModel: WorkbenchNotificationModel;
   readonly localSearchReady: boolean;
   readonly labels: WorkbenchLabels;
@@ -112,6 +112,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   onUndoEditorWorkItem,
   preferencesModel,
   settings,
+  onOpenSettingsSection,
   notificationModel,
   localSearchReady,
   labels,
@@ -222,11 +223,11 @@ export const useWorkspaceSurfaceRouterProps = ({
           return;
         }
         if (appId === "login-manager") {
-          tabsModel.openAppTab(createLoginManagerAppRequest(labels.loginManager.tabTitle));
+          onOpenSettingsSection("loginManager");
           return;
         }
         if (appId === "software-store") {
-          tabsModel.openAppTab(createSoftwareStoreAppRequest(labels.softwareStore.tabTitle));
+          onOpenSettingsSection("softwareStore");
         }
       }
     }

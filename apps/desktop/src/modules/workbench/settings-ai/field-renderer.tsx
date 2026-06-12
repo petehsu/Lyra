@@ -1,5 +1,5 @@
 import type { AiProviderFieldSchema } from "../../../shared/ai";
-import { LyraListPicker } from "../list-picker";
+import { AppInput, AppSelect, AppTextarea } from "@renderer/ui/components";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
 
 type SettingsAiFieldRendererProps = {
@@ -32,7 +32,7 @@ export const SettingsAiFieldRenderer = ({
     return (
       <label key={field.id} className="lyra-settings-ai-field">
         <span>{field.label}</span>
-        <textarea
+        <AppTextarea
           className="lyra-settings-ai-input lyra-settings-ai-input-multiline"
           value={value}
           placeholder={field.placeholder}
@@ -62,15 +62,13 @@ export const SettingsAiFieldRenderer = ({
     return (
       <label key={field.id} className="lyra-settings-ai-field">
         <span>{field.label}</span>
-        <LyraListPicker
-          className="lyra-settings-ai-list-picker"
+        <AppSelect
+          className="lyra-settings-ai-select"
           ariaLabel={field.label}
-          listAriaLabel={field.label}
           value={resolvedValue}
-          shape="rounded"
           options={pickerOptions}
           disabled={resolvedOptions.length === 0}
-          onChange={(nextValue) => {
+          onValueChange={(nextValue) => {
             model.updateDraftField(isSecret ? "secret" : target, field.id, nextValue);
           }}
         />
@@ -83,7 +81,7 @@ export const SettingsAiFieldRenderer = ({
     <label key={field.id} className="lyra-settings-ai-field">
       <span>{field.label}</span>
       {isSecret ? (
-        <input
+        <AppInput
           className="lyra-settings-ai-input"
           type="password"
           autoComplete="off"
@@ -94,7 +92,7 @@ export const SettingsAiFieldRenderer = ({
           }}
         />
       ) : (
-        <input
+        <AppInput
           className="lyra-settings-ai-input"
           type="text"
           autoComplete="off"

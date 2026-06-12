@@ -1,6 +1,33 @@
 import type { ReactNode } from "react";
+import {
+  ArrowUpRight,
+  Bell,
+  BookText,
+  KeyRound,
+  AppWindow,
+  Monitor,
+  Moon,
+  Palette,
+  Search,
+  Settings2,
+  Sun,
+  Terminal,
+  type LucideIcon
+} from "lucide-react";
 
+import {
+  AppButton,
+  AppInput,
+  AppSelect,
+  type AppSelectOption,
+  AppSettingsRow,
+  AppSettingsSection,
+  AppSwitch,
+  AppTextarea
+} from "@renderer/ui/components";
 import { SettingsAiView } from "../settings-ai";
+import { LoginManagerSurface } from "../login-manager";
+import { SoftwareStoreSurface } from "../software-store";
 import type { SettingsCategoryId } from "./settings-schema";
 import type {
   SettingsBooleanChoiceControlDescriptor,
@@ -19,235 +46,170 @@ type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
   readonly activeCategory: SettingsCategoryId;
   readonly onActivateCategory: (categoryId: SettingsCategoryId) => void;
+  readonly docsNavLabel: string;
+  readonly onOpenDocs: () => void;
 };
 
-const buildThemePreviewClassName = (value: string): string =>
-  `lyra-settings-theme-preview-${value}`;
+const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
+  appearance: Palette,
+  general: Settings2,
+  linux: Terminal,
+  loginManager: KeyRound,
+  notifications: Bell,
+  softwareStore: AppWindow,
+  search: Search,
+  workspace: Monitor
+};
 
-const buildSplitLayoutPreviewClassName = (value: string): string =>
-  `lyra-settings-split-layout-preview-${value}`;
+const THEME_SELECT_ICONS: Partial<Record<string, LucideIcon>> = {
+  "lyra-dark": Moon,
+  "lyra-light": Sun,
+  "lyra-system": Monitor
+};
 
-const SettingsGroup = ({
-  label,
-  children,
-  cluster = false
-}: {
-  readonly label: string;
-  readonly children: ReactNode;
-  readonly cluster?: boolean;
-}) => (
-  <section className={cluster ? "lyra-settings-group lyra-settings-group-cluster" : "lyra-settings-group"}>
-    <header className="lyra-settings-group-header">
-      <h3>{label}</h3>
-    </header>
-    {children}
-  </section>
-);
-
-const SettingsToggleButton = ({
-  label,
-  active,
-  onClick
-}: {
-  readonly label: string;
-  readonly active: boolean;
-  readonly onClick: () => void;
-}) => (
-  <button
-    className={active ? "lyra-settings-choice lyra-settings-choice-active" : "lyra-settings-choice"}
-    type="button"
-    onClick={onClick}
-  >
-    <span className="lyra-settings-choice-main">
-      <strong>{label}</strong>
-    </span>
-  </button>
-);
-
-const renderThemePreview = (value: string): ReactNode => (
-  <span
-    className={`lyra-settings-theme-preview ${buildThemePreviewClassName(value)}`}
-    aria-hidden="true"
-  >
-    <i className="lyra-settings-theme-preview-titlebar" />
-    <i className="lyra-settings-theme-preview-sidebar" />
-    <i className="lyra-settings-theme-preview-content">
-      <em />
-      <em />
-      <em />
-    </i>
-  </span>
-);
-
-const renderSplitLayoutPreview = (value: string): ReactNode => (
-  <span
-    className={`lyra-settings-split-layout-preview ${buildSplitLayoutPreviewClassName(value)}`}
-    aria-hidden="true"
-  >
-    <i className="lyra-settings-split-layout-pane lyra-settings-split-layout-pane-1" />
-    <i className="lyra-settings-split-layout-pane lyra-settings-split-layout-pane-2" />
-    <i className="lyra-settings-split-layout-pane lyra-settings-split-layout-pane-3" />
-  </span>
-);
-
-const renderPreview = (control: SettingsChoiceControlDescriptor, value: string): ReactNode => {
-  switch (control.previewKind) {
-    case "theme":
-      return renderThemePreview(value);
-    case "split-layout":
-      return renderSplitLayoutPreview(value);
-    default:
-      return null;
+const resolveSelectedChoiceDescription = (
+  control: SettingsChoiceControlDescriptor
+): string | undefined => {
+  if (control.description !== undefined) {
+    return control.description;
   }
+  return control.options.find((option) => option.value === control.value)?.description;
 };
 
-const SettingsChoiceGrid = ({ control }: { readonly control: SettingsChoiceControlDescriptor }) => (
-  <>
-    <div
-      className={control.gridClassName ?? "lyra-settings-choice-grid"}
-      role="radiogroup"
-      aria-label={control.label}
-    >
-      {control.options.map((option) => {
-        const active = option.value === control.value;
-        const className = [
-          "lyra-settings-choice",
-          control.previewKind === undefined ? "" : "lyra-settings-choice-preview",
-          control.optionClassName ?? "",
-          active ? "lyra-settings-choice-active" : ""
-        ]
-          .filter((entry) => entry.length > 0)
-          .join(" ");
-        const showOptionText = control.showOptionText !== false;
+const buildSelectOptions = (
+  control: SettingsChoiceControlDescriptor
+): readonly AppSelectOption[] => control.options.map((option) => {
+  const Icon = control.previewKind === "theme"
+    ? THEME_SELECT_ICONS[option.value]
+    : undefined;
 
-        return (
-          <button
-            key={option.value}
-            type="button"
-            title={showOptionText ? undefined : option.label}
-            aria-label={showOptionText ? undefined : option.label}
-            className={className}
-            role="radio"
-            aria-checked={active}
-            onClick={() => {
-              control.onChange(option.value);
-            }}
-          >
-            {renderPreview(control, option.value)}
-            {showOptionText ? (
-              <span className="lyra-settings-choice-main">
-                <strong>{option.label}</strong>
-                {option.description === undefined ? null : <small>{option.description}</small>}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-    {control.description === undefined ? null : (
-      <p className="lyra-settings-description">{control.description}</p>
+  return {
+    ...option,
+    ...(Icon === undefined
+      ? {}
+      : {
+          icon: <Icon aria-hidden="true" />
+        })
+  };
+});
+
+const SettingsChoiceSelect = ({ control }: { readonly control: SettingsChoiceControlDescriptor }) => (
+  <AppSettingsRow
+    title={control.label}
+    description={resolveSelectedChoiceDescription(control)}
+    control={(
+      <AppSelect
+        ariaLabel={control.label}
+        className="lyra-settings-select"
+        contentClassName={control.options.some((option) => option.description !== undefined)
+          ? "lyra-settings-select-content lyra-settings-select-content-rich"
+          : "lyra-settings-select-content"}
+        value={control.value}
+        options={buildSelectOptions(control)}
+        onValueChange={control.onChange}
+      />
     )}
-  </>
+  />
 );
 
 const SettingsBooleanChoice = ({ control }: { readonly control: SettingsBooleanChoiceControlDescriptor }) => (
-  <div className="lyra-settings-choice-grid" role="radiogroup" aria-label={control.label}>
-    <button
-      type="button"
-      className={control.value ? "lyra-settings-choice lyra-settings-choice-active" : "lyra-settings-choice"}
-      role="radio"
-      aria-checked={control.value}
-      onClick={() => {
-        control.onChange(true);
-      }}
-    >
-      <span className="lyra-settings-choice-main">
-        <strong>{control.enabledLabel}</strong>
-        <small>{control.description}</small>
-      </span>
-    </button>
-    <button
-      type="button"
-      className={control.value ? "lyra-settings-choice" : "lyra-settings-choice lyra-settings-choice-active"}
-      role="radio"
-      aria-checked={control.value === false}
-      onClick={() => {
-        control.onChange(false);
-      }}
-    >
-      <span className="lyra-settings-choice-main">
-        <strong>{control.disabledLabel}</strong>
-        <small>{control.description}</small>
-      </span>
-    </button>
-  </div>
+  <AppSettingsRow
+    title={control.label}
+    description={control.description}
+    control={(
+      <AppSwitch
+        checked={control.value}
+        aria-label={control.label}
+        onCheckedChange={control.onChange}
+      />
+    )}
+  />
 );
 
 const SettingsTextControl = ({ control }: { readonly control: SettingsTextControlDescriptor }) => {
   if (control.kind === "textarea") {
     return (
-      <textarea
-        className="lyra-settings-textarea"
-        value={control.value}
-        placeholder={control.placeholder}
-        onChange={(event) => {
-          control.onChange(event.target.value);
-        }}
+      <AppSettingsRow
+        className="lyra-settings-row-block-control"
+        title={control.label}
+        control={(
+          <AppTextarea
+            aria-label={control.label}
+            className="lyra-settings-textarea"
+            value={control.value}
+            placeholder={control.placeholder}
+            onChange={(event) => {
+              control.onChange(event.target.value);
+            }}
+          />
+        )}
       />
     );
   }
 
   return (
-    <input
-      className="lyra-settings-input"
-      value={control.value}
-      placeholder={control.placeholder}
-      onChange={(event) => {
-        control.onChange(event.target.value);
-      }}
+    <AppSettingsRow
+      title={control.label}
+      control={(
+        <AppInput
+          aria-label={control.label}
+          className="lyra-settings-input lyra-settings-inline-input"
+          value={control.value}
+          placeholder={control.placeholder}
+          onChange={(event) => {
+            control.onChange(event.target.value);
+          }}
+        />
+      )}
     />
   );
 };
 
 const SettingsToggleGroup = ({ control }: { readonly control: SettingsToggleGroupControlDescriptor }) => (
   <div
-    className={control.gridClassName ?? "lyra-settings-choice-grid"}
+    className="lyra-settings-row-list"
     role="group"
     aria-label={control.label}
   >
     {control.toggles.map((toggle) => (
-      <SettingsToggleButton
+      <AppSettingsRow
         key={toggle.id}
-        label={toggle.label}
-        active={toggle.active}
-        onClick={toggle.onToggle}
+        title={toggle.label}
+        control={(
+          <AppSwitch
+            checked={toggle.active}
+            aria-label={toggle.label}
+            onCheckedChange={toggle.onToggle}
+          />
+        )}
       />
     ))}
   </div>
 );
 
 const SettingsMultiChoice = ({ control }: { readonly control: SettingsMultiChoiceControlDescriptor }) => (
-  <div className="lyra-settings-choice-grid" role="group" aria-label={control.label}>
+  <div className="lyra-settings-row-list" role="group" aria-label={control.label}>
     {control.options.map((option) => {
       const checked = control.selectedValues.includes(option.value);
       return (
-        <button
+        <AppSettingsRow
           key={option.value}
-          className={checked ? "lyra-settings-choice lyra-settings-choice-active" : "lyra-settings-choice"}
-          type="button"
-          onClick={() => {
-            if (checked) {
-              control.onChange(control.selectedValues.filter((value) => value !== option.value));
-              return;
-            }
-            control.onChange([...control.selectedValues, option.value]);
-          }}
-        >
-          <span className="lyra-settings-choice-main">
-            <strong>{option.label}</strong>
-            {option.description === undefined ? null : <small>{option.description}</small>}
-          </span>
-        </button>
+          title={option.label}
+          description={option.description}
+          control={(
+            <AppSwitch
+              checked={checked}
+              aria-label={option.label}
+              onCheckedChange={(nextChecked) => {
+                if (!nextChecked) {
+                  control.onChange(control.selectedValues.filter((value) => value !== option.value));
+                  return;
+                }
+                control.onChange([...control.selectedValues, option.value]);
+              }}
+            />
+          )}
+        />
       );
     })}
   </div>
@@ -263,14 +225,16 @@ const SettingsInlineStatusAction = ({
       <small>{control.statusLabel}</small>
       <strong>{control.statusValue}</strong>
     </div>
-    <button
+    <AppButton
+      variant="outline"
+      size="sm"
       className="lyra-settings-ai-action"
       type="button"
       disabled={control.actionDisabled}
       onClick={control.onAction}
     >
       {control.actionLabel}
-    </button>
+    </AppButton>
   </div>
 );
 
@@ -289,13 +253,15 @@ const SettingsStatusList = ({
       ))}
     </div>
     {control.actionLabel !== undefined && control.onAction !== undefined ? (
-      <button
+      <AppButton
+        variant="outline"
+        size="sm"
         className="lyra-settings-ai-action"
         type="button"
         onClick={control.onAction}
       >
         {control.actionLabel}
-      </button>
+      </AppButton>
     ) : null}
   </div>
 );
@@ -305,8 +271,14 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
     case "boolean-choice":
       return <SettingsBooleanChoice control={control} />;
     case "choice":
-      return <SettingsChoiceGrid control={control} />;
+      return <SettingsChoiceSelect control={control} />;
     case "custom":
+      if (control.customKind === "login-manager") {
+        return <LoginManagerSurface {...control.props} embedded />;
+      }
+      if (control.customKind === "software-store") {
+        return <SoftwareStoreSurface {...control.props} embedded />;
+      }
       return <SettingsAiView labels={control.labels} model={control.model} />;
     case "inline-status-action":
       return <SettingsInlineStatusAction control={control} />;
@@ -324,28 +296,99 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
   }
 };
 
-const renderSection = (section: SettingsRenderedSection): ReactNode => {
-  const controls = section.controls.map((control, index) => (
-    <div key={`${section.id}-${control.kind}-${index}`}>
+const resolveSectionTitlePlacement = (
+  section: SettingsRenderedSection
+): "inside" | "outside" | "none" => {
+  if (section.controls.length !== 1) {
+    return "outside";
+  }
+
+  switch (section.controls[0]?.kind) {
+    case "multi-choice":
+    case "status-list":
+    case "toggle-group":
+      return "outside";
+    case "custom":
+      return "inside";
+    default:
+      return "none";
+  }
+};
+
+const renderSectionControlSlots = (section: SettingsRenderedSection): readonly ReactNode[] =>
+  section.controls.map((control, index) => (
+    <div
+      className={[
+        "lyra-settings-control-slot",
+        `lyra-settings-control-slot-${control.kind}`,
+        control.kind === "custom" ? `lyra-settings-control-slot-custom-${control.customKind}` : ""
+      ].filter(Boolean).join(" ")}
+      key={`${section.id}-${control.kind}-${index}`}
+    >
       {renderControl(control)}
     </div>
   ));
+
+const isCompactSection = (section: SettingsRenderedSection): boolean =>
+  section.frame !== "none" && resolveSectionTitlePlacement(section) === "none";
+
+const renderSection = (section: SettingsRenderedSection): ReactNode => {
+  const controls = renderSectionControlSlots(section);
 
   if (section.frame === "none") {
     return controls;
   }
 
   return (
-    <SettingsGroup label={section.label} cluster={section.cluster}>
+    <AppSettingsSection
+      label={section.label}
+      cluster={section.cluster}
+      titlePlacement={resolveSectionTitlePlacement(section)}
+    >
       {controls}
-    </SettingsGroup>
+    </AppSettingsSection>
   );
+};
+
+const renderCategorySections = (category: SettingsSurfaceModel["categories"][number]): readonly ReactNode[] => {
+  const nodes: ReactNode[] = [];
+  let compactRun: SettingsRenderedSection[] = [];
+
+  const flushCompactRun = () => {
+    if (compactRun.length === 0) return;
+    const run = compactRun;
+    compactRun = [];
+    nodes.push(
+      <AppSettingsSection
+        key={`compact-${run.map((section) => section.id).join("-")}`}
+        label={category.heading}
+        cluster
+        titlePlacement="none"
+      >
+        {run.flatMap(renderSectionControlSlots)}
+      </AppSettingsSection>
+    );
+  };
+
+  for (const section of category.sections) {
+    if (isCompactSection(section)) {
+      compactRun.push(section);
+      continue;
+    }
+    flushCompactRun();
+    nodes.push(<div key={section.id}>{renderSection(section)}</div>);
+  }
+
+  flushCompactRun();
+  return nodes;
 };
 
 export const SettingsSurfaceView = ({
   model,
   activeCategory,
-  onActivateCategory
+  onActivateCategory,
+  docsNavLabel,
+  onOpenDocs
 }: SettingsSurfaceViewProps) => {
   const selectedCategory =
     model.categories.find((category) => category.id === activeCategory)
@@ -358,19 +401,48 @@ export const SettingsSurfaceView = ({
         <aside className="lyra-settings-nav" aria-label="settings-nav">
           <div className="lyra-settings-nav-list">
             {model.categories.map((category) => (
-              <button
-                key={category.id}
-                className={category.id === selectedCategory?.id
-                  ? "lyra-settings-nav-item lyra-settings-nav-item-active"
-                  : "lyra-settings-nav-item"}
-                type="button"
-                onClick={() => {
-                  onActivateCategory(category.id);
-                }}
-              >
-                {category.navLabel}
-              </button>
+              (() => {
+                const Icon = SETTINGS_CATEGORY_ICONS[category.id];
+                return (
+                  <AppButton
+                    key={category.id}
+                    variant="ghost"
+                    size="sm"
+                    className={category.id === selectedCategory?.id
+                      ? "lyra-settings-nav-item lyra-settings-nav-item-active"
+                      : "lyra-settings-nav-item"}
+                    onClick={() => {
+                      onActivateCategory(category.id);
+                    }}
+                  >
+                    {category.id === "ai" ? (
+                      <span className="lyra-settings-nav-icon lyra-settings-nav-logo" aria-hidden="true" />
+                    ) : Icon === undefined ? null : (
+                      <Icon className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
+                    )}
+                    <span>{category.navLabel}</span>
+                  </AppButton>
+                );
+              })()
             ))}
+          </div>
+          <div className="lyra-settings-nav-actions">
+            <AppButton
+              className="lyra-settings-nav-item lyra-settings-nav-item-jump"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenDocs}
+            >
+              <BookText className="lyra-settings-nav-icon" size={15} aria-hidden="true" />
+              <span className="lyra-settings-nav-jump-label">
+                <span>{docsNavLabel}</span>
+                <ArrowUpRight
+                  className="lyra-settings-nav-jump-icon"
+                  size={12}
+                  aria-hidden="true"
+                />
+              </span>
+            </AppButton>
           </div>
         </aside>
 
@@ -379,17 +451,13 @@ export const SettingsSurfaceView = ({
             <section
               key={selectedCategory.id}
               id={selectedCategory.domId}
-              className="lyra-settings-category"
+              className={`lyra-settings-category lyra-settings-category-${selectedCategory.id}`}
               aria-labelledby={`${selectedCategory.domId}-heading`}
             >
               <header className="lyra-settings-category-header">
                 <h2 id={`${selectedCategory.domId}-heading`}>{selectedCategory.heading}</h2>
               </header>
-              {selectedCategory.sections.map((section) => (
-                <div key={section.id}>
-                  {renderSection(section)}
-                </div>
-              ))}
+              {renderCategorySections(selectedCategory)}
             </section>
           )}
         </main>

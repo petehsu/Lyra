@@ -1,3 +1,4 @@
+import { AppButton, AppEmptyState, AppToolbarButton } from "@renderer/ui/components";
 import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronUp, GitCompareArrows, Lock, Save, Undo2, X } from "lucide-react";
 import type { RefObject } from "react";
 
@@ -44,23 +45,24 @@ export const FileEditorTitlebarContent = ({
         </span>
       )}
       {toolbar.diffToggle === null ? null : (
-        <button
+        <AppToolbarButton
           type="button"
           className={
             toolbar.diffToggle.active
               ? "lyra-titlebar-context-icon-button lyra-titlebar-context-button-active"
               : "lyra-titlebar-context-icon-button"
           }
+          active={toolbar.diffToggle.active}
           aria-label={toolbar.diffToggle.label}
           aria-pressed={toolbar.diffToggle.active}
           onClick={onToggleDiff}
         >
           <GitCompareArrows size={13} />
-        </button>
+        </AppToolbarButton>
       )}
       {toolbar.reviewActions === null ? null : (
         <span className="lyra-titlebar-context-group">
-          <button
+          <AppToolbarButton
             type="button"
             className="lyra-titlebar-context-icon-button"
             aria-label={toolbar.reviewActions.prevLabel}
@@ -70,8 +72,8 @@ export const FileEditorTitlebarContent = ({
             }}
           >
             <ChevronUp size={12} />
-          </button>
-          <button
+          </AppToolbarButton>
+          <AppToolbarButton
             type="button"
             className="lyra-titlebar-context-icon-button"
             aria-label={toolbar.reviewActions.nextLabel}
@@ -81,8 +83,8 @@ export const FileEditorTitlebarContent = ({
             }}
           >
             <ChevronDown size={12} />
-          </button>
-          <button
+          </AppToolbarButton>
+          <AppToolbarButton
             type="button"
             className="lyra-titlebar-context-icon-button"
             aria-label={toolbar.reviewActions.acceptAllLabel}
@@ -92,9 +94,9 @@ export const FileEditorTitlebarContent = ({
             }}
           >
             <CheckCheck size={12} />
-          </button>
+          </AppToolbarButton>
           {toolbar.reviewActions.decisionState === "accepted" ? (
-            <button
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={toolbar.reviewActions.undoLabel}
@@ -103,10 +105,10 @@ export const FileEditorTitlebarContent = ({
               }}
             >
               <Undo2 size={12} />
-            </button>
+            </AppToolbarButton>
           ) : (
             <>
-              <button
+              <AppToolbarButton
                 type="button"
                 className="lyra-titlebar-context-icon-button"
                 aria-label={toolbar.reviewActions.acceptLabel}
@@ -115,21 +117,23 @@ export const FileEditorTitlebarContent = ({
                 }}
               >
                 <Check size={12} />
-              </button>
-              <button
+              </AppToolbarButton>
+              <AppToolbarButton
                 type="button"
                 className={
                   toolbar.reviewActions.decisionState === "rejected"
                     ? "lyra-titlebar-context-icon-button lyra-titlebar-context-danger lyra-titlebar-context-button-active"
                     : "lyra-titlebar-context-icon-button lyra-titlebar-context-danger"
                 }
+                tone="danger"
+                active={toolbar.reviewActions.decisionState === "rejected"}
                 aria-label={toolbar.reviewActions.rejectLabel}
                 onClick={() => {
                   onRejectEditorWorkItem?.(toolbar.reviewActions!.item);
                 }}
               >
                 <X size={12} />
-              </button>
+              </AppToolbarButton>
             </>
           )}
         </span>
@@ -147,14 +151,15 @@ export const FileEditorTitlebarContent = ({
         </span>
       )}
       {toolbar.saveButton === null ? null : (
-        <button
+        <AppToolbarButton
+          type="button"
           className="lyra-titlebar-context-icon-button"
           aria-label={toolbar.saveButton.label}
           disabled={toolbar.saveButton.disabled}
           onClick={onSave}
         >
           <Save size={14} />
-        </button>
+        </AppToolbarButton>
       )}
     </div>
   );
@@ -183,15 +188,21 @@ export const FileEditorSurfaceView = ({
     >
       {body.kind === "empty" ? (
         <section className="lyra-file-editor-empty-state">
-          <AlertTriangle size={16} />
-          <p>{body.message}</p>
-          <button
-            type="button"
-            className="lyra-file-editor-retry-button"
-            onClick={onRetry}
-          >
-            {body.retryLabel}
-          </button>
+          <AppEmptyState
+            density="compact"
+            icon={<AlertTriangle size={16} />}
+            title={body.message}
+            actions={(
+              <AppButton
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+              >
+                {body.retryLabel}
+              </AppButton>
+            )}
+          />
         </section>
       ) : (
         <section className="lyra-file-editor-body">

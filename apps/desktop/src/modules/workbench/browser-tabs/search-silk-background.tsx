@@ -8,10 +8,10 @@ type SilkTheme = {
 };
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-const FALLBACK_LIGHT_APP = "#dcdcdd";
-const FALLBACK_LIGHT_MUTED = "#7e8086";
-const FALLBACK_DARK_APP = "#3b414d";
-const FALLBACK_DARK_MUTED = "#878a98";
+const FALLBACK_LIGHT_APP = "#f6f5f6";
+const FALLBACK_LIGHT_MUTED = "#77797d";
+const FALLBACK_DARK_APP = "#191919";
+const FALLBACK_DARK_MUTED = "#8e8f90";
 
 const isBrowserRuntime = (): boolean =>
   typeof window !== "undefined" && typeof document !== "undefined";
@@ -72,7 +72,7 @@ const readThemeTone = (): "light" | "dark" => {
 
 const readSilkColor = (): string => {
   const tone = readThemeTone();
-  const app = readRootVar("--lyra-bg-app", tone === "dark" ? FALLBACK_DARK_APP : FALLBACK_LIGHT_APP);
+  const app = readRootVar("--lyra-app-bg", tone === "dark" ? FALLBACK_DARK_APP : FALLBACK_LIGHT_APP);
   const muted = readRootVar(
     "--lyra-text-muted",
     tone === "dark" ? FALLBACK_DARK_MUTED : FALLBACK_LIGHT_MUTED

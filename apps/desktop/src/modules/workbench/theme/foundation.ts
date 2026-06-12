@@ -117,9 +117,9 @@ const UNIT_TOKENS = Object.fromEntries(
 export const WORKBENCH_FOUNDATION_TOKENS = {
   ...UNIT_TOKENS,
   "--lyra-font-sans":
-    '"IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Segoe UI", sans-serif',
+    '"Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif',
   "--lyra-font-mono":
-    '"Lyra Nerd Mono", "Iosevka Nerd Font Mono", "IBM Plex Mono", "JetBrains Mono", "Cascadia Mono", monospace',
+    '"Geist Mono", "Lyra Nerd Mono", "Iosevka Nerd Font Mono", "JetBrains Mono", "Cascadia Mono", monospace',
   "--lyra-font-ui": 'var(--lyra-font-sans)',
 
   "--lyra-space-0": "0px",

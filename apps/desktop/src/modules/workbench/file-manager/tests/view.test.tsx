@@ -589,9 +589,8 @@ describe("FileManagerSurface", () => {
     fireEvent.click(screen.getByLabelText("Pause all"));
     fireEvent.click(screen.getByLabelText("Cancel"));
     fireEvent.click(screen.getByLabelText("Cancel all"));
-    fireEvent.change(screen.getByLabelText("Priority: build.zip"), {
-      target: { value: "high" }
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Priority: build.zip" }));
+    fireEvent.click(screen.getByRole("option", { name: "High" }));
 
     expect(screen.getByText("2m 0s left")).toBeInTheDocument();
     expect(screen.getByText("SHA256 verified")).toBeInTheDocument();
@@ -659,9 +658,8 @@ describe("FileManagerSurface", () => {
     fireEvent.change(screen.getByLabelText("Existing partial file"), {
       target: { value: "/tmp/file.zip.crdownload" }
     });
-    fireEvent.change(screen.getByLabelText("Checksum"), {
-      target: { value: "sha1" }
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Checksum" }));
+    fireEvent.click(screen.getByRole("option", { name: "SHA1" }));
     fireEvent.change(screen.getByLabelText("Checksum value"), {
       target: { value: "abc123" }
     });
@@ -779,10 +777,9 @@ describe("FileManagerSurface", () => {
     fireEvent.change(screen.getByLabelText("Outside speed limit"), {
       target: { value: "128" }
     });
-    fireEvent.change(screen.getByLabelText("Proxy mode"), {
-      target: { value: "socks5" }
-    });
-    fireEvent.click(screen.getByLabelText("Auto extract"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Proxy mode" }));
+    fireEvent.click(screen.getByRole("option", { name: "SOCKS5" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Auto extract" }));
     fireEvent.click(screen.getByLabelText("Add save rule"));
     fireEvent.change(screen.getByLabelText("Rule name"), {
       target: { value: "Installers" }

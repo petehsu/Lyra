@@ -3,8 +3,8 @@ import type {
   AgentSessionSnapshot,
   AgentSidePanelSnapshot
 } from "../../shared/agent";
-import type { AgentSidePanel, ModelOption, SessionMeta, TodoItem } from "./ai-panel/agent-chat-demo/core/types";
-import { formatMessage } from "./ai-panel/agent-chat-demo/core/i18n";
+import type { AgentSidePanel, ModelOption, SessionMeta, TodoItem } from "./ai-panel/lyra-agents/core/types";
+import { formatMessage } from "./ai-panel/lyra-agents/core/i18n";
 
 export { applyAgentRuntimeEventToSnapshot } from "./agent-session-view-model/runtime-reducer";
 export {

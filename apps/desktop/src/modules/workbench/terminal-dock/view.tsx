@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useMemo,
   useState,
   type DragEvent as ReactDragEvent
 } from "react";
@@ -24,13 +25,8 @@ import {
 } from "./drag-transfer";
 import { TerminalPaneSurface } from "./pane-surface";
 import type { TerminalDockProps } from "./types";
-import {
-  ChromeIconButton,
-  ChromeTabButton,
-  ChromeTabFrame,
-  ChromeToolbar,
-  cx
-} from "../ui-primitives";
+import { AppButton, AppIconButton, AppSelect } from "@renderer/ui/components";
+import { cn } from "@renderer/ui/utils";
 import {
   DEFAULT_TERMINAL_PROFILE_ID,
   DEFAULT_TERMINAL_PROFILES,
@@ -54,6 +50,13 @@ export const TerminalDock = ({
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string>(DEFAULT_TERMINAL_PROFILE_ID);
   const selectedProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, selectedProfileId);
+  const profileOptions = useMemo(
+    () => DEFAULT_TERMINAL_PROFILES.map((profile) => ({
+      value: profile.id,
+      label: profile.name
+    })),
+    []
+  );
 
   const clearDragUiState = useCallback((): void => {
     setIsWorkspaceDropActive(false);
@@ -197,7 +200,7 @@ export const TerminalDock = ({
 
   return (
     <section
-      className={cx(
+      className={cn(
         "lyra-terminal-dock",
         isWorkspaceDropActive && "lyra-terminal-dock-workspace-drop-target"
       )}
@@ -209,7 +212,7 @@ export const TerminalDock = ({
     >
       <aside className="lyra-terminal-side" aria-label="terminal-tabs-side">
         <nav
-          className={cx(
+          className={cn(
             "lyra-terminal-tabs",
             dockDropIndex !== null && dockDropIndex >= model.dockTabs.length
               && "lyra-terminal-tabs-drop-end"
@@ -217,9 +220,9 @@ export const TerminalDock = ({
           aria-label="terminal-tabs"
         >
           {model.dockTabs.map((tab, index) => (
-            <ChromeTabFrame
+            <div
               key={tab.id}
-              className={cx(
+              className={cn(
                 "lyra-terminal-tab",
                 "lyra-allow-web-drag",
                 tab.id === activeDockTab?.id && "lyra-terminal-tab-active",
@@ -227,7 +230,7 @@ export const TerminalDock = ({
                   && "lyra-terminal-tab-drop-target-before"
               )}
               data-lyra-terminal-tab-id={tab.id}
-              allowWebDrag
+              data-lyra-allow-web-drag="true"
               draggable
               onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
                 onDockTabDragStart(event, tab.id);
@@ -245,9 +248,11 @@ export const TerminalDock = ({
                 });
               }}
             >
-              <ChromeTabButton
+              <AppButton
                 className="lyra-terminal-tab-main"
-                allowWebDrag
+                variant="ghost"
+                size="sm"
+                data-lyra-allow-web-drag="true"
                 draggable
                 aria-label={tab.title}
                 onDragStart={(event: ReactDragEvent<HTMLButtonElement>) => {
@@ -281,60 +286,58 @@ export const TerminalDock = ({
                     <Star size={10} />
                   </span>
                 ) : null}
-              </ChromeTabButton>
-              <ChromeIconButton
+              </AppButton>
+              <AppIconButton
                 className="lyra-terminal-tab-close"
                 aria-label={labels.closeTab}
+                title={labels.closeTab}
                 onClick={() => {
                   onRequestCloseTab(tab.id);
                 }}
               >
-                <X size={12} />
-              </ChromeIconButton>
-            </ChromeTabFrame>
+                <X size={12} aria-hidden="true" />
+              </AppIconButton>
+            </div>
           ))}
         </nav>
-        <ChromeToolbar className="lyra-terminal-toolbar-actions">
-          <select
+        <div className="lyra-terminal-toolbar-actions">
+          <AppSelect
             className="lyra-terminal-profile-select"
-            aria-label={labels.profile}
+            ariaLabel={labels.profile}
             value={selectedProfile.id}
-            onChange={(event) => {
-              setSelectedProfileId(event.currentTarget.value);
+            options={profileOptions}
+            onValueChange={(value) => {
+              setSelectedProfileId(value);
             }}
-          >
-            {DEFAULT_TERMINAL_PROFILES.map((profile) => (
-              <option key={profile.id} value={profile.id}>{profile.name}</option>
-            ))}
-          </select>
-          <ChromeIconButton
+          />
+          <AppIconButton
             aria-label={labels.newTabWithProfile}
             title={labels.newTabWithProfile}
             onClick={() => {
               model.openTabWithProfile(selectedProfile);
             }}
           >
-            <Plus size={14} />
-          </ChromeIconButton>
-          <ChromeIconButton
+            <Plus size={14} aria-hidden="true" />
+          </AppIconButton>
+          <AppIconButton
             aria-label={labels.splitHorizontal}
             disabled={activeDockTab === null}
             onClick={() => {
               model.splitActivePane("horizontal");
             }}
           >
-            <SplitSquareHorizontal size={14} />
-          </ChromeIconButton>
-          <ChromeIconButton
+            <SplitSquareHorizontal size={14} aria-hidden="true" />
+          </AppIconButton>
+          <AppIconButton
             aria-label={labels.splitVertical}
             disabled={activeDockTab === null}
             onClick={() => {
               model.splitActivePane("vertical");
             }}
           >
-            <SplitSquareVertical size={14} />
-          </ChromeIconButton>
-          <ChromeIconButton
+            <SplitSquareVertical size={14} aria-hidden="true" />
+          </AppIconButton>
+          <AppIconButton
             aria-label={
               terminalPanelSide === "top"
                 ? labels.moveTerminalToBottom
@@ -343,12 +346,12 @@ export const TerminalDock = ({
             onClick={onToggleTerminalPanelSide}
           >
             {terminalPanelSide === "top" ? (
-              <PanelBottom size={14} />
+              <PanelBottom size={14} aria-hidden="true" />
             ) : (
-              <PanelTop size={14} />
+              <PanelTop size={14} aria-hidden="true" />
             )}
-          </ChromeIconButton>
-        </ChromeToolbar>
+          </AppIconButton>
+        </div>
       </aside>
 
       <section className="lyra-terminal-stage">

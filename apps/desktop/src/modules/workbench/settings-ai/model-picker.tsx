@@ -1,6 +1,6 @@
 import { useId } from "react";
 
-import { LyraListPicker } from "../list-picker";
+import { AppSelect, AppTextarea } from "@renderer/ui/components";
 import type { SettingsAiLabels, SettingsAiModelSelectionMode } from "./types";
 
 type SettingsAiModelPickerProps = {
@@ -36,18 +36,16 @@ export const SettingsAiModelPicker = ({
   return (
     <div className="lyra-settings-ai-field">
       <span>{labels.mainModelLabel}</span>
-      <LyraListPicker<SettingsAiModelSelectionMode>
-        className="lyra-settings-ai-list-picker lyra-settings-ai-model-mode-picker"
+      <AppSelect<SettingsAiModelSelectionMode>
+        className="lyra-settings-ai-select lyra-settings-ai-model-mode-picker"
         ariaLabel={labels.mainModelLabel}
-        listAriaLabel={labels.mainModelLabel}
         value={mode}
-        shape="rounded"
         options={modelModeOptions(labels)}
-        onChange={onModeChange}
+        onValueChange={onModeChange}
       />
       {mode === "custom" ? (
         <>
-          <textarea
+          <AppTextarea
             id={customInputId}
             aria-label={labels.modelLabel}
             className="lyra-settings-ai-input lyra-settings-ai-input-multiline lyra-settings-ai-model-input"

@@ -15,7 +15,7 @@ import type {
 } from "./types";
 
 const DEFAULT_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
-  fontFamily: '"IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Segoe UI", sans-serif',
+  fontFamily: '"Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif',
   surfaceBackground:
     "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",

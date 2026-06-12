@@ -108,6 +108,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         aiCategoryLabel: t("settings.aiCategoryLabel"),
         notificationsCategoryLabel: t("settings.notificationsCategoryLabel"),
         linuxCategoryLabel: t("settings.linuxCategoryLabel"),
+        docsNavLabel: t("settings.docsNavLabel"),
         languageLabel: t("settings.languageLabel"),
         themeLabel: t("settings.themeLabel"),
         uiStyleLabel: t("settings.uiStyleLabel"),
@@ -656,6 +657,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
       notificationCenter: {
         title: t("notification.centerTitle"),
         listTitle: t("notification.centerListTitle"),
+        emptyTitle: t("notification.centerEmptyTitle"),
+        emptyDescription: t("notification.centerEmptyDescription"),
         markAllRead: t("notification.centerMarkAllRead"),
         clearAll: t("notification.centerClearAll"),
         openSource: t("notification.centerOpenSource"),

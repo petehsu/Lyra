@@ -1,0 +1,224 @@
+import { Check, ChevronDown } from "lucide-react";
+import { useState, type ReactNode } from "react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from "../primitives";
+import { cn } from "../utils";
+
+export type AppModelMenuOption<TValue extends string = string> = {
+  readonly disabled?: boolean;
+  readonly label: ReactNode;
+  readonly value: TValue;
+};
+
+export type AppModelMenuSubmenu<TValue extends string = string> = {
+  readonly ariaLabel: string;
+  readonly disabled?: boolean;
+  readonly id: string;
+  readonly label: ReactNode;
+  readonly onValueChange: (value: TValue) => void;
+  readonly options: readonly AppModelMenuOption<TValue>[];
+  readonly value: TValue;
+};
+
+export type AppModelMenuProps<TModelValue extends string = string> = {
+  readonly ariaLabel: string;
+  readonly className?: string;
+  readonly contentClassName?: string;
+  readonly disabled?: boolean;
+  readonly onModelChange: (value: TModelValue) => void;
+  readonly options: readonly AppModelMenuOption<TModelValue>[];
+  readonly placeholder?: ReactNode;
+  readonly submenus?: readonly AppModelMenuSubmenu[];
+  readonly value: TModelValue;
+};
+
+const labelText = (label: ReactNode): string | undefined =>
+  typeof label === "string" ? label : undefined;
+
+export const AppModelMenu = <TModelValue extends string = string>({
+  ariaLabel,
+  className,
+  contentClassName,
+  disabled = false,
+  onModelChange,
+  options,
+  placeholder,
+  submenus = [],
+  value
+}: AppModelMenuProps<TModelValue>) => {
+  const [open, setOpen] = useState(false);
+  const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
+  const selectedOption = options.find((option) => option.value === value);
+  const triggerLabel = selectedOption?.label ?? placeholder ?? ariaLabel;
+  const enabledSubmenus = submenus.filter((submenu) => submenu.options.length > 0);
+
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setOpenSubmenuId(null);
+        }
+      }}
+      modal={false}
+    >
+      <DropdownMenuTrigger
+        className={cn("lyra-ui-select-trigger lyra-app-model-menu-trigger", className)}
+        aria-label={ariaLabel}
+        disabled={disabled || options.length === 0}
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        <span className="lyra-ui-select-trigger-value">
+          {triggerLabel}
+        </span>
+        <ChevronDown className="lyra-ui-select-chevron" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        className={cn("lyra-app-model-menu-content", contentClassName)}
+        align="start"
+      >
+        <DropdownMenuGroup>
+          {options.map((option) => {
+            const active = option.value === value;
+            const textValue = labelText(option.label);
+            const disabledProps = option.disabled === undefined
+              ? {}
+              : { disabled: option.disabled };
+            const textValueProps = textValue === undefined
+              ? {}
+              : { textValue };
+
+            return (
+              <DropdownMenuItem
+                key={option.value}
+                className="lyra-app-model-menu-item"
+                data-active={active ? "true" : undefined}
+                onSelect={() => {
+                  onModelChange(option.value);
+                  setOpenSubmenuId(null);
+                  setOpen(false);
+                }}
+                {...disabledProps}
+                {...textValueProps}
+              >
+                <span className="lyra-app-model-menu-item-label">
+                  {option.label}
+                </span>
+                {active ? (
+                  <Check className="lyra-ui-menu-check" aria-hidden="true" />
+                ) : null}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuGroup>
+        {enabledSubmenus.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              {enabledSubmenus.map((submenu) => {
+                const currentOption = submenu.options.find((option) => option.value === submenu.value);
+                const currentLabel = currentOption?.label ?? submenu.value;
+                const currentLabelText = labelText(currentLabel);
+                const submenuDisabledProps = submenu.disabled === undefined
+                  ? {}
+                  : { disabled: submenu.disabled };
+
+                return (
+                  <DropdownMenuSub
+                    key={submenu.id}
+                    open={openSubmenuId === submenu.id}
+                    onOpenChange={(nextOpen) => {
+                      setOpenSubmenuId(nextOpen ? submenu.id : null);
+                    }}
+                  >
+                    <DropdownMenuSubTrigger
+                      className="lyra-app-model-menu-sub-trigger"
+                      aria-label={
+                        currentLabelText === undefined
+                          ? submenu.ariaLabel
+                          : `${submenu.ariaLabel} ${currentLabelText}`
+                      }
+                      onFocus={() => {
+                        if (!submenu.disabled) {
+                          setOpenSubmenuId(submenu.id);
+                        }
+                      }}
+                      onMouseEnter={() => {
+                        if (!submenu.disabled) {
+                          setOpenSubmenuId(submenu.id);
+                        }
+                      }}
+                      onPointerMove={() => {
+                        if (!submenu.disabled) {
+                          setOpenSubmenuId(submenu.id);
+                        }
+                      }}
+                      {...submenuDisabledProps}
+                    >
+                      <span className="lyra-app-model-menu-sub-label">
+                        {submenu.label}
+                      </span>
+                      <span className="lyra-app-model-menu-sub-value">
+                        {currentLabel}
+                      </span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent
+                      className="lyra-app-model-menu-sub-content"
+                      alignOffset={-4}
+                    >
+                      {submenu.options.map((option) => {
+                        const active = option.value === submenu.value;
+                        const textValue = labelText(option.label);
+                        const disabledProps = option.disabled === undefined
+                          ? {}
+                          : { disabled: option.disabled };
+                        const textValueProps = textValue === undefined
+                          ? {}
+                          : { textValue };
+
+                        return (
+                          <DropdownMenuItem
+                            key={option.value}
+                            className="lyra-app-model-menu-item"
+                            data-active={active ? "true" : undefined}
+                            onSelect={() => {
+                              submenu.onValueChange(option.value);
+                              setOpenSubmenuId(null);
+                              setOpen(false);
+                            }}
+                            {...disabledProps}
+                            {...textValueProps}
+                          >
+                            <span className="lyra-app-model-menu-item-label">
+                              {option.label}
+                            </span>
+                            {active ? (
+                              <Check className="lyra-ui-menu-check" aria-hidden="true" />
+                            ) : null}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                );
+              })}
+            </DropdownMenuGroup>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};

@@ -400,6 +400,11 @@ const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
     />
   );
 
+const openModelControlsMenu = async () => {
+  const trigger = await screen.findByLabelText("Model controls");
+  fireEvent.click(trigger);
+};
+
 describe("AiPanelSurface", () => {
   test("opens long sessions with only the recent message window rendered", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
@@ -707,16 +712,63 @@ describe("AiPanelSurface", () => {
     const { api } = createDesktopApi();
     renderPanel(api);
 
-    fireEvent.click(await screen.findByLabelText("Model controls"));
-    expect(screen.queryByRole("option", { name: "unconfigured-model · Missing" }))
+    await openModelControlsMenu();
+    expect(screen.queryByRole("menuitem", { name: "unconfigured-model · Missing" }))
       .not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
         sessionId: "session-1",
         model: "gpt-5"
       });
+    });
+  });
+
+  test("keeps model runtime parameters inside nested model menu items", async () => {
+    const { api } = createDesktopApi();
+    renderPanel(api);
+
+    await openModelControlsMenu();
+
+    const reasoningItem = await screen.findByRole("menuitem", { name: /Reasoning effort low/u });
+    fireEvent.pointerMove(reasoningItem, { pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
+
+    await waitFor(() => {
+      expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        reasoningEffort: "medium"
+      });
+    });
+
+    await openModelControlsMenu();
+
+    const serviceTierItem = await screen.findByRole("menuitem", { name: /Fast mode priority/u });
+    fireEvent.pointerMove(serviceTierItem, { pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "flex" }));
+
+    await waitFor(() => {
+      expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        serviceTier: "flex"
+      });
+    });
+  });
+
+  test("closes the composer attachment menu when clicking outside", async () => {
+    const { api } = createDesktopApi();
+    renderPanel(api);
+
+    fireEvent.click(await screen.findByLabelText("Attach"));
+    expect(await screen.findByRole("menuitem", { name: "Add image" }))
+      .toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: "Add image" }))
+        .not.toBeInTheDocument();
     });
   });
 
@@ -970,9 +1022,16 @@ describe("AiPanelSurface", () => {
       planOnly: false,
       focus: null
     });
+    await waitFor(() => {
+      expect(screen.getByLabelText("More")).toHaveAttribute("aria-expanded", "false");
+    });
 
     fireEvent.click(screen.getByLabelText("More"));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Refactor" }));
+    const refactorItem = await screen.findByRole("menuitem", { name: "Refactor" });
+    await waitFor(() => {
+      expect(refactorItem).not.toHaveAttribute("data-disabled");
+    });
+    fireEvent.click(refactorItem);
     expect(runRefactor).toHaveBeenCalledWith({
       sessionId: "session-1",
       planOnly: false,
@@ -1092,7 +1151,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const groupHead = (await screen.findByText("Agent activity")).closest(".tool-group-head");
+    const groupHead = (await screen.findByText("Agent activity")).closest(".lyra-agents-tool-group-head");
     if (groupHead === null) throw new Error("Expected tool group head");
     expect(groupHead).not.toHaveTextContent("2 elements");
     expect(groupHead).not.toHaveTextContent("example.com");
@@ -1100,25 +1159,25 @@ describe("AiPanelSurface", () => {
 
     fireEvent.click(groupHead);
 
-    const callHead = (await screen.findByText("Mapped browser elements")).closest(".tool-call-head");
+    const callHead = (await screen.findByText("Mapped browser elements")).closest(".lyra-agents-tool-call-head");
     if (callHead === null) throw new Error("Expected tool call head");
     expect(callHead).not.toHaveTextContent("2 elements");
     expect(callHead).not.toHaveTextContent("example.com");
     expect(callHead).not.toHaveTextContent("1 button Search");
 
-    const call = callHead.closest(".tool-call");
+    const call = callHead.closest(".lyra-agents-tool-call");
     if (call === null) throw new Error("Expected tool call row");
-    const callCollapse = call.querySelector(".collapse");
+    const callCollapse = call.querySelector(".lyra-agents-collapse");
     expect(callCollapse).toHaveAttribute("data-open", "false");
 
     fireEvent.click(callHead);
 
     await waitFor(() => {
-      expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "true");
+      expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
     });
-    expect(screen.getByText("2 elements").closest(".tool-call-body")).not.toBeNull();
-    expect(screen.getByText("example.com").closest(".tool-call-body")).not.toBeNull();
-    expect(screen.getByText(/1 button Search/u).closest(".tool-call-body")).not.toBeNull();
+    expect(screen.getByText("2 elements").closest(".lyra-agents-tool-call-body")).not.toBeNull();
+    expect(screen.getByText("example.com").closest(".lyra-agents-tool-call-body")).not.toBeNull();
+    expect(screen.getByText(/1 button Search/u).closest(".lyra-agents-tool-call-body")).not.toBeNull();
   });
 
   test("keeps Lyra Lumen typed text out of tool evidence", async () => {
@@ -1146,29 +1205,29 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    const groupHead = (await screen.findByText("Agent activity")).closest(".tool-group-head");
+    const groupHead = (await screen.findByText("Agent activity")).closest(".lyra-agents-tool-group-head");
     if (groupHead === null) throw new Error("Expected tool group head");
     expect(groupHead).not.toHaveTextContent("12 chars");
     expect(groupHead).not.toHaveTextContent("element 9");
 
     fireEvent.click(groupHead);
 
-    const callHead = (await screen.findByText("Typed in browser")).closest(".tool-call-head");
+    const callHead = (await screen.findByText("Typed in browser")).closest(".lyra-agents-tool-call-head");
     if (callHead === null) throw new Error("Expected tool call head");
     expect(callHead).not.toHaveTextContent("12 chars");
     expect(callHead).not.toHaveTextContent("element 9");
 
-    const call = callHead.closest(".tool-call");
+    const call = callHead.closest(".lyra-agents-tool-call");
     if (call === null) throw new Error("Expected tool call row");
-    expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "false");
+    expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "false");
 
     fireEvent.click(callHead);
 
     await waitFor(() => {
-      expect(call.querySelector(".collapse")).toHaveAttribute("data-open", "true");
+      expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
     });
-    expect(screen.getByText("12 chars").closest(".tool-call-body")).not.toBeNull();
-    expect(screen.getByText("element 9").closest(".tool-call-body")).not.toBeNull();
+    expect(screen.getByText("12 chars").closest(".lyra-agents-tool-call-body")).not.toBeNull();
+    expect(screen.getByText("element 9").closest(".lyra-agents-tool-call-body")).not.toBeNull();
     expect(screen.queryByText("secret-value")).not.toBeInTheDocument();
   });
 
@@ -1707,7 +1766,7 @@ describe("AiPanelSurface", () => {
         output: {
           content: [
             "- 豆包 - 字节跳动旗下 AI 智能助手 [browser-tab-10] page (page) flags=active,visible,focused | https://www.doubao.com/chat/2084714018988034",
-            "- Lyra Agent UI [browser-tab-11] page (page) flags=visible | http://localhost:5173/"
+            "- Lyra Agents [browser-tab-11] page (page) flags=visible | http://localhost:5173/"
           ].join("\n")
         },
         startedAt: "2026-05-13T00:00:02.000Z",
@@ -2061,8 +2120,8 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByRole("tab", { name: "Primary Chat" }))
       .toHaveAttribute("aria-selected", "true");
     const backgroundTab = screen.getByRole("tab", { name: "Background plan" });
-    expect(backgroundTab.closest(".ai-session-tab-item"))
-      .toHaveClass("ai-session-tab-item-running");
+    expect(backgroundTab.closest(".lyra-agents-session-tab-item"))
+      .toHaveClass("lyra-agents-session-tab-item-running");
 
     fireEvent.click(backgroundTab);
 
@@ -2077,7 +2136,7 @@ describe("AiPanelSurface", () => {
     fireEvent.click(screen.getByLabelText("Close session tab: Background plan"));
     expect(onCloseSessionTab).toHaveBeenCalledWith("session-2");
     expect(api.agent?.cancelTurn).not.toHaveBeenCalled();
-    expect(container.querySelector(".ai-session-tab-title")).not.toBeNull();
+    expect(container.querySelector(".lyra-agents-session-tab-title")).not.toBeNull();
   });
 
   test("creates an unbound session through the tab button", async () => {
@@ -2229,8 +2288,8 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByRole("tab", { name: "新会话" }))
       .toHaveAttribute("aria-selected", "true");
 
-    fireEvent.click(await screen.findByLabelText("Model controls"));
-    fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
+    await openModelControlsMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
@@ -2254,8 +2313,8 @@ describe("AiPanelSurface", () => {
       });
     });
 
-    fireEvent.click(await screen.findByLabelText("Model controls"));
-    fireEvent.click(screen.getByRole("option", { name: "gpt-5 · OpenAI" }));
+    await openModelControlsMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({
@@ -2294,7 +2353,7 @@ describe("AiPanelSurface", () => {
 
     const tab = await screen.findByRole("tab", { name: longTitle });
     expect(tab).toHaveAttribute("title", longTitle);
-    expect(tab.querySelector(".ai-session-tab-title")).not.toBeNull();
+    expect(tab.querySelector(".lyra-agents-session-tab-title")).not.toBeNull();
     expect(screen.getByLabelText(`Close session tab: ${longTitle}`)).toBeInTheDocument();
     expect(screen.getByLabelText("New session")).toBeInTheDocument();
   });
@@ -2315,10 +2374,10 @@ describe("AiPanelSurface", () => {
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
-        if (this.classList.contains("ai-session-tab-strip")) {
+        if (this.classList.contains("lyra-agents-session-tab-strip")) {
           return rect(172);
         }
-        if (this.classList.contains("ai-session-tab-add")) {
+        if (this.classList.contains("lyra-agents-session-tab-add")) {
           return rect(32, 30);
         }
         return rect(0);
@@ -2369,17 +2428,17 @@ describe("AiPanelSurface", () => {
 
       await screen.findByRole("tab", { name: "Session 1" });
       await waitFor(() => {
-        expect(container.querySelector(".ai-session-tab-strip"))
-          .not.toHaveClass("ai-session-tab-strip-stacked");
+        expect(container.querySelector(".lyra-agents-session-tab-strip"))
+          .not.toHaveClass("lyra-agents-session-tab-strip-stacked");
       });
-      const activeTab = container.querySelector(".ai-session-tab-item-active");
+      const activeTab = container.querySelector(".lyra-agents-session-tab-item-active");
       expect(activeTab)
         .toHaveStyle({ width: "132px", transform: "translate3d(0px, 0, 0)" });
-      expect(container.querySelector(".ai-session-tab-list-spacer"))
+      expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
         .toHaveStyle({ width: "525px" });
-      expect(activeTab?.querySelector(".ai-session-tab-title"))
+      expect(activeTab?.querySelector(".lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 1");
-      expect(container.querySelector("[data-ai-session-tab-id='session-2'] .ai-session-tab-title"))
+      expect(container.querySelector("[data-ai-session-tab-id='session-2'] .lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 2");
       expect(screen.getByLabelText("New session")).toBeInTheDocument();
     } finally {
@@ -2403,13 +2462,13 @@ describe("AiPanelSurface", () => {
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function getBoundingClientRectMock(this: HTMLElement) {
-        if (this.classList.contains("ai-session-tab-strip")) {
+        if (this.classList.contains("lyra-agents-session-tab-strip")) {
           return rect(220);
         }
-        if (this.classList.contains("ai-session-tab-list")) {
+        if (this.classList.contains("lyra-agents-session-tab-list")) {
           return rect(188);
         }
-        if (this.classList.contains("ai-session-tab-add")) {
+        if (this.classList.contains("lyra-agents-session-tab-add")) {
           return rect(32, 30);
         }
         return rect(0);
@@ -2444,13 +2503,13 @@ describe("AiPanelSurface", () => {
 
       await screen.findByRole("tab", { name: "Session 8" });
       await waitFor(() => {
-        expect(container.querySelector(".ai-session-tab-strip"))
-          .not.toHaveClass("ai-session-tab-strip-stacked");
+        expect(container.querySelector(".lyra-agents-session-tab-strip"))
+          .not.toHaveClass("lyra-agents-session-tab-strip-stacked");
       });
-      expect(container.querySelector(".ai-session-tab-item-active"))
+      expect(container.querySelector(".lyra-agents-session-tab-item-active"))
         .toHaveStyle({ width: "132px", transform: "translate3d(917px, 0, 0)" });
       await waitFor(() => {
-        expect(container.querySelector(".ai-session-tab-list"))
+        expect(container.querySelector(".lyra-agents-session-tab-list"))
           .toHaveProperty("scrollLeft", 861);
       });
     } finally {

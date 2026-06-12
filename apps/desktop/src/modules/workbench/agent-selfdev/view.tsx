@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
+import {
+  AppBadge,
+  AppButton,
+  AppEmptyState,
+  AppStatusMessage,
+  AppSwitch,
+  AppTabs,
+  AppTextarea,
+  type AppTabOption
+} from "@renderer/ui/components";
+
 import type {
   AgentRuntimeEvent,
   AgentSelfDevStatusResponse,
   AgentSessionSnapshot
 } from "../../../shared/desktop-bridge";
-import { AgentChatApp } from "../ai-panel/agent-chat-demo/AgentChatApp";
-import { setLocale, type Locale } from "../ai-panel/agent-chat-demo/core/i18n";
-import { createDataProviderValue } from "../ai-panel/agent-chat-demo/data/createDataProviderValue";
+import { LyraAgentsApp } from "../ai-panel/lyra-agents/LyraAgentsApp";
+import { setLocale, type Locale } from "../ai-panel/lyra-agents/core/i18n";
+import { createDataProviderValue } from "../ai-panel/lyra-agents/data/createDataProviderValue";
 import {
   agentSessionToChatMessages,
   agentSessionToSessionMeta,
@@ -213,6 +224,13 @@ export const AgentSelfDevSurface = ({
   const running = state.session?.follow.running ?? false;
   const unavailable =
     desktopApi?.agent === undefined || selfdevStatus?.available === false;
+  const targetTabOptions = useMemo<readonly AppTabOption<AgentSelfDevTarget>[]>(
+    () => targetOptions.map((option) => ({
+      value: option,
+      label: targetLabel(labels, option)
+    })),
+    [labels]
+  );
 
   return (
     <section className="lyra-agent-selfdev-surface" aria-label={labels.title}>
@@ -222,7 +240,7 @@ export const AgentSelfDevSurface = ({
 
         <label className="lyra-agent-selfdev-field">
           <span>{labels.promptLabel}</span>
-          <textarea
+          <AppTextarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             placeholder={labels.promptPlaceholder}
@@ -232,46 +250,46 @@ export const AgentSelfDevSurface = ({
 
         <fieldset className="lyra-agent-selfdev-fieldset">
           <legend>{labels.targetLabel}</legend>
-          <div className="lyra-agent-selfdev-segments">
-            {targetOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={option === target ? "is-active" : ""}
-                onClick={() => setTarget(option)}
-              >
-                {targetLabel(labels, option)}
-              </button>
-            ))}
-          </div>
+          <AppTabs
+            ariaLabel={labels.targetLabel}
+            className="lyra-agent-selfdev-segments"
+            value={target}
+            options={targetTabOptions}
+            onValueChange={setTarget}
+          />
         </fieldset>
 
         <label className="lyra-agent-selfdev-toggle">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={inheritContext}
-            onChange={(event) => setInheritContext(event.target.checked)}
+            onCheckedChange={setInheritContext}
+            aria-label={labels.inheritContext}
           />
           <span>{labels.inheritContext}</span>
         </label>
 
-        <button
-          type="button"
+        <AppButton
           className="lyra-agent-selfdev-start"
           disabled={starting || unavailable}
           onClick={() => void startSelfDev()}
         >
           {starting ? labels.starting : labels.start}
-        </button>
+        </AppButton>
 
         {state.error !== null ? (
-          <div className="lyra-agent-selfdev-error" role="status">{state.error}</div>
+          <AppStatusMessage
+            className="lyra-agent-selfdev-error"
+            tone="error"
+            role="status"
+          >
+            {state.error}
+          </AppStatusMessage>
         ) : null}
       </aside>
 
       <main className="lyra-agent-selfdev-main">
         <header className="lyra-agent-selfdev-status">
-          <span className="lyra-agent-selfdev-badge">self-dev</span>
+          <AppBadge className="lyra-agent-selfdev-badge">self-dev</AppBadge>
           <span>{labels.status}: {running ? labels.running : labels.idle}</span>
           {repoDir.trim().length > 0 ? <span>{labels.repo}: {repoDir}</span> : null}
           {selfdevStatus?.output.toLowerCase().includes("reload") ? (
@@ -279,13 +297,14 @@ export const AgentSelfDevSurface = ({
           ) : null}
         </header>
         {state.session === null ? (
-          <section className="lyra-agent-selfdev-empty">
-            <h2>{unavailable ? labels.unavailable : labels.emptyTitle}</h2>
-            <p>{selfdevStatus?.available === false ? selfdevStatus.output : labels.emptyDescription}</p>
-          </section>
+          <AppEmptyState
+            className="lyra-agent-selfdev-empty"
+            title={unavailable ? labels.unavailable : labels.emptyTitle}
+            description={selfdevStatus?.available === false ? selfdevStatus.output : labels.emptyDescription}
+          />
         ) : (
           <div className="lyra-agent-selfdev-chat">
-            <AgentChatApp
+            <LyraAgentsApp
               data={data}
               showHeader={false}
               {...(locale === undefined ? {} : { locale: locale as Locale })}

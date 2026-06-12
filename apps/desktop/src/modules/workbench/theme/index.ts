@@ -4,6 +4,7 @@ export { WORKBENCH_FOUNDATION_TOKENS } from "./foundation";
 export { WORKBENCH_SEMANTIC_TOKENS } from "./semantic";
 export {
   isWorkbenchThemeId,
+  normalizeWorkbenchThemeId,
   observeSystemPrefersDark,
   readSystemPrefersDark,
   resolveThemeVars,

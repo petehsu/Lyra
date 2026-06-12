@@ -174,9 +174,8 @@ describe("terminal dock view", () => {
     const props = createProps();
     render(<TerminalDock {...props} />);
 
-    fireEvent.change(screen.getByLabelText("profile"), {
-      target: { value: "developer" }
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "profile" }));
+    fireEvent.click(screen.getByRole("option", { name: "Developer" }));
     fireEvent.click(screen.getByRole("button", { name: "new-profile" }));
 
     expect(props.model.openTabWithProfile).toHaveBeenCalledWith(

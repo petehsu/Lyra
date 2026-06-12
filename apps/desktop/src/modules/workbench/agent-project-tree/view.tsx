@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FolderOpen, GitBranch, RefreshCw } from "lucide-react";
 
+import {
+  AppEmptyState,
+  AppLoadingState,
+  AppObjectRow,
+  AppStatusMessage,
+  AppToolbarButton
+} from "@renderer/ui/components";
 import type { FileManagerEntry } from "../../../shared/file-manager";
 import { FileEditorSurface } from "../file-editor";
 import { renderFileManagerEntryIcon } from "../file-manager";
@@ -24,8 +31,9 @@ const sortEntries = (entries: readonly FileManagerEntry[]): readonly FileManager
     });
   });
 
-const joinClassNames = (...values: Array<string | false | null | undefined>): string =>
-  values.filter((value): value is string => typeof value === "string" && value.length > 0).join(" ");
+const indentStyle = (depth: number, base: number): { readonly paddingLeft: string } => ({
+  paddingLeft: `${Math.max(depth, 0) * 14 + base}px`
+});
 
 type DirectoryStateMap = Record<string, AgentProjectTreeDirectoryState | undefined>;
 
@@ -52,7 +60,7 @@ const AgentProjectTreeTitlebarBridge = ({
       controls: (
         <>
           {onOpenGitPanel === undefined ? null : (
-            <button
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.openSourceControl}
@@ -60,9 +68,9 @@ const AgentProjectTreeTitlebarBridge = ({
               onClick={onOpenGitPanel}
             >
               <GitBranch size={14} />
-            </button>
+            </AppToolbarButton>
           )}
-          <button
+          <AppToolbarButton
             type="button"
             className="lyra-titlebar-context-icon-button"
             aria-label={labels.refresh}
@@ -70,7 +78,7 @@ const AgentProjectTreeTitlebarBridge = ({
             onClick={onRefresh}
           >
             <RefreshCw size={14} />
-          </button>
+          </AppToolbarButton>
         </>
       )
     }),
@@ -120,35 +128,38 @@ const TreeDirectory = ({
 
   if (node === undefined || node.status === "loading") {
     return (
-      <div
+      <AppLoadingState
         className="lyra-agent-project-tree-inline-state"
-        style={{ paddingLeft: `${Math.max(depth, 0) * 14 + 28}px` }}
-      >
-        {labels.loading}
-      </div>
+        align="start"
+        density="compact"
+        title={labels.loading}
+        style={indentStyle(depth, 28)}
+      />
     );
   }
 
   if (node.status === "error") {
     return (
-      <div
-        className="lyra-agent-project-tree-inline-state lyra-agent-project-tree-inline-error"
-        style={{ paddingLeft: `${Math.max(depth, 0) * 14 + 28}px` }}
+      <AppStatusMessage
+        className="lyra-agent-project-tree-inline-state"
+        tone="error"
+        style={indentStyle(depth, 28)}
       >
         {node.errorMessage}
-      </div>
+      </AppStatusMessage>
     );
   }
 
   const entries = sortEntries(node.entries);
   if (entries.length === 0) {
     return (
-      <div
+      <AppEmptyState
         className="lyra-agent-project-tree-inline-state"
-        style={{ paddingLeft: `${Math.max(depth, 0) * 14 + 28}px` }}
-      >
-        {labels.emptyDirectory}
-      </div>
+        align="start"
+        density="compact"
+        title={labels.emptyDirectory}
+        style={indentStyle(depth, 28)}
+      />
     );
   }
 
@@ -159,15 +170,23 @@ const TreeDirectory = ({
         const selected = entry.kind === "file" && selectedFilePath === entry.path;
         return (
           <div key={entry.path} className="lyra-agent-project-tree-node">
-            <button
-              type="button"
-              className={joinClassNames(
-                "lyra-agent-project-tree-row",
-                selected && "lyra-agent-project-tree-row-selected"
-              )}
-              style={{ paddingLeft: `${Math.max(depth, 0) * 14 + 10}px` }}
+            <AppObjectRow
+              className="lyra-agent-project-tree-row"
+              active={selected}
+              style={indentStyle(depth, 10)}
               aria-expanded={entry.kind === "directory" ? expanded : undefined}
-              title={entry.path}
+              aria-label={entry.path}
+              title={(
+                <span className="lyra-agent-project-tree-label">
+                  <span className="lyra-agent-project-tree-twist" aria-hidden="true">
+                    {entry.kind === "directory"
+                      ? expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />
+                      : null}
+                  </span>
+                  {renderFileManagerEntryIcon(entry)}
+                  <span className="lyra-agent-project-tree-name">{entry.name}</span>
+                </span>
+              )}
               onClick={() => {
                 if (entry.kind === "directory") {
                   onToggleDirectory(entry.path);
@@ -178,15 +197,7 @@ const TreeDirectory = ({
                 }
                 onOpenFile(entry.path);
               }}
-            >
-              <span className="lyra-agent-project-tree-twist" aria-hidden="true">
-                {entry.kind === "directory"
-                  ? expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />
-                  : null}
-              </span>
-              {renderFileManagerEntryIcon(entry)}
-              <span className="lyra-agent-project-tree-name">{entry.name}</span>
-            </button>
+            />
             {expanded ? (
               <TreeDirectory
                 path={entry.path}
@@ -316,24 +327,26 @@ export const AgentProjectTreeSurface = ({
           : { onOpenGitPanel: onOpenSourceControl })}
       />
       <aside className="lyra-agent-project-tree-sidebar">
-        <button
-          type="button"
+        <AppObjectRow
           className="lyra-agent-project-tree-root-row"
-          title={state.rootPath}
           aria-expanded={expandedPaths.has(state.rootPath)}
+          aria-label={state.rootPath}
+          title={(
+            <span className="lyra-agent-project-tree-label">
+              <span className="lyra-agent-project-tree-twist" aria-hidden="true">
+                {expandedPaths.has(state.rootPath) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </span>
+              <FolderOpen size={14} aria-hidden="true" />
+              <span className="lyra-agent-project-tree-name">{state.title}</span>
+            </span>
+          )}
           onClick={() => {
             model.toggleDirectory(state.instanceId, state.rootPath);
             if (directoryStates[state.rootPath] === undefined) {
               loadDirectory(state.rootPath);
             }
           }}
-        >
-          <span className="lyra-agent-project-tree-twist" aria-hidden="true">
-            {expandedPaths.has(state.rootPath) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </span>
-          <FolderOpen size={14} aria-hidden="true" />
-          <span className="lyra-agent-project-tree-name">{state.title}</span>
-        </button>
+        />
         <div className="lyra-agent-project-tree-list" role="tree" aria-label={labels.title}>
           {expandedPaths.has(state.rootPath) ? (
             <TreeDirectory
@@ -350,17 +363,18 @@ export const AgentProjectTreeSurface = ({
           ) : null}
         </div>
         {actionError === null ? null : (
-          <div className="lyra-agent-project-tree-error" role="status">
+          <AppStatusMessage className="lyra-agent-project-tree-error" tone="error" role="status">
             {actionError}
-          </div>
+          </AppStatusMessage>
         )}
       </aside>
       <main className="lyra-agent-project-tree-editor">
         {fileEditorState === null ? (
-          <section className="lyra-agent-project-tree-empty">
-            <h2>{labels.selectFileTitle}</h2>
-            <p>{labels.selectFileDescription}</p>
-          </section>
+          <AppEmptyState
+            className="lyra-agent-project-tree-empty"
+            title={labels.selectFileTitle}
+            description={labels.selectFileDescription}
+          />
         ) : (
           <FileEditorSurface
             state={fileEditorState}

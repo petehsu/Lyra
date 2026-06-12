@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 
+import { AppButton } from "@renderer/ui/components";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";
 
 export const FileManagerChooserBar = ({
@@ -21,8 +22,9 @@ export const FileManagerChooserBar = ({
           {chooserBar.path ?? labels.chooserSelectDirectoryPlaceholder}
         </span>
       </div>
-      <button
-        type="button"
+      <AppButton
+        variant="ghost"
+        size="sm"
         className="lyra-file-manager-chooser-confirm"
         disabled={!chooserBar.canConfirm}
         onClick={() => {
@@ -32,9 +34,9 @@ export const FileManagerChooserBar = ({
           actions.onConfirmChooser();
         }}
       >
-        <Check size={14} />
+        <Check size={14} aria-hidden="true" />
         <span>{chooserBar.confirmLabel}</span>
-      </button>
+      </AppButton>
     </footer>
   );
 };

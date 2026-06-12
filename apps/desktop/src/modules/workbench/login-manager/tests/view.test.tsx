@@ -208,9 +208,8 @@ describe("LoginManagerSurface", () => {
     expect(onOpenSite).toHaveBeenCalledWith("https://example.com/login", "Example");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Login method"), {
-      target: { value: "oauth" }
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Login method" }));
+    fireEvent.click(screen.getByRole("option", { name: "OAuth" }));
     fireEvent.change(screen.getByLabelText("Notes"), {
       target: { value: "manual GitHub login" }
     });
@@ -242,6 +241,39 @@ describe("LoginManagerSurface", () => {
     });
   });
 
+  test("renders embedded login management as action rows without a detail pane", async () => {
+    const { api, clearSite, clearSiteData } = createDesktopApi();
+    const onOpenSite = vi.fn();
+    render(
+      <LoginManagerSurface
+        desktopApi={api}
+        labels={createLabels()}
+        onOpenSite={onOpenSite}
+        embedded
+      />
+    );
+
+    expect(await screen.findAllByText("example.com")).not.toHaveLength(0);
+    expect(document.querySelector(".lyra-login-manager-detail")).toBeNull();
+    expect(document.querySelector(".lyra-login-manager-embedded-list")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open site" }));
+    expect(onOpenSite).toHaveBeenCalledWith("https://example.com/login", "Example");
+
+    fireEvent.click(screen.getByRole("button", { name: "Log out site" }));
+    await waitFor(() => {
+      expect(clearSite).toHaveBeenCalledWith({
+        sessionId: "https://example.com"
+      });
+    });
+    await waitFor(() => {
+      expect(clearSiteData).toHaveBeenCalledWith({
+        origin: "https://example.com"
+      });
+    });
+  });
+
   test("keeps saved password actions behind explicit user controls", async () => {
     const {
       api,
@@ -257,7 +289,7 @@ describe("LoginManagerSurface", () => {
       />
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Passwords" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Passwords" }));
     expect(await screen.findAllByText("alice@example.com")).not.toHaveLength(0);
     expect(screen.queryByText("super-secret-password")).toBeNull();
 

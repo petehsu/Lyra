@@ -491,7 +491,7 @@ describe("AgentSessionHistorySurface", () => {
     const { api, readSession } = createDesktopApi();
     const onOpenSession = vi.fn();
 
-    renderAgentHistory({
+    const { container } = renderAgentHistory({
       desktopApi: api,
       labels,
       activeSessionId: "session-1",
@@ -506,7 +506,8 @@ describe("AgentSessionHistorySurface", () => {
     });
     expect(screen.getByText("Preview answer for session-2")).toBeInTheDocument();
     const previewPane = screen.getByRole("complementary", { name: "Session preview" });
-    expect(within(previewPane).queryByRole("heading", { name: "Review UI polish" })).not.toBeInTheDocument();
+    expect(within(previewPane).getByRole("heading", { name: "Review UI polish" })).toBeInTheDocument();
+    expect(container.querySelector(".msg")).toBeNull();
     expect(screen.queryByText("OpenAI / gpt-5")).not.toBeInTheDocument();
     expect(screen.queryByText("idle")).not.toBeInTheDocument();
     expect(onOpenSession).not.toHaveBeenCalled();

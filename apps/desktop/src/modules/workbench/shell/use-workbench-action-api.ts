@@ -9,8 +9,6 @@ import {
   AGENT_SESSION_HISTORY_INSTANCE_ID,
   createAgentSessionHistoryAppRequest
 } from "../agent-session-history";
-import { createSoftwareStoreAppRequest } from "../software-store";
-import { createLoginManagerAppRequest } from "../login-manager";
 import { resolveDocsEntryUrl } from "./service";
 import type { PanelLayoutModel } from "./use-panel-layout";
 
@@ -63,8 +61,8 @@ type UseWorkbenchActionApiParams = {
   readonly docsEntryAddress: string;
   readonly docsTabTitle: string;
   readonly agentSessionHistoryTitle: string;
-  readonly softwareStoreTitle: string;
-  readonly loginManagerTitle: string;
+  readonly onOpenSoftwareStore: () => void;
+  readonly onOpenLoginManager: () => void;
   readonly locale: WorkbenchLocale;
   readonly resolvedThemeId: WorkbenchResolvedThemeId;
 };
@@ -78,8 +76,8 @@ export const useWorkbenchActionApi = ({
   docsEntryAddress,
   docsTabTitle,
   agentSessionHistoryTitle,
-  softwareStoreTitle,
-  loginManagerTitle,
+  onOpenSoftwareStore,
+  onOpenLoginManager,
   locale,
   resolvedThemeId
 }: UseWorkbenchActionApiParams): WorkbenchActionApi =>
@@ -99,12 +97,8 @@ export const useWorkbenchActionApi = ({
     return {
       openNewTab: tabsModel.openNewTab,
       openSettings: tabsModel.openSettingsTab,
-      openSoftwareStore: () => {
-        tabsModel.openAppTab(createSoftwareStoreAppRequest(softwareStoreTitle));
-      },
-      openLoginManager: () => {
-        tabsModel.openAppTab(createLoginManagerAppRequest(loginManagerTitle));
-      },
+      openSoftwareStore: onOpenSoftwareStore,
+      openLoginManager: onOpenLoginManager,
       openFileManager: () => {
         const nextApp = fileManagerModel.createInstance();
         tabsModel.openAppTab(nextApp);
@@ -156,8 +150,8 @@ export const useWorkbenchActionApi = ({
     docsEntryAddress,
     docsTabTitle,
     agentSessionHistoryTitle,
-    loginManagerTitle,
-    softwareStoreTitle,
+    onOpenLoginManager,
+    onOpenSoftwareStore,
     fileManagerModel,
     locale,
     onBeforePanelLayoutAnimation,
@@ -184,4 +178,4 @@ export const createWorkbenchChromeLabels = (
   minimizeWindow: t("window.minimize"),
   toggleMaximizeWindow: t("window.toggleMaximize"),
   closeWindow: t("window.close")
-});
+  });

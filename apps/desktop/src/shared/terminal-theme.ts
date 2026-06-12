@@ -87,9 +87,9 @@ export const TERMINAL_THEME_PRESET_IDS: readonly TerminalThemeMode[] =
   TERMINAL_THEME_MODE_IDS;
 
 export const TERMINAL_THEME_PRESETS: Record<TerminalThemeMode, TerminalThemePreset> = {
-  "follow-app": createPreset("follow-app", ["#8390aa", "#7aa2f7", "#a3be8c", "#e5c07b"]),
+  "follow-app": createPreset("follow-app", ["#77797d", "#56575a", "#669f59", "#a48819"]),
   "lyra-minimal": createPreset("lyra-minimal", ["#8ecae6", "#90be6d", "#f8961e", "#577590"]),
-  "lyra-standard": createPreset("lyra-standard", ["#7aa2f7", "#9ece6a", "#e0af68", "#89dceb"]),
+  "lyra-standard": createPreset("lyra-standard", ["#56575a", "#669f59", "#a48819", "#77797d"]),
   "lyra-rich": createPreset("lyra-rich", ["#82aaff", "#c3e88d", "#f78c6c", "#89ddff"]),
   "lyra-developer": createPreset("lyra-developer", ["#7dcfff", "#a6e3a1", "#f9e2af", "#f38ba8"])
 };

@@ -1,20 +1,50 @@
 import {
+  AppBadge,
+  AppButton,
+  AppIconButton,
+  AppInput,
+  AppObjectRow,
+  AppSearchField,
+  AppStatusMessage,
+  AppSurfaceHeader,
+  AppTabs,
+  type AppBadgeTone,
+  type AppTabOption
+} from "@renderer/ui/components";
+import {
+  AppWindow,
+  Bell,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileImage,
   FolderOpen,
+  FolderTree,
   GitBranch,
+  Globe,
+  History,
+  KeyRound,
+  Layers3,
   Package,
+  PackageOpen,
+  Palette,
   Play,
   RefreshCw,
+  Settings2,
   ShieldCheck,
   ShieldOff,
-  Store
+  Sparkles,
+  SquareTerminal,
+  Timer
 } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
   useState,
-  type FormEvent
+  type FormEvent,
+  type ReactNode
 } from "react";
 
 import type {
@@ -33,6 +63,7 @@ import {
 import type {
   SoftwareStoreAgentAccess,
   SoftwareStoreBuiltinApp,
+  SoftwareStoreBuiltinAppId,
   SoftwareStoreCatalogFilter,
   SoftwareStoreLabels,
   SoftwareStoreSurfaceProps
@@ -204,12 +235,92 @@ const matchesFilter = (
     && (item.kind === "uiux" || (item.kind === "software" && item.software.source === "uiux"))
   );
 
-const ItemIcon = ({ item }: { readonly item: SoftwareStoreItem }) => (
-  <span className="lyra-software-store-item-icon" aria-hidden="true">
-    {item.kind === "software" && item.software.source === "builtin"
-      ? <Store size={15} />
-      : <Package size={15} />}
-  </span>
+const BuiltinSoftwareIcon = ({
+  id,
+  size = 17
+}: {
+  readonly id: SoftwareStoreBuiltinAppId | string;
+  readonly size?: number;
+}) => {
+  if (id === "browser-search") return <Globe size={size} />;
+  if (id === "file-manager") return <FolderOpen size={size} />;
+  if (id === "downloads") return <Download size={size} />;
+  if (id === "terminal") return <SquareTerminal size={size} />;
+  if (id === "image-viewer") return <FileImage size={size} />;
+  if (id === "notifications") return <Bell size={size} />;
+  if (id === "settings") return <Settings2 size={size} />;
+  if (id === "agent-history") return <History size={size} />;
+  if (id === "agent-project-tree") return <FolderTree size={size} />;
+  if (id === "agent-git") return <GitBranch size={size} />;
+  if (id === "agent-selfdev") return <Sparkles size={size} />;
+  if (id === "agent-overnight") return <Timer size={size} />;
+  if (id === "login-manager") return <KeyRound size={size} />;
+  if (id === "software-store") return <AppWindow size={size} />;
+  return <Layers3 size={size} />;
+};
+
+const ItemIcon = ({
+  item,
+  size = 17
+}: {
+  readonly item: SoftwareStoreItem;
+  readonly size?: number;
+}) => {
+  const icon = item.kind === "software"
+    ? <BuiltinSoftwareIcon id={item.software.id} size={size} />
+    : item.builtin
+      ? <Palette size={size} />
+      : <PackageOpen size={size} />;
+  return (
+    <span className="lyra-software-store-product-icon" aria-hidden="true">
+      {icon}
+    </span>
+  );
+};
+
+const getItemTitle = (item: SoftwareStoreItem): string =>
+  item.kind === "software" ? item.software.title : item.name;
+
+const getItemDescription = (item: SoftwareStoreItem): string =>
+  item.kind === "software" ? item.software.description : item.description;
+
+const getItemMeta = (
+  item: SoftwareStoreItem,
+  labels: SoftwareStoreLabels
+): string =>
+  item.kind === "software"
+    ? item.software.category ?? labels.builtinType
+    : item.version;
+
+const badgeToneForTrustState = (
+  trustState: InstalledUiuxPack["trustState"]
+): AppBadgeTone => {
+  if (trustState === "trusted") {
+    return "success";
+  }
+  if (trustState === "revoked") {
+    return "error";
+  }
+  return "warning";
+};
+
+const badgeToneForRisk = (
+  risk: LyraSoftwareManifest["actions"][number]["risk"]
+): AppBadgeTone => (
+  risk === "read" ? "neutral" : risk === "navigate" ? "info" : "warning"
+);
+
+const DetailFact = ({
+  label,
+  children
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+}) => (
+  <div className="lyra-software-store-fact">
+    <dt>{label}</dt>
+    <dd>{children}</dd>
+  </div>
 );
 
 const StatusBadges = ({
@@ -222,38 +333,38 @@ const StatusBadges = ({
   if (item.kind === "software") {
     return (
       <>
-        <span className="lyra-software-store-badge">
+        <AppBadge>
           {item.software.source === "builtin" ? labels.builtinBadge : labels.uiuxBadge}
-        </span>
+        </AppBadge>
         {item.software.actions.length === 0 ? null : (
-          <span className="lyra-software-store-badge lyra-software-store-badge-success">
+          <AppBadge tone="success">
             {labels.agentAccessControllable}
-          </span>
+          </AppBadge>
         )}
       </>
     );
   }
   return (
     <>
-      <span className="lyra-software-store-badge">{labels.uiuxBadge}</span>
+      <AppBadge>{labels.uiuxBadge}</AppBadge>
       {item.active ? (
-        <span className="lyra-software-store-badge lyra-software-store-badge-success">
+        <AppBadge tone="success">
           {labels.activeBadge}
-        </span>
+        </AppBadge>
       ) : null}
       {item.pending ? (
-        <span className="lyra-software-store-badge lyra-software-store-badge-warning">
+        <AppBadge tone="warning">
           {labels.pendingBadge}
-        </span>
+        </AppBadge>
       ) : null}
       {item.installed === undefined ? null : (
-        <span className="lyra-software-store-badge">
+        <AppBadge tone={badgeToneForTrustState(item.installed.trustState)}>
           {item.installed.trustState === "trusted"
             ? labels.trustedBadge
             : item.installed.trustState === "revoked"
               ? labels.revokedBadge
               : labels.untrustedBadge}
-        </span>
+        </AppBadge>
       )}
     </>
   );
@@ -261,6 +372,7 @@ const StatusBadges = ({
 
 export const SoftwareStoreSurface = ({
   desktopApi,
+  embedded = false,
   labels,
   softwareCapabilities,
   activeUiPackId,
@@ -352,17 +464,14 @@ export const SoftwareStoreSurface = ({
   );
 
   useEffect(() => {
-    if (selectedKey !== null && items.some((item) => item.key === selectedKey)) {
+    if (selectedKey === null || items.some((item) => item.key === selectedKey)) {
       return;
     }
-    if (
-      selectedKey !== null
-      && (selectedKey.startsWith("software:") || selectedKey.startsWith("uiux:"))
-    ) {
+    if (selectedKey.startsWith("uiux:") && packs === null) {
       return;
     }
-    setSelectedKey(items[0]?.key ?? null);
-  }, [items, selectedKey]);
+    setSelectedKey(null);
+  }, [items, packs, selectedKey]);
 
   useEffect(
     () => subscribeSoftwareStoreDetailRequests((request) => {
@@ -478,8 +587,7 @@ export const SoftwareStoreSurface = ({
           <span className="lyra-titlebar-context-chip">
             {String(items.length)}
           </span>
-          <button
-            type="button"
+          <AppIconButton
             className="lyra-titlebar-context-icon-button"
             aria-label={labels.refresh}
             title={labels.refresh}
@@ -488,7 +596,7 @@ export const SoftwareStoreSurface = ({
             }}
           >
             <RefreshCw size={14} aria-hidden="true" />
-          </button>
+          </AppIconButton>
         </>
       )
     }),
@@ -498,228 +606,305 @@ export const SoftwareStoreSurface = ({
 
   const canInstall = desktopApi?.uiux !== undefined;
   const isBusy = pendingOperation !== null;
+  const filterOptions = useMemo<readonly AppTabOption<SoftwareStoreCatalogFilter>[]>(
+    () => [
+      { value: "all", label: labels.allTab },
+      { value: "builtin", label: labels.builtinTab },
+      { value: "uiux", label: labels.uiuxTab }
+    ],
+    [labels.allTab, labels.builtinTab, labels.uiuxTab]
+  );
+  const builtinItems = useMemo(
+    () => filteredItems.filter((item) => item.kind === "software"),
+    [filteredItems]
+  );
+  const uiuxItems = useMemo(
+    () => filteredItems.filter((item) => item.kind === "uiux"),
+    [filteredItems]
+  );
 
   return (
-    <section className="lyra-software-store" aria-label={labels.title}>
-      <aside className="lyra-software-store-sidebar">
-        <header className="lyra-software-store-sidebar-head">
-          <strong>{labels.title}</strong>
-          <button
-            type="button"
-            aria-label={labels.refresh}
-            title={labels.refresh}
-            onClick={() => {
-              void refreshAll();
-            }}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-          </button>
-        </header>
+    <section
+      className={embedded ? "lyra-software-store lyra-software-store-embedded" : "lyra-software-store"}
+      aria-label={labels.title}
+    >
+      <div className="lyra-software-store-content">
+        {selectedItem === null ? (
+          <>
+            {embedded ? null : (
+              <header className="lyra-software-store-browse-head">
+                <div className="lyra-software-store-title-block">
+                  <h1>{labels.title}</h1>
+                  <p>{labels.selectItemDescription}</p>
+                </div>
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  disabled={!canInstall || isBusy}
+                  onClick={installLocal}
+                >
+                  <FolderOpen size={14} aria-hidden="true" />
+                  <span>{labels.chooseLocal}</span>
+                </AppButton>
+              </header>
+            )}
 
-        <input
-          className="lyra-software-store-search"
-          aria-label={labels.searchPlaceholder}
-          placeholder={labels.searchPlaceholder}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.currentTarget.value);
-          }}
-        />
+            <div className="lyra-software-store-controls">
+              <AppTabs
+                ariaLabel={labels.title}
+                className="lyra-software-store-filter"
+                value={filter}
+                options={filterOptions}
+                onValueChange={setFilter}
+              />
+              <AppSearchField
+                className="lyra-software-store-search"
+                ariaLabel={labels.searchPlaceholder}
+                placeholder={labels.searchPlaceholder}
+                value={query}
+                onValueChange={setQuery}
+              />
+              {embedded ? (
+                <AppIconButton
+                  className="lyra-software-store-local-install"
+                  aria-label={labels.chooseLocal}
+                  title={labels.chooseLocal}
+                  disabled={!canInstall || isBusy}
+                  onClick={installLocal}
+                >
+                  <FolderOpen size={14} aria-hidden="true" />
+                </AppIconButton>
+              ) : null}
+            </div>
 
-        <div className="lyra-software-store-filter" role="tablist" aria-label={labels.title}>
-          {[
-            ["all", labels.allTab],
-            ["builtin", labels.builtinTab],
-            ["uiux", labels.uiuxTab]
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={filter === value}
-              className={filter === value ? "is-active" : ""}
+            {filteredItems.length === 0 ? (
+              <div className="lyra-software-store-empty">
+                <strong>{labels.emptyTitle}</strong>
+                <span>{labels.emptyDescription}</span>
+              </div>
+            ) : (
+              <div className="lyra-software-store-section-stack">
+                {builtinItems.length === 0 ? null : (
+                  <SoftwareStoreItemSection
+                    title={labels.builtinTab}
+                    items={builtinItems}
+                    labels={labels}
+                    onSelect={setSelectedKey}
+                  />
+                )}
+                {uiuxItems.length === 0 ? null : (
+                  <SoftwareStoreItemSection
+                    title={labels.uiuxTab}
+                    items={uiuxItems}
+                    labels={labels}
+                    onSelect={setSelectedKey}
+                  />
+                )}
+              </div>
+            )}
+
+            <section className="lyra-software-store-install" aria-label={labels.installLocal}>
+              <AppSurfaceHeader
+                title={labels.installLocal}
+                description={labels.uiuxTab}
+                actions={(
+                  <AppIconButton
+                    aria-label={labels.refresh}
+                    title={labels.refresh}
+                    onClick={() => {
+                      void refreshAll();
+                    }}
+                  >
+                    <RefreshCw size={14} aria-hidden="true" />
+                  </AppIconButton>
+                )}
+              />
+
+              <div className="lyra-software-store-install-grid">
+                <form onSubmit={installGit}>
+                  <strong className="lyra-software-store-install-title">
+                    <GitBranch size={14} aria-hidden="true" />
+                    {labels.installGit}
+                  </strong>
+                  <label>
+                    <span>{labels.gitUrlLabel}</span>
+                    <AppInput
+                      aria-label={labels.gitUrlLabel}
+                      value={gitUrl}
+                      onChange={(event) => {
+                        setGitUrl(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>{labels.gitRefLabel}</span>
+                    <AppInput
+                      aria-label={labels.gitRefLabel}
+                      value={gitRef}
+                      onChange={(event) => {
+                        setGitRef(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>{labels.gitSubdirLabel}</span>
+                    <AppInput
+                      aria-label={labels.gitSubdirLabel}
+                      value={gitSubdir}
+                      onChange={(event) => {
+                        setGitSubdir(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <AppButton
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canInstall || isBusy || gitUrl.trim().length === 0}
+                  >
+                    {labels.installGit}
+                  </AppButton>
+                </form>
+
+                <form onSubmit={installNpm}>
+                  <strong className="lyra-software-store-install-title">
+                    <Package size={14} aria-hidden="true" />
+                    {labels.installNpm}
+                  </strong>
+                  <label>
+                    <span>{labels.npmPackageLabel}</span>
+                    <AppInput
+                      aria-label={labels.npmPackageLabel}
+                      value={npmPackage}
+                      onChange={(event) => {
+                        setNpmPackage(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>{labels.npmVersionLabel}</span>
+                    <AppInput
+                      aria-label={labels.npmVersionLabel}
+                      value={npmVersion}
+                      onChange={(event) => {
+                        setNpmVersion(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>{labels.npmSubdirLabel}</span>
+                    <AppInput
+                      aria-label={labels.npmSubdirLabel}
+                      value={npmSubdir}
+                      onChange={(event) => {
+                        setNpmSubdir(event.currentTarget.value);
+                      }}
+                    />
+                  </label>
+                  <AppButton
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canInstall || isBusy || npmPackage.trim().length === 0}
+                  >
+                    {labels.installNpm}
+                  </AppButton>
+                </form>
+              </div>
+            </section>
+          </>
+        ) : (
+          <section className="lyra-software-store-detail" aria-label={labels.detailsTitle}>
+            <AppButton
+              className="lyra-software-store-back"
+              variant="ghost"
+              size="sm"
               onClick={() => {
-                setFilter(value as SoftwareStoreCatalogFilter);
+                setSelectedKey(null);
               }}
             >
-              {label}
-            </button>
-          ))}
-        </div>
+              <ChevronLeft size={14} aria-hidden="true" />
+              <span>{labels.title}</span>
+            </AppButton>
 
-        <div className="lyra-software-store-list" aria-label={labels.title}>
-          {filteredItems.length === 0 ? (
-            <div className="lyra-software-store-empty">
-              <strong>{labels.emptyTitle}</strong>
-              <span>{labels.emptyDescription}</span>
-            </div>
+            {selectedItem.kind === "software" ? (
+            <SoftwareDetail
+              item={selectedItem}
+              labels={labels}
+              onOpenBuiltinApp={onOpenBuiltinApp}
+            />
           ) : (
-            filteredItems.map((item) => {
-              const active = selectedItem?.key === item.key;
-              const title = item.kind === "software" ? item.software.title : item.name;
-              const description = item.kind === "software"
-                ? item.software.description
-                : item.description;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={active ? "lyra-software-store-item is-active" : "lyra-software-store-item"}
-                  onClick={() => {
-                    setSelectedKey(item.key);
-                  }}
-                >
-                  <ItemIcon item={item} />
-                  <span className="lyra-software-store-item-main">
-                    <strong>{title}</strong>
-                    <small>{description}</small>
-                  </span>
-                  <span className="lyra-software-store-item-badges">
-                    <StatusBadges item={item} labels={labels} />
-                  </span>
-                </button>
-              );
-            })
+            <UiuxDetail
+              item={selectedItem}
+              labels={labels}
+              busy={isBusy}
+              onTrust={() => {
+                setTrustState(selectedItem, "trusted");
+              }}
+              onRevoke={() => {
+                setTrustState(selectedItem, "revoked");
+              }}
+              onActivate={() => {
+                activateUiuxPack(selectedItem);
+              }}
+            />
+          )}
+          </section>
+        )}
+
+        <div className="lyra-software-store-status-stack">
+          {pendingOperation === null ? null : (
+            <AppStatusMessage className="lyra-software-store-status">
+              {labels.activating}
+            </AppStatusMessage>
+          )}
+          {message === null ? null : (
+            <AppStatusMessage className="lyra-software-store-status" tone="success">
+              {message}
+            </AppStatusMessage>
+          )}
+          {error === null ? null : (
+            <AppStatusMessage className="lyra-software-store-status" tone="error">
+              {error}
+            </AppStatusMessage>
           )}
         </div>
-      </aside>
-
-      <section className="lyra-software-store-detail" aria-label={labels.detailsTitle}>
-        {selectedItem === null ? (
-          <div className="lyra-software-store-detail-empty">
-            <strong>{labels.selectItemTitle}</strong>
-            <span>{labels.selectItemDescription}</span>
-          </div>
-        ) : selectedItem.kind === "software" ? (
-          <SoftwareDetail
-            item={selectedItem}
-            labels={labels}
-            onOpenBuiltinApp={onOpenBuiltinApp}
-          />
-        ) : (
-          <UiuxDetail
-            item={selectedItem}
-            labels={labels}
-            busy={isBusy}
-            onTrust={() => {
-              setTrustState(selectedItem, "trusted");
-            }}
-            onRevoke={() => {
-              setTrustState(selectedItem, "revoked");
-            }}
-            onActivate={() => {
-              activateUiuxPack(selectedItem);
-            }}
-          />
-        )}
-
-        <section className="lyra-software-store-install" aria-label={labels.installLocal}>
-          <header>
-            <strong>{labels.uiuxTab}</strong>
-            <button
-              type="button"
-              disabled={!canInstall || isBusy}
-              onClick={installLocal}
-            >
-              <FolderOpen size={14} aria-hidden="true" />
-              <span>{labels.chooseLocal}</span>
-            </button>
-          </header>
-
-          <div className="lyra-software-store-install-grid">
-            <form onSubmit={installGit}>
-              <strong>
-                <GitBranch size={14} aria-hidden="true" />
-                {labels.installGit}
-              </strong>
-              <label>
-                <span>{labels.gitUrlLabel}</span>
-                <input
-                  value={gitUrl}
-                  onChange={(event) => {
-                    setGitUrl(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <label>
-                <span>{labels.gitRefLabel}</span>
-                <input
-                  value={gitRef}
-                  onChange={(event) => {
-                    setGitRef(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <label>
-                <span>{labels.gitSubdirLabel}</span>
-                <input
-                  value={gitSubdir}
-                  onChange={(event) => {
-                    setGitSubdir(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <button type="submit" disabled={!canInstall || isBusy || gitUrl.trim().length === 0}>
-                {labels.installGit}
-              </button>
-            </form>
-
-            <form onSubmit={installNpm}>
-              <strong>
-                <Package size={14} aria-hidden="true" />
-                {labels.installNpm}
-              </strong>
-              <label>
-                <span>{labels.npmPackageLabel}</span>
-                <input
-                  value={npmPackage}
-                  onChange={(event) => {
-                    setNpmPackage(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <label>
-                <span>{labels.npmVersionLabel}</span>
-                <input
-                  value={npmVersion}
-                  onChange={(event) => {
-                    setNpmVersion(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <label>
-                <span>{labels.npmSubdirLabel}</span>
-                <input
-                  value={npmSubdir}
-                  onChange={(event) => {
-                    setNpmSubdir(event.currentTarget.value);
-                  }}
-                />
-              </label>
-              <button type="submit" disabled={!canInstall || isBusy || npmPackage.trim().length === 0}>
-                {labels.installNpm}
-              </button>
-            </form>
-          </div>
-        </section>
-
-        {pendingOperation === null ? null : (
-          <p className="lyra-software-store-status">{labels.activating}</p>
-        )}
-        {message === null ? null : (
-          <p className="lyra-software-store-status lyra-software-store-status-success">
-            {message}
-          </p>
-        )}
-        {error === null ? null : (
-          <p className="lyra-software-store-status lyra-software-store-status-error">
-            {error}
-          </p>
-        )}
-      </section>
+      </div>
     </section>
   );
 };
+
+const SoftwareStoreItemSection = ({
+  title,
+  items,
+  labels,
+  onSelect
+}: {
+  readonly title: string;
+  readonly items: readonly SoftwareStoreItem[];
+  readonly labels: SoftwareStoreLabels;
+  readonly onSelect: (key: string) => void;
+}) => (
+  <section className="lyra-software-store-item-section" aria-label={title}>
+    <h2>{title}</h2>
+    <div className="lyra-software-store-item-list">
+      {items.map((item) => (
+        <AppObjectRow
+          key={item.key}
+          className="lyra-software-store-item"
+          icon={<ItemIcon item={item} />}
+          title={getItemTitle(item)}
+          description={getItemDescription(item)}
+          meta={getItemMeta(item, labels)}
+          badges={<ChevronRight className="lyra-software-store-item-chevron" size={14} aria-hidden="true" />}
+          onClick={() => {
+            onSelect(item.key);
+          }}
+        />
+      ))}
+    </div>
+  </section>
+);
 
 const SoftwareDetail = ({
   item,
@@ -737,60 +922,59 @@ const SoftwareDetail = ({
     <article className="lyra-software-store-detail-panel">
       <header className="lyra-software-store-detail-head">
         <span className="lyra-software-store-detail-icon" aria-hidden="true">
-          {software.source === "builtin" ? <Store size={18} /> : <Package size={18} />}
+          <ItemIcon item={item} size={20} />
         </span>
-        <div>
+        <div className="lyra-software-store-detail-copy">
           <h2>{software.title}</h2>
+          <span className="lyra-software-store-detail-badges">
+            <StatusBadges item={item} labels={labels} />
+          </span>
           <p>{software.description}</p>
         </div>
+        <span className="lyra-software-store-detail-actions">
+          <AppButton
+            variant="outline"
+            size="sm"
+            disabled={!openable}
+            title={builtinApp?.openDisabledReason ?? labels.openBuiltin}
+            onClick={() => {
+              if (openable && builtinApp !== undefined) {
+                onOpenBuiltinApp(builtinApp.id);
+              }
+            }}
+          >
+            <Play size={14} aria-hidden="true" />
+            <span>{openable ? labels.openBuiltin : labels.openUnavailable}</span>
+          </AppButton>
+        </span>
       </header>
       <dl className="lyra-software-store-facts">
-        <div>
-          <dt>{labels.typeLabel}</dt>
-          <dd>{software.source === "builtin" ? labels.builtinType : labels.uiuxType}</dd>
-        </div>
-        <div>
-          <dt>{labels.categoryLabel}</dt>
-          <dd>{software.category ?? "-"}</dd>
-        </div>
-        <div>
-          <dt>{labels.versionLabel}</dt>
-          <dd>{software.version ?? "-"}</dd>
-        </div>
-        <div>
-          <dt>{labels.agentAccessLabel}</dt>
-          <dd>{getAgentAccessLabel(getSoftwareAgentAccess(software), labels)}</dd>
-        </div>
+        <DetailFact label={labels.typeLabel}>
+          {software.source === "builtin" ? labels.builtinType : labels.uiuxType}
+        </DetailFact>
+        <DetailFact label={labels.categoryLabel}>{software.category ?? "-"}</DetailFact>
+        <DetailFact label={labels.versionLabel}>{software.version ?? "-"}</DetailFact>
+        <DetailFact label={labels.agentAccessLabel}>
+          {getAgentAccessLabel(getSoftwareAgentAccess(software), labels)}
+        </DetailFact>
       </dl>
       <section className="lyra-software-store-permissions">
         <strong>{labels.actionsLabel}</strong>
         {software.actions.length === 0 ? (
           <span>{labels.noActions}</span>
         ) : (
-          <ul>
+          <ul className="lyra-software-store-action-list">
             {software.actions.map((action) => (
               <li key={action.id}>
-                {action.title} · {labels.riskLabel}: {action.risk}
+                <span>{action.title}</span>
+                <AppBadge tone={badgeToneForRisk(action.risk)}>
+                  {labels.riskLabel}: {action.risk}
+                </AppBadge>
               </li>
             ))}
           </ul>
         )}
       </section>
-      <footer className="lyra-software-store-actions">
-        <button
-          type="button"
-          disabled={!openable}
-          title={builtinApp?.openDisabledReason ?? labels.openBuiltin}
-          onClick={() => {
-            if (openable && builtinApp !== undefined) {
-              onOpenBuiltinApp(builtinApp.id);
-            }
-          }}
-        >
-          <Play size={14} aria-hidden="true" />
-          <span>{openable ? labels.openBuiltin : labels.openUnavailable}</span>
-        </button>
-      </footer>
     </article>
   );
 };
@@ -816,46 +1000,53 @@ const UiuxDetail = ({
     <article className="lyra-software-store-detail-panel">
       <header className="lyra-software-store-detail-head">
         <span className="lyra-software-store-detail-icon" aria-hidden="true">
-          <Package size={18} />
+          <ItemIcon item={item} size={20} />
         </span>
-        <div>
+        <div className="lyra-software-store-detail-copy">
           <h2>{item.name}</h2>
+          <span className="lyra-software-store-detail-badges">
+            <StatusBadges item={item} labels={labels} />
+          </span>
           <p>{item.description}</p>
         </div>
+        <span className="lyra-software-store-detail-actions">
+          {installed === undefined ? null : installed.trustState === "trusted" ? (
+            <AppButton variant="outline" size="sm" disabled={busy} onClick={onRevoke}>
+              <ShieldOff size={14} aria-hidden="true" />
+              <span>{labels.revokeTrust}</span>
+            </AppButton>
+          ) : (
+            <AppButton variant="outline" size="sm" disabled={busy} onClick={onTrust}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              <span>{labels.trust}</span>
+            </AppButton>
+          )}
+          <AppButton
+            variant="outline"
+            size="sm"
+            disabled={busy || item.active || item.pending || !canActivate}
+            onClick={onActivate}
+          >
+            {item.active ? <CheckCircle2 size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
+            <span>{labels.activate}</span>
+          </AppButton>
+        </span>
       </header>
       <dl className="lyra-software-store-facts">
-        <div>
-          <dt>{labels.typeLabel}</dt>
-          <dd>{labels.uiuxType}</dd>
-        </div>
-        <div>
-          <dt>{labels.versionLabel}</dt>
-          <dd>{item.version}</dd>
-        </div>
-        <div>
-          <dt>{labels.sourceLabel}</dt>
-          <dd>{item.sourceLabel}</dd>
-        </div>
-        <div>
-          <dt>{labels.statusLabel}</dt>
-          <dd>
-            {item.pending
-              ? labels.pendingBadge
-              : item.active
-                ? labels.activeBadge
-                : installed?.trustState ?? labels.builtinBadge}
-          </dd>
-        </div>
+        <DetailFact label={labels.typeLabel}>{labels.uiuxType}</DetailFact>
+        <DetailFact label={labels.versionLabel}>{item.version}</DetailFact>
+        <DetailFact label={labels.sourceLabel}>{item.sourceLabel}</DetailFact>
+        <DetailFact label={labels.statusLabel}>
+          {item.pending
+            ? labels.pendingBadge
+            : item.active
+              ? labels.activeBadge
+              : installed?.trustState ?? labels.builtinBadge}
+        </DetailFact>
         {installed === undefined ? null : (
           <>
-            <div>
-              <dt>{labels.installedAtLabel}</dt>
-              <dd>{formatDate(installed.installedAt)}</dd>
-            </div>
-            <div>
-              <dt>{labels.updatedAtLabel}</dt>
-              <dd>{formatDate(installed.updatedAt)}</dd>
-            </div>
+            <DetailFact label={labels.installedAtLabel}>{formatDate(installed.installedAt)}</DetailFact>
+            <DetailFact label={labels.updatedAtLabel}>{formatDate(installed.updatedAt)}</DetailFact>
           </>
         )}
       </dl>
@@ -864,34 +1055,15 @@ const UiuxDetail = ({
         {item.permissions.length === 0 ? (
           <span>{labels.noPermissions}</span>
         ) : (
-          <ul>
+          <ul className="lyra-software-store-chip-list">
             {item.permissions.map((permission) => (
-              <li key={permission}>{permission}</li>
+              <li key={permission}>
+                <AppBadge>{permission}</AppBadge>
+              </li>
             ))}
           </ul>
         )}
       </section>
-      <footer className="lyra-software-store-actions">
-        {installed === undefined ? null : installed.trustState === "trusted" ? (
-          <button type="button" disabled={busy} onClick={onRevoke}>
-            <ShieldOff size={14} aria-hidden="true" />
-            <span>{labels.revokeTrust}</span>
-          </button>
-        ) : (
-          <button type="button" disabled={busy} onClick={onTrust}>
-            <ShieldCheck size={14} aria-hidden="true" />
-            <span>{labels.trust}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          disabled={busy || item.active || item.pending || !canActivate}
-          onClick={onActivate}
-        >
-          {item.active ? <CheckCircle2 size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
-          <span>{labels.activate}</span>
-        </button>
-      </footer>
     </article>
   );
 };

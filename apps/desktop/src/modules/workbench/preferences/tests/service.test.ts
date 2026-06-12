@@ -70,7 +70,7 @@ describe("workbench preferences", () => {
     writeWorkbenchPreferences({
       ...defaults,
       locale: "zh-CN",
-      theme: "terra-system",
+      theme: "lyra-system",
       uiPackId: "classic",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
@@ -81,13 +81,22 @@ describe("workbench preferences", () => {
     expect(readWorkbenchPreferences(defaults)).toEqual({
       ...defaults,
       locale: "zh-CN",
-      theme: "terra-system",
+      theme: "lyra-system",
       uiPackId: "classic",
       splitTriggerMode: "ctrl_left_drag",
       splitThreePaneLayout: "top_two_bottom_one",
       splitOverflowPolicy: "replace_oldest",
       aiRichRenderingEnabled: true
     });
+  });
+
+  test("migrates legacy theme family values into Lyra theme ids", () => {
+    writeWorkbenchStateSync("preferences", JSON.stringify({
+      ...defaults,
+      theme: "terra-dark"
+    }));
+
+    expect(readWorkbenchPreferences(defaults).theme).toBe("lyra-dark");
   });
 
   test("falls back to classic when stored UI pack is unknown", () => {

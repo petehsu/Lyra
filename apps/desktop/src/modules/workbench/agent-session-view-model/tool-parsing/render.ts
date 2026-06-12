@@ -1,5 +1,5 @@
 import type { AgentToolActivity } from "../../../../shared/agent";
-import type { RenderSurfaceColumn, RenderSurfaceRow, ToolDetails } from "../../ai-panel/agent-chat-demo/core/types";
+import type { RenderSurfaceColumn, RenderSurfaceRow, ToolDetails } from "../../ai-panel/lyra-agents/core/types";
 import { asRecord, numberField, stringField, toolArgsRecord, toolInputRecord } from "./common";
 
 type ParsedRenderDetails = Extract<ToolDetails, { type: "render" }>;

@@ -50,7 +50,7 @@ const presentationState: WorkbenchPresentationState = {
 };
 
 describe("WorkbenchChrome", () => {
-  test("renders the login manager and agent history buttons immediately after notifications", () => {
+  test("renders titlebar actions without settings-owned shortcuts", () => {
     const actions = createActions();
 
     render(
@@ -105,17 +105,12 @@ describe("WorkbenchChrome", () => {
     const notificationButton = screen.getByRole("button", {
       name: "Open notification center"
     });
-    const loginButton = screen.getByRole("button", { name: "Open Login Manager" });
     const historyButton = screen.getByRole("button", { name: "Open Agent History" });
+    expect(screen.queryByRole("button", { name: "Open Login Manager" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open docs" })).toBeNull();
     expect(
-      notificationButton.compareDocumentPosition(loginButton) & Node.DOCUMENT_POSITION_FOLLOWING
+      notificationButton.compareDocumentPosition(historyButton) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(
-      loginButton.compareDocumentPosition(historyButton) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-
-    fireEvent.click(loginButton);
-    expect(actions.openLoginManager).toHaveBeenCalledTimes(1);
 
     fireEvent.click(historyButton);
     expect(actions.openAgentSessionHistory).toHaveBeenCalledTimes(1);

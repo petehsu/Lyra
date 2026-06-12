@@ -455,9 +455,8 @@ describe("SettingsAiView", () => {
     fireEvent.change(screen.getByLabelText("Google OAuth Client Secret"), {
       target: { value: "client-secret" },
     });
-    fireEvent.change(screen.getByLabelText("Gmail Access"), {
-      target: { value: "full" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Gmail Access" }));
+    fireEvent.click(screen.getByRole("option", { name: "Full Gmail access" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /Start login/ }));
     });

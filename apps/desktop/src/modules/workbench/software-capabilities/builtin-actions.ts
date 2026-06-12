@@ -11,11 +11,7 @@ import { resolveWebSearchTarget } from "../browser-search/service";
 import { WORKBENCH_CONFIG } from "../config";
 import type { FileManagerModel } from "../file-manager";
 import type { ImageViewerModel } from "../image-viewer";
-import { createLoginManagerAppRequest } from "../login-manager";
-import {
-  createSoftwareStoreAppRequest,
-  requestSoftwareStoreDetail
-} from "../software-store/service";
+import { requestSoftwareStoreDetail } from "../software-store/service";
 import type { SoftwareStoreLabels } from "../software-store/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
 import {
@@ -239,10 +235,7 @@ export const createBuiltinHandlers = ({
 
   handlers.set("login-manager.readState", async () => await refreshLoginManagerState());
   handlers.set("login-manager.open", () => {
-    const title =
-      labels.builtinApps.find((app) => app.id === "login-manager")?.title
-      ?? "Login Manager";
-    tabsModel.openAppTab(createLoginManagerAppRequest(title));
+    onOpenSettingsSection("loginManager");
     return {
       opened: true,
       openTarget: {
@@ -344,7 +337,7 @@ export const createBuiltinHandlers = ({
   });
 
   handlers.set("software-store.open", () => {
-    tabsModel.openAppTab(createSoftwareStoreAppRequest(labels.tabTitle));
+    onOpenSettingsSection("softwareStore");
     return { opened: true };
   });
   handlers.set("software-store.listInstalledApps", () =>
@@ -358,7 +351,7 @@ export const createBuiltinHandlers = ({
           : { kind: "software" as const, id: softwareId })
       : { kind: "uiux" as const, id: packId };
     requestSoftwareStoreDetail(selected);
-    tabsModel.openAppTab(createSoftwareStoreAppRequest(labels.tabTitle));
+    onOpenSettingsSection("softwareStore");
     return {
       opened: true,
       selected,
@@ -399,7 +392,7 @@ export const createBuiltinHandlers = ({
       throw new Error("sourceKind must be local, git, or npm.");
     }
     requestSoftwareStoreDetail({ kind: "uiux", id: installed.id });
-    tabsModel.openAppTab(createSoftwareStoreAppRequest(labels.tabTitle));
+    onOpenSettingsSection("softwareStore");
     await refreshSoftwarePacks();
     return {
       installed: true,

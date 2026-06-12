@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 
+import { AppButton } from "@renderer/ui/components";
+
 export type LyraListPickerOption<T extends string> = {
   readonly value: T;
   readonly label: string;
@@ -126,8 +128,9 @@ export const LyraListPicker = <T extends string>({
 
             return (
               <li key={option.value} className="lyra-list-picker-option-item">
-                <button
-                  type="button"
+                <AppButton
+                  variant="ghost"
+                  size="sm"
                   role="option"
                   aria-selected={isActive}
                   aria-disabled={isOptionDisabled}
@@ -144,13 +147,14 @@ export const LyraListPicker = <T extends string>({
                   }}
                 >
                   <span>{option.label}</span>
-                </button>
+                </AppButton>
               </li>
             );
           })}
         </ul>
-        <button
-          type="button"
+        <AppButton
+          variant="ghost"
+          size="sm"
           className="lyra-list-picker-trigger"
           aria-label={ariaLabel}
           aria-haspopup="listbox"
@@ -167,7 +171,7 @@ export const LyraListPicker = <T extends string>({
           <span className="lyra-list-picker-trigger-label">
             {displayLabel ?? activeOption?.label ?? ""}
           </span>
-        </button>
+        </AppButton>
       </div>
     </div>
   );

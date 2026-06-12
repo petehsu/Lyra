@@ -13,10 +13,10 @@ body,
 
 body {
   font-family: var(--lyra-font-ui);
-  font-size: 12px;
+  font-size: var(--lyra-text-size-body);
   line-height: 1.4;
   color: var(--lyra-text-primary);
-  background: var(--lyra-bg-app);
+  background: var(--lyra-app-bg);
   text-rendering: optimizeLegibility;
 }
 
@@ -79,7 +79,7 @@ body::-webkit-scrollbar-track-piece:vertical,
 #app::-webkit-scrollbar-track-piece:vertical,
 .lyra-root::-webkit-scrollbar-track-piece:vertical,
 .lyra-root *::-webkit-scrollbar-track-piece:vertical {
-  margin-block: 2px;
+  margin-block: var(--lyra-space-2);
 }
 
 html::-webkit-scrollbar-track-piece:horizontal,
@@ -87,7 +87,7 @@ body::-webkit-scrollbar-track-piece:horizontal,
 #app::-webkit-scrollbar-track-piece:horizontal,
 .lyra-root::-webkit-scrollbar-track-piece:horizontal,
 .lyra-root *::-webkit-scrollbar-track-piece:horizontal {
-  margin-inline: 2px;
+  margin-inline: var(--lyra-space-2);
 }
 
 html::-webkit-scrollbar-corner,
@@ -103,11 +103,11 @@ body::-webkit-scrollbar-thumb,
 #app::-webkit-scrollbar-thumb,
 .lyra-root::-webkit-scrollbar-thumb,
 .lyra-root *::-webkit-scrollbar-thumb {
-  min-height: 24px;
-  min-width: 24px;
+  min-height: var(--lyra-control-h-24);
+  min-width: var(--lyra-control-h-24);
   border-radius: var(--lyra-scrollbar-radius) !important;
   -webkit-border-radius: var(--lyra-scrollbar-radius) !important;
-  border: 2px solid transparent;
+  border: var(--lyra-stroke-strong) solid transparent;
   background-clip: padding-box;
   -webkit-background-clip: padding-box;
   -webkit-appearance: none;
@@ -143,8 +143,8 @@ body::-webkit-scrollbar-thumb:horizontal,
 #app::-webkit-scrollbar-thumb:horizontal,
 .lyra-root::-webkit-scrollbar-thumb:horizontal,
 .lyra-root *::-webkit-scrollbar-thumb:horizontal {
-  border-radius: 999px !important;
-  -webkit-border-radius: 999px !important;
+  border-radius: var(--lyra-radius-pill) !important;
+  -webkit-border-radius: var(--lyra-radius-pill) !important;
   overflow: hidden !important;
 }
 

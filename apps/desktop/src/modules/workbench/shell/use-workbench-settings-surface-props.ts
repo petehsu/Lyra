@@ -17,6 +17,8 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchNotificationModel } from "../notifications";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SettingsAiModel } from "../settings-ai";
+import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
+import type { SoftwareStoreSurfaceProps } from "../software-store";
 import {
   isBuiltinWorkbenchUiPackId,
   type WorkbenchUiPackId
@@ -28,10 +30,14 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly preferencesModel: WorkbenchPreferencesModel;
   readonly settingsAiModel: SettingsAiModel;
+  readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly jsReplEnabled: boolean;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly openDialog: GlobalDialogModel["openDialog"];
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
+  readonly onOpenSite: (url: string, title?: string) => void;
+  readonly onOpenSoftwareStoreBuiltinApp: SoftwareStoreSurfaceProps["onOpenBuiltinApp"];
+  readonly onOpenDocs: () => void;
   readonly onJsReplChange: (enabled: boolean) => void;
 };
 
@@ -40,10 +46,14 @@ export const useWorkbenchSettingsSurfaceProps = ({
   desktopApi,
   preferencesModel,
   settingsAiModel,
+  softwareCapabilities,
   jsReplEnabled,
   focusCategoryRequest = null,
   openDialog,
   publishNotification,
+  onOpenSite,
+  onOpenSoftwareStoreBuiltinApp,
+  onOpenDocs,
   onJsReplChange
 }: UseWorkbenchSettingsSurfacePropsParams): BrowserSettingsSurfaceProps => {
   const preferences = preferencesModel.preferences;
@@ -364,6 +374,23 @@ export const useWorkbenchSettingsSurfaceProps = ({
     linuxCompatProfileOptions: labels.settingsOptions.linuxCompatProfile,
     aiLabels: labels.settingsAi,
     aiModel: settingsAiModel,
+    loginManagerCategoryLabel: labels.loginManager.title,
+    loginManager: {
+      desktopApi,
+      labels: labels.loginManager,
+      onOpenSite,
+      embedded: true
+    },
+    softwareStoreCategoryLabel: labels.softwareStore.title,
+    softwareStore: {
+      desktopApi,
+      embedded: true,
+      labels: labels.softwareStore,
+      softwareCapabilities,
+      activeUiPackId: preferences.uiPackId,
+      onUiPackIdChange: preferencesModel.setUiPackId,
+      onOpenBuiltinApp: onOpenSoftwareStoreBuiltinApp
+    },
     onLocaleChange: preferencesModel.setLocale,
     onThemeChange: preferencesModel.setTheme,
     onUiStyleChange: handleUiStyleChange,
@@ -386,6 +413,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onLinuxCompatProfileChange: handleLinuxCompatProfileChange,
     onLinuxCompatRestart: () => {
       openLinuxCompatRestartDialog("linux-compat-settings");
-    }
+    },
+    onOpenDocs
   };
 };

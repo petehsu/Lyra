@@ -106,6 +106,7 @@ export type SoftwareStoreLabels = {
 
 export type SoftwareStoreSurfaceProps = {
   readonly desktopApi: LyraDesktopApi | null;
+  readonly embedded?: boolean;
   readonly labels: SoftwareStoreLabels;
   readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly activeUiPackId: WorkbenchUiPackId;

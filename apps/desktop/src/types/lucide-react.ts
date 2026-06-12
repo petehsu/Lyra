@@ -71,6 +71,7 @@ export declare const Square: LucideIcon;
 export declare const SquareTerminal: LucideIcon;
 export declare const Star: LucideIcon;
 export declare const Store: LucideIcon;
+export declare const Sun: LucideIcon;
 export declare const Target: LucideIcon;
 export declare const Terminal: LucideIcon;
 export declare const Timer: LucideIcon;

@@ -71,9 +71,20 @@ const renderSettingsProps = ({
       desktopApi,
       preferencesModel,
       settingsAiModel: {} as never,
+      softwareCapabilities: {
+        software: [],
+        loading: false,
+        error: null,
+        refresh: async () => undefined,
+        handleBridgeQuery: () => ({}) as never,
+        createUiPackCapabilities: () => ({}) as never
+      },
       jsReplEnabled: true,
       openDialog: vi.fn(),
       publishNotification: vi.fn(),
+      onOpenSite: vi.fn(),
+      onOpenSoftwareStoreBuiltinApp: vi.fn(),
+      onOpenDocs: vi.fn(),
       onJsReplChange: vi.fn()
     });
   });

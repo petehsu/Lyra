@@ -4,7 +4,7 @@ import {
   classifyActionTarget,
   isLocalFileReference,
   splitActionText
-} from "../agent-chat-demo/features/rich-text/ActionTargets";
+} from "../lyra-agents/features/rich-text/ActionTargets";
 
 describe("action target path detection", () => {
   test("does not turn ellipsized paths into file targets", () => {

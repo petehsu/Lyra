@@ -18,7 +18,7 @@ describe("resolveDocsEntryUrl", () => {
     expect(
       resolveDocsEntryUrl(broken, {
         locale: "en-US",
-        themeId: "terra-light"
+        themeId: "lyra-light"
       })
     ).toBe(broken);
   });

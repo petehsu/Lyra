@@ -1,22 +1,22 @@
 export { cx } from "./classnames";
 export type { ClassNameValue } from "./classnames";
-export { ChromeIconButton } from "./chrome-icon-button";
-export type { ChromeIconButtonProps } from "./chrome-icon-button";
-export { ChromeTabButton, ChromeTabFrame, ChromeTabShape } from "./chrome-tab";
 export {
   closestChromeTabLayoutIndex,
   computeChromeTabStripLayout
 } from "./chrome-tab-layout";
 export type {
-  ChromeTabButtonProps,
-  ChromeTabFrameProps,
-  ChromeTabShapeProps
-} from "./chrome-tab";
-export type {
   ChromeTabDensity,
   ChromeTabLayoutItem,
   ChromeTabStripLayout
 } from "./chrome-tab-layout";
-export { ChromeToolbar } from "./chrome-toolbar";
-export type { ChromeToolbarProps } from "./chrome-toolbar";
 export { PanelHost, PanelResizer } from "./panel-chrome";
+
+// Chrome control primitives now resolve to the shared Lyra App components.
+// Pack authors consuming `context.primitives` keep the legacy names; the values
+// are the canonical App components instead of bespoke chrome shells.
+export {
+  AppButton,
+  AppButton as ChromeTabButton,
+  AppIconButton,
+  AppIconButton as ChromeIconButton
+} from "@renderer/ui/components";

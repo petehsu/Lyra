@@ -14,6 +14,8 @@ import type {
   WorkbenchSplitTriggerMode
 } from "../preferences";
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
+import type { LoginManagerSurfaceProps } from "../login-manager";
+import type { SoftwareStoreSurfaceProps } from "../software-store";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
@@ -22,6 +24,8 @@ export type BrowserSettingsCategoryId =
   | "appearance"
   | "workspace"
   | "notifications"
+  | "loginManager"
+  | "softwareStore"
   | "linux"
   | "search"
   | "ai";
@@ -45,7 +49,10 @@ export type BrowserSettingsSurfaceProps = {
   readonly workspaceCategoryLabel: string;
   readonly aiCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
+  readonly loginManagerCategoryLabel: string;
+  readonly softwareStoreCategoryLabel: string;
   readonly linuxCategoryLabel: string;
+  readonly docsNavLabel: string;
   readonly languageLabel: string;
   readonly themeLabel: string;
   readonly uiStyleLabel: string;
@@ -149,6 +156,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatProfileOptions: readonly SettingsOption<LinuxCompatProfile>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
+  readonly loginManager: LoginManagerSurfaceProps;
+  readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;
   readonly onUiStyleChange: (value: WorkbenchUiPackId) => void;
@@ -170,4 +179,5 @@ export type BrowserSettingsSurfaceProps = {
   readonly onSystemNotificationActionsChange: (value: boolean) => void;
   readonly onLinuxCompatProfileChange: (value: LinuxCompatProfile) => void;
   readonly onLinuxCompatRestart: () => void;
+  readonly onOpenDocs: () => void;
 };

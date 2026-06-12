@@ -9,6 +9,15 @@ import {
   RotateCcw
 } from "lucide-react";
 
+import {
+  AppEmptyState,
+  AppErrorState,
+  AppIconButton,
+  AppLoadingState,
+  AppObjectRow,
+  AppStatusMessage,
+  AppToolbarButton
+} from "@renderer/ui/components";
 import type {
   AgentGitChangedFile,
   AgentGitDiffScope,
@@ -90,7 +99,7 @@ const AgentGitTitlebarBridge = ({
         </>
       ) : undefined,
       controls: (
-        <button
+        <AppToolbarButton
           type="button"
           className="lyra-titlebar-context-icon-button"
           aria-label={labels.refresh}
@@ -98,7 +107,7 @@ const AgentGitTitlebarBridge = ({
           onClick={onRefresh}
         >
           <RefreshCw size={14} />
-        </button>
+        </AppToolbarButton>
       )
     }),
     [labels.changes, labels.refresh, labels.title, onRefresh, snapshot, title]
@@ -130,24 +139,22 @@ const GitFileRow = ({
   readonly onDiscard: (file: AgentGitChangedFile) => void;
 }) => (
   <div className={joinClassNames("lyra-agent-git-row", selected && "lyra-agent-git-row-selected")}>
-    <button
-      type="button"
+    <AppObjectRow
       className="lyra-agent-git-row-main"
-      title={file.path}
+      active={selected}
+      icon={(
+        <span className={joinClassNames("lyra-agent-git-status", `lyra-agent-git-status-${file.status}`)}>
+          {statusLabel(file.status)}
+        </span>
+      )}
+      title={file.path.split(/[\\/]/u).pop() ?? file.path}
+      description={file.path}
+      aria-label={file.path}
       onClick={() => onSelect(file)}
-    >
-      <span className={joinClassNames("lyra-agent-git-status", `lyra-agent-git-status-${file.status}`)}>
-        {statusLabel(file.status)}
-      </span>
-      <span className="lyra-agent-git-file">
-        <span className="lyra-agent-git-file-name">{file.path.split(/[\\/]/u).pop() ?? file.path}</span>
-        <span className="lyra-agent-git-file-path">{file.path}</span>
-      </span>
-    </button>
+    />
     <span className="lyra-agent-git-row-actions">
       {file.unstaged || file.untracked ? (
-        <button
-          type="button"
+        <AppIconButton
           className="lyra-agent-git-icon-button"
           aria-label={`${labels.stage}: ${file.path}`}
           title={labels.stage}
@@ -155,11 +162,10 @@ const GitFileRow = ({
           onClick={() => onStage(file)}
         >
           <Plus size={14} aria-hidden="true" />
-        </button>
+        </AppIconButton>
       ) : null}
       {file.staged ? (
-        <button
-          type="button"
+        <AppIconButton
           className="lyra-agent-git-icon-button"
           aria-label={`${labels.unstage}: ${file.path}`}
           title={labels.unstage}
@@ -167,18 +173,18 @@ const GitFileRow = ({
           onClick={() => onUnstage(file)}
         >
           <Minus size={14} aria-hidden="true" />
-        </button>
+        </AppIconButton>
       ) : null}
-      <button
-        type="button"
-        className="lyra-agent-git-icon-button lyra-agent-git-icon-button-danger"
+      <AppIconButton
+        className="lyra-agent-git-icon-button"
+        tone="danger"
         aria-label={`${labels.discard}: ${file.path}`}
         title={labels.discard}
         disabled={busy}
         onClick={() => onDiscard(file)}
       >
         <RotateCcw size={14} aria-hidden="true" />
-      </button>
+      </AppIconButton>
     </span>
   </div>
 );
@@ -192,24 +198,25 @@ const DiffPane = ({
 }) => {
   if (diffState.kind === "empty") {
     return (
-      <section className="lyra-agent-git-empty">
-        <Diff size={22} aria-hidden="true" />
-        <h2>{labels.selectFileTitle}</h2>
-        <p>{labels.selectFileDescription}</p>
-      </section>
+      <AppEmptyState
+        className="lyra-agent-git-empty"
+        icon={<Diff size={22} aria-hidden="true" />}
+        title={labels.selectFileTitle}
+        description={labels.selectFileDescription}
+      />
     );
   }
   if (diffState.kind === "loading") {
-    return <section className="lyra-agent-git-diff-state">{labels.loading}</section>;
+    return <AppLoadingState className="lyra-agent-git-diff-state" title={labels.loading} />;
   }
   if (diffState.kind === "error") {
-    return <section className="lyra-agent-git-diff-state lyra-agent-git-error">{diffState.message}</section>;
+    return <AppErrorState className="lyra-agent-git-diff-state" title={diffState.message} />;
   }
   if (diffState.diff.isBinary) {
-    return <section className="lyra-agent-git-diff-state">{labels.binaryDiff}</section>;
+    return <AppEmptyState className="lyra-agent-git-diff-state" icon={<Diff size={18} aria-hidden="true" />} title={labels.binaryDiff} />;
   }
   if (diffState.diff.diff.trim().length === 0) {
-    return <section className="lyra-agent-git-diff-state">{labels.noDiff}</section>;
+    return <AppEmptyState className="lyra-agent-git-diff-state" icon={<Diff size={18} aria-hidden="true" />} title={labels.noDiff} />;
   }
   return (
     <section className="lyra-agent-git-diff" aria-label={diffState.file.path}>
@@ -350,15 +357,18 @@ export const AgentGitSurface = ({
       />
       <aside className="lyra-agent-git-sidebar">
         {snapshot?.isRepository === false ? (
-          <section className="lyra-agent-git-empty lyra-agent-git-empty-sidebar">
-            <h2>{labels.notRepositoryTitle}</h2>
-            <p>{snapshot.message ?? labels.notRepositoryDescription}</p>
-          </section>
+          <AppErrorState
+            className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
+            title={labels.notRepositoryTitle}
+            description={snapshot.message ?? labels.notRepositoryDescription}
+          />
         ) : entries.length === 0 && statusState.kind !== "loading" ? (
-          <section className="lyra-agent-git-empty lyra-agent-git-empty-sidebar">
-            <h2>{labels.emptyTitle}</h2>
-            <p>{labels.emptyDescription}</p>
-          </section>
+          <AppEmptyState
+            className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
+            density="compact"
+            title={labels.emptyTitle}
+            description={labels.emptyDescription}
+          />
         ) : (
           <>
             <div className="lyra-agent-git-summary">
@@ -387,10 +397,17 @@ export const AgentGitSurface = ({
           </>
         )}
         {statusState.kind === "loading" ? (
-          <div className="lyra-agent-git-inline-state">{labels.loading}</div>
+          <AppLoadingState
+            className="lyra-agent-git-inline-state"
+            align="start"
+            density="compact"
+            title={labels.loading}
+          />
         ) : null}
         {statusState.kind === "error" ? (
-          <div className="lyra-agent-git-inline-state lyra-agent-git-error">{statusState.message}</div>
+          <AppStatusMessage className="lyra-agent-git-inline-state" tone="error">
+            {statusState.message}
+          </AppStatusMessage>
         ) : null}
       </aside>
       <main className="lyra-agent-git-main">

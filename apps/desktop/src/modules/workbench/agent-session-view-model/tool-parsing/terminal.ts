@@ -1,5 +1,5 @@
 import type { AgentToolActivity } from "../../../../shared/agent";
-import type { ToolActionTarget, ToolDetails } from "../../ai-panel/agent-chat-demo/core/types";
+import type { ToolActionTarget, ToolDetails } from "../../ai-panel/lyra-agents/core/types";
 import { asRecord, arrayField, numberField, rangeField, stringField, toolInputRecord, uniqueActionTargets } from "./common";
 
 type ParsedTerminalDetails = Extract<ToolDetails, { type: "terminal" }>;

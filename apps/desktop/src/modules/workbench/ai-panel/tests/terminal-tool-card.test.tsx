@@ -4,10 +4,10 @@ import { describe, expect, test, vi } from "vitest";
 import type {
   SessionMeta,
   ToolDetails
-} from "../agent-chat-demo/core/types";
-import { createDataProviderValue } from "../agent-chat-demo/data/createDataProviderValue";
-import { DataContextProvider } from "../agent-chat-demo/data/DataProvider";
-import { TerminalToolCard } from "../agent-chat-demo/features/tools/TerminalToolCard";
+} from "../lyra-agents/core/types";
+import { createDataProviderValue } from "../lyra-agents/data/createDataProviderValue";
+import { DataContextProvider } from "../lyra-agents/data/DataProvider";
+import { TerminalToolCard } from "../lyra-agents/features/tools/TerminalToolCard";
 
 type TerminalDetails = Extract<ToolDetails, { type: "terminal" }>;
 
@@ -125,7 +125,7 @@ describe("terminal tool card release gate", () => {
       if (details.output.trim().length > 0) {
         expect(screen.getByText(details.output)).toBeInTheDocument();
       }
-      expect(container.querySelector(".shell-exit")).toHaveTextContent("running");
+      expect(container.querySelector(".lyra-agents-shell-exit")).toHaveTextContent("running");
       unmount();
     }
   });

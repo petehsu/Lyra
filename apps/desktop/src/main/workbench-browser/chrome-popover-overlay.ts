@@ -453,15 +453,15 @@ const buildOmniboxLikeDocument = ({
         --lyra-stroke-hairline: 1px;
         --lyra-radius-pill: 999px;
         --lyra-titlebar-navigation-radius: var(--lyra-unit-14);
-        --lyra-bg-app: ${palette.bgApp};
-        --lyra-bg-surface: ${palette.bgSurface};
-        --lyra-bg-editor: ${palette.bgEditor};
-        --lyra-bg-hover: color-mix(in srgb, ${palette.bgEditor} 78%, ${palette.textAccent} 10%);
+        --lyra-app-bg: ${palette.bgApp};
+        --lyra-app-surface-bg: ${palette.bgSurface};
+        --lyra-app-panel-bg: ${palette.bgEditor};
+        --lyra-app-row-hover-bg: color-mix(in srgb, ${palette.bgEditor} 78%, ${palette.textAccent} 10%);
+        --lyra-app-border: ${palette.lineDefault};
         --lyra-text-primary: ${palette.textPrimary};
         --lyra-text-secondary: ${palette.textSecondary};
         --lyra-text-muted: ${palette.textMuted};
         --lyra-text-accent: ${palette.textAccent};
-        --lyra-line-default: ${palette.lineDefault};
         --lyra-scrollbar-thumb-idle: ${palette.textMuted};
         --lyra-scrollbar-thumb-hover: ${palette.lineFocused};
         --lyra-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -495,17 +495,17 @@ const buildOmniboxLikeDocument = ({
         justify-content: flex-end;
         padding: 0;
         border: var(--lyra-stroke-hairline) solid
-          color-mix(in srgb, var(--lyra-line-default) 54%, var(--lyra-text-secondary) 22%);
+          color-mix(in srgb, var(--lyra-app-border) 54%, var(--lyra-text-secondary) 22%);
         border-radius: var(--lyra-titlebar-navigation-radius);
         background:
           linear-gradient(
             180deg,
-            color-mix(in srgb, var(--lyra-bg-surface) 96%, transparent) 0%,
-            color-mix(in srgb, var(--lyra-bg-editor) 90%, transparent) 100%
+            color-mix(in srgb, var(--lyra-app-surface-bg) 96%, transparent) 0%,
+            color-mix(in srgb, var(--lyra-app-panel-bg) 90%, transparent) 100%
           );
         box-shadow:
-          inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-bg-surface) 34%, transparent),
-          0 var(--lyra-unit-10) 28px color-mix(in srgb, var(--lyra-bg-app) 16%, transparent);
+          inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-app-surface-bg) 34%, transparent),
+          0 var(--lyra-unit-10) 28px color-mix(in srgb, var(--lyra-app-bg) 16%, transparent);
         overflow: hidden;
         transform-origin: bottom center;
         animation: lyra-native-omnibox-expand 190ms cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -524,7 +524,7 @@ const buildOmniboxLikeDocument = ({
         margin: 0;
         text-align: left;
         border-bottom: var(--lyra-stroke-hairline) solid
-          color-mix(in srgb, var(--lyra-line-default) 34%, transparent);
+          color-mix(in srgb, var(--lyra-app-border) 34%, transparent);
         background: transparent;
         animation: omnibox-suggestions-reveal 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
       }
@@ -562,7 +562,7 @@ const buildOmniboxLikeDocument = ({
       }
       .lyra-suggestion-item:hover,
       .lyra-suggestion-item.is-selected {
-        background: var(--lyra-bg-hover);
+        background: var(--lyra-app-row-hover-bg);
         color: var(--lyra-text-primary);
       }
       .lyra-suggestion-left {
@@ -830,8 +830,8 @@ export const buildBrowserChromePopoverDocument = ({
         ? palette.statusError
         : palette.textMuted;
   const shadow = normalizedTheme.isDark
-    ? "0 18px 50px rgba(0, 0, 0, 0.48)"
-    : "0 18px 42px rgba(54, 45, 24, 0.24)";
+    ? "0 7px 22px rgba(0, 0, 0, 0.32)"
+    : "0 7px 22px rgba(20, 24, 33, 0.12)";
   const detailRows = securityDetailRows(security, level, copy.labels)
     .map(
       ([label, value]) => `
@@ -883,11 +883,11 @@ export const buildBrowserChromePopoverDocument = ({
         height: 100%;
         overflow: auto;
         border: 1px solid var(--line);
-        border-radius: 12px;
-        background: linear-gradient(180deg, var(--surface) 0%, var(--field) 100%);
+        border-radius: 10px;
+        background: var(--surface);
         color: var(--text);
-        box-shadow: none;
-        padding: 14px;
+        box-shadow: var(--shadow);
+        padding: 10px;
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -913,24 +913,24 @@ export const buildBrowserChromePopoverDocument = ({
       }
       .header {
         display: grid;
-        grid-template-columns: 18px minmax(0, 1fr);
-        gap: 10px;
+        grid-template-columns: 22px minmax(0, 1fr);
+        gap: 8px;
         align-items: start;
-        padding-bottom: 7px;
+        padding: 2px 2px 8px;
         border-bottom: 1px solid var(--line);
       }
       .mark {
-        width: 18px;
-        height: 18px;
-        border-radius: 999px;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        margin-top: 1px;
-        background: var(--mark);
-        color: white;
+        background: var(--field);
+        color: var(--mark);
         font-size: 11px;
         font-weight: 800;
+        border: 1px solid var(--line);
       }
       h3 {
         margin: 0;
@@ -948,7 +948,7 @@ export const buildBrowserChromePopoverDocument = ({
       .details {
         display: flex;
         flex-direction: column;
-        gap: 7px;
+        gap: 6px;
       }
       .item {
         display: flex;
@@ -966,9 +966,10 @@ export const buildBrowserChromePopoverDocument = ({
       .item span {
         color: var(--text);
         background: var(--field);
-        border-radius: 4px;
-        padding: 3px 6px;
-        font: 10.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         word-break: break-word;
         overflow-wrap: anywhere;
       }

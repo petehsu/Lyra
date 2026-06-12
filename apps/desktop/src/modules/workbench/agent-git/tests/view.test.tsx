@@ -167,7 +167,7 @@ describe("AgentGitSurface", () => {
     expect(await screen.findByText("src/app.ts")).toBeInTheDocument();
     expect(readGitStatus).toHaveBeenCalledWith({ workingDir: "/project" });
 
-    fireEvent.click(screen.getByTitle("src/app.ts"));
+    fireEvent.click(screen.getByRole("button", { name: "src/app.ts" }));
     await waitFor(() => {
       expect(readGitDiff).toHaveBeenCalledWith({
         workingDir: "/project",

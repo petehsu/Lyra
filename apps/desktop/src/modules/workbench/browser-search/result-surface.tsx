@@ -4,6 +4,7 @@ import type {
   BrowserSearchPayload,
   SearchEngineDefinition
 } from "./types";
+import { AppTabs } from "@renderer/ui/components";
 import { ResultLocalSection } from "./result-local-section";
 import {
   resolveLocalSearchStatusLabel,
@@ -146,63 +147,58 @@ export const BrowserResultSurface = ({
       content: (
         <>
             <span className="lyra-titlebar-context-chip">{payload.query}</span>
-            <div className="lyra-titlebar-context-controls">
-              <button
-                type="button"
-                className={
-                  sourceFilter === "local"
-                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
-                    : "lyra-titlebar-context-text-button"
-                }
-                aria-label={`${sourceFilterLabel}: ${localTabLabel}`}
-                disabled={!localIndexReady}
-                title={localIndexReady ? undefined : localIndexNotReadyLabel}
-                onClick={() => {
-                  if (!localIndexReady) {
-                    return;
-                  }
+            <AppTabs
+              ariaLabel={`${sourceFilterLabel} options`}
+              className="lyra-titlebar-context-tabs"
+              selectionMode="multiple"
+              value={sourceFilter === "local"
+                ? "local"
+                : searchEngineSelectionMode === "manual"
+                  ? searchSelectedEngineIds[0] ?? "auto"
+                  : "auto"}
+              activeValues={sourceFilter === "local"
+                ? ["local"]
+                : searchEngineSelectionMode === "manual"
+                  ? searchSelectedEngineIds
+                  : ["auto"]}
+              options={[
+                {
+                  value: "local",
+                  label: localTabLabel,
+                  ariaLabel: `${sourceFilterLabel}: ${localTabLabel}`,
+                  disabled: !localIndexReady,
+                  ...(localIndexReady ? {} : { title: localIndexNotReadyLabel })
+                },
+                {
+                  value: "auto",
+                  label: autoSearchLabel,
+                  ariaLabel: `${sourceFilterLabel}: ${autoSearchLabel}`
+                },
+                ...searchEngines.map((engine) => ({
+                  value: engine.id,
+                  label: engine.label,
+                  ariaLabel: `${sourceFilterLabel}: ${engine.label}`
+                }))
+              ]}
+              onValueChange={(value) => {
+                if (value === "local") {
+                  if (!localIndexReady) return;
                   onSourceFilterChange("local");
-                }}
-              >
-                {localTabLabel}
-              </button>
-              <button
-                type="button"
-                className={
-                  searchEngineSelectionMode !== "manual"
-                    ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
-                    : "lyra-titlebar-context-text-button"
+                  return;
                 }
-                aria-label={`${sourceFilterLabel}: ${autoSearchLabel}`}
-                onClick={onSwitchToWebSearch}
-              >
-                {autoSearchLabel}
-              </button>
-              {searchEngines.map((engine) => (
-                <button
-                  key={engine.id}
-                  type="button"
-                  className={
-                    searchEngineSelectionMode === "manual" &&
-                    searchSelectedEngineIds.includes(engine.id)
-                      ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
-                      : "lyra-titlebar-context-text-button"
-                  }
-                  aria-label={`${sourceFilterLabel}: ${engine.label}`}
-                  onClick={() => {
-                    onSearchEngineSelectionChange(
-                      resolveNextSearchEngineSelection({
-                        currentMode: searchEngineSelectionMode,
-                        currentEngineIds: searchSelectedEngineIds,
-                        clickedEngineId: engine.id
-                      })
-                    );
-                  }}
-                >
-                  {engine.label}
-                </button>
-              ))}
-          </div>
+                if (value === "auto") {
+                  onSwitchToWebSearch();
+                  return;
+                }
+                onSearchEngineSelectionChange(
+                  resolveNextSearchEngineSelection({
+                    currentMode: searchEngineSelectionMode,
+                    currentEngineIds: searchSelectedEngineIds,
+                    clickedEngineId: value
+                  })
+                );
+              }}
+            />
         </>
       )
     }),

@@ -3,7 +3,7 @@ import type {
   AgentImageAttachment,
   ToolActionTarget,
   ToolArtifactPreview
-} from "../../ai-panel/agent-chat-demo/core/types";
+} from "../../ai-panel/lyra-agents/core/types";
 import { isLyraSensitiveValueRef } from "../../../../shared/sensitive-value";
 import type { LyraSensitiveValueRef } from "../../../../shared/desktop-bridge";
 

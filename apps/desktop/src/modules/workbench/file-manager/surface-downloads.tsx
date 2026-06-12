@@ -16,6 +16,15 @@ import {
 } from "lucide-react";
 import type { FormEvent } from "react";
 
+import {
+  AppBadge,
+  AppIconButton,
+  AppInput,
+  AppSelect,
+  AppSwitch,
+  AppTextarea
+} from "@renderer/ui/components";
+import type { AppBadgeTone } from "@renderer/ui/components";
 import type {
   DownloadManagerPriority,
   DownloadManagerTask
@@ -56,6 +65,23 @@ const isResumableDownload = (task: DownloadManagerTask): boolean =>
 const isCancelableDownload = (task: DownloadManagerTask): boolean =>
   task.state === "queued" || task.state === "downloading" || task.state === "paused";
 
+const resolveDownloadStateTone = (state: DownloadManagerTask["state"]): AppBadgeTone => {
+  switch (state) {
+    case "completed":
+      return "success";
+    case "failed":
+      return "error";
+    case "paused":
+      return "warning";
+    case "downloading":
+      return "info";
+    case "queued":
+    case "canceled":
+    default:
+      return "neutral";
+  }
+};
+
 const DownloadTaskActions = ({
   task,
   labels,
@@ -67,95 +93,83 @@ const DownloadTaskActions = ({
 }) => (
   <div className="lyra-file-manager-download-actions">
     {task.state === "downloading" ? (
-      <button
-        type="button"
-        className="lyra-file-manager-download-action"
+      <AppIconButton
         aria-label={labels.downloadPause}
         title={labels.downloadPause}
         onClick={() => {
           actions.onPauseDownload(task.id);
         }}
       >
-        <Pause size={14} />
-      </button>
+        <Pause size={14} aria-hidden="true" />
+      </AppIconButton>
     ) : null}
     {task.state === "paused" ? (
-      <button
-        type="button"
-        className="lyra-file-manager-download-action"
+      <AppIconButton
         aria-label={labels.downloadResume}
         title={labels.downloadResume}
         onClick={() => {
           actions.onResumeDownload(task.id);
         }}
       >
-        <Play size={14} />
-      </button>
+        <Play size={14} aria-hidden="true" />
+      </AppIconButton>
     ) : null}
     {task.state === "queued" || task.state === "downloading" || task.state === "paused" ? (
-      <button
-        type="button"
-        className="lyra-file-manager-download-action lyra-file-manager-download-action-danger"
+      <AppIconButton
+        tone="danger"
         aria-label={labels.downloadCancel}
         title={labels.downloadCancel}
         onClick={() => {
           actions.onCancelDownload(task.id);
         }}
       >
-        <X size={14} />
-      </button>
+        <X size={14} aria-hidden="true" />
+      </AppIconButton>
     ) : null}
     {task.state === "failed" || task.state === "canceled" ? (
-      <button
-        type="button"
-        className="lyra-file-manager-download-action"
+      <AppIconButton
         aria-label={labels.downloadRetry}
         title={labels.downloadRetry}
         onClick={() => {
           actions.onRetryDownload(task.id);
         }}
       >
-        <RotateCcw size={14} />
-      </button>
+        <RotateCcw size={14} aria-hidden="true" />
+      </AppIconButton>
     ) : null}
     {task.state === "completed" ? (
       <>
-        <button
-          type="button"
-          className="lyra-file-manager-download-action"
+        <AppIconButton
           aria-label={labels.downloadOpenFile}
           title={labels.downloadOpenFile}
           onClick={() => {
             actions.onOpenDownloadedFile(task.id);
           }}
         >
-          <ExternalLink size={14} />
-        </button>
-        <button
-          type="button"
-          className="lyra-file-manager-download-action"
+          <ExternalLink size={14} aria-hidden="true" />
+        </AppIconButton>
+        <AppIconButton
           aria-label={labels.downloadRevealFile}
           title={labels.downloadRevealFile}
           onClick={() => {
             actions.onRevealDownloadedFile(task.id);
           }}
         >
-          <FolderOpen size={14} />
-        </button>
+          <FolderOpen size={14} aria-hidden="true" />
+        </AppIconButton>
       </>
     ) : null}
     {task.state === "completed" || task.state === "failed" || task.state === "canceled" ? (
-      <button
-        type="button"
-        className="lyra-file-manager-download-action lyra-file-manager-download-action-danger"
+      <AppIconButton
+        tone="danger"
         aria-label={labels.downloadRemove}
         title={labels.downloadRemove}
         onClick={() => {
           actions.onRemoveDownload(task.id);
         }}
       >
-        <Trash2 size={14} />
-      </button>
+        <Trash2 size={14} aria-hidden="true" />
+      </AppIconButton>
     ) : null}
   </div>
 );
@@ -187,7 +201,12 @@ const DownloadTaskRow = ({
       <div className="lyra-file-manager-download-main">
         <div className="lyra-file-manager-download-name-line">
           <strong title={task.fileName}>{task.fileName}</strong>
-          <span>{stateLabel}</span>
+          <AppBadge
+            className="lyra-file-manager-download-state"
+            tone={resolveDownloadStateTone(task.state)}
+          >
+            {stateLabel}
+          </AppBadge>
         </div>
         <div className="lyra-file-manager-download-meta">
           <span title={task.url}>{sourceLabel}</span>
@@ -214,24 +233,20 @@ const DownloadTaskRow = ({
           <div className="lyra-file-manager-download-error">{task.errorMessage}</div>
         )}
       </div>
-      <select
-        className="lyra-file-manager-download-priority"
+      <AppSelect
+        ariaLabel={`${labels.downloadPriority}: ${task.fileName}`}
         value={task.priority}
-        aria-label={`${labels.downloadPriority}: ${task.fileName}`}
-        title={labels.downloadPriority}
-        onChange={(event) => {
+        options={DOWNLOAD_PRIORITIES.map((priority) => ({
+          value: priority,
+          label: resolveDownloadPriorityLabel(priority, labels)
+        }))}
+        onValueChange={(value) => {
           actions.onSetDownloadPriority(
             task.id,
-            event.target.value as DownloadManagerPriority
+            value as DownloadManagerPriority
           );
         }}
-      >
-        {DOWNLOAD_PRIORITIES.map((priority) => (
-          <option key={priority} value={priority}>
-            {resolveDownloadPriorityLabel(priority, labels)}
-          </option>
-        ))}
-      </select>
+      />
       <DownloadTaskActions task={task} labels={labels} actions={actions} />
     </div>
   );
@@ -280,13 +295,13 @@ const DownloadAdvancedOptionsPanel = ({
 
   return (
     <section
-      className="lyra-file-manager-download-advanced"
+      className="lyra-app-group lyra-file-manager-download-advanced"
       aria-label={labels.downloadAdvancedOptions}
     >
-      <div className="lyra-file-manager-download-settings-grid">
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+      <div className="lyra-app-form-grid lyra-file-manager-download-settings-grid">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadAdvancedCookie}</span>
-          <input
+          <AppInput
             value={draft.cookieHeader}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -295,9 +310,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadAdvancedHeaders}</span>
-          <textarea
+          <AppTextarea
             value={draft.headersText}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -306,9 +321,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadAdvancedMirrors}</span>
-          <textarea
+          <AppTextarea
             value={draft.mirrorsText}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -317,9 +332,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadAdvancedBtSelectedFiles}</span>
-          <input
+          <AppInput
             value={draft.btSelectedFileIndexesText}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -328,9 +343,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadAdvancedBtTrackers}</span>
-          <textarea
+          <AppTextarea
             value={draft.btTrackerUrlsText}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -339,9 +354,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadAdvancedPartialFile}</span>
-          <input
+          <AppInput
             value={draft.partialFilePath}
             onChange={(event) => {
               actions.onDownloadAdvancedDraftChange({
@@ -350,27 +365,26 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadAdvancedChecksumAlgorithm}</span>
-          <select
+          <AppSelect
+            ariaLabel={labels.downloadAdvancedChecksumAlgorithm}
             value={draft.checksumAlgorithm}
-            onChange={(event) => {
+            options={DOWNLOAD_CHECKSUM_ALGORITHMS.map((algorithm) => ({
+              value: algorithm,
+              label: resolveChecksumAlgorithmLabel(algorithm, labels)
+            }))}
+            onValueChange={(value) => {
               actions.onDownloadAdvancedDraftChange({
-                checksumAlgorithm: event.target.value as typeof draft.checksumAlgorithm
+                checksumAlgorithm: value as typeof draft.checksumAlgorithm
               });
             }}
-          >
-            {DOWNLOAD_CHECKSUM_ALGORITHMS.map((algorithm) => (
-              <option key={algorithm} value={algorithm}>
-                {resolveChecksumAlgorithmLabel(algorithm, labels)}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         {checksumVisible ? (
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadAdvancedChecksumExpected}</span>
-            <input
+            <AppInput
               value={draft.checksumExpected}
               onChange={(event) => {
                 actions.onDownloadAdvancedDraftChange({
@@ -380,9 +394,9 @@ const DownloadAdvancedOptionsPanel = ({
             />
           </label>
         ) : null}
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadAdvancedMaxRetries}</span>
-          <input
+          <AppInput
             value={draft.maxRetries}
             inputMode="numeric"
             onChange={(event) => {
@@ -392,9 +406,9 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadAdvancedRetryDelay}</span>
-          <input
+          <AppInput
             value={draft.retryDelaySeconds}
             inputMode="numeric"
             onChange={(event) => {
@@ -404,27 +418,26 @@ const DownloadAdvancedOptionsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadAdvancedProxyMode}</span>
-          <select
+          <AppSelect
+            ariaLabel={labels.downloadAdvancedProxyMode}
             value={draft.proxyMode}
-            onChange={(event) => {
+            options={DOWNLOAD_PROXY_MODES.map((mode) => ({
+              value: mode,
+              label: resolveProxyModeLabel(mode, labels)
+            }))}
+            onValueChange={(value) => {
               actions.onDownloadAdvancedDraftChange({
-                proxyMode: event.target.value as typeof draft.proxyMode
+                proxyMode: value as typeof draft.proxyMode
               });
             }}
-          >
-            {DOWNLOAD_PROXY_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {resolveProxyModeLabel(mode, labels)}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         {proxyUrlVisible ? (
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadAdvancedProxyUrl}</span>
-            <input
+            <AppInput
               value={draft.proxyUrl}
               onChange={(event) => {
                 actions.onDownloadAdvancedDraftChange({
@@ -456,12 +469,12 @@ const DownloadScheduleSettings = ({
       {labels.downloadSettingsSchedule}
     </span>
     <label className="lyra-file-manager-download-setting-check">
-      <input
-        type="checkbox"
+      <AppSwitch
         checked={draft.scheduleEnabled}
-        onChange={(event) => {
+        aria-label={labels.downloadSettingsScheduleEnabled}
+        onCheckedChange={(checked) => {
           actions.onDownloadSettingsDraftChange({
-            scheduleEnabled: event.target.checked
+            scheduleEnabled: checked
           });
         }}
       />
@@ -469,9 +482,9 @@ const DownloadScheduleSettings = ({
     </label>
     {draft.scheduleEnabled ? (
       <>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadSettingsScheduleStart}</span>
-          <input
+          <AppInput
             type="time"
             value={draft.scheduleStartTime}
             onChange={(event) => {
@@ -481,9 +494,9 @@ const DownloadScheduleSettings = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadSettingsScheduleEnd}</span>
-          <input
+          <AppInput
             type="time"
             value={draft.scheduleEndTime}
             onChange={(event) => {
@@ -493,24 +506,26 @@ const DownloadScheduleSettings = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadSettingsScheduleOutsideAction}</span>
-          <select
+          <AppSelect
+            ariaLabel={labels.downloadSettingsScheduleOutsideAction}
             value={draft.scheduleOutsideAction}
-            onChange={(event) => {
+            options={[
+              { value: "pause", label: labels.downloadSettingsSchedulePause },
+              { value: "speed-limit", label: labels.downloadSettingsScheduleSpeedLimit }
+            ]}
+            onValueChange={(value) => {
               actions.onDownloadSettingsDraftChange({
-                scheduleOutsideAction: event.target.value as typeof draft.scheduleOutsideAction
+                scheduleOutsideAction: value as typeof draft.scheduleOutsideAction
               });
             }}
-          >
-            <option value="pause">{labels.downloadSettingsSchedulePause}</option>
-            <option value="speed-limit">{labels.downloadSettingsScheduleSpeedLimit}</option>
-          </select>
+          />
         </label>
         {draft.scheduleOutsideAction === "speed-limit" ? (
-          <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
             <span>{labels.downloadSettingsScheduleLimit}</span>
-            <input
+            <AppInput
               value={draft.scheduleOutsideSpeedLimitKibPerSecond}
               inputMode="numeric"
               onChange={(event) => {
@@ -543,47 +558,45 @@ const DownloadSaveRulesSettings = ({
       <span className="lyra-file-manager-download-settings-row-title">
         {labels.downloadSettingsSaveRules}
       </span>
-      <button
+      <AppIconButton
         type="button"
-        className="lyra-file-manager-download-action"
         aria-label={labels.downloadSettingsAddSaveRule}
         title={labels.downloadSettingsAddSaveRule}
         onClick={actions.onAddDownloadSaveRule}
       >
-        <Plus size={14} />
-      </button>
+        <Plus size={14} aria-hidden="true" />
+      </AppIconButton>
     </div>
     {draft.saveRules.map((rule) => {
       const ruleLabel = rule.name.trim().length === 0 ? rule.id : rule.name;
       return (
         <div className="lyra-file-manager-download-save-rule" key={rule.id}>
           <label className="lyra-file-manager-download-setting-check">
-            <input
-              type="checkbox"
+            <AppSwitch
               checked={rule.enabled}
               aria-label={`${labels.downloadSettingsRuleEnabled}: ${ruleLabel}`}
-              onChange={(event) => {
+              onCheckedChange={(checked) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
-                  enabled: event.target.checked
+                  enabled: checked
                 });
               }}
             />
             <span>{labels.downloadSettingsRuleEnabled}</span>
           </label>
-          <button
+          <AppIconButton
             type="button"
-            className="lyra-file-manager-download-action lyra-file-manager-download-action-danger"
+            tone="danger"
             aria-label={`${labels.downloadSettingsRemoveSaveRule}: ${ruleLabel}`}
             title={labels.downloadSettingsRemoveSaveRule}
             onClick={() => {
               actions.onRemoveDownloadSaveRule(rule.id);
             }}
           >
-            <Trash2 size={14} />
-          </button>
-          <label className="lyra-file-manager-download-setting-field">
+            <Trash2 size={14} aria-hidden="true" />
+          </AppIconButton>
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleName}</span>
-            <input
+            <AppInput
               value={rule.name}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -592,9 +605,9 @@ const DownloadSaveRulesSettings = ({
               }}
             />
           </label>
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleDirectory}</span>
-            <input
+            <AppInput
               value={rule.directory}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -603,9 +616,9 @@ const DownloadSaveRulesSettings = ({
               }}
             />
           </label>
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleExtensions}</span>
-            <input
+            <AppInput
               value={rule.extensionsText}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -614,9 +627,9 @@ const DownloadSaveRulesSettings = ({
               }}
             />
           </label>
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleHosts}</span>
-            <input
+            <AppInput
               value={rule.hostContainsText}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -625,9 +638,9 @@ const DownloadSaveRulesSettings = ({
               }}
             />
           </label>
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleProtocols}</span>
-            <input
+            <AppInput
               value={rule.protocolsText}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -636,9 +649,9 @@ const DownloadSaveRulesSettings = ({
               }}
             />
           </label>
-          <label className="lyra-file-manager-download-setting-field">
+          <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
             <span>{labels.downloadSettingsRuleTags}</span>
-            <input
+            <AppInput
               value={rule.tagsText}
               onChange={(event) => {
                 actions.onDownloadSaveRuleDraftChange(rule.id, {
@@ -674,11 +687,11 @@ const DownloadSettingsPanel = ({
   const proxyUrlVisible = draft.proxyMode === "http" || draft.proxyMode === "socks5";
 
   return (
-    <section className="lyra-file-manager-download-settings" aria-label={labels.downloadSettings}>
-      <div className="lyra-file-manager-download-settings-grid">
-        <label className="lyra-file-manager-download-setting-field">
+    <section className="lyra-app-group lyra-file-manager-download-settings" aria-label={labels.downloadSettings}>
+      <div className="lyra-app-form-grid lyra-file-manager-download-settings-grid">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadSettingsSpeedLimit}</span>
-          <input
+          <AppInput
             value={draft.speedLimitKibPerSecond}
             inputMode="numeric"
             placeholder={labels.downloadSettingsNoLimit}
@@ -689,27 +702,26 @@ const DownloadSettingsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field">
           <span>{labels.downloadSettingsProxyMode}</span>
-          <select
+          <AppSelect
+            ariaLabel={labels.downloadSettingsProxyMode}
             value={draft.proxyMode}
-            onChange={(event) => {
+            options={DOWNLOAD_PROXY_MODES.map((mode) => ({
+              value: mode,
+              label: resolveProxyModeLabel(mode, labels)
+            }))}
+            onValueChange={(value) => {
               actions.onDownloadSettingsDraftChange({
-                proxyMode: event.target.value as typeof draft.proxyMode
+                proxyMode: value as typeof draft.proxyMode
               });
             }}
-          >
-            {DOWNLOAD_PROXY_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {resolveProxyModeLabel(mode, labels)}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         {proxyUrlVisible ? (
-          <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+          <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
             <span>{labels.downloadSettingsProxyUrl}</span>
-            <input
+            <AppInput
               value={draft.proxyUrl}
               onChange={(event) => {
                 actions.onDownloadSettingsDraftChange({
@@ -719,9 +731,9 @@ const DownloadSettingsPanel = ({
             />
           </label>
         ) : null}
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadSettingsCookie}</span>
-          <input
+          <AppInput
             value={draft.defaultCookieHeader}
             onChange={(event) => {
               actions.onDownloadSettingsDraftChange({
@@ -730,9 +742,9 @@ const DownloadSettingsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
+        <label className="lyra-app-form-field lyra-app-form-field-wide lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-wide">
           <span>{labels.downloadSettingsHeaders}</span>
-          <textarea
+          <AppTextarea
             value={draft.defaultHeadersText}
             onChange={(event) => {
               actions.onDownloadSettingsDraftChange({
@@ -754,44 +766,44 @@ const DownloadSettingsPanel = ({
           {labels.downloadSettingsPostProcessing}
         </span>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.autoExtract}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsAutoExtract}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                autoExtract: event.target.checked
+                autoExtract: checked
               });
             }}
           />
           <span>{labels.downloadSettingsAutoExtract}</span>
         </label>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.deleteArchiveAfterExtract}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsDeleteArchive}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                deleteArchiveAfterExtract: event.target.checked
+                deleteArchiveAfterExtract: checked
               });
             }}
           />
           <span>{labels.downloadSettingsDeleteArchive}</span>
         </label>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.detectSplitArchives}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsDetectSplitArchives}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                detectSplitArchives: event.target.checked
+                detectSplitArchives: checked
               });
             }}
           />
           <span>{labels.downloadSettingsDetectSplitArchives}</span>
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-flex">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-flex">
           <span>{labels.downloadSettingsExtractDirectory}</span>
-          <input
+          <AppInput
             value={draft.extractDirectory}
             onChange={(event) => {
               actions.onDownloadSettingsDraftChange({
@@ -807,44 +819,44 @@ const DownloadSettingsPanel = ({
           {labels.downloadSettingsBt}
         </span>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.btDhtEnabled}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsBtDht}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                btDhtEnabled: event.target.checked
+                btDhtEnabled: checked
               });
             }}
           />
           <span>{labels.downloadSettingsBtDht}</span>
         </label>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.btPeerExchangeEnabled}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsBtPeerExchange}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                btPeerExchangeEnabled: event.target.checked
+                btPeerExchangeEnabled: checked
               });
             }}
           />
           <span>{labels.downloadSettingsBtPeerExchange}</span>
         </label>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.btLocalPeerDiscoveryEnabled}
-            onChange={(event) => {
+            aria-label={labels.downloadSettingsBtLocalPeerDiscovery}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                btLocalPeerDiscoveryEnabled: event.target.checked
+                btLocalPeerDiscoveryEnabled: checked
               });
             }}
           />
           <span>{labels.downloadSettingsBtLocalPeerDiscovery}</span>
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadSettingsBtSeedTime}</span>
-          <input
+          <AppInput
             value={draft.btSeedTimeMinutes}
             inputMode="numeric"
             onChange={(event) => {
@@ -854,9 +866,9 @@ const DownloadSettingsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadSettingsBtUploadLimit}</span>
-          <input
+          <AppInput
             value={draft.btUploadLimitKibPerSecond}
             inputMode="numeric"
             placeholder={labels.downloadSettingsNoLimit}
@@ -867,9 +879,9 @@ const DownloadSettingsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-flex">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-flex">
           <span>{labels.downloadSettingsBtTrackers}</span>
-          <input
+          <AppInput
             value={draft.btTrackerUrlsText}
             onChange={(event) => {
               actions.onDownloadSettingsDraftChange({
@@ -891,14 +903,14 @@ const DownloadSettingsPanel = ({
           {labels.downloadRemoteApi}
         </span>
         <span className="lyra-file-manager-download-remote-state">
-          <RadioTower size={14} />
+          <RadioTower size={14} aria-hidden="true" />
           {remoteStatus?.running === true
             ? labels.downloadRemoteApiRunning
             : labels.downloadRemoteApiStopped}
         </span>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadRemoteApiHost}</span>
-          <input
+          <AppInput
             value={draft.remoteHost}
             onChange={(event) => {
               actions.onDownloadSettingsDraftChange({
@@ -907,9 +919,9 @@ const DownloadSettingsPanel = ({
             }}
           />
         </label>
-        <label className="lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
+        <label className="lyra-app-form-field lyra-file-manager-download-setting-field lyra-file-manager-download-setting-field-compact">
           <span>{labels.downloadRemoteApiPort}</span>
-          <input
+          <AppInput
             value={draft.remotePort}
             inputMode="numeric"
             onChange={(event) => {
@@ -920,37 +932,36 @@ const DownloadSettingsPanel = ({
           />
         </label>
         <label className="lyra-file-manager-download-setting-check">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={draft.remoteAllowLan}
-            onChange={(event) => {
+            aria-label={labels.downloadRemoteApiAllowLan}
+            onCheckedChange={(checked) => {
               actions.onDownloadSettingsDraftChange({
-                remoteAllowLan: event.target.checked
+                remoteAllowLan: checked
               });
             }}
           />
           <span>{labels.downloadRemoteApiAllowLan}</span>
         </label>
         {remoteStatus?.running === true ? (
-          <button
+          <AppIconButton
             type="button"
-            className="lyra-file-manager-download-action"
+            tone="danger"
             aria-label={labels.downloadRemoteApiStop}
             title={labels.downloadRemoteApiStop}
             onClick={actions.onStopDownloadRemoteApi}
           >
-            <X size={14} />
-          </button>
+            <X size={14} aria-hidden="true" />
+          </AppIconButton>
         ) : (
-          <button
+          <AppIconButton
             type="button"
-            className="lyra-file-manager-download-action"
             aria-label={labels.downloadRemoteApiStart}
             title={labels.downloadRemoteApiStart}
             onClick={actions.onStartDownloadRemoteApi}
           >
-            <Play size={14} />
-          </button>
+            <Play size={14} aria-hidden="true" />
+          </AppIconButton>
         )}
         {remoteStatus?.token === undefined ? null : (
           <span className="lyra-file-manager-download-remote-token" title={remoteStatus.token}>
@@ -966,14 +977,14 @@ const DownloadSettingsPanel = ({
       )}
 
       <div className="lyra-file-manager-download-settings-actions">
-        <button
+        <AppIconButton
           type="button"
           aria-label={labels.downloadSettingsSave}
           title={labels.downloadSettingsSave}
           onClick={actions.onSaveDownloadSettings}
         >
-          <Save size={14} />
-        </button>
+          <Save size={14} aria-hidden="true" />
+        </AppIconButton>
       </div>
     </section>
   );
@@ -997,8 +1008,8 @@ export const FileManagerDownloadsContent = ({
   };
 
   return (
-    <div className="lyra-file-manager-downloads-page">
-      <header className="lyra-file-manager-downloads-header">
+    <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-downloads-page">
+      <header className="lyra-app-group lyra-file-manager-downloads-header">
         <div className="lyra-file-manager-downloads-title">
           {renderFileManagerSectionIcon("downloads")}
           <h3>{labels.downloadManagerTitle}</h3>
@@ -1006,88 +1017,86 @@ export const FileManagerDownloadsContent = ({
         <div className="lyra-file-manager-downloads-controls">
           <div className="lyra-file-manager-downloads-batch-actions">
             {canPauseAll ? (
-              <button
+              <AppIconButton
                 type="button"
                 aria-label={labels.downloadPauseAll}
                 title={labels.downloadPauseAll}
                 onClick={actions.onPauseAllDownloads}
               >
-                <Pause size={14} />
-              </button>
+                <Pause size={14} aria-hidden="true" />
+              </AppIconButton>
             ) : null}
             {canResumeAll ? (
-              <button
+              <AppIconButton
                 type="button"
                 aria-label={labels.downloadResumeAll}
                 title={labels.downloadResumeAll}
                 onClick={actions.onResumeAllDownloads}
               >
-                <Play size={14} />
-              </button>
+                <Play size={14} aria-hidden="true" />
+              </AppIconButton>
             ) : null}
             {canCancelAll ? (
-              <button
+              <AppIconButton
                 type="button"
-                className="lyra-file-manager-download-action-danger"
+                tone="danger"
                 aria-label={labels.downloadCancelAll}
                 title={labels.downloadCancelAll}
                 onClick={actions.onCancelAllDownloads}
               >
-                <X size={14} />
-              </button>
+                <X size={14} aria-hidden="true" />
+              </AppIconButton>
             ) : null}
-            <button
+            <AppIconButton
               type="button"
               aria-label={labels.downloadSettings}
               title={labels.downloadSettings}
               onClick={actions.onToggleDownloadSettings}
             >
-              <Settings2 size={14} />
-            </button>
+              <Settings2 size={14} aria-hidden="true" />
+            </AppIconButton>
           </div>
           <form className="lyra-file-manager-downloads-form" onSubmit={onSubmit}>
-            <input
+            <AppInput
               value={downloads.urlDraft}
               placeholder={labels.downloadUrlPlaceholder}
               onChange={(event) => {
                 actions.onDownloadUrlDraftChange(event.target.value);
               }}
             />
-            <button
-              className={downloads.advancedDraft.advancedOpen
-                ? "lyra-file-manager-download-action lyra-file-manager-download-action-active"
-                : "lyra-file-manager-download-action"}
+            <AppIconButton
               type="button"
+              active={downloads.advancedDraft.advancedOpen}
               aria-label={labels.downloadAdvancedOptions}
               title={labels.downloadAdvancedOptions}
               onClick={actions.onToggleDownloadAdvancedOptions}
             >
-              <SlidersHorizontal size={14} />
-            </button>
-            <button
+              <SlidersHorizontal size={14} aria-hidden="true" />
+            </AppIconButton>
+            <AppIconButton
               type="button"
               aria-label={labels.downloadImportClipboard}
               title={labels.downloadImportClipboard}
               onClick={actions.onImportDownloadUrlsFromClipboard}
             >
-              <ClipboardPaste size={14} />
-            </button>
-            <button
+              <ClipboardPaste size={14} aria-hidden="true" />
+            </AppIconButton>
+            <AppIconButton
               type="button"
               aria-label={labels.downloadImportExternalBrowser}
               title={labels.downloadImportExternalBrowser}
               onClick={actions.onImportExternalBrowserDownloads}
             >
-              <Import size={14} />
-            </button>
-            <button
+              <Import size={14} aria-hidden="true" />
+            </AppIconButton>
+            <AppIconButton
               type="submit"
               aria-label={labels.downloadAddUrl}
               title={labels.downloadAddUrl}
               disabled={downloads.urlDraft.trim().length === 0}
             >
-              <Plus size={14} />
-            </button>
+              <Plus size={14} aria-hidden="true" />
+            </AppIconButton>
           </form>
         </div>
       </header>
@@ -1111,7 +1120,7 @@ export const FileManagerDownloadsContent = ({
       {downloads.isEmpty ? (
         <div className="lyra-file-manager-empty-state">{labels.emptyDownloads}</div>
       ) : (
-        <div className="lyra-file-manager-download-list">
+        <div className="lyra-app-group lyra-app-row-list lyra-file-manager-download-list">
           {downloads.tasks.map((task) => (
             <DownloadTaskRow
               key={task.id}

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { AppButton } from "@renderer/ui/components";
 import type { ContextMenuState } from "./types";
 
 type ContextMenuHostProps = {
@@ -119,8 +120,10 @@ export const ContextMenuHost = ({
         }}
       >
         {state.items.map((item) => (
-          <button
+          <AppButton
             key={item.id}
+            variant="ghost"
+            size="sm"
             className={[
               "lyra-context-menu-item",
               item.separatorBefore ? "lyra-context-menu-item-separator" : "",
@@ -138,7 +141,7 @@ export const ContextMenuHost = ({
               {item.icon}
             </span>
             <span className="lyra-context-menu-item-label">{item.label}</span>
-          </button>
+          </AppButton>
         ))}
       </div>
     </div>,

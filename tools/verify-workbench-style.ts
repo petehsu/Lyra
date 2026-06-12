@@ -25,13 +25,19 @@ type CssSelectorBlock = {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
-const RENDERER_WORKBENCH_STYLES_DIR = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench");
+const DESKTOP_SRC_DIR = path.join(ROOT, "apps/desktop/src");
+const RENDERER_UI_DIR = path.join(DESKTOP_SRC_DIR, "renderer/ui");
+const RENDERER_UI_COMPONENTS_DIR = path.join(RENDERER_UI_DIR, "components");
+const RENDERER_UI_PRIMITIVES_DIR = path.join(RENDERER_UI_DIR, "primitives");
+const RENDERER_STYLES_DIR = path.join(DESKTOP_SRC_DIR, "renderer/styles");
+const DELETED_RENDERER_WORKBENCH_STYLES_DIR = path.join(RENDERER_STYLES_DIR, "workbench");
+const RENDERER_STYLES_ENTRYPOINT = path.join(RENDERER_STYLES_DIR, "index.scss");
 const MODULES_WORKBENCH_DIR = path.join(ROOT, "apps/desktop/src/modules/workbench");
 const WORKBENCH_SHELL_ENTRYPOINT = path.join(MODULES_WORKBENCH_DIR, "shell/index.tsx");
 const WORKBENCH_SHELL_ENTRYPOINT_RELATIVE = "apps/desktop/src/modules/workbench/shell/index.tsx";
-const LEGACY_CSS_PATH = path.join(ROOT, "apps/desktop/src/renderer/styles/workbench.css");
+const DELETED_LEGACY_CSS_PATH = path.join(RENDERER_STYLES_DIR, "workbench.css");
 const WORKBENCH_SHELL_ENTRYPOINT_MAX_LINES = 800;
-const APPROVED_BREAKPOINTS = new Set(["360px", "720px", "860px", "980px", "1180px"]);
+const APPROVED_BREAKPOINTS = new Set(["360px", "720px", "860px", "980px", "1080px", "1180px", "1200px"]);
 const FOUNDATION_TOKEN_NAMES = new Set(Object.keys(WORKBENCH_FOUNDATION_TOKENS));
 const VISUAL_STYLE_KEYS = new Set([
   "fontSize",
@@ -62,28 +68,57 @@ const VISUAL_STYLE_KEYS = new Set([
   "borderRadius"
 ]);
 
-const COLOR_EXEMPT_FILES = [
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/settings\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/browser-search\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/ai-panel\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/notification-center\.css$/
+const MIGRATED_PAGE_TOKEN_SOURCE_FILES = [
+  /apps\/desktop\/src\/renderer\/styles\/shell\.scss$/,
+  /apps\/desktop\/src\/renderer\/styles\/surfaces\.scss$/,
+  /apps\/desktop\/src\/renderer\/styles\/agents\.scss$/,
+  /apps\/desktop\/src\/renderer\/styles\/effects\.scss$/
+];
+
+const PAGE_VISUAL_TOKEN_NAMES = new Set([
+  "--lyra-settings-bg",
+  "--lyra-settings-shell-bg",
+  "--lyra-settings-sidebar-bg",
+  "--lyra-settings-panel-bg",
+  "--lyra-settings-card-bg",
+  "--lyra-settings-card-strong-bg",
+  "--lyra-settings-row-bg",
+  "--lyra-settings-row-hover-bg",
+  "--lyra-settings-row-active-bg",
+  "--lyra-settings-row-active-border",
+  "--lyra-settings-input-bg",
+  "--lyra-settings-input-hover-bg",
+  "--lyra-settings-input-focus-bg",
+  "--lyra-settings-input-border",
+  "--lyra-settings-input-focus-border",
+  "--lyra-settings-input-placeholder",
+  "--lyra-settings-muted-bg",
+  "--lyra-settings-border",
+  "--lyra-settings-border-strong",
+  "--lyra-settings-focus",
+  "--lyra-settings-switch-on",
+  "--lyra-settings-primary-button",
+  "--lyra-settings-primary-button-fg"
+]);
+
+const LEGACY_VISUAL_TOKEN_REFERENCE_PATTERN = /var\(--(?:lyra-bg|lyra-line|material)-[A-Za-z0-9-]+/g;
+const LEGACY_VISUAL_TOKEN_PATTERN =
+  /--(?:lyra-(?:bg|line)-[A-Za-z0-9-]+|lyra-browser-tabs-bg|lyra-browser-tab-bg|lyra-browser-tab-top-border|lyra-tab-inactive|lyra-tab-active(?![A-Za-z0-9_-])|material-[A-Za-z0-9-]+)/g;
+
+const MATERIAL_TOKEN_SOURCE_FILES = [
+  /apps\/desktop\/src\/renderer\/styles\/material\.scss$/,
+  /apps\/desktop\/src\/renderer\/styles\/app-ui\.scss$/
+];
+
+const RAW_VALUE_SOURCE_FILES = [
+  /apps\/desktop\/src\/renderer\/styles\/tokens\.css$/,
+  /apps\/desktop\/src\/renderer\/styles\/material\.scss$/
 ];
 
 const TS_INLINE_PX_ALLOWLIST = [
   /apps\/desktop\/src\/modules\/workbench\/shell\/use-panel-layout\.ts$/,
   /apps\/desktop\/src\/modules\/workbench\/global-dialog\/view\.tsx$/,
   /apps\/desktop\/src\/modules\/workbench\/browser-tabs\/tab-strip\.tsx$/
-];
-
-const CSS_LITERAL_SCAN_EXEMPT_FILES = [
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-git\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-overnight\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-project-tree\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-selfdev\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/agent-session-history\.css$/,
-  /apps\/desktop\/src\/renderer\/styles\/workbench\/omnibox-styles\.css$/,
-  /apps\/desktop\/src\/modules\/workbench\/ai-panel\/agent-chat-demo\/(?:App|index)\.css$/,
-  /apps\/desktop\/src\/modules\/workbench\/ai-panel\/agent-chat-demo\/styles\/tokens\.css$/
 ];
 
 const REACT_STATEFUL_VIEW_IMPORTS = new Set([
@@ -108,47 +143,50 @@ const DISALLOWED_LOCAL_TITLEBAR_CLASSES = [
   "lyra-notification-center-header",
 ] as const;
 
+const DISALLOWED_WORKBENCH_INTRINSIC_CONTROLS = new Set([
+  "button",
+  "input",
+  "select",
+  "textarea"
+]);
+
 const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-settings-nav-item:hover",
-    required: [/background:\s*transparent\s*;/]
+    required: [/background:\s*var\(--lyra-settings-row-hover-bg\)\s*;/]
   },
   {
     selector: ".lyra-settings-nav-item-active",
-    required: [/background:\s*transparent\s*;/]
+    required: [/background:\s*var\(--lyra-settings-row-active-bg\)\s*;/],
+    forbidden: [/border-color\s*:/]
   },
   {
     selector: ".lyra-settings-nav-item-active::before",
-    required: [/width:\s*var\(--lyra-(?:unit|space)-2\)\s*;/, /border-radius:\s*var\(--lyra-(?:unit-999|radius-pill)\)\s*;/, /background:\s*color-mix\(/]
+    required: [/display:\s*none\s*;/]
+  },
+  {
+    selector: ".lyra-settings-group",
+    required: [/border:\s*var\(--lyra-stroke-thin\)\s+solid\s+var\(--lyra-settings-border\)\s*;/, /background:\s*/, /box-shadow\s*:/]
   },
   {
     selector: ".lyra-settings-choice",
-    required: [/border:\s*0\s*;/, /background:\s*transparent\s*;/, /position:\s*relative\s*;/],
-    forbidden: [/box-shadow\s*:/]
-  },
-  {
-    selector: ".lyra-settings-choice::before",
-    required: [/width:\s*var\(--lyra-(?:unit|space)-2\)\s*;/, /border-radius:\s*var\(--lyra-(?:unit-999|radius-pill)\)\s*;/]
+    required: [/border:\s*var\(--lyra-stroke-thin\)\s+solid\s+transparent\s*;/, /background:\s*var\(--lyra-settings-row-bg\)\s*;/, /border-radius:\s*var\(--lyra-settings-radius-control\)\s*;/]
   },
   {
     selector: ".lyra-settings-choice:hover",
-    required: [/background:\s*transparent\s*;/]
+    required: [/background:\s*var\(--lyra-settings-row-hover-bg\)\s*;/, /border-color:\s*transparent\s*;/]
   },
   {
     selector: ".lyra-settings-choice-active",
-    required: [/background:\s*transparent\s*;/]
-  },
-  {
-    selector: ".lyra-settings-choice-active::before",
-    required: [/background:\s*color-mix\(/]
+    required: [/background:\s*var\(--lyra-settings-row-active-bg\)\s*;/, /border-color:\s*transparent\s*;/, /box-shadow:\s*none\s*;/]
   },
   {
     selector: ".lyra-context-menu-item",
-    required: [/box-shadow:\s*none\s*;/, /border-radius:\s*0\s*;/]
+    required: [/border-radius:\s*var\(--lyra-radius-6\)\s*;/, /background:\s*transparent\s*;/]
   },
   {
     selector: ".lyra-context-menu-item:hover:enabled",
-    required: [/background:\s*transparent\s*;/]
+    required: [/background:\s*var\(--lyra-app-row-hover-bg\)\s*;/]
   },
   {
     selector: ".lyra-settings-ai-action-icon",
@@ -186,7 +224,7 @@ const selectorRules: readonly SelectorRule[] = [
   },
   {
     selector: ".lyra-notification-topbar-preview",
-    required: [/background:\s*color-mix\(/, /backdrop-filter:\s*none\s*;/],
+    required: [/background:\s*var\(--lyra-app-input-bg\)\s*;/, /backdrop-filter:\s*none\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/, /linear-gradient\(/]
   },
   {
@@ -276,8 +314,8 @@ const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
   { selector: ".lyra-titlebar-navigation-action:hover" },
   { selector: ".lyra-titlebar-context-icon-button:hover:enabled" },
   { selector: ".lyra-titlebar-context-text-button:hover:enabled" },
-  { selector: ".lyra-window-button:hover" },
-  { selector: ".lyra-window-button-close:hover" },
+  { selector: ".lyra-app-window-button:hover:not(:disabled)" },
+  { selector: ".lyra-app-window-button[data-window-action=\"close\"]:hover:not(:disabled)" },
   { selector: ".lyra-browser-nav-button:hover" },
   { selector: ".lyra-browser-tab-close:hover" },
   { selector: ".lyra-browser-tab-add:hover" },
@@ -287,18 +325,6 @@ const iconOnlyHoverRules: readonly IconOnlyHoverRule[] = [
 const transparentMenuSelectionSelectors: readonly string[] = [];
 
 const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly message: string }[] = [
-  {
-    pattern: /\.lyra-settings-choice\s*\{[^}]*border:\s*var\(--lyra-(?:unit-0-5|stroke-hairline)\)/gs,
-    message: "Settings choice must stay borderless (no boxed card style)."
-  },
-  {
-    pattern: /\.lyra-settings-choice\s*\{[^}]*background:\s*color-mix\(/gs,
-    message: "Settings choice base block must stay transparent (no filled card style)."
-  },
-  {
-    pattern: /\.lyra-settings-choice-active\s*\{[^}]*background:\s*color-mix\(/gs,
-    message: "Settings choice active block must stay transparent."
-  },
   {
     pattern: /\.lyra-browser-tab-item:hover\s+\.lyra-chrome-tab-background\s*\{/gs,
     message: "Tab hover must not reveal or alter the tab shape; only text brightness may change."
@@ -341,14 +367,17 @@ const findSelectorBlock = (css: string, selector: string): string | null => {
 const findSelectorBlocks = (css: string, selector: string): CssSelectorBlock[] =>
   collectSelectorBlocks(css).filter((block) => block.selectors.includes(selector));
 
-const isColorExemptFile = (filePath: string): boolean =>
-  COLOR_EXEMPT_FILES.some((pattern) => pattern.test(filePath));
+const isMigratedPageTokenSourceFile = (filePath: string): boolean =>
+  MIGRATED_PAGE_TOKEN_SOURCE_FILES.some((pattern) => pattern.test(filePath));
 
 const isTsInlinePxAllowlisted = (filePath: string): boolean =>
   TS_INLINE_PX_ALLOWLIST.some((pattern) => pattern.test(filePath));
 
-const isCssLiteralScanExemptFile = (filePath: string): boolean =>
-  CSS_LITERAL_SCAN_EXEMPT_FILES.some((pattern) => pattern.test(filePath));
+const isMaterialTokenSourceFile = (filePath: string): boolean =>
+  MATERIAL_TOKEN_SOURCE_FILES.some((pattern) => pattern.test(filePath));
+
+const isRawValueSourceFile = (filePath: string): boolean =>
+  RAW_VALUE_SOURCE_FILES.some((pattern) => pattern.test(filePath));
 
 const isBreakpointLine = (line: string, literal: string): boolean =>
   (line.includes("@media") || line.includes("@container")) && APPROVED_BREAKPOINTS.has(literal);
@@ -364,6 +393,13 @@ const reportPath = (filePath: string): string =>
   path.isAbsolute(filePath) ? relativeToRoot(filePath) : normalizePath(filePath);
 
 const isWorkbenchTestPath = (filePath: string): boolean => /\/tests\//.test(normalizePath(filePath));
+
+const isWorkbenchBusinessTsxPath = (filePath: string): boolean => {
+  const normalizedPath = normalizePath(filePath);
+  return normalizedPath.endsWith(".tsx")
+    && /apps\/desktop\/src\/modules\/workbench\//.test(normalizedPath)
+    && !/\/tests\/|\.test\./.test(normalizedPath);
+};
 
 const basenameOf = (filePath: string): string => path.basename(filePath);
 
@@ -460,16 +496,12 @@ export const collectFiles = (rootDir: string, predicate: (filePath: string) => b
 
 const collectCssPaths = (): string[] => {
   const cssPaths = [
-    ...collectFiles(RENDERER_WORKBENCH_STYLES_DIR, (filePath) => filePath.endsWith(".css")),
+    ...collectFiles(RENDERER_STYLES_DIR, (filePath) => filePath.endsWith(".css") || filePath.endsWith(".scss")),
     ...collectFiles(MODULES_WORKBENCH_DIR, (filePath) => filePath.endsWith(".css"))
   ];
 
-  if (fs.existsSync(LEGACY_CSS_PATH)) {
-    cssPaths.push(LEGACY_CSS_PATH);
-  }
-
   if (cssPaths.length === 0) {
-    throw new Error("No workbench style files found.");
+    throw new Error("No renderer or workbench style files found.");
   }
 
   return cssPaths;
@@ -477,6 +509,35 @@ const collectCssPaths = (): string[] => {
 
 const collectWorkbenchTsPaths = (): string[] =>
   collectFiles(MODULES_WORKBENCH_DIR, (filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
+
+const collectDesktopTsPaths = (): string[] =>
+  collectFiles(DESKTOP_SRC_DIR, (filePath) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"));
+
+const collectRendererStylePaths = (): string[] =>
+  collectFiles(RENDERER_STYLES_DIR, (filePath) => filePath.endsWith(".css") || filePath.endsWith(".scss"));
+
+export const validateDeletedStyleEntrypoints = (): string[] => {
+  const violations: string[] = [];
+  if (fs.existsSync(DELETED_RENDERER_WORKBENCH_STYLES_DIR)) {
+    violations.push("apps/desktop/src/renderer/styles/workbench must not exist; use shell.scss, surfaces.scss, agents.scss, and effects.scss.");
+  }
+  if (fs.existsSync(DELETED_LEGACY_CSS_PATH)) {
+    violations.push("apps/desktop/src/renderer/styles/workbench.css must not exist; styles/index.scss is the only renderer style entrypoint.");
+  }
+  if (fs.existsSync(RENDERER_STYLES_ENTRYPOINT)) {
+    const entrypoint = fs.readFileSync(RENDERER_STYLES_ENTRYPOINT, "utf8");
+    if (/workbench\//.test(entrypoint) || /workbench\.css/.test(entrypoint)) {
+      violations.push("apps/desktop/src/renderer/styles/index.scss must not import deleted workbench CSS entrypoints.");
+    }
+  }
+  return violations;
+};
+
+const isWithinDir = (filePath: string, dir: string): boolean => {
+  const absoluteFilePath = path.isAbsolute(filePath) ? filePath : path.join(ROOT, filePath);
+  const relative = path.relative(dir, absoluteFilePath);
+  return relative.length === 0 || (relative.startsWith("..") === false && path.isAbsolute(relative) === false);
+};
 
 export const validateSelectorRules = (css: string): string[] => {
   const violations: string[] = [];
@@ -584,21 +645,64 @@ export const validateTransparentMenuSelections = (css: string): string[] => {
   return violations;
 };
 
-const findVarFallbackRanges = (text: string): Array<[number, number]> =>
-  [...text.matchAll(/var\([^)]*,\s*(#[0-9A-Fa-f]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\))\)/g)].map((match) => [
-    match.index ?? 0,
-    (match.index ?? 0) + match[0].length
-  ]);
+export const scanPageVisualTokenSources = (filePath: string, text: string): string[] => {
+  const violations: string[] = [];
+  if (!isMigratedPageTokenSourceFile(filePath)) {
+    return violations;
+  }
 
-const isWithinRanges = (index: number, ranges: readonly [number, number][]): boolean =>
-  ranges.some(([start, end]) => index >= start && index < end);
+  for (const match of text.matchAll(LEGACY_VISUAL_TOKEN_REFERENCE_PATTERN)) {
+    const lineNumber = lineNumberAt(text, match.index ?? 0);
+    violations.push(`${filePath}:${lineNumber} migrated surfaces must use --lyra-app-* or App component tokens, not legacy ${match[0].slice("var(".length)}.`);
+  }
+
+  for (const match of text.matchAll(/(--lyra-[A-Za-z0-9-]+)\s*:\s*([^;]+);/g)) {
+    const tokenName = match[1] ?? "";
+    const value = (match[2] ?? "").trim();
+    if (!PAGE_VISUAL_TOKEN_NAMES.has(tokenName)) {
+      continue;
+    }
+    if (value === "transparent" || /var\(--lyra-app-/.test(value)) {
+      continue;
+    }
+    const lineNumber = lineNumberAt(text, match.index ?? 0);
+    violations.push(`${filePath}:${lineNumber} ${tokenName} must alias --lyra-app-* instead of defining page-local visual values.`);
+  }
+
+  return violations;
+};
+
+export const scanLegacyVisualTokenConsumers = (filePath: string, text: string): string[] => {
+  if (isWorkbenchTestPath(filePath)) {
+    return [];
+  }
+
+  const normalizedPath = normalizePath(filePath);
+  const violations: string[] = [];
+  for (const match of text.matchAll(LEGACY_VISUAL_TOKEN_PATTERN)) {
+    const tokenName = match[0] ?? "";
+    if (tokenName.startsWith("--material-")) {
+      if (isMaterialTokenSourceFile(normalizedPath)) {
+        continue;
+      }
+      const lineNumber = lineNumberAt(text, match.index ?? 0);
+      violations.push(`${reportPath(filePath)}:${lineNumber} --material-* is reserved for the global material shell layer; migrated/product UI must use --lyra-app-* or App components.`);
+      continue;
+    }
+
+    const lineNumber = lineNumberAt(text, match.index ?? 0);
+    violations.push(`${reportPath(filePath)}:${lineNumber} ${tokenName} belongs to the removed visual system. Use --lyra-app-* as the product visual source.`);
+  }
+
+  return violations;
+};
 
 export const scanCssText = (filePath: string, text: string): string[] => {
   const violations: string[] = [];
-  if (isCssLiteralScanExemptFile(filePath)) {
-    return violations;
+  if (/apps\/desktop\/src\/modules\/workbench\/ai-panel\/lyra-agents\/.*\.css$/.test(normalizePath(filePath))) {
+    violations.push(`${filePath}:1 Lyra Agents styles must live in apps/desktop/src/renderer/styles/agents.scss, not inside the module directory.`);
   }
-  const fallbackRanges = findVarFallbackRanges(text);
+  const rawValueSource = isRawValueSourceFile(filePath);
 
   for (const match of text.matchAll(/var\((--lyra-unit-[A-Za-z0-9-]+)/g)) {
     const tokenName = match[1] ?? "";
@@ -610,23 +714,22 @@ export const scanCssText = (filePath: string, text: string): string[] => {
     violations.push(`${filePath}:${lineNumber} references unknown foundation token ${tokenName}`);
   }
 
-  for (const match of text.matchAll(/-?\d+(?:\.\d+)?px\b/g)) {
-    const literal = match[0];
-    const index = match.index ?? 0;
-    const lineNumber = lineNumberAt(text, index);
-    const line = text.split("\n")[lineNumber - 1] ?? "";
-    if (isBreakpointLine(line, literal.replace(/^-/, ""))) {
-      continue;
-    }
-    violations.push(`${filePath}:${lineNumber} contains raw length literal ${literal}`);
-  }
-
-  if (!isColorExemptFile(filePath)) {
-    for (const match of text.matchAll(/#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)/g)) {
+  if (!rawValueSource) {
+    for (const match of text.matchAll(/-?\d+(?:\.\d+)?px\b/g)) {
+      const literal = match[0];
       const index = match.index ?? 0;
-      if (isWithinRanges(index, fallbackRanges)) {
+      const lineNumber = lineNumberAt(text, index);
+      const line = text.split("\n")[lineNumber - 1] ?? "";
+      if (isBreakpointLine(line, literal.replace(/^-/, ""))) {
         continue;
       }
+      violations.push(`${filePath}:${lineNumber} contains raw length literal ${literal}`);
+    }
+  }
+
+  if (!rawValueSource) {
+    for (const match of text.matchAll(/#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)/g)) {
+      const index = match.index ?? 0;
       const lineNumber = lineNumberAt(text, index);
       violations.push(`${filePath}:${lineNumber} contains raw color literal ${match[0]}`);
     }
@@ -857,6 +960,10 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
   const relativePath = reportPath(filePath);
   const violations: string[] = [];
 
+  if (/agent-chat-demo|lyra-agents\/(?:App|index)\.css|lyra-agents\/styles\/tokens\.css/.test(text)) {
+    violations.push(`${relativePath}:1 AI Panel must use the Lyra Agents module and global agents.scss layer; old demo paths and local CSS/token imports are forbidden.`);
+  }
+
   if (normalizedPath.endsWith(".tsx")) {
     if (hasExactClassToken(text, DISALLOWED_TITLEBAR_CONTEXT_TITLE_CLASS)) {
       violations.push(`${relativePath}:1 Global titlebar contributions must not render visible title blocks; the active tab already carries the surface title.`);
@@ -905,7 +1012,7 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
 
   if (
     /apps\/desktop\/src\/modules\/workbench\/shell\/element-picker-appearance\.ts$/.test(normalizedPath)
-    && (/--lyra-(?:line-focused|text-accent)/.test(text) || /#7d82e8|#5c78e2/i.test(text))
+    && (/--lyra-(?:app-primary-button|app-focus|text-accent)/.test(text) || /#7d82e8|#5c78e2/i.test(text))
   ) {
     violations.push(`${relativePath}:1 Browser element picker appearance must use neutral workbench tones, not accent tokens.`);
   }
@@ -915,6 +1022,70 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     && /--lyra-line-focused/.test(text)
   ) {
     violations.push(`${relativePath}:1 AI rich content diagrams must use neutral line tokens, not focused accent tokens.`);
+  }
+
+  return violations;
+};
+
+export const scanUiImportBoundaries = (filePath: string, text: string): string[] => {
+  const normalizedPath = normalizePath(filePath);
+  if (
+    (!filePath.endsWith(".ts") && !filePath.endsWith(".tsx")) ||
+    /\/tests\/|\.test\./.test(normalizedPath)
+  ) {
+    return [];
+  }
+
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const violations: string[] = [];
+  const relativePath = reportPath(filePath);
+  const isPrimitiveLayer = isWithinDir(filePath, RENDERER_UI_PRIMITIVES_DIR);
+  const isLyraUiLayer = isWithinDir(filePath, RENDERER_UI_COMPONENTS_DIR);
+  const enforceAppComponentControls = isWorkbenchBusinessTsxPath(normalizedPath);
+
+  const pushViolation = (node: ts.Node, message: string): void => {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    violations.push(`${relativePath}:${line + 1} ${message}`);
+  };
+
+  const checkModuleSpecifier = (
+    node: ts.ImportDeclaration | ts.ExportDeclaration,
+    moduleSpecifier: string
+  ): void => {
+    if (moduleSpecifier.startsWith("@radix-ui/") && isPrimitiveLayer === false) {
+      pushViolation(node, "Radix primitives must be wrapped inside apps/desktop/src/renderer/ui/primitives before business code consumes them.");
+    }
+    if (moduleSpecifier.startsWith("@renderer/ui/primitives") && isLyraUiLayer === false) {
+      pushViolation(node, "Business code must import Lyra App components/layout/app modules instead of @renderer/ui/primitives.");
+    }
+  };
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) {
+      const moduleSpecifier = moduleSpecifierText(statement);
+      if (moduleSpecifier !== null) {
+        checkModuleSpecifier(statement, moduleSpecifier);
+      }
+    }
+  }
+
+  if (enforceAppComponentControls) {
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+        const tagName = node.tagName.getText(sourceFile);
+        if (DISALLOWED_WORKBENCH_INTRINSIC_CONTROLS.has(tagName)) {
+          pushViolation(node, `Workbench business TSX must use Lyra App components instead of bare <${tagName}>.`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
   }
 
   return violations;
@@ -940,6 +1111,8 @@ export const scanWorkbenchShellEntrypointSize = (filePath: string, text: string)
 export const runUiStyleGuard = (): string[] => {
   const violations: string[] = [];
 
+  violations.push(...validateDeletedStyleEntrypoints());
+
   const cssPaths = collectCssPaths();
   const cssByPath = new Map(cssPaths.map((cssPath) => [cssPath, fs.readFileSync(cssPath, "utf8")]));
   const combinedCss = [...cssByPath.values()].join("\n\n");
@@ -950,6 +1123,7 @@ export const runUiStyleGuard = (): string[] => {
 
   for (const [cssPath, cssText] of cssByPath) {
     violations.push(...scanCssText(cssPath, cssText));
+    violations.push(...scanPageVisualTokenSources(cssPath, cssText));
   }
 
   for (const filePath of collectWorkbenchTsPaths()) {
@@ -958,6 +1132,18 @@ export const runUiStyleGuard = (): string[] => {
     violations.push(...scanWorkbenchUiComposition(filePath, text));
     violations.push(...scanWorkbenchDesignContracts(filePath, text));
     violations.push(...scanWorkbenchShellEntrypointSize(filePath, text));
+  }
+
+  for (const filePath of collectDesktopTsPaths()) {
+    violations.push(...scanUiImportBoundaries(filePath, fs.readFileSync(filePath, "utf8")));
+  }
+
+  const legacyConsumerPaths = new Set([
+    ...collectRendererStylePaths(),
+    ...collectDesktopTsPaths()
+  ]);
+  for (const filePath of legacyConsumerPaths) {
+    violations.push(...scanLegacyVisualTokenConsumers(filePath, fs.readFileSync(filePath, "utf8")));
   }
 
   return violations;

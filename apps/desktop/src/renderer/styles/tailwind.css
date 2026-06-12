@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@source "../main.tsx";
+@source "../ui/**/*.{ts,tsx}";
+@source "../../modules/workbench/**/*.{ts,tsx}";
+
+@theme inline {
+  --font-sans: var(--lyra-font-ui);
+  --font-mono: var(--lyra-font-mono);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-app: var(--lyra-app-bg);
+  --color-app-bg: var(--lyra-app-bg);
+  --color-app-sidebar: var(--lyra-app-sidebar-bg);
+  --color-app-panel: var(--lyra-app-panel-bg);
+  --color-app-surface: var(--lyra-app-surface-bg);
+  --color-app-surface-strong: var(--lyra-app-surface-strong-bg);
+  --color-app-muted: var(--lyra-app-muted-bg);
+  --color-app-row-hover: var(--lyra-app-row-hover-bg);
+  --color-app-row-active: var(--lyra-app-row-active-bg);
+  --color-app-input: var(--lyra-app-input-bg);
+  --color-app-border: var(--lyra-app-border);
+  --color-app-border-strong: var(--lyra-app-border-strong);
+  --color-surface: var(--lyra-app-surface-bg);
+  --color-surface-elevated: var(--lyra-app-surface-strong-bg);
+  --color-panel: var(--lyra-app-panel-bg);
+  --color-editor: var(--lyra-app-input-bg);
+  --color-hover: var(--lyra-app-row-hover-bg);
+  --color-active: var(--lyra-app-row-active-bg);
+  --color-toolbar: var(--lyra-app-sidebar-bg);
+  --color-line: var(--lyra-app-border);
+  --color-line-variant: var(--lyra-app-border);
+  --color-line-focused: var(--lyra-app-focus);
+  --color-text-primary: var(--lyra-text-primary);
+  --color-text-secondary: var(--lyra-text-secondary);
+  --color-text-muted: var(--lyra-text-muted);
+  --color-text-accent: var(--lyra-text-accent);
+  --color-success: var(--lyra-status-success);
+  --color-warning: var(--lyra-status-warning);
+  --color-error: var(--lyra-status-error);
+
+  --spacing-control-compact: var(--lyra-control-h-compact);
+  --spacing-control-default: var(--lyra-control-h-default);
+  --spacing-control-prominent: var(--lyra-control-h-prominent);
+  --spacing-shell-titlebar: var(--lyra-shell-titlebar-h);
+
+  --radius-sm: var(--lyra-radius-sm);
+  --radius-md: var(--lyra-radius-md);
+  --radius-lg: var(--lyra-radius-lg);
+  --radius-xl: var(--lyra-radius-12);
+  --radius-2xl: var(--lyra-radius-16);
+  --radius-full: var(--lyra-radius-pill);
+}

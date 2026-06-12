@@ -6,12 +6,12 @@ import { buildWebThemeSnapshot } from "../theme-bridge";
 const makeSnapshot = (enabled = true) =>
   buildWebThemeSnapshot({
     vars: {
-      "--lyra-bg-app": "#111111",
-      "--lyra-bg-surface": "#1e1e1e",
+      "--lyra-app-bg": "#111111",
+      "--lyra-app-surface-bg": "#1e1e1e",
       "--lyra-text-primary": "#eaeaea",
-      "--lyra-text-accent": "#88aaff",
-      "--lyra-line-default": "#2a2a2a",
-      "--lyra-line-focused": "#6280ff"
+      "--lyra-app-primary-button": "#88aaff",
+      "--lyra-app-border": "#2a2a2a",
+      "--lyra-app-border-strong": "#6280ff"
     },
     enabled,
     previousRevision: 0

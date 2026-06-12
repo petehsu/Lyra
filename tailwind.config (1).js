@@ -1,0 +1,13 @@
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        'primary': '#191919',
+        'secondary': '#1C1C1C',
+        'accent': '#222221',
+        'neutral': '#424445',
+        'background': '#232322',
+      }
+    }
+  }
+}

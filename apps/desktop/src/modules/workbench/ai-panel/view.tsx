@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import {
   useCallback,
   useLayoutEffect,
@@ -11,18 +11,17 @@ import {
 } from "react";
 
 import {
-  ChromeIconButton,
-  ChromeTabButton,
-  ChromeTabFrame,
-  ChromeTabShape,
-  closestChromeTabLayoutIndex,
-  cx
-} from "../ui-primitives";
-import type { ChromeTabStripLayout } from "../ui-primitives";
-import { AgentChatApp } from "./agent-chat-demo/AgentChatApp";
-import { t } from "./agent-chat-demo/core/i18n";
-import { useData } from "./agent-chat-demo/data/DataProvider";
-import { HeaderControls } from "./agent-chat-demo/features/header/Header";
+  AppButton,
+  AppIconButton,
+  AppPanel,
+  AppStatusMessage
+} from "@renderer/ui/components";
+import { LyraLogo } from "@renderer/ui/app";
+import { cn } from "@renderer/ui/utils";
+import { LyraAgentsApp } from "./lyra-agents/LyraAgentsApp";
+import { t } from "./lyra-agents/core/i18n";
+import { useData } from "./lyra-agents/data/DataProvider";
+import { HeaderControls } from "./lyra-agents/features/header/Header";
 import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
@@ -34,6 +33,20 @@ const AI_SESSION_TAB_MIN_WIDTH_PX = 132;
 const AI_SESSION_TAB_MAX_WIDTH_PX = 220;
 const AI_SESSION_TAB_OVERLAP_PX = 1;
 const AI_SESSION_TAB_ADD_BUTTON_FALLBACK_WIDTH_PX = 32;
+
+type AiSessionTabLayoutItem = {
+  readonly width: number;
+  readonly x: number;
+  readonly contentWidth: number;
+};
+
+type AiSessionTabStripLayout = {
+  readonly density: "regular";
+  readonly items: readonly AiSessionTabLayoutItem[];
+  readonly addButtonX: number;
+  readonly contentWidth: number;
+  readonly totalTabsWidth: number;
+};
 
 type AiSessionTabDragState = {
   readonly tabId: string;
@@ -50,7 +63,7 @@ type AiSessionTabDragVisualState = {
   readonly x: number;
 };
 
-const computeAiSessionChromeTabLayout = ({
+const computeAiSessionTabLayout = ({
   tabCount,
   stripWidth,
   addButtonWidth
@@ -58,7 +71,7 @@ const computeAiSessionChromeTabLayout = ({
   readonly tabCount: number;
   readonly stripWidth: number;
   readonly addButtonWidth: number;
-}): ChromeTabStripLayout => {
+}): AiSessionTabStripLayout => {
   const effectiveAddButtonWidth =
     addButtonWidth > 0 ? addButtonWidth : AI_SESSION_TAB_ADD_BUTTON_FALLBACK_WIDTH_PX;
   const contentWidth = Math.max(0, stripWidth - effectiveAddButtonWidth);
@@ -101,15 +114,31 @@ const computeAiSessionChromeTabLayout = ({
   };
 };
 
-const useAiSessionChromeTabLayout = (
+const closestAiSessionTabLayoutIndex = (
+  value: number,
+  items: readonly Pick<AiSessionTabLayoutItem, "x">[]
+): number => {
+  let closestDistance = Infinity;
+  let closestIndex = -1;
+  items.forEach((item, index) => {
+    const distance = Math.abs(value - item.x);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+  return closestIndex;
+};
+
+const useAiSessionTabLayout = (
   tabCount: number,
   stripRef: RefObject<HTMLDivElement>,
   addButtonRef: RefObject<HTMLButtonElement>
 ): {
-  readonly layout: ChromeTabStripLayout;
+  readonly layout: AiSessionTabStripLayout;
 } => {
-  const [layout, setLayout] = useState<ChromeTabStripLayout>(() =>
-    computeAiSessionChromeTabLayout({
+  const [layout, setLayout] = useState<AiSessionTabStripLayout>(() =>
+    computeAiSessionTabLayout({
       tabCount,
       stripWidth: 0,
       addButtonWidth: 0
@@ -119,7 +148,7 @@ const useAiSessionChromeTabLayout = (
   useLayoutEffect(() => {
     const strip = stripRef.current;
     if (strip === null) {
-      setLayout(computeAiSessionChromeTabLayout({
+      setLayout(computeAiSessionTabLayout({
         tabCount,
         stripWidth: 0,
         addButtonWidth: 0
@@ -128,7 +157,7 @@ const useAiSessionChromeTabLayout = (
     }
 
     const measure = (): void => {
-      setLayout(computeAiSessionChromeTabLayout({
+      setLayout(computeAiSessionTabLayout({
         tabCount,
         stripWidth: strip.getBoundingClientRect().width,
         addButtonWidth: addButtonRef.current?.getBoundingClientRect().width ?? 0
@@ -204,7 +233,7 @@ const AiPanelTabsHeader = ({
     0,
     visibleTabs.findIndex((tab) => tab.tabId === effectiveActiveTabId)
   );
-  const { layout } = useAiSessionChromeTabLayout(
+  const { layout } = useAiSessionTabLayout(
     visibleTabs.length,
     stripRef,
     addButtonRef
@@ -275,7 +304,7 @@ const AiPanelTabsHeader = ({
     event.preventDefault();
 
     const currentIndex = visibleTabs.findIndex((tab) => tab.tabId === drag.tabId);
-    const destinationIndex = closestChromeTabLayoutIndex(
+    const destinationIndex = closestAiSessionTabLayoutIndex(
       nextX,
       drag.positions.map((x) => ({ x, width: 0, contentWidth: 0 }))
     );
@@ -318,23 +347,23 @@ const AiPanelTabsHeader = ({
   }, []);
 
   return (
-    <header className="app-header ai-session-tabs-header">
+    <header className="lyra-agents-header lyra-agents-session-tabs-header">
       <div
         ref={stripRef}
-        className={cx(
-          "ai-session-tab-strip",
-          dragVisual !== null && "ai-session-tab-strip-sorting"
+        className={cn(
+          "lyra-agents-session-tab-strip",
+          dragVisual !== null && "lyra-agents-session-tab-strip-sorting"
         )}
         role="tablist"
         aria-label="AI sessions"
       >
         <div
           ref={listRef}
-          className="lyra-browser-tab-list ai-session-tab-list"
+          className="lyra-agents-session-tab-list"
           onWheel={onTabListWheel}
         >
           <div
-            className="ai-session-tab-list-spacer"
+            className="lyra-agents-session-tab-list-spacer"
             style={listSpacerStyle}
             aria-hidden="true"
           />
@@ -357,13 +386,13 @@ const AiPanelTabsHeader = ({
                       : `translate3d(${Math.round(tabLayout.x)}px, 0, 0)`
                 };
             return (
-              <ChromeTabFrame
+              <div
                 key={tab.tabId}
-                className={cx(
-                  "lyra-browser-tab-item ai-session-tab-item",
-                  active && "lyra-browser-tab-item-active ai-session-tab-item-active",
-                  running && "lyra-browser-tab-item-agent-active ai-session-tab-item-running",
-                  draggingTabId === tab.tabId && "ai-session-tab-item-dragging"
+                className={cn(
+                  "lyra-agents-session-tab-item",
+                  active && "lyra-agents-session-tab-item-active",
+                  running && "lyra-agents-session-tab-item-running",
+                  draggingTabId === tab.tabId && "lyra-agents-session-tab-item-dragging"
                 )}
                 style={tabStyle}
                 data-ai-session-tab-id={tab.tabId}
@@ -371,9 +400,10 @@ const AiPanelTabsHeader = ({
                 onPointerUp={onTabPointerUp}
                 onPointerCancel={onTabPointerUp}
               >
-                <ChromeTabShape />
-                <ChromeTabButton
-                  className="lyra-browser-tab-main ai-session-tab-main"
+                <AppButton
+                  className="lyra-agents-session-tab-main"
+                  variant="ghost"
+                  size="sm"
                   role="tab"
                   aria-selected={active}
                   aria-label={title}
@@ -390,39 +420,40 @@ const AiPanelTabsHeader = ({
                     onActivateSessionTab?.(tab.tabId);
                   }}
                 >
-                  <span className="lyra-browser-tab-icon ai-session-tab-icon" aria-hidden="true">
-                    <MessageSquare size={14} />
+                  <span className="lyra-agents-session-tab-icon" aria-hidden="true">
+                    <LyraLogo className="lyra-agents-session-tab-logo" alt="" />
                   </span>
-                  <span className="lyra-browser-tab-title ai-session-tab-title">{title}</span>
-                </ChromeTabButton>
-                <ChromeIconButton
-                  className="lyra-browser-tab-close ai-session-tab-close"
+                  <span className="lyra-agents-session-tab-title">{title}</span>
+                </AppButton>
+                <AppIconButton
+                  className="lyra-agents-session-tab-close"
                   aria-label={`Close session tab: ${title}`}
+                  title={`Close session tab: ${title}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseSessionTab?.(tab.tabId);
                   }}
                 >
-                  <X size={12} />
-                </ChromeIconButton>
-              </ChromeTabFrame>
+                  <X size={12} aria-hidden="true" />
+                </AppIconButton>
+              </div>
             );
           })}
         </div>
-        <ChromeIconButton
+        <AppIconButton
           ref={addButtonRef}
-          className="lyra-browser-tab-add ai-session-tab-add"
+          className="lyra-agents-session-tab-add"
           style={{
             transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)`
           }}
           aria-label={newSessionLabel}
           title={newSessionLabel}
           onClick={() => {
-            void createSession();
-          }}
-        >
-          <Plus size={14} />
-        </ChromeIconButton>
+          void createSession();
+        }}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </AppIconButton>
       </div>
       <HeaderControls showNewSessionButton={false} />
     </header>
@@ -485,12 +516,14 @@ export const AiPanelSurface = ({
   );
 
   return (
-    <section className="lyra-ai-panel-shell" aria-label={title}>
+    <AppPanel placement="right" className="lyra-ai-panel-shell" aria-label={title}>
       {provider.error === null ? null : (
-        <div className="lyra-ai-panel-error" role="status">{provider.error}</div>
+        <AppStatusMessage className="lyra-ai-panel-error" role="status" tone="error">
+          {provider.error}
+        </AppStatusMessage>
       )}
-      <div className="lyra-ai-panel-agent-chat">
-        <AgentChatApp
+      <div className="lyra-agents-host">
+        <LyraAgentsApp
           data={provider.data}
           headerSlot={
             <AiPanelTabsHeader
@@ -505,6 +538,6 @@ export const AiPanelSurface = ({
           {...(locale === undefined ? {} : { locale })}
         />
       </div>
-    </section>
+    </AppPanel>
   );
 };

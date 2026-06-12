@@ -1,7 +1,7 @@
 import type { WorkbenchBrowserElementPickerAppearance } from "../../../shared/desktop-bridge";
 
 const FALLBACK_APPEARANCE: WorkbenchBrowserElementPickerAppearance = {
-  fontFamily: '"IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Segoe UI", sans-serif',
+  fontFamily: '"Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif',
   surfaceBackground:
     "linear-gradient(180deg, color-mix(in srgb, #ebebec 92%, transparent) 0%, color-mix(in srgb, #fafafa 88%, transparent) 100%)",
   surfaceBorder: "color-mix(in srgb, #d8d8da 42%, transparent)",
@@ -49,10 +49,10 @@ export const readElementPickerAppearance = (): WorkbenchBrowserElementPickerAppe
   }
 
   const styles = window.getComputedStyle(document.documentElement);
-  const bgApp = readVar(styles, "--lyra-bg-app", FALLBACK_APPEARANCE.textMuted);
-  const bgSurface = readVar(styles, "--lyra-bg-surface-elevated", "#ebebec");
-  const bgEditor = readVar(styles, "--lyra-bg-editor", "#fafafa");
-  const lineDefault = readVar(styles, "--lyra-line-default", FALLBACK_APPEARANCE.surfaceBorder);
+  const bgApp = readVar(styles, "--lyra-app-bg", FALLBACK_APPEARANCE.textMuted);
+  const bgSurface = readVar(styles, "--lyra-app-surface-strong-bg", "#ebebec");
+  const bgEditor = readVar(styles, "--lyra-app-panel-bg", "#fafafa");
+  const lineDefault = readVar(styles, "--lyra-app-border", FALLBACK_APPEARANCE.surfaceBorder);
   const textSecondary = readVar(styles, "--lyra-text-secondary", FALLBACK_APPEARANCE.textSecondary);
 
   return {

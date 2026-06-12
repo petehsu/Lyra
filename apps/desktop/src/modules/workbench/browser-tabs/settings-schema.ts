@@ -26,6 +26,8 @@ export type SettingsFieldId =
   | "systemNotificationMode"
   | "systemNotificationClickBehavior"
   | "systemNotificationActions"
+  | "loginManager"
+  | "softwareStore"
   | "linuxCompatProfile"
   | "linuxCompatStatus"
   | "linuxCompatRestart"
@@ -72,6 +74,8 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "workspaceCategoryLabel"
   | "aiCategoryLabel"
   | "notificationsCategoryLabel"
+  | "loginManagerCategoryLabel"
+  | "softwareStoreCategoryLabel"
   | "linuxCategoryLabel"
   | "languageLabel"
   | "themeLabel"
@@ -132,6 +136,8 @@ export const createWorkbenchSettingsSchema = (
       "choice"
     ),
     createField("systemNotificationActions", "notifications", props.systemNotificationActionsLabel, "boolean-choice"),
+    createField("loginManager", "loginManager", props.loginManagerCategoryLabel, "custom"),
+    createField("softwareStore", "softwareStore", props.softwareStoreCategoryLabel, "custom"),
     createField("linuxCompatProfile", "linux", props.linuxCompatProfileLabel, "choice", props.linuxCompatVisible),
     createField("linuxCompatStatus", "linux", props.linuxCompatStatusLabel, "custom", props.linuxCompatVisible),
     createField("linuxCompatRestart", "linux", props.linuxCompatRestartLabel, "action", props.linuxCompatVisible),
@@ -172,6 +178,16 @@ export const createWorkbenchSettingsSchema = (
       id: "notifications",
       label: props.notificationsCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "notifications").map((section) => section.id)
+    },
+    {
+      id: "loginManager",
+      label: props.loginManagerCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "loginManager").map((section) => section.id)
+    },
+    {
+      id: "softwareStore",
+      label: props.softwareStoreCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "softwareStore").map((section) => section.id)
     },
     {
       id: "linux",

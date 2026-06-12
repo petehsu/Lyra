@@ -1,3 +1,5 @@
+import { AppList, AppObjectRow } from "@renderer/ui/components";
+
 import {
   renderFileManagerEntryIcon
 } from "./icon-registry";
@@ -20,8 +22,8 @@ export const FileManagerDirectoryContent = ({
   const directory = renderModel.body.directory;
   if (renderModel.toolbar.isLargeMode) {
     return (
-      <div className="lyra-file-manager-list-shell">
-        <div className="lyra-file-manager-large-grid">
+      <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-list-shell">
+        <div className="lyra-app-group lyra-file-manager-large-grid">
           {directory.createDraft === undefined ? null : (
             <FileManagerDraftInput
               draft={directory.createDraft}
@@ -60,8 +62,8 @@ export const FileManagerDirectoryContent = ({
   }
 
   return (
-    <div className="lyra-file-manager-list-shell">
-      <div className="lyra-file-manager-list-grid">
+    <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-list-shell">
+      <AppList className="lyra-app-group lyra-file-manager-list-grid">
         {directory.createDraft === undefined ? null : (
           <FileManagerDraftInput
             draft={directory.createDraft}
@@ -76,13 +78,10 @@ export const FileManagerDirectoryContent = ({
             {labels.emptyDirectory}
           </div>
         ) : directory.entries.map(({ entry, active }) => (
-          <button
+          <AppObjectRow
             key={entry.id}
-            className={
-              active
-                ? "lyra-file-manager-list-row lyra-file-manager-list-row-active"
-                : "lyra-file-manager-list-row"
-            }
+            className="lyra-file-manager-list-row"
+            active={active}
             data-lyra-allow-web-drag="true"
             draggable
             onClick={() => {
@@ -99,18 +98,17 @@ export const FileManagerDirectoryContent = ({
               actions.onDirectoryEntryDragStart(event, entry);
             }}
             onDragEnd={actions.onEntryDragEnd}
-          >
-            <div className="lyra-file-manager-list-cell-primary">
-              {renderFileManagerEntryIcon(entry)}
+            icon={renderFileManagerEntryIcon(entry)}
+            title={(
               <OverflowMarqueeText
                 text={entry.name}
                 active={active}
                 className="lyra-file-manager-list-name"
               />
-            </div>
-          </button>
+            )}
+          />
         ))}
-      </div>
+      </AppList>
     </div>
   );
 };

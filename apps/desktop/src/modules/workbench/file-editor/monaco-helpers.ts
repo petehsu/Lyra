@@ -81,16 +81,16 @@ export const buildMonacoTheme = (): Monaco.editor.IStandaloneThemeData => ({
   inherit: true,
   rules: [],
   colors: {
-    "editor.background": readRootCssVar("--lyra-bg-editor", "#0f1116"),
+    "editor.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116"),
     "editor.foreground": readRootCssVar("--lyra-text-primary", "#d5d7de"),
     "editorLineNumber.foreground": readRootCssVar("--lyra-text-muted", "#757a86"),
     "editorLineNumber.activeForeground": readRootCssVar("--lyra-text-secondary", "#aeb4c3"),
     "editorCursor.foreground": readRootCssVar("--lyra-text-primary", "#d5d7de"),
-    "editor.selectionBackground": readRootCssVar("--lyra-bg-hover", "#2b3241"),
-    "editor.inactiveSelectionBackground": readRootCssVar("--lyra-bg-hover", "#2b3241"),
+    "editor.selectionBackground": readRootCssVar("--lyra-app-row-hover-bg", "#2b3241"),
+    "editor.inactiveSelectionBackground": readRootCssVar("--lyra-app-row-hover-bg", "#2b3241"),
     "editorLineNumber.dimmedForeground": readRootCssVar("--lyra-text-muted", "#697082"),
-    "editorIndentGuide.background1": readRootCssVar("--lyra-line-variant", "#2f3341"),
-    "editorIndentGuide.activeBackground1": readRootCssVar("--lyra-line-default", "#4a4f60"),
-    "editorGutter.background": readRootCssVar("--lyra-bg-editor", "#0f1116")
+    "editorIndentGuide.background1": readRootCssVar("--lyra-app-border", "#2f3341"),
+    "editorIndentGuide.activeBackground1": readRootCssVar("--lyra-app-border-strong", "#4a4f60"),
+    "editorGutter.background": readRootCssVar("--lyra-app-panel-bg", "#0f1116")
   }
 });

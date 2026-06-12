@@ -13,6 +13,7 @@ export const SETTING_CATEGORY_IDS = new Set<BrowserSettingsCategoryId>([
   "appearance",
   "workspace",
   "notifications",
+  "loginManager",
   "linux",
   "search",
   "ai"
@@ -202,7 +203,7 @@ export const createBuiltinSoftware = (
         createAction({
           id: "login-manager.open",
           title: "Open Login Manager",
-          description: "Open the Lyra Login Manager software tab.",
+          description: "Open the Lyra Login Manager settings section.",
           risk: "navigate"
         }),
         createAction({

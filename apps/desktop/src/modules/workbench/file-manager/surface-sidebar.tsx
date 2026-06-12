@@ -1,3 +1,11 @@
+import { RefreshCw } from "lucide-react";
+
+import {
+  AppIconButton,
+  AppObjectRow,
+  AppSidebar,
+  AppSidebarSection
+} from "@renderer/ui/components";
 import {
   renderFileManagerAppIcon,
   renderFileManagerLocationIcon,
@@ -111,11 +119,18 @@ const FileManagerSearchIndexStatus = ({
       ? undefined
       : replaceTokens(labels.searchIndexPhase, { phase: status.phase });
   const errorLabel = searchIndex.errorMessage ?? status?.error ?? status?.policyWarnings[0];
+  const detailTitle = [
+    statsLabel,
+    phaseLabel,
+    pendingLabel,
+    errorLabel
+  ].filter((item): item is string => item !== undefined).join(" · ");
 
   return (
     <section
-      className={`lyra-file-manager-index-status lyra-file-manager-index-status-${tone}`}
+      className={`lyra-app-sidebar-status lyra-file-manager-index-status lyra-file-manager-index-status-${tone}`}
       aria-label={labels.searchIndexTitle}
+      title={detailTitle.length === 0 ? undefined : detailTitle}
     >
       <div className="lyra-file-manager-index-status-header">
         <span className="lyra-file-manager-index-status-dot" aria-hidden="true" />
@@ -125,27 +140,24 @@ const FileManagerSearchIndexStatus = ({
           </span>
           <strong>{stateLabel}</strong>
         </div>
+        <AppIconButton
+          variant="ghost"
+          tone="muted"
+          className="lyra-file-manager-index-status-action"
+          disabled={searchIndex.rebuilding}
+          aria-label={searchIndex.rebuilding ? labels.searchIndexRebuilding : labels.searchIndexRebuild}
+          title={searchIndex.rebuilding ? labels.searchIndexRebuilding : labels.searchIndexRebuild}
+          onClick={onRebuildSearchIndex}
+        >
+          <RefreshCw size={14} aria-hidden="true" />
+        </AppIconButton>
       </div>
       {statsLabel === undefined ? null : (
         <span className="lyra-file-manager-index-status-line">{statsLabel}</span>
       )}
-      {phaseLabel === undefined ? null : (
-        <span className="lyra-file-manager-index-status-line">{phaseLabel}</span>
-      )}
-      {pendingLabel === undefined ? null : (
-        <span className="lyra-file-manager-index-status-line">{pendingLabel}</span>
-      )}
       {errorLabel === undefined ? null : (
         <span className="lyra-file-manager-index-status-error">{errorLabel}</span>
       )}
-      <button
-        type="button"
-        className="lyra-file-manager-index-status-action"
-        disabled={searchIndex.rebuilding}
-        onClick={onRebuildSearchIndex}
-      >
-        {searchIndex.rebuilding ? labels.searchIndexRebuilding : labels.searchIndexRebuild}
-      </button>
     </section>
   );
 };
@@ -159,48 +171,45 @@ export const FileManagerSidebar = ({
   const favoritesActive =
     renderModel.sidebar.favoritesActive
     || renderModel.sidebar.favorites.some((item) => item.active);
+  const locationActive = renderModel.sidebar.locations.some((item) => item.active);
+  const homeActive =
+    renderModel.sidebar.homeActive
+    && favoritesActive === false
+    && renderModel.sidebar.downloadsActive === false
+    && locationActive === false;
 
   return (
-    <aside className="lyra-file-manager-nav" aria-label="file-manager-nav">
-      <div className="lyra-file-manager-nav-group">
-        <span className="lyra-file-manager-nav-label">{labels.homeSectionLocations}</span>
-        <button
-          className={renderModel.sidebar.homeActive ? "lyra-file-manager-nav-item lyra-file-manager-nav-item-active" : "lyra-file-manager-nav-item"}
+    <AppSidebar className="lyra-file-manager-nav" aria-label="file-manager-nav">
+      <AppSidebarSection
+        className="lyra-file-manager-nav-group"
+        label={labels.homeSectionLocations}
+      >
+        <AppObjectRow
+          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+          active={homeActive}
           onClick={actions.onOpenHome}
-        >
-          {renderFileManagerAppIcon("file-manager-home")}
-          <span>{labels.title}</span>
-        </button>
-        <button
-          className={
-            favoritesActive
-              ? "lyra-file-manager-nav-item lyra-file-manager-nav-item-active"
-              : "lyra-file-manager-nav-item"
-          }
+          icon={renderFileManagerAppIcon("file-manager-home")}
+          title={labels.title}
+        />
+        <AppObjectRow
+          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+          active={favoritesActive}
           onClick={actions.onOpenFavorites}
-        >
-          {renderFileManagerSectionIcon("favorites")}
-          <span>{labels.homeSectionFavorites}</span>
-        </button>
-        <button
-          className={
-            renderModel.sidebar.downloadsActive
-              ? "lyra-file-manager-nav-item lyra-file-manager-nav-item-active"
-              : "lyra-file-manager-nav-item"
-          }
+          icon={renderFileManagerSectionIcon("favorites")}
+          title={labels.homeSectionFavorites}
+        />
+        <AppObjectRow
+          className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+          active={renderModel.sidebar.downloadsActive}
           onClick={actions.onOpenDownloads}
-        >
-          {renderFileManagerSectionIcon("downloads")}
-          <span>{labels.downloadManagerTitle}</span>
-        </button>
+          icon={renderFileManagerSectionIcon("downloads")}
+          title={labels.downloadManagerTitle}
+        />
         {renderModel.sidebar.locations.map(({ location, active }) => (
-          <button
+          <AppObjectRow
             key={location.id}
-            className={
-              active
-                ? "lyra-file-manager-nav-item lyra-file-manager-nav-item-active"
-                : "lyra-file-manager-nav-item"
-            }
+            className="lyra-app-sidebar-nav-item lyra-file-manager-nav-item"
+            active={active}
             onClick={() => {
               actions.onOpenLocation(location);
             }}
@@ -208,17 +217,16 @@ export const FileManagerSidebar = ({
               preventContextMenuDefaults(event);
               actions.onLocationContextMenu(location, event.clientX, event.clientY);
             }}
-          >
-            {renderFileManagerLocationIcon(location)}
-            <span>{location.title}</span>
-          </button>
+            icon={renderFileManagerLocationIcon(location)}
+            title={location.title}
+          />
         ))}
-      </div>
+      </AppSidebarSection>
       <FileManagerSearchIndexStatus
         labels={labels}
         searchIndex={searchIndex}
         onRebuildSearchIndex={actions.onRebuildSearchIndex}
       />
-    </aside>
+    </AppSidebar>
   );
 };

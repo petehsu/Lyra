@@ -9,16 +9,29 @@ import {
   Timer
 } from "lucide-react";
 
-import "../ai-panel/agent-chat-demo/App.css";
-import "../ai-panel/agent-chat-demo/styles/tokens.css";
+import {
+  AppBadge,
+  AppButton,
+  AppEmptyState,
+  AppIconButton,
+  AppInput,
+  AppLoadingState,
+  AppObjectRow,
+  AppStatusMessage,
+  AppSwitch,
+  AppTabs,
+  AppTextarea,
+  type AppTabOption
+} from "@renderer/ui/components";
+
 import type {
   AgentSessionSnapshot,
   AgentOvernightRunSnapshot
 } from "../../../shared/desktop-bridge";
-import { setLocale, type Locale } from "../ai-panel/agent-chat-demo/core/i18n";
-import { DataContextProvider } from "../ai-panel/agent-chat-demo/data/DataProvider";
-import { createDataProviderValue } from "../ai-panel/agent-chat-demo/data/createDataProviderValue";
-import { Message } from "../ai-panel/agent-chat-demo/features/chat/Message";
+import { setLocale, type Locale } from "../ai-panel/lyra-agents/core/i18n";
+import { DataContextProvider } from "../ai-panel/lyra-agents/data/DataProvider";
+import { createDataProviderValue } from "../ai-panel/lyra-agents/data/createDataProviderValue";
+import { Message } from "../ai-panel/lyra-agents/features/chat/Message";
 import {
   agentSessionToChatMessages,
   agentSessionToSessionMeta
@@ -64,6 +77,16 @@ const formatDateTime = (value: string): string => {
     minute: "2-digit",
     hour12: false
   }).format(parsed);
+};
+
+const runStatusTone = (
+  status: string
+): "neutral" | "success" | "warning" | "error" | "info" => {
+  if (status === "running") return "info";
+  if (status === "completed") return "success";
+  if (status === "failed") return "error";
+  if (status === "cancel requested" || status === "cancelled") return "warning";
+  return "neutral";
 };
 
 const durationLabel = (labels: AgentOvernightLabels, minutes: number): string => {
@@ -140,21 +163,15 @@ const RunList = ({
     ) : (
       <div className="lyra-agent-overnight-run-list">
         {runs.map((run) => (
-          <button
+          <AppObjectRow
             key={run.runId}
-            type="button"
-            className={[
-              "lyra-agent-overnight-run-row",
-              selectedRunId === run.runId ? "is-selected" : ""
-            ].filter(Boolean).join(" ")}
+            className="lyra-agent-overnight-run-row"
+            active={selectedRunId === run.runId}
+            title={run.mission ?? run.coordinatorSessionName}
+            description={formatDateTime(run.startedAt)}
+            badges={<AppBadge tone={runStatusTone(run.status)}>{run.status}</AppBadge>}
             onClick={() => onSelect(run)}
-          >
-            <span>
-              <strong>{run.mission ?? run.coordinatorSessionName}</strong>
-              <small>{formatDateTime(run.startedAt)}</small>
-            </span>
-            <em>{run.status}</em>
-          </button>
+          />
         ))}
       </div>
     )}
@@ -180,11 +197,12 @@ const Dashboard = ({
 }) => {
   if (run === null) {
     return (
-      <section className="lyra-agent-overnight-empty">
-        <Moon size={22} aria-hidden="true" />
-        <h2>{labels.noRunsTitle}</h2>
-        <p>{labels.noRunsDescription}</p>
-      </section>
+      <AppEmptyState
+        className="lyra-agent-overnight-empty"
+        icon={<Moon size={22} aria-hidden="true" />}
+        title={labels.noRunsTitle}
+        description={labels.noRunsDescription}
+      />
     );
   }
 
@@ -196,19 +214,35 @@ const Dashboard = ({
   return (
     <section className="lyra-agent-overnight-dashboard">
       <header className="lyra-agent-overnight-status">
-        <span className="lyra-agent-overnight-badge">{labels.title}</span>
+        <AppBadge className="lyra-agent-overnight-badge">{labels.title}</AppBadge>
         <span>{labels.status}: {run.status}</span>
         <span>{labels.targetWake}: {formatDateTime(run.targetWakeAt)}</span>
         <div className="lyra-agent-overnight-status-actions">
-          <button type="button" onClick={onRefresh} disabled={refreshing} title={labels.refresh}>
+          <AppIconButton
+            aria-label={labels.refresh}
+            title={labels.refresh}
+            onClick={onRefresh}
+            disabled={refreshing}
+          >
             <RefreshCw size={14} aria-hidden="true" />
-          </button>
-          <button type="button" onClick={onReview} disabled={refreshing} title={labels.review}>
+          </AppIconButton>
+          <AppIconButton
+            aria-label={labels.review}
+            title={labels.review}
+            onClick={onReview}
+            disabled={refreshing}
+          >
             <FileText size={14} aria-hidden="true" />
-          </button>
-          <button type="button" onClick={onCancel} disabled={!canCancel || cancelling} title={labels.cancel}>
+          </AppIconButton>
+          <AppIconButton
+            tone="danger"
+            aria-label={labels.cancel}
+            title={labels.cancel}
+            onClick={onCancel}
+            disabled={!canCancel || cancelling}
+          >
             <Square size={13} aria-hidden="true" />
-          </button>
+          </AppIconButton>
         </div>
       </header>
 
@@ -244,7 +278,7 @@ const Dashboard = ({
               {run.taskCards.map((card, index) => (
                 <article key={`${taskTitle(card, index)}-${index}`} className="lyra-agent-overnight-task">
                   <strong>{taskTitle(card, index)}</strong>
-                  <span>{taskStatus(card)}</span>
+                  <AppBadge tone={runStatusTone(taskStatus(card))}>{taskStatus(card)}</AppBadge>
                 </article>
               ))}
             </div>
@@ -313,6 +347,14 @@ export const AgentOvernightSurface = ({
       setLocale(locale as Locale);
     }
   }, [locale]);
+
+  const durationTabOptions = useMemo<readonly AppTabOption<string>[]>(
+    () => durationPresets.map((minutes) => ({
+      value: String(minutes),
+      label: durationLabel(labels, minutes)
+    })),
+    [labels]
+  );
 
   const loadRuns = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) {
@@ -453,24 +495,20 @@ export const AgentOvernightSurface = ({
 
         <fieldset className="lyra-agent-overnight-fieldset">
           <legend>{labels.durationLabel}</legend>
-          <div className="lyra-agent-overnight-segments">
-            {durationPresets.map((minutes) => (
-              <button
-                key={minutes}
-                type="button"
-                className={durationMinutes === minutes ? "is-active" : ""}
-                onClick={() => setDurationMinutes(minutes)}
-              >
-                {durationLabel(labels, minutes)}
-              </button>
-            ))}
-          </div>
+          <AppTabs
+            ariaLabel={labels.durationLabel}
+            className="lyra-agent-overnight-segments"
+            value={String(durationMinutes)}
+            options={durationTabOptions}
+            onValueChange={(value) => setDurationMinutes(Number(value))}
+          />
           <label className="lyra-agent-overnight-inline-field">
             <span>{labels.customMinutes}</span>
-            <input
+            <AppInput
               type="number"
               min={1}
               max={4320}
+              aria-label={labels.customMinutes}
               value={durationMinutes}
               onChange={(event) => setDurationMinutes(Number(event.target.value))}
             />
@@ -479,7 +517,7 @@ export const AgentOvernightSurface = ({
 
         <label className="lyra-agent-overnight-field">
           <span>{labels.missionLabel}</span>
-          <textarea
+          <AppTextarea
             value={mission}
             onChange={(event) => setMission(event.target.value)}
             placeholder={labels.missionPlaceholder}
@@ -488,25 +526,30 @@ export const AgentOvernightSurface = ({
         </label>
 
         <label className="lyra-agent-overnight-toggle">
-          <input
-            type="checkbox"
+          <AppSwitch
             checked={inheritContext}
-            onChange={(event) => setInheritContext(event.target.checked)}
+            onCheckedChange={setInheritContext}
+            aria-label={labels.inheritContext}
           />
           <span>{labels.inheritContext}</span>
         </label>
 
-        <button
-          type="button"
+        <AppButton
           className="lyra-agent-overnight-start"
           disabled={starting || desktopApi?.agent === undefined}
           onClick={() => void startRun()}
         >
           {starting ? labels.starting : labels.start}
-        </button>
+        </AppButton>
 
         {state.error === null ? null : (
-          <div className="lyra-agent-overnight-error" role="status">{state.error}</div>
+          <AppStatusMessage
+            className="lyra-agent-overnight-error"
+            tone="error"
+            role="status"
+          >
+            {state.error}
+          </AppStatusMessage>
         )}
 
         <RunList
@@ -519,7 +562,7 @@ export const AgentOvernightSurface = ({
 
       <main className="lyra-agent-overnight-main">
         {state.loading ? (
-          <section className="lyra-agent-overnight-empty">{labels.loading}</section>
+          <AppLoadingState className="lyra-agent-overnight-empty" title={labels.loading} />
         ) : (
           <Dashboard
             run={state.selectedRun}

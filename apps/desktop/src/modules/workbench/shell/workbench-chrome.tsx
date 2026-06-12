@@ -6,10 +6,8 @@ import type {
   RefObject
 } from "react";
 import {
-  BookText,
   Folder,
   History,
-  KeyRound,
   Minus,
   PanelBottom,
   PanelTop,
@@ -21,7 +19,17 @@ import {
 
 import { WorkbenchNotificationTopbar } from "../notifications";
 import type { WorkbenchUiRuntime } from "../ui-platform";
-import { ChromeIconButton, cx, PanelHost, PanelResizer } from "../ui-primitives";
+import {
+  AppToolbarButton,
+  AppWindowButton
+} from "@renderer/ui/components";
+import {
+  AppShell,
+  AppShellMain,
+  AppShellTitlebar,
+  AppShellWorkspace
+} from "@renderer/ui/layout";
+import { cx, PanelHost, PanelResizer } from "../ui-primitives";
 import { TitlebarAiLaunchPill } from "./titlebar-ai-launch-pill";
 import type {
   WorkbenchActionApi,
@@ -89,59 +97,46 @@ const WorkbenchTitlebarActions = ({
 >) => (
   <>
     <WorkbenchNotificationTopbar {...notificationTopbar} />
-    <ChromeIconButton
-      className="lyra-window-button"
-      aria-label={labels.openLoginManager}
-      onClick={actions.openLoginManager}
-    >
-      <KeyRound size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
+    <AppToolbarButton
       aria-label={labels.openAgentSessionHistory}
+      title={labels.openAgentSessionHistory}
       onClick={actions.openAgentSessionHistory}
     >
-      <History size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
+      <History size={14} aria-hidden="true" />
+    </AppToolbarButton>
+    <AppToolbarButton
       aria-label={labels.toggleTerminalPanel}
+      title={labels.toggleTerminalPanel}
+      active={presentationState.isTerminalPanelVisible}
       onClick={actions.toggleTerminalPanel}
     >
       {presentationState.terminalPanelSide === "top" ? (
-        <PanelTop size={14} />
+        <PanelTop size={14} aria-hidden="true" />
       ) : (
-        <PanelBottom size={14} />
+        <PanelBottom size={14} aria-hidden="true" />
       )}
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
+    </AppToolbarButton>
+    <AppToolbarButton
       aria-label={labels.openSettings}
+      title={labels.openSettings}
       onClick={actions.openSettings}
     >
-      <Settings2 size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
+      <Settings2 size={14} aria-hidden="true" />
+    </AppToolbarButton>
+    <AppToolbarButton
       aria-label={labels.openSoftwareStore}
+      title={labels.openSoftwareStore}
       onClick={actions.openSoftwareStore}
     >
-      <Store size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
+      <Store size={14} aria-hidden="true" />
+    </AppToolbarButton>
+    <AppToolbarButton
       aria-label={labels.openFiles}
+      title={labels.openFiles}
       onClick={actions.openFileManager}
     >
-      <Folder size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
-      className="lyra-window-button"
-      aria-label={labels.openDocs}
-      onClick={actions.openDocs}
-    >
-      <BookText size={14} />
-    </ChromeIconButton>
+      <Folder size={14} aria-hidden="true" />
+    </AppToolbarButton>
     <TitlebarAiLaunchPill
       isOpen={presentationState.isAiPanelVisible}
       onToggle={actions.toggleAiPanel}
@@ -152,30 +147,35 @@ const WorkbenchTitlebarActions = ({
     />
     {presentationState.isMac ? null : (
       <>
-        <ChromeIconButton
-          className="lyra-window-button"
+        <AppWindowButton
+          action="minimize"
           aria-label={labels.minimizeWindow}
+          title={labels.minimizeWindow}
           onClick={actions.minimizeWindow}
         >
-          <Minus size={14} />
-        </ChromeIconButton>
-        <ChromeIconButton
-          className="lyra-window-button"
+          <Minus size={14} aria-hidden="true" />
+        </AppWindowButton>
+        <AppWindowButton
+          action="maximize"
           aria-label={labels.toggleMaximizeWindow}
+          title={labels.toggleMaximizeWindow}
+          active={presentationState.isMaximized}
           onClick={actions.toggleMaximizeWindow}
         >
           <Square
             size={11}
             fill={presentationState.isMaximized ? "currentColor" : "none"}
+            aria-hidden="true"
           />
-        </ChromeIconButton>
-        <ChromeIconButton
-          className="lyra-window-button lyra-window-button-close"
+        </AppWindowButton>
+        <AppWindowButton
+          action="close"
           aria-label={labels.closeWindow}
+          title={labels.closeWindow}
           onClick={actions.closeWindow}
         >
-          <X size={14} />
-        </ChromeIconButton>
+          <X size={14} aria-hidden="true" />
+        </AppWindowButton>
       </>
     )}
   </>
@@ -197,14 +197,14 @@ export const WorkbenchChrome = ({
   aiLaunch,
   onRootDragStartCapture
 }: WorkbenchShellAdapterProps) => (
-  <main
+  <AppShell
     {...uiRuntime.rootAttributes}
     ref={rootRef}
     className={rootClassName}
     style={rootStyle}
     onDragStartCapture={onRootDragStartCapture}
   >
-    <header
+    <AppShellTitlebar
       className={cx(
         "lyra-titlebar",
         isMac && "lyra-titlebar-macos",
@@ -229,9 +229,9 @@ export const WorkbenchChrome = ({
           aiLaunch={aiLaunch}
         />
       </div>
-    </header>
+    </AppShellTitlebar>
 
-    <section
+    <AppShellMain
       className={cx(
         "lyra-main",
         layout.aiPanelSide === "right"
@@ -261,10 +261,10 @@ export const WorkbenchChrome = ({
             : "lyra-center-stack-terminal-bottom"
         )}
       >
-        <section className="lyra-workspace" aria-label="workspace">
+        <AppShellWorkspace className="lyra-workspace" aria-label="workspace">
           {slots.workspace}
           {slots.browserTabs}
-        </section>
+        </AppShellWorkspace>
 
         <PanelResizer
           orientation="horizontal"
@@ -280,8 +280,8 @@ export const WorkbenchChrome = ({
           {slots.terminalPanel}
         </PanelHost>
       </section>
-    </section>
+    </AppShellMain>
 
     {slots.overlays}
-  </main>
+  </AppShell>
 );

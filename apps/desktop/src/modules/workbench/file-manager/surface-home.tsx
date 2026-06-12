@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { AppBadge, AppObjectRow } from "@renderer/ui/components";
+
 import {
   renderFileManagerDiskIcon,
   renderFileManagerLocationIcon,
@@ -20,12 +22,12 @@ const HomeSection = ({
   readonly children: ReactNode;
   readonly section: "favorites" | "locations" | "devices" | "recent";
 }) => (
-  <section className="lyra-file-manager-home-section">
-    <header className="lyra-file-manager-home-section-header">
+  <section className="lyra-app-section lyra-file-manager-home-section">
+    <header className="lyra-app-section-title lyra-file-manager-home-section-header">
       {renderFileManagerSectionIcon(section)}
       <h3>{title}</h3>
     </header>
-    <div className="lyra-file-manager-home-grid">{children}</div>
+    <div className="lyra-app-group lyra-app-row-list lyra-file-manager-home-grid">{children}</div>
   </section>
 );
 
@@ -39,10 +41,10 @@ export const FileManagerHomeContent = ({
   }
   const home = renderModel.body.home;
   return (
-    <div className="lyra-file-manager-home">
+    <div className="lyra-app-content-column lyra-file-manager-home">
       <HomeSection title={labels.homeSectionLocations} section="locations">
         {home.locations.map((location) => (
-          <button
+          <AppObjectRow
             key={location.id}
             className="lyra-file-manager-home-card"
             onClick={() => {
@@ -52,17 +54,16 @@ export const FileManagerHomeContent = ({
               preventContextMenuDefaults(event);
               actions.onLocationContextMenu(location, event.clientX, event.clientY);
             }}
-          >
-            {renderFileManagerLocationIcon(location)}
-            <strong>{location.title}</strong>
-            <small>{location.path ?? location.kind}</small>
-          </button>
+            icon={renderFileManagerLocationIcon(location)}
+            title={location.title}
+            description={location.path ?? location.kind}
+          />
         ))}
       </HomeSection>
 
       <HomeSection title={labels.homeSectionDevices} section="devices">
         {home.disks.map((item) => (
-          <button
+          <AppObjectRow
             key={item.disk.id}
             className="lyra-file-manager-home-card lyra-file-manager-disk-card"
             onClick={() => {
@@ -72,38 +73,36 @@ export const FileManagerHomeContent = ({
               preventContextMenuDefaults(event);
               actions.onDiskContextMenu(item.disk, event.clientX, event.clientY);
             }}
-          >
-            <div className="lyra-file-manager-disk-summary">
-              <div className="lyra-file-manager-disk-summary-icon">
-                {renderFileManagerDiskIcon(item.disk)}
-              </div>
-              <div className="lyra-file-manager-disk-summary-body">
-                <strong>{item.disk.title}</strong>
-                <small className="lyra-file-manager-disk-path">{item.disk.mountPath}</small>
-              </div>
-            </div>
-            <div className="lyra-file-manager-disk-meter" aria-hidden="true">
-              <div
-                className={`lyra-file-manager-disk-meter-fill lyra-file-manager-disk-meter-fill-${item.usageTone}`}
-                style={{ width: `${item.usagePercent}%` }}
-              />
-            </div>
-            <div className="lyra-file-manager-disk-meta">
-              <span>{item.usageLabel}</span>
-              <span>
-                {labels.diskAvailable} {item.availableLabel}
-              </span>
-            </div>
-            <div className="lyra-file-manager-disk-footer">
-              <span className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.disk.kind}`}>
+            icon={renderFileManagerDiskIcon(item.disk)}
+            title={item.disk.title}
+            meta={(
+              <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.disk.kind}`}>
                 {resolveFileManagerDiskKindLabel(item.disk.kind, labels)}
+              </AppBadge>
+            )}
+            description={(
+              <span className="lyra-file-manager-disk-description">
+                <span className="lyra-file-manager-disk-path">{item.disk.mountPath}</span>
+                <span className="lyra-file-manager-disk-meter" aria-hidden="true">
+                  <span
+                    className={`lyra-file-manager-disk-meter-fill lyra-file-manager-disk-meter-fill-${item.usageTone}`}
+                    style={{ width: `${item.usagePercent}%` }}
+                  />
+                </span>
+                <span className="lyra-file-manager-disk-meta">
+                  <span>{item.usageLabel}</span>
+                  <span>
+                    {labels.diskAvailable} {item.availableLabel}
+                  </span>
+                </span>
               </span>
-            </div>
-          </button>
+            )}
+          />
         ))}
 
         {home.devices.map((item) => (
-          <div
+          <AppObjectRow
+            as="div"
             key={item.device.id}
             className="lyra-file-manager-home-card lyra-file-manager-disk-card lyra-file-manager-device-card"
             onContextMenu={(event) => {
@@ -113,28 +112,25 @@ export const FileManagerHomeContent = ({
               }
               actions.onDeviceContextMenu(item.device, event.clientX, event.clientY);
             }}
-          >
-            <div className="lyra-file-manager-disk-summary">
-              <div className="lyra-file-manager-disk-summary-icon">
-                {renderFileManagerDiskIcon(item.device)}
-              </div>
-              <div className="lyra-file-manager-disk-summary-body">
-                <strong>{item.device.title}</strong>
-                <small className="lyra-file-manager-disk-path">
-                  {item.device.displayPath ?? item.device.devicePath}
-                </small>
-              </div>
-            </div>
-            <div className="lyra-file-manager-disk-meta">
-              <span>{labels.deviceUnmounted}</span>
-              {item.totalBytesLabel === null ? null : <span>{item.totalBytesLabel}</span>}
-            </div>
-            <div className="lyra-file-manager-disk-footer">
-              <span className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.device.kind}`}>
+            icon={renderFileManagerDiskIcon(item.device)}
+            title={item.device.title}
+            meta={(
+              <AppBadge className={`lyra-file-manager-disk-kind lyra-file-manager-disk-kind-${item.device.kind}`}>
                 {resolveFileManagerDiskKindLabel(item.device.kind, labels)}
+              </AppBadge>
+            )}
+            description={(
+              <span className="lyra-file-manager-disk-description">
+                <span className="lyra-file-manager-disk-path">
+                  {item.device.displayPath ?? item.device.devicePath}
+                </span>
+                <span className="lyra-file-manager-disk-meta">
+                  <span>{labels.deviceUnmounted}</span>
+                  {item.totalBytesLabel === null ? null : <span>{item.totalBytesLabel}</span>}
+                </span>
               </span>
-            </div>
-          </div>
+            )}
+          />
         ))}
       </HomeSection>
 
@@ -142,7 +138,7 @@ export const FileManagerHomeContent = ({
         {home.isRecentEmpty ? (
           <div className="lyra-file-manager-home-empty">{labels.noRecentLocations}</div>
         ) : home.recentLocations.map((recent) => (
-          <button
+          <AppObjectRow
             key={recent.id}
             className="lyra-file-manager-home-card"
             onClick={() => {
@@ -152,16 +148,15 @@ export const FileManagerHomeContent = ({
               preventContextMenuDefaults(event);
               actions.onRecentLocationContextMenu(recent, event.clientX, event.clientY);
             }}
-          >
-            {renderFileManagerLocationIcon({
+            icon={renderFileManagerLocationIcon({
               id: recent.id,
               title: recent.title,
               kind: "directory",
               path: recent.path
             })}
-            <strong>{recent.title}</strong>
-            <small>{recent.path}</small>
-          </button>
+            title={recent.title}
+            description={recent.path}
+          />
         ))}
       </HomeSection>
     </div>
@@ -180,8 +175,8 @@ export const FileManagerFavoritesContent = ({
   const favorites = renderModel.body.favorites;
 
   return (
-    <div className="lyra-file-manager-favorites-page">
-      <header className="lyra-file-manager-favorites-header">
+    <div className="lyra-app-content-column lyra-file-manager-favorites-page">
+      <header className="lyra-app-section-title lyra-file-manager-favorites-header">
         {renderFileManagerSectionIcon("favorites")}
         <h3>{labels.homeSectionFavorites}</h3>
       </header>
@@ -190,11 +185,10 @@ export const FileManagerFavoritesContent = ({
           {labels.noFavorites}
         </div>
       ) : (
-        <div className="lyra-file-manager-favorites-list">
+        <div className="lyra-app-group lyra-app-row-list lyra-file-manager-favorites-list">
           {favorites.favorites.map((favorite) => (
-            <button
+            <AppObjectRow
               key={favorite.id}
-              type="button"
               className="lyra-file-manager-favorite-row"
               onClick={() => {
                 actions.onOpenDirectoryPath(favorite.path);
@@ -203,13 +197,10 @@ export const FileManagerFavoritesContent = ({
                 preventContextMenuDefaults(event);
                 actions.onFavoriteContextMenu(favorite, event.clientX, event.clientY);
               }}
-            >
-              {renderFileManagerLocationIcon(favorite)}
-              <span>
-                <strong>{favorite.title}</strong>
-                <small>{favorite.path}</small>
-              </span>
-            </button>
+              icon={renderFileManagerLocationIcon(favorite)}
+              title={favorite.title}
+              description={favorite.path}
+            />
           ))}
         </div>
       )}

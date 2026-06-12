@@ -1,6 +1,13 @@
 import { ArrowUpRight, CheckCheck, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 
+import {
+  AppBadge,
+  AppButton,
+  AppIconButton,
+  AppObjectRow,
+  AppSidebar
+} from "@renderer/ui/components";
 import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationCenterLabels, WorkbenchNotificationItem } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
@@ -56,26 +63,25 @@ export const NotificationCenterSurface = ({
           {canMarkAllRead || canClearAll ? (
             <div className="lyra-titlebar-context-controls">
               {canMarkAllRead ? (
-                <button
-                  type="button"
+                <AppIconButton
                   className="lyra-titlebar-context-icon-button"
                   aria-label={labels.markAllRead}
                   title={labels.markAllRead}
                   onClick={onMarkAllRead}
                 >
                   <CheckCheck size={14} aria-hidden="true" />
-                </button>
+                </AppIconButton>
               ) : null}
               {canClearAll ? (
-                <button
-                  type="button"
+                <AppIconButton
                   className="lyra-titlebar-context-icon-button lyra-titlebar-context-danger"
+                  tone="danger"
                   aria-label={labels.clearAll}
                   title={labels.clearAll}
                   onClick={onClearAll}
                 >
                   <Trash2 size={14} aria-hidden="true" />
-                </button>
+                </AppIconButton>
               ) : null}
             </div>
           ) : null}
@@ -101,45 +107,44 @@ export const NotificationCenterSurface = ({
   return (
     <section className="lyra-notification-center" aria-label="notification-center-surface">
       <section className="lyra-notification-center-body">
-        <aside className="lyra-notification-center-list" aria-label={labels.listTitle}>
-          {notifications.map((item) => {
+        <AppSidebar className="lyra-notification-center-list" aria-label={labels.listTitle}>
+          {notifications.length === 0 ? (
+            <div className="lyra-notification-center-empty">
+              <strong>{labels.emptyTitle}</strong>
+              <span>{labels.emptyDescription}</span>
+            </div>
+          ) : notifications.map((item) => {
             const isActive = item.id === selected?.id;
             const isUnread = item.readAt === undefined;
-            const className = [
-              "lyra-notification-center-item",
-              isActive ? "lyra-notification-center-item-active" : "",
-              isUnread ? "lyra-notification-center-item-unread" : ""
-            ]
-              .filter((value) => value.length > 0)
-              .join(" ");
 
             return (
-              <button
+              <AppObjectRow
                 key={item.id}
-                type="button"
-                className={className}
+                className={[
+                  "lyra-notification-center-item",
+                  isUnread ? "lyra-notification-center-item-unread" : ""
+                ].filter(Boolean).join(" ")}
+                active={isActive}
+                icon={renderNotificationSourceIcon(item.source.iconKey, 16)}
+                title={item.title}
+                description={item.preview}
+                meta={formatTimestamp(item.createdAt)}
+                badges={isUnread ? <AppBadge tone="info">{labels.unread}</AppBadge> : undefined}
                 onClick={() => {
                   onSelectNotification(item.id);
                 }}
-              >
-                <span className="lyra-notification-center-item-icon" aria-hidden="true">
-                  {renderNotificationSourceIcon(item.source.iconKey, 14)}
-                </span>
-                <span className="lyra-notification-center-item-main">
-                  <strong>{item.title}</strong>
-                  <small>{item.preview}</small>
-                </span>
-                <span className="lyra-notification-center-item-meta">
-                  {isUnread ? <i>{labels.unread}</i> : null}
-                  <time>{formatTimestamp(item.createdAt)}</time>
-                </span>
-              </button>
+              />
             );
           })}
-        </aside>
+        </AppSidebar>
 
         <section className="lyra-notification-center-detail" aria-label="notification-center-detail">
-          {selected === null ? null : (
+          {selected === null ? (
+            <div className="lyra-notification-center-detail-empty">
+              <strong>{labels.emptyTitle}</strong>
+              <span>{labels.emptyDescription}</span>
+            </div>
+          ) : (
             <article className="lyra-notification-center-detail-card">
               <header className="lyra-notification-center-detail-head">
                 <span className="lyra-notification-center-detail-icon" aria-hidden="true">
@@ -158,21 +163,21 @@ export const NotificationCenterSurface = ({
               </section>
 
               <footer className="lyra-notification-center-detail-actions">
-                <button
-                  type="button"
-                  className="lyra-notification-center-detail-open"
+                <AppButton
+                  variant="secondary"
+                  size="sm"
                   disabled={selected.target.kind === "none"}
                   onClick={() => {
                     onOpenNotificationSource(selected.id);
                   }}
                 >
-                  <ArrowUpRight size={13} />
+                  <ArrowUpRight size={14} aria-hidden="true" />
                   <span>
                     {selected.target.kind === "none"
                       ? labels.sourceFallback
                       : labels.openSource}
                   </span>
-                </button>
+                </AppButton>
               </footer>
             </article>
           )}

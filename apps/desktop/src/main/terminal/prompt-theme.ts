@@ -79,7 +79,7 @@ export const resolvePromptPalette = (uiThemeId: string): PromptPalette => {
   if (uiThemeId.endsWith("-light")) {
     return {
       leftA: "#d36151",
-      leftB: "#5c78e2",
+      leftB: "#77797d",
       leftC: "#669f59",
       leftFg: "#fdfdfd",
       rightA: "#669f59",
@@ -92,11 +92,11 @@ export const resolvePromptPalette = (uiThemeId: string): PromptPalette => {
 
   return {
     leftA: "#d07277",
-    leftB: "#74ade8",
+    leftB: "#8e8f90",
     leftC: "#a1c181",
     leftFg: "#20242b",
     rightA: "#a1c181",
-    rightB: "#3b414d",
+    rightB: "#2b2b2a",
     rightFg: "#dce0e5",
     success: "#a1c181",
     error: "#d07277"

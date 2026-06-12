@@ -3,6 +3,7 @@ import type { WorkbenchResolvedThemeId, WorkbenchThemeId, WorkbenchThemeVars } f
 
 const FALLBACK_THEME: WorkbenchResolvedThemeId = "lyra-light";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
+const LEGACY_THEME_PATTERN = /^(?:nova|terra|ocean|eclipse)-(light|dark|system)$/;
 
 const toResolvedThemeId = (
   themeId: WorkbenchThemeId,
@@ -22,6 +23,26 @@ export const resolveWorkbenchThemeId = (
 
 export const isWorkbenchThemeId = (value: unknown): value is WorkbenchThemeId =>
   typeof value === "string" && WORKBENCH_THEME_IDS.includes(value as WorkbenchThemeId);
+
+export const normalizeWorkbenchThemeId = (
+  value: unknown,
+  fallback: WorkbenchThemeId = "lyra-system"
+): WorkbenchThemeId => {
+  if (isWorkbenchThemeId(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const legacyMatch = LEGACY_THEME_PATTERN.exec(value);
+  if (legacyMatch !== null) {
+    return `lyra-${legacyMatch[1]}` as WorkbenchThemeId;
+  }
+
+  return fallback;
+};
 
 export const readSystemPrefersDark = (): boolean => {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {

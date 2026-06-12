@@ -60,7 +60,7 @@ describe("classifyAreaAction", () => {
 const enabledSnapshot = () =>
   buildWebThemeSnapshot({
     vars: {
-      "--lyra-bg-app": "#131416",
+      "--lyra-app-bg": "#131416",
       "--lyra-text-primary": "#ededed"
     },
     enabled: true,

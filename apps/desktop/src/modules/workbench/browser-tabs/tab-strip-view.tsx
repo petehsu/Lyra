@@ -15,13 +15,8 @@ import {
   type MouseEvent as ReactMouseEvent
 } from "react";
 
-import {
-  ChromeIconButton,
-  ChromeTabButton,
-  ChromeTabFrame,
-  ChromeTabShape,
-  cx
-} from "../ui-primitives";
+import { AppButton, AppIconButton } from "@renderer/ui/components";
+import { cx } from "../ui-primitives";
 import { renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import { BrowserChromeSurface } from "./browser-chrome-surface";
@@ -68,6 +63,45 @@ type BrowserTabStripControlsProps = Pick<
   | "onGoForward"
   | "onToggleStackedMode"
 >;
+
+const BrowserTabShape = () => (
+  <div className="lyra-chrome-tab-shape" aria-hidden="true">
+    <div className="lyra-chrome-tab-dividers" />
+    <div className="lyra-chrome-tab-background">
+      <svg
+        className="lyra-chrome-tab-background-svg"
+        focusable="false"
+      >
+        <svg
+          width="52%"
+          height="100%"
+          viewBox="0 0 214 36"
+          preserveAspectRatio="none"
+        >
+          <path
+            className="lyra-chrome-tab-geometry"
+            d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
+          />
+        </svg>
+        <g transform="scale(-1, 1)">
+          <svg
+            width="52%"
+            height="100%"
+            x="-100%"
+            y="0"
+            viewBox="0 0 214 36"
+            preserveAspectRatio="none"
+          >
+            <path
+              className="lyra-chrome-tab-geometry"
+              d="M17 0h197v36H0v-2c4.5 0 9-3.5 9-8V8c0-4.5 3.5-8 8-8z"
+            />
+          </svg>
+        </g>
+      </svg>
+    </div>
+  </div>
+);
 
 const BrowserTabDefaultIcon = () => (
   <Globe size={14} className="lyra-browser-tab-icon-svg" />
@@ -138,23 +172,23 @@ const BrowserTabStripControls = ({
   onToggleStackedMode
 }: BrowserTabStripControlsProps) => (
   <>
-    <ChromeIconButton
+    <AppIconButton
       className="lyra-browser-nav-button"
       aria-label={goBackLabel}
       disabled={!canGoBack}
       onClick={onGoBack}
     >
       <ChevronLeft size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
+    </AppIconButton>
+    <AppIconButton
       className="lyra-browser-nav-button"
       aria-label={goForwardLabel}
       disabled={!canGoForward}
       onClick={onGoForward}
     >
       <ChevronRight size={14} />
-    </ChromeIconButton>
-    <ChromeIconButton
+    </AppIconButton>
+    <AppIconButton
       className={
         stackedMode
           ? "lyra-browser-nav-button lyra-browser-nav-button-active"
@@ -165,7 +199,7 @@ const BrowserTabStripControls = ({
       onClick={onToggleStackedMode}
     >
       <Layers3 size={14} />
-    </ChromeIconButton>
+    </AppIconButton>
   </>
 );
 
@@ -229,7 +263,7 @@ export const BrowserTabStripView = ({
       >
         <div className="lyra-browser-tab-list">
           {renderModel.tabs.map((tabModel) => (
-            <ChromeTabFrame
+            <div
               key={tabModel.tab.id}
               className={cx(
                 tabModel.tabClassName,
@@ -239,7 +273,7 @@ export const BrowserTabStripView = ({
               style={tabModel.tabStyle}
               data-lyra-tab-id={tabModel.tab.id}
               data-agent-active={tabModel.isAgentActive ? "true" : "false"}
-              allowWebDrag
+              data-lyra-allow-web-drag="true"
               draggable
               onMouseDown={(event) => {
                 runtime.onTabItemMouseDown(event, tabModel.tab.id);
@@ -253,12 +287,14 @@ export const BrowserTabStripView = ({
               onDragEnd={runtime.onTabDragEnd}
               onContextMenu={runtime.onTabItemContextMenu}
             >
-              <ChromeTabShape />
-              <ChromeTabButton
+              <BrowserTabShape />
+              <AppButton
+                variant="ghost"
+                size="sm"
                 className={tabModel.tabMainClassName}
                 aria-label={tabModel.tab.title}
                 title={tabModel.tab.title}
-                allowWebDrag
+                data-lyra-allow-web-drag="true"
                 draggable
                 onMouseDown={(event) => {
                   runtime.onTabItemMouseDown(event, tabModel.tab.id);
@@ -277,9 +313,9 @@ export const BrowserTabStripView = ({
                 {!tabModel.isCollapsed ? (
                   <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
                 ) : null}
-              </ChromeTabButton>
+              </AppButton>
               {!tabModel.isCollapsed ? (
-                <ChromeIconButton
+                <AppIconButton
                   className="lyra-browser-tab-close"
                   aria-label={tabModel.closeLabel}
                   draggable={false}
@@ -288,19 +324,19 @@ export const BrowserTabStripView = ({
                   }}
                 >
                   <X size={12} />
-                </ChromeIconButton>
+                </AppIconButton>
               ) : null}
-            </ChromeTabFrame>
+            </div>
           ))}
         </div>
-        <ChromeIconButton
+        <AppIconButton
           className="lyra-browser-tab-add"
           style={renderModel.addButtonStyle}
           aria-label={openNewTabLabel}
           onClick={onOpenNewTab}
         >
           <Plus size={14} />
-        </ChromeIconButton>
+        </AppIconButton>
       </div>
       {renderModel.preview !== null ? (
         <div
@@ -308,11 +344,11 @@ export const BrowserTabStripView = ({
           style={renderModel.preview.shellStyle}
           aria-hidden="true"
         >
-          <ChromeTabFrame
+          <div
             className={renderModel.preview.tabClassName}
             style={renderModel.preview.tabStyle}
           >
-            <ChromeTabShape />
+            <BrowserTabShape />
             <span className={renderModel.preview.mainClassName}>
               <span className="lyra-browser-tab-icon" aria-hidden="true">
                 <BrowserTabIcon tab={renderModel.preview.tab} />
@@ -320,15 +356,15 @@ export const BrowserTabStripView = ({
               <span className="lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
             </span>
             {renderModel.preview.isCollapsed ? null : (
-              <ChromeIconButton
+              <AppIconButton
                 className="lyra-browser-tab-close lyra-browser-tab-right-drag-preview-close"
                 tabIndex={-1}
                 aria-hidden="true"
               >
                 <X size={12} />
-              </ChromeIconButton>
+              </AppIconButton>
             )}
-          </ChromeTabFrame>
+          </div>
         </div>
       ) : null}
     </>

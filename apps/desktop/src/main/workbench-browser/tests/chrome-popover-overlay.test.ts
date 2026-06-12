@@ -48,7 +48,8 @@ describe("browser chrome popover overlay", () => {
     expect(html).toContain("--surface: #ecddb4");
     expect(html).toContain("--field: #dfcf9f");
     expect(html).toContain("background: transparent");
-    expect(html).toContain("border-radius: 12px");
+    expect(html).toContain("border-radius: 10px");
+    expect(html).not.toContain("linear-gradient(180deg, var(--surface)");
     expect(html).not.toContain("Canvas");
     expect(html).not.toContain("backdrop-filter");
     expect(html).not.toContain("document.addEventListener");

@@ -2,6 +2,8 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
   RefreshCw,
   Search,
   X,
@@ -19,6 +21,7 @@ import type {
   WorkbenchBrowserSecurityLocale,
   WorkbenchBrowserSearchInPageResult
 } from "../../../shared/desktop-bridge";
+import { AppIconButton, AppInput } from "@renderer/ui/components";
 import type { OmniboxSuggestion } from "./use-titlebar-navigation-model";
 import { useAnchoredOverlayPosition } from "./use-anchored-overlay-position";
 
@@ -225,12 +228,12 @@ export const TitlebarNavigation = ({
   const renderSecurityIcon = () => {
     switch (securityLevel) {
       case "secure":
-        return <Lock size={13} className="lyra-security-secure" />;
+        return <Lock size={13} className="lyra-security-icon" />;
       case "insecure":
-        return <ShieldAlert size={13} className="lyra-security-insecure animated-pulse" />;
+        return <ShieldAlert size={13} className="lyra-security-icon" />;
       case "system":
       default:
-        return <Info size={13} className="text-muted" />;
+        return <Info size={13} className="lyra-security-icon" />;
     }
   };
 
@@ -260,18 +263,18 @@ export const TitlebarNavigation = ({
       ? {
           title: securityLabels.secureTitle,
           body: securityLabels.secureBody,
-          icon: <ShieldCheck size={18} className="text-green" />
+          icon: <ShieldCheck size={18} className="lyra-security-popover-icon" />
         }
       : securityLevel === "insecure"
         ? {
             title: securityLabels.insecureTitle,
             body: securityLabels.insecureBody,
-            icon: <AlertTriangle size={18} className="text-red animated-bounce" />
+            icon: <AlertTriangle size={18} className="lyra-security-popover-icon" />
           }
         : {
             title: securityLabels.systemTitle,
             body: securityLabels.systemBody,
-            icon: <Globe size={18} className="text-muted" />
+            icon: <Globe size={18} className="lyra-security-popover-icon" />
           };
   const securityRows = [
     [securityLabels.connectionLabel, securityConnection],
@@ -565,7 +568,7 @@ export const TitlebarNavigation = ({
   const securityPopover = (
     <div
       ref={popoverRef}
-      className="lyra-omnibox-security-popover"
+      className={`lyra-omnibox-security-popover lyra-security-${securityLevel}`}
       role="dialog"
       aria-label={securityLabels.ariaLabel}
       data-placement={securityPopoverPosition.placement}
@@ -713,10 +716,11 @@ export const TitlebarNavigation = ({
           {pageFindResultsList}
           {inlineSuggestionPanelOpen ? suggestionsList : null}
           <div className="lyra-titlebar-navigation-row">
-            <button
-              type="button"
+            <AppIconButton
               ref={securityButtonRef}
               className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
+              active={showSecurityPopover}
+              aria-label={securityLabels.ariaLabel}
               onClick={() => {
                 if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
                   setShowSecurityPopover(false);
@@ -732,9 +736,9 @@ export const TitlebarNavigation = ({
               title={securityLabels.title}
             >
               {renderSecurityIcon()}
-            </button>
+            </AppIconButton>
 
-            <input
+            <AppInput
               ref={inputRef}
               className="lyra-titlebar-navigation-input"
               type="text"
@@ -752,8 +756,7 @@ export const TitlebarNavigation = ({
             <span className="lyra-titlebar-navigation-actions">
               {trailingControl}
               {hasValue ? (
-                <button
-                  type="button"
+                <AppIconButton
                   className="lyra-titlebar-navigation-action"
                   aria-label={`Clear ${ariaLabel}`}
                   title={`Clear ${ariaLabel}`}
@@ -761,16 +764,15 @@ export const TitlebarNavigation = ({
                     onChange("");
                   }}
                 >
-                  <X size={14} />
-                </button>
+                  <X size={14} aria-hidden="true" />
+                </AppIconButton>
               ) : null}
               {pageFindMode ? (
                 <>
                   <span className="lyra-titlebar-page-find-counter">
                     {pageFindCounter}
                   </span>
-                  <button
-                    type="button"
+                  <AppIconButton
                     className="lyra-titlebar-navigation-action"
                     aria-label="Previous page result"
                     title="Previous page result"
@@ -779,10 +781,9 @@ export const TitlebarNavigation = ({
                       void onPageFindPrevious();
                     }}
                   >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
+                    <ChevronUp size={14} aria-hidden="true" />
+                  </AppIconButton>
+                  <AppIconButton
                     className="lyra-titlebar-navigation-action"
                     aria-label="Next page result"
                     title="Next page result"
@@ -791,23 +792,23 @@ export const TitlebarNavigation = ({
                       void onPageFindNext();
                     }}
                   >
-                    ↓
-                  </button>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </AppIconButton>
                 </>
               ) : null}
               {!pageFindMode ? (
-                <button
+                <AppIconButton
                   type="submit"
                   className="lyra-titlebar-navigation-action"
                   aria-label={primaryActionLabel}
                   title={primaryActionLabel}
                 >
                   {primaryActionKind === "reload" ? (
-                    <RefreshCw size={14} />
+                    <RefreshCw size={14} aria-hidden="true" />
                   ) : (
-                    <ArrowRight size={14} />
+                    <ArrowRight size={14} aria-hidden="true" />
                   )}
-                </button>
+                </AppIconButton>
               ) : null}
             </span>
           </div>

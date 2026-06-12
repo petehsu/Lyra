@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { AppButton } from "@renderer/ui/components";
 import { createSettingsSurfaceModel } from "./settings-render-model";
 import { SettingsSurfaceView } from "./settings-surface-view";
 import type { BrowserSettingsSurfaceProps } from "./settings-surface-types";
@@ -35,9 +36,10 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       content: (
         <div className="lyra-titlebar-context-controls">
           {model.categories.map((category) => (
-            <button
+            <AppButton
               key={category.id}
-              type="button"
+              variant="ghost"
+              size="sm"
               className={
                 category.id === activeCategory
                   ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
@@ -48,7 +50,7 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
               }}
             >
               {category.navLabel}
-            </button>
+            </AppButton>
           ))}
         </div>
       )
@@ -62,6 +64,8 @@ export const BrowserSettingsSurface = (props: BrowserSettingsSurfaceProps) => {
       model={model}
       activeCategory={activeCategory}
       onActivateCategory={handleActivateCategory}
+      docsNavLabel={props.docsNavLabel}
+      onOpenDocs={props.onOpenDocs}
     />
   );
 };

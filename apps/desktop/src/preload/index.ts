@@ -278,6 +278,7 @@ const fallbackMeta: AppMetaPayload = {
   version: "0.1.0",
   platform: process.platform,
   arch: process.arch,
+  windowMaterialMode: "opaque",
   isPackaged: false,
   userName: process.env.USER ?? process.env.USERNAME,
   locale: Intl.DateTimeFormat().resolvedOptions().locale,

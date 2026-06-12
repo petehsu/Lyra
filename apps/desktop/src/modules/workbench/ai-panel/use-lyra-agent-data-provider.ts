@@ -13,7 +13,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
 import type { GlobalDialogModel } from "../global-dialog";
-import { APP_CONFIG } from "./agent-chat-demo/core/config";
+import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   AgentGoalItem,
   AgentImageAttachment,
@@ -22,12 +22,12 @@ import type {
   DecisionQuestion,
   DiffFileEntry,
   PermissionRequest
-} from "./agent-chat-demo/core/types";
-import { setLocale, t, type Locale } from "./agent-chat-demo/core/i18n";
+} from "./lyra-agents/core/types";
+import { setLocale, t, type Locale } from "./lyra-agents/core/i18n";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
-} from "./agent-chat-demo/data/createDataProviderValue";
+} from "./lyra-agents/data/createDataProviderValue";
 import {
   agentSessionToChatMessages,
   agentSessionToSidePanel,
@@ -657,7 +657,7 @@ export const useLyraAgentDataProvider = (
       id: "browser-screenshot-" + Date.now().toString(36),
       mediaType: capture.mimeType,
       data: capture.imageBase64,
-      label: t("msg.browserScreenshot"),
+      label: t("lyra-agents-message.browserScreenshot"),
       source: "browser-screenshot",
       width: capture.width,
       height: capture.height
@@ -671,7 +671,7 @@ export const useLyraAgentDataProvider = (
       id: "window-screenshot-" + Date.now().toString(36),
       mediaType: capture.mimeType,
       data: capture.imageBase64,
-      label: t("msg.windowScreenshot"),
+      label: t("lyra-agents-message.windowScreenshot"),
       source: "window-screenshot",
       width: capture.width,
       height: capture.height

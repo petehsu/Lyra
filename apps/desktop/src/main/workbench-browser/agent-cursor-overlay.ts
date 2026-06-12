@@ -148,7 +148,7 @@ export const buildAgentCursorOverlayScript = ({
       aura.style.width = "90px";
       aura.style.height = "90px";
       aura.style.borderRadius = "999px";
-      aura.style.background = "radial-gradient(circle, rgba(68, 210, 255, 0.36) 0%, rgba(85, 130, 255, 0.18) 38%, rgba(85, 130, 255, 0) 72%)";
+      aura.style.background = "radial-gradient(circle, rgba(246, 246, 246, 0.24) 0%, rgba(132, 132, 132, 0.14) 38%, rgba(132, 132, 132, 0) 72%)";
       aura.style.filter = "none";
       wrap.appendChild(aura);
     }
@@ -168,7 +168,7 @@ export const buildAgentCursorOverlayScript = ({
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", payload.path);
       path.setAttribute("fill", "rgba(248, 252, 255, 0.98)");
-      path.setAttribute("stroke", "rgba(35, 118, 255, 0.98)");
+      path.setAttribute("stroke", "rgba(44, 44, 44, 0.92)");
       path.setAttribute("stroke-width", "17");
       path.setAttribute("stroke-linejoin", "round");
       svg.appendChild(path);

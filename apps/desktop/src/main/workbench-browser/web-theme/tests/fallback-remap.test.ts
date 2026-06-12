@@ -9,15 +9,15 @@ import { buildWebThemeSnapshot } from "../theme-bridge";
 
 const snapshot = buildWebThemeSnapshot({
   vars: {
-    "--lyra-bg-app": "#101112",
-    "--lyra-bg-surface": "#1e1f22",
-    "--lyra-bg-editor": "#181a1e",
+    "--lyra-app-bg": "#101112",
+    "--lyra-app-surface-bg": "#1e1f22",
+    "--lyra-app-panel-bg": "#181a1e",
     "--lyra-text-primary": "#f0f1f3",
     "--lyra-text-secondary": "#cbccd2",
     "--lyra-text-muted": "#9e9fa6",
-    "--lyra-text-accent": "#8faaff",
-    "--lyra-line-default": "#2a2b30",
-    "--lyra-line-focused": "#6583ff",
+    "--lyra-app-primary-button": "#8faaff",
+    "--lyra-app-border": "#2a2b30",
+    "--lyra-app-border-strong": "#6583ff",
     "--lyra-status-error": "#e47878"
   },
   enabled: true,

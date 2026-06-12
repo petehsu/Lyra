@@ -6,7 +6,7 @@ import type {
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
-import { isWorkbenchThemeId } from "../theme";
+import { normalizeWorkbenchThemeId } from "../theme";
 import type { WorkbenchThemeId } from "../theme";
 import { resolveWorkbenchUiPackId } from "../ui-platform";
 import type { WorkbenchUiPackId } from "../ui-platform";
@@ -27,7 +27,8 @@ const WORKBENCH_PREFERENCES_STATE_KEY = "preferences" as const;
 const isLocale = (value: unknown): value is WorkbenchLocale =>
   typeof value === "string" && WORKBENCH_LOCALES.includes(value as WorkbenchLocale);
 
-const isTheme = (value: unknown): value is WorkbenchThemeId => isWorkbenchThemeId(value);
+const normalizeTheme = (value: unknown, fallback: WorkbenchThemeId): WorkbenchThemeId =>
+  normalizeWorkbenchThemeId(value, fallback);
 const isUiPackId = (value: unknown): value is WorkbenchUiPackId =>
   resolveWorkbenchUiPackId(value) === value;
 const isSplitTriggerMode = (value: unknown): value is WorkbenchSplitTriggerMode =>
@@ -103,7 +104,7 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
 
     return {
       locale: isLocale(parsed.locale) ? parsed.locale : defaults.locale,
-      theme: isTheme(parsed.theme) ? parsed.theme : defaults.theme,
+      theme: normalizeTheme(parsed.theme, defaults.theme),
       uiPackId: isUiPackId(parsed.uiPackId)
         ? parsed.uiPackId
         : isUiPackId(parsed.uiStyleId)

@@ -5,6 +5,8 @@ import type {
   MouseEvent as ReactMouseEvent
 } from "react";
 
+import { AppButton, AppIconButton, AppInput } from "@renderer/ui/components";
+
 import type {
   FileManagerEntry,
   FileManagerTrashEntry
@@ -47,7 +49,7 @@ export const FileManagerDraftInput = ({
       ? renderFileManagerLocationIcon({ id: "draft", title: "", kind: "directory", path: "" })
       : renderFileManagerEntryIcon({ id: "draft", name: "", path: "", kind: "file", isHidden: false });
   const input = (
-    <input
+    <AppInput
       className="lyra-file-manager-create-input"
       value={draft.value}
       placeholder={
@@ -64,20 +66,20 @@ export const FileManagerDraftInput = ({
   );
   const actionButtons = (
     <div className="lyra-file-manager-create-actions">
-      <button
+      <AppIconButton
         className="lyra-file-manager-create-button"
         aria-label={labels.createConfirm}
         onClick={actions.onCommitCreateDraft}
       >
-        <Check size={14} />
-      </button>
-      <button
+        <Check size={14} aria-hidden="true" />
+      </AppIconButton>
+      <AppIconButton
         className="lyra-file-manager-create-button"
         aria-label={labels.createCancel}
         onClick={actions.onCancelCreateDraft}
       >
-        <X size={14} />
-      </button>
+        <X size={14} aria-hidden="true" />
+      </AppIconButton>
     </div>
   );
 
@@ -121,12 +123,14 @@ export const FileManagerLargeEntryTile = ({
   readonly onDragStart: (event: ReactDragEvent<HTMLButtonElement>) => void;
   readonly onDragEnd: () => void;
 }) => (
-  <button
+  <AppButton
+    variant="ghost"
     className={
       isActive
         ? "lyra-file-manager-large-tile lyra-file-manager-large-tile-active"
         : "lyra-file-manager-large-tile"
     }
+    data-active={isActive ? "true" : undefined}
     data-lyra-allow-web-drag="true"
     draggable
     onClick={onSelect}
@@ -150,7 +154,7 @@ export const FileManagerLargeEntryTile = ({
         className="lyra-file-manager-large-tile-title"
       />
     </div>
-  </button>
+  </AppButton>
 );
 
 export const FileManagerLargeTrashTile = ({
@@ -168,12 +172,14 @@ export const FileManagerLargeTrashTile = ({
   readonly onDragStart: (event: ReactDragEvent<HTMLButtonElement>) => void;
   readonly onDragEnd: () => void;
 }) => (
-  <button
+  <AppButton
+    variant="ghost"
     className={
       isActive
         ? "lyra-file-manager-large-tile lyra-file-manager-large-tile-active"
         : "lyra-file-manager-large-tile"
     }
+    data-active={isActive ? "true" : undefined}
     data-lyra-allow-web-drag="true"
     draggable
     onClick={onSelect}
@@ -196,5 +202,5 @@ export const FileManagerLargeTrashTile = ({
         className="lyra-file-manager-large-tile-title"
       />
     </div>
-  </button>
+  </AppButton>
 );

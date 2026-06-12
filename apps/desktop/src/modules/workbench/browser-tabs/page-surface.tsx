@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 
+import { AppButton } from "@renderer/ui/components";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import { resolveNextSearchEngineSelection } from "../browser-search/service";
@@ -67,8 +68,9 @@ export const BrowserPageSurface = ({
           <>
             <span className="lyra-titlebar-context-chip">{searchQuery}</span>
             <div className="lyra-titlebar-context-controls">
-              <button
-                type="button"
+              <AppButton
+                variant="ghost"
+                size="sm"
                 className={
                   searchSource === "local"
                     ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
@@ -85,9 +87,10 @@ export const BrowserPageSurface = ({
                 }}
               >
                 {localTabLabel}
-              </button>
-              <button
-                type="button"
+              </AppButton>
+              <AppButton
+                variant="ghost"
+                size="sm"
                 className={
                   searchEngineSelectionMode !== "manual"
                     ? "lyra-titlebar-context-text-button lyra-titlebar-context-button-active"
@@ -99,11 +102,12 @@ export const BrowserPageSurface = ({
                 }}
               >
                 {autoSearchLabel}
-              </button>
+              </AppButton>
               {searchEngines.map((engine) => (
-                <button
+                <AppButton
                   key={engine.id}
-                  type="button"
+                  variant="ghost"
+                  size="sm"
                   className={
                     searchEngineSelectionMode === "manual" &&
                     searchSelectedEngineIds.includes(engine.id)
@@ -122,7 +126,7 @@ export const BrowserPageSurface = ({
                   }}
                 >
                   {engine.label}
-                </button>
+                </AppButton>
               ))}
             </div>
           </>

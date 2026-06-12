@@ -47,6 +47,7 @@ export type LoginManagerSurfaceProps = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: LoginManagerLabels;
   readonly onOpenSite: (url: string, title?: string) => void;
+  readonly embedded?: boolean;
 };
 
 export type LoginManagerViewState = {

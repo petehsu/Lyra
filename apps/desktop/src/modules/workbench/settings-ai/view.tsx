@@ -1,6 +1,18 @@
 import { Check, ExternalLink, FilePenLine, KeyRound, LogIn, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { ComponentPropsWithoutRef, KeyboardEvent } from "react";
 
+import {
+  AppButton,
+  AppEmptyState,
+  AppIconButton,
+  AppInput,
+  AppObjectRow,
+  AppSelect,
+  AppStatusMessage,
+  AppSwitch,
+  AppTextarea
+} from "@renderer/ui/components";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
 
 type SettingsAiViewProps = {
@@ -80,6 +92,101 @@ const optionalPort = (value: string): number | undefined => {
   if (trimmed.length === 0) return undefined;
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 65535 ? parsed : undefined;
+};
+
+type SettingsAiSwitchRowProps = {
+  readonly checked: boolean;
+  readonly className?: string;
+  readonly label: string;
+  readonly onCheckedChange: (checked: boolean) => void;
+};
+
+const SettingsAiSwitchRow = ({
+  checked,
+  className,
+  label,
+  onCheckedChange
+}: SettingsAiSwitchRowProps) => (
+  <div className={["lyra-settings-ai-switch-row", className ?? ""].filter(Boolean).join(" ")}>
+    <span>{label}</span>
+    <AppSwitch
+      checked={checked}
+      aria-label={label}
+      onCheckedChange={onCheckedChange}
+    />
+  </div>
+);
+
+type SettingsAiInputFieldProps = Omit<ComponentPropsWithoutRef<typeof AppInput>, "className" | "onChange" | "value"> & {
+  readonly className?: string;
+  readonly inputClassName?: string;
+  readonly label: string;
+  readonly onValueChange: (value: string) => void;
+  readonly value: string;
+};
+
+const SettingsAiInputField = ({
+  className,
+  inputClassName,
+  label,
+  onValueChange,
+  value,
+  ...inputProps
+}: SettingsAiInputFieldProps) => (
+  <label className={["lyra-settings-ai-field", className ?? ""].filter(Boolean).join(" ")}>
+    <span>{label}</span>
+    <AppInput
+      className={["lyra-settings-ai-input", inputClassName ?? ""].filter(Boolean).join(" ")}
+      value={value}
+      onChange={(event) => setValueFromEvent(event.target.value, onValueChange)}
+      {...inputProps}
+    />
+  </label>
+);
+
+type SettingsAiTextareaFieldProps = Omit<ComponentPropsWithoutRef<typeof AppTextarea>, "className" | "onChange" | "value"> & {
+  readonly className?: string;
+  readonly label: string;
+  readonly onValueChange: (value: string) => void;
+  readonly textareaClassName?: string;
+  readonly value: string;
+};
+
+const SettingsAiTextareaField = ({
+  className,
+  label,
+  onValueChange,
+  textareaClassName,
+  value,
+  ...textareaProps
+}: SettingsAiTextareaFieldProps) => (
+  <label className={["lyra-settings-ai-field", className ?? ""].filter(Boolean).join(" ")}>
+    <span>{label}</span>
+    <AppTextarea
+      className={["lyra-settings-ai-input lyra-settings-ai-input-multiline", textareaClassName ?? ""].filter(Boolean).join(" ")}
+      value={value}
+      onChange={(event) => setValueFromEvent(event.target.value, onValueChange)}
+      {...textareaProps}
+    />
+  </label>
+);
+
+const setValueFromEvent = (
+  value: string,
+  onValueChange: (value: string) => void
+): void => {
+  onValueChange(value);
+};
+
+const activateRowFromKeyboard = (
+  event: KeyboardEvent,
+  onActivate: () => void
+): void => {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  onActivate();
 };
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
@@ -220,11 +327,12 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   ]);
 
   return (
-    <section className="lyra-settings-group">
-      <header className="lyra-settings-group-header lyra-settings-ai-header">
+    <section className="lyra-settings-ai-stack">
+      <header className="lyra-settings-ai-page-header">
         <h3>{labels.profilesTitle}</h3>
-        <button
-          type="button"
+        <AppButton
+          variant="outline"
+          size="sm"
           className="lyra-settings-ai-action"
           onClick={() => {
             void model.openAgentConfigFile?.();
@@ -232,9 +340,10 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         >
           <FilePenLine size={14} aria-hidden="true" />
           {labels.openConfigFile}
-        </button>
-        <button
-          type="button"
+        </AppButton>
+        <AppButton
+          variant="outline"
+          size="sm"
           className="lyra-settings-ai-action"
           onClick={() => {
             void model.refreshAgent?.();
@@ -242,54 +351,48 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         >
           <RefreshCw size={14} aria-hidden="true" />
           {labels.refreshAgent}
-        </button>
+        </AppButton>
       </header>
 
       <div className="lyra-settings-ai-profile-grid">
         <div className="lyra-settings-ai-provider-list" aria-label={labels.agentConfigAriaLabel}>
           <div className="lyra-settings-ai-provider-row">
-            <button type="button" className="lyra-settings-ai-provider-tab lyra-settings-ai-provider-tab-active">
-              <span>
-                <strong>{config.provider?.default_provider ?? labels.providerAutoFallback}</strong>
-                <small>{config.provider?.default_model ?? labels.defaultModelFallback}</small>
-              </span>
-            </button>
+            <AppObjectRow
+              as="div"
+              active
+              className="lyra-settings-ai-provider-tab lyra-settings-ai-provider-tab-active"
+              title={config.provider?.default_provider ?? labels.providerAutoFallback}
+              description={config.provider?.default_model ?? labels.defaultModelFallback}
+            />
           </div>
         </div>
 
         <div className="lyra-settings-ai-provider-models">
           <div className="lyra-settings-ai-model-row">
-            <button
-              type="button"
+            <AppObjectRow
               className="lyra-settings-ai-model-card lyra-settings-ai-model-card-active"
+              active
+              meta={labels.configFileTitle}
+              title={model.agentConfig?.configPath ?? "~/.lyra/modules/agent/config.toml"}
+              description={model.agentConfig?.agentHome ?? labels.configFileDescription}
               onClick={() => {
                 void model.openAgentConfigFile?.();
               }}
-            >
-              <small>{labels.configFileTitle}</small>
-              <strong title={model.agentConfig?.configPath ?? undefined}>
-                {model.agentConfig?.configPath ?? "~/.lyra/modules/agent/config.toml"}
-              </strong>
-              <small title={model.agentConfig?.agentHome ?? undefined}>
-                {model.agentConfig?.agentHome ?? labels.configFileDescription}
-              </small>
-            </button>
+            />
           </div>
           {providers.map(([name, provider]) => (
             <div key={name} className="lyra-settings-ai-model-row">
-              <button
-                type="button"
+              <AppObjectRow
                 className="lyra-settings-ai-model-card"
+                title={name}
+                description={provider.default_model ?? provider.base_url ?? labels.customProviderFallback}
                 onClick={() => {
                   void model.updateAgentConfig?.({
                     defaultProvider: name,
                     defaultModel: provider.default_model ?? null,
                   });
                 }}
-              >
-                <strong>{name}</strong>
-                <small>{provider.default_model ?? provider.base_url ?? labels.customProviderFallback}</small>
-              </button>
+              />
             </div>
           ))}
         </div>
@@ -308,53 +411,63 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
 
         <div className="lyra-settings-ai-provider-list" aria-label={labels.accountsAriaLabel}>
           {accounts.length === 0 ? (
-            <div className="lyra-settings-ai-empty">
-              <strong>{labels.accountsEmptyTitle}</strong>
-              <span>{labels.accountsEmptyDescription}</span>
-            </div>
+            <AppEmptyState
+              align="start"
+              density="compact"
+              className="lyra-settings-ai-empty"
+              title={labels.accountsEmptyTitle}
+              description={labels.accountsEmptyDescription}
+            />
           ) : (
-            accounts.map((account) => (
-              <div key={`${account.provider}:${account.label}`} className="lyra-settings-ai-provider-row">
-                <button
-                  type="button"
-                  className={[
-                    "lyra-settings-ai-provider-tab",
-                    account.active ? "lyra-settings-ai-provider-tab-active" : "",
-                  ].filter(Boolean).join(" ")}
-                  disabled={model.isSaving || account.active || account.provider === "google"}
-                  onClick={() => {
-                    void model.switchAgentAccount?.({
-                      provider: account.provider,
-                      label: account.label,
-                    });
-                  }}
-                >
-                  {account.active ? <Check size={14} aria-hidden="true" /> : null}
-                  <span>
-                    <strong>{account.label}</strong>
-                    <small>
-                      {account.provider} · {account.kind} ·{" "}
-                      {account.configured ? labels.accountConfigured : labels.accountNotConfigured}
-                      {account.detail ? ` · ${account.detail}` : ""}
-                    </small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="lyra-settings-ai-row-delete"
-                  aria-label={`${labels.removeAccount}: ${account.label}`}
-                  disabled={model.isSaving}
-                  onClick={() => {
-                    void model.removeAgentAccount?.({
-                      provider: account.provider,
-                      label: account.label,
-                    });
-                  }}
-                >
-                  <Trash2 size={13} aria-hidden="true" />
-                </button>
-              </div>
-            ))
+            accounts.map((account) => {
+              const disabled = model.isSaving || account.active || account.provider === "google";
+              const switchAccount = (): void => {
+                if (disabled) return;
+                void model.switchAgentAccount?.({
+                  provider: account.provider,
+                  label: account.label,
+                });
+              };
+
+              return (
+                <div key={`${account.provider}:${account.label}`} className="lyra-settings-ai-provider-row">
+                  <AppObjectRow
+                    as="div"
+                    role="button"
+                    tabIndex={disabled ? -1 : 0}
+                    active={account.active}
+                    aria-disabled={disabled ? "true" : undefined}
+                    className={[
+                      "lyra-settings-ai-provider-tab",
+                      account.active ? "lyra-settings-ai-provider-tab-active" : "",
+                    ].filter(Boolean).join(" ")}
+                    icon={account.active ? <Check size={14} aria-hidden="true" /> : undefined}
+                    title={account.label}
+                    description={`${account.provider} · ${account.kind} · ${
+                      account.configured ? labels.accountConfigured : labels.accountNotConfigured
+                    }${account.detail ? ` · ${account.detail}` : ""}`}
+                    actions={(
+                      <AppIconButton
+                        tone="danger"
+                        className="lyra-settings-ai-row-delete"
+                        aria-label={`${labels.removeAccount}: ${account.label}`}
+                        disabled={model.isSaving}
+                        onClick={() => {
+                          void model.removeAgentAccount?.({
+                            provider: account.provider,
+                            label: account.label,
+                          });
+                        }}
+                      >
+                        <Trash2 size={13} aria-hidden="true" />
+                      </AppIconButton>
+                    )}
+                    onClick={switchAccount}
+                    onKeyDown={(event) => activateRowFromKeyboard(event, switchAccount)}
+                  />
+                </div>
+              );
+            })
           )}
         </div>
       </div>
@@ -369,14 +482,17 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
 
         <div className="lyra-settings-ai-login-provider-grid">
           {oauthLoginProviders.map((provider) => (
-            <button
+            <AppObjectRow
               key={provider.id}
-              type="button"
               className={[
                 "lyra-settings-ai-login-provider",
                 provider.configured ? "lyra-settings-ai-login-provider-configured" : "",
               ].filter(Boolean).join(" ")}
               disabled={model.isSaving}
+              icon={<LogIn size={14} aria-hidden="true" />}
+              title={provider.displayName}
+              description={`${provider.authKind} · ${provider.configured ? labels.accountConfigured : labels.accountNotConfigured}`}
+              meta={<ExternalLink size={13} aria-hidden="true" />}
               onClick={() => {
                 void model.startAgentAccountLogin?.({ provider: provider.id }).then((response) => {
                   if (response === null) return;
@@ -390,18 +506,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   setCallbackInput("");
                 });
               }}
-            >
-              <span className="lyra-settings-ai-login-provider-icon">
-                <LogIn size={14} aria-hidden="true" />
-              </span>
-              <span>
-                <strong>{provider.displayName}</strong>
-                <small>
-                  {provider.authKind} · {provider.configured ? labels.accountConfigured : labels.accountNotConfigured}
-                </small>
-              </span>
-              <ExternalLink size={13} aria-hidden="true" />
-            </button>
+            />
           ))}
         </div>
 
@@ -415,41 +520,40 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               </small>
             </span>
             <div className="lyra-settings-ai-form">
-              <label className="lyra-settings-ai-field">
-                <span>{labels.gmailClientIdLabel}</span>
-                <input
-                  className="lyra-settings-ai-input"
-                  type="text"
-                  value={googleClientId}
-                  onChange={(event) => setGoogleClientId(event.target.value)}
-                />
-              </label>
-              <label className="lyra-settings-ai-field">
-                <span>{labels.gmailClientSecretLabel}</span>
-                <input
-                  className="lyra-settings-ai-input"
-                  type="password"
-                  autoComplete="off"
-                  value={googleClientSecret}
-                  onChange={(event) => setGoogleClientSecret(event.target.value)}
-                />
-              </label>
+              <SettingsAiInputField
+                label={labels.gmailClientIdLabel}
+                type="text"
+                value={googleClientId}
+                onValueChange={setGoogleClientId}
+              />
+              <SettingsAiInputField
+                label={labels.gmailClientSecretLabel}
+                type="password"
+                autoComplete="off"
+                value={googleClientSecret}
+                onValueChange={setGoogleClientSecret}
+              />
               <label className="lyra-settings-ai-field">
                 <span>{labels.gmailAccessTierLabel}</span>
-                <select
-                  className="lyra-settings-ai-input"
+                <AppSelect
+                  ariaLabel={labels.gmailAccessTierLabel}
+                  className="lyra-settings-ai-select"
                   value={gmailAccessTier}
-                  onChange={(event) => setGmailAccessTier(event.target.value === "full" ? "full" : "readonly")}
-                >
-                  <option value="readonly">{labels.gmailAccessReadOnly}</option>
-                  <option value="full">{labels.gmailAccessFull}</option>
-                </select>
+                  options={[
+                    { value: "readonly", label: labels.gmailAccessReadOnly },
+                    { value: "full", label: labels.gmailAccessFull }
+                  ]}
+                  onValueChange={(nextValue) => {
+                    setGmailAccessTier(nextValue === "full" ? "full" : "readonly");
+                  }}
+                />
               </label>
             </div>
             <footer className="lyra-settings-ai-inline-editor-footer">
               <span className="lyra-settings-ai-actions">
-                <button
-                  type="button"
+                <AppButton
+                  variant="default"
+                  size="sm"
                   className="lyra-settings-ai-action lyra-settings-ai-action-primary"
                   disabled={model.isSaving}
                   onClick={() => {
@@ -474,7 +578,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 >
                   <LogIn size={14} aria-hidden="true" />
                   {labels.startLogin}
-                </button>
+                </AppButton>
               </span>
             </footer>
           </div>
@@ -487,19 +591,18 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               <small>{pendingLogin.instructions}</small>
               <small>{labels.loginCallbackDescription}</small>
             </span>
-            <label className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
-              <span>{labels.callbackInputLabel}</span>
-              <textarea
-                className="lyra-settings-ai-input lyra-settings-ai-input-multiline"
-                placeholder={pendingLogin.callbackHint ?? labels.callbackInputPlaceholder}
-                value={callbackInput}
-                onChange={(event) => setCallbackInput(event.target.value)}
-              />
-            </label>
+            <SettingsAiTextareaField
+              className="lyra-settings-ai-field-span-2"
+              label={labels.callbackInputLabel}
+              placeholder={pendingLogin.callbackHint ?? labels.callbackInputPlaceholder}
+              value={callbackInput}
+              onValueChange={setCallbackInput}
+            />
             <footer className="lyra-settings-ai-inline-editor-footer">
               <span className="lyra-settings-ai-actions">
-                <button
-                  type="button"
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   className="lyra-settings-ai-action"
                   disabled={model.isSaving}
                   onClick={() => {
@@ -508,9 +611,10 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                   }}
                 >
                   {labels.cancel}
-                </button>
-                <button
-                  type="button"
+                </AppButton>
+                <AppButton
+                  variant="default"
+                  size="sm"
                   className="lyra-settings-ai-action lyra-settings-ai-action-primary"
                   disabled={model.isSaving || callbackInput.trim().length === 0}
                   onClick={() => {
@@ -529,7 +633,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 >
                   <Check size={14} aria-hidden="true" />
                   {labels.completeLogin}
-                </button>
+                </AppButton>
               </span>
             </footer>
           </div>
@@ -546,91 +650,74 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
 
         <div className="lyra-settings-ai-api-provider-strip">
           {apiKeyLoginProviders.map((provider) => (
-            <button
+            <AppObjectRow
               key={provider.id}
-              type="button"
               className={[
                 "lyra-settings-ai-provider-tab",
                 selectedApiKeyProvider === provider.id ? "lyra-settings-ai-provider-tab-active" : "",
               ].filter(Boolean).join(" ")}
+              active={selectedApiKeyProvider === provider.id}
               disabled={model.isSaving}
+              icon={<KeyRound size={13} aria-hidden="true" />}
+              title={provider.displayName}
+              description={provider.detail}
               onClick={() => {
                 setSelectedApiKeyProvider(provider.id);
                 setProfileName(provider.id);
               }}
-            >
-              <KeyRound size={13} aria-hidden="true" />
-              <span>
-                <strong>{provider.displayName}</strong>
-                <small>{provider.detail}</small>
-              </span>
-            </button>
+            />
           ))}
         </div>
 
         <div className="lyra-settings-ai-form">
-          <label className="lyra-settings-ai-field">
-            <span>{labels.profileNameLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              value={profileName}
-              onChange={(event) => setProfileName(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.urlLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.urlPlaceholder}
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.mainModelLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.modelPlaceholder}
-              value={defaultModel}
-              onChange={(event) => setDefaultModel(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.authHeaderLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder="Authorization"
-              value={authHeader}
-              onChange={(event) => setAuthHeader(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.keyLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="password"
-              autoComplete="off"
-              placeholder={labels.keyPlaceholder}
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-          </label>
+          <SettingsAiInputField
+            label={labels.profileNameLabel}
+            type="text"
+            value={profileName}
+            onValueChange={setProfileName}
+          />
+          <SettingsAiInputField
+            label={labels.urlLabel}
+            type="text"
+            placeholder={labels.urlPlaceholder}
+            value={baseUrl}
+            onValueChange={setBaseUrl}
+          />
+          <SettingsAiInputField
+            label={labels.mainModelLabel}
+            type="text"
+            placeholder={labels.modelPlaceholder}
+            value={defaultModel}
+            onValueChange={setDefaultModel}
+          />
+          <SettingsAiInputField
+            label={labels.authHeaderLabel}
+            type="text"
+            placeholder="Authorization"
+            value={authHeader}
+            onValueChange={setAuthHeader}
+          />
+          <SettingsAiInputField
+            label={labels.keyLabel}
+            type="password"
+            autoComplete="off"
+            placeholder={labels.keyPlaceholder}
+            value={apiKey}
+            onValueChange={setApiKey}
+          />
         </div>
 
         {model.errorMessage === null ? null : (
-          <div className="lyra-settings-ai-error" role="alert">
+          <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
             {model.errorMessage}
-          </div>
+          </AppStatusMessage>
         )}
 
         <footer className="lyra-settings-ai-inline-editor-footer">
           <span className="lyra-settings-ai-actions">
-            <button
-              type="button"
+            <AppButton
+              variant="default"
+              size="sm"
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving || selectedApiKeyProvider.length === 0}
               onClick={() => {
@@ -647,7 +734,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             >
               <Save size={14} aria-hidden="true" />
               {labels.saveProfile}
-            </button>
+            </AppButton>
           </span>
         </footer>
       </div>
@@ -660,62 +747,48 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         </header>
 
         <div className="lyra-settings-ai-form">
-          <label className="lyra-settings-ai-field">
-            <span>{labels.roleSwarmSubagentLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.roleProviderDefaultPlaceholder}
-              value={swarmModel}
-              onChange={(event) => setSwarmModel(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.roleReviewLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.roleProviderDefaultPlaceholder}
-              value={reviewModel}
-              onChange={(event) => setReviewModel(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.roleJudgeLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.roleProviderDefaultPlaceholder}
-              value={judgeModel}
-              onChange={(event) => setJudgeModel(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.roleMemoryLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.roleMemoryDefaultPlaceholder}
-              value={memoryModel}
-              onChange={(event) => setMemoryModel(event.target.value)}
-            />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.roleAmbientLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              placeholder={labels.roleProviderDefaultPlaceholder}
-              value={ambientModel}
-              onChange={(event) => setAmbientModel(event.target.value)}
-            />
-          </label>
+          <SettingsAiInputField
+            label={labels.roleSwarmSubagentLabel}
+            type="text"
+            placeholder={labels.roleProviderDefaultPlaceholder}
+            value={swarmModel}
+            onValueChange={setSwarmModel}
+          />
+          <SettingsAiInputField
+            label={labels.roleReviewLabel}
+            type="text"
+            placeholder={labels.roleProviderDefaultPlaceholder}
+            value={reviewModel}
+            onValueChange={setReviewModel}
+          />
+          <SettingsAiInputField
+            label={labels.roleJudgeLabel}
+            type="text"
+            placeholder={labels.roleProviderDefaultPlaceholder}
+            value={judgeModel}
+            onValueChange={setJudgeModel}
+          />
+          <SettingsAiInputField
+            label={labels.roleMemoryLabel}
+            type="text"
+            placeholder={labels.roleMemoryDefaultPlaceholder}
+            value={memoryModel}
+            onValueChange={setMemoryModel}
+          />
+          <SettingsAiInputField
+            label={labels.roleAmbientLabel}
+            type="text"
+            placeholder={labels.roleProviderDefaultPlaceholder}
+            value={ambientModel}
+            onValueChange={setAmbientModel}
+          />
         </div>
 
         <footer className="lyra-settings-ai-inline-editor-footer">
           <span className="lyra-settings-ai-actions">
-            <button
-              type="button"
+            <AppButton
+              variant="default"
+              size="sm"
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving}
               onClick={() => {
@@ -730,7 +803,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             >
               <Save size={14} aria-hidden="true" />
               {labels.saveRoleModels}
-            </button>
+            </AppButton>
           </span>
         </footer>
       </div>
@@ -744,137 +817,148 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         </header>
 
         <div className="lyra-settings-ai-form">
-          <label className="lyra-settings-ai-checkbox">
-            <input
-              type="checkbox"
-              checked={desktopNotifications}
-              onChange={(event) => setDesktopNotifications(event.target.checked)}
-            />
-            <span>{labels.desktopNotificationsLabel}</span>
-          </label>
+          <SettingsAiSwitchRow
+            checked={desktopNotifications}
+            label={labels.desktopNotificationsLabel}
+            onCheckedChange={setDesktopNotifications}
+          />
           <label className="lyra-settings-ai-field">
             <span>{labels.ntfyTopicLabel}</span>
-            <input
+            <AppInput
               className="lyra-settings-ai-input"
               type="text"
               value={ntfyTopic}
               onChange={(event) => setNtfyTopic(event.target.value)}
             />
           </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.ntfyServerLabel}</span>
-            <input
-              className="lyra-settings-ai-input"
-              type="text"
-              value={ntfyServer}
-              onChange={(event) => setNtfyServer(event.target.value)}
-            />
-          </label>
+          <SettingsAiInputField
+            label={labels.ntfyServerLabel}
+            type="text"
+            value={ntfyServer}
+            onValueChange={setNtfyServer}
+          />
 
-          <label className="lyra-settings-ai-checkbox lyra-settings-ai-field-span-2">
-            <input
-              type="checkbox"
-              checked={emailEnabled}
-              onChange={(event) => setEmailEnabled(event.target.checked)}
-            />
-            <span>{labels.emailNotificationsLabel}</span>
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailToLabel}</span>
-            <input className="lyra-settings-ai-input" type="email" value={emailTo} onChange={(event) => setEmailTo(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailFromLabel}</span>
-            <input className="lyra-settings-ai-input" type="email" value={emailFrom} onChange={(event) => setEmailFrom(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailSmtpHostLabel}</span>
-            <input className="lyra-settings-ai-input" type="text" value={emailSmtpHost} onChange={(event) => setEmailSmtpHost(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailSmtpPortLabel}</span>
-            <input className="lyra-settings-ai-input" type="number" min="0" max="65535" value={emailSmtpPort} onChange={(event) => setEmailSmtpPort(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailPasswordLabel}</span>
-            <input className="lyra-settings-ai-input" type="password" autoComplete="off" value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailImapHostLabel}</span>
-            <input className="lyra-settings-ai-input" type="text" value={emailImapHost} onChange={(event) => setEmailImapHost(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.emailImapPortLabel}</span>
-            <input className="lyra-settings-ai-input" type="number" min="0" max="65535" value={emailImapPort} onChange={(event) => setEmailImapPort(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-checkbox">
-            <input
-              type="checkbox"
-              checked={emailReplyEnabled}
-              onChange={(event) => setEmailReplyEnabled(event.target.checked)}
-            />
-            <span>{labels.emailReplyLabel}</span>
-          </label>
+          <SettingsAiSwitchRow
+            className="lyra-settings-ai-field-span-2"
+            checked={emailEnabled}
+            label={labels.emailNotificationsLabel}
+            onCheckedChange={setEmailEnabled}
+          />
+          <SettingsAiInputField
+            label={labels.emailToLabel}
+            type="email"
+            value={emailTo}
+            onValueChange={setEmailTo}
+          />
+          <SettingsAiInputField
+            label={labels.emailFromLabel}
+            type="email"
+            value={emailFrom}
+            onValueChange={setEmailFrom}
+          />
+          <SettingsAiInputField
+            label={labels.emailSmtpHostLabel}
+            type="text"
+            value={emailSmtpHost}
+            onValueChange={setEmailSmtpHost}
+          />
+          <SettingsAiInputField
+            label={labels.emailSmtpPortLabel}
+            type="number"
+            min="0"
+            max="65535"
+            value={emailSmtpPort}
+            onValueChange={setEmailSmtpPort}
+          />
+          <SettingsAiInputField
+            label={labels.emailPasswordLabel}
+            type="password"
+            autoComplete="off"
+            value={emailPassword}
+            onValueChange={setEmailPassword}
+          />
+          <SettingsAiInputField
+            label={labels.emailImapHostLabel}
+            type="text"
+            value={emailImapHost}
+            onValueChange={setEmailImapHost}
+          />
+          <SettingsAiInputField
+            label={labels.emailImapPortLabel}
+            type="number"
+            min="0"
+            max="65535"
+            value={emailImapPort}
+            onValueChange={setEmailImapPort}
+          />
+          <SettingsAiSwitchRow
+            checked={emailReplyEnabled}
+            label={labels.emailReplyLabel}
+            onCheckedChange={setEmailReplyEnabled}
+          />
 
-          <label className="lyra-settings-ai-checkbox lyra-settings-ai-field-span-2">
-            <input
-              type="checkbox"
-              checked={telegramEnabled}
-              onChange={(event) => setTelegramEnabled(event.target.checked)}
-            />
-            <span>{labels.telegramNotificationsLabel}</span>
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.telegramBotTokenLabel}</span>
-            <input className="lyra-settings-ai-input" type="password" autoComplete="off" value={telegramBotToken} onChange={(event) => setTelegramBotToken(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.telegramChatIdLabel}</span>
-            <input className="lyra-settings-ai-input" type="text" value={telegramChatId} onChange={(event) => setTelegramChatId(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-checkbox">
-            <input
-              type="checkbox"
-              checked={telegramReplyEnabled}
-              onChange={(event) => setTelegramReplyEnabled(event.target.checked)}
-            />
-            <span>{labels.telegramReplyLabel}</span>
-          </label>
+          <SettingsAiSwitchRow
+            className="lyra-settings-ai-field-span-2"
+            checked={telegramEnabled}
+            label={labels.telegramNotificationsLabel}
+            onCheckedChange={setTelegramEnabled}
+          />
+          <SettingsAiInputField
+            label={labels.telegramBotTokenLabel}
+            type="password"
+            autoComplete="off"
+            value={telegramBotToken}
+            onValueChange={setTelegramBotToken}
+          />
+          <SettingsAiInputField
+            label={labels.telegramChatIdLabel}
+            type="text"
+            value={telegramChatId}
+            onValueChange={setTelegramChatId}
+          />
+          <SettingsAiSwitchRow
+            checked={telegramReplyEnabled}
+            label={labels.telegramReplyLabel}
+            onCheckedChange={setTelegramReplyEnabled}
+          />
 
-          <label className="lyra-settings-ai-checkbox lyra-settings-ai-field-span-2">
-            <input
-              type="checkbox"
-              checked={discordEnabled}
-              onChange={(event) => setDiscordEnabled(event.target.checked)}
-            />
-            <span>{labels.discordNotificationsLabel}</span>
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.discordBotTokenLabel}</span>
-            <input className="lyra-settings-ai-input" type="password" autoComplete="off" value={discordBotToken} onChange={(event) => setDiscordBotToken(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.discordChannelIdLabel}</span>
-            <input className="lyra-settings-ai-input" type="text" value={discordChannelId} onChange={(event) => setDiscordChannelId(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-field">
-            <span>{labels.discordBotUserIdLabel}</span>
-            <input className="lyra-settings-ai-input" type="text" value={discordBotUserId} onChange={(event) => setDiscordBotUserId(event.target.value)} />
-          </label>
-          <label className="lyra-settings-ai-checkbox">
-            <input
-              type="checkbox"
-              checked={discordReplyEnabled}
-              onChange={(event) => setDiscordReplyEnabled(event.target.checked)}
-            />
-            <span>{labels.discordReplyLabel}</span>
-          </label>
+          <SettingsAiSwitchRow
+            className="lyra-settings-ai-field-span-2"
+            checked={discordEnabled}
+            label={labels.discordNotificationsLabel}
+            onCheckedChange={setDiscordEnabled}
+          />
+          <SettingsAiInputField
+            label={labels.discordBotTokenLabel}
+            type="password"
+            autoComplete="off"
+            value={discordBotToken}
+            onValueChange={setDiscordBotToken}
+          />
+          <SettingsAiInputField
+            label={labels.discordChannelIdLabel}
+            type="text"
+            value={discordChannelId}
+            onValueChange={setDiscordChannelId}
+          />
+          <SettingsAiInputField
+            label={labels.discordBotUserIdLabel}
+            type="text"
+            value={discordBotUserId}
+            onValueChange={setDiscordBotUserId}
+          />
+          <SettingsAiSwitchRow
+            checked={discordReplyEnabled}
+            label={labels.discordReplyLabel}
+            onCheckedChange={setDiscordReplyEnabled}
+          />
         </div>
 
         <footer className="lyra-settings-ai-inline-editor-footer">
           <span className="lyra-settings-ai-actions">
-            <button
-              type="button"
+            <AppButton
+              variant="default"
+              size="sm"
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving}
               onClick={() => {
@@ -910,7 +994,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             >
               <Save size={14} aria-hidden="true" />
               {labels.saveNotifications}
-            </button>
+            </AppButton>
           </span>
         </footer>
       </div>

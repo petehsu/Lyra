@@ -56,7 +56,7 @@ const toWebContentsArg = (value: FakeWebContents): never => value as never;
 const enabledSnapshot = () =>
   buildWebThemeSnapshot({
     vars: {
-      "--lyra-bg-app": "#111",
+      "--lyra-app-bg": "#111",
       "--lyra-text-primary": "#eee"
     },
     enabled: true,
@@ -100,7 +100,7 @@ describe("createWebThemeInjector", () => {
     const baselineSends = wc.debugger.sendCommand.mock.calls.length;
     const first = buildWebThemeSnapshot({
       vars: {
-        "--lyra-bg-app": "#111",
+        "--lyra-app-bg": "#111",
         "--lyra-text-primary": "#eee"
       },
       enabled: true,
@@ -112,7 +112,7 @@ describe("createWebThemeInjector", () => {
 
     const equivalent = buildWebThemeSnapshot({
       vars: {
-        "--lyra-bg-app": "#111",
+        "--lyra-app-bg": "#111",
         "--lyra-text-primary": "#eee"
       },
       enabled: true,
@@ -136,7 +136,7 @@ describe("createWebThemeInjector", () => {
 
     const snapshot = buildWebThemeSnapshot({
       vars: {
-        "--lyra-bg-app": "#111",
+        "--lyra-app-bg": "#111",
         "--lyra-text-primary": "#eee"
       },
       enabled: true,
@@ -156,7 +156,7 @@ describe("createWebThemeInjector", () => {
     const baseline = wc.debugger.sendCommand.mock.calls.length;
 
     const disabled = buildWebThemeSnapshot({
-      vars: { "--lyra-bg-app": "#111", "--lyra-text-primary": "#eee" },
+      vars: { "--lyra-app-bg": "#111", "--lyra-text-primary": "#eee" },
       enabled: false,
       previousRevision: 0
     });

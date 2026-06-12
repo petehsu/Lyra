@@ -1,5 +1,5 @@
 import type { AgentToolActivity } from "../../../../shared/agent";
-import type { ToolActionTarget, ToolDetails, WebResult, WorkbenchTabSummary } from "../../ai-panel/agent-chat-demo/core/types";
+import type { ToolActionTarget, ToolDetails, WebResult, WorkbenchTabSummary } from "../../ai-panel/lyra-agents/core/types";
 import { asRecord, arrayField, isHttpUrl, stringField, toolInputRecord } from "./common";
 
 type ParsedWorkbenchDetails = Extract<ToolDetails, { type: "workbench" }>;

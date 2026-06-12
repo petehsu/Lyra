@@ -1,3 +1,4 @@
+import { AppButton, AppIconButton, AppInput } from "@renderer/ui/components";
 import { Check, Copy } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -225,7 +226,7 @@ export const GlobalDialogHost = ({
         {state.input !== undefined ? (
           <label className="lyra-global-dialog-input" htmlFor={`global-dialog-${state.input.id}`}>
             <span>{state.input.label}</span>
-            <input
+            <AppInput
               id={`global-dialog-${state.input.id}`}
               autoFocus
               type={state.input.type ?? "text"}
@@ -262,17 +263,17 @@ export const GlobalDialogHost = ({
                     <strong>{item.label}</strong>
                     <code>{item.value}</code>
                   </div>
-                  <button
-                    type="button"
+                  <AppIconButton
                     className={copyClassName}
+                    active={isCopied}
                     aria-label={`${copyLabel} ${item.label}`}
                     title={`${copyLabel}: ${item.label}`}
                     onClick={() => {
                       onCopyItem(item.id, item.value);
                     }}
                   >
-                    {isCopied ? <Check size={13} /> : <Copy size={13} />}
-                  </button>
+                    {isCopied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                  </AppIconButton>
                 </article>
               );
             })}
@@ -282,9 +283,17 @@ export const GlobalDialogHost = ({
         {state.actions.length > 0 ? (
           <footer className={actionsClassName}>
             {state.actions.map((action) => (
-              <button
+              <AppButton
                 key={action.id}
                 type="button"
+                size="sm"
+                variant={
+                  action.tone === "primary"
+                    ? "default"
+                    : action.tone === "danger"
+                      ? "destructive"
+                      : "secondary"
+                }
                 className={[
                   "lyra-global-dialog-action",
                   action.tone === "primary"
@@ -302,7 +311,7 @@ export const GlobalDialogHost = ({
                 }}
               >
                 {action.label}
-              </button>
+              </AppButton>
             ))}
           </footer>
         ) : null}

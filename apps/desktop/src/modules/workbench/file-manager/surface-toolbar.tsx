@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { Fragment } from "react";
 
+import { AppButton, AppIconButton } from "@renderer/ui/components";
+
 import type { FileManagerSurfaceRenderModel } from "./surface-model";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";
 
@@ -46,15 +48,17 @@ const FileManagerBreadcrumbs = ({
                 {part.title}
               </span>
             ) : (
-              <button
-                className="lyra-titlebar-context-text-button"
+              <AppButton
+                variant="ghost"
+                size="sm"
+                className="lyra-file-manager-titlebar-breadcrumb-button"
                 title={part.path}
                 onClick={() => {
                   onOpenBreadcrumb(part.path);
                 }}
               >
                 {part.title}
-              </button>
+              </AppButton>
             )}
             {index < breadcrumb.parts.length - 1 && part.title !== "/" ? (
               <span className="lyra-file-manager-titlebar-breadcrumb-separator" aria-hidden="true">/</span>
@@ -81,41 +85,37 @@ export const FileManagerToolbarContent = ({
   return (
     <>
       <div className="lyra-titlebar-context-group">
-        <button
-          className="lyra-titlebar-context-icon-button"
+        <AppIconButton
           aria-label={labels.navigationBack}
           title={labels.navigationBack}
           disabled={!toolbar.canGoBack}
           onClick={actions.onGoBack}
         >
           <ChevronLeft size={14} />
-        </button>
-        <button
-          className="lyra-titlebar-context-icon-button"
+        </AppIconButton>
+        <AppIconButton
           aria-label={labels.navigationForward}
           title={labels.navigationForward}
           disabled={!toolbar.canGoForward}
           onClick={actions.onGoForward}
         >
           <ChevronRight size={14} />
-        </button>
-        <button
-          className="lyra-titlebar-context-icon-button"
+        </AppIconButton>
+        <AppIconButton
           aria-label={labels.navigationUp}
           title={labels.navigationUp}
           disabled={!toolbar.canGoUp}
           onClick={actions.onGoUp}
         >
           <ChevronUp size={14} />
-        </button>
-        <button
-          className="lyra-titlebar-context-icon-button"
+        </AppIconButton>
+        <AppIconButton
           aria-label={labels.refresh}
           title={labels.refresh}
           onClick={actions.onRefresh}
         >
           <RefreshCw size={14} />
-        </button>
+        </AppIconButton>
       </div>
 
       <FileManagerBreadcrumbs
@@ -125,8 +125,7 @@ export const FileManagerToolbarContent = ({
 
       <div className="lyra-titlebar-context-group">
         {toolbar.isLargeMode ? (
-          <button
-            className="lyra-titlebar-context-icon-button"
+          <AppIconButton
             aria-label={labels.viewList}
             title={labels.viewList}
             onClick={() => {
@@ -134,10 +133,9 @@ export const FileManagerToolbarContent = ({
             }}
           >
             <List size={14} />
-          </button>
+          </AppIconButton>
         ) : (
-          <button
-            className="lyra-titlebar-context-icon-button"
+          <AppIconButton
             aria-label={labels.viewLarge}
             title={labels.viewLarge}
             onClick={() => {
@@ -145,22 +143,21 @@ export const FileManagerToolbarContent = ({
             }}
           >
             <LayoutGrid size={14} />
-          </button>
+          </AppIconButton>
         )}
         {toolbar.favoriteDisabled ? null : (
-          <button
-            className={toolbar.favoriteActive ? "lyra-titlebar-context-icon-button lyra-titlebar-context-button-active" : "lyra-titlebar-context-icon-button"}
+          <AppIconButton
+            active={toolbar.favoriteActive}
             aria-label={toolbar.favoriteActive ? labels.removeFavorite : labels.addFavorite}
             title={toolbar.favoriteActive ? labels.removeFavorite : labels.addFavorite}
             onClick={actions.onToggleFavorite}
           >
             {toolbar.favoriteActive ? <StarOff size={14} /> : <Star size={14} />}
-          </button>
+          </AppIconButton>
         )}
         {toolbar.canCreateDraft ? (
           <>
-            <button
-              className="lyra-titlebar-context-icon-button"
+            <AppIconButton
               aria-label={labels.newFolder}
               title={labels.newFolder}
               onClick={() => {
@@ -168,9 +165,8 @@ export const FileManagerToolbarContent = ({
               }}
             >
               <FolderPlus size={14} />
-            </button>
-            <button
-              className="lyra-titlebar-context-icon-button"
+            </AppIconButton>
+            <AppIconButton
               aria-label={labels.newFile}
               title={labels.newFile}
               onClick={() => {
@@ -178,38 +174,37 @@ export const FileManagerToolbarContent = ({
               }}
             >
               <FilePlus2 size={14} />
-            </button>
+            </AppIconButton>
           </>
         ) : null}
         {toolbar.canMoveSelectionToTrash ? (
-          <button
-            className="lyra-titlebar-context-icon-button lyra-titlebar-context-danger"
+          <AppIconButton
+            tone="danger"
             aria-label={labels.delete}
             title={labels.delete}
             onClick={actions.onMoveSelectionToTrash}
           >
             <Trash2 size={14} />
-          </button>
+          </AppIconButton>
         ) : null}
         {toolbar.canRestoreSelectionFromTrash ? (
-          <button
-            className="lyra-titlebar-context-icon-button"
+          <AppIconButton
             aria-label={labels.restore}
             title={labels.restore}
             onClick={actions.onRestoreSelectionFromTrash}
           >
             <RotateCcw size={14} />
-          </button>
+          </AppIconButton>
         ) : null}
         {toolbar.canEmptyTrash ? (
-          <button
-            className="lyra-titlebar-context-icon-button lyra-titlebar-context-danger"
+          <AppIconButton
+            tone="danger"
             aria-label={labels.emptyTrash}
             title={labels.emptyTrash}
             onClick={actions.onEmptyTrash}
           >
             <Trash2 size={14} />
-          </button>
+          </AppIconButton>
         ) : null}
       </div>
     </>

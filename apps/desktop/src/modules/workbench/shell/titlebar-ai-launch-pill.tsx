@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { AppButton } from "@renderer/ui/components";
 import { LyraBrandLogo } from "../brand";
-import { AnimatedMagicBorder } from "./animated-magic-border";
 
 type PillPhase = "idle" | "exit" | "enter";
 
@@ -200,8 +200,9 @@ export const TitlebarAiLaunchPill = ({
     : undefined;
 
   return (
-    <button
-      type="button"
+    <AppButton
+      variant="ghost"
+      size="sm"
       className={rootClassName}
       aria-label={ariaLabel}
       aria-pressed={isOpen}
@@ -209,7 +210,6 @@ export const TitlebarAiLaunchPill = ({
       onClick={onToggle}
       data-phase={phase}
     >
-      <AnimatedMagicBorder isOpen={isOpen} />
       <LyraBrandLogo
         logoUrl={logoUrl}
         className="lyra-titlebar-ai-launch-logo"
@@ -255,6 +255,6 @@ export const TitlebarAiLaunchPill = ({
           </span>
         </span>
       </span>
-    </button>
+    </AppButton>
   );
 };

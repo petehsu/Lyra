@@ -1,4 +1,6 @@
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
+import type { LoginManagerSurfaceProps } from "../login-manager";
+import type { SoftwareStoreSurfaceProps } from "../software-store";
 import {
   createWorkbenchSettingsSchema,
   type SettingsCategoryId,
@@ -71,12 +73,29 @@ export type SettingsInlineStatusActionControlDescriptor = {
   readonly onAction: () => void;
 };
 
-export type SettingsCustomControlDescriptor = {
+export type SettingsAiCustomControlDescriptor = {
   readonly kind: "custom";
   readonly customKind: "ai-provider-settings";
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
 };
+
+export type SettingsLoginManagerCustomControlDescriptor = {
+  readonly kind: "custom";
+  readonly customKind: "login-manager";
+  readonly props: LoginManagerSurfaceProps;
+};
+
+export type SettingsSoftwareStoreCustomControlDescriptor = {
+  readonly kind: "custom";
+  readonly customKind: "software-store";
+  readonly props: SoftwareStoreSurfaceProps;
+};
+
+export type SettingsCustomControlDescriptor =
+  | SettingsAiCustomControlDescriptor
+  | SettingsLoginManagerCustomControlDescriptor
+  | SettingsSoftwareStoreCustomControlDescriptor;
 
 export type SettingsStatusListControlDescriptor = {
   readonly kind: "status-list";
@@ -286,6 +305,10 @@ const resolveCategoryHeading = (
       return props.workspaceCategoryLabel;
     case "notifications":
       return props.notificationsCategoryLabel;
+    case "loginManager":
+      return props.loginManagerCategoryLabel;
+    case "softwareStore":
+      return props.softwareStoreCategoryLabel;
     case "search":
       return props.searchCategoryLabel;
     case "linux":
@@ -455,6 +478,32 @@ const createSectionControl = (
             disabledLabel: props.systemNotificationActionsDisabled,
             onChange: props.onSystemNotificationActionsChange
           })
+        ]
+      });
+    case "loginManager":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.loginManagerCategoryLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "login-manager",
+            props: props.loginManager
+          }
+        ]
+      });
+    case "softwareStore":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.softwareStoreCategoryLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "software-store",
+            props: props.softwareStore
+          }
         ]
       });
     case "linuxCompatProfile":

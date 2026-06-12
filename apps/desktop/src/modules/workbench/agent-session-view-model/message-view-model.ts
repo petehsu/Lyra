@@ -1,6 +1,6 @@
 import type { AgentMessageBlock, AgentSessionSnapshot, AgentToolActivity } from "../../../shared/agent";
-import type { ChatMessage, MessageBlock } from "../ai-panel/agent-chat-demo/core/types";
-import { formatMessage, t } from "../ai-panel/agent-chat-demo/core/i18n";
+import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
+import { formatMessage, t } from "../ai-panel/lyra-agents/core/i18n";
 import { toToolGroup } from "./tool-view-model";
 
 export const formatAgentMessageTime = (value: string | undefined): string | undefined => {
@@ -40,7 +40,7 @@ const messageBody = (
 ): string => {
   if (message.text.length > 0) return cleanSyntheticImageText(message.text);
   const isLastAssistant = message.role === "assistant" && index === session.messages.length - 1;
-  return isLastAssistant && session.turnStatus === "running" ? "" : t("msg.noResponseText");
+  return isLastAssistant && session.turnStatus === "running" ? "" : t("lyra-agents-message.noResponseText");
 };
 
 const timelineTimeMs = (value: string | undefined, fallback: number): number => {
@@ -255,8 +255,8 @@ export const agentSessionToChatMessages = (
             type: "text",
             id: `${session.id}-turn-failed-text`,
             body: errorDetail === undefined || errorDetail.length === 0
-              ? t("msg.turnFailedNoResponse")
-              : formatMessage("msg.turnFailedWithReason", { message: errorDetail })
+              ? t("lyra-agents-message.turnFailedNoResponse")
+              : formatMessage("lyra-agents-message.turnFailedWithReason", { message: errorDetail })
           }
         ]
       },

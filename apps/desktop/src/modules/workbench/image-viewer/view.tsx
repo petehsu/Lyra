@@ -1,3 +1,4 @@
+import { AppButton, AppErrorState, AppLoadingState, AppToolbarButton } from "@renderer/ui/components";
 import {
   ChevronLeft,
   ChevronRight,
@@ -65,7 +66,7 @@ const ImageViewerTitlebarBridge = ({
             <span className="lyra-titlebar-context-chip">{metadata}</span>
           )}
           <div className="lyra-titlebar-context-controls">
-            <button
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.previous}
@@ -75,8 +76,8 @@ const ImageViewerTitlebarBridge = ({
               }}
             >
               <ChevronLeft size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.next}
@@ -86,71 +87,70 @@ const ImageViewerTitlebarBridge = ({
               }}
             >
               <ChevronRight size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.zoomOut}
               onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 0.8 })}
             >
               <ZoomOut size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.zoomIn}
               onClick={() => model.setViewport(state.instanceId, { zoom: state.view.zoom * 1.25 })}
             >
               <ZoomIn size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-text-button"
               aria-label={labels.actualSize}
+              label={labels.actualSize}
               onClick={() => model.setViewport(state.instanceId, { zoom: 1, offsetX: 0, offsetY: 0 })}
-            >
-              {labels.actualSize}
-            </button>
-            <button
+            />
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.fit}
               onClick={fitToViewport}
             >
               <Maximize2 size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.rotateLeft}
               onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation - 90 })}
             >
               <RotateCcw size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.rotateRight}
               onClick={() => model.setViewport(state.instanceId, { rotation: state.view.rotation + 90 })}
             >
               <RotateCw size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.reset}
               onClick={() => model.resetViewport(state.instanceId)}
             >
               <RefreshCcw size={15} />
-            </button>
-            <button
+            </AppToolbarButton>
+            <AppToolbarButton
               type="button"
               className="lyra-titlebar-context-icon-button"
               aria-label={labels.background}
               onClick={cycleBackground}
             >
               <PaintBucket size={15} />
-            </button>
+            </AppToolbarButton>
           </div>
         </>
       )
@@ -481,12 +481,11 @@ const ImageViewerLoadingOverlay = ({ labels, progress }: LoadingOverlayProps) =>
       <span />
       <span />
     </div>
-    <div className="lyra-image-viewer-loading-copy">
-      <strong>{labels.loading}</strong>
-      {progress === undefined ? null : (
-        <small>{Math.round(Math.max(0, Math.min(1, progress)) * 100)}%</small>
-      )}
-    </div>
+    <AppLoadingState
+      className="lyra-image-viewer-loading-copy"
+      title={labels.loading}
+      description={progress === undefined ? undefined : `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`}
+    />
   </section>
 );
 
@@ -830,29 +829,32 @@ export const ImageViewerSurface = ({
             <span />
             <span />
           </div>
-          <div className="lyra-image-viewer-loading-copy">
-            <strong>{labels.loading}</strong>
-            {importProgress === undefined ? null : (
-              <small>{Math.round(Math.max(0, Math.min(1, importProgress)) * 100)}%</small>
-            )}
-          </div>
+          <AppLoadingState
+            className="lyra-image-viewer-loading-copy"
+            title={labels.loading}
+            description={importProgress === undefined ? undefined : `${Math.round(Math.max(0, Math.min(1, importProgress)) * 100)}%`}
+          />
         </section>
       );
     }
     if (state.status === "error" || state.status === "unsupported" || openResult === null) {
       return (
-        <section className="lyra-image-viewer-empty">
-          <p>{state.message ?? labels.unsupported}</p>
-          <button
-            type="button"
-            className="lyra-image-viewer-button"
-            onClick={() => {
-              void model.openImage(state.instanceId, state.filePath);
-            }}
-          >
-            {labels.retry}
-          </button>
-        </section>
+        <AppErrorState
+          className="lyra-image-viewer-empty"
+          title={state.message ?? labels.unsupported}
+          actions={(
+            <AppButton
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void model.openImage(state.instanceId, state.filePath);
+              }}
+            >
+              {labels.retry}
+            </AppButton>
+          )}
+        />
       );
     }
 
@@ -891,20 +893,24 @@ export const ImageViewerSurface = ({
           <ImageViewerLoadingOverlay labels={labels} progress={importProgress} />
         ) : null}
         {sourceImageFailed ? (
-          <section className="lyra-image-viewer-empty lyra-image-viewer-stage-message">
-            <p>{labels.unavailable}</p>
-            <button
-              type="button"
-              className="lyra-image-viewer-button"
-              onClick={() => {
-                setSourceFailedSessionId(null);
-                setSourceLoadedSessionId(null);
-                void model.openImage(state.instanceId, state.filePath);
-              }}
-            >
-              {labels.retry}
-            </button>
-          </section>
+          <AppErrorState
+            className="lyra-image-viewer-empty lyra-image-viewer-stage-message"
+            title={labels.unavailable}
+            actions={(
+              <AppButton
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSourceFailedSessionId(null);
+                  setSourceLoadedSessionId(null);
+                  void model.openImage(state.instanceId, state.filePath);
+                }}
+              >
+                {labels.retry}
+              </AppButton>
+            )}
+          />
         ) : null}
         {openResult.cacheState === "importing" ? (
           <div className="lyra-image-viewer-import-overlay" aria-label="image-viewer-import-progress">

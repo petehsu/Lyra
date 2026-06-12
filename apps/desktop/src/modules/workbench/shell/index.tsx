@@ -30,9 +30,9 @@ import { useBrowserSearchModel } from "../browser-search";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
-import type {
-  AgentSessionHistoryBrowserPreviewPage,
-  AgentSessionHistoryLocateRequest
+import {
+  type AgentSessionHistoryBrowserPreviewPage,
+  type AgentSessionHistoryLocateRequest
 } from "../agent-session-history";
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
@@ -46,6 +46,7 @@ import {
 } from "./use-workbench-action-api";
 import { usePanelLayoutModel } from "./use-panel-layout";
 import { useOpenTerminalLiveSession } from "./use-open-terminal-live-session";
+import { useSoftwareStoreBuiltinAppOpener } from "./use-software-store-builtin-app-opener";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
 import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
@@ -234,6 +235,12 @@ resolvedThemeId,
     terminalModel,
     onOpenSettingsSection: openSettingsSectionFromCapability
   });
+  const onOpenSoftwareStoreBuiltinApp = useSoftwareStoreBuiltinAppOpener({
+    fileManagerModel,
+    labels,
+    onOpenSettingsSection: openSettingsSectionFromCapability,
+    tabsModel
+  });
   const uiRuntime = useWorkbenchUiRuntime(
     preferencesModel.preferences.uiPackId,
     desktopApi,
@@ -248,8 +255,12 @@ resolvedThemeId,
     docsEntryAddress: WORKBENCH_CONFIG.browser.docsEntryAddress,
     docsTabTitle: t("docs.tabTitle"),
     agentSessionHistoryTitle: t("agentHistory.tabTitle"),
-    softwareStoreTitle: t("softwareStore.tabTitle"),
-    loginManagerTitle: t("loginManager.tabTitle"),
+    onOpenSoftwareStore: () => {
+      openSettingsSectionFromCapability("softwareStore");
+    },
+    onOpenLoginManager: () => {
+      openSettingsSectionFromCapability("loginManager");
+    },
     locale: preferencesModel.preferences.locale,
     resolvedThemeId
   });
@@ -309,10 +320,14 @@ resolvedThemeId,
     desktopApi,
     preferencesModel,
     settingsAiModel,
+    softwareCapabilities,
     jsReplEnabled,
     focusCategoryRequest: settingsFocusRequest,
     openDialog: globalDialogModel.openDialog,
     publishNotification,
+    onOpenSite: tabsModel.openPageInNewTab,
+    onOpenSoftwareStoreBuiltinApp,
+    onOpenDocs: workbenchActions.openDocs,
     onJsReplChange: updateJsReplSetting
   });
   useWorkbenchLinuxCompatNotice({
@@ -426,7 +441,9 @@ resolvedThemeId,
     document.documentElement.dataset.lyraThemeTone = resolvedThemeId.endsWith("-dark")
       ? "dark"
       : "light";
-  }, [resolvedThemeId, themeVars, uiRuntime.vars]);
+    document.documentElement.dataset.lyraWindowMaterial =
+      desktopApi?.appMeta.windowMaterialMode ?? "opaque";
+  }, [desktopApi, resolvedThemeId, themeVars, uiRuntime.vars]);
 
   useWorkbenchAppRestoration({
     activeTab,
@@ -577,6 +594,7 @@ resolvedThemeId,
     onUndoEditorWorkItem,
     preferencesModel,
     settings: settingsSurfaceProps,
+    onOpenSettingsSection: openSettingsSectionFromCapability,
     notificationModel,
     localSearchReady: localSearchIndexStatus.ready,
     labels,

@@ -1,4 +1,19 @@
 import {
+  AppBadge,
+  AppButton,
+  AppIconButton,
+  AppInput,
+  AppObjectRow,
+  AppSearchField,
+  AppSelect,
+  AppStatusMessage,
+  AppTabs,
+  AppTextarea,
+  type AppBadgeTone,
+  type AppSelectOption,
+  type AppTabOption
+} from "@renderer/ui/components";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -26,7 +41,6 @@ import {
   Pencil,
   RefreshCw,
   Save,
-  Search,
   ShieldAlert,
   ShieldCheck,
   UserRound,
@@ -201,17 +215,19 @@ const StatusBadge = ({
   readonly session: LoginManagerSession;
   readonly labels: LoginManagerSurfaceProps["labels"];
 }) => (
-  <span
-    className={
-      session.status === "observed"
-        ? "lyra-login-manager-badge lyra-login-manager-badge-success"
-        : "lyra-login-manager-badge"
-    }
-  >
-    {session.status === "observed" ? <ShieldCheck size={11} /> : <ShieldAlert size={11} />}
+  <AppBadge tone={session.status === "observed" ? "success" : "neutral"}>
+    {session.status === "observed"
+      ? <ShieldCheck size={11} aria-hidden="true" />
+      : <ShieldAlert size={11} aria-hidden="true" />}
     {session.status === "observed" ? labels.statusObserved : labels.statusPossible}
-  </span>
+  </AppBadge>
 );
+
+const sourceBadgeTone = (source: LoginManagerFactSource): AppBadgeTone => {
+  if (source === "manual") return "success";
+  if (source === "unknown") return "warning";
+  return "neutral";
+};
 
 const SourceBadge = ({
   source,
@@ -220,22 +236,14 @@ const SourceBadge = ({
   readonly source: LoginManagerFactSource;
   readonly labels: LoginManagerSurfaceProps["labels"];
 }) => (
-  <span
-    className={
-      source === "manual"
-        ? "lyra-login-manager-badge lyra-login-manager-badge-success"
-        : source === "unknown"
-          ? "lyra-login-manager-badge lyra-login-manager-badge-warning"
-          : "lyra-login-manager-badge"
-    }
-  >
+  <AppBadge tone={sourceBadgeTone(source)}>
     {source === "manual"
-      ? <Pencil size={11} />
+      ? <Pencil size={11} aria-hidden="true" />
       : source === "unknown"
-        ? <HelpCircle size={11} />
-        : <Shield size={11} />}
+        ? <HelpCircle size={11} aria-hidden="true" />
+        : <Shield size={11} aria-hidden="true" />}
     {sourceLabel(source, labels)}
-  </span>
+  </AppBadge>
 );
 
 const EmptyState = ({
@@ -255,7 +263,8 @@ const EmptyState = ({
 export const LoginManagerSurface = ({
   desktopApi,
   labels,
-  onOpenSite
+  onOpenSite,
+  embedded = false
 }: LoginManagerSurfaceProps) => {
   const [snapshot, setSnapshot] = useState<LoginManagerSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -367,7 +376,21 @@ export const LoginManagerSurface = ({
     sessions.length,
     snapshot
   ]);
-  useWorkbenchTitlebarContribution(titlebarContribution);
+  useWorkbenchTitlebarContribution(embedded ? null : titlebarContribution);
+
+  const tabOptions = useMemo<readonly AppTabOption<TabMode>[]>(() => [
+    { value: "sessions", label: labels.sessionsTab, icon: <ModeIcon mode="sessions" /> },
+    { value: "credentials", label: labels.credentialsTab, icon: <ModeIcon mode="credentials" /> },
+    { value: "review", label: labels.reviewTab, icon: <ModeIcon mode="review" /> }
+  ], [labels.credentialsTab, labels.reviewTab, labels.sessionsTab]);
+
+  const authMethodOptions = useMemo<readonly AppSelectOption<LoginManagerAuthMethodKind>[]>(
+    () => AUTH_METHOD_ORDER.map((kind) => ({
+      value: kind,
+      label: labels.methodLabels[kind]
+    })),
+    [labels.methodLabels]
+  );
 
   const beginEdit = useCallback((session: LoginManagerSession): void => {
     setEditingSessionId(session.id);
@@ -511,6 +534,161 @@ export const LoginManagerSurface = ({
   const selectedCredential =
     selectedItem?.kind === "credential" ? selectedItem.value : null;
 
+  const renderSessionActions = (session: LoginManagerSession): ReactNode => (
+    <>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.openSite}
+        title={labels.openSite}
+        onClick={() => onOpenSite(session.address ?? session.origin, session.title ?? session.hostname)}
+      >
+        <ExternalLink size={14} aria-hidden="true" />
+      </AppIconButton>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.logoutSite}
+        title={labels.logoutSite}
+        tone="danger"
+        disabled={busyKey === `session:${session.id}`}
+        onClick={() => void clearSite(session)}
+      >
+        <LogOut size={14} aria-hidden="true" />
+      </AppIconButton>
+    </>
+  );
+
+  const renderCredentialActions = (credential: LoginManagerCredential): ReactNode => (
+    <>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.openSite}
+        title={labels.openSite}
+        onClick={() => onOpenSite(credential.origin, credential.hostname)}
+      >
+        <ExternalLink size={14} aria-hidden="true" />
+      </AppIconButton>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.fill}
+        title={labels.fill}
+        disabled={!credential.passwordAvailable || busyKey === `credential:${credential.id}`}
+        onClick={() => void fillCredential(credential)}
+      >
+        <Check size={14} aria-hidden="true" />
+      </AppIconButton>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.copy}
+        title={labels.copy}
+        disabled={!credential.passwordAvailable}
+        onClick={() => void copyCredential(credential)}
+      >
+        <Copy size={14} aria-hidden="true" />
+      </AppIconButton>
+      <AppIconButton
+        className="lyra-login-manager-row-action"
+        aria-label={labels.deleteCredential}
+        title={labels.deleteCredential}
+        tone="danger"
+        disabled={busyKey === `credential:${credential.id}`}
+        onClick={() => void deleteCredential(credential)}
+      >
+        <Trash2 size={14} aria-hidden="true" />
+      </AppIconButton>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section className="lyra-login-manager lyra-login-manager-embedded">
+        {error === null ? null : (
+          <AppStatusMessage
+            className="lyra-login-manager-error"
+            tone="error"
+            icon={<ShieldAlert size={14} aria-hidden="true" />}
+          >
+            {error}
+          </AppStatusMessage>
+        )}
+        <div className="lyra-login-manager-embedded-toolbar">
+          <AppSearchField
+            className="lyra-login-manager-search"
+            ariaLabel={labels.searchPlaceholder}
+            placeholder={labels.searchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <AppTabs
+            className="lyra-login-manager-tabs"
+            ariaLabel={labels.title}
+            value={mode}
+            options={tabOptions}
+            onValueChange={(tab) => {
+              setMode(tab);
+              setSelectedKey(null);
+            }}
+          />
+          <AppIconButton
+            className="lyra-login-manager-refresh"
+            aria-label={labels.refresh}
+            title={labels.refresh}
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+          </AppIconButton>
+        </div>
+        <div className="lyra-login-manager-embedded-list">
+          {mode === "credentials" ? (
+            filteredCredentials.length === 0 ? (
+              <EmptyState
+                title={labels.emptyCredentialsTitle}
+                description={labels.emptyCredentialsDescription}
+              />
+            ) : filteredCredentials.map((credential) => (
+              <AppObjectRow
+                key={credential.id}
+                as="div"
+                className="lyra-login-manager-row lyra-login-manager-embedded-row"
+                icon={(
+                  <SiteIcon
+                    faviconUrl={credential.faviconUrl}
+                    fallback={methodIcon(credential.authMethod.kind)}
+                  />
+                )}
+                title={credential.hostname}
+                description={credential.username}
+                meta={formatTime(credential.updatedAt)}
+                actions={renderCredentialActions(credential)}
+              />
+            ))
+          ) : filteredSessions.length === 0 ? (
+            <EmptyState
+              title={labels.emptySessionsTitle}
+              description={labels.emptySessionsDescription}
+            />
+          ) : filteredSessions.map((session) => (
+            <AppObjectRow
+              key={session.id}
+              as="div"
+              className="lyra-login-manager-row lyra-login-manager-embedded-row"
+              icon={(
+                <SiteIcon
+                  faviconUrl={session.faviconUrl}
+                  fallback={methodIcon(session.authMethod.kind)}
+                />
+              )}
+              title={session.hostname}
+              description={session.accountHint ?? session.authMethod.label}
+              meta={formatTime(session.lastSeenAt)}
+              actions={renderSessionActions(session)}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="lyra-login-manager">
       <header className="lyra-login-manager-header">
@@ -527,54 +705,45 @@ export const LoginManagerSurface = ({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          className="lyra-login-manager-icon-button"
+        <AppIconButton
           aria-label={labels.refresh}
+          title={labels.refresh}
           disabled={loading}
           onClick={() => void refresh()}
         >
-          <RefreshCw size={14} />
-        </button>
+          <RefreshCw size={14} aria-hidden="true" />
+        </AppIconButton>
       </header>
 
       {error === null ? null : (
-        <div className="lyra-login-manager-error">
-          <ShieldAlert size={14} />
-          <span>{error}</span>
-        </div>
+        <AppStatusMessage
+          className="lyra-login-manager-error"
+          tone="error"
+          icon={<ShieldAlert size={14} aria-hidden="true" />}
+        >
+          {error}
+        </AppStatusMessage>
       )}
 
       <div className="lyra-login-manager-body">
         <aside className="lyra-login-manager-sidebar">
-          <div className="lyra-login-manager-search">
-            <Search size={14} />
-            <input
-              value={query}
-              placeholder={labels.searchPlaceholder}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-          <div className="lyra-login-manager-tabs" role="tablist" aria-label={labels.title}>
-            {([
-              ["sessions", labels.sessionsTab],
-              ["credentials", labels.credentialsTab],
-              ["review", labels.reviewTab]
-            ] as const).map(([tab, label]) => (
-              <button
-                key={tab}
-                type="button"
-                className={mode === tab ? "is-active" : undefined}
-                onClick={() => {
-                  setMode(tab);
-                  setSelectedKey(null);
-                }}
-              >
-                <ModeIcon mode={tab} />
-                {label}
-              </button>
-            ))}
-          </div>
+          <AppSearchField
+            className="lyra-login-manager-search"
+            ariaLabel={labels.searchPlaceholder}
+            placeholder={labels.searchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <AppTabs
+            className="lyra-login-manager-tabs"
+            ariaLabel={labels.title}
+            value={mode}
+            options={tabOptions}
+            onValueChange={(tab) => {
+              setMode(tab);
+              setSelectedKey(null);
+            }}
+          />
           <div className="lyra-login-manager-list">
             {mode === "credentials" ? (
               filteredCredentials.length === 0 ? (
@@ -583,30 +752,21 @@ export const LoginManagerSurface = ({
                   description={labels.emptyCredentialsDescription}
                 />
               ) : filteredCredentials.map((credential) => (
-                <button
+                <AppObjectRow
                   key={credential.id}
-                  type="button"
-                  className={
-                    selectedCredential?.id === credential.id
-                      ? "lyra-login-manager-row is-active"
-                      : "lyra-login-manager-row"
-                  }
-                  onClick={() => setSelectedKey(`credential:${credential.id}`)}
-                >
-                  <span className="lyra-login-manager-row-icon">
+                  className="lyra-login-manager-row"
+                  active={selectedCredential?.id === credential.id}
+                  icon={(
                     <SiteIcon
                       faviconUrl={credential.faviconUrl}
                       fallback={methodIcon(credential.authMethod.kind)}
                     />
-                  </span>
-                  <span className="lyra-login-manager-row-main">
-                    <strong>{credential.hostname}</strong>
-                    <small>{credential.username}</small>
-                  </span>
-                  <span className="lyra-login-manager-row-meta">
-                    {formatTime(credential.updatedAt)}
-                  </span>
-                </button>
+                  )}
+                  title={credential.hostname}
+                  description={credential.username}
+                  meta={formatTime(credential.updatedAt)}
+                  onClick={() => setSelectedKey(`credential:${credential.id}`)}
+                />
               ))
             ) : filteredSessions.length === 0 ? (
               <EmptyState
@@ -614,30 +774,21 @@ export const LoginManagerSurface = ({
                 description={labels.emptySessionsDescription}
               />
             ) : filteredSessions.map((session) => (
-              <button
+              <AppObjectRow
                 key={session.id}
-                type="button"
-                className={
-                  selectedSession?.id === session.id
-                    ? "lyra-login-manager-row is-active"
-                    : "lyra-login-manager-row"
-                }
-                onClick={() => setSelectedKey(`session:${session.id}`)}
-              >
-                <span className="lyra-login-manager-row-icon">
+                className="lyra-login-manager-row"
+                active={selectedSession?.id === session.id}
+                icon={(
                   <SiteIcon
                     faviconUrl={session.faviconUrl}
                     fallback={methodIcon(session.authMethod.kind)}
                   />
-                </span>
-                <span className="lyra-login-manager-row-main">
-                  <strong>{session.hostname}</strong>
-                  <small>{session.accountHint ?? session.authMethod.label}</small>
-                </span>
-                <span className="lyra-login-manager-row-meta">
-                  {formatTime(session.lastSeenAt)}
-                </span>
-              </button>
+                )}
+                title={session.hostname}
+                description={session.accountHint ?? session.authMethod.label}
+                meta={formatTime(session.lastSeenAt)}
+                onClick={() => setSelectedKey(`session:${session.id}`)}
+              />
             ))}
           </div>
         </aside>
@@ -668,31 +819,41 @@ export const LoginManagerSurface = ({
                 </div>
               </div>
               <div className="lyra-login-manager-actions">
-                <button
-                  type="button"
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   onClick={() => onOpenSite(selectedItem.value.address ?? selectedItem.value.origin, selectedItem.value.title ?? selectedItem.value.hostname)}
                 >
-                  <ExternalLink size={14} />
-                  {labels.openSite}
-                </button>
-                <button
-                  type="button"
+                  <ExternalLink size={14} aria-hidden="true" />
+                  <span>{labels.openSite}</span>
+                </AppButton>
+                <AppButton
+                  variant="destructive"
+                  size="sm"
                   disabled={busyKey === `session:${selectedItem.value.id}`}
                   onClick={() => void clearSite(selectedItem.value)}
                 >
-                  <LogOut size={14} />
-                  {labels.logoutSite}
-                </button>
+                  <LogOut size={14} aria-hidden="true" />
+                  <span>{labels.logoutSite}</span>
+                </AppButton>
                 {editingSessionId === selectedItem.value.id ? (
-                  <button type="button" onClick={() => setEditingSessionId(null)}>
-                    <X size={14} />
-                    {labels.cancel}
-                  </button>
+                  <AppButton
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setEditingSessionId(null)}
+                  >
+                    <X size={14} aria-hidden="true" />
+                    <span>{labels.cancel}</span>
+                  </AppButton>
                 ) : (
-                  <button type="button" onClick={() => beginEdit(selectedItem.value)}>
-                    <Pencil size={14} />
-                    {labels.edit}
-                  </button>
+                  <AppButton
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => beginEdit(selectedItem.value)}
+                  >
+                    <Pencil size={14} aria-hidden="true" />
+                    <span>{labels.edit}</span>
+                  </AppButton>
                 )}
               </div>
               {editingSessionId === selectedItem.value.id ? (
@@ -702,42 +863,44 @@ export const LoginManagerSurface = ({
                       <FactIcon kind="account" />
                       {labels.accountLabel}
                     </span>
-                    <input
+                    <AppInput
+                      aria-label={labels.accountLabel}
                       value={accountDraft}
                       onChange={(event) => setAccountDraft(event.target.value)}
                     />
                   </label>
-                  <label>
+                  <div className="lyra-login-manager-edit-field">
                     <span>
                       <FactIcon kind="method" />
                       {labels.authMethodLabel}
                     </span>
-                    <select
+                    <AppSelect
+                      ariaLabel={labels.authMethodLabel}
                       value={authMethodDraft}
-                      onChange={(event) =>
-                        setAuthMethodDraft(event.target.value as LoginManagerAuthMethodKind)}
-                    >
-                      {AUTH_METHOD_ORDER.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {labels.methodLabels[kind]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      options={authMethodOptions}
+                      onValueChange={(value) => setAuthMethodDraft(value)}
+                    />
+                  </div>
                   <label>
                     <span>
                       <FactIcon kind="notes" />
                       {labels.notesLabel}
                     </span>
-                    <textarea
+                    <AppTextarea
+                      aria-label={labels.notesLabel}
                       value={notesDraft}
                       onChange={(event) => setNotesDraft(event.target.value)}
                     />
                   </label>
-                  <button type="submit" disabled={busyKey === `session:${selectedItem.value.id}`}>
-                    <Save size={14} />
-                    {labels.save}
-                  </button>
+                  <AppButton
+                    type="submit"
+                    variant="default"
+                    size="sm"
+                    disabled={busyKey === `session:${selectedItem.value.id}`}
+                  >
+                    <Save size={14} aria-hidden="true" />
+                    <span>{labels.save}</span>
+                  </AppButton>
                 </form>
               ) : (
                 <dl className="lyra-login-manager-facts">
@@ -805,45 +968,50 @@ export const LoginManagerSurface = ({
                 </div>
               </div>
               <div className="lyra-login-manager-actions">
-                <button
-                  type="button"
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   onClick={() => onOpenSite(selectedItem.value.origin, selectedItem.value.hostname)}
                 >
-                  <ExternalLink size={14} />
-                  {labels.openSite}
-                </button>
-                <button
-                  type="button"
+                  <ExternalLink size={14} aria-hidden="true" />
+                  <span>{labels.openSite}</span>
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   disabled={!selectedItem.value.passwordAvailable || busyKey === `credential:${selectedItem.value.id}`}
                   onClick={() => void fillCredential(selectedItem.value)}
                 >
-                  <Check size={14} />
-                  {labels.fill}
-                </button>
-                <button
-                  type="button"
+                  <Check size={14} aria-hidden="true" />
+                  <span>{labels.fill}</span>
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   disabled={!selectedItem.value.passwordAvailable || busyKey === `credential:${selectedItem.value.id}`}
                   onClick={() => void revealCredential(selectedItem.value)}
                 >
-                  <Eye size={14} />
-                  {labels.reveal}
-                </button>
-                <button
-                  type="button"
+                  <Eye size={14} aria-hidden="true" />
+                  <span>{labels.reveal}</span>
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
                   disabled={!selectedItem.value.passwordAvailable}
                   onClick={() => void copyCredential(selectedItem.value)}
                 >
-                  <Copy size={14} />
-                  {copiedCredentialId === selectedItem.value.id ? labels.copied : labels.copy}
-                </button>
-                <button
-                  type="button"
+                  <Copy size={14} aria-hidden="true" />
+                  <span>{copiedCredentialId === selectedItem.value.id ? labels.copied : labels.copy}</span>
+                </AppButton>
+                <AppButton
+                  variant="destructive"
+                  size="sm"
                   disabled={busyKey === `credential:${selectedItem.value.id}`}
                   onClick={() => void deleteCredential(selectedItem.value)}
                 >
-                  <Trash2 size={14} />
-                  {labels.deleteCredential}
-                </button>
+                  <Trash2 size={14} aria-hidden="true" />
+                  <span>{labels.deleteCredential}</span>
+                </AppButton>
               </div>
               <dl className="lyra-login-manager-facts">
                 <div>

@@ -11,15 +11,15 @@ import {
 } from "../theme-bridge";
 
 const darkVars = {
-  "--lyra-bg-app": "#1a1b20",
-  "--lyra-bg-surface": "#24262d",
-  "--lyra-bg-editor": "#1e2026",
+  "--lyra-app-bg": "#1a1b20",
+  "--lyra-app-surface-bg": "#24262d",
+  "--lyra-app-panel-bg": "#1e2026",
   "--lyra-text-primary": "#e6e7eb",
   "--lyra-text-secondary": "#b7bac3",
   "--lyra-text-muted": "#8b8f9b",
-  "--lyra-text-accent": "#7aa7ff",
-  "--lyra-line-default": "#353842",
-  "--lyra-line-focused": "#5c78e2",
+  "--lyra-app-primary-button": "#7aa7ff",
+  "--lyra-app-border": "#353842",
+  "--lyra-app-border-strong": "#5c78e2",
   "--lyra-status-success": "#87c07a",
   "--lyra-status-warning": "#dcba7a",
   "--lyra-status-error": "#e47878"
@@ -27,7 +27,7 @@ const darkVars = {
 
 const lightVars = {
   ...darkVars,
-  "--lyra-bg-app": "#f1f2f5",
+  "--lyra-app-bg": "#f1f2f5",
   "--lyra-text-primary": "#1a1b20"
 } as const;
 
@@ -74,7 +74,7 @@ describe("resolveWebThemePalette", () => {
   });
 
   test("falls back to defaults for missing or empty vars", () => {
-    const palette = resolveWebThemePalette({ "--lyra-bg-app": "  " });
+    const palette = resolveWebThemePalette({ "--lyra-app-bg": "  " });
     expect(palette.bgApp).toBe(DEFAULT_WEB_THEME_PALETTE.bgApp);
     expect(palette.textPrimary).toBe(DEFAULT_WEB_THEME_PALETTE.textPrimary);
   });

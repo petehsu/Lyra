@@ -708,6 +708,7 @@ export type AppMetaPayload = {
   readonly version: string;
   readonly platform: NodeJS.Platform;
   readonly arch?: NodeJS.Architecture | undefined;
+  readonly windowMaterialMode?: "native" | "opaque" | undefined;
   readonly desktopTargetId?: string | undefined;
   readonly desktopSupportTier?: "tier1" | "tier2" | "unsupported" | undefined;
   readonly linuxLibc?: "glibc" | "musl" | "unknown" | null | undefined;

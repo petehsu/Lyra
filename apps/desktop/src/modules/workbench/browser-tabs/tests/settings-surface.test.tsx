@@ -8,14 +8,20 @@ vi.mock("../../settings-ai", () => ({
   SettingsAiView: () => <div aria-label="ai-provider-settings" />
 }));
 
+vi.mock("../../login-manager", () => ({
+  LoginManagerSurface: ({ embedded }: { readonly embedded?: boolean }) => (
+    <div aria-label="login-manager-settings" data-embedded={embedded ? "true" : "false"} />
+  )
+}));
+
 describe("BrowserSettingsSurface", () => {
   test("routes category navigation through a single active settings page", () => {
     render(<BrowserSettingsSurface {...createBrowserSettingsSurfaceProps()} />);
 
     const nav = screen.getByLabelText("settings-nav");
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Language" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Bing" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Language" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "Bing" })).toBeNull();
 
     fireEvent.click(within(nav).getByRole("button", { name: "Search" }));
 
@@ -23,8 +29,8 @@ describe("BrowserSettingsSurface", () => {
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Bing" })).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup", { name: "Language" })).toBeNull();
+    expect(screen.getByRole("switch", { name: "Bing" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Language" })).toBeNull();
   });
 
   test("opens directly to the AI provider settings category when requested", () => {
@@ -37,10 +43,51 @@ describe("BrowserSettingsSurface", () => {
     );
 
     const nav = screen.getByLabelText("settings-nav");
-    expect(within(nav).getByRole("button", { name: "AI" })).toHaveClass(
+    expect(within(nav).getByRole("button", { name: "Lyra Agents" })).toHaveClass(
       "lyra-settings-nav-item-active"
     );
     expect(screen.getByLabelText("ai-provider-settings")).toBeInTheDocument();
+  });
+
+  test("renders Login Manager as an embedded settings category", () => {
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          focusCategoryRequest: { categoryId: "loginManager", requestId: 1 }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).getByRole("button", { name: "Login Manager" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
+    expect(screen.getByLabelText("login-manager-settings")).toHaveAttribute("data-embedded", "true");
+  });
+
+  test("renders docs as a jump action in settings navigation", () => {
+    const onOpenDocs = vi.fn();
+
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          onOpenDocs
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    const docsButton = within(nav).getByRole("button", { name: "Docs" });
+
+    expect(docsButton).toHaveClass("lyra-settings-nav-item-jump");
+    expect(docsButton).not.toHaveClass("lyra-settings-nav-item-active");
+
+    fireEvent.click(docsButton);
+
+    expect(onOpenDocs).toHaveBeenCalledTimes(1);
+    expect(within(nav).getByRole("button", { name: "General" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
   });
 
   test("routes choice, boolean, and multi-choice controls through props", () => {
@@ -59,14 +106,14 @@ describe("BrowserSettingsSurface", () => {
     );
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "Appearance" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Theme" }));
+    fireEvent.click(screen.getByRole("option", { name: "Dark" }));
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "General" }));
-    const preventSleepGroup = screen.getByRole("radiogroup", { name: "Prevent sleep" });
-    fireEvent.click(within(preventSleepGroup).getByRole("radio", { name: /Disabled/ }));
+    fireEvent.click(screen.getByRole("switch", { name: "Prevent sleep" }));
 
     fireEvent.click(within(screen.getByLabelText("settings-nav")).getByRole("button", { name: "Search" }));
-    fireEvent.click(screen.getByRole("button", { name: "Bing" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Bing" }));
 
     expect(onThemeChange).toHaveBeenCalledWith("lyra-dark");
     expect(onPreventSleepChange).toHaveBeenCalledWith(false);
