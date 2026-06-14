@@ -406,7 +406,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         config.default_model = env::var("OPENAI_MODEL")
             .ok()
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| Some("gpt-4.1-mini".to_string()));
+            .or_else(|| Some("gpt-5-mini".to_string()));
     }
     let openai_key = env::var("OPENAI_API_KEY").ok();
     config
@@ -415,10 +415,10 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         .or_insert_with(|| NativeProviderProfile {
             id: "openai".to_string(),
             label: "OpenAI".to_string(),
-            provider_type: "openai-compatible".to_string(),
+            route_id: providers::routes::openai::ROUTE_ID.to_string(),
             base_url: env::var("OPENAI_BASE_URL")
                 .ok()
-                .or_else(|| Some("https://api.openai.com/v1".to_string())),
+                .or_else(|| Some(providers::routes::openai::DEFAULT_BASE_URL.to_string())),
             default_model: config.default_model.clone(),
             api_key: openai_key,
             api_key_env: Some("OPENAI_API_KEY".to_string()),
@@ -428,7 +428,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 id: config
                     .default_model
                     .clone()
-                    .unwrap_or_else(|| "gpt-4.1-mini".to_string()),
+                    .unwrap_or_else(|| "gpt-5-mini".to_string()),
                 label: None,
                 context_window: None,
                 supports_image_input: true,
@@ -442,10 +442,10 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         .or_insert_with(|| NativeProviderProfile {
             id: "openrouter".to_string(),
             label: "OpenRouter".to_string(),
-            provider_type: "openrouter".to_string(),
+            route_id: providers::routes::openrouter::ROUTE_ID.to_string(),
             base_url: env::var("OPENROUTER_BASE_URL")
                 .ok()
-                .or_else(|| Some("https://openrouter.ai/api/v1".to_string())),
+                .or_else(|| Some(providers::routes::openrouter::DEFAULT_BASE_URL.to_string())),
             default_model: env::var("OPENROUTER_MODEL").ok(),
             api_key: env::var("OPENROUTER_API_KEY").ok(),
             api_key_env: Some("OPENROUTER_API_KEY".to_string()),
@@ -455,31 +455,228 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     config
         .providers
-        .entry("mimo-token-plan".to_string())
+        .entry("anthropic".to_string())
+        .or_insert_with(|| {
+            let default_model = env::var("ANTHROPIC_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
+            NativeProviderProfile {
+                id: "anthropic".to_string(),
+                label: "Anthropic".to_string(),
+                route_id: providers::routes::anthropic::ROUTE_ID.to_string(),
+                base_url: env::var("ANTHROPIC_BASE_URL")
+                    .ok()
+                    .or_else(|| Some(providers::routes::anthropic::DEFAULT_BASE_URL.to_string())),
+                default_model: Some(default_model.clone()),
+                api_key: env::var("ANTHROPIC_API_KEY").ok(),
+                api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+                auth_header: None,
+                embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+                models: vec![NativeProviderModel {
+                    id: default_model,
+                    label: None,
+                    context_window: None,
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                }],
+            }
+        });
+    config
+        .providers
+        .entry("google_gemini".to_string())
+        .or_insert_with(|| {
+            let default_model = env::var("GEMINI_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "gemini-2.5-flash".to_string());
+            NativeProviderProfile {
+                id: "google_gemini".to_string(),
+                label: "Google Gemini".to_string(),
+                route_id: providers::routes::google_gemini::ROUTE_ID.to_string(),
+                base_url: env::var("GEMINI_BASE_URL").ok().or_else(|| {
+                    Some(providers::routes::google_gemini::DEFAULT_BASE_URL.to_string())
+                }),
+                default_model: Some(default_model.clone()),
+                api_key: env::var("GEMINI_API_KEY").ok(),
+                api_key_env: Some("GEMINI_API_KEY".to_string()),
+                auth_header: None,
+                embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+                models: vec![NativeProviderModel {
+                    id: default_model,
+                    label: None,
+                    context_window: None,
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                }],
+            }
+        });
+    config
+        .providers
+        .entry("aws_bedrock".to_string())
+        .or_insert_with(|| {
+            let default_region = env::var("AWS_REGION")
+                .ok()
+                .or_else(|| env::var("AWS_DEFAULT_REGION").ok())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| {
+                    providers::protocol::aws_bedrock_converse::DEFAULT_REGION.to_string()
+                });
+            let default_model = env::var("AWS_BEDROCK_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string());
+            NativeProviderProfile {
+                id: "aws_bedrock".to_string(),
+                label: "AWS Bedrock".to_string(),
+                route_id: providers::routes::aws_bedrock::ROUTE_ID.to_string(),
+                base_url: env::var("AWS_BEDROCK_BASE_URL").ok().or_else(|| {
+                    Some(format!(
+                        "https://bedrock-runtime.{}.amazonaws.com",
+                        default_region
+                    ))
+                }),
+                default_model: Some(default_model.clone()),
+                api_key: env::var("AWS_ACCESS_KEY_ID").ok(),
+                api_key_env: Some("AWS_ACCESS_KEY_ID".to_string()),
+                auth_header: None,
+                embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+                models: vec![NativeProviderModel {
+                    id: default_model,
+                    label: None,
+                    context_window: None,
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: false,
+                }],
+            }
+        });
+    config
+        .providers
+        .entry("mimo".to_string())
         .or_insert_with(|| NativeProviderProfile {
-            id: "mimo-token-plan".to_string(),
-            label: "MiMo Token Plan".to_string(),
-            provider_type: "openai-compatible".to_string(),
-            base_url: env::var("MIMO_BASE_URL").ok(),
+            id: "mimo".to_string(),
+            label: "MiMo".to_string(),
+            route_id: providers::routes::mimo::PAY_AS_YOU_GO_ROUTE_ID.to_string(),
+            base_url: env::var("MIMO_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::mimo::PAY_AS_YOU_GO_BASE_URL.to_string())),
             default_model: env::var("MIMO_MODEL")
                 .ok()
                 .or_else(|| Some("mimo-v2.5-pro".to_string())),
             api_key: env::var("MIMO_API_KEY").ok(),
             api_key_env: Some("MIMO_API_KEY".to_string()),
-            auth_header: None,
+            auth_header: Some("api-key".to_string()),
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: vec![NativeProviderModel {
-                id: "mimo-v2.5-pro".to_string(),
-                label: Some("MiMo v2.5 Pro".to_string()),
-                context_window: None,
-                supports_image_input: true,
-                supports_tool_calling: true,
-                supports_streaming: true,
-            }],
+            models: mimo_default_models(),
+        });
+    config
+        .providers
+        .entry("mimo-token-plan-cn".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "mimo-token-plan-cn".to_string(),
+            label: "MiMo Token Plan (CN)".to_string(),
+            route_id: providers::routes::mimo::TOKEN_PLAN_CN_ROUTE_ID.to_string(),
+            base_url: env::var("MIMO_TOKEN_PLAN_CN_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::mimo::TOKEN_PLAN_CN_BASE_URL.to_string())),
+            default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
+                .ok()
+                .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
+            api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
+            auth_header: Some("api-key".to_string()),
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: mimo_default_models(),
+        });
+    config
+        .providers
+        .entry("mimo-token-plan-sgp".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "mimo-token-plan-sgp".to_string(),
+            label: "MiMo Token Plan (SGP)".to_string(),
+            route_id: providers::routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID.to_string(),
+            base_url: env::var("MIMO_TOKEN_PLAN_SGP_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::mimo::TOKEN_PLAN_SGP_BASE_URL.to_string())),
+            default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
+                .ok()
+                .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
+            api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
+            auth_header: Some("api-key".to_string()),
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: mimo_default_models(),
+        });
+    config
+        .providers
+        .entry("mimo-token-plan-ams".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "mimo-token-plan-ams".to_string(),
+            label: "MiMo Token Plan (AMS)".to_string(),
+            route_id: providers::routes::mimo::TOKEN_PLAN_AMS_ROUTE_ID.to_string(),
+            base_url: env::var("MIMO_TOKEN_PLAN_AMS_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::mimo::TOKEN_PLAN_AMS_BASE_URL.to_string())),
+            default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
+                .ok()
+                .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
+            api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
+            auth_header: Some("api-key".to_string()),
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: mimo_default_models(),
         });
     for provider in config.providers.values_mut() {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
         }
     }
+}
+
+fn mimo_default_models() -> Vec<NativeProviderModel> {
+    vec![
+        NativeProviderModel {
+            id: "mimo-v2.5-pro".to_string(),
+            label: Some("MiMo v2.5 Pro".to_string()),
+            context_window: Some(1_000_000),
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        },
+        NativeProviderModel {
+            id: "mimo-v2.5".to_string(),
+            label: Some("MiMo v2.5".to_string()),
+            context_window: Some(1_000_000),
+            supports_image_input: true,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        },
+        NativeProviderModel {
+            id: "mimo-v2-flash".to_string(),
+            label: Some("MiMo v2 Flash".to_string()),
+            context_window: Some(256_000),
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        },
+        NativeProviderModel {
+            id: "mimo-v2-omni".to_string(),
+            label: Some("MiMo v2 Omni".to_string()),
+            context_window: Some(256_000),
+            supports_image_input: true,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        },
+        NativeProviderModel {
+            id: "mimo-v2-pro".to_string(),
+            label: Some("MiMo v2 Pro".to_string()),
+            context_window: Some(1_000_000),
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+        },
+    ]
 }

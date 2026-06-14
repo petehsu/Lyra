@@ -15,6 +15,7 @@ import type {
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAgentVisualStaleResult,
   WorkbenchBrowserDebuggerSession,
+  WorkbenchBrowserOsAxAdapter,
   WorkbenchBrowserPublishEvent
 } from "../types";
 import type {
@@ -52,6 +53,7 @@ export type WorkbenchBrowserAgentControllerHost = {
     timeoutMs: number
   ) => Promise<void>;
   readonly openDebuggerSessionForTarget: (target: BrowserAgentPageTarget) => Promise<WorkbenchBrowserDebuggerSession>;
+  readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
   readonly readPageDiagnostics: (tabId: string) => readonly import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry[];
   readonly recordPageDiagnostic: (
     tabId: string,

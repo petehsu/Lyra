@@ -618,7 +618,7 @@ fn memory_extraction_uses_background_memory_agent_without_tools() {
             NativeProviderProfile {
                 id: "memory-agent-test".to_string(),
                 label: "Memory Agent Test".to_string(),
-                provider_type: "openai-compatible".to_string(),
+                route_id: "custom_openai_compatible".to_string(),
                 base_url: Some(format!("http://{address}/v1")),
                 default_model: Some("memory-agent-model".to_string()),
                 api_key: Some("test-key".to_string()),

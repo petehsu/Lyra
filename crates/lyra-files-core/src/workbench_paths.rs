@@ -71,8 +71,9 @@ pub fn probe_workbench_path(path: &str) -> Result<WorkbenchPathProbeResult> {
 
     let directory_path = match existing_path.as_ref() {
         Some(existing) => {
-            let metadata = fs::metadata(existing)
-                .map_err(|error| io_error(format!("failed to read {}", existing.display()), error))?;
+            let metadata = fs::metadata(existing).map_err(|error| {
+                io_error(format!("failed to read {}", existing.display()), error)
+            })?;
             if metadata.is_dir() {
                 Some(existing.clone())
             } else {
@@ -163,11 +164,9 @@ mod tests {
         fs::write(src.join("main.rs"), b"fn main() {}").unwrap();
         fs::write(root.join("README.md"), b"hello").unwrap();
 
-        let collected = collect_workbench_file_paths(
-            &path_to_string(&root),
-            Some(&path_to_string(&root)),
-        )
-        .unwrap();
+        let collected =
+            collect_workbench_file_paths(&path_to_string(&root), Some(&path_to_string(&root)))
+                .unwrap();
         let paths = collected
             .into_iter()
             .map(|entry| entry.path)

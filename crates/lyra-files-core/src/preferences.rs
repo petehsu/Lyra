@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::paths::{
-    canonical_directory_path, location_path_key, path_to_string, title_for_path,
-};
+use crate::paths::{canonical_directory_path, location_path_key, path_to_string, title_for_path};
 use crate::{FilesCoreError, Result};
 
 pub const FAVORITES_FILE_NAME: &str = "favorites.json";
@@ -68,8 +66,9 @@ where
 
     let bytes = fs::read(path)
         .map_err(|error| io_error(format!("failed to read {}", path.display()), error))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| FilesCoreError::InvalidArgument(format!("failed to parse {}: {}", path.display(), error)))
+    serde_json::from_slice(&bytes).map_err(|error| {
+        FilesCoreError::InvalidArgument(format!("failed to parse {}: {}", path.display(), error))
+    })
 }
 
 pub fn write_json_file<T>(path: &Path, value: &T) -> Result<()>
@@ -92,9 +91,7 @@ where
         .map_err(|error| io_error(format!("failed to write {}", path.display()), error))
 }
 
-pub fn sanitize_favorites(
-    payload: FileManagerFavoritesPayload,
-) -> FileManagerFavoritesPayload {
+pub fn sanitize_favorites(payload: FileManagerFavoritesPayload) -> FileManagerFavoritesPayload {
     let mut seen = std::collections::HashSet::new();
     let favorites = payload
         .favorites

@@ -966,6 +966,119 @@ fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
         Some("elevate")
     );
 }
+
+#[test]
+fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Live Auth Challenge Prompt Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        match method.as_str() {
+            "lyraLumen.map" => Ok(serde_json::to_string(&json!({
+                "ok": true,
+                "kind": "lyraLumenMap",
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "observationId": "obs-live-auth",
+                "title": "Login",
+                "url": "https://example.com/login",
+                "elements": [],
+                "authChallengeSignals": [{
+                    "kind": "captcha",
+                    "confidence": "high",
+                    "source": "frame",
+                    "label": "recaptcha"
+                }],
+                "needsUserAction": {
+                    "kind": "auth_challenge",
+                    "reason": "captcha",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "suggestedAction": "lyra_lumen_elevate"
+                }
+            }))
+            .expect("json")),
+            "lyraLumen.completeElevation" => {
+                assert_eq!(input["targetMode"], "live");
+                Ok(serde_json::to_string(&json!({
+                    "ok": true,
+                    "kind": "lyraLumenElevationCompletion",
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "verified": true,
+                    "message": "verified"
+                }))
+                .expect("json"))
+            }
+            "lyraLumen.elevate" => panic!("live auth prompt should not open another visible tab"),
+            other => panic!("unexpected method {other}"),
+        }
+    });
+    let thread_session_id = session_id.clone();
+    let thread_turn_id = turn_id.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &thread_session_id,
+            &thread_turn_id,
+            &Some(dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-map-live-auth",
+                "/tools/browser/map",
+                json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+            ),
+        )
+    });
+    let clarification_id = wait_for_pending_clarification(&session_id);
+    {
+        let state = state().lock().expect("state lock");
+        let pending = state
+            .pending_clarifications
+            .get(&clarification_id)
+            .expect("pending clarification");
+        assert!(pending.question.contains("visible browser page"));
+        let labels: Vec<_> = pending
+            .options
+            .iter()
+            .filter_map(|option| option.get("label").and_then(Value::as_str))
+            .collect();
+        assert!(labels.contains(&"Already Completed"));
+        assert!(labels.contains(&"Cancel Task"));
+        assert!(!labels.contains(&"Open Visible Tab"));
+    }
+    backend
+        .call_agent_method(
+            "agent.clarification.respond",
+            json!({
+                "sessionId": session_id,
+                "clarificationId": clarification_id,
+                "answer": "Already Completed",
+                "selectedOption": "Already Completed"
+            }),
+        )
+        .expect("respond live auth clarification");
+    let output = handle.join().expect("join live auth map");
+    assert_eq!(
+        output
+            .pointer("/raw/userActionResolution/decision")
+            .and_then(Value::as_str),
+        Some("verify")
+    );
+    assert_eq!(
+        output
+            .pointer("/raw/userActionResolution/verification/targetMode")
+            .and_then(Value::as_str),
+        Some("live")
+    );
+}
+
 #[test]
 fn goals_btw_and_overnight_return_real_state() {
     let backend = LyraAgentBackend;

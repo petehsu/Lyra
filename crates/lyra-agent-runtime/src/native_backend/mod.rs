@@ -58,6 +58,7 @@ mod permissions;
 mod projections;
 mod provider;
 mod provider_config;
+mod providers;
 mod rollback;
 mod sessions;
 mod state;
@@ -132,11 +133,12 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.clarification.respond" => respond_clarification(payload),
             "agent.config.read" => read_config(),
             "agent.config.update" => update_config(payload),
+            "agent.provider.catalog.read" => providers::read_provider_catalog(),
             "agent.provider.profile.save" => save_provider_profile(payload),
             "agent.provider.options.update" => update_provider_options(payload),
             "agent.models.list" => list_models(payload),
             "agent.models.switch" => switch_model(payload),
-            "agent.models.refresh" => list_models(payload),
+            "agent.models.refresh" => refresh_models(payload),
             "agent.roles.update" => update_roles(payload),
             "agent.accounts.list" => list_accounts(),
             "agent.accounts.login" => login_account(payload),

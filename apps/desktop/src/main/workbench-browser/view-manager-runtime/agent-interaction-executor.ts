@@ -105,7 +105,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     readonly interaction: WorkbenchBrowserAgentInteraction;
   }): Promise<void> => {
     const button = interaction === "rightClick" ? "right" : "left";
-    const clickCount = interaction === "doubleClick" ? 2 : 1;
+    const clickCounts = interaction === "doubleClick" ? [1, 2] : [1];
     const cursor = { x, y };
     publishBrowserAgentActivity({
       tabId,
@@ -138,33 +138,35 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       return;
     }
 
-    publishBrowserAgentActivity({
-      tabId,
-      targetMode: target.targetMode,
-      action: "act",
-      interaction,
-      cursorPhase: "down",
-      inputActive: true,
-      visibleFollow: target.browserMode.visibleFollow,
-      cursor,
-      durationMs: 2_400
-    });
-    sendAgentInputEvent(target, { type: "mouseDown", x, y, button, clickCount });
-    await delay(20);
+    for (const [index, clickCount] of clickCounts.entries()) {
+      publishBrowserAgentActivity({
+        tabId,
+        targetMode: target.targetMode,
+        action: "act",
+        interaction,
+        cursorPhase: "down",
+        inputActive: true,
+        visibleFollow: target.browserMode.visibleFollow,
+        cursor,
+        durationMs: 2_400
+      });
+      sendAgentInputEvent(target, { type: "mouseDown", x, y, button, clickCount });
+      await delay(20);
 
-    publishBrowserAgentActivity({
-      tabId,
-      targetMode: target.targetMode,
-      action: "act",
-      interaction,
-      cursorPhase: "up",
-      inputActive: true,
-      visibleFollow: target.browserMode.visibleFollow,
-      cursor,
-      durationMs: 2_400
-    });
-    sendAgentInputEvent(target, { type: "mouseUp", x, y, button, clickCount });
-    await delay(30);
+      publishBrowserAgentActivity({
+        tabId,
+        targetMode: target.targetMode,
+        action: "act",
+        interaction,
+        cursorPhase: "up",
+        inputActive: true,
+        visibleFollow: target.browserMode.visibleFollow,
+        cursor,
+        durationMs: 2_400
+      });
+      sendAgentInputEvent(target, { type: "mouseUp", x, y, button, clickCount });
+      await delay(index === clickCounts.length - 1 ? 30 : 40);
+    }
 
     publishBrowserAgentActivity({
       tabId,

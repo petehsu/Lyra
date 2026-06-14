@@ -15,9 +15,9 @@ pub use dto::*;
 
 use directory::entry_from_core;
 use eject::safely_eject_device;
+pub(crate) use error::failure;
 use error::{core_error, invalid_arg, io_error, NapiResult as Result};
 use mount::mount_device as perform_mount_device;
-pub(crate) use error::failure;
 
 fn favorite_from_core(
     favorite: lyra_files_core::preferences::FileManagerFavorite,
@@ -67,7 +67,11 @@ fn favorites_from_core(
     payload: lyra_files_core::preferences::FileManagerFavoritesPayload,
 ) -> FileManagerFavoritesPayload {
     FileManagerFavoritesPayload {
-        favorites: payload.favorites.into_iter().map(favorite_from_core).collect(),
+        favorites: payload
+            .favorites
+            .into_iter()
+            .map(favorite_from_core)
+            .collect(),
     }
 }
 
@@ -181,8 +185,8 @@ pub fn read_trash(request: StorageRootRequest) -> Result<FileManagerReadTrashRes
 pub fn create_file(
     request: FileManagerCreateFileRequest,
 ) -> Result<FileManagerDirectoryMutationResponse> {
-    let parent_path = lyra_files_core::paths::normalize_path(&request.parent_path)
-        .map_err(core_error)?;
+    let parent_path =
+        lyra_files_core::paths::normalize_path(&request.parent_path).map_err(core_error)?;
     let name = lyra_files_core::paths::normalize_name(&request.name).map_err(core_error)?;
     let full_path = parent_path.join(name);
     File::create_new(&full_path)
@@ -198,8 +202,8 @@ pub fn create_file(
 pub fn create_folder(
     request: FileManagerCreateFolderRequest,
 ) -> Result<FileManagerDirectoryMutationResponse> {
-    let parent_path = lyra_files_core::paths::normalize_path(&request.parent_path)
-        .map_err(core_error)?;
+    let parent_path =
+        lyra_files_core::paths::normalize_path(&request.parent_path).map_err(core_error)?;
     let name = lyra_files_core::paths::normalize_name(&request.name).map_err(core_error)?;
     let full_path = parent_path.join(name);
     fs::create_dir(&full_path)
@@ -230,8 +234,8 @@ pub fn empty_trash(request: StorageRootRequest) -> Result<()> {
 pub fn eject_device(
     request: FileManagerEjectDeviceRequest,
 ) -> Result<FileManagerEjectDeviceResult> {
-    let mount_path = lyra_files_core::paths::normalize_path(&request.mount_path)
-        .map_err(core_error)?;
+    let mount_path =
+        lyra_files_core::paths::normalize_path(&request.mount_path).map_err(core_error)?;
     let device_path = request
         .device_path
         .as_deref()
@@ -259,8 +263,8 @@ pub fn eject_device(
 pub fn mount_device(
     request: FileManagerMountDeviceRequest,
 ) -> Result<FileManagerMountDeviceResult> {
-    let device_path = lyra_files_core::paths::normalize_path(&request.device_path)
-        .map_err(core_error)?;
+    let device_path =
+        lyra_files_core::paths::normalize_path(&request.device_path).map_err(core_error)?;
     let device_path_string = lyra_files_core::paths::path_to_string(&device_path);
     let outcome = perform_mount_device(&device_path_string, &request.kind)?;
 
@@ -289,7 +293,11 @@ pub fn write_favorites(
     lyra_files_core::preferences::write_favorites_to_storage(
         &root,
         &lyra_files_core::preferences::FileManagerFavoritesPayload {
-            favorites: request.favorites.into_iter().map(favorite_to_core).collect(),
+            favorites: request
+                .favorites
+                .into_iter()
+                .map(favorite_to_core)
+                .collect(),
         },
     )
     .map(favorites_from_core)
@@ -370,6 +378,11 @@ pub fn collect_workbench_file_paths(
         &request.root_path,
         request.base_path.as_deref(),
     )
-    .map(|items| items.into_iter().map(workbench_collected_from_core).collect())
+    .map(|items| {
+        items
+            .into_iter()
+            .map(workbench_collected_from_core)
+            .collect()
+    })
     .map_err(core_error)
 }

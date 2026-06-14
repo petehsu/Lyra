@@ -18,6 +18,56 @@ impl ProviderService {
         Self { backend }
     }
 
+    pub fn handles_method(&self, method: &str) -> bool {
+        matches!(
+            method,
+            "agent.config.read"
+                | "agent.config.update"
+                | "agent.provider.profile.save"
+                | "agent.provider.options.update"
+                | "agent.provider.catalog.read"
+                | "agent.models.list"
+                | "agent.models.switch"
+                | "agent.models.refresh"
+                | "agent.roles.update"
+                | "agent.accounts.list"
+                | "agent.accounts.login"
+                | "agent.accounts.loginProviders"
+                | "agent.accounts.loginStart"
+                | "agent.accounts.loginComplete"
+                | "agent.accounts.switch"
+                | "agent.accounts.remove"
+        )
+    }
+
+    pub fn handle_agent_request(
+        &self,
+        method: &str,
+        payload: serde_json::Value,
+    ) -> Option<crate::AgentRuntimeResult<serde_json::Value>> {
+        let response = match method {
+            "agent.config.read" => self.read_config(payload),
+            "agent.config.update" => self.update_config(payload),
+            "agent.provider.profile.save" => self.save_profile(payload),
+            "agent.provider.options.update" => self.update_options(payload),
+            "agent.provider.catalog.read" => self.provider_catalog(),
+            "agent.models.list" => self.model_catalog_from_payload(payload),
+            "agent.models.switch" => self.switch_model(payload),
+            "agent.models.refresh" => self.refresh_models(payload),
+            "agent.roles.update" => self.update_roles(payload),
+            "agent.accounts.list" => self.accounts(payload),
+            "agent.accounts.login" => self.login_account(payload),
+            "agent.accounts.loginProviders" => self.login_providers(payload),
+            "agent.accounts.loginStart" => self.start_login(payload),
+            "agent.accounts.loginComplete" => self.complete_login(payload),
+            "agent.accounts.switch" => self.switch_account(payload),
+            "agent.accounts.remove" => self.remove_account(payload),
+            _ => return None,
+        };
+
+        Some(response)
+    }
+
     pub fn read_config(
         &self,
         payload: serde_json::Value,
@@ -46,10 +96,12 @@ impl ProviderService {
                     .map(|(id, profile)| {
                         serde_json::json!({
                             "id": id,
-                            "providerType": profile.get("provider_type").or_else(|| profile.get("providerType")).cloned().unwrap_or(serde_json::Value::Null),
-                            "baseUrl": profile.get("base_url").or_else(|| profile.get("baseUrl")).cloned().unwrap_or(serde_json::Value::Null),
-                            "defaultModel": profile.get("default_model").or_else(|| profile.get("defaultModel")).cloned().unwrap_or(serde_json::Value::Null),
-                            "requiresApiKey": profile.get("requires_api_key").or_else(|| profile.get("requiresApiKey")).cloned().unwrap_or(serde_json::Value::Null),
+                            "routeId": profile.get("routeId").cloned().unwrap_or(serde_json::Value::Null),
+                            "protocolId": profile.get("protocolId").cloned().unwrap_or(serde_json::Value::Null),
+                            "protocolFamily": profile.get("protocolFamily").cloned().unwrap_or(serde_json::Value::Null),
+                            "baseUrl": profile.get("baseUrl").cloned().unwrap_or(serde_json::Value::Null),
+                            "defaultModel": profile.get("defaultModel").cloned().unwrap_or(serde_json::Value::Null),
+                            "requiresApiKey": profile.get("requiresApiKey").cloned().unwrap_or(serde_json::Value::Null),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -124,6 +176,11 @@ impl ProviderService {
         payload: serde_json::Value,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend.call("agent.models.refresh", payload)
+    }
+
+    pub fn provider_catalog(&self) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend
+            .call("agent.provider.catalog.read", serde_json::json!({}))
     }
 
     pub fn update_roles(

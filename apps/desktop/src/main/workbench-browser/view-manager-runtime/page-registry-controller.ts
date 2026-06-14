@@ -33,6 +33,7 @@ import type {
 } from "../types";
 import { liveAgentTarget } from "./agent-target-runtime";
 import {
+  areNavigationAddressesEquivalent,
   buildBrowserAgentFrameOwnerProbeScript,
   coerceFrameOwnerCandidates,
   delay,
@@ -52,6 +53,27 @@ import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
 type TopologySyncResult = {
   readonly previousActiveTabId: string | null;
   readonly topology: WorkbenchBrowserTopologySnapshot;
+};
+
+type ListenerBudgetWebContents = WebContents & {
+  readonly getMaxListeners?: () => number;
+  readonly setMaxListeners?: (count: number) => void;
+};
+
+const MIN_BROWSER_PAGE_LISTENER_BUDGET = 128;
+
+const ensureBrowserPageListenerBudget = (webContents: WebContents): void => {
+  const candidate = webContents as ListenerBudgetWebContents;
+  if (
+    typeof candidate.getMaxListeners !== "function"
+    || typeof candidate.setMaxListeners !== "function"
+  ) {
+    return;
+  }
+  const current = candidate.getMaxListeners();
+  if (current !== 0 && current < MIN_BROWSER_PAGE_LISTENER_BUDGET) {
+    candidate.setMaxListeners(MIN_BROWSER_PAGE_LISTENER_BUDGET);
+  }
 };
 
 type PageRegistryHost = {
@@ -141,6 +163,7 @@ type PageRegistryHost = {
 
 export const createPageRegistryController = (host: PageRegistryHost) => {
   const entries = new Map<string, BrowserPageEntry>();
+  const pendingLoadAddressByTabId = new Map<string, string>();
 
   const getEntry = (tabId: string): BrowserPageEntry | undefined => entries.get(tabId);
 
@@ -165,6 +188,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       return;
     }
     entry.isDestroyed = true;
+    pendingLoadAddressByTabId.delete(entry.tabId);
     host.clearTabSnapshot(entry.tabId);
     host.destroyBrowserAgentShadow(entry.tabId);
     host.hideChromePopover(entry);
@@ -192,7 +216,20 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   };
 
   const deleteEntry = (tabId: string): void => {
+    pendingLoadAddressByTabId.delete(tabId);
     entries.delete(tabId);
+  };
+
+  const isNavigationAbortError = (error: unknown): boolean => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("ERR_ABORTED") || message.includes("(-3)");
+  };
+
+  const updateStableAddress = (entry: BrowserPageEntry, address: string): void => {
+    host.updateRuntimeState(entry, {
+      address,
+      title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? address
+    });
   };
 
   const loadRequestedAddress = (entry: BrowserPageEntry): void => {
@@ -201,9 +238,15 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     }
     const target = entry.requestedAddress;
     const currentUrl = normalizeAddress(entry.webContents.getURL());
-    if (currentUrl === target) {
+    if (currentUrl !== null && areNavigationAddressesEquivalent(currentUrl, target)) {
+      updateStableAddress(entry, currentUrl);
+      return;
+    }
+    const pendingTarget = pendingLoadAddressByTabId.get(entry.tabId);
+    if (pendingTarget !== undefined && areNavigationAddressesEquivalent(pendingTarget, target)) {
       host.updateRuntimeState(entry, {
-        address: currentUrl,
+        address: currentUrl !== null && currentUrl !== "about:blank" ? currentUrl : entry.runtime.address,
+        isLoading: true,
         title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? target
       });
       return;
@@ -218,7 +261,15 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         if (restored) {
           return;
         }
+        pendingLoadAddressByTabId.set(entry.tabId, target);
         void entry.webContents.loadURL(target).catch((error: unknown) => {
+          if (isNavigationAbortError(error)) {
+            const nextUrl = normalizeAddress(entry.webContents.getURL());
+            if (nextUrl !== null && areNavigationAddressesEquivalent(nextUrl, target)) {
+              updateStableAddress(entry, nextUrl);
+            }
+            return;
+          }
           const recoveryFailure: WorkbenchBrowserRecoveryFailure = {
             reason: "navigation_failed",
             message: error instanceof Error ? error.message : String(error),
@@ -229,6 +280,11 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
             isLoading: false,
             recoveryFailure
           });
+        }).finally(() => {
+          const pending = pendingLoadAddressByTabId.get(entry.tabId);
+          if (pending !== undefined && areNavigationAddressesEquivalent(pending, target)) {
+            pendingLoadAddressByTabId.delete(entry.tabId);
+          }
         });
       });
   };
@@ -247,6 +303,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       }
     });
     const { webContents } = view;
+    ensureBrowserPageListenerBudget(webContents);
     const disposeDownloadTracking = host.onWebContentsCreated?.(spec.tabId, webContents) ?? (() => undefined);
     const entry: BrowserPageEntry = {
       tabId: spec.tabId,
@@ -562,7 +619,18 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         entry.requestedAddress = page.address;
       }
       if (entry.runtime.address !== page.address) {
-        loadRequestedAddress(entry);
+        if (areNavigationAddressesEquivalent(entry.runtime.address, page.address)) {
+          const currentUrl = normalizeAddress(entry.webContents.getURL());
+          host.updateRuntimeState(entry, {
+            address:
+              currentUrl !== null && areNavigationAddressesEquivalent(currentUrl, page.address)
+                ? currentUrl
+                : page.address,
+            isActive: page.isActive
+          });
+        } else {
+          loadRequestedAddress(entry);
+        }
       } else {
         host.updateRuntimeState(entry, { isActive: page.isActive });
       }

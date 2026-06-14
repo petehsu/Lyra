@@ -34,7 +34,7 @@ export const readWorkbenchStateSync = (key: WorkbenchStateKey): string | null =>
   if (bridge === null) {
     return testMemoryState.get(key) ?? null;
   }
-  return bridge.readSync(key);
+  return bridge.readCached(key);
 };
 
 export const writeWorkbenchStateSync = (key: WorkbenchStateKey, json: string): void => {
@@ -43,7 +43,9 @@ export const writeWorkbenchStateSync = (key: WorkbenchStateKey, json: string): v
     testMemoryState.set(key, json);
     return;
   }
-  bridge.writeSync(key, json);
+  void bridge.write(key, json).catch((error: unknown) => {
+    console.error(`workbench state write failed for ${key}: ${String(error)}`);
+  });
 };
 
 export const removeWorkbenchStateSync = (key: WorkbenchStateKey): void => {
@@ -52,7 +54,9 @@ export const removeWorkbenchStateSync = (key: WorkbenchStateKey): void => {
     testMemoryState.delete(key);
     return;
   }
-  bridge.removeSync(key);
+  void bridge.remove(key).catch((error: unknown) => {
+    console.error(`workbench state remove failed for ${key}: ${String(error)}`);
+  });
 };
 
 export const resetWorkbenchStateStorageForTests = (): void => {

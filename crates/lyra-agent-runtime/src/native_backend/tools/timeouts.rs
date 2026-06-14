@@ -24,6 +24,7 @@ pub(crate) fn attach_runtime_cancellation(
                 "cancellable": matches!(
                     (display_name, action),
                     ("lyra_lumen", _)
+                        | ("lyra_ax", _)
                         | ("software", "invoke_capability")
                         | ("software", "read_state")
                 ),
@@ -70,6 +71,7 @@ pub(crate) fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
     match (display_name, action) {
         ("lyra_lumen", "wait" | "read_until") => DEFAULT_BROWSER_WAIT_TIMEOUT_MS,
         ("lyra_lumen", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
+        ("lyra_ax", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
         ("software", "invoke_capability" | "read_state") => DEFAULT_SOFTWARE_TOOL_TIMEOUT_MS,
         ("software", _) => DEFAULT_HOST_TOOL_TIMEOUT_MS,
         ("terminal", "wait" | "read_until") => 35_000,

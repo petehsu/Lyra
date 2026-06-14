@@ -123,15 +123,19 @@ pub(crate) fn config_json(config: &NativeConfig) -> Value {
         .providers
         .iter()
         .map(|(id, provider)| {
+            let route = providers::registry::require_route(&provider.route_id)
+                .expect("default provider routes must be valid");
             (
                 id.clone(),
                 json!({
                     "label": provider.label,
-                    "providerType": provider.provider_type,
+                    "routeId": provider.route_id,
+                    "protocolId": route.protocol_id,
+                    "protocolFamily": route.protocol_family,
                     "baseUrl": provider.base_url,
                     "defaultModel": provider.default_model,
                     "embeddingModel": provider.embedding_model,
-                    "requiresApiKey": provider_api_key(provider).is_none(),
+                    "requiresApiKey": providers::capabilities::provider_requires_api_key(provider, &route),
                     "models": provider.models
                 }),
             )
@@ -147,6 +151,7 @@ pub(crate) fn config_json(config: &NativeConfig) -> Value {
         "options": {
             "reasoningEffort": config.reasoning_effort,
             "serviceTier": config.service_tier,
+            "verbosity": config.verbosity,
         },
         "notifications": config.notifications,
         "proactive": {
@@ -189,7 +194,11 @@ pub(crate) fn auth_status(config: &NativeConfig) -> Value {
     let configured = config
         .providers
         .values()
-        .filter(|provider| provider_api_key(provider).is_some())
+        .filter(|provider| {
+            providers::registry::require_route(&provider.route_id)
+                .map(|route| providers::capabilities::provider_profile_available(provider, &route))
+                .unwrap_or(false)
+        })
         .map(|provider| provider.id.clone())
         .collect::<Vec<_>>();
     json!({

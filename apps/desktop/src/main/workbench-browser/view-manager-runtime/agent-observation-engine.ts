@@ -260,8 +260,23 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           id: `captcha-${hashStableString(`${signal.url ?? ""}|${signal.label ?? ""}`)}`,
           kind: "captcha",
           reason: signal.label ?? "captcha challenge detected",
+          ...(signal.frameRef === undefined ? {} : { frameRef: signal.frameRef }),
+          ...(signal.frameTreeNodeId === undefined ? {} : { frameTreeNodeId: signal.frameTreeNodeId }),
+          ...(signal.bounds === undefined ? {} : { bounds: signal.bounds }),
           ...(signal.url === undefined ? {} : { url: signal.url }),
           fallback: "elevate",
+          confidence: signal.confidence
+        });
+      } else if (signal.kind === "oauth_popup" && signal.confidence === "high") {
+        blockedRegions.push({
+          id: `auth-prompt-${hashStableString(`${signal.url ?? ""}|${signal.label ?? ""}`)}`,
+          kind: "auth-prompt",
+          reason: signal.label ?? "OAuth identity prompt detected",
+          ...(signal.frameRef === undefined ? {} : { frameRef: signal.frameRef }),
+          ...(signal.frameTreeNodeId === undefined ? {} : { frameTreeNodeId: signal.frameTreeNodeId }),
+          ...(signal.bounds === undefined ? {} : { bounds: signal.bounds }),
+          ...(signal.url === undefined ? {} : { url: signal.url }),
+          fallback: "ax",
           confidence: signal.confidence
         });
       } else if (signal.kind === "permission_prompt" || signal.kind === "payment_auth") {
@@ -269,6 +284,9 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           id: `${signal.kind}-${hashStableString(`${signal.url ?? ""}|${signal.label ?? ""}`)}`,
           kind: "permission-prompt",
           reason: signal.label ?? signal.kind,
+          ...(signal.frameRef === undefined ? {} : { frameRef: signal.frameRef }),
+          ...(signal.frameTreeNodeId === undefined ? {} : { frameTreeNodeId: signal.frameTreeNodeId }),
+          ...(signal.bounds === undefined ? {} : { bounds: signal.bounds }),
           ...(signal.url === undefined ? {} : { url: signal.url }),
           fallback: "user",
           confidence: signal.confidence
@@ -995,9 +1013,8 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         }
         return [];
       });
-    const authChallengeSignals = rawAuthChallengeSignals.length > 0
-      ? [...rawAuthChallengeSignals, ...diagnosticAuthChallengeSignals]
-          .map((value): NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] | null => {
+    const authChallengeSignals = [...rawAuthChallengeSignals, ...diagnosticAuthChallengeSignals]
+      .map((value): NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] | null => {
             if (value === null || typeof value !== "object") {
               return null;
             }
@@ -1020,16 +1037,21 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
             ) {
               return null;
             }
+            const bounds = coerceFrameBounds(record.bounds);
             return {
               kind,
               confidence,
               source,
               ...(typeof record.label === "string" && record.label.length > 0 ? { label: record.label } : {}),
-              ...(typeof record.url === "string" && record.url.length > 0 ? { url: record.url } : {})
+              ...(typeof record.url === "string" && record.url.length > 0 ? { url: record.url } : {}),
+              ...(typeof record.frameRef === "string" && record.frameRef.length > 0 ? { frameRef: record.frameRef } : {}),
+              ...(Number.isFinite(Number(record.frameTreeNodeId))
+                ? { frameTreeNodeId: Math.round(Number(record.frameTreeNodeId)) }
+                : {}),
+              ...(bounds === null ? {} : { bounds })
             };
           })
-          .filter((value): value is NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] => value !== null)
-      : diagnosticAuthChallengeSignals;
+      .filter((value): value is NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] => value !== null);
     const observedFrameGraph: BrowserAgentSemanticFrameGraph = {
       ...frameGraph,
       warnings: graphWarnings,
@@ -1062,10 +1084,13 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       ...(authChallengeSignals.length > 0 ? { authChallengeSignals } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       nextRecommendedAction:
-        authChallengeSignals.some((signal) => signal.confidence === "high")
+        authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind !== "oauth_popup")
           || semanticTree.blockedRegions.some((region) => region.fallback === "elevate")
           ? "lyra_lumen_elevate"
-          : semanticTree.coverage.visualCoverage > 0 ? "lyra_lumen.see" : elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+          : authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind === "oauth_popup")
+            || semanticTree.blockedRegions.some((region) => region.fallback === "ax")
+            ? "browser_ax.map"
+            : semanticTree.coverage.visualCoverage > 0 ? "lyra_lumen.see" : elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
     };
     rememberBrowserAgentObservation(tabId, target.targetMode, observation);
     registerTargetObservation({
@@ -1138,6 +1163,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
 
   return {
     observeAgentPage,
+    buildBrowserAgentSemanticFrameGraph,
     scheduleBrowserTargetRegistryWarmup
   };
 };

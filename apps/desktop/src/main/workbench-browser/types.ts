@@ -170,6 +170,7 @@ export type WorkbenchBrowserSemanticBlockedRegion = {
     | "cross-origin"
     | "closed-shadow"
     | "captcha"
+    | "auth-prompt"
     | "permission-prompt"
     | "frame-unavailable"
     | "visual-fallback";
@@ -392,6 +393,222 @@ export type WorkbenchBrowserAgentVisualInteraction =
 export type WorkbenchBrowserAgentVerification =
   | "none"
   | "full";
+
+// --- AX-first browser tool (browser_ax.*) ---
+
+export type WorkbenchBrowserAxStrategy =
+  | "interactive"
+  | "document"
+  | "auth";
+
+export type WorkbenchBrowserAxInteraction =
+  | "click"
+  | "hover"
+  | "focus"
+  | "toggle"
+  | "select";
+
+export type WorkbenchBrowserAxActionMethod =
+  | "resolveNode"
+  | "cdpInput"
+  | "osAx"
+  | "keyboard"
+  | "scriptFallback";
+
+export type WorkbenchBrowserAxActionCapability =
+  | "click"
+  | "focus"
+  | "type"
+  | "press"
+  | "select"
+  | "toggle";
+
+export type WorkbenchBrowserAxFocusDirection =
+  | "next"
+  | "previous";
+
+export type WorkbenchBrowserAxNodeState = {
+  readonly focused?: boolean;
+  readonly disabled?: boolean;
+  readonly expanded?: boolean;
+  readonly checked?: boolean;
+  readonly selected?: boolean;
+  readonly modal?: boolean;
+};
+
+export type WorkbenchBrowserAxSource =
+  | "cdp"
+  | "os";
+
+export type WorkbenchBrowserAxCoordinateSpace =
+  | "webContentsCss"
+  | "screen";
+
+export type WorkbenchBrowserAxOsStatus = {
+  readonly ok: boolean;
+  readonly platform: string;
+  readonly state: "available" | "unsupported" | "permissionDenied" | "unavailable" | "error";
+  readonly message?: string;
+  readonly nodeCount?: number;
+  readonly loadedFrom?: string;
+};
+
+export type BrowserAxNode = {
+  readonly axRef: string;
+  readonly role: string;
+  readonly name: string;
+  readonly value?: string;
+  readonly description?: string;
+  readonly state: WorkbenchBrowserAxNodeState;
+  readonly bounds?: WorkbenchBrowserAgentElementBounds;
+  readonly screenBounds?: WorkbenchBrowserAgentElementBounds;
+  readonly frameRef?: string;
+  readonly frameTreeNodeId?: number;
+  readonly frameUrl?: string;
+  readonly backendDOMNodeId?: number;
+  readonly nodeId?: string;
+  readonly osPath?: string;
+  readonly parentAxRef?: string;
+  readonly childAxRefs?: readonly string[];
+  readonly actionCapabilities: readonly WorkbenchBrowserAxActionCapability[];
+  readonly confidence: number;
+  readonly source: "ax";
+  readonly axSource: WorkbenchBrowserAxSource;
+  readonly coordinateSpace: WorkbenchBrowserAxCoordinateSpace;
+  readonly provider?: string;
+};
+
+export type BrowserAxSnapshot = {
+  readonly snapshotId: string;
+  readonly snapshotHash: string;
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly url: string;
+  readonly title: string;
+  readonly createdAt: number;
+  readonly mapEpoch: number;
+  readonly ttlMs: number;
+  readonly nodesByAxRef: Map<string, BrowserAxNode>;
+  readonly cdpNodeIndex: Map<string, { readonly backendDOMNodeId?: number; readonly nodeId?: string }>;
+  readonly osNodeIndex?: Map<string, { readonly osPath: string }>;
+};
+
+export type WorkbenchBrowserAxMapResult = {
+  readonly ok: true;
+  readonly kind: "browserAxMap";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly snapshotId: string;
+  readonly url: string;
+  readonly title: string;
+  readonly strategy: WorkbenchBrowserAxStrategy;
+  readonly sources: readonly WorkbenchBrowserAxSource[];
+  readonly osAxStatus?: WorkbenchBrowserAxOsStatus;
+  readonly nodes: readonly BrowserAxNode[];
+  readonly authChallengeSignals?: readonly WorkbenchBrowserAuthChallengeSignal[];
+  readonly blockedRegions?: readonly WorkbenchBrowserSemanticBlockedRegion[];
+  readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAxQueryMatch = {
+  readonly axRef: string;
+  readonly role: string;
+  readonly name: string;
+  readonly bounds?: WorkbenchBrowserAgentElementBounds;
+  readonly screenBounds?: WorkbenchBrowserAgentElementBounds;
+  readonly provider?: string;
+  readonly score: number;
+};
+
+export type WorkbenchBrowserAxQueryResult = {
+  readonly ok: true;
+  readonly kind: "browserAxQuery";
+  readonly snapshotId: string;
+  readonly matches: readonly WorkbenchBrowserAxQueryMatch[];
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAxNeedsUserAction = {
+  readonly kind: "auth_challenge";
+  readonly reason: string;
+  readonly provider?: string;
+  readonly signal?: WorkbenchBrowserAuthChallengeSignal;
+  readonly suggestedAction: string;
+};
+
+export type WorkbenchBrowserAxAuthorization = {
+  readonly kind: "lyra_ax_one_time";
+  readonly action: "act" | "press";
+  readonly axRef: string;
+  readonly tabId?: string;
+  readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+  readonly toolCallId?: string;
+  readonly permissionRequestId?: string;
+  readonly issuedAt?: string;
+  readonly expiresAt?: number;
+};
+
+export type WorkbenchBrowserOsAxAdapter = {
+  readonly loadedFrom?: string;
+  readonly readTree: (request: { readonly maxNodes: number }) => Promise<unknown> | unknown;
+  readonly actOnNode: (
+    request: {
+      readonly osPath: string;
+      readonly interaction: WorkbenchBrowserAxInteraction;
+    }
+  ) => Promise<unknown> | unknown;
+};
+
+export type WorkbenchBrowserAxActionResult = {
+  readonly ok: boolean;
+  readonly kind: "browserAxActionResult";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly axRef: string;
+  readonly interaction: WorkbenchBrowserAxInteraction;
+  readonly method?: WorkbenchBrowserAxActionMethod;
+  readonly x?: number;
+  readonly y?: number;
+  readonly pageChanged: boolean;
+  readonly navigationStarted: boolean;
+  readonly focusChanged?: boolean;
+  readonly afterObservationId?: string;
+  readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
+  readonly error?: { readonly kind: string; readonly message: string };
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAxFocusTrailEntry = {
+  readonly step: number;
+  readonly axRef?: string;
+  readonly role: string;
+  readonly name: string;
+};
+
+export type WorkbenchBrowserAxFocusResult = {
+  readonly ok: true;
+  readonly kind: "browserAxFocusResult";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly activeAxRef?: string;
+  readonly snapshotId: string;
+  readonly trail: readonly WorkbenchBrowserAxFocusTrailEntry[];
+  readonly nextRecommendedAction?: string;
+};
+
+export type WorkbenchBrowserAxExplanation = {
+  readonly ok: true;
+  readonly kind: "browserAxExplanation";
+  readonly summary: string;
+  readonly domAvailable: boolean;
+  readonly axAvailable: boolean;
+  readonly visualFallbackRecommended: boolean;
+  readonly userActionRequired: boolean;
+  readonly reason?: string;
+  readonly provider?: string;
+  readonly nextRecommendedAction?: string;
+};
 
 export type WorkbenchBrowserAgentPoint = {
   readonly x: number;
@@ -669,6 +886,68 @@ export type WorkbenchBrowserViewManager = {
       readonly suppressActivity?: boolean;
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
+  readonly axMapAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly strategy?: WorkbenchBrowserAxStrategy;
+      readonly maxNodes?: number;
+      readonly includeIgnored?: boolean;
+      readonly includeText?: boolean;
+      readonly includeFrames?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAxMapResult>;
+  readonly axQueryAgentSnapshot: (
+    tabId: string,
+    request: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly snapshotId?: string;
+      readonly role?: string;
+      readonly nameIncludes?: string;
+      readonly provider?: string;
+      readonly visibleOnly?: boolean;
+      readonly maxResults?: number;
+    }
+  ) => WorkbenchBrowserAxQueryResult;
+  readonly axActOnNode: (
+    tabId: string,
+    request: {
+      readonly axRef: string;
+      readonly interaction?: WorkbenchBrowserAxInteraction;
+      readonly verification?: "fast" | "full";
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly authorized?: boolean;
+    }
+  ) => Promise<WorkbenchBrowserAxActionResult>;
+  readonly axFocusAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly direction?: WorkbenchBrowserAxFocusDirection;
+      readonly role?: string;
+      readonly nameIncludes?: string;
+      readonly maxSteps?: number;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserAxFocusResult>;
+  readonly axPressAgentKey: (
+    tabId: string,
+    request: {
+      readonly key: string;
+      readonly axRef?: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+      readonly authorized?: boolean;
+    }
+  ) => Promise<WorkbenchBrowserAxActionResult>;
+  readonly axExplainNode: (
+    tabId: string,
+    request: {
+      readonly axRef?: string;
+      readonly snapshotId?: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    }
+  ) => WorkbenchBrowserAxExplanation;
   readonly findAgentPage: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & WorkbenchBrowserSearchInPageRequest & {

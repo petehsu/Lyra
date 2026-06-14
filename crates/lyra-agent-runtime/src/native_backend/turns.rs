@@ -163,14 +163,17 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
     }
 
     match model_result {
-        Ok(result) => finish_turn_with_metadata(
-            &session_id,
-            &turn_id,
-            "finished",
-            result.final_text,
-            None,
-            result.metadata,
-        ),
+        Ok(result) => {
+            let metadata = result.session_metadata();
+            finish_turn_with_metadata(
+                &session_id,
+                &turn_id,
+                "finished",
+                result.final_text,
+                None,
+                metadata,
+            )
+        }
         Err(error) => finish_turn(
             &session_id,
             &turn_id,
@@ -216,7 +219,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .default_model
             .clone()
             .or_else(|| state.config.default_model.clone())
-            .unwrap_or_else(|| "gpt-4.1-mini".to_string());
+            .unwrap_or_else(|| "gpt-5-mini".to_string());
         let (session_messages, session_tools, working_dir, session_kind) = {
             let session = state.sessions.get(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
@@ -301,6 +304,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         )
     };
     let capabilities = model_capabilities(&provider, &model);
+    let route = providers::registry::require_route(&provider.route_id)?;
+    let openai_responses_replay =
+        route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
     let design_research_required = design_tools::is_design_task(&latest_user_text)
         || active_skills.contains("lyra-design-research");
@@ -377,6 +383,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             max_tool_output_chars: 24_000,
             session_tool_count: session_tools.len(),
             last_turn_tool_count,
+            openai_responses_replay,
         },
     );
     if let Some(overflow) = context.overflow.clone() {

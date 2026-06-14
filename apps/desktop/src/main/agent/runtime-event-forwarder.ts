@@ -9,12 +9,18 @@ import type {
   TerminalEvent,
   TerminalMemoryCorrelation
 } from "../../shared/desktop-bridge";
+import {
+  createBackpressuredEventSender,
+  estimateSerializedBytes
+} from "../events/backpressure";
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { isRecord } from "./host-payload";
 
 const AGENT_RUNTIME_EVENT_NAME = "agent.runtime";
 const TERMINAL_RUNTIME_EVENT_NAME = "terminal.runtime";
+const AGENT_EVENT_THROTTLE_MS = 50;
+const AGENT_EVENT_MAX_QUEUE_SIZE = 512;
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
 
@@ -33,6 +39,50 @@ const readTerminalRuntimeCorrelationString = (
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : undefined;
+};
+
+const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null => {
+  if (event.kind === "messageDelta") {
+    return [
+      "messageDelta",
+      event.sessionId,
+      event.messageId,
+      event.blockId ?? "",
+      event.replace === true ? "replace" : "append"
+    ].join(":");
+  }
+  if (event.kind === "toolUpdated") {
+    return `toolUpdated:${event.sessionId}:${event.turnId}:${event.tool.id}`;
+  }
+  if (event.kind === "turnStateChanged") {
+    return `turnStateChanged:${event.sessionId}:${event.turnId}`;
+  }
+  if (event.kind === "followStateChanged") {
+    return `followStateChanged:${event.sessionId}`;
+  }
+  if (event.kind === "browserActivityChanged") {
+    return `browserActivityChanged:${event.sessionId}:${event.turnId}`;
+  }
+  if (event.kind === "todoUpdated") {
+    return `todoUpdated:${event.sessionId}`;
+  }
+  return null;
+};
+
+const mergeAgentRuntimeEvent = (
+  current: AgentRuntimeEvent,
+  incoming: AgentRuntimeEvent
+): AgentRuntimeEvent => {
+  if (current.kind === "messageDelta" && incoming.kind === "messageDelta") {
+    if (incoming.replace === true) {
+      return incoming;
+    }
+    return {
+      ...current,
+      delta: `${current.delta}${incoming.delta}`
+    };
+  }
+  return incoming;
 };
 
 export const createRuntimeEventForwarder = ({
@@ -71,6 +121,26 @@ export const createRuntimeEventForwarder = ({
     });
   };
 
+  const eventSender = createBackpressuredEventSender<AgentRuntimeEvent>({
+    name: "agent.event",
+    intervalMs: AGENT_EVENT_THROTTLE_MS,
+    maxQueueSize: AGENT_EVENT_MAX_QUEUE_SIZE,
+    keyFor: agentRuntimeEventKey,
+    merge: mergeAgentRuntimeEvent,
+    coalesceMode: "consecutive",
+    estimateBytes: estimateSerializedBytes,
+    send: (event) => {
+      const window = getWindow();
+      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
+        return;
+      }
+      window.webContents.send(LYRA_CHANNELS.agentEvent, event);
+    },
+    onError: (error) => {
+      console.warn(`[lyra-agent] failed to send throttled event: ${String(error)}`);
+    }
+  });
+
   const unsubscribe = runtimeClient.subscribe((eventName, payload) => {
     if (eventName === TERMINAL_RUNTIME_EVENT_NAME) {
       handleTerminalRuntimeEvent(payload);
@@ -102,14 +172,13 @@ export const createRuntimeEventForwarder = ({
         });
       }
     }
-    const window = getWindow();
-    if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.agentEvent, event);
+    eventSender.enqueue(event);
   });
 
   return {
-    dispose: unsubscribe
+    dispose: () => {
+      unsubscribe();
+      eventSender.dispose();
+    }
   };
 };

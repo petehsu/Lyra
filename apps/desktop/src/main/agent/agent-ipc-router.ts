@@ -54,6 +54,7 @@ import type {
   AgentCompactResponse,
   AgentFeedbackRunRequest,
   AgentConfigSnapshot,
+  AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
   AgentRolesUpdateRequest,
   AgentGoalsRequest,
@@ -411,6 +412,14 @@ export const createAgentIpcRouter = ({
     [
       LYRA_CHANNELS.agentConfigRead,
       () => requestRuntime<AgentConfigSnapshot>("agent.config.read")
+    ],
+    [
+      LYRA_CHANNELS.agentProviderCatalogRead,
+      () =>
+        requestRuntime<AgentProviderCatalogSnapshot>(
+          "agent.provider.catalog.read",
+          {}
+        )
     ],
     [
       LYRA_CHANNELS.agentConfigUpdate,

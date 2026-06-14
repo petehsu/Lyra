@@ -73,6 +73,171 @@ fn native_backend_keeps_explicit_or_manual_session_titles() {
     maybe_title_session_from_first_user_message(&mut manual, "用户首条消息");
     assert_eq!(manual.snapshot["title"], "Manual");
 }
+
+#[test]
+fn provider_catalog_reports_rust_owned_routes_and_protocols() {
+    let backend = LyraAgentBackend;
+    let catalog = backend
+        .call_agent_method("agent.provider.catalog.read", json!({}))
+        .expect("provider catalog");
+
+    assert_eq!(catalog["schemaVersion"], "2026-06-14");
+    assert!(
+        catalog["protocols"]
+            .as_array()
+            .expect("protocol list")
+            .iter()
+            .any(|entry| entry["id"] == "openai_chat_completions")
+    );
+    assert!(
+        catalog["protocols"]
+            .as_array()
+            .expect("protocol list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "openai_responses"
+                    && entry["runtimeSupported"] == true
+                    && entry["streamingSupported"] == true
+                    && entry["toolCallingSupported"] == true
+            })
+    );
+    assert!(
+        catalog["protocols"]
+            .as_array()
+            .expect("protocol list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "aws_bedrock_converse"
+                    && entry["runtimeSupported"] == true
+                    && entry["streamingSupported"] == false
+                    && entry["toolCallingSupported"] == true
+            })
+    );
+    assert!(
+        catalog["protocols"]
+            .as_array()
+            .expect("protocol list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "gemini_generate_content"
+                    && entry["runtimeSupported"] == true
+                    && entry["streamingSupported"] == true
+                    && entry["toolCallingSupported"] == true
+            })
+    );
+    assert!(
+        catalog["protocols"]
+            .as_array()
+            .expect("protocol list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "anthropic_messages"
+                    && entry["runtimeSupported"] == true
+                    && entry["streamingSupported"] == true
+                    && entry["toolCallingSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "openai"
+                    && entry["protocolId"] == "openai_responses"
+                    && entry["apiMethod"] == "responses"
+                    && entry["catalogSection"] == "hosted"
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "aws_bedrock"
+                    && entry["protocolId"] == "aws_bedrock_converse"
+                    && entry["apiMethod"] == "converse"
+                    && entry["authKind"] == "aws_sigv4_env"
+                    && entry["catalogSection"] == "hosted"
+                    && entry["quickSetupSupported"] == false
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "google_gemini"
+                    && entry["protocolId"] == "gemini_generate_content"
+                    && entry["apiMethod"] == "generateContent"
+                    && entry["authKind"] == "x-goog-api-key"
+                    && entry["catalogSection"] == "hosted"
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "anthropic"
+                    && entry["protocolId"] == "anthropic_messages"
+                    && entry["apiMethod"] == "messages"
+                    && entry["catalogSection"] == "hosted"
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "custom_anthropic_compatible"
+                    && entry["protocolId"] == "anthropic_messages"
+                    && entry["apiMethod"] == "messages"
+                    && entry["catalogSection"] == "custom"
+                    && entry["customHeadersSupported"] == true
+                    && entry["quickSetupSupported"] == true
+            })
+    );
+    assert!(
+        catalog["profiles"]
+            .as_array()
+            .expect("profile list")
+            .iter()
+            .any(|entry| entry["id"] == "openai" && entry["routeId"] == "openai")
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .all(|entry| entry.get("catalogSection").is_some())
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "mimo"
+                    && entry["defaultBaseUrl"] == "https://api.xiaomimimo.com/v1"
+                    && entry["authKind"] == "bearer_or_header"
+            })
+    );
+    assert!(
+        catalog["routes"]
+            .as_array()
+            .expect("route list")
+            .iter()
+            .all(|entry| entry["id"] != "mimo_token_plan")
+    );
+}
 #[test]
 fn native_state_save_only_rewrites_dirty_sessions() {
     let temp = tempfile::tempdir().expect("tempdir");
@@ -134,7 +299,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
     let custom_provider = NativeProviderProfile {
         id: "custom-provider".to_string(),
         label: "Custom Provider".to_string(),
-        provider_type: "openai-compatible".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
         base_url: Some("http://localhost:8787/v1".to_string()),
         default_model: Some("custom-model".to_string()),
         api_key: Some("secret".to_string()),

@@ -1892,6 +1892,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
+name = "lyra-accessibility-napi"
+version = "0.1.0"
+dependencies = [
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lyra-agent-api"
 version = "0.1.0"
 dependencies = [
@@ -1972,6 +1983,7 @@ dependencies = [
  "dirs",
  "futures",
  "glob",
+ "hmac",
  "lyra-agent-api",
  "lyra-agent-kernel",
  "lyra-agent-plugins",
@@ -1984,6 +1996,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "shlex",
  "tempfile",
  "thiserror 2.0.18",

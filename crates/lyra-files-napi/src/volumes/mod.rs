@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use sysinfo::{DiskKind, Disks};
 
 use crate::dto::FileManagerDisk;
-use lyra_files_core::paths::{path_to_string, os_to_string};
+use lyra_files_core::paths::{os_to_string, path_to_string};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -24,7 +24,6 @@ pub use windows::read_unmounted_devices;
 pub fn read_unmounted_devices() -> Vec<crate::dto::FileManagerDevice> {
     Vec::new()
 }
-
 
 fn unquote_os_release_value(value: &str) -> String {
     let trimmed = value.trim();
@@ -340,7 +339,6 @@ fn can_eject_disk(kind: &str, mount_path: &str, device_path: Option<&str>) -> bo
     }
 }
 
-
 pub fn read_disks() -> Vec<FileManagerDisk> {
     let disks = Disks::new_with_refreshed_list();
     let reference_paths = system_reference_paths();
@@ -439,4 +437,3 @@ pub fn read_disks() -> Vec<FileManagerDisk> {
     });
     items
 }
-

@@ -9,18 +9,15 @@ import type {
   AgentAccountsSnapshot,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
-  AgentRolesUpdateRequest,
   AgentLoginProviderCatalogSnapshot,
+  AgentProviderCatalogSnapshot,
   AgentProviderProfileSaveRequest,
+  AgentRolesUpdateRequest,
+  LyraDesktopApi,
 } from "../../../shared/desktop-bridge";
-import type { AiProviderModelEntry, AiProviderProfile } from "../../../shared/ai";
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type {
-  SettingsAiDraft,
   SettingsAiLabels,
   SettingsAiModel,
-  SettingsAiModelSelectionMode,
-  SettingsAiPresetSection,
 } from "./types";
 
 type UseSettingsAiModelOptions = {
@@ -31,79 +28,11 @@ type UseSettingsAiModelOptions = {
     | undefined;
 };
 
-const emptyDraft = (): SettingsAiDraft => ({
-  id: null,
-  name: "lyra-agent-provider",
-  providerId: "agent",
-  protocolId: "openai_chat_completions",
-  presetId: null,
-  connectionConfig: {},
-  authConfig: {},
-  secretValues: {},
-  configuredSecretFields: [],
-  headersText: "",
-  modelSelectionMode: "custom",
-  modelsText: "",
-  isDefault: true,
-});
-
-const emptySections = (labels: SettingsAiLabels): readonly SettingsAiPresetSection[] => [
-  { id: "mainstream", label: labels.sectionAgent, presets: [] },
-  { id: "local", label: labels.sectionSessions, presets: [] },
-  { id: "custom", label: labels.customSection, presets: [] },
-];
-
-const profilesFromAgentConfig = (
-  snapshot: AgentConfigSnapshot | null
-): readonly AiProviderProfile[] => {
-  const config = snapshot?.config as {
-    provider?: {
-      default_model?: string | null;
-      default_provider?: string | null;
-      defaultModel?: string | null;
-      defaultProvider?: string | null;
-    };
-    providers?: Record<string, {
-      base_url?: string;
-      baseUrl?: string;
-      default_model?: string | null;
-      defaultModel?: string | null;
-      models?: readonly { readonly id?: string }[];
-    }>;
-  } | null;
-  const providers = config?.providers ?? {};
-  const defaultProvider =
-    config?.provider?.default_provider ?? config?.provider?.defaultProvider ?? null;
-  const now = Date.now();
-  return Object.entries(providers).map(([name, provider]) => {
-    const defaultModel = provider.default_model ?? provider.defaultModel ?? "";
-    const customModels: readonly AiProviderModelEntry[] = (provider.models ?? [])
-      .map((model) => model.id?.trim() ?? "")
-      .filter((id) => id.length > 0 && id !== defaultModel)
-      .map((id) => ({ id, name: id, source: "custom" as const }));
-    return {
-      id: name,
-      name,
-      providerId: "custom_openai_compatible",
-      protocolId: "custom_chat_completions",
-      runtimeProviderId: name,
-      runtimeSupported: true,
-      secretStatus: "configured",
-      presetId: null,
-      connectionConfig: {
-        baseUrl: provider.base_url ?? provider.baseUrl ?? "",
-      },
-      authConfig: {},
-      configuredSecretFields: [],
-      headers: {},
-      model: defaultModel,
-      customModels,
-      discoveryState: { status: "idle", lastCheckedAt: null, models: [] },
-      isDefault: defaultProvider === name,
-      createdAt: now,
-      updatedAt: now,
-    };
-  });
+type AgentRefreshSnapshot = {
+  readonly config: AgentConfigSnapshot;
+  readonly catalog: AgentProviderCatalogSnapshot;
+  readonly accounts: AgentAccountsSnapshot;
+  readonly loginProviders: AgentLoginProviderCatalogSnapshot;
 };
 
 export const useSettingsAiModel = ({
@@ -112,10 +41,11 @@ export const useSettingsAiModel = ({
   onOpenAgentConfigFile,
 }: UseSettingsAiModelOptions): SettingsAiModel => {
   const [agentConfig, setAgentConfig] = useState<AgentConfigSnapshot | null>(null);
+  const [agentProviderCatalog, setAgentProviderCatalog] =
+    useState<AgentProviderCatalogSnapshot | null>(null);
   const [agentAccounts, setAgentAccounts] = useState<AgentAccountsSnapshot | null>(null);
   const [agentLoginProviders, setAgentLoginProviders] =
     useState<AgentLoginProviderCatalogSnapshot | null>(null);
-  const [draft, setDraft] = useState<SettingsAiDraft>(() => emptyDraft());
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -124,16 +54,35 @@ export const useSettingsAiModel = ({
       setErrorMessage(labels.runtimeUnavailable);
       return;
     }
-    const config = await desktopApi.agent.readAgentConfig();
-    setAgentConfig(config);
-    const listAccounts = desktopApi.agent.listAccounts;
-    if (typeof listAccounts === "function") {
-      setAgentAccounts(await listAccounts());
-    }
-    const listLoginProviders = desktopApi.agent.listLoginProviders;
-    if (typeof listLoginProviders === "function") {
-      setAgentLoginProviders(await listLoginProviders());
-    }
+
+    const [
+      config,
+      catalog,
+      accounts,
+      loginProviders,
+    ]: [
+      AgentConfigSnapshot,
+      AgentProviderCatalogSnapshot,
+      AgentAccountsSnapshot,
+      AgentLoginProviderCatalogSnapshot,
+    ] = await Promise.all([
+      desktopApi.agent.readAgentConfig(),
+      desktopApi.agent.readAgentProviderCatalog(),
+      desktopApi.agent.listAccounts(),
+      desktopApi.agent.listLoginProviders(),
+    ]);
+
+    const snapshot: AgentRefreshSnapshot = {
+      config,
+      catalog,
+      accounts,
+      loginProviders,
+    };
+
+    setAgentConfig(snapshot.config);
+    setAgentProviderCatalog(snapshot.catalog);
+    setAgentAccounts(snapshot.accounts);
+    setAgentLoginProviders(snapshot.loginProviders);
     setErrorMessage(null);
   }, [desktopApi, labels.runtimeUnavailable]);
 
@@ -148,23 +97,38 @@ export const useSettingsAiModel = ({
     setIsSaving(true);
     try {
       setAgentConfig(await desktopApi.agent.updateAgentConfig(request));
+      await refreshAgent();
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi]);
+  }, [desktopApi, refreshAgent]);
 
   const saveAgentProviderProfile = useCallback(async (
-    request: AgentProviderProfileSaveRequest
+    request: AgentProviderProfileSaveRequest,
   ) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
       setAgentConfig(await desktopApi.agent.saveAgentProviderProfile(request));
-      setErrorMessage(null);
       await refreshAgent();
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshAgent]);
+
+  const refreshAgentModels = useCallback(async (providerId: string) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.refreshAgentModels({ provider: providerId });
+      await refreshAgent();
+      setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -173,7 +137,7 @@ export const useSettingsAiModel = ({
   }, [desktopApi, refreshAgent]);
 
   const startAgentAccountLogin = useCallback(async (
-    request: AgentAccountLoginStartRequest
+    request: AgentAccountLoginStartRequest,
   ): Promise<AgentAccountLoginStartResponse | null> => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
@@ -193,7 +157,7 @@ export const useSettingsAiModel = ({
   }, [desktopApi]);
 
   const completeAgentAccountLogin = useCallback(async (
-    request: AgentAccountLoginCompleteRequest
+    request: AgentAccountLoginCompleteRequest,
   ): Promise<AgentAccountLoginCompleteResponse | null> => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
@@ -211,15 +175,13 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi, refreshAgent]);
 
-  const updateAgentRoles = useCallback(async (
-    request: AgentRolesUpdateRequest
-  ) => {
+  const updateAgentRoles = useCallback(async (request: AgentRolesUpdateRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
       setAgentConfig(await desktopApi.agent.updateAgentRoles(request));
-      setErrorMessage(null);
       await refreshAgent();
+      setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -283,78 +245,51 @@ export const useSettingsAiModel = ({
     labels.configPathUnavailable,
     labels.fileEditorUnavailable,
     labels.runtimeUnavailable,
-    onOpenAgentConfigFile
+    onOpenAgentConfigFile,
   ]);
 
-  const profiles = useMemo(() => profilesFromAgentConfig(agentConfig), [agentConfig]);
-  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? null;
-
-  const noopAsync = useCallback(async (): Promise<void> => undefined, []);
-  const noop = useCallback((): void => undefined, []);
+  const profiles = useMemo(
+    () => agentProviderCatalog?.profiles ?? [],
+    [agentProviderCatalog],
+  );
+  const quickSetupRoutes = useMemo(
+    () =>
+      (agentProviderCatalog?.routes ?? []).filter(
+        (route) => route.runtimeSupported && route.quickSetupSupported,
+      ),
+    [agentProviderCatalog],
+  );
+  const localRoutes = useMemo(
+    () =>
+      (agentProviderCatalog?.routes ?? []).filter(
+        (route) => route.runtimeSupported && route.catalogSection === "local",
+      ),
+    [agentProviderCatalog],
+  );
 
   return {
     isSaving,
     errorMessage,
     profiles,
-    presetSections: emptySections(labels),
-    selectedProfileId: defaultProfile?.id ?? null,
-    defaultProfileId: defaultProfile?.id ?? null,
-    defaultProviderId: defaultProfile?.providerId ?? null,
-    defaultModelNames: defaultProfile?.model ? [defaultProfile.model] : [],
-    selectedPresetId: null,
-    selectedPreset: null,
+    quickSetupRoutes,
+    localRoutes,
+    defaultProfileId: agentProviderCatalog?.defaultProvider ?? null,
     agentConfig,
     agentAccounts,
     agentLoginProviders,
-    draft,
-    modelSelectionMode: draft.modelSelectionMode,
-    availableModels: [],
-    selectProfile: noop,
-    applyPreset: noop,
-    updateDraftName: (value) => {
-      setDraft((current) => ({ ...current, name: value }));
-    },
-    updateDraftModelSelectionMode: (value: SettingsAiModelSelectionMode) => {
-      setDraft((current) => ({ ...current, modelSelectionMode: value }));
-    },
-    updateDraftHeadersText: (value) => {
-      setDraft((current) => ({ ...current, headersText: value }));
-    },
-    updateDraftModelsText: (value) => {
-      setDraft((current) => ({ ...current, modelsText: value }));
-    },
-    updateDraftField: (target, fieldId, value) => {
-      setDraft((current) => {
-        const next = { ...(target === "connection"
-          ? current.connectionConfig
-          : target === "auth"
-            ? current.authConfig
-            : current.secretValues) };
-        if (value.trim().length === 0) {
-          delete next[fieldId];
-        } else {
-          next[fieldId] = value;
-        }
-        if (target === "connection") return { ...current, connectionConfig: next };
-        if (target === "auth") return { ...current, authConfig: next };
-        return { ...current, secretValues: next };
-      });
-    },
-    saveProfile: noopAsync,
-    deleteProfile: noopAsync,
-    deleteProviderModels: noopAsync,
-    deleteConfiguredModel: noopAsync,
+    agentProviderCatalog,
     setDefaultProfile: async (profileId: string) => {
-      const profile = profiles.find((entry) => entry.id === profileId);
+      const profile = profiles.find((entry) => entry.id === profileId) ?? null;
       await updateAgentConfig({
         defaultProvider: profileId,
-        defaultModel: profile?.model ?? null,
+        defaultModel: profile?.defaultModel ?? null,
       });
     },
     refreshAgent,
     openAgentConfigFile,
     updateAgentConfig,
     saveAgentProviderProfile,
+    refreshAgentModels,
     startAgentAccountLogin,
     completeAgentAccountLogin,
     updateAgentRoles,

@@ -55,6 +55,7 @@ import {
   type AgentBtwRunRequest,
   type AgentCompactResponse,
   type AgentConfigSnapshot,
+  type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
   type AgentActionRunRequest,
   type AgentRolesUpdateRequest,
@@ -242,7 +243,9 @@ import {
   type WorkbenchBrowserSearchInPageResult,
   type WorkbenchBrowserStorageStateRequest,
   type WorkbenchBrowserTopologySnapshot,
+  type WorkbenchStateChangeEvent,
   type WorkbenchStateKey,
+  type WorkbenchStateSnapshot,
   type LyraDesktopApi,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
@@ -284,6 +287,53 @@ const fallbackMeta: AppMetaPayload = {
   locale: Intl.DateTimeFormat().resolvedOptions().locale,
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
 };
+
+const WORKBENCH_STATE_KEYS: readonly WorkbenchStateKey[] = [
+  "preferences",
+  "workspace-tabs",
+  "browser-session",
+  "browser-history",
+  "ai-panel-tabs",
+  "terminal-dock",
+  "notifications",
+  "layout"
+];
+
+const createEmptyWorkbenchStateSnapshot = (): Record<WorkbenchStateKey, string | null> => ({
+  preferences: null,
+  "workspace-tabs": null,
+  "browser-session": null,
+  "browser-history": null,
+  "ai-panel-tabs": null,
+  "terminal-dock": null,
+  notifications: null,
+  layout: null
+});
+
+const normalizeWorkbenchStateSnapshot = (value: unknown): Record<WorkbenchStateKey, string | null> => {
+  const snapshot = createEmptyWorkbenchStateSnapshot();
+  if (value === null || typeof value !== "object") {
+    return snapshot;
+  }
+  const record = value as Partial<Record<WorkbenchStateKey, unknown>>;
+  for (const key of WORKBENCH_STATE_KEYS) {
+    const entry = record[key];
+    snapshot[key] = typeof entry === "string" ? entry : null;
+  }
+  return snapshot;
+};
+
+const readWorkbenchStateBootstrapSnapshot = (): Record<WorkbenchStateKey, string | null> => {
+  try {
+    return normalizeWorkbenchStateSnapshot(
+      ipcRenderer.sendSync(LYRA_CHANNELS.workbenchStateBootstrapSnapshot) as WorkbenchStateSnapshot
+    );
+  } catch (_error) {
+    return createEmptyWorkbenchStateSnapshot();
+  }
+};
+
+const workbenchStateCache = readWorkbenchStateBootstrapSnapshot();
 
 const readBrowserNotificationPermission = (): SystemNotificationPermission => {
   if (typeof window === "undefined" || typeof window.Notification === "undefined") {
@@ -682,20 +732,51 @@ const readAppMeta = (): AppMetaPayload => {
   }
 };
 
-const invokeSyncChannel = <T>(channel: string, payload: unknown): T => {
-  const response = ipcRenderer.sendSync(channel, payload) as
-    | { readonly ok: true; readonly value: T }
-    | { readonly ok: false; readonly error: string };
+const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
+  WORKBENCH_STATE_KEYS.includes(value as WorkbenchStateKey);
 
-  if (response === null || typeof response !== "object" || typeof (response as { ok?: unknown }).ok !== "boolean") {
-    throw new Error(`invalid sync response for channel: ${channel}`);
+const normalizeWorkbenchStateChangeEvent = (value: unknown): WorkbenchStateChangeEvent | null => {
+  if (value === null || typeof value !== "object") {
+    return null;
   }
-
-  if (response.ok === false) {
-    throw new Error(response.error);
+  const event = value as {
+    readonly key?: unknown;
+    readonly json?: unknown;
+  };
+  if (isWorkbenchStateKey(event.key) === false) {
+    return null;
   }
+  return {
+    key: event.key,
+    json: typeof event.json === "string" ? event.json : null
+  };
+};
 
-  return response.value;
+ipcRenderer.on(LYRA_CHANNELS.workbenchStateChanged, (_event, payload: unknown) => {
+  const event = normalizeWorkbenchStateChangeEvent(payload);
+  if (event === null) {
+    return;
+  }
+  workbenchStateCache[event.key] = event.json;
+});
+
+const readCachedWorkbenchState = (key: WorkbenchStateKey): string | null =>
+  workbenchStateCache[key] ?? null;
+
+const readWorkbenchState = async (key: WorkbenchStateKey): Promise<string | null> => {
+  const value = await ipcRenderer.invoke(LYRA_CHANNELS.workbenchStateRead, { key }) as string | null;
+  workbenchStateCache[key] = typeof value === "string" ? value : null;
+  return workbenchStateCache[key];
+};
+
+const writeWorkbenchState = async (key: WorkbenchStateKey, json: string): Promise<void> => {
+  workbenchStateCache[key] = json;
+  await ipcRenderer.invoke(LYRA_CHANNELS.workbenchStateWrite, { key, json });
+};
+
+const removeWorkbenchState = async (key: WorkbenchStateKey): Promise<void> => {
+  workbenchStateCache[key] = null;
+  await ipcRenderer.invoke(LYRA_CHANNELS.workbenchStateRemove, { key });
 };
 
 const createLyraDesktopApi = (): LyraDesktopApi => ({
@@ -1408,6 +1489,10 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ) as Promise<AgentPermissionPolicySnapshot>,
     readAgentConfig: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentConfigRead) as Promise<AgentConfigSnapshot>,
+    readAgentProviderCatalog: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentProviderCatalogRead
+      ) as Promise<AgentProviderCatalogSnapshot>,
     updateAgentConfig: (request: AgentConfigUpdateRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentConfigUpdate,
@@ -1615,20 +1700,25 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.uiuxResolveRuntime, request) as Promise<UiuxPackRuntime | null>
   },
   workbenchState: {
-    readSync: (key: WorkbenchStateKey) =>
-      invokeSyncChannel<string | null>(LYRA_CHANNELS.workbenchStateReadSync, {
-        key
-      }),
-    writeSync: (key: WorkbenchStateKey, json: string) => {
-      invokeSyncChannel<null>(LYRA_CHANNELS.workbenchStateWriteSync, {
-        key,
-        json
-      });
-    },
-    removeSync: (key: WorkbenchStateKey) => {
-      invokeSyncChannel<null>(LYRA_CHANNELS.workbenchStateRemoveSync, {
-        key
-      });
+    readCached: readCachedWorkbenchState,
+    read: readWorkbenchState,
+    write: writeWorkbenchState,
+    remove: removeWorkbenchState,
+    onDidChange: (listener: (event: WorkbenchStateChangeEvent) => void) => {
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        payload: unknown
+      ): void => {
+        const event = normalizeWorkbenchStateChangeEvent(payload);
+        if (event === null) {
+          return;
+        }
+        listener(event);
+      };
+      ipcRenderer.on(LYRA_CHANNELS.workbenchStateChanged, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(LYRA_CHANNELS.workbenchStateChanged, wrappedListener);
+      };
     }
   }
 });

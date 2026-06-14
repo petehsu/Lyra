@@ -1236,9 +1236,18 @@ export type WorkbenchBrowserAuthChallengeKind =
 export type WorkbenchBrowserAuthChallengeSignal = {
   readonly kind: WorkbenchBrowserAuthChallengeKind;
   readonly confidence: "high" | "medium" | "low";
-  readonly source: "dom" | "attribute" | "frame" | "browser" | "diagnostic";
+  readonly source: "dom" | "attribute" | "frame" | "browser" | "diagnostic" | "ax";
   readonly label?: string;
+  readonly provider?: string;
   readonly url?: string;
+  readonly frameRef?: string;
+  readonly frameTreeNodeId?: number;
+  readonly bounds?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
 };
 
 export type WorkbenchLumenActivityEvent = {

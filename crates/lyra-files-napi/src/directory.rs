@@ -1,8 +1,8 @@
 use std::sync::{Mutex, OnceLock};
 
 use crate::dto::{
-    FileManagerDirectoryPatch, FileManagerDirectorySnapshot, FileManagerEntry,
-    FileManagerLocation, FileManagerReadDirectoryResponse, FileManagerSubscribeDirectoryResponse,
+    FileManagerDirectoryPatch, FileManagerDirectorySnapshot, FileManagerEntry, FileManagerLocation,
+    FileManagerReadDirectoryResponse, FileManagerSubscribeDirectoryResponse,
 };
 use crate::error::{core_error, failure, NapiResult};
 
@@ -11,8 +11,8 @@ static DIRECTORY_SERVICE: OnceLock<Mutex<lyra_files_core::DirectoryService>> = O
 fn with_directory_service<T>(
     f: impl FnOnce(&mut lyra_files_core::DirectoryService) -> lyra_files_core::Result<T>,
 ) -> NapiResult<T> {
-    let service = DIRECTORY_SERVICE
-        .get_or_init(|| Mutex::new(lyra_files_core::DirectoryService::new()));
+    let service =
+        DIRECTORY_SERVICE.get_or_init(|| Mutex::new(lyra_files_core::DirectoryService::new()));
     let mut guard = service
         .lock()
         .map_err(|_| failure("directory service lock is poisoned"))?;

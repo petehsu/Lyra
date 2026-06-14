@@ -1822,6 +1822,35 @@ describe("Agent IPC bridge", () => {
       strategy: "interactiveOnly",
       targetMode: "isolated"
     });
+
+    browserBridge.observeAgentPage.mockResolvedValueOnce({
+      ok: true,
+      kind: "lyraLumenMap",
+      tabId: "page-1",
+      targetMode: "live",
+      observationId: "obs-google-auth",
+      strategy: "interactiveOnly",
+      url: "https://dmit.io/clientarea",
+      title: "Client Area",
+      elements: [],
+      activeElementId: null,
+      focusOrder: [],
+      authChallengeSignals: [{
+        kind: "oauth_popup",
+        confidence: "high",
+        source: "frame",
+        label: "Google identity prompt",
+        url: "https://accounts.google.com/gsi/iframe/select",
+        bounds: { x: 620, y: 60, width: 380, height: 180 }
+      }]
+    } as never);
+    const oauthMapResult = await registered.get("lyraLumen.map")?.({ targetMode: "live" });
+    expect(oauthMapResult).toMatchObject({
+      kind: "lyraLumenMap",
+      nextRecommendedAction: "browser_ax.map"
+    });
+    expect(oauthMapResult).not.toHaveProperty("needsUserAction");
+
     browserBridge.actOnAgentElement.mockClear();
     await expect(
       registered.get("lyraLumen.act")?.({

@@ -275,12 +275,92 @@ const buildBrowserAgentObservationScript = ({
       return collectLimitedElements(root, MAX_LIGHTWEIGHT_SHADOW_HOSTS, "shadow_host_scan_limited");
     };
 
-    const detectAuthChallengeSignals = (doc, win, frameUrl = "") => {
+    const detectAuthChallengeSignals = (doc, win, frameUrl = "", offsetX = 0, offsetY = 0) => {
       const signals = [];
       const pushSignal = (signal) => {
         if (!signals.some((entry) => entry.kind === signal.kind && entry.label === signal.label && entry.url === signal.url)) {
           signals.push(signal);
         }
+      };
+      const boundsFor = (element) => {
+        try {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return undefined;
+          return {
+            x: Math.round(rect.left + offsetX),
+            y: Math.round(rect.top + offsetY),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          };
+        } catch (_error) {
+          return undefined;
+        }
+      };
+      const identityProviderDetailsFor = (urlText, labelText = "") => {
+        const combined = normalizeText([urlText, labelText].filter(Boolean).join(" "), 1000).toLowerCase();
+        let host = "";
+        let path = "";
+        try {
+          const parsed = new URL(urlText || String(win.location.href || frameUrl || "https://invalid.local"), String(win.location.href || frameUrl || "https://invalid.local"));
+          host = parsed.hostname.toLowerCase();
+          path = parsed.pathname.toLowerCase();
+        } catch (_error) {
+          host = combined;
+        }
+        const accountBoundaryText = combined.includes("continue as ")
+          || combined.includes("choose an account")
+          || combined.includes("select an account")
+          || combined.includes("authorize")
+          || combined.includes("consent")
+          || combined.includes("allow ")
+          || combined.includes("以 ")
+          || combined.includes("的身份继续")
+          || combined.includes("授权")
+          || combined.includes("允许");
+        const googleHost = host.includes("accounts.google.com") || host.includes("googleusercontent.com");
+        const googleTrigger = path.includes("/gsi/button")
+          || combined.includes("sign in with google")
+          || combined.includes("continue with google")
+          || combined.includes("使用 google")
+          || combined.includes("使用google")
+          || combined.includes("google 登录");
+        const googleBoundary = path.includes("/gsi/iframe/select")
+          || path.includes("/gsi/iframe/confirm")
+          || path.includes("/gsi/iframe/consent")
+          || path.includes("/o/oauth")
+          || path.includes("/signin/oauth")
+          || combined.includes("google one tap")
+          || combined.includes("fedcm")
+          || (accountBoundaryText && (googleHost || combined.includes("google")));
+        if (googleBoundary) {
+          return { label: "Google identity prompt", boundary: true };
+        }
+        if (googleTrigger || googleHost) {
+          return { label: "Google sign-in trigger", boundary: false };
+        }
+        const appleTrigger = combined.includes("sign in with apple") || combined.includes("continue with apple");
+        const appleBoundary = host.includes("appleid.apple.com") && (!appleTrigger || accountBoundaryText);
+        if (appleBoundary) {
+          return { label: "Apple identity prompt", boundary: true };
+        }
+        if (appleTrigger) {
+          return { label: "Apple sign-in trigger", boundary: false };
+        }
+        const microsoftTrigger = combined.includes("sign in with microsoft") || combined.includes("continue with microsoft");
+        const microsoftBoundary = (
+          host.includes("login.microsoftonline.com")
+          || host.includes("login.live.com")
+        ) && (!microsoftTrigger || accountBoundaryText);
+        if (microsoftBoundary) {
+          return { label: "Microsoft identity prompt", boundary: true };
+        }
+        if (microsoftTrigger) {
+          return { label: "Microsoft sign-in trigger", boundary: false };
+        }
+        if (host.includes("okta.com") || host.includes("auth0.com") || combined.includes("openid") || combined.includes("oauth")) {
+          return { label: "OAuth identity prompt", boundary: true };
+        }
+        return null;
       };
       const passwordFields = Array.from(doc.querySelectorAll("input[type='password']"))
         .filter((element) => isVisible(element, win) && !isDisabled(element));
@@ -362,9 +442,50 @@ const buildBrowserAgentObservationScript = ({
           url: frameUrl
         });
       }
+      for (const element of Array.from(doc.querySelectorAll("button, a[href], [role='button'], [role='link']"))) {
+        if (!isVisible(element, win) || isDisabled(element)) continue;
+        const label = normalizeText([
+          element.getAttribute?.("aria-label") || "",
+          element.getAttribute?.("title") || "",
+          element.textContent || ""
+        ].join(" "), 200);
+        const provider = identityProviderDetailsFor("", label);
+        if (provider !== null) {
+          const bounds = boundsFor(element);
+          pushSignal({
+            kind: "oauth_popup",
+            confidence: provider.boundary ? "high" : "medium",
+            source: "dom",
+            label: provider.boundary ? provider.label : provider.label + " trigger",
+            url: frameUrl,
+            frameRef: FRAME_REF,
+            frameTreeNodeId: FRAME_TREE_NODE_ID,
+            ...(bounds === undefined ? {} : { bounds })
+          });
+        }
+      }
       for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
         const src = normalizeText(frame.getAttribute?.("src") || "", 600);
         if (!src) continue;
+        const frameLabel = normalizeText([
+          frame.getAttribute?.("title") || "",
+          frame.getAttribute?.("aria-label") || "",
+          frame.getAttribute?.("name") || ""
+        ].join(" "), 200);
+        const provider = identityProviderDetailsFor(src, frameLabel);
+        if (provider !== null) {
+          const bounds = boundsFor(frame);
+          pushSignal({
+            kind: "oauth_popup",
+            confidence: provider.boundary && isVisible(frame, win) ? "high" : "medium",
+            source: "frame",
+            label: provider.label,
+            url: src,
+            frameRef: FRAME_REF,
+            frameTreeNodeId: FRAME_TREE_NODE_ID,
+            ...(bounds === undefined ? {} : { bounds })
+          });
+        }
         let host = "";
         try {
           host = new URL(src, String(win.location.href || "https://invalid.local")).hostname.toLowerCase();
@@ -377,12 +498,16 @@ const buildBrowserAgentObservationScript = ({
           || host.includes("challenges.cloudflare")
           || host.includes("turnstile")
         ) {
+          const bounds = boundsFor(frame);
           pushSignal({
             kind: "captcha",
             confidence: "high",
             source: "frame",
             label: host,
-            url: src
+            url: src,
+            frameRef: FRAME_REF,
+            frameTreeNodeId: FRAME_TREE_NODE_ID,
+            ...(bounds === undefined ? {} : { bounds })
           });
         }
       }
@@ -510,7 +635,7 @@ const buildBrowserAgentObservationScript = ({
         });
       }
 
-      authChallengeSignals.push(...detectAuthChallengeSignals(doc, win, frameUrl));
+      authChallengeSignals.push(...detectAuthChallengeSignals(doc, win, frameUrl, offsetX, offsetY));
 
       if (!INCLUDE_CHILD_FRAMES) {
         return;
@@ -533,12 +658,24 @@ const buildBrowserAgentObservationScript = ({
           warnings.push("cross_origin_frame_skipped");
           const src = normalizeText(frame.getAttribute?.("src") || "", 600);
           if (src) {
+            const rect = frame.getBoundingClientRect();
+            const bounds = rect.width > 0 && rect.height > 0
+              ? {
+                x: Math.round(rect.left + offsetX),
+                y: Math.round(rect.top + offsetY),
+                width: Math.round(rect.width),
+                height: Math.round(rect.height)
+              }
+              : undefined;
             authChallengeSignals.push({
               kind: "oauth_popup",
               confidence: "low",
               source: "frame",
               label: "cross-origin frame",
-              url: src
+              url: src,
+              frameRef: FRAME_REF,
+              frameTreeNodeId: FRAME_TREE_NODE_ID,
+              ...(bounds === undefined ? {} : { bounds })
             });
           }
         }

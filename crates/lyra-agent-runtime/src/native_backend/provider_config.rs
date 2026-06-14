@@ -28,6 +28,9 @@ pub(crate) fn update_config(payload: Value) -> AgentRuntimeResult<Value> {
     if let Some(value) = string_opt(&payload, "openaiServiceTier") {
         state.config.service_tier = Some(value);
     }
+    if let Some(value) = string_opt(&payload, "openaiVerbosity") {
+        state.config.verbosity = Some(value);
+    }
     if let Some(value) = payload.get("proactiveEnabled").and_then(Value::as_bool) {
         state.config.proactive_enabled = value;
     }
@@ -62,9 +65,10 @@ pub(crate) fn update_config(payload: Value) -> AgentRuntimeResult<Value> {
 pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value> {
     let profile_name = string_opt(&payload, "profileName")
         .ok_or_else(|| AgentRuntimeError::Core("profileName is required".to_string()))?;
-    let provider_type =
-        string_opt(&payload, "providerType").unwrap_or_else(|| "openai-compatible".to_string());
-    let base_url = string_opt(&payload, "baseUrl");
+    let route_id = string_opt(&payload, "routeId")
+        .ok_or_else(|| AgentRuntimeError::Core("routeId is required".to_string()))?;
+    let route = providers::registry::require_route(&route_id)?;
+    let base_url = string_opt(&payload, "baseUrl").or_else(|| route.default_base_url.clone());
     let default_model = string_opt(&payload, "defaultModel");
     let models = payload
         .get("models")
@@ -103,8 +107,8 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
         .unwrap_or_default();
     let profile = NativeProviderProfile {
         id: profile_name.clone(),
-        label: string_opt(&payload, "label").unwrap_or_else(|| profile_name.clone()),
-        provider_type,
+        label: string_opt(&payload, "label").unwrap_or_else(|| route.label.clone()),
+        route_id,
         base_url,
         default_model: default_model.clone(),
         api_key: string_opt(&payload, "apiKey"),
@@ -137,8 +141,15 @@ pub(crate) fn update_provider_options(payload: Value) -> AgentRuntimeResult<Valu
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    state.config.reasoning_effort = string_opt(&payload, "reasoningEffort");
-    state.config.service_tier = string_opt(&payload, "serviceTier");
+    if payload.get("reasoningEffort").is_some() {
+        state.config.reasoning_effort = string_opt(&payload, "reasoningEffort");
+    }
+    if payload.get("serviceTier").is_some() {
+        state.config.service_tier = string_opt(&payload, "serviceTier");
+    }
+    if payload.get("verbosity").is_some() {
+        state.config.verbosity = string_opt(&payload, "verbosity");
+    }
     state.save_state()?;
     drop(state);
     list_models(payload)
@@ -164,10 +175,12 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
                 .get(&current_provider)
                 .and_then(|provider| provider.default_model.clone())
         })
-        .unwrap_or_else(|| "gpt-4.1-mini".to_string());
+        .unwrap_or_else(|| "gpt-5-mini".to_string());
     let mut models = Vec::new();
     let mut routes = Vec::new();
     for provider in state.config.providers.values() {
+        let route = providers::registry::require_route(&provider.route_id)?;
+        let available = providers::capabilities::provider_profile_available(provider, &route);
         let provider_models = if provider.models.is_empty() {
             provider
                 .default_model
@@ -197,22 +210,28 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
                 "providerId": provider.id,
                 "providerLabel": provider.label,
                 "providerKey": provider.id,
-                "apiMethod": "chatCompletions",
+                "routeId": provider.route_id,
+                "protocolId": route.protocol_id,
+                "protocolFamily": route.protocol_family,
+                "apiMethod": route.api_method,
                 "detail": provider.base_url,
                 "contextWindow": model.context_window,
                 "supportsImageInput": model.supports_image_input,
                 "supportsToolCalling": model.supports_tool_calling,
                 "supportsStreaming": model.supports_streaming,
                 "embeddingModel": provider.embedding_model,
-                "available": provider_api_key(provider).is_some(),
+                "available": available,
                 "selected": selected,
             }));
             routes.push(json!({
                 "model": model.id,
                 "provider": provider.id,
-                "apiMethod": "chatCompletions",
+                "routeId": provider.route_id,
+                "protocolId": route.protocol_id,
+                "protocolFamily": route.protocol_family,
+                "apiMethod": route.api_method,
                 "embeddingModel": provider.embedding_model,
-                "available": provider_api_key(provider).is_some(),
+                "available": available,
                 "detail": provider.base_url.clone().unwrap_or_else(|| "base URL not configured".to_string())
             }));
         }
@@ -225,7 +244,8 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
         "defaultProvider": state.config.default_provider,
         "models": models,
         "routes": routes,
-        "reasoningEffort": option_state(state.config.reasoning_effort.clone(), &["minimal", "low", "medium", "high"]),
+        "reasoningEffort": option_state(state.config.reasoning_effort.clone(), &["none", "low", "medium", "high", "xhigh"]),
+        "verbosity": option_state(state.config.verbosity.clone(), &["low", "medium", "high"]),
         "serviceTier": option_state(state.config.service_tier.clone(), &["auto", "default", "flex"]),
     }))
 }
@@ -240,6 +260,77 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
     state.config.default_model = Some(model);
     if let Some(provider) = provider {
         state.config.default_provider = Some(provider);
+    }
+    state.save_state()?;
+    drop(state);
+    list_models(payload)
+}
+
+pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
+    let provider_id = string_opt(&payload, "provider").or_else(|| {
+        state()
+            .lock()
+            .ok()
+            .and_then(|state| state.config.default_provider.clone())
+    });
+    let Some(provider_id) = provider_id else {
+        return list_models(payload);
+    };
+    let provider = {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        state.config.providers.get(&provider_id).cloned()
+    };
+    let Some(provider) = provider else {
+        return list_models(payload);
+    };
+    let route = providers::registry::require_route(&provider.route_id)?;
+    if !route.model_discovery_supported {
+        return list_models(payload);
+    }
+    if let Some(hook) = providers::registry::route_model_discovery_hook(&provider.route_id) {
+        let models = hook.discover_models(&provider)?;
+        return save_refreshed_models(payload, &provider_id, models);
+    }
+    let client = http_client_builder(Duration::from_secs(30))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let models = if route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID {
+        providers::protocol::openai_responses::discover_models(&client, &provider)?
+    } else if route.protocol_id == providers::protocol::anthropic_messages::PROTOCOL_ID {
+        providers::protocol::anthropic_messages::discover_models(&client, &provider)?
+    } else if route.protocol_id == providers::protocol::gemini_generate_content::PROTOCOL_ID {
+        providers::protocol::gemini_generate_content::discover_models(&client, &provider)?
+    } else if route.protocol_id == providers::protocol::openai_chat_completions::PROTOCOL_ID {
+        let require_auth = !route.auth_kind.contains("none");
+        providers::protocol::openai_common::discover_models(
+            &client,
+            &provider,
+            require_auth,
+            providers::protocol::openai_common::ModelDiscoveryScope::CompatibleText,
+        )?
+    } else if route.protocol_id == providers::protocol::ollama_chat::PROTOCOL_ID {
+        providers::protocol::ollama_chat::discover_models(&client, &provider)?
+    } else {
+        return list_models(payload);
+    };
+    save_refreshed_models(payload, &provider_id, models)
+}
+
+fn save_refreshed_models(
+    payload: Value,
+    provider_id: &str,
+    models: Vec<NativeProviderModel>,
+) -> AgentRuntimeResult<Value> {
+    if models.is_empty() {
+        return list_models(payload);
+    }
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    if let Some(profile) = state.config.providers.get_mut(provider_id) {
+        profile.models = models;
     }
     state.save_state()?;
     drop(state);
@@ -307,14 +398,7 @@ pub(crate) fn login_providers() -> AgentRuntimeResult<Value> {
             &state.config,
         ),
         login_provider("gmail", "Gmail", "oauth", false, true, &state.config),
-        login_provider(
-            "mimo-token-plan",
-            "MiMo Token Plan",
-            "apiKey",
-            true,
-            false,
-            &state.config,
-        ),
+        login_provider("mimo", "MiMo", "apiKey", true, false, &state.config),
     ];
     Ok(json!({ "providers": providers, "authStatus": auth_status(&state.config) }))
 }
@@ -343,8 +427,15 @@ pub(crate) fn start_account_login(payload: Value) -> AgentRuntimeResult<Value> {
 pub(crate) fn complete_account_login(payload: Value) -> AgentRuntimeResult<Value> {
     let provider = string_opt(&payload, "provider").unwrap_or_else(|| "openai".to_string());
     if provider != "gmail" {
+        let route_id =
+            providers::registry::route_id_for_login_provider(&provider).ok_or_else(|| {
+                AgentRuntimeError::Core(format!(
+                    "provider {provider} does not have a configured login route"
+                ))
+            })?;
         let _ = save_provider_profile(json!({
             "profileName": provider,
+            "routeId": route_id,
             "label": string_opt(&payload, "label").unwrap_or_else(|| provider.clone()),
             "baseUrl": string_opt(&payload, "baseUrl"),
             "defaultModel": string_opt(&payload, "defaultModel"),

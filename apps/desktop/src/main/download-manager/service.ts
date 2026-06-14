@@ -23,6 +23,10 @@ import type {
 } from "../../shared/download-manager";
 import type { LyraRuntimeClient } from "../runtime-client";
 import {
+  createBackpressuredEventSender,
+  estimateSerializedBytes
+} from "../events/backpressure";
+import {
   collectBrowserDownloadHeaders,
   shouldHandoffBrowserDownload
 } from "./browser-handoff";
@@ -40,6 +44,8 @@ export type DownloadManagerIpcBridge = {
 };
 
 const DOWNLOAD_RUNTIME_EVENT_NAME = "download.runtime";
+const DOWNLOAD_EVENT_THROTTLE_MS = 75;
+const DOWNLOAD_EVENT_MAX_QUEUE_SIZE = 256;
 
 const EMPTY_SNAPSHOT: DownloadManagerSnapshot = { tasks: [] };
 
@@ -71,6 +77,16 @@ const normalizeBatchRequest = (payload: unknown): DownloadManagerBatchRequest =>
 
 const isDownloadPriority = (value: unknown): value is DownloadManagerTask["priority"] =>
   value === "low" || value === "normal" || value === "high";
+
+const downloadEventKey = (event: DownloadManagerEvent): string => {
+  if (event.kind === "snapshot") {
+    return "snapshot";
+  }
+  if (event.kind === "task-updated") {
+    return `task:${event.task.id}`;
+  }
+  return `task:${event.taskId}`;
+};
 
 const normalizeSetPriorityRequest = (
   payload: DownloadManagerSetPriorityRequest
@@ -135,6 +151,25 @@ export const createDownloadManagerIpcBridge = ({
   const taskFromCache = (taskId: string): DownloadManagerTask | null =>
     cachedSnapshot.tasks.find((task) => task.id === taskId) ?? null;
 
+  const eventSender = createBackpressuredEventSender<DownloadManagerEvent>({
+    name: "downloads.event",
+    intervalMs: DOWNLOAD_EVENT_THROTTLE_MS,
+    maxQueueSize: DOWNLOAD_EVENT_MAX_QUEUE_SIZE,
+    keyFor: downloadEventKey,
+    merge: (_current, incoming) => incoming,
+    estimateBytes: estimateSerializedBytes,
+    send: (event) => {
+      const window = getWindow();
+      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
+        return;
+      }
+      window.webContents.send(LYRA_CHANNELS.downloadsEvent, event);
+    },
+    onError: (error) => {
+      console.warn(`[lyra-downloads] failed to send throttled event: ${String(error)}`);
+    }
+  });
+
   const publishEvent = (event: DownloadManagerEvent): void => {
     if (event.kind === "snapshot") {
       cachedSnapshot = event.snapshot;
@@ -149,11 +184,7 @@ export const createDownloadManagerIpcBridge = ({
       };
     }
 
-    const window = getWindow();
-    if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.downloadsEvent, event);
+    eventSender.enqueue(event);
   };
 
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
@@ -411,6 +442,7 @@ export const createDownloadManagerIpcBridge = ({
       disposed = true;
       session.defaultSession.off("will-download", handleWillDownload);
       unsubscribeRuntimeEvents();
+      eventSender.dispose();
       for (const [channel] of handlers) {
         ipcMain.removeHandler(channel);
       }

@@ -5,12 +5,16 @@ import { createBrowserAgentLocator } from "./agent-locator";
 import { createBrowserAgentObservationEngine } from "./agent-observation-engine";
 import { createBrowserAgentPageController } from "./agent-page-controller";
 import { createBrowserAgentStateStore } from "./agent-state-store";
+import { createBrowserAxController } from "./ax-controller";
+import { createBrowserAxSnapshotStore } from "./ax-snapshot-store";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
+import type { WorkbenchBrowserAgentTargetMode } from "../types";
 
 export type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 
 export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgentControllerHost) => {
   const stateStore = createBrowserAgentStateStore();
+  const axSnapshotStore = createBrowserAxSnapshotStore();
   const observationEngine = createBrowserAgentObservationEngine({
     findFrameInWebContents: host.findFrameInWebContents,
     openDebuggerSessionForTarget: host.openDebuggerSessionForTarget,
@@ -83,6 +87,28 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
     waitForAgentPageLoad: host.waitForAgentPageLoad
   });
+  const ax = createBrowserAxController({
+    openDebuggerSessionForTarget: host.openDebuggerSessionForTarget,
+    resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
+    sendAgentInputEvent: host.sendAgentInputEvent,
+    publishBrowserAgentActivity: host.publishBrowserAgentActivity,
+    recordFollowAction: host.recordFollowAction,
+    assertSharedControlCanContinue: host.assertSharedControlCanContinue,
+    buildSemanticFrameGraph: observationEngine.buildBrowserAgentSemanticFrameGraph,
+    nextMapEpoch: stateStore.nextMapEpoch,
+    axSnapshotStore,
+    ...(host.osAxAdapter === undefined ? {} : { osAxAdapter: host.osAxAdapter })
+  });
+
+  // Invalidate AX snapshots in lockstep with Lumen targets (navigation/reload/clearSiteData).
+  const invalidateBrowserAgentTargets = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    reason: "navigation" | "frameReload" = "navigation"
+  ): void => {
+    stateStore.invalidateBrowserAgentTargets(tabId, targetMode, reason);
+    axSnapshotStore.invalidate(tabId, targetMode, reason);
+  };
 
   const explainAgentTargetRef = async (
     tabId: string,
@@ -100,12 +126,20 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
   const dispose = (): void => {
     stateStore.dispose();
     elevation.dispose();
+    ax.dispose();
+    axSnapshotStore.dispose();
   };
 
   return {
     actOnAgentElement: interaction.actOnAgentElement,
     actOnAgentPoint: interaction.actOnAgentPoint,
     actOnAgentVisualPoint: interaction.actOnAgentVisualPoint,
+    axMapAgentPage: ax.axMapAgentPage,
+    axQueryAgentSnapshot: ax.axQueryAgentSnapshot,
+    axActOnNode: ax.axActOnNode,
+    axFocusAgentPage: ax.axFocusAgentPage,
+    axPressAgentKey: ax.axPressAgentKey,
+    axExplainNode: ax.axExplainNode,
     captureAgentPage: page.captureAgentPage,
     completeElevationSession: elevation.completeElevationSession,
     dispose,
@@ -113,7 +147,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     explainAgentTargetRef,
     findAgentPage: locator.findAgentPage,
     focusAgentPage: focusInput.focusAgentPage,
-    invalidateBrowserAgentTargets: stateStore.invalidateBrowserAgentTargets,
+    invalidateBrowserAgentTargets,
     locateAgentPage: locator.locateAgentPage,
     navigateAgentPage: page.navigateAgentPage,
     observeAgentPage: observationEngine.observeAgentPage,

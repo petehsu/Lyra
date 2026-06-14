@@ -247,6 +247,14 @@ const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
   return null;
 };
 
+const sessionExistsInList = async (
+  agentApi: NonNullable<LyraDesktopApi["agent"]>,
+  sessionId: string
+): Promise<boolean> => {
+  const response = await agentApi.listSessions({});
+  return response.sessions.some((session) => session.id === sessionId);
+};
+
 const classifyPermissionRequest = (
   title: string,
   detail: string
@@ -485,7 +493,13 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "loading" });
     const initialSession = requestedSessionId === null
       ? agentApi.createSession({ title: "新会话" })
-      : agentApi.readSession({ sessionId: requestedSessionId });
+      : (async () => {
+          const exists = await sessionExistsInList(agentApi, requestedSessionId);
+          if (!exists) {
+            throw new Error(`session not found: ${requestedSessionId}`);
+          }
+          return agentApi.readSession({ sessionId: requestedSessionId });
+        })();
 
     void initialSession
       .then((snapshot) => {
@@ -1148,6 +1162,19 @@ export const useLyraAgentDataProvider = (
     }
   }, [currentSessionId, desktopApi]);
 
+  const updateVerbosity = useCallback(async (value: string): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    setModelBusy("switch");
+    try {
+      setModelState(await desktopApi.agent.updateAgentProviderOptions({
+        sessionId: currentSessionId,
+        verbosity: value
+      }));
+    } finally {
+      setModelBusy(null);
+    }
+  }, [currentSessionId, desktopApi]);
+
   const runImprove = useCallback(async (options?: {
     planOnly?: boolean;
     focus?: string | null;
@@ -1314,6 +1341,11 @@ export const useLyraAgentDataProvider = (
         options: [...modelState.reasoningEffort.options],
         supported: modelState.reasoningEffort.supported
       },
+      verbosity: {
+        current: modelState.verbosity.current ?? null,
+        options: [...modelState.verbosity.options],
+        supported: modelState.verbosity.supported
+      },
       serviceTier: {
         current: modelState.serviceTier.current ?? null,
         options: [...modelState.serviceTier.options],
@@ -1325,6 +1357,7 @@ export const useLyraAgentDataProvider = (
       refreshModels,
       openModelSettings,
       updateReasoningEffort,
+      updateVerbosity,
       updateServiceTier
     };
     const permissionModeControls = desktopApi?.agent === undefined ? null : {
@@ -1451,6 +1484,7 @@ export const useLyraAgentDataProvider = (
     switchPermissionMode,
     switchModel,
     updateReasoningEffort,
+    updateVerbosity,
     updateServiceTier,
     onOpenFile,
     locale

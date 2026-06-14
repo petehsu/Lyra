@@ -137,12 +137,35 @@ const agentModels = {
     options: ["none", "low", "medium", "high"],
     supported: true
   },
+  verbosity: {
+    current: "medium",
+    options: ["low", "medium", "high"],
+    supported: true
+  },
   serviceTier: {
     current: "priority",
     options: ["priority", "flex"],
     supported: true
   }
 };
+
+const sessionSummaryFromSnapshot = (entry: AgentSessionSnapshot) => ({
+  id: entry.id,
+  title: entry.title,
+  status: entry.turnStatus,
+  providerKey: null,
+  providerLabel: null,
+  model: null,
+  messageCount: entry.messages.length,
+  createdAt: entry.updatedAt,
+  updatedAt: entry.updatedAt,
+  lastActiveAt: entry.updatedAt,
+  saved: false,
+  saveLabel: null,
+  archived: false,
+  customTitle: null,
+  workingDir: entry.workingDir
+});
 
 const createDesktopApi = () => {
   let listener: ((event: AgentRuntimeEvent) => void) | null = null;
@@ -151,6 +174,20 @@ const createDesktopApi = () => {
   let modelsResponse = agentModels;
   let browserFollowModeEnabled = false;
   const createSession = vi.fn(async () => readSnapshot);
+  const listSessions = vi.fn(async () => ({
+    sessionsDir: "/tmp/lyra/agent/sessions",
+    sessions: [
+      sessionSummaryFromSnapshot(readSnapshot),
+      sessionSummaryFromSnapshot({
+        ...snapshot,
+        id: "session-2",
+        title: "Background plan",
+        turnStatus: "running"
+      })
+    ].filter((session, index, sessions) =>
+      sessions.findIndex((candidate) => candidate.id === session.id) === index
+    )
+  }));
   const runImprove = vi.fn(async () => ({
     sessionId: "session-1",
     turnId: "turn-improve",
@@ -270,6 +307,7 @@ const createDesktopApi = () => {
   const api = {
     agent: {
       createSession,
+      listSessions,
       readSession: vi.fn(async () => readSnapshot),
       sendTurn: vi.fn(async () => ({
         sessionId: "session-1",
@@ -739,6 +777,19 @@ describe("AiPanelSurface", () => {
       expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
         sessionId: "session-1",
         reasoningEffort: "medium"
+      });
+    });
+
+    await openModelControlsMenu();
+
+    const verbosityItem = await screen.findByRole("menuitem", { name: /Verbosity medium/u });
+    fireEvent.pointerMove(verbosityItem, { pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
+
+    await waitFor(() => {
+      expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        verbosity: "high"
       });
     });
 

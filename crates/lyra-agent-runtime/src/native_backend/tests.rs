@@ -6,7 +6,7 @@ use std::{
     sync::{OnceLock, mpsc},
 };
 
-fn read_http_json_body(stream: &mut std::net::TcpStream) -> Value {
+fn read_http_request(stream: &mut std::net::TcpStream) -> (String, Value) {
     let mut headers = Vec::new();
     let mut byte = [0_u8; 1];
     while !headers.ends_with(b"\r\n\r\n") {
@@ -25,7 +25,14 @@ fn read_http_json_body(stream: &mut std::net::TcpStream) -> Value {
         .expect("content length");
     let mut body = vec![0_u8; content_length];
     stream.read_exact(&mut body).expect("read request body");
-    serde_json::from_slice(&body).expect("json request body")
+    (
+        header_text.into_owned(),
+        serde_json::from_slice(&body).expect("json request body"),
+    )
+}
+
+fn read_http_json_body(stream: &mut std::net::TcpStream) -> Value {
+    read_http_request(stream).1
 }
 
 fn model_tool_names(request: &Value) -> Vec<String> {

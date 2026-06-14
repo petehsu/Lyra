@@ -21,6 +21,7 @@ pub struct ProviderContextOptions {
     pub max_tool_output_chars: usize,
     pub session_tool_count: usize,
     pub last_turn_tool_count: usize,
+    pub openai_responses_replay: bool,
 }
 
 impl Default for ProviderContextOptions {
@@ -31,6 +32,7 @@ impl Default for ProviderContextOptions {
             max_tool_output_chars: 24_000,
             session_tool_count: 0,
             last_turn_tool_count: 0,
+            openai_responses_replay: false,
         }
     }
 }
@@ -109,11 +111,9 @@ impl ContextBuilder {
         };
 
         for message in messages {
-            if let Some(provider_message) =
-                provider_message_from_agent_message(&message, &options, &mut output)
-            {
-                output.messages.push(provider_message);
-            }
+            let provider_messages =
+                provider_messages_from_agent_message(&message, &options, &mut output);
+            output.messages.extend(provider_messages);
         }
 
         output.token_estimate = estimate_messages_tokens(&output.messages);
@@ -125,12 +125,23 @@ impl ContextBuilder {
     }
 }
 
-fn provider_message_from_agent_message(
+fn provider_messages_from_agent_message(
     message: &Value,
     options: &ProviderContextOptions,
     output: &mut ProviderContext,
-) -> Option<Value> {
-    let role = message.get("role").and_then(Value::as_str)?;
+) -> Vec<Value> {
+    let Some(role) = message.get("role").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    if options.openai_responses_replay
+        && role == "assistant"
+        && let Some(items) = message
+            .pointer("/metadata/openaiResponsesReplay")
+            .and_then(Value::as_array)
+            .filter(|items| !items.is_empty())
+    {
+        return items.clone();
+    }
     let text = message
         .get("text")
         .and_then(Value::as_str)
@@ -142,30 +153,89 @@ fn provider_message_from_agent_message(
         if let Some(evidence_ref) = evidence_ref {
             output.evidence_refs.push(evidence_ref);
         }
-        return (!content.trim().is_empty()).then(|| {
-            json!({
+        return if content.trim().is_empty() {
+            Vec::new()
+        } else {
+            vec![json!({
                 "role": "tool",
                 "tool_call_id": message.get("toolCallId").or_else(|| message.get("tool_call_id")).cloned().unwrap_or_else(|| Value::String("tool-result".to_string())),
                 "content": content,
-            })
-        });
+            })]
+        };
     }
 
+    let mut transcript = provider_transcript_from_agent_message(message);
     let blocks = message
         .get("blocks")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let content = if blocks.is_empty() {
-        text_content_or_none(text)?
+        text_content_or_none(text)
     } else {
-        content_from_blocks(message, &blocks, text, options, output)?
+        content_from_blocks(message, &blocks, text, options, output)
     };
 
-    Some(json!({
-        "role": role,
-        "content": content,
-    }))
+    if let Some(content) = content {
+        transcript.push(json!({
+            "role": role,
+            "content": content,
+        }));
+    }
+
+    transcript
+}
+
+fn provider_transcript_from_agent_message(message: &Value) -> Vec<Value> {
+    message
+        .pointer("/metadata/providerTranscript")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(sanitize_provider_transcript_message)
+        .collect()
+}
+
+fn sanitize_provider_transcript_message(message: &Value) -> Option<Value> {
+    let role = message.get("role").and_then(Value::as_str)?;
+    match role {
+        "assistant" => {
+            let mut output = json!({
+                "role": "assistant",
+                "content": message.get("content").cloned().unwrap_or(Value::String(String::new())),
+            });
+            if let Some(tool_calls) = message.get("tool_calls").filter(|value| value.is_array()) {
+                output["tool_calls"] = tool_calls.clone();
+            }
+            if let Some(reasoning_content) = message
+                .get("reasoning_content")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                output["reasoning_content"] = Value::String(reasoning_content.to_string());
+            }
+            Some(output)
+        }
+        "tool" => {
+            let tool_call_id = message
+                .get("tool_call_id")
+                .or_else(|| message.get("toolCallId"))
+                .cloned()
+                .unwrap_or_else(|| Value::String("tool-result".to_string()));
+            Some(json!({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": message.get("content").cloned().unwrap_or(Value::String(String::new())),
+            }))
+        }
+        "user" | "system" => message.get("content").map(|content| {
+            json!({
+                "role": role,
+                "content": content,
+            })
+        }),
+        _ => None,
+    }
 }
 
 fn text_content_or_none(text: &str) -> Option<Value> {
@@ -680,6 +750,81 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .starts_with("abc")
+        );
+    }
+
+    #[test]
+    fn provider_context_replays_provider_transcript_with_reasoning_content() {
+        let context = ContextBuilder::default().build_provider_context(
+            "system".to_string(),
+            vec![json!({
+                "id": "message-assistant",
+                "role": "assistant",
+                "text": "Done.",
+                "metadata": {
+                    "providerTranscript": [
+                        {
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": "I need to inspect the workspace.",
+                            "tool_calls": [{
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "tool_fs_run",
+                                    "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                                }
+                            }]
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": "call-1",
+                            "content": "tabs: settings"
+                        }
+                    ]
+                }
+            })],
+            ProviderContextOptions::default(),
+        );
+
+        assert_eq!(
+            context.messages[1]["reasoning_content"],
+            "I need to inspect the workspace."
+        );
+        assert_eq!(context.messages[2]["tool_call_id"], "call-1");
+        assert_eq!(context.messages[3]["content"], "Done.");
+    }
+
+    #[test]
+    fn provider_context_uses_openai_responses_replay_without_duplicate_visible_text() {
+        let context = ContextBuilder::default().build_provider_context(
+            "system".to_string(),
+            vec![json!({
+                "id": "message-assistant",
+                "role": "assistant",
+                "text": "Done.",
+                "metadata": {
+                    "openaiResponsesReplay": [{
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{ "type": "output_text", "text": "Done." }]
+                    }]
+                }
+            })],
+            ProviderContextOptions {
+                openai_responses_replay: true,
+                ..ProviderContextOptions::default()
+            },
+        );
+
+        assert_eq!(context.messages[1]["type"], "message");
+        assert_eq!(
+            context
+                .messages
+                .iter()
+                .filter(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+                .count(),
+            1
         );
     }
 

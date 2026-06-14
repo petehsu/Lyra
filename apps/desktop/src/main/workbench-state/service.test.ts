@@ -6,12 +6,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const electronMock = vi.hoisted(() => ({
   ipcMain: {
+    handle: vi.fn(),
     on: vi.fn(),
+    removeHandler: vi.fn(),
     removeListener: vi.fn()
+  },
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => [])
   }
 }));
 
 vi.mock("electron", () => ({
+  BrowserWindow: electronMock.BrowserWindow,
   ipcMain: electronMock.ipcMain
 }));
 
@@ -22,16 +28,19 @@ describe("Workbench state IPC bridge", () => {
 
   beforeEach(() => {
     storageRoot = mkdtempSync(path.join(tmpdir(), "lyra-workbench-state-"));
+    electronMock.ipcMain.handle.mockClear();
     electronMock.ipcMain.on.mockClear();
+    electronMock.ipcMain.removeHandler.mockClear();
     electronMock.ipcMain.removeListener.mockClear();
+    electronMock.BrowserWindow.getAllWindows.mockClear();
   });
 
   afterEach(() => {
     rmSync(storageRoot, { recursive: true, force: true });
   });
 
-  test("persists browser session state through the shared workbench state bridge", () => {
-    const bridge = createWorkbenchStateIpcBridge(storageRoot);
+  test("persists browser session state through the shared workbench state bridge", async () => {
+    const bridge = await createWorkbenchStateIpcBridge(storageRoot);
     const snapshot = JSON.stringify({
       schemaVersion: 1,
       snapshotId: "browser-session-1",
@@ -42,6 +51,7 @@ describe("Workbench state IPC bridge", () => {
     const unsubscribe = bridge.subscribe((event) => events.push(event));
 
     bridge.writeState("browser-session", snapshot);
+    await bridge.flush();
 
     expect(bridge.readState("browser-session")).toBe(snapshot);
     expect(events).toEqual([{ key: "browser-session", json: snapshot }]);
@@ -49,7 +59,7 @@ describe("Workbench state IPC bridge", () => {
     unsubscribe();
     bridge.dispose();
 
-    const reloadedBridge = createWorkbenchStateIpcBridge(storageRoot);
+    const reloadedBridge = await createWorkbenchStateIpcBridge(storageRoot);
     expect(reloadedBridge.readState("browser-session")).toBe(snapshot);
     reloadedBridge.dispose();
   });

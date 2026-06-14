@@ -760,9 +760,11 @@ const createDesktopApi = (): {
       onError: () => () => undefined
     },
     workbenchState: {
-      readSync: () => null,
-      writeSync: () => undefined,
-      removeSync: () => undefined
+      readCached: () => null,
+      read: async () => null,
+      write: async () => undefined,
+      remove: async () => undefined,
+      onDidChange: () => () => undefined
     },
     uiux: {
       listPacks: async () => ({ builtin: [], installed: [] }),

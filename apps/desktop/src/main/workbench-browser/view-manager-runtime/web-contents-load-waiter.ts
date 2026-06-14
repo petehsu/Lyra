@@ -1,7 +1,33 @@
 import type { WebContents } from "electron";
 
+import {
+  areNavigationAddressesEquivalent,
+  normalizeAddress
+} from "./normalizers";
+
 type PendingPageLoadWait = {
   readonly cancel: () => void;
+};
+
+type ListenerBudgetWebContents = WebContents & {
+  readonly getMaxListeners?: () => number;
+  readonly setMaxListeners?: (count: number) => void;
+};
+
+const MIN_WEB_CONTENTS_LISTENER_BUDGET = 128;
+
+const ensureWebContentsListenerBudget = (webContents: WebContents): void => {
+  const candidate = webContents as ListenerBudgetWebContents;
+  if (
+    typeof candidate.getMaxListeners !== "function"
+    || typeof candidate.setMaxListeners !== "function"
+  ) {
+    return;
+  }
+  const current = candidate.getMaxListeners();
+  if (current !== 0 && current < MIN_WEB_CONTENTS_LISTENER_BUDGET) {
+    candidate.setMaxListeners(MIN_WEB_CONTENTS_LISTENER_BUDGET);
+  }
 };
 
 const stopWebContentsLoading = (webContents: WebContents): void => {
@@ -28,6 +54,16 @@ export const createWebContentsLoadWaiter = () => {
     timeoutMs: number
   ): Promise<void> => {
     if (webContents.isDestroyed()) {
+      return;
+    }
+    ensureWebContentsListenerBudget(webContents);
+    const targetUrl = normalizeAddress(url);
+    const currentUrl = normalizeAddress(webContents.getURL());
+    if (
+      targetUrl !== null
+      && currentUrl !== null
+      && areNavigationAddressesEquivalent(currentUrl, targetUrl)
+    ) {
       return;
     }
     cancelPendingLoad(webContents);

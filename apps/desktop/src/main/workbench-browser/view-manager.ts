@@ -29,6 +29,7 @@ import type {
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserElementPickerController,
+  WorkbenchBrowserOsAxAdapter,
   WorkbenchBrowserPublishEvent,
   WorkbenchBrowserViewManager
 } from "./types";
@@ -61,12 +62,14 @@ import {
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
   publishEvent,
+  osAxAdapter,
   workbenchState,
   onWebContentsCreated,
   performanceScheduler
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
+  readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
   readonly workbenchState?: {
     readonly readState: (key: typeof BROWSER_SESSION_STATE_KEY) => string | null;
     readonly writeState: (key: typeof BROWSER_SESSION_STATE_KEY, json: string) => void;
@@ -415,6 +418,7 @@ export const createWorkbenchBrowserViewManager = ({
     navigateInEntry: pageRegistry.navigateInEntry,
     waitForAgentPageLoad,
     openDebuggerSessionForTarget,
+    ...(osAxAdapter === undefined ? {} : { osAxAdapter }),
     readPageDiagnostics,
     recordPageDiagnostic,
     publishEvent,
@@ -438,6 +442,12 @@ export const createWorkbenchBrowserViewManager = ({
     actOnAgentElement,
     actOnAgentPoint,
     actOnAgentVisualPoint,
+    axMapAgentPage,
+    axQueryAgentSnapshot,
+    axActOnNode,
+    axFocusAgentPage,
+    axPressAgentKey,
+    axExplainNode,
     captureAgentPage,
     completeElevationSession,
     elevateAgentPage,
@@ -660,6 +670,12 @@ export const createWorkbenchBrowserViewManager = ({
     actOnAgentElement,
     actOnAgentPoint,
     actOnAgentVisualPoint,
+    axMapAgentPage,
+    axQueryAgentSnapshot,
+    axActOnNode,
+    axFocusAgentPage,
+    axPressAgentKey,
+    axExplainNode,
     focusAgentPage,
     scrollAgentPage,
     typeIntoAgentElement,

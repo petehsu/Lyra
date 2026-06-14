@@ -22,6 +22,7 @@ members = [
   "crates/lyra-docs-napi",
   "crates/lyra-download-core",
   "crates/lyra-download-napi",
+  "crates/lyra-accessibility-napi",
   "crates/lyra-local-search",
   "crates/lyra-search-core",
   "crates/lyra-local-inference-core",

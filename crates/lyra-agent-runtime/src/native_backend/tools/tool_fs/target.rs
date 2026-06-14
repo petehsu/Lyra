@@ -136,6 +136,12 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         }
         "/tools/browser/audit" => host("lyraLumen.audit", "lyra_lumen", "audit"),
         "/tools/browser/elevate" => host("lyraLumen.elevate", "lyra_lumen", "elevate"),
+        "/tools/browser_ax/map" => host("lyraAx.map", "lyra_ax", "map"),
+        "/tools/browser_ax/query" => host("lyraAx.query", "lyra_ax", "query"),
+        "/tools/browser_ax/act" => host("lyraAx.act", "lyra_ax", "act"),
+        "/tools/browser_ax/focus" => host("lyraAx.focus", "lyra_ax", "focus"),
+        "/tools/browser_ax/press" => host("lyraAx.press", "lyra_ax", "press"),
+        "/tools/browser_ax/explain" => host("lyraAx.explain", "lyra_ax", "explain"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
         "/tools/filesystem/read_file" | "/tools/filesystem/read_range" => {
             native("file_read", "file", "read")

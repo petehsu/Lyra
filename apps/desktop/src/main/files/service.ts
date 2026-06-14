@@ -9,6 +9,7 @@ import type {
   FileManagerCreateFolderRequest,
   FileManagerEjectDeviceRequest,
   FileManagerFavoritesPayload,
+  FileManagerDirectoryPatch,
   FileReadResult,
   FileReadTextRequest,
   FileStatRequest,
@@ -19,8 +20,15 @@ import type {
   FileManagerRestoreFromTrashRequest,
   FileWriteTextRequest
 } from "../../shared/file-manager";
+import {
+  createBackpressuredEventSender,
+  estimateSerializedBytes
+} from "../events/backpressure";
 import { loadFilesNativeBindings } from "./native-loader";
 import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
+
+const DIRECTORY_PATCH_THROTTLE_MS = 75;
+const DIRECTORY_PATCH_MAX_QUEUE_SIZE = 1024;
 
 const normalizePath = (value: string): string => {
   const trimmed = value.trim();
@@ -230,6 +238,25 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
   let patchPoller: ReturnType<typeof setInterval> | null = null;
   const subscriptionsByWebContents = new Map<number, Set<string>>();
 
+  const directoryPatchSender = createBackpressuredEventSender<FileManagerDirectoryPatch>({
+    name: "files.directoryPatch",
+    intervalMs: DIRECTORY_PATCH_THROTTLE_MS,
+    maxQueueSize: DIRECTORY_PATCH_MAX_QUEUE_SIZE,
+    leading: false,
+    estimateBytes: estimateSerializedBytes,
+    send: (patch) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.webContents.isDestroyed()) {
+          continue;
+        }
+        window.webContents.send(LYRA_CHANNELS.filesDirectoryPatch, patch);
+      }
+    },
+    onError: (error) => {
+      console.warn(`[lyra-files] failed to send throttled directory patch: ${String(error)}`);
+    }
+  });
+
   const broadcastDirectoryPatches = (): void => {
     let patches;
     try {
@@ -240,13 +267,8 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     if (patches.length === 0) {
       return;
     }
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (window.webContents.isDestroyed()) {
-        continue;
-      }
-      for (const patch of patches) {
-        window.webContents.send(LYRA_CHANNELS.filesDirectoryPatch, patch);
-      }
+    for (const patch of patches) {
+      directoryPatchSender.enqueue(patch);
     }
   };
 
@@ -460,6 +482,7 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
         clearInterval(patchPoller);
         patchPoller = null;
       }
+      directoryPatchSender.dispose();
       subscriptionsByWebContents.clear();
     }
   };

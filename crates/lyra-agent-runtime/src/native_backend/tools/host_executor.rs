@@ -11,7 +11,7 @@ pub(crate) fn execute_host_tool_adapter(
     input: Value,
     started_at: &str,
 ) -> Value {
-    let input = attach_runtime_cancellation(
+    let mut input = attach_runtime_cancellation(
         input,
         session_id,
         turn_id,
@@ -19,7 +19,8 @@ pub(crate) fn execute_host_tool_adapter(
         display_name,
         action,
     );
-    let (input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
+    strip_untrusted_ax_authorization(display_name, action, &mut input);
+    let (mut input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
     let mut policy_decision = None;
     record_tool_activity(
         session_id,
@@ -88,6 +89,13 @@ pub(crate) fn execute_host_tool_adapter(
                     &permission_record,
                     "approved",
                 ));
+                inject_trusted_ax_authorization(
+                    display_name,
+                    action,
+                    &mut input,
+                    tool_call_id,
+                    Some(&permission_record),
+                );
             }
             Ok(false) => {
                 let output = attach_policy_decision_to_output(
@@ -156,6 +164,7 @@ pub(crate) fn execute_host_tool_adapter(
         }
     } else if policy_record_required(display_name, action, &input) {
         policy_decision = Some(auto_approval_policy_decision(display_name, action, &input));
+        inject_trusted_ax_authorization(display_name, action, &mut input, tool_call_id, None);
     }
     if cancellation.load(Ordering::SeqCst) {
         record_tool_activity(
@@ -337,6 +346,69 @@ pub(crate) fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
     let mut input = arguments.as_object().cloned().unwrap_or_default();
     input.insert("action".to_string(), Value::String(action.to_string()));
     Value::Object(input)
+}
+
+fn strip_untrusted_ax_authorization(display_name: &str, action: &str, input: &mut Value) {
+    if !matches!((display_name, action), ("lyra_ax", "act" | "press")) {
+        return;
+    }
+    let Some(object) = input.as_object_mut() else {
+        return;
+    };
+    object.remove("authorized");
+    object.remove("axAuthorization");
+}
+
+fn inject_trusted_ax_authorization(
+    display_name: &str,
+    action: &str,
+    input: &mut Value,
+    tool_call_id: &str,
+    permission: Option<&PermissionRequest>,
+) {
+    if !matches!((display_name, action), ("lyra_ax", "act" | "press")) {
+        return;
+    }
+    let Some(object) = input.as_object_mut() else {
+        return;
+    };
+    let Some(ax_ref) = object.get("axRef").and_then(Value::as_str) else {
+        return;
+    };
+    let mut authorization = Map::new();
+    authorization.insert(
+        "kind".to_string(),
+        Value::String("lyra_ax_one_time".to_string()),
+    );
+    authorization.insert("action".to_string(), Value::String(action.to_string()));
+    authorization.insert("axRef".to_string(), Value::String(ax_ref.to_string()));
+    authorization.insert(
+        "toolCallId".to_string(),
+        Value::String(tool_call_id.to_string()),
+    );
+    if let Some(permission) = permission {
+        authorization.insert(
+            "permissionRequestId".to_string(),
+            Value::String(permission.id.clone()),
+        );
+    }
+    authorization.insert("issuedAt".to_string(), Value::String(now()));
+    authorization.insert(
+        "expiresAt".to_string(),
+        Value::Number((Utc::now().timestamp_millis() + 120_000).into()),
+    );
+    if let Some(tab_id) = object.get("tabId").and_then(Value::as_str) {
+        authorization.insert("tabId".to_string(), Value::String(tab_id.to_string()));
+    }
+    if let Some(target_mode) = object.get("targetMode").and_then(Value::as_str)
+        && matches!(target_mode, "live" | "isolated")
+    {
+        authorization.insert(
+            "targetMode".to_string(),
+            Value::String(target_mode.to_string()),
+        );
+    }
+    object.insert("axAuthorization".to_string(), Value::Object(authorization));
 }
 
 pub(crate) fn browser_host_adapter_arguments(

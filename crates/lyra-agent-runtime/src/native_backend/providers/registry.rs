@@ -1,0 +1,296 @@
+use crate::AgentRuntimeResult;
+
+use super::{
+    errors, protocol, routes,
+    types::{ProtocolCatalogEntry, ProviderRouteDescriptor},
+};
+
+pub(crate) fn protocol_catalog() -> Vec<ProtocolCatalogEntry> {
+    vec![
+        protocol::openai_chat_completions::catalog_entry(),
+        protocol::openai_responses::catalog_entry(),
+        protocol::anthropic_messages::catalog_entry(),
+        protocol::gemini_generate_content::catalog_entry(),
+        protocol::ollama_chat::catalog_entry(),
+        protocol::aws_bedrock_converse::catalog_entry(),
+        protocol::local_inference::catalog_entry(),
+    ]
+}
+
+pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
+    let mut routes = vec![
+        routes::openai::descriptor(),
+        routes::anthropic::descriptor(),
+        routes::aws_bedrock::descriptor(),
+        routes::google_gemini::descriptor(),
+        routes::openrouter::descriptor(),
+        routes::custom_openai_compatible::descriptor(),
+        routes::custom_anthropic_compatible::descriptor(),
+        routes::local_openai_compatible::descriptor(),
+        routes::ollama::descriptor(),
+    ];
+    routes.extend(routes::mimo::route_descriptors());
+    routes.extend([
+        routes::lmstudio::descriptor(),
+        routes::llama_cpp_server::descriptor(),
+        routes::vllm::descriptor(),
+    ]);
+    routes
+}
+
+pub(crate) fn route_descriptor(route_id: &str) -> Option<ProviderRouteDescriptor> {
+    route_catalog()
+        .into_iter()
+        .find(|route| route.id == route_id)
+}
+
+pub(crate) fn require_route(route_id: &str) -> AgentRuntimeResult<ProviderRouteDescriptor> {
+    route_descriptor(route_id).ok_or_else(|| errors::unknown_route_error(route_id))
+}
+
+pub(crate) fn hosted_openai_route_hook(
+    route_id: &str,
+) -> Option<&'static dyn routes::HostedOpenAiRouteHook> {
+    match route_id {
+        routes::openrouter::ROUTE_ID => Some(routes::openrouter::hook()),
+        routes::mimo::PAY_AS_YOU_GO_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_CN_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_AMS_ROUTE_ID => routes::mimo::hook(route_id),
+        routes::custom_openai_compatible::ROUTE_ID => {
+            Some(routes::custom_openai_compatible::hook())
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn route_model_discovery_hook(
+    route_id: &str,
+) -> Option<&'static dyn routes::RouteModelDiscoveryHook> {
+    match route_id {
+        routes::lmstudio::ROUTE_ID => Some(routes::lmstudio::model_discovery_hook()),
+        _ => None,
+    }
+}
+
+pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str> {
+    match provider {
+        "openai" => Some(routes::openai::ROUTE_ID),
+        "anthropic" | "claude" => Some(routes::anthropic::ROUTE_ID),
+        "aws_bedrock" | "bedrock" => Some(routes::aws_bedrock::ROUTE_ID),
+        "gemini" | "google_gemini" => Some(routes::google_gemini::ROUTE_ID),
+        "openrouter" => Some(routes::openrouter::ROUTE_ID),
+        "mimo" => Some(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use reqwest::{blocking::Client, header::AUTHORIZATION};
+    use serde_json::json;
+
+    use crate::native_backend::{NativeProviderModel, NativeProviderProfile};
+
+    use super::*;
+
+    fn provider(route_id: &str, auth_header: Option<&str>) -> NativeProviderProfile {
+        NativeProviderProfile {
+            id: format!("{route_id}-profile"),
+            label: route_id.to_string(),
+            route_id: route_id.to_string(),
+            base_url: Some("https://example.com/v1".to_string()),
+            default_model: Some("gpt-test".to_string()),
+            api_key: Some("sk-test".to_string()),
+            api_key_env: None,
+            auth_header: auth_header.map(str::to_string),
+            embedding_model: None,
+            models: vec![NativeProviderModel {
+                id: "gpt-test".to_string(),
+                label: Some("gpt-test".to_string()),
+                context_window: None,
+                supports_image_input: true,
+                supports_tool_calling: true,
+                supports_streaming: true,
+            }],
+        }
+    }
+
+    #[test]
+    fn hosted_openai_hook_lookup_resolves_supported_hosted_routes_only() {
+        assert!(hosted_openai_route_hook(routes::openai::ROUTE_ID).is_none());
+        assert_eq!(
+            hosted_openai_route_hook(routes::openrouter::ROUTE_ID).map(|hook| hook.descriptor().id),
+            Some(routes::openrouter::ROUTE_ID.to_string())
+        );
+        assert_eq!(
+            hosted_openai_route_hook(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID)
+                .map(|hook| hook.descriptor().id),
+            Some(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID.to_string())
+        );
+        assert_eq!(
+            hosted_openai_route_hook(routes::mimo::TOKEN_PLAN_CN_ROUTE_ID)
+                .map(|hook| hook.descriptor().id),
+            Some(routes::mimo::TOKEN_PLAN_CN_ROUTE_ID.to_string())
+        );
+        assert_eq!(
+            hosted_openai_route_hook(routes::custom_openai_compatible::ROUTE_ID)
+                .map(|hook| hook.descriptor().id),
+            Some(routes::custom_openai_compatible::ROUTE_ID.to_string())
+        );
+        assert!(hosted_openai_route_hook(routes::lmstudio::ROUTE_ID).is_none());
+        assert!(hosted_openai_route_hook(routes::llama_cpp_server::ROUTE_ID).is_none());
+        assert!(hosted_openai_route_hook(routes::vllm::ROUTE_ID).is_none());
+        assert!(hosted_openai_route_hook(routes::local_openai_compatible::ROUTE_ID).is_none());
+    }
+
+    #[test]
+    fn openai_route_is_responses_protocol_not_chat_hook() {
+        let route = require_route(routes::openai::ROUTE_ID).expect("openai route");
+
+        assert_eq!(route.protocol_id, protocol::openai_responses::PROTOCOL_ID);
+        assert_eq!(route.api_method, "responses");
+        assert!(route.runtime_supported);
+        assert!(route.model_discovery_supported);
+    }
+
+    #[test]
+    fn anthropic_route_is_messages_protocol() {
+        let route = require_route(routes::anthropic::ROUTE_ID).expect("anthropic route");
+
+        assert_eq!(route.protocol_id, protocol::anthropic_messages::PROTOCOL_ID);
+        assert_eq!(route.api_method, "messages");
+        assert!(route.runtime_supported);
+        assert!(route.model_discovery_supported);
+    }
+
+    #[test]
+    fn custom_anthropic_route_is_messages_protocol() {
+        let route = require_route(routes::custom_anthropic_compatible::ROUTE_ID)
+            .expect("custom anthropic route");
+
+        assert_eq!(route.protocol_id, protocol::anthropic_messages::PROTOCOL_ID);
+        assert_eq!(route.api_method, "messages");
+        assert!(route.runtime_supported);
+        assert!(route.model_discovery_supported);
+        assert!(route.custom_headers_supported);
+    }
+
+    #[test]
+    fn google_gemini_route_is_generate_content_protocol() {
+        let route = require_route(routes::google_gemini::ROUTE_ID).expect("google gemini route");
+
+        assert_eq!(
+            route.protocol_id,
+            protocol::gemini_generate_content::PROTOCOL_ID
+        );
+        assert_eq!(route.api_method, "generateContent");
+        assert!(route.runtime_supported);
+        assert!(route.model_discovery_supported);
+    }
+
+    #[test]
+    fn aws_bedrock_route_is_converse_protocol() {
+        let route = require_route(routes::aws_bedrock::ROUTE_ID).expect("aws bedrock route");
+
+        assert_eq!(
+            route.protocol_id,
+            protocol::aws_bedrock_converse::PROTOCOL_ID
+        );
+        assert_eq!(route.api_method, "converse");
+        assert!(route.runtime_supported);
+        assert!(!route.model_discovery_supported);
+        assert!(!route.quick_setup_supported);
+    }
+
+    #[test]
+    fn local_routes_are_runtime_supported_but_not_quick_setup() {
+        for route_id in [
+            routes::ollama::ROUTE_ID,
+            routes::local_openai_compatible::ROUTE_ID,
+            routes::lmstudio::ROUTE_ID,
+            routes::llama_cpp_server::ROUTE_ID,
+            routes::vllm::ROUTE_ID,
+        ] {
+            let route = require_route(route_id).expect("local route");
+
+            assert_eq!(route.catalog_section, "local");
+            assert!(route.runtime_supported);
+            assert!(route.model_discovery_supported);
+            assert!(!route.quick_setup_supported);
+        }
+    }
+
+    #[test]
+    fn lmstudio_has_route_model_discovery_hook_only() {
+        assert!(route_model_discovery_hook(routes::lmstudio::ROUTE_ID).is_some());
+        assert!(route_model_discovery_hook(routes::llama_cpp_server::ROUTE_ID).is_none());
+        assert!(route_model_discovery_hook(routes::vllm::ROUTE_ID).is_none());
+    }
+
+    #[test]
+    fn custom_hosted_hook_uses_custom_auth_header_when_requested() {
+        let hook = hosted_openai_route_hook(routes::custom_openai_compatible::ROUTE_ID)
+            .expect("custom hook must exist");
+        let provider = provider(routes::custom_openai_compatible::ROUTE_ID, Some("api-key"));
+
+        let request = hook
+            .apply_request_headers(
+                Client::new().post("https://example.com/v1/chat/completions"),
+                &provider,
+            )
+            .expect("apply request headers")
+            .build()
+            .expect("build request");
+
+        assert_eq!(
+            request
+                .headers()
+                .get("api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("sk-test")
+        );
+        assert!(request.headers().get(AUTHORIZATION).is_none());
+    }
+
+    #[test]
+    fn mimo_hook_applies_api_key_header_and_keeps_pro_thinking_enabled_for_tool_calls() {
+        let hook =
+            hosted_openai_route_hook(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID).expect("mimo hook");
+        let provider = provider(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID, None);
+
+        let body = hook
+            .decorate_request_body(
+                json!({
+                    "model": "mimo-v2.5-pro",
+                    "tools": [{
+                        "type": "function",
+                        "function": { "name": "tool_fs_run" }
+                    }]
+                }),
+                &provider,
+                "mimo-v2.5-pro",
+            )
+            .expect("decorate mimo body");
+        let request = hook
+            .apply_request_headers(
+                Client::new().post("https://example.com/v1/chat/completions"),
+                &provider,
+            )
+            .expect("apply request headers")
+            .build()
+            .expect("build request");
+
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["temperature"], 1.0);
+        assert_eq!(body["top_p"], 0.95);
+        assert_eq!(
+            request
+                .headers()
+                .get("api-key")
+                .and_then(|value| value.to_str().ok()),
+            Some("sk-test")
+        );
+        assert!(request.headers().get(AUTHORIZATION).is_none());
+    }
+}

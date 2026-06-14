@@ -29,6 +29,7 @@ import type {
   BrowserTextExtractOptions
 } from "../workbench-observation/browser/types";
 import type { DownloadManagerIpcBridge } from "../download-manager";
+import type { AccessibilityNativeLoadResult } from "../accessibility";
 import type { LoginManagerIpcBridge } from "../login-manager";
 import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
@@ -56,6 +57,7 @@ import type {
   WorkbenchBrowserFrameDomProbeResult,
   WorkbenchBrowserFrameGlobalBounds,
   WorkbenchBrowserNativeInputEvent,
+  WorkbenchBrowserOsAxAdapter,
   WorkbenchBrowserSessionFetchRequest,
   WorkbenchBrowserSessionFetchResult,
   WorkbenchBrowserViewManager
@@ -70,6 +72,21 @@ const publishEvent = (
     return;
   }
   window.webContents.send(LYRA_CHANNELS.workbenchBrowserEvent, event);
+};
+
+const createOsAxAdapter = (
+  loadResult: AccessibilityNativeLoadResult | undefined
+): WorkbenchBrowserOsAxAdapter | undefined => {
+  if (loadResult === undefined || loadResult.ok === false) {
+    return undefined;
+  }
+  const { bindings, loadedFrom } = loadResult;
+  return {
+    loadedFrom,
+    readTree: ({ maxNodes }) => JSON.parse(bindings.readOsAxTreeJson(JSON.stringify({ maxNodes }))),
+    actOnNode: ({ osPath, interaction }) =>
+      JSON.parse(bindings.actOnOsAxNodeJson(JSON.stringify({ osPath, interaction })))
+  };
 };
 
 export type WorkbenchBrowserIpcBridge = {
@@ -269,6 +286,12 @@ export type WorkbenchBrowserIpcBridge = {
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly axMapAgentPage: WorkbenchBrowserViewManager["axMapAgentPage"];
+  readonly axQueryAgentSnapshot: WorkbenchBrowserViewManager["axQueryAgentSnapshot"];
+  readonly axActOnNode: WorkbenchBrowserViewManager["axActOnNode"];
+  readonly axFocusAgentPage: WorkbenchBrowserViewManager["axFocusAgentPage"];
+  readonly axPressAgentKey: WorkbenchBrowserViewManager["axPressAgentKey"];
+  readonly axExplainNode: WorkbenchBrowserViewManager["axExplainNode"];
   readonly navigateAgentPage: WorkbenchBrowserViewManager["navigateAgentPage"];
   readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
   readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
@@ -286,18 +309,22 @@ export const createWorkbenchBrowserIpcBridge = ({
   getWindow,
   downloadManager,
   loginManager,
+  accessibilityNative,
   workbenchState,
   performanceScheduler
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
   readonly loginManager?: Pick<LoginManagerIpcBridge, "attachWebContents">;
+  readonly accessibilityNative?: AccessibilityNativeLoadResult;
   readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
 }): WorkbenchBrowserIpcBridge => {
+  const osAxAdapter = createOsAxAdapter(accessibilityNative);
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
     publishEvent: (event) => publishEvent(getWindow, event),
+    ...(osAxAdapter === undefined ? {} : { osAxAdapter }),
     ...(workbenchState === undefined ? {} : { workbenchState }),
     ...(performanceScheduler === undefined ? {} : { performanceScheduler }),
     ...(
@@ -470,6 +497,12 @@ export const createWorkbenchBrowserIpcBridge = ({
     setModalOcclusionActive: manager.setModalOcclusionActive,
     toggleDevToolsForActivePage: manager.toggleDevToolsForActivePage,
     observeAgentPage: manager.observeAgentPage,
+    axMapAgentPage: manager.axMapAgentPage,
+    axQueryAgentSnapshot: manager.axQueryAgentSnapshot,
+    axActOnNode: manager.axActOnNode,
+    axFocusAgentPage: manager.axFocusAgentPage,
+    axPressAgentKey: manager.axPressAgentKey,
+    axExplainNode: manager.axExplainNode,
     actOnAgentElement: manager.actOnAgentElement,
     actOnAgentPoint: manager.actOnAgentPoint,
     actOnAgentVisualPoint: manager.actOnAgentVisualPoint,

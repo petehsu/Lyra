@@ -371,6 +371,7 @@ export interface ComposerModelControls {
   currentProvider: string;
   models: ModelOption[];
   reasoningEffort: ProviderOptionControl;
+  verbosity: ProviderOptionControl;
   serviceTier: ProviderOptionControl;
   isRefreshing: boolean;
   isSwitching: boolean;
@@ -378,6 +379,7 @@ export interface ComposerModelControls {
   refreshModels(): Promise<void>;
   openModelSettings(): Promise<void>;
   updateReasoningEffort(value: string): Promise<void>;
+  updateVerbosity(value: string): Promise<void>;
   updateServiceTier(value: string): Promise<void>;
 }
 

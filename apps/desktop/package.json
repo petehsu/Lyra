@@ -5,7 +5,7 @@
   "type": "module",
   "main": "out/main/index.cjs",
   "scripts": {
-    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-cli && cargo build --manifest-path ../../Cargo.toml -p lyra-performance-core && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -F lyra-terminal-core/node-api -p lyra-lsp-core -F lyra-lsp-core/node-api -p lyra-files-napi -p lyra-image-napi -p lyra-docs-napi -p lyra-download-core -p lyra-download-napi && npm run native:stage",
+    "native:build": "cargo build --manifest-path ../../Cargo.toml -p lyrad && cargo build --manifest-path ../../Cargo.toml -p lyra-cli && cargo build --manifest-path ../../Cargo.toml -p lyra-performance-core && cargo build --manifest-path ../../Cargo.toml -p lyra-terminal-core -F lyra-terminal-core/node-api -p lyra-lsp-core -F lyra-lsp-core/node-api -p lyra-files-napi -p lyra-image-napi -p lyra-docs-napi -p lyra-download-core -p lyra-download-napi -p lyra-accessibility-napi && npm run native:stage",
     "native:build:release": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --release --clean",
     "native:stage": "node --import tsx ../../scripts/desktop/stage-native-resources.ts --stage-only",
     "electron:ensure": "node --import tsx ../../scripts/desktop/ensure-electron.ts",

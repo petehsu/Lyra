@@ -904,11 +904,69 @@ export type AgentConfigSnapshot = {
   readonly commands: readonly AgentRegisteredCommand[];
 };
 
+export type AgentProviderProtocolEntry = {
+  readonly id: string;
+  readonly family: string;
+  readonly label: string;
+  readonly transport: string;
+  readonly runtimeSupported: boolean;
+  readonly streamingSupported: boolean;
+  readonly toolCallingSupported: boolean;
+};
+
+export type AgentProviderRouteEntry = {
+  readonly id: string;
+  readonly providerId: string;
+  readonly protocolId: string;
+  readonly protocolFamily: string;
+  readonly label: string;
+  readonly description: string;
+  readonly defaultBaseUrl?: string | null;
+  readonly apiMethod: string;
+  readonly authKind: string;
+  readonly runtimeSupported: boolean;
+  readonly modelDiscoverySupported: boolean;
+  readonly customHeadersSupported: boolean;
+  readonly localBackend?: string | null;
+  readonly catalogSection: string;
+  readonly quickSetupSupported: boolean;
+};
+
+export type AgentProviderCapabilitySummary = {
+  readonly supportsImageInput: boolean;
+  readonly supportsToolCalling: boolean;
+  readonly supportsStreaming: boolean;
+};
+
+export type AgentProviderCatalogProfile = {
+  readonly id: string;
+  readonly label: string;
+  readonly routeId: string;
+  readonly protocolId: string;
+  readonly protocolFamily: string;
+  readonly baseUrl?: string | null;
+  readonly defaultModel?: string | null;
+  readonly configured: boolean;
+  readonly authHeader?: string | null;
+  readonly modelCount: number;
+  readonly capabilities: AgentProviderCapabilitySummary;
+};
+
+export type AgentProviderCatalogSnapshot = {
+  readonly schemaVersion: string;
+  readonly defaultProvider?: string | null;
+  readonly defaultModel?: string | null;
+  readonly protocols: readonly AgentProviderProtocolEntry[];
+  readonly routes: readonly AgentProviderRouteEntry[];
+  readonly profiles: readonly AgentProviderCatalogProfile[];
+};
+
 export type AgentConfigUpdateRequest = {
   readonly defaultModel?: string | null;
   readonly defaultProvider?: string | null;
   readonly openaiReasoningEffort?: string | null;
   readonly openaiServiceTier?: string | null;
+  readonly openaiVerbosity?: string | null;
   readonly ntfyTopic?: string | null;
   readonly ntfyServer?: string | null;
   readonly desktopNotifications?: boolean;
@@ -935,10 +993,14 @@ export type AgentConfigUpdateRequest = {
 export type AgentProviderProfileModelRequest = {
   readonly id: string;
   readonly contextWindow?: number | null;
+  readonly supportsImageInput?: boolean;
+  readonly supportsToolCalling?: boolean;
+  readonly supportsStreaming?: boolean;
 };
 
 export type AgentProviderProfileSaveRequest = {
   readonly profileName: string;
+  readonly routeId: string;
   readonly baseUrl: string;
   readonly defaultModel?: string | null;
   readonly apiKey?: string | null;
@@ -946,7 +1008,6 @@ export type AgentProviderProfileSaveRequest = {
   readonly envFile?: string | null;
   readonly auth?: "bearer" | "header" | "none";
   readonly authHeader?: string | null;
-  readonly providerType?: "openai-compatible" | "openrouter";
   readonly setDefault?: boolean;
   readonly models?: readonly AgentProviderProfileModelRequest[];
 };
@@ -1047,6 +1108,7 @@ export type AgentModelCatalogSnapshot = {
   readonly models: readonly AgentModelEntry[];
   readonly routes: readonly AgentModelRoute[];
   readonly reasoningEffort: AgentProviderOptionState;
+  readonly verbosity: AgentProviderOptionState;
   readonly serviceTier: AgentProviderOptionState;
 };
 
@@ -1058,11 +1120,13 @@ export type AgentModelSwitchRequest = {
 
 export type AgentModelRefreshRequest = {
   readonly sessionId?: string | null;
+  readonly provider?: string | null;
 };
 
 export type AgentProviderOptionsUpdateRequest = {
   readonly sessionId?: string | null;
   readonly reasoningEffort?: string | null;
+  readonly verbosity?: string | null;
   readonly serviceTier?: string | null;
 };
 
@@ -1156,6 +1220,7 @@ export type AgentApi = {
     request: AgentPermissionPolicySetModeRequest
   ) => Promise<AgentPermissionPolicySnapshot>;
   readonly readAgentConfig: () => Promise<AgentConfigSnapshot>;
+  readonly readAgentProviderCatalog: () => Promise<AgentProviderCatalogSnapshot>;
   readonly updateAgentConfig: (
     request: AgentConfigUpdateRequest
   ) => Promise<AgentConfigSnapshot>;

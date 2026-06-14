@@ -45,6 +45,11 @@ fn home_dir() -> AgentRuntimeResult<PathBuf> {
 }
 
 fn permission_policy_path() -> AgentRuntimeResult<PathBuf> {
+    if cfg!(test) {
+        return Ok(runtime_root()
+            .join(PERMISSION_POLICY_DIR)
+            .join(PERMISSION_POLICY_FILE));
+    }
     Ok(home_dir()?
         .join(PERMISSION_POLICY_DIR)
         .join(PERMISSION_POLICY_FILE))

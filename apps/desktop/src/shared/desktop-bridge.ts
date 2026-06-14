@@ -214,11 +214,16 @@ export type {
   AgentOvernightRunSnapshot,
   AgentOvernightStartRequest,
   AgentOvernightStartResponse,
+  AgentProviderCapabilitySummary,
+  AgentProviderCatalogProfile,
+  AgentProviderCatalogSnapshot,
   AgentPermissionPolicySetModeRequest,
   AgentPermissionPolicySnapshot,
   AgentProviderOptionState,
+  AgentProviderProtocolEntry,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
+  AgentProviderRouteEntry,
   AgentPokeRequest,
   AgentPokeResponse,
   AgentRegisteredCommand,
@@ -231,27 +236,6 @@ export type {
   AgentSubagentRunRequest,
   AgentSubagentRunResponse
 } from "./agent";
-export type {
-  AiDiscoverModelsRequest,
-  AiDeleteProfileRequest,
-  AiModelDiscoveryResult,
-  AiProfileId,
-  AiProviderCatalogItem,
-  AiProviderFieldKind,
-  AiProviderFieldOption,
-  AiProviderFieldSchema,
-  AiProviderHeaders,
-  AiProviderId,
-  AiProviderModelEntry,
-  AiProviderPreset,
-  AiProviderPresetId,
-  AiProviderProfile,
-  AiProtocolId,
-  AiProfileAuthConfig,
-  AiProfileConnectionConfig,
-  AiRuntimeConfigSnapshot,
-  AiUpsertProfileRequest
-} from "./ai";
 export type {
   ImageViewerCloseSessionRequest,
   ImageViewerEvent,
@@ -652,6 +636,7 @@ export const LYRA_CHANNELS = {
   agentPermissionPolicyRead: "lyra:agent/permission-policy/read",
   agentPermissionPolicySetMode: "lyra:agent/permission-policy/set-mode",
   agentConfigRead: "lyra:agent/config/read",
+  agentProviderCatalogRead: "lyra:agent/provider/catalog/read",
   agentConfigUpdate: "lyra:agent/config/update",
   agentProviderProfileSave: "lyra:agent/provider/profile/save",
   agentModelsList: "lyra:agent/models/list",
@@ -694,9 +679,11 @@ export const LYRA_CHANNELS = {
   uiuxUninstall: "lyra:uiux/uninstall",
   uiuxRequestActivation: "lyra:uiux/request-activation",
   uiuxResolveRuntime: "lyra:uiux/resolve-runtime",
-  workbenchStateReadSync: "lyra:workbench-state/read-sync",
-  workbenchStateWriteSync: "lyra:workbench-state/write-sync",
-  workbenchStateRemoveSync: "lyra:workbench-state/remove-sync"
+  workbenchStateBootstrapSnapshot: "lyra:workbench-state/bootstrap-snapshot",
+  workbenchStateRead: "lyra:workbench-state/read",
+  workbenchStateWrite: "lyra:workbench-state/write",
+  workbenchStateRemove: "lyra:workbench-state/remove",
+  workbenchStateChanged: "lyra:workbench-state/changed"
 } as const;
 
 export type WindowStatePayload = {
@@ -2480,10 +2467,19 @@ export type WorkbenchStateKey =
   | "notifications"
   | "layout";
 
+export type WorkbenchStateSnapshot = Readonly<Record<WorkbenchStateKey, string | null>>;
+
+export type WorkbenchStateChangeEvent = {
+  readonly key: WorkbenchStateKey;
+  readonly json: string | null;
+};
+
 export type WorkbenchStateApi = {
-  readonly readSync: (key: WorkbenchStateKey) => string | null;
-  readonly writeSync: (key: WorkbenchStateKey, json: string) => void;
-  readonly removeSync: (key: WorkbenchStateKey) => void;
+  readonly readCached: (key: WorkbenchStateKey) => string | null;
+  readonly read: (key: WorkbenchStateKey) => Promise<string | null>;
+  readonly write: (key: WorkbenchStateKey, json: string) => Promise<void>;
+  readonly remove: (key: WorkbenchStateKey) => Promise<void>;
+  readonly onDidChange: (listener: (event: WorkbenchStateChangeEvent) => void) => () => void;
 };
 
 export type WorkbenchObservationBridgeApi = {

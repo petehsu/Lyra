@@ -5,6 +5,7 @@ import type { TerminalIpcBridge } from "../terminal/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
 import { createAgentIpcRouter } from "./agent-ipc-router";
+import { createAxToolHost } from "./ax-tool-host";
 import { createLumenToolHost } from "./lumen-tool-host";
 import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
@@ -68,11 +69,18 @@ export const createAgentIpcBridge = ({
     getBrowserFollowMode: browserFollowMode.read
   });
 
+  const axToolHost = createAxToolHost({
+    getBrowserBridge,
+    tabResolver: workbenchObservationAdapter,
+    getBrowserFollowMode: browserFollowMode.read
+  });
+
   const softwareCapabilityHost = createSoftwareCapabilityHost({ getWindow });
 
   const hostCapabilityHandlers: AgentHostCapabilityHandlers = {
     ...workbenchObservationAdapter.handlers,
     ...lumenToolHost.handlers,
+    ...axToolHost.handlers,
     ...terminalToolHost.handlers,
     ...softwareCapabilityHost.handlers
   };

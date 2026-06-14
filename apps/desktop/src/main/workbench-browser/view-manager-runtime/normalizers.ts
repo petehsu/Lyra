@@ -624,6 +624,59 @@ const normalizeAddress = (value: unknown): string | null => {
   }
 };
 
+const TRANSIENT_NAVIGATION_PARAM_NAMES = new Set([
+  "__cf_chl_rt_tk",
+  "__cf_chl_tk",
+  "__cf_chl_jschl_tk__",
+  "__cf_chl_captcha_tk__",
+  "__cf_chl_managed_tk__",
+  "__cf_chl_f_tk",
+  "cf_chl_rt_tk",
+  "cf_chl_tk"
+]);
+
+const isTransientNavigationParam = (name: string): boolean => {
+  const normalized = name.trim();
+  return (
+    TRANSIENT_NAVIGATION_PARAM_NAMES.has(normalized)
+    || normalized.startsWith("__cf_chl_")
+    || normalized.startsWith("cf_chl_")
+  );
+};
+
+const normalizeNavigationComparisonAddress = (value: unknown): string | null => {
+  const address = normalizeAddress(value);
+  if (address === null || address === "about:blank") {
+    return address;
+  }
+  try {
+    const parsed = new URL(address);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return address;
+    }
+    for (const name of [...parsed.searchParams.keys()]) {
+      if (isTransientNavigationParam(name)) {
+        parsed.searchParams.delete(name);
+      }
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return address;
+  }
+};
+
+const areNavigationAddressesEquivalent = (left: unknown, right: unknown): boolean => {
+  const normalizedLeft = normalizeAddress(left);
+  const normalizedRight = normalizeAddress(right);
+  if (normalizedLeft === null || normalizedRight === null) {
+    return false;
+  }
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+  return normalizeNavigationComparisonAddress(normalizedLeft) === normalizeNavigationComparisonAddress(normalizedRight);
+};
+
 const normalizeWebOrigin = (value: unknown): string | null => {
   const address = normalizeAddress(value);
   if (address === null) {
@@ -878,6 +931,7 @@ export {
   MAX_BROWSER_AGENT_FOLLOW_FRAMES,
   MAX_BROWSER_PAGE_DIAGNOSTICS,
   actionCapabilitiesForElement,
+  areNavigationAddressesEquivalent,
   boundsCenter,
   browserAgentTargetFingerprint,
   browserAgentTargetKind,

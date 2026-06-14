@@ -59,6 +59,7 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &V
         ("lyra_lumen", "act" | "vact" | "type" | "press" | "submit" | "navigate" | "elevate") => {
             true
         }
+        ("lyra_ax", "act" | "press") => true,
         ("software", "invoke_capability") => true,
         _ => false,
     }

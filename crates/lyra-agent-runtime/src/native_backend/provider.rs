@@ -1,4 +1,10 @@
-use super::*;
+use super::{
+    providers::protocol::{
+        anthropic_messages, aws_bedrock_converse, gemini_generate_content, ollama_chat,
+        openai_chat_completions as openai_chat, openai_responses,
+    },
+    *,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
 
@@ -26,8 +32,10 @@ pub(crate) struct ModelRequest {
 #[derive(Clone, Debug)]
 pub(crate) struct ModelReply {
     pub(crate) content: Option<String>,
+    pub(crate) reasoning_content: Option<String>,
     pub(crate) tool_calls: Vec<ModelToolCall>,
     pub(crate) ui_message_id: Option<String>,
+    pub(crate) provider_replay_items: Vec<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,8 +48,9 @@ pub(crate) struct ModelToolCall {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ProviderStreamState {
     pub(crate) content: String,
+    pub(crate) reasoning_content: String,
     pub(crate) reasoning_chars: usize,
-    pub(crate) tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
+    pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
 }
@@ -50,6 +59,8 @@ pub(crate) struct ProviderStreamState {
 pub(crate) struct ModelLoopResult {
     pub(crate) final_text: Option<String>,
     pub(crate) metadata: Option<Value>,
+    pub(crate) provider_transcript: Vec<Value>,
+    pub(crate) provider_replay_items: Vec<Value>,
 }
 
 impl ModelLoopResult {
@@ -57,6 +68,8 @@ impl ModelLoopResult {
         Self {
             final_text: Some(text),
             metadata: None,
+            provider_transcript: Vec::new(),
+            provider_replay_items: Vec::new(),
         }
     }
 
@@ -64,7 +77,43 @@ impl ModelLoopResult {
         Self {
             final_text: Some(text),
             metadata: Some(metadata),
+            provider_transcript: Vec::new(),
+            provider_replay_items: Vec::new(),
         }
+    }
+
+    fn with_provider_transcript(mut self, provider_transcript: Vec<Value>) -> Self {
+        self.provider_transcript = provider_transcript;
+        self
+    }
+
+    fn with_provider_replay_items(mut self, provider_replay_items: Vec<Value>) -> Self {
+        self.provider_replay_items = provider_replay_items;
+        self
+    }
+
+    pub(crate) fn session_metadata(&self) -> Option<Value> {
+        let mut metadata = self.metadata.clone().unwrap_or_else(|| json!({}));
+        if !metadata.is_object() {
+            metadata = json!({ "value": metadata });
+        }
+        if !self.provider_transcript.is_empty()
+            && let Some(object) = metadata.as_object_mut()
+        {
+            object.insert(
+                "providerTranscript".to_string(),
+                Value::Array(self.provider_transcript.clone()),
+            );
+        }
+        if !self.provider_replay_items.is_empty()
+            && let Some(object) = metadata.as_object_mut()
+        {
+            object.insert(
+                "openaiResponsesReplay".to_string(),
+                Value::Array(self.provider_replay_items.clone()),
+            );
+        }
+        (!metadata.as_object().is_some_and(Map::is_empty)).then_some(metadata)
     }
 }
 
@@ -179,6 +228,8 @@ pub(crate) fn run_model_loop(
     let mut structured_finish_repairs = 0_u8;
     let mut transient_provider_retries = 0_u8;
     let mut progress_guard = ModelLoopProgressGuard::default();
+    let mut provider_transcript = Vec::new();
+    let mut provider_replay_items = Vec::new();
     let requires_structured_finish = request_requires_structured_finish(&request);
     loop {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
@@ -259,6 +310,9 @@ pub(crate) fn run_model_loop(
         };
         if reply.tool_calls.is_empty() {
             let final_text = reply.content.unwrap_or_default();
+            if !reply.provider_replay_items.is_empty() {
+                provider_replay_items.extend(reply.provider_replay_items.clone());
+            }
             if requires_structured_finish {
                 if structured_finish_repairs >= STRUCTURED_FINISH_REPAIR_LIMIT {
                     emit_structured_finish_event(session_id, turn_id, "structuredFinishRejected");
@@ -267,10 +321,23 @@ pub(crate) fn run_model_loop(
                     ));
                 }
                 structured_finish_repairs += 1;
-                messages.push(json!({
+                let mut assistant_message = json!({
                     "role": "assistant",
                     "content": final_text,
-                }));
+                });
+                if let Some(reasoning_content) = reply
+                    .reasoning_content
+                    .as_ref()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    assistant_message["reasoning_content"] =
+                        Value::String(reasoning_content.clone());
+                }
+                if !reply.provider_replay_items.is_empty() {
+                    assistant_message["openaiResponsesShadow"] = Value::Bool(true);
+                    messages.extend(reply.provider_replay_items.clone());
+                }
+                messages.push(assistant_message);
                 messages.push(json!({
                     "role": "system",
                     "content": STRUCTURED_FINISH_RETRY_PROMPT,
@@ -285,12 +352,23 @@ pub(crate) fn run_model_loop(
                 emit_structured_finish_event(session_id, turn_id, "structuredFinishProtocolRetry");
                 continue;
             }
-            return Ok(ModelLoopResult::final_text(final_text));
+            return Ok(ModelLoopResult::final_text(final_text)
+                .with_provider_transcript(provider_transcript)
+                .with_provider_replay_items(provider_replay_items));
         }
 
+        let response_replay_items = reply.provider_replay_items.clone();
+        if !response_replay_items.is_empty() {
+            provider_replay_items.extend(response_replay_items.clone());
+            messages.extend(response_replay_items);
+        }
         let tool_calls = reply.tool_calls;
         if let Some(result) = try_finish_from_turn_finish_tool(&tool_calls)? {
-            return Ok(result);
+            let provider_replay_items =
+                replay_items_for_finished_turn(provider_replay_items, result.final_text.as_deref());
+            return Ok(result
+                .with_provider_transcript(provider_transcript)
+                .with_provider_replay_items(provider_replay_items));
         }
         let assistant_content = reply.content.unwrap_or_default();
         if !assistant_content.trim().is_empty() {
@@ -309,11 +387,23 @@ pub(crate) fn run_model_loop(
                 })
             })
             .collect::<Vec<_>>();
-        messages.push(json!({
+        let mut assistant_message = json!({
             "role": "assistant",
             "content": assistant_content,
             "tool_calls": assistant_tool_calls,
-        }));
+        });
+        if !reply.provider_replay_items.is_empty() {
+            assistant_message["openaiResponsesShadow"] = Value::Bool(true);
+        }
+        if let Some(reasoning_content) = reply
+            .reasoning_content
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
+        }
+        messages.push(assistant_message.clone());
+        provider_transcript.push(assistant_message);
 
         let mut provider_tool_results = Vec::new();
         for call in &tool_calls {
@@ -340,18 +430,29 @@ pub(crate) fn run_model_loop(
                     }),
                 );
             }
-            messages.push(json!({
+            let mut tool_message = json!({
                 "role": "tool",
                 "tool_call_id": call.id,
                 "content": content,
-            }));
+            });
+            if !provider_replay_items.is_empty() {
+                tool_message["openaiResponsesShadow"] = Value::Bool(true);
+                let output_item =
+                    openai_responses::function_call_output_item(&call.id, content.clone());
+                provider_replay_items.push(output_item.clone());
+                messages.push(output_item);
+            }
+            messages.push(tool_message.clone());
+            provider_transcript.push(tool_message);
             if let Some(content) =
                 provider_image_message_from_tool_output(&output, &request.capabilities)
             {
-                messages.push(json!({
+                let user_message = json!({
                     "role": "user",
                     "content": content,
-                }));
+                });
+                messages.push(user_message.clone());
+                provider_transcript.push(user_message);
             }
         }
 
@@ -382,6 +483,7 @@ pub(crate) fn run_model_loop(
                     turn_id,
                     &request,
                     messages,
+                    provider_transcript,
                     cancellation,
                     reason,
                     observed_occurrences,
@@ -403,6 +505,7 @@ pub(crate) fn synthesize_after_progress_guard(
     turn_id: &str,
     request: &ModelRequest,
     mut messages: Vec<Value>,
+    provider_transcript: Vec<Value>,
     cancellation: &Arc<AtomicBool>,
     reason: &str,
     observed_occurrences: usize,
@@ -444,9 +547,11 @@ pub(crate) fn synthesize_after_progress_guard(
             "provider requested additional tools after Lyra disabled tools for progress-guard synthesis".to_string(),
         ));
     }
-    Ok(ModelLoopResult::final_text(
-        reply.content.unwrap_or_default(),
-    ))
+    Ok(
+        ModelLoopResult::final_text(reply.content.unwrap_or_default())
+            .with_provider_transcript(provider_transcript)
+            .with_provider_replay_items(reply.provider_replay_items),
+    )
 }
 
 fn emit_structured_finish_event(session_id: &str, turn_id: &str, event_type: &str) {
@@ -513,6 +618,47 @@ fn try_finish_from_turn_finish_tool(
         fallback.to_string(),
         metadata,
     )))
+}
+
+fn replay_items_for_finished_turn(items: Vec<Value>, final_text: Option<&str>) -> Vec<Value> {
+    let mut output = items
+        .into_iter()
+        .filter(|item| !is_lyra_turn_finish_response_item(item))
+        .collect::<Vec<_>>();
+    let final_text = final_text.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(final_text) = final_text
+        && !responses_replay_has_assistant_text(&output)
+    {
+        output.push(json!({
+            "type": "message",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": final_text }],
+        }));
+    }
+    output
+}
+
+fn is_lyra_turn_finish_response_item(item: &Value) -> bool {
+    item.get("type").and_then(Value::as_str) == Some("function_call")
+        && item.get("name").and_then(Value::as_str) == Some(LYRA_TURN_FINISH_TOOL)
+}
+
+fn responses_replay_has_assistant_text(items: &[Value]) -> bool {
+    items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("message"))
+        .flat_map(|item| {
+            item.get("content")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .any(|part| {
+            part.get("text")
+                .or_else(|| part.get("content"))
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty())
+        })
 }
 
 fn turn_finish_metadata(arguments: &Value) -> Value {
@@ -885,37 +1031,93 @@ pub(crate) fn call_model_once_non_streaming(
     messages: &[Value],
     tools: &[Value],
 ) -> AgentRuntimeResult<ModelReply> {
-    let base_url = provider
-        .base_url
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AgentRuntimeError::Core("provider base URL is not configured".to_string())
-        })?;
-    let api_key = provider
-        .api_key
-        .clone()
-        .or_else(|| {
-            provider
-                .api_key_env
-                .as_ref()
-                .and_then(|key| env::var(key).ok())
-        })
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!(
-                "API key is not configured for provider {}",
-                provider.label
-            ))
-        })?;
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = model_request_body(model, messages, tools, false);
-    let response = http_client_builder(Duration::from_secs(120))
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
-        .post(url)
-        .bearer_auth(api_key)
-        .json(&body)
+    if route_uses_openai_responses(provider)? {
+        let response = build_openai_responses_request(provider, model, messages, tools, false)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !status.is_success() {
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = openai_responses::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_anthropic_messages(provider)? {
+        let response = build_anthropic_messages_request(provider, model, messages, tools, false)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !status.is_success() {
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_gemini_generate_content(provider)? {
+        let response =
+            build_gemini_generate_content_request(provider, model, messages, tools, false)?
+                .send()
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !status.is_success() {
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = gemini_generate_content::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_aws_bedrock_converse(provider)? {
+        let response = build_aws_bedrock_converse_request(provider, model, messages, tools)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !status.is_success() {
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = aws_bedrock_converse::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_ollama_chat(provider)? {
+        let response = build_ollama_chat_request(provider, model, messages, tools, false)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !status.is_success() {
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = ollama_chat::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    let response = build_openai_compatible_request(provider, model, messages, tools, false)?
         .send()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let status = response.status();
@@ -930,16 +1132,16 @@ pub(crate) fn call_model_once_non_streaming(
     let message = body.pointer("/choices/0/message").ok_or_else(|| {
         AgentRuntimeError::Core("provider returned no assistant message".to_string())
     })?;
-    let content = model_message_content(message.get("content"));
-    let reasoning = model_message_reasoning_text(message);
-    let allowed_tool_names = model_tool_name_set(tools);
+    let content = openai_chat::message_content(message.get("content"));
+    let reasoning = openai_chat::message_reasoning_text(message);
+    let allowed_tool_names = openai_chat::tool_name_set(tools);
     let tool_calls = message
         .get("tool_calls")
         .and_then(Value::as_array)
         .map(|items| {
             items
                 .iter()
-                .filter_map(|item| parse_model_tool_call(item, &allowed_tool_names))
+                .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -958,8 +1160,10 @@ pub(crate) fn call_model_once_non_streaming(
     }
     Ok(ModelReply {
         content,
+        reasoning_content: reasoning,
         tool_calls,
         ui_message_id: None,
+        provider_replay_items: Vec::new(),
     })
 }
 
@@ -995,27 +1199,110 @@ fn call_model_once_streaming_inner(
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
-    let base_url = provider
-        .base_url
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            AgentRuntimeError::Core("provider base URL is not configured".to_string())
-        })?;
-    let api_key = provider_api_key(provider).ok_or_else(|| {
-        AgentRuntimeError::Core(format!(
-            "API key is not configured for provider {}",
-            provider.label
-        ))
-    })?;
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let body = model_request_body(model, messages, tools, true);
-    let response = http_client_builder(Duration::from_secs(120))
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
-        .post(url)
-        .bearer_auth(api_key)
-        .json(&body)
+    if route_uses_openai_responses(provider)? {
+        let response = build_openai_responses_request(provider, model, messages, tools, true)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = openai_responses::parse_streaming_response(
+            BufReader::new(response),
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_anthropic_messages(provider)? {
+        let response = build_anthropic_messages_request(provider, model, messages, tools, true)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = anthropic_messages::parse_streaming_response(
+            BufReader::new(response),
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_gemini_generate_content(provider)? {
+        let response =
+            build_gemini_generate_content_request(provider, model, messages, tools, true)?
+                .send()
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = gemini_generate_content::parse_streaming_response(
+            BufReader::new(response),
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    if route_uses_aws_bedrock_converse(provider)? {
+        return Err(AgentRuntimeError::Core(
+            "AWS Bedrock Converse streaming is not supported yet; mark this model as non-streaming"
+                .to_string(),
+        ));
+    }
+    if route_uses_ollama_chat(provider)? {
+        let response = build_ollama_chat_request(provider, model, messages, tools, true)?
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+            return Err(AgentRuntimeError::Core(format!(
+                "provider request failed with status {status}: {body}"
+            )));
+        }
+        let mut reply = ollama_chat::parse_streaming_response(
+            BufReader::new(response),
+            session_id,
+            turn_id,
+            cancellation,
+            tools,
+            commit_assistant_text,
+        )?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
+    }
+    let response = build_openai_compatible_request(provider, model, messages, tools, true)?
         .send()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let status = response.status();
@@ -1037,31 +1324,6 @@ fn call_model_once_streaming_inner(
     )
 }
 
-pub(crate) fn model_request_body(
-    model: &str,
-    messages: &[Value],
-    tools: &[Value],
-    stream: bool,
-) -> Value {
-    let mut body = json!({
-        "model": model,
-        "messages": messages,
-        "stream": stream,
-    });
-    if !tools.is_empty() {
-        body["tools"] = Value::Array(tools.to_vec());
-        body["tool_choice"] = Value::String("auto".to_string());
-    }
-    body
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct StreamingToolCallAccumulator {
-    pub(crate) id: Option<String>,
-    pub(crate) name: Option<String>,
-    pub(crate) arguments: String,
-}
-
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn parse_streaming_response<R: BufRead>(
     reader: R,
@@ -1071,6 +1333,172 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     tools: &[Value],
 ) -> AgentRuntimeResult<ModelReply> {
     parse_streaming_response_with_commit(reader, session_id, turn_id, cancellation, tools, true)
+}
+
+fn build_openai_compatible_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    streaming: bool,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = openai_chat::build_request_body(model, messages, tools, streaming);
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let route = providers::registry::require_route(&provider.route_id)?;
+    if let Some(route_hook) = providers::registry::hosted_openai_route_hook(&provider.route_id) {
+        let url = providers::transport::http::endpoint_url(provider, route_hook.endpoint_path())?;
+        let body = route_hook.decorate_request_body(body, provider, model)?;
+        let request = route_hook.apply_request_headers(client.post(url), provider)?;
+        return Ok(request.json(&body));
+    }
+
+    let url = providers::transport::http::chat_completions_url(provider)?;
+    let request = apply_route_model_auth(client.post(url), provider, &route)?;
+    Ok(request.json(&body))
+}
+
+fn apply_route_model_auth(
+    builder: reqwest::blocking::RequestBuilder,
+    provider: &NativeProviderProfile,
+    route: &providers::types::ProviderRouteDescriptor,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    if providers::transport::auth::resolve_api_key(provider).is_none()
+        && route.auth_kind.contains("none")
+    {
+        return Ok(builder);
+    }
+    providers::transport::auth::apply_model_auth(builder, provider)
+}
+
+fn route_uses_openai_responses(provider: &NativeProviderProfile) -> AgentRuntimeResult<bool> {
+    let route = providers::registry::require_route(&provider.route_id)?;
+    Ok(route.protocol_id == openai_responses::PROTOCOL_ID)
+}
+
+fn route_uses_anthropic_messages(provider: &NativeProviderProfile) -> AgentRuntimeResult<bool> {
+    let route = providers::registry::require_route(&provider.route_id)?;
+    Ok(route.protocol_id == anthropic_messages::PROTOCOL_ID)
+}
+
+fn route_uses_gemini_generate_content(
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<bool> {
+    let route = providers::registry::require_route(&provider.route_id)?;
+    Ok(route.protocol_id == gemini_generate_content::PROTOCOL_ID)
+}
+
+fn route_uses_aws_bedrock_converse(provider: &NativeProviderProfile) -> AgentRuntimeResult<bool> {
+    let route = providers::registry::require_route(&provider.route_id)?;
+    Ok(route.protocol_id == aws_bedrock_converse::PROTOCOL_ID)
+}
+
+fn route_uses_ollama_chat(provider: &NativeProviderProfile) -> AgentRuntimeResult<bool> {
+    let route = providers::registry::require_route(&provider.route_id)?;
+    Ok(route.protocol_id == ollama_chat::PROTOCOL_ID)
+}
+
+fn build_openai_responses_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    streaming: bool,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = openai_responses::build_request_body(
+        model,
+        messages,
+        tools,
+        streaming,
+        openai_responses_request_options()?,
+    )?;
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url = providers::transport::http::endpoint_url(provider, openai_responses::ENDPOINT_PATH)?;
+    let request = providers::transport::auth::apply_model_auth(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_anthropic_messages_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    streaming: bool,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = anthropic_messages::build_request_body(model, messages, tools, streaming)?;
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url =
+        providers::transport::http::endpoint_url(provider, anthropic_messages::ENDPOINT_PATH)?;
+    let request = anthropic_messages::apply_headers(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_gemini_generate_content_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    streaming: bool,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = gemini_generate_content::build_request_body(messages, tools)?;
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let path = if streaming {
+        gemini_generate_content::stream_generate_content_path(model)?
+    } else {
+        gemini_generate_content::generate_content_path(model)?
+    };
+    let url = providers::transport::http::endpoint_url(provider, &path)?;
+    let request = gemini_generate_content::apply_headers(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn build_aws_bedrock_converse_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = aws_bedrock_converse::build_request_body(messages, tools)?;
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let path = aws_bedrock_converse::converse_path(model)?;
+    let url = providers::transport::http::endpoint_url(provider, &path)?;
+    aws_bedrock_converse::build_signed_json_request(&client, provider, &url, &body)
+}
+
+fn build_ollama_chat_request(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    streaming: bool,
+) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = ollama_chat::build_request_body(model, messages, tools, streaming)?;
+    let client = http_client_builder(Duration::from_secs(120))
+        .build()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
+    let request = ollama_chat::apply_headers(client.post(url), provider)?;
+    Ok(request.json(&body))
+}
+
+fn openai_responses_request_options() -> AgentRuntimeResult<openai_responses::RequestOptions> {
+    let state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    Ok(openai_responses::RequestOptions {
+        reasoning_effort: state.config.reasoning_effort.clone(),
+        verbosity: state.config.verbosity.clone(),
+        service_tier: state.config.service_tier.clone(),
+    })
 }
 
 fn parse_streaming_response_with_commit<R: BufRead>(
@@ -1084,25 +1512,19 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
     let buffer_assistant_text = !commit_assistant_text || !tools.is_empty();
-    let allowed_tool_names = model_tool_name_set(tools);
+    let allowed_tool_names = openai_chat::tool_name_set(tools);
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
         }
         let line = line.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        let Some(data) = line.trim().strip_prefix("data:") else {
+        let Some(event) = openai_chat::parse_sse_line(&line)? else {
             continue;
         };
-        let data = data.trim();
-        if data == "[DONE]" {
+        let openai_chat::SseEvent::Data(value) = event else {
             break;
-        }
-        if data.is_empty() {
-            continue;
-        }
-        let value: Value = serde_json::from_str(data)
-            .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
+        };
         if let Some(error) = value.get("error") {
             return Err(AgentRuntimeError::Core(format!(
                 "provider streaming error: {error}"
@@ -1118,7 +1540,8 @@ fn parse_streaming_response_with_commit<R: BufRead>(
         )?;
     }
 
-    let mut tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
+    let mut tool_calls =
+        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
     tool_calls.sort_by_key(|(index, _)| *index);
     let tool_calls = tool_calls
         .into_iter()
@@ -1143,8 +1566,11 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
+        reasoning_content: (!state.reasoning_content.trim().is_empty())
+            .then_some(state.reasoning_content),
         tool_calls,
         ui_message_id: ui_message_id.filter(|id| !id.is_empty()),
+        provider_replay_items: Vec::new(),
     };
     normalize_model_reply_protocol(&mut reply, tools)?;
     if commit_assistant_text
@@ -1180,7 +1606,7 @@ pub(crate) fn map_provider_stream_chunk(
         state.finish_reason = Some(finish_reason.to_string());
     }
     let delta = choice.get("delta").unwrap_or(&Value::Null);
-    if let Some(text) = model_message_content(delta.get("content"))
+    if let Some(text) = openai_chat::message_content(delta.get("content"))
         && !text.is_empty()
     {
         if !buffer_assistant_text {
@@ -1195,17 +1621,18 @@ pub(crate) fn map_provider_stream_chunk(
         }
         state.content.push_str(&text);
     }
-    if let Some(reasoning) = model_message_reasoning_text(delta) {
+    if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
         state.reasoning_chars = state
             .reasoning_chars
             .saturating_add(reasoning.chars().count());
+        state.reasoning_content.push_str(&reasoning);
     }
     if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
         for chunk in chunks {
             let index = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
             let accumulator = state.tool_calls.entry(index).or_default();
             if let Some(id) = chunk.get("id").and_then(Value::as_str)
-                && is_valid_tool_call_id(id)
+                && openai_chat::is_valid_tool_call_id(id)
             {
                 accumulator.id = Some(id.trim().to_string());
             }
@@ -1222,51 +1649,15 @@ pub(crate) fn map_provider_stream_chunk(
     Ok(())
 }
 
-pub(crate) fn finalize_streaming_tool_calls(
-    tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
-    allowed_tool_names: &HashSet<String>,
-) -> AgentRuntimeResult<Vec<(usize, ModelToolCall)>> {
-    let mut finalized = Vec::new();
-    for (index, accumulator) in tool_calls {
-        let has_tool_payload = accumulator.id.is_some()
-            || accumulator.name.is_some()
-            || !accumulator.arguments.trim().is_empty();
-        if !has_tool_payload {
-            continue;
-        }
-        let Some(name) = accumulator
-            .name
-            .as_deref()
-            .and_then(|name| repair_model_tool_name(name, allowed_tool_names))
-        else {
-            return Err(AgentRuntimeError::Core(
-                "provider returned incomplete tool call: missing function name".to_string(),
-            ));
-        };
-        finalized.push((
-            index,
-            ModelToolCall {
-                id: accumulator
-                    .id
-                    .filter(|id| is_valid_tool_call_id(id))
-                    .unwrap_or_else(|| format!("tool-{}", Uuid::new_v4())),
-                name,
-                arguments: parse_model_tool_arguments(&accumulator.arguments),
-            },
-        ));
-    }
-    Ok(finalized)
-}
-
 pub(crate) const TEXTUAL_TOOL_CALL_MARKER: &str = "[Tool call:";
 
 pub(crate) fn normalize_model_reply_protocol(
     reply: &mut ModelReply,
     tools: &[Value],
 ) -> AgentRuntimeResult<()> {
-    let allowed_tool_names = model_tool_name_set(tools);
+    let allowed_tool_names = openai_chat::tool_name_set(tools);
     for call in &mut reply.tool_calls {
-        if let Some(name) = repair_model_tool_name(&call.name, &allowed_tool_names) {
+        if let Some(name) = openai_chat::repair_tool_name(&call.name, &allowed_tool_names) {
             call.name = name;
         }
     }
@@ -1286,14 +1677,6 @@ pub(crate) fn normalize_model_reply_protocol(
 pub(crate) fn normalize_visible_assistant_text(content: &str) -> Option<String> {
     let text = content.trim();
     (!text.is_empty()).then(|| text.to_string())
-}
-
-pub(crate) fn model_tool_name_set(tools: &[Value]) -> HashSet<String> {
-    tools
-        .iter()
-        .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
-        .map(str::to_string)
-        .collect()
 }
 
 pub(crate) fn contains_textual_tool_call_marker(
@@ -1359,108 +1742,6 @@ pub(crate) fn find_ascii_case_insensitive(
     haystack_lower
         .find(&needle_lower)
         .map(|offset| from + offset)
-}
-
-pub(crate) fn model_message_content(value: Option<&Value>) -> Option<String> {
-    match value {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(Value::Array(parts)) => {
-            let text = parts
-                .iter()
-                .filter_map(|part| {
-                    part.get("text")
-                        .and_then(Value::as_str)
-                        .or_else(|| part.get("content").and_then(Value::as_str))
-                })
-                .collect::<Vec<_>>()
-                .join("");
-            (!text.trim().is_empty()).then_some(text)
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn model_message_reasoning_text(message: &Value) -> Option<String> {
-    [
-        "reasoning",
-        "reasoning_content",
-        "thinking",
-        "reasoning_text",
-    ]
-    .iter()
-    .find_map(|field| message.get(*field).and_then(Value::as_str))
-    .filter(|value| !value.trim().is_empty())
-    .map(str::to_string)
-    .or_else(|| {
-        message
-            .get("reasoning_details")
-            .filter(|value| !value.is_null())
-            .map(|value| serde_json::to_string(value).unwrap_or_default())
-            .filter(|value| !value.trim().is_empty())
-    })
-}
-
-pub(crate) fn parse_model_tool_call(
-    value: &Value,
-    allowed_tool_names: &HashSet<String>,
-) -> Option<ModelToolCall> {
-    let function = value.get("function")?;
-    let name = function
-        .get("name")
-        .and_then(Value::as_str)
-        .and_then(|name| repair_model_tool_name(name, allowed_tool_names))?;
-    let id = value
-        .get("id")
-        .and_then(Value::as_str)
-        .filter(|id| is_valid_tool_call_id(id))
-        .map(|id| id.trim().to_string())
-        .unwrap_or_else(|| format!("tool-{}", Uuid::new_v4()));
-    let arguments = match function.get("arguments") {
-        Some(Value::String(text)) => parse_model_tool_arguments(text),
-        Some(value) => value.clone(),
-        None => json!({}),
-    };
-    Some(ModelToolCall {
-        id,
-        name,
-        arguments,
-    })
-}
-
-pub(crate) fn repair_model_tool_name(
-    name: &str,
-    allowed_tool_names: &HashSet<String>,
-) -> Option<String> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if allowed_tool_names.is_empty() {
-        return None;
-    }
-    if allowed_tool_names.contains(trimmed) {
-        return Some(trimmed.to_string());
-    }
-    let lowercase = trimmed.to_ascii_lowercase();
-    if allowed_tool_names.contains(&lowercase) {
-        return Some(lowercase);
-    }
-    Some(trimmed.to_string())
-}
-
-pub(crate) fn is_valid_tool_call_id(id: &str) -> bool {
-    let value = id.trim();
-    !value.is_empty() && value != "null"
-}
-
-pub(crate) fn parse_model_tool_arguments(arguments: &str) -> Value {
-    let text = arguments.trim();
-    if text.is_empty() {
-        return json!({});
-    }
-    serde_json::from_str(text).unwrap_or_else(
-        |error| json!({ "rawArguments": arguments, "parseError": error.to_string() }),
-    )
 }
 
 pub(crate) fn model_capabilities(

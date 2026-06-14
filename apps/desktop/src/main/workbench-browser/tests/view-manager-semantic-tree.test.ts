@@ -416,16 +416,24 @@ const createWebContents = (
 const createManager = (
   mainFrame: FakeFrame,
   options?: Parameters<typeof createWebContents>[1],
-  managerOptions: { readonly withWindow?: boolean } = {}
-): { readonly manager: WorkbenchBrowserViewManager; readonly webContents: FakeWebContents } => {
+  managerOptions: {
+    readonly withWindow?: boolean;
+    readonly publishEvent?: Parameters<typeof createWorkbenchBrowserViewManager>[0]["publishEvent"];
+  } = {}
+): {
+  readonly manager: WorkbenchBrowserViewManager;
+  readonly publishEvent: Parameters<typeof createWorkbenchBrowserViewManager>[0]["publishEvent"];
+  readonly webContents: FakeWebContents;
+} => {
   const webContents = createWebContents(mainFrame, options);
   const browserWindow = managerOptions.withWindow === true
     ? new electronMock.BrowserWindow()
     : null;
+  const publishEvent = managerOptions.publishEvent ?? vi.fn();
   electronMock.webContentsQueue.push(webContents);
   const manager = createWorkbenchBrowserViewManager({
     getWindow: () => browserWindow as never,
-    publishEvent: vi.fn()
+    publishEvent
   });
   manager.syncTopology({
     activeTabId: "tab-1",
@@ -436,7 +444,7 @@ const createManager = (
       isActive: true
     }]
   });
-  return { manager, webContents };
+  return { manager, publishEvent, webContents };
 };
 
 const createEmptyManager = (): WorkbenchBrowserViewManager =>
@@ -460,6 +468,72 @@ describe("Workbench browser semantic tree fixtures", () => {
     electronMock.browserWindows.length = 0;
     delete process.env.LYRA_BROWSER_ENABLE_CDP_PAGESHOT;
     delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
+  });
+
+  test("does not reload Cloudflare challenge token variants from topology sync", async () => {
+    const tokenA =
+      "https://www.dmit.io/clientarea.php?__cf_chl_rt_tk=first-token";
+    const tokenB =
+      "https://www.dmit.io/clientarea.php?__cf_chl_rt_tk=second-token";
+    const mainFrame = createFrame({
+      id: 1,
+      url: tokenA,
+      html: "<!doctype html><title>Cloudflare</title><main>Checking...</main>"
+    });
+
+    const { manager, webContents } = createManager(mainFrame);
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    manager.syncTopology({
+      activeTabId: "tab-1",
+      pages: [{
+        tabId: "tab-1",
+        address: tokenB,
+        titleHint: "Cloudflare",
+        isActive: true
+      }]
+    });
+
+    expect(webContents.loadURL).not.toHaveBeenCalled();
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(tokenA);
+  });
+
+  test("reuses an active elevated browser tab instead of reopening it", async () => {
+    const publishEvent = vi.fn();
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://www.dmit.io/clientarea.php",
+      html: "<!doctype html><title>DMIT</title><main>Login</main>"
+    });
+    const { manager } = createManager(mainFrame, undefined, { publishEvent });
+    const shadowFrame = createFrame({
+      id: 101,
+      url: "about:blank",
+      html: "<!doctype html><title>Shadow</title><main>Shadow</main>"
+    });
+    const shadowWebContents = createWebContents(shadowFrame);
+    electronMock.webContentsQueue.push(shadowWebContents);
+
+    const first = await manager.elevateAgentPage("tab-1", {
+      reason: "captcha"
+    });
+    const second = await manager.elevateAgentPage("tab-1", {
+      reason: "captcha"
+    });
+
+    expect(first.liveTabId).toBeTruthy();
+    expect(second.liveTabId).toBe(first.liveTabId);
+    expect(shadowWebContents.loadURL).toHaveBeenCalledTimes(1);
+    expect(electronMock.browserWindows).toHaveLength(1);
+    const openEvents = publishEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.kind === "request-open-tab");
+    expect(openEvents).toHaveLength(1);
+    expect(openEvents[0]).toMatchObject({
+      tabId: first.liveTabId,
+      address: "https://www.dmit.io/clientarea.php"
+    });
   });
 
   test("maps and acts on open shadow root controls", async () => {
@@ -696,6 +770,43 @@ describe("Workbench browser semantic tree fixtures", () => {
         })
       ])
     );
+  });
+
+  test("sends two Chromium click sequences for double click", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/double-click",
+      html: "<!doctype html><title>Double Click</title><button>Open file</button>"
+    });
+    const button = mainFrame.window.document.querySelector("button");
+    expect(button).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    setRect(button as Element, { x: 40, y: 40, width: 80, height: 30 });
+
+    const { manager, webContents } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+    const openTarget = findByLabel(observation.elements, "Open file");
+
+    await expect(
+      manager.actOnAgentElement("tab-1", {
+        targetMode: "live",
+        targetRef: openTarget.targetRef,
+        interaction: "doubleClick"
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      targetRef: openTarget.targetRef
+    });
+
+    expect(webContents.sentInputEvents).toEqual([
+      expect.objectContaining({ type: "mouseMove", x: 80, y: 55, clickCount: 1 }),
+      expect.objectContaining({ type: "mouseDown", x: 80, y: 55, button: "left", clickCount: 1 }),
+      expect.objectContaining({ type: "mouseUp", x: 80, y: 55, button: "left", clickCount: 1 }),
+      expect.objectContaining({ type: "mouseDown", x: 80, y: 55, button: "left", clickCount: 2 }),
+      expect.objectContaining({ type: "mouseUp", x: 80, y: 55, button: "left", clickCount: 2 })
+    ]);
   });
 
   test("uses fast action verification by default and full verification only when requested", async () => {
@@ -947,6 +1058,103 @@ describe("Workbench browser semantic tree fixtures", () => {
       },
       nextRecommendedAction: "lyra_lumen.see"
     });
+  });
+
+  test("does not treat a visible Google sign-in trigger as an auth prompt", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://dmit.io/clientarea",
+      html: `
+        <!doctype html>
+        <title>Client Area</title>
+        <button>Sign in with Google</button>
+        <iframe
+          title="Sign in with Google"
+          src="https://accounts.google.com/gsi/button?client_id=client.test"
+        ></iframe>
+      `
+    });
+    const iframe = mainFrame.window.document.querySelector("iframe");
+    expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
+    setRect(iframe as Element, { x: 620, y: 60, width: 380, height: 44 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+
+    expect(observation.authChallengeSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "oauth_popup",
+          confidence: "medium",
+          label: expect.stringContaining("trigger")
+        })
+      ])
+    );
+    expect(observation.authChallengeSignals?.some((signal) => signal.confidence === "high")).not.toBe(true);
+    expect(observation.blockedRegions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "auth-prompt" })
+      ])
+    );
+    expect(observation.nextRecommendedAction).not.toBe("lyra_lumen_elevate");
+  });
+
+  test("detects visible Google account iframe as an AX auth prompt", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://dmit.io/clientarea",
+      html: `
+        <!doctype html>
+        <title>Client Area</title>
+        <form>
+          <input aria-label="Email Address" />
+          <input aria-label="Password" type="password" />
+          <button>Login</button>
+        </form>
+        <button>Sign in with Google</button>
+        <iframe
+          title="Sign in to dmit.io with Google"
+          src="https://accounts.google.com/gsi/iframe/select?client_id=client.test"
+        ></iframe>
+      `
+    });
+    const iframe = mainFrame.window.document.querySelector("iframe");
+    expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
+    setRect(iframe as Element, { x: 620, y: 60, width: 380, height: 180 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+
+    expect(observation.authChallengeSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "oauth_popup",
+          confidence: "high",
+          source: "frame",
+          label: "Google identity prompt",
+          url: expect.stringContaining("accounts.google.com/gsi"),
+          bounds: { x: 620, y: 60, width: 380, height: 180 }
+        })
+      ])
+    );
+    expect(observation.blockedRegions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "auth-prompt",
+          fallback: "ax",
+          confidence: "high",
+          bounds: { x: 620, y: 60, width: 380, height: 180 },
+          url: expect.stringContaining("accounts.google.com/gsi")
+        })
+      ])
+    );
+    expect(observation.nextRecommendedAction).toBe("browser_ax.map");
   });
 
   test("visual point action converts screenshot device pixels to css coordinates", async () => {

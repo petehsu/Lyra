@@ -25,6 +25,18 @@ pub(crate) fn user_action_tab_id(
         .to_string()
 }
 
+fn user_action_target_mode(
+    input: &Value,
+    value: &Value,
+    action: &serde_json::Map<String, Value>,
+) -> String {
+    user_action_string(action, "targetMode")
+        .or_else(|| value.get("targetMode").and_then(Value::as_str))
+        .or_else(|| input.get("targetMode").and_then(Value::as_str))
+        .unwrap_or("isolated")
+        .to_string()
+}
+
 pub(crate) fn wait_for_automatic_user_action(
     session_id: &str,
     turn_id: &str,
@@ -197,17 +209,30 @@ pub(crate) fn resolve_auth_challenge_user_action(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
     let tab_id = user_action_tab_id(input, value, action);
+    let target_mode = user_action_target_mode(input, value, action);
     let reason = user_action_string(action, "reason").unwrap_or("auth_challenge");
+    let is_live = target_mode == "live";
     let request = wait_for_automatic_user_action(
         session_id,
         turn_id,
         tool_call_id,
-        "The isolated browser hit an authentication or verification challenge that requires user action.",
-        vec![
-            json!({ "label": "Open Visible Tab", "description": "Elevate this isolated browser task to a visible tab so the user can complete the challenge." }),
-            json!({ "label": "Already Completed", "description": "The user already completed the challenge; verify and continue." }),
-            json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
-        ],
+        if is_live {
+            "The visible browser page hit an authentication or verification challenge that may require user action."
+        } else {
+            "The isolated browser hit an authentication or verification challenge that requires user action."
+        },
+        if is_live {
+            vec![
+                json!({ "label": "Already Completed", "description": "The user already completed or approved the challenge in the visible tab; verify and continue." }),
+                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+            ]
+        } else {
+            vec![
+                json!({ "label": "Open Visible Tab", "description": "Elevate this isolated browser task to a visible tab so the user can complete the challenge." }),
+                json!({ "label": "Already Completed", "description": "The user already completed the challenge; verify and continue." }),
+                json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
+            ]
+        },
         Some(format!("AuthChallengeSignal: {reason}")),
     );
     let request = match request {
@@ -314,7 +339,7 @@ pub(crate) fn resolve_auth_challenge_user_action(
         "lyraLumen.completeElevation",
         json!({
             "tabId": tab_id,
-            "targetMode": "isolated",
+            "targetMode": target_mode,
             "liveTabId": live_tab_id,
             "elevationSessionId": elevation_session_id,
         }),

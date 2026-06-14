@@ -75,6 +75,15 @@ const labels: SettingsAiLabels = {
   gmailAccessFull: "Full Gmail access",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
+  localProviderTitle: "Local Models",
+  localProviderDescription: "Connect to local model servers.",
+  saveAndDiscoverModels: "Save & Discover Models",
+  localModelsLabel: "Model IDs",
+  localModelsPlaceholder: "llama3.2:latest",
+  localCapabilitiesTitle: "Default model capabilities",
+  localSupportsImageInput: "Image input",
+  localSupportsToolCalling: "Tool calling",
+  localSupportsStreaming: "Streaming",
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
@@ -124,54 +133,55 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusIdle: "Idle",
   memoryConfigStatusLoaded: "Loaded",
   memoryConfigStatusSaved: "Saved",
-  memoryConfigStatusInvalidJson: "Invalid JSON"
+  memoryConfigStatusInvalidJson: "Invalid JSON",
 };
 
 const agentConfigSnapshot = {
   agentHome: "/Users/petehsu/.lyra/modules/agent",
-  configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
+  configPath: "/Users/petehsu/.lyra/modules/agent/state.json",
   config: {
     provider: {
-      default_provider: "mimo-token-plan",
-      default_model: "mimo-v2.5-pro",
+      defaultProvider: "mimo_token_plan",
+      defaultModel: "mimo-v2.5-pro",
     },
     providers: {
-      "mimo-token-plan": {
-        base_url: "https://token-plan-cn.xiaomimimo.com/v1",
-        default_model: "mimo-v2.5-pro",
-        models: [
-          { id: "mimo-v2.5-pro" },
-          { id: "mimo-v2.5-pro-plus" },
-        ],
+      mimo_token_plan: {
+        label: "MiMo Token Plan",
+        routeId: "mimo_token_plan",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+        defaultModel: "mimo-v2.5-pro",
+        requiresApiKey: false,
+        models: [{ id: "mimo-v2.5-pro" }],
       },
       "openai-compatible": {
-        base_url: "https://api.example.com/v1",
-        default_model: "gpt-5",
+        label: "Custom OpenAI-Compatible",
+        routeId: "custom_openai_compatible",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        baseUrl: "https://api.example.com/v1",
+        defaultModel: "gpt-5",
+        requiresApiKey: false,
         models: [{ id: "gpt-5" }],
       },
     },
-    agents: {
-      swarm_model: "gpt-5",
-      memory_model: "mimo-v2.5-pro",
+    roles: {
+      swarmModel: "gpt-5",
+      memoryModel: "mimo-v2.5-pro",
+      reviewModel: "gpt-5-mini",
+      judgeModel: "gpt-5",
+      ambientModel: "mimo-v2.5-pro",
     },
-    autoreview: {
-      model: "gpt-5-mini",
-    },
-    autojudge: {
-      model: "gpt-5",
-    },
-    ambient: {
-      model: "mimo-v2.5-pro",
-    },
-    safety: {
-      desktop_notifications: true,
-      ntfy_topic: "lyra-alerts",
-      ntfy_server: "https://ntfy.sh",
-      email_enabled: false,
-      email_smtp_port: 587,
-      email_imap_port: 993,
-      telegram_enabled: false,
-      discord_enabled: false,
+    notifications: {
+      desktopNotifications: true,
+      ntfyTopic: "lyra-alerts",
+      ntfyServer: "https://ntfy.sh",
+      emailEnabled: false,
+      emailSmtpPort: 587,
+      emailImapPort: 993,
+      telegramEnabled: false,
+      discordEnabled: false,
     },
   },
   commands: [
@@ -184,31 +194,131 @@ const agentConfigSnapshot = {
   ],
 };
 
-const agentSessions = {
-  sessionsDir: "/Users/petehsu/.lyra/modules/agent/sessions",
-  sessions: [
+const agentProviderCatalog = {
+  schemaVersion: "2026-06-14",
+  defaultProvider: "mimo_token_plan",
+  defaultModel: "mimo-v2.5-pro",
+  protocols: [
     {
-      id: "session-1",
-      title: "Saved Lyra Agent session",
-      customTitle: null,
-      shortName: "saved",
-      status: "saved",
-      providerKey: "mimo-token-plan",
-      model: "mimo-v2.5-pro",
-      messageCount: 4,
-      createdAt: "2026-05-15T00:00:00Z",
-      updatedAt: "2026-05-15T00:05:00Z",
-      lastActiveAt: "2026-05-15T00:05:00Z",
-      saved: true,
-      saveLabel: "saved",
-      archived: false,
-      workingDir: "/Users/petehsu/Documents/Lyra",
+      id: "openai_chat_completions",
+      family: "openai-compatible",
+      label: "OpenAI Chat Completions",
+      transport: "http",
+      runtimeSupported: true,
+      streamingSupported: true,
+      toolCallingSupported: true,
+    },
+  ],
+  routes: [
+    {
+      id: "openai",
+      providerId: "openai",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "OpenAI",
+      description: "OpenAI hosted route.",
+      defaultBaseUrl: "https://api.openai.com/v1",
+      apiMethod: "chatCompletions",
+      authKind: "bearer",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: false,
+      localBackend: null,
+      catalogSection: "hosted",
+      quickSetupSupported: true,
+    },
+    {
+      id: "custom_openai_compatible",
+      providerId: "custom_openai_compatible",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "Custom OpenAI-Compatible",
+      description: "Manual OpenAI-compatible endpoint.",
+      defaultBaseUrl: null,
+      apiMethod: "chatCompletions",
+      authKind: "bearer_or_header",
+      runtimeSupported: true,
+      modelDiscoverySupported: false,
+      customHeadersSupported: true,
+      localBackend: null,
+      catalogSection: "custom",
+      quickSetupSupported: true,
+    },
+    {
+      id: "lmstudio",
+      providerId: "lmstudio",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "LM Studio",
+      description: "Local LM Studio route.",
+      defaultBaseUrl: "http://127.0.0.1:1234/v1",
+      apiMethod: "chatCompletions",
+      authKind: "none_or_header",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: true,
+      localBackend: "lmstudio",
+      catalogSection: "local",
+      quickSetupSupported: false,
+    },
+    {
+      id: "future_provider",
+      providerId: "future_provider",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "Future Provider",
+      description: "Not runtime supported.",
+      defaultBaseUrl: "https://future.example/v1",
+      apiMethod: "chatCompletions",
+      authKind: "bearer",
+      runtimeSupported: false,
+      modelDiscoverySupported: false,
+      customHeadersSupported: false,
+      localBackend: null,
+      catalogSection: "hosted",
+      quickSetupSupported: true,
+    },
+  ],
+  profiles: [
+    {
+      id: "mimo_token_plan",
+      label: "MiMo Token Plan",
+      routeId: "mimo_token_plan",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+      defaultModel: "mimo-v2.5-pro",
+      configured: true,
+      authHeader: "api-key",
+      modelCount: 1,
+      capabilities: {
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        supportsStreaming: true,
+      },
+    },
+    {
+      id: "openai-compatible",
+      label: "Custom OpenAI-Compatible",
+      routeId: "custom_openai_compatible",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      baseUrl: "https://api.example.com/v1",
+      defaultModel: "gpt-5",
+      configured: true,
+      authHeader: null,
+      modelCount: 1,
+      capabilities: {
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        supportsStreaming: true,
+      },
     },
   ],
 };
 
 const agentAccounts = {
-  defaultProvider: "mimo-token-plan",
+  defaultProvider: "mimo_token_plan",
   defaultModel: "mimo-v2.5-pro",
   authStatus: {},
   accounts: [],
@@ -241,24 +351,12 @@ const agentLoginProviders = {
       requiresCallback: true,
       requiresApiKey: false,
     },
-    {
-      id: "openai-compatible",
-      displayName: "OpenAI-compatible",
-      authKind: "API key",
-      statusMethod: "API key",
-      detail: "Custom endpoint",
-      recommended: false,
-      configured: false,
-      state: "notConfigured",
-      requiresCallback: false,
-      requiresApiKey: true,
-    },
   ],
 };
 
 const createDesktopApi = () => {
   const readAgentConfig = vi.fn(async () => agentConfigSnapshot);
-  const listSessions = vi.fn(async () => agentSessions);
+  const readAgentProviderCatalog = vi.fn(async () => agentProviderCatalog);
   const listAccounts = vi.fn(async () => agentAccounts);
   const listLoginProviders = vi.fn(async () => agentLoginProviders);
   const startAccountLogin = vi.fn(async () => ({
@@ -278,6 +376,18 @@ const createDesktopApi = () => {
   }));
   const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
+  const refreshAgentModels = vi.fn(async () => ({
+    sessionId: null,
+    currentModel: "mimo-v2.5-pro",
+    currentProvider: "mimo_token_plan",
+    defaultModel: "mimo-v2.5-pro",
+    defaultProvider: "mimo_token_plan",
+    models: [],
+    routes: [],
+    reasoningEffort: { current: null, options: [], supported: true },
+    verbosity: { current: null, options: [], supported: true },
+    serviceTier: { current: null, options: [], supported: true },
+  }));
   const updateAgentRoles = vi.fn(async () => agentConfigSnapshot);
   const openExternal = vi.fn(async () => true);
 
@@ -286,18 +396,19 @@ const createDesktopApi = () => {
       openExternal,
       agent: {
         readAgentConfig,
-        listSessions,
+        readAgentProviderCatalog,
         listAccounts,
         listLoginProviders,
         startAccountLogin,
         completeAccountLogin,
         updateAgentConfig,
         saveAgentProviderProfile,
+        refreshAgentModels,
         updateAgentRoles,
       },
     } as unknown as LyraDesktopApi,
     readAgentConfig,
-    listSessions,
+    readAgentProviderCatalog,
     listAccounts,
     listLoginProviders,
     startAccountLogin,
@@ -305,18 +416,19 @@ const createDesktopApi = () => {
     openExternal,
     updateAgentConfig,
     saveAgentProviderProfile,
+    refreshAgentModels,
     updateAgentRoles,
   };
 };
 
 const renderModel = (
   desktopApi: LyraDesktopApi | null,
-  onOpenAgentConfigFile?: (filePath: string) => void | Promise<void>
+  onOpenAgentConfigFile?: (filePath: string) => void | Promise<void>,
 ) =>
   renderHook(() => useSettingsAiModel({
     desktopApi,
     labels,
-    onOpenAgentConfigFile
+    onOpenAgentConfigFile,
   }));
 
 describe("useSettingsAiModel", () => {
@@ -327,12 +439,12 @@ describe("useSettingsAiModel", () => {
       expect(result.current.errorMessage).toBe("Lyra Agent runtime bridge is unavailable.");
     });
     expect(result.current.profiles).toEqual([]);
+    expect(result.current.quickSetupRoutes).toEqual([]);
     expect(result.current.agentConfig).toBeNull();
-    expect(result.current.availableModels).toEqual([]);
   });
 
-  test("loads Lyra Agent config, commands, and derived provider rows", async () => {
-    const { api, readAgentConfig, listSessions } = createDesktopApi();
+  test("loads Lyra Agent config and Rust-owned provider catalog", async () => {
+    const { api, readAgentConfig, readAgentProviderCatalog } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
@@ -340,21 +452,45 @@ describe("useSettingsAiModel", () => {
     });
 
     expect(readAgentConfig).toHaveBeenCalledTimes(1);
-    expect(listSessions).not.toHaveBeenCalled();
-    expect(result.current.selectedProfileId).toBe("mimo-token-plan");
-    expect(result.current.defaultProfileId).toBe("mimo-token-plan");
-    expect(result.current.defaultModelNames).toEqual(["mimo-v2.5-pro"]);
+    expect(readAgentProviderCatalog).toHaveBeenCalledTimes(1);
+    expect(result.current.defaultProfileId).toBe("mimo_token_plan");
     expect(result.current.profiles[0]).toMatchObject({
-      id: "mimo-token-plan",
-      name: "mimo-token-plan",
-      runtimeProviderId: "mimo-token-plan",
-      runtimeSupported: true,
-      model: "mimo-v2.5-pro",
-      isDefault: true,
+      id: "mimo_token_plan",
+      routeId: "mimo_token_plan",
+      defaultModel: "mimo-v2.5-pro",
     });
-    expect(result.current.profiles[0]?.customModels.map((entry) => entry.id)).toEqual([
-      "mimo-v2.5-pro-plus",
+  });
+
+  test("derives quick setup routes from the Rust catalog only", async () => {
+    const { api } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.quickSetupRoutes).toHaveLength(2);
+    });
+
+    expect(result.current.quickSetupRoutes.map((route) => route.id)).toEqual([
+      "openai",
+      "custom_openai_compatible",
     ]);
+    expect(result.current.localRoutes.map((route) => route.id)).toEqual([
+      "lmstudio",
+    ]);
+  });
+
+  test("refreshes local provider models through the Lyra Agent runtime bridge", async () => {
+    const { api, refreshAgentModels } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.localRoutes).toHaveLength(1);
+    });
+
+    await act(async () => {
+      await result.current.refreshAgentModels?.("lmstudio");
+    });
+
+    expect(refreshAgentModels).toHaveBeenCalledWith({ provider: "lmstudio" });
   });
 
   test("saves provider profiles through the Lyra Agent runtime bridge", async () => {
@@ -362,12 +498,13 @@ describe("useSettingsAiModel", () => {
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.agentConfig).not.toBeNull();
+      expect(result.current.agentProviderCatalog).not.toBeNull();
     });
 
     await act(async () => {
       await result.current.saveAgentProviderProfile?.({
         profileName: "xiaomi-mimo-api",
+        routeId: "mimo_token_plan",
         baseUrl: "https://api.xiaomimimo.com/v1",
         apiKey: "sk-secret",
         defaultModel: "mimo-v2.5-pro",
@@ -380,6 +517,7 @@ describe("useSettingsAiModel", () => {
 
     expect(saveAgentProviderProfile).toHaveBeenCalledWith({
       profileName: "xiaomi-mimo-api",
+      routeId: "mimo_token_plan",
       baseUrl: "https://api.xiaomimimo.com/v1",
       apiKey: "sk-secret",
       defaultModel: "mimo-v2.5-pro",
@@ -390,12 +528,12 @@ describe("useSettingsAiModel", () => {
     });
   });
 
-  test("starts and completes provider login through the Lyra Agent runtime bridge", async () => {
+  test("starts and completes OAuth account login through the Lyra Agent runtime bridge", async () => {
     const { api, startAccountLogin, completeAccountLogin, openExternal } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.agentLoginProviders?.providers).toHaveLength(3);
+      expect(result.current.agentLoginProviders?.providers).toHaveLength(2);
     });
 
     await act(async () => {
@@ -509,30 +647,6 @@ describe("useSettingsAiModel", () => {
       await result.current.openAgentConfigFile?.();
     });
 
-    expect(onOpenAgentConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/config.toml");
-  });
-
-  test("keeps draft field edits local until explicit Lyra Agent save", async () => {
-    const { api, saveAgentProviderProfile } = createDesktopApi();
-    const { result } = renderModel(api);
-
-    await waitFor(() => {
-      expect(result.current.agentConfig).not.toBeNull();
-    });
-
-    act(() => {
-      result.current.updateDraftName("Local edit only");
-      result.current.updateDraftField("connection", "baseUrl", "https://local.example/v1");
-      result.current.updateDraftModelSelectionMode("custom");
-      result.current.updateDraftModelsText("custom-model");
-    });
-
-    expect(result.current.draft.name).toBe("Local edit only");
-    expect(result.current.draft.connectionConfig).toEqual({
-      baseUrl: "https://local.example/v1",
-    });
-    expect(result.current.modelSelectionMode).toBe("custom");
-    expect(result.current.draft.modelsText).toBe("custom-model");
-    expect(saveAgentProviderProfile).not.toHaveBeenCalled();
+    expect(onOpenAgentConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/state.json");
   });
 });

@@ -134,7 +134,11 @@ pub fn read_home(storage_root: &str) -> NapiResult<FileManagerReadHomeResponse> 
             Some("home"),
         ),
         system_locations: system_locations(),
-        favorites: favorites.favorites.into_iter().map(favorite_from_core).collect(),
+        favorites: favorites
+            .favorites
+            .into_iter()
+            .map(favorite_from_core)
+            .collect(),
         recent_locations: recent_locations
             .recent_locations
             .into_iter()

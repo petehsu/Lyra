@@ -5,6 +5,14 @@ import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-typ
 import { hashStableString, normalizeAddress, normalizeString } from "./normalizers";
 import type { BrowserElevationSessionRecord } from "./types";
 
+const REUSABLE_ELEVATION_STATUSES = new Set<WorkbenchBrowserElevationSession["status"]>([
+  "opening_live",
+  "awaiting_user",
+  "verifying"
+]);
+
+const ELEVATION_REOPEN_COOLDOWN_MS = 4_000;
+
 type BrowserAgentElevationControllerDeps = Pick<
   WorkbenchBrowserAgentControllerHost,
   | "entries"
@@ -39,6 +47,60 @@ export const createBrowserAgentElevationController = (deps: BrowserAgentElevatio
     tabId,
     request
   ) => {
+    if ((request?.targetMode ?? "isolated") !== "live") {
+      const existingSessionId = elevationSessionByIsolatedTabId.get(tabId);
+      const existingSession = existingSessionId === undefined
+        ? undefined
+        : elevationSessions.get(existingSessionId);
+      if (
+        existingSession !== undefined
+        && REUSABLE_ELEVATION_STATUSES.has(existingSession.status)
+      ) {
+        const liveEntry = entries.get(existingSession.liveTabId);
+        const liveAddress = liveEntry === undefined
+          ? existingSession.isolatedTarget.address
+          : normalizeAddress(liveEntry.webContents.getURL()) ?? liveEntry.runtime.address;
+        const liveTitle = liveEntry === undefined
+          ? existingSession.isolatedTarget.title
+          : normalizeString(liveEntry.webContents.getTitle()) ?? liveEntry.runtime.title;
+        const refreshedSession: WorkbenchBrowserElevationSession = {
+          ...existingSession,
+          updatedAt: Date.now(),
+          status: existingSession.status === "verifying" ? "verifying" : "awaiting_user",
+          ...(typeof request?.reason === "string" && request.reason.length > 0
+            ? { reason: request.reason }
+            : {})
+        };
+        elevationSessions.set(refreshedSession.sessionId, refreshedSession);
+        if (
+          liveEntry === undefined
+          && Date.now() - existingSession.updatedAt > ELEVATION_REOPEN_COOLDOWN_MS
+        ) {
+          publishEvent({
+            kind: "request-open-tab",
+            address: liveAddress,
+            title: liveTitle,
+            tabId: existingSession.liveTabId
+          });
+        }
+        return {
+          ok: true,
+          kind: "lyraLumenElevation",
+          tabId,
+          targetMode: "isolated",
+          liveTabId: existingSession.liveTabId,
+          address: liveAddress,
+          title: liveTitle,
+          userActionRequired: true,
+          elevationSession: refreshedSession,
+          message:
+            "Lyra is already waiting on the visible elevated browser tab for this isolated page."
+        };
+      }
+      if (existingSession !== undefined) {
+        elevationSessionByIsolatedTabId.delete(tabId);
+      }
+    }
     const target = await resolveBrowserAgentTarget(
       tabId,
       { ...request, targetMode: request?.targetMode ?? "isolated" },

@@ -611,17 +611,19 @@ export const createLumenToolHost = ({
         ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      const highConfidenceAuthSignal = observation.authChallengeSignals
-        ?.find((signal) => signal.confidence === "high");
+      const highConfidenceBlockingSignal = observation.authChallengeSignals
+        ?.find((signal) => signal.confidence === "high" && signal.kind !== "oauth_popup");
+      const highConfidenceOauthSignal = observation.authChallengeSignals
+        ?.find((signal) => signal.confidence === "high" && signal.kind === "oauth_popup");
       return withLumenTargetIds({
         ...observation,
         kind: "lyraLumenMap",
-        ...(targetMode === "isolated" && highConfidenceAuthSignal !== undefined
+        ...(highConfidenceBlockingSignal !== undefined
           ? {
             needsUserAction: {
               kind: "auth_challenge",
-              reason: highConfidenceAuthSignal.kind,
-              signal: highConfidenceAuthSignal,
+              reason: highConfidenceBlockingSignal.kind,
+              signal: highConfidenceBlockingSignal,
               tabId,
               targetMode,
               suggestedAction: "lyra_lumen_elevate"
@@ -629,8 +631,10 @@ export const createLumenToolHost = ({
           }
           : {}),
         nextRecommendedAction:
-          highConfidenceAuthSignal !== undefined
+          highConfidenceBlockingSignal !== undefined
             ? "lyra_lumen_elevate"
+            : highConfidenceOauthSignal !== undefined
+              ? "browser_ax.map"
             : observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
       }, tabId);
     }),

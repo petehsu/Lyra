@@ -6,6 +6,10 @@ import type {
   LspRuntimeEvent
 } from "../../../shared/desktop-bridge";
 import type { FileTextEncoding } from "../../../shared/file-manager";
+import {
+  disposeFileEditorTextModel,
+  disposeInactiveFileEditorTextModels
+} from "./monaco-model-store";
 import type {
   FileEditorAppIconKey,
   FileEditorAppState,
@@ -174,6 +178,10 @@ export const useFileEditorModel = ({
     statesRef.current = statesById;
   }, [statesById]);
 
+  useEffect(() => () => {
+    disposeInactiveFileEditorTextModels({});
+  }, []);
+
   const publishMeta = useCallback((state: FileEditorAppState): void => {
     onMetaChange({
       appId: "file-editor",
@@ -224,6 +232,7 @@ export const useFileEditorModel = ({
         lastSavedContent: "",
         isHydrated: false
       };
+      disposeFileEditorTextModel(instanceId);
       hydratedCount -= 1;
       publishMeta(next[instanceId]);
       delete lspSyncedVersionRef.current[instanceId];
@@ -254,6 +263,7 @@ export const useFileEditorModel = ({
       };
       const withEviction = applyHydrationEviction(withPatched, instanceId);
       statesRef.current = withEviction;
+      disposeInactiveFileEditorTextModels(withEviction);
       publishMeta(withEviction[instanceId]!);
       return withEviction;
     });
@@ -267,6 +277,7 @@ export const useFileEditorModel = ({
       };
       const withEviction = applyHydrationEviction(withPatched, instanceId);
       statesRef.current = withEviction;
+      disposeInactiveFileEditorTextModels(withEviction);
       publishMeta(withEviction[instanceId]!);
       return withEviction;
     });
@@ -525,6 +536,7 @@ export const useFileEditorModel = ({
         [instanceId]: nextState
       };
       statesRef.current = nextStates;
+      disposeFileEditorTextModel(instanceId);
       setStatesById(nextStates);
       publishMeta(nextState);
       return;
@@ -577,6 +589,7 @@ export const useFileEditorModel = ({
       }
       const nextStates = Object.fromEntries(nextEntries);
       statesRef.current = nextStates;
+      disposeInactiveFileEditorTextModels(nextStates);
       return nextStates;
     });
 

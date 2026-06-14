@@ -261,6 +261,22 @@ export function Composer({
               }
             }]
           : []),
+        ...(modelControls.verbosity.supported
+          ? [{
+              id: "verbosity",
+              ariaLabel: t("lyra-agents-composer.verbosity"),
+              label: t("lyra-agents-composer.verbosity"),
+              value: modelControls.verbosity.current ?? "medium",
+              options: modelControls.verbosity.options.map((option) => ({
+                label: option,
+                value: option
+              })),
+              disabled: modelControls.isSwitching,
+              onValueChange: (nextValue: string) => {
+                void modelControls.updateVerbosity(nextValue);
+              }
+            }]
+          : []),
         ...(modelControls.serviceTier.supported
           ? [{
               id: "service-tier",

@@ -97,6 +97,209 @@ fn browser_visual_tools_receive_model_image_capability() {
 }
 
 #[test]
+fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser AX Authorization Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraAx.act");
+        assert_eq!(input["action"], "act");
+        assert_eq!(input["axRef"], "ax:snapshot:node");
+        assert!(input.get("authorized").is_none());
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/kind")
+                .and_then(Value::as_str),
+            Some("lyra_ax_one_time")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/action")
+                .and_then(Value::as_str),
+            Some("act")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/axRef")
+                .and_then(Value::as_str),
+            Some("ax:snapshot:node")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/toolCallId")
+                .and_then(Value::as_str),
+            Some("tool-ax-auth")
+        );
+        assert!(
+            input
+                .pointer("/axAuthorization/permissionRequestId")
+                .and_then(Value::as_str)
+                .is_some()
+        );
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "browserAxActionResult",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "axRef": "ax:snapshot:node",
+            "interaction": "click",
+            "pageChanged": false,
+            "navigationStarted": false
+        }))
+        .expect("json"))
+    });
+    let run_session_id = session_id.clone();
+    let run_turn_id = turn_id.clone();
+    let run_dispatcher = dispatcher.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &run_session_id,
+            &run_turn_id,
+            &Some(run_dispatcher),
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-ax-auth",
+                "/tools/browser_ax/act",
+                json!({
+                    "tabId": "browser-tab-1",
+                    "targetMode": "live",
+                    "axRef": "ax:snapshot:node",
+                    "authorized": true,
+                    "axAuthorization": {
+                        "kind": "fake",
+                        "axRef": "ax:snapshot:node"
+                    }
+                }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    {
+        let state = state().lock().expect("state lock");
+        let pending = state
+            .pending_permissions
+            .get(&permission_id)
+            .expect("pending permission");
+        assert!(pending.detail.contains("axRef=ax:snapshot:node"));
+    }
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow AX permission");
+    let output = handle.join().expect("join AX authorization");
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output
+            .pointer("/raw/policyDecision/outcome")
+            .and_then(Value::as_str),
+        Some("approved")
+    );
+}
+
+#[test]
+fn browser_ax_act_injects_trusted_one_time_authorization_when_preapproved() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Browser AX Auto Authorization Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraAx.act");
+        assert_eq!(input["action"], "act");
+        assert_eq!(input["axRef"], "ax:snapshot:auto");
+        assert!(input.get("authorized").is_none());
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/kind")
+                .and_then(Value::as_str),
+            Some("lyra_ax_one_time")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/action")
+                .and_then(Value::as_str),
+            Some("act")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/axRef")
+                .and_then(Value::as_str),
+            Some("ax:snapshot:auto")
+        );
+        assert_eq!(
+            input
+                .pointer("/axAuthorization/toolCallId")
+                .and_then(Value::as_str),
+            Some("tool-ax-auto-auth")
+        );
+        assert!(
+            input
+                .pointer("/axAuthorization/permissionRequestId")
+                .is_none()
+        );
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "browserAxActionResult",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "axRef": "ax:snapshot:auto",
+            "interaction": "click",
+            "pageChanged": false,
+            "navigationStarted": false
+        }))
+        .expect("json"))
+    });
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call_with_permission_mode(
+            "tool-ax-auto-auth",
+            "/tools/browser_ax/act",
+            json!({
+                "tabId": "browser-tab-1",
+                "targetMode": "live",
+                "axRef": "ax:snapshot:auto",
+                "authorized": true,
+                "axAuthorization": {
+                    "kind": "fake",
+                    "axRef": "ax:snapshot:auto"
+                }
+            }),
+            "full_access",
+        ),
+    );
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(
+        output
+            .pointer("/raw/policyDecision/mode")
+            .and_then(Value::as_str),
+        Some("full_access")
+    );
+    let state = state().lock().expect("state lock");
+    assert!(!state.pending_permissions.values().any(|request| {
+        request.session_id == session_id
+            && request.tool_call_id == "tool-ax-auto-auth"
+            && request.allowed.is_none()
+    }));
+}
+
+#[test]
 fn host_permission_denied_failure_has_not_run_reason_and_no_changes() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -1315,6 +1518,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "git",
         "workbench",
         "browser",
+        "browser_ax",
         "software",
         "web",
         "render",
@@ -1403,4 +1607,52 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         Some("tool_not_found")
     );
     assert_eq!(output["truncated"], false);
+}
+
+#[test]
+fn browser_ax_tools_dispatch_to_ax_host_methods_with_expected_risk() {
+    let registry = tools::tool_fs::runtime_registry();
+    let by_path = |path: &str| {
+        registry
+            .manifests()
+            .into_iter()
+            .find(|manifest| manifest.path == path)
+            .unwrap_or_else(|| panic!("missing browser_ax manifest {path}"))
+    };
+
+    for (path, host_method) in [
+        ("/tools/browser_ax/map", "lyraAx.map"),
+        ("/tools/browser_ax/query", "lyraAx.query"),
+        ("/tools/browser_ax/act", "lyraAx.act"),
+        ("/tools/browser_ax/focus", "lyraAx.focus"),
+        ("/tools/browser_ax/press", "lyraAx.press"),
+        ("/tools/browser_ax/explain", "lyraAx.explain"),
+    ] {
+        let manifest = by_path(path);
+        assert_eq!(manifest.domain, "browser_ax", "{path} domain");
+        let target = tools::tool_fs::runtime_target_for_manifest(&manifest)
+            .unwrap_or_else(|| panic!("{path} has no runtime target"));
+        match target {
+            tools::tool_fs::RuntimeToolTarget::HostAdapter {
+                host_method: actual,
+                display_name,
+                ..
+            } => {
+                assert_eq!(actual, host_method, "{path} host method");
+                assert_eq!(display_name, "lyra_ax", "{path} display name");
+            }
+            _ => panic!("{path} must dispatch to a host adapter"),
+        }
+    }
+
+    let act = by_path("/tools/browser_ax/act");
+    assert_eq!(act.risk_level, "browser");
+    assert_eq!(act.permission_policy, "ask_on_risk");
+    let press = by_path("/tools/browser_ax/press");
+    assert_eq!(press.permission_policy, "ask_on_risk");
+    let map = by_path("/tools/browser_ax/map");
+    assert_eq!(map.risk_level, "read");
+    assert_eq!(map.permission_policy, "runtime_policy");
+    assert_eq!(map.renderer_hint, "lumen");
+    assert_eq!(map.activity_kind, "web");
 }

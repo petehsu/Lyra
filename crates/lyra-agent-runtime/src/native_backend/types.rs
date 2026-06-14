@@ -151,6 +151,7 @@ pub(crate) struct NativeConfig {
     pub(crate) memory_agent_model: Option<String>,
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) service_tier: Option<String>,
+    pub(crate) verbosity: Option<String>,
     #[serde(default)]
     pub(crate) providers: HashMap<String, NativeProviderProfile>,
     #[serde(default)]
@@ -170,7 +171,7 @@ pub(crate) struct NativeConfig {
 pub(crate) struct NativeProviderProfile {
     pub(crate) id: String,
     pub(crate) label: String,
-    pub(crate) provider_type: String,
+    pub(crate) route_id: String,
     pub(crate) base_url: Option<String>,
     pub(crate) default_model: Option<String>,
     pub(crate) api_key: Option<String>,

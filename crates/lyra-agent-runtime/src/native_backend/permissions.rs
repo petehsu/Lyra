@@ -150,6 +150,10 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("lyra_lumen", "follow_audit")
             | ("lyra_lumen", "explain_target")
             | ("lyra_lumen", "audit")
+            | ("lyra_ax", "map")
+            | ("lyra_ax", "query")
+            | ("lyra_ax", "explain")
+            | ("lyra_ax", "focus")
     ) {
         return None;
     }
@@ -163,6 +167,8 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("lyra_lumen", "submit")
             | ("lyra_lumen", "navigate")
             | ("lyra_lumen", "elevate")
+            | ("lyra_ax", "act")
+            | ("lyra_ax", "press")
     ) {
         return Some(if action == "navigate" {
             "network".to_string()
@@ -198,6 +204,7 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
         "target",
         "text",
         "captureId",
+        "axRef",
         "reason",
     ] {
         if let Some(value) = input.get(key).and_then(Value::as_str)

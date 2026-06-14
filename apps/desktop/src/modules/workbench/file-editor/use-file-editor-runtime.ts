@@ -13,6 +13,10 @@ import {
   MONACO_PADDING,
   MONACO_THEME_ID
 } from "./monaco-helpers";
+import {
+  acquireFileEditorTextModel,
+  isFileEditorTextModelDisposed
+} from "./monaco-model-store";
 import type {
   FileEditorAppState,
   FileEditorChangeReviewItem,
@@ -172,10 +176,7 @@ export const useFileEditorRuntime = ({
         if (latestState === null) {
           return;
         }
-        const textModel = monaco.editor.createModel(
-          latestState.content,
-          latestState.languageId
-        );
+        const textModel = acquireFileEditorTextModel(monaco, latestState);
         textModelRef.current = textModel;
         const editor = monaco.editor.create(host, {
           model: textModel,
@@ -201,6 +202,9 @@ export const useFileEditorRuntime = ({
             if (applyingStateRef.current || latestState === null) {
               return;
             }
+            if (isFileEditorTextModelDisposed(textModel)) {
+              return;
+            }
             setContent(latestState.instanceId, textModel.getValue());
           }),
           editor.onDidBlurEditorWidget(() => {
@@ -219,6 +223,8 @@ export const useFileEditorRuntime = ({
                 if (
                   latestState === null ||
                   currentModel === null ||
+                  isFileEditorTextModelDisposed(currentModel) ||
+                  isFileEditorTextModelDisposed(targetModel) ||
                   targetModel !== currentModel ||
                   latestState.languageId !== languageId
                 ) {
@@ -289,7 +295,6 @@ export const useFileEditorRuntime = ({
       }
       const editor = editorRef.current;
       const diffEditor = diffEditorRef.current;
-      const textModel = textModelRef.current;
       const diffOriginalModel = diffOriginalModelRef.current;
       editorRef.current = null;
       diffEditorRef.current = null;
@@ -300,7 +305,6 @@ export const useFileEditorRuntime = ({
       editor?.setModel(null);
       editor?.dispose();
       diffOriginalModel?.dispose();
-      textModel?.dispose();
     };
   }, [canShowEditor, isAiOnly, requestCompletion, save, setContent, stateId]);
 
@@ -322,10 +326,15 @@ export const useFileEditorRuntime = ({
     }
     touchInstance(state.instanceId);
     const editor = editorRef.current;
-    const textModel = textModelRef.current;
+    let textModel = textModelRef.current;
     const monaco = monacoRef.current;
     if (editor === null || textModel === null || monaco === null) {
       return;
+    }
+    if (isFileEditorTextModelDisposed(textModel)) {
+      textModel = acquireFileEditorTextModel(monaco, state);
+      textModelRef.current = textModel;
+      editor.setModel(textModel);
     }
 
     if (textModel.getLanguageId() !== state.languageId) {
@@ -399,7 +408,12 @@ export const useFileEditorRuntime = ({
     const monaco = monacoRef.current;
     const modifiedModel = textModelRef.current;
     const host = diffHostRef.current;
-    if (monaco === null || modifiedModel === null || host === null) {
+    if (
+      monaco === null ||
+      modifiedModel === null ||
+      isFileEditorTextModelDisposed(modifiedModel) ||
+      host === null
+    ) {
       return;
     }
 
@@ -448,6 +462,9 @@ export const useFileEditorRuntime = ({
     if (state === null || monaco === null || originalModel === null) {
       return;
     }
+    if (isFileEditorTextModelDisposed(originalModel)) {
+      return;
+    }
     if (originalModel.getLanguageId() !== state.languageId) {
       monaco.editor.setModelLanguage(originalModel, state.languageId);
     }
@@ -476,7 +493,8 @@ export const useFileEditorRuntime = ({
       return;
     }
 
-    const textModel = targetEditor.getModel();
+    const targetModel = targetEditor.getModel();
+    const textModel = isFileEditorTextModelDisposed(targetModel) ? null : targetModel;
     const startLine = Math.max(1, revealLocation.line);
     const endLine = textModel === null
       ? Math.max(startLine, revealLocation.endLine ?? startLine)

@@ -8,6 +8,10 @@ import {
   type LspDocumentRequest,
   type LspRuntimeEvent
 } from "../../shared/desktop-bridge";
+import {
+  createBackpressuredEventSender,
+  estimateSerializedBytes
+} from "../events/backpressure";
 import { resolveBundledRustAnalyzerCandidates } from "./runtime-paths";
 import type { LyraRuntimeClient } from "../runtime-client";
 
@@ -15,6 +19,9 @@ type LspServerEnvKey =
   | "LYRA_LSP_TYPESCRIPT_SERVER"
   | "LYRA_LSP_RUST_ANALYZER"
   | "LYRA_LSP_PYRIGHT";
+
+const LSP_EVENT_THROTTLE_MS = 100;
+const LSP_EVENT_MAX_QUEUE_SIZE = 128;
 
 const candidateFileNames = (baseName: string): readonly string[] => {
   if (process.platform !== "win32") {
@@ -213,6 +220,20 @@ const parseEvent = (payload: unknown): LspRuntimeEvent | null => {
   return candidate;
 };
 
+const lspEventKey = (event: LspRuntimeEvent): string => {
+  if (event.kind === "server-status") {
+    return `server-status:${event.languageId ?? "*"}:${event.projectRoot ?? "*"}`;
+  }
+  return [
+    "error",
+    event.sessionId ?? "*",
+    event.filePath ?? "*",
+    event.languageId ?? "*",
+    event.projectRoot ?? "*",
+    event.message
+  ].join(":");
+};
+
 export type LspIpcBridge = {
   readonly dispose: () => void;
   readonly loadResult: { readonly loadedFrom: string };
@@ -223,6 +244,24 @@ export const createLspIpcBridge = (
   getWindow: () => BrowserWindow | null
 ): LspIpcBridge => {
   configureLanguageServerEnvironment();
+  const eventSender = createBackpressuredEventSender<LspRuntimeEvent>({
+    name: "lsp.event",
+    intervalMs: LSP_EVENT_THROTTLE_MS,
+    maxQueueSize: LSP_EVENT_MAX_QUEUE_SIZE,
+    keyFor: lspEventKey,
+    merge: (_current, incoming) => incoming,
+    estimateBytes: estimateSerializedBytes,
+    send: (event) => {
+      const window = getWindow();
+      if (window === null || window.isDestroyed() || window.webContents.isDestroyed()) {
+        return;
+      }
+      window.webContents.send(LYRA_CHANNELS.lspEvent, event);
+    },
+    onError: (error) => {
+      console.warn(`[lyra-lsp] failed to send throttled event: ${String(error)}`);
+    }
+  });
   const unsubscribeRuntimeEvents = runtimeClient.subscribe((eventName, payload) => {
     if (eventName !== "lsp.runtime") {
       return;
@@ -232,11 +271,7 @@ export const createLspIpcBridge = (
       return;
     }
 
-    const window = getWindow();
-    if (window === null || window.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(LYRA_CHANNELS.lspEvent, event);
+    eventSender.enqueue(event);
   });
   const requestRuntime = async <T>(method: string, payload: unknown): Promise<T> =>
     await runtimeClient.request<T>(method, payload);
@@ -297,6 +332,7 @@ export const createLspIpcBridge = (
         ipcMain.removeHandler(channel);
       }
       unsubscribeRuntimeEvents();
+      eventSender.dispose();
     }
   };
 };

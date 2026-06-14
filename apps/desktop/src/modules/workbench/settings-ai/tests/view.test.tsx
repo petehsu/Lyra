@@ -1,11 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { SettingsAiView } from "../view";
 import type {
-  SettingsAiDraft,
   SettingsAiLabels,
-  SettingsAiModel
+  SettingsAiModel,
 } from "../types";
 
 const labels: SettingsAiLabels = {
@@ -78,6 +77,15 @@ const labels: SettingsAiLabels = {
   gmailAccessFull: "Full Gmail access",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
+  localProviderTitle: "Local Models",
+  localProviderDescription: "Connect to local model servers.",
+  saveAndDiscoverModels: "Save & Discover Models",
+  localModelsLabel: "Model IDs",
+  localModelsPlaceholder: "llama3.2:latest",
+  localCapabilitiesTitle: "Default model capabilities",
+  localSupportsImageInput: "Image input",
+  localSupportsToolCalling: "Tool calling",
+  localSupportsStreaming: "Streaming",
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
@@ -127,84 +135,149 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusIdle: "Idle",
   memoryConfigStatusLoaded: "Loaded",
   memoryConfigStatusSaved: "Saved",
-  memoryConfigStatusInvalidJson: "Invalid JSON"
-};
-
-const draft: SettingsAiDraft = {
-  id: null,
-  name: "lyra-agent-provider",
-  providerId: "agent",
-  protocolId: "openai_chat_completions",
-  presetId: null,
-  connectionConfig: {},
-  authConfig: {},
-  secretValues: {},
-  configuredSecretFields: [],
-  headersText: "",
-  modelSelectionMode: "custom",
-  modelsText: "",
-  isDefault: true
+  memoryConfigStatusInvalidJson: "Invalid JSON",
 };
 
 const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel => ({
   isSaving: false,
   errorMessage: null,
-  profiles: [],
-  presetSections: [],
-  selectedProfileId: null,
-  defaultProfileId: null,
-  defaultProviderId: null,
-  defaultModelNames: [],
-  selectedPresetId: null,
-  selectedPreset: null,
+  profiles: [
+    {
+      id: "mimo_token_plan",
+      label: "MiMo Token Plan",
+      routeId: "mimo_token_plan",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+      defaultModel: "mimo-v2.5-pro",
+      configured: true,
+      authHeader: "api-key",
+      modelCount: 1,
+      capabilities: {
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        supportsStreaming: true,
+      },
+    },
+    {
+      id: "openai-compatible",
+      label: "Custom OpenAI-Compatible",
+      routeId: "custom_openai_compatible",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      baseUrl: "https://api.example.com/v1",
+      defaultModel: "gpt-5",
+      configured: true,
+      authHeader: null,
+      modelCount: 1,
+      capabilities: {
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        supportsStreaming: true,
+      },
+    },
+  ],
+  quickSetupRoutes: [
+    {
+      id: "openai",
+      providerId: "openai",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "OpenAI",
+      description: "OpenAI hosted route.",
+      defaultBaseUrl: "https://api.openai.com/v1",
+      apiMethod: "chatCompletions",
+      authKind: "bearer",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: false,
+      localBackend: null,
+      catalogSection: "hosted",
+      quickSetupSupported: true,
+    },
+    {
+      id: "custom_openai_compatible",
+      providerId: "custom_openai_compatible",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "Custom OpenAI-Compatible",
+      description: "Manual OpenAI-compatible endpoint.",
+      defaultBaseUrl: null,
+      apiMethod: "chatCompletions",
+      authKind: "bearer_or_header",
+      runtimeSupported: true,
+      modelDiscoverySupported: false,
+      customHeadersSupported: true,
+      localBackend: null,
+      catalogSection: "custom",
+      quickSetupSupported: true,
+    },
+  ],
+  localRoutes: [
+    {
+      id: "lmstudio",
+      providerId: "lmstudio",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "LM Studio",
+      description: "Local LM Studio route.",
+      defaultBaseUrl: "http://127.0.0.1:1234/v1",
+      apiMethod: "chatCompletions",
+      authKind: "none_or_header",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: true,
+      localBackend: "lmstudio",
+      catalogSection: "local",
+      quickSetupSupported: false,
+    },
+  ],
+  defaultProfileId: "mimo_token_plan",
   agentConfig: {
     agentHome: "/Users/petehsu/.lyra/modules/agent",
-    configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
+    configPath: "/Users/petehsu/.lyra/modules/agent/state.json",
     config: {
       provider: {
-        default_provider: "mimo-token-plan",
-        default_model: "mimo-v2.5-pro",
-      },
-      features: {
-        memory: true,
-        swarm: false,
+        defaultProvider: "mimo_token_plan",
+        defaultModel: "mimo-v2.5-pro",
       },
       providers: {
-        "mimo-token-plan": {
-          base_url: "https://token-plan-cn.xiaomimimo.com/v1",
-          auth: "header",
-          auth_header: "api-key",
-          default_model: "mimo-v2.5-pro",
+        mimo_token_plan: {
+          label: "MiMo Token Plan",
+          routeId: "mimo_token_plan",
+          protocolId: "openai_chat_completions",
+          protocolFamily: "openai-compatible",
+          baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+          authHeader: "api-key",
+          defaultModel: "mimo-v2.5-pro",
           models: [{ id: "mimo-v2.5-pro" }],
         },
         "openai-compatible": {
-          base_url: "https://api.example.com/v1",
-          default_model: "gpt-5",
+          label: "Custom OpenAI-Compatible",
+          routeId: "custom_openai_compatible",
+          protocolId: "openai_chat_completions",
+          protocolFamily: "openai-compatible",
+          baseUrl: "https://api.example.com/v1",
+          defaultModel: "gpt-5",
           models: [{ id: "gpt-5" }],
         },
       },
-      agents: {
-        swarm_model: "gpt-5",
-        memory_model: "mimo-v2.5-pro",
+      roles: {
+        swarmModel: "gpt-5",
+        memoryModel: "mimo-v2.5-pro",
+        reviewModel: "gpt-5-mini",
+        judgeModel: "gpt-5",
+        ambientModel: "mimo-v2.5-pro",
       },
-      autoreview: {
-        model: "gpt-5-mini",
-      },
-      autojudge: {
-        model: "gpt-5",
-      },
-      ambient: {
-        model: "mimo-v2.5-pro",
-      },
-      safety: {
-        desktop_notifications: true,
-        ntfy_topic: "lyra-alerts",
-        ntfy_server: "https://ntfy.sh",
-        email_enabled: false,
-        email_smtp_port: 587,
-        email_imap_port: 993,
-        telegram_enabled: false,
-        discord_enabled: false,
+      notifications: {
+        desktopNotifications: true,
+        ntfyTopic: "lyra-alerts",
+        ntfyServer: "https://ntfy.sh",
+        emailEnabled: false,
+        emailSmtpPort: 587,
+        emailImapPort: 993,
+        telegramEnabled: false,
+        discordEnabled: false,
       },
     },
     commands: [
@@ -221,6 +294,12 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
         remoteOnly: false,
       },
     ],
+  },
+  agentAccounts: {
+    defaultProvider: "mimo_token_plan",
+    defaultModel: "mimo-v2.5-pro",
+    authStatus: {},
+    accounts: [],
   },
   agentLoginProviders: {
     authStatus: {},
@@ -249,145 +328,233 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
         requiresCallback: true,
         requiresApiKey: false,
       },
-      {
-        id: "openai-compatible",
-        displayName: "OpenAI-compatible",
-        authKind: "API key",
-        statusMethod: "API key",
-        detail: "custom endpoint",
-        recommended: false,
-        configured: false,
-        state: "notConfigured",
-        requiresCallback: false,
-        requiresApiKey: true,
-      },
     ],
   },
-  draft,
-  modelSelectionMode: draft.modelSelectionMode,
-  availableModels: [],
-  selectProfile: vi.fn(),
-  applyPreset: vi.fn(),
-  updateDraftName: vi.fn(),
-  updateDraftModelSelectionMode: vi.fn(),
-  updateDraftHeadersText: vi.fn(),
-  updateDraftModelsText: vi.fn(),
-  updateDraftField: vi.fn(),
-  saveProfile: vi.fn(),
-  deleteProfile: vi.fn(),
-  deleteProviderModels: vi.fn(),
-  deleteConfiguredModel: vi.fn(),
+  agentProviderCatalog: {
+    schemaVersion: "2026-06-14",
+    defaultProvider: "mimo_token_plan",
+    defaultModel: "mimo-v2.5-pro",
+    protocols: [
+      {
+        id: "openai_chat_completions",
+        family: "openai-compatible",
+        label: "OpenAI Chat Completions",
+        transport: "http",
+        runtimeSupported: true,
+        streamingSupported: true,
+        toolCallingSupported: true,
+      },
+    ],
+    routes: [
+      {
+        id: "openai",
+        providerId: "openai",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "OpenAI",
+        description: "OpenAI hosted route.",
+        defaultBaseUrl: "https://api.openai.com/v1",
+        apiMethod: "chatCompletions",
+        authKind: "bearer",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: false,
+        localBackend: null,
+        catalogSection: "hosted",
+        quickSetupSupported: true,
+      },
+      {
+        id: "custom_openai_compatible",
+        providerId: "custom_openai_compatible",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "Custom OpenAI-Compatible",
+        description: "Manual OpenAI-compatible endpoint.",
+        defaultBaseUrl: null,
+        apiMethod: "chatCompletions",
+        authKind: "bearer_or_header",
+        runtimeSupported: true,
+        modelDiscoverySupported: false,
+        customHeadersSupported: true,
+        localBackend: null,
+        catalogSection: "custom",
+        quickSetupSupported: true,
+      },
+      {
+        id: "lmstudio",
+        providerId: "lmstudio",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "LM Studio",
+        description: "Local LM Studio route.",
+        defaultBaseUrl: "http://127.0.0.1:1234/v1",
+        apiMethod: "chatCompletions",
+        authKind: "none_or_header",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: true,
+        localBackend: "lmstudio",
+        catalogSection: "local",
+        quickSetupSupported: false,
+      },
+    ],
+    profiles: [],
+  },
   setDefaultProfile: vi.fn(),
   refreshAgent: vi.fn(),
   openAgentConfigFile: vi.fn(),
   updateAgentConfig: vi.fn(),
   saveAgentProviderProfile: vi.fn(),
+  refreshAgentModels: vi.fn(),
   startAgentAccountLogin: vi.fn(),
   completeAgentAccountLogin: vi.fn(),
   updateAgentRoles: vi.fn(),
+  switchAgentAccount: vi.fn(),
+  removeAgentAccount: vi.fn(),
   ...overrides,
 });
 
 describe("SettingsAiView", () => {
-  test("renders Lyra Agent-owned config and account login without session history", () => {
+  test("renders Rust-catalog profiles and local routes in the local section", () => {
     const model = createModel();
 
     render(<SettingsAiView labels={labels} model={model} />);
 
     expect(screen.getByRole("heading", { name: "Profiles" })).toBeInTheDocument();
-    expect(screen.getAllByText("mimo-token-plan").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("MiMo Token Plan").length).toBeGreaterThan(0);
     expect(screen.getAllByText("mimo-v2.5-pro").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Swarm Off")).not.toBeInTheDocument();
-    expect(screen.queryByText("Swarm On")).not.toBeInTheDocument();
-    expect(screen.queryByText("Memory On")).not.toBeInTheDocument();
-    expect(screen.queryByText("Memory Off")).not.toBeInTheDocument();
-    expect(screen.getByText("/Users/petehsu/.lyra/modules/agent/config.toml")).toBeInTheDocument();
+    expect(screen.getByText("/Users/petehsu/.lyra/modules/agent/state.json")).toBeInTheDocument();
     expect(screen.getByText("/Users/petehsu/.lyra/modules/agent")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Config" })).toBeInTheDocument();
-    expect(screen.queryByText("/resume")).not.toBeInTheDocument();
-    expect(screen.queryByText("/account")).not.toBeInTheDocument();
-    expect(screen.queryByText("/model")).not.toBeInTheDocument();
     expect(screen.getByText("Provider Login")).toBeInTheDocument();
     expect(screen.getByText("Add API Key Provider")).toBeInTheDocument();
-    expect(screen.getByText("Agent Role Models")).toBeInTheDocument();
-    expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
-    expect(screen.queryByText("No AI profile yet")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add profile" })).not.toBeInTheDocument();
+    expect(screen.getByText("Local Models")).toBeInTheDocument();
+    expect(screen.getByText("OpenAI")).toBeInTheDocument();
+    expect(screen.getAllByText("Custom OpenAI-Compatible").length).toBeGreaterThan(0);
+    expect(screen.getByText("LM Studio")).toBeInTheDocument();
+    expect(model.quickSetupRoutes.map((route) => route.id)).not.toContain("lmstudio");
   });
 
-  test("saves an API key provider through the Lyra Agent login bridge", () => {
+  test("saves an API key provider through the provider profile bridge", () => {
+    const saveAgentProviderProfile = vi.fn();
     const completeAgentAccountLogin = vi.fn();
-    const model = createModel({ completeAgentAccountLogin });
+    const model = createModel({
+      saveAgentProviderProfile,
+      completeAgentAccountLogin,
+    });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
-    fireEvent.change(screen.getByLabelText("Profile name"), {
+    fireEvent.click(
+      screen.getByRole("button", { name: /Custom OpenAI-Compatible Manual OpenAI-compatible endpoint\./i })
+    );
+    fireEvent.change(screen.getAllByLabelText("Profile name")[1]!, {
       target: { value: "xiaomi-mimo-api" },
     });
-    fireEvent.change(screen.getByLabelText("Base URL"), {
+    fireEvent.change(screen.getAllByLabelText("Base URL")[1]!, {
       target: { value: "https://api.xiaomimimo.com/v1" },
     });
-    fireEvent.change(screen.getByLabelText("Main model"), {
+    fireEvent.change(screen.getAllByLabelText("Main model")[1]!, {
       target: { value: "mimo-v2.5-pro" },
     });
-    fireEvent.change(screen.getByLabelText("Auth Header"), {
+    fireEvent.change(screen.getAllByLabelText("Auth Header")[1]!, {
       target: { value: "api-key" },
     });
-    fireEvent.change(screen.getByLabelText("API key"), {
+    fireEvent.change(screen.getAllByLabelText("API key")[1]!, {
       target: { value: "sk-secret-value" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Save profile/ })[1]!);
 
-    expect(completeAgentAccountLogin).toHaveBeenCalledWith({
-      provider: "openai-compatible",
+    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
       profileName: "xiaomi-mimo-api",
+      routeId: "custom_openai_compatible",
       baseUrl: "https://api.xiaomimimo.com/v1",
       apiKey: "sk-secret-value",
       defaultModel: "mimo-v2.5-pro",
+      auth: "header",
       authHeader: "api-key",
       setDefault: true,
+    });
+    expect(completeAgentAccountLogin).not.toHaveBeenCalled();
+  });
+
+  test("saves and refreshes a local provider profile with model capabilities", async () => {
+    const saveAgentProviderProfile = vi.fn(async () => undefined);
+    const refreshAgentModels = vi.fn(async () => undefined);
+    const model = createModel({
+      saveAgentProviderProfile,
+      refreshAgentModels,
+    });
+
+    render(<SettingsAiView labels={labels} model={model} />);
+
+    fireEvent.change(screen.getAllByLabelText("Profile name")[0]!, {
+      target: { value: "local-dev" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Base URL")[0]!, {
+      target: { value: "http://127.0.0.1:1234/v1" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Main model")[0]!, {
+      target: { value: "local-qwen" },
+    });
+    fireEvent.change(screen.getByLabelText("Model IDs"), {
+      target: { value: "local-qwen\nlocal-vision" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save & Discover Models/ }));
+
+    await waitFor(() => {
+      expect(refreshAgentModels).toHaveBeenCalledWith("local-dev");
+    });
+    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
+      profileName: "local-dev",
+      routeId: "lmstudio",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      apiKey: null,
+      defaultModel: "local-qwen",
+      auth: "none",
+      authHeader: null,
+      setDefault: true,
+      models: [
+        {
+          id: "local-qwen",
+          supportsImageInput: true,
+          supportsToolCalling: true,
+          supportsStreaming: true,
+        },
+        {
+          id: "local-vision",
+          supportsImageInput: true,
+          supportsToolCalling: true,
+          supportsStreaming: true,
+        },
+      ],
     });
   });
 
   test("does not render stored provider secrets as visible text", () => {
-    const model = createModel({
-      agentConfig: {
-        agentHome: "/Users/petehsu/.lyra/modules/agent",
-        configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
-        config: {
-          providers: {
-            "mimo-token-plan": {
-              base_url: "https://token-plan-cn.xiaomimimo.com/v1",
-              auth: "header",
-              auth_header: "api-key",
-              api_key_env: "MIMO_API_KEY",
-              default_model: "mimo-v2.5-pro",
-            },
-          },
-        },
-        commands: [],
-      },
-    });
+    const model = createModel();
 
     const { container } = render(<SettingsAiView labels={labels} model={model} />);
 
-    expect(screen.getByLabelText("API key")).toHaveValue("");
+    for (const input of screen.getAllByLabelText("API key")) {
+      expect(input).toHaveValue("");
+    }
     expect(container).not.toHaveTextContent("sk-secret-value");
     expect(container).not.toHaveTextContent("tp-secret-value");
   });
 
   test("updates the Lyra Agent default provider when a provider card is selected", () => {
-    const updateAgentConfig = vi.fn();
-    const model = createModel({ updateAgentConfig });
+    const setDefaultProfile = vi.fn();
+    const model = createModel({ setDefaultProfile });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /openai-compatible gpt-5/ }));
+    const profileButton = screen
+      .getAllByRole("button", { name: /openai-compatible/i })
+      .find((element) => element.textContent?.includes("gpt-5"));
+    expect(profileButton).toBeDefined();
+    fireEvent.click(profileButton!);
 
-    expect(updateAgentConfig).toHaveBeenCalledWith({
-      defaultProvider: "openai-compatible",
-      defaultModel: "gpt-5",
-    });
+    expect(setDefaultProfile).toHaveBeenCalledWith("openai-compatible");
   });
 
   test("opens the Lyra Agent config file from the settings surface", () => {
@@ -503,32 +670,6 @@ describe("SettingsAiView", () => {
       telegramEnabled: true,
       telegramChatId: "12345",
     }));
-  });
-
-  test("does not render stored notification secrets as visible text", () => {
-    const model = createModel({
-      agentConfig: {
-        agentHome: "/Users/petehsu/.lyra/modules/agent",
-        configPath: "/Users/petehsu/.lyra/modules/agent/config.toml",
-        config: {
-          safety: {
-            email_password: "smtp-secret-value",
-            telegram_bot_token: "telegram-secret-value",
-            discord_bot_token: "discord-secret-value",
-          },
-        },
-        commands: [],
-      },
-    });
-
-    const { container } = render(<SettingsAiView labels={labels} model={model} />);
-
-    expect(screen.getByLabelText("SMTP password")).toHaveValue("");
-    expect(screen.getByLabelText("Telegram bot token")).toHaveValue("");
-    expect(screen.getByLabelText("Discord bot token")).toHaveValue("");
-    expect(container).not.toHaveTextContent("smtp-secret-value");
-    expect(container).not.toHaveTextContent("telegram-secret-value");
-    expect(container).not.toHaveTextContent("discord-secret-value");
   });
 
   test("shows Lyra Agent bridge errors inline", () => {

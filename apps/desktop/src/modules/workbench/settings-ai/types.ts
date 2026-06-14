@@ -1,9 +1,7 @@
 import type {
-  AiProviderModelEntry,
-  AiProviderPreset,
-  AiProviderProfile,
-} from "../../../shared/ai";
-import type {
+  AgentProviderCatalogProfile,
+  AgentProviderCatalogSnapshot,
+  AgentProviderRouteEntry,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
   AgentRolesUpdateRequest,
@@ -87,6 +85,15 @@ export type SettingsAiLabels = {
   readonly gmailAccessFull: string;
   readonly apiKeyProviderTitle: string;
   readonly apiKeyProviderDescription: string;
+  readonly localProviderTitle: string;
+  readonly localProviderDescription: string;
+  readonly saveAndDiscoverModels: string;
+  readonly localModelsLabel: string;
+  readonly localModelsPlaceholder: string;
+  readonly localCapabilitiesTitle: string;
+  readonly localSupportsImageInput: string;
+  readonly localSupportsToolCalling: string;
+  readonly localSupportsStreaming: string;
   readonly removeAccount: string;
   readonly providerProfileTitle: string;
   readonly authHeaderLabel: string;
@@ -139,62 +146,17 @@ export type SettingsAiLabels = {
   readonly memoryConfigStatusInvalidJson: string;
 };
 
-export type SettingsAiModelSelectionMode = "custom" | "all";
-
-export type SettingsAiDraft = {
-  readonly id: string | null;
-  readonly name: string;
-  readonly providerId: string;
-  readonly protocolId: string;
-  readonly presetId: string | null;
-  readonly connectionConfig: Readonly<Record<string, string>>;
-  readonly authConfig: Readonly<Record<string, string>>;
-  readonly secretValues: Readonly<Record<string, string>>;
-  readonly configuredSecretFields: readonly string[];
-  readonly headersText: string;
-  readonly modelSelectionMode: SettingsAiModelSelectionMode;
-  readonly modelsText: string;
-  readonly isDefault: boolean;
-};
-
-export type SettingsAiPresetSection = {
-  readonly id: "mainstream" | "local" | "custom";
-  readonly label: string;
-  readonly presets: readonly AiProviderPreset[];
-};
-
 export type SettingsAiModel = {
   readonly isSaving: boolean;
   readonly errorMessage: string | null;
-  readonly profiles: readonly AiProviderProfile[];
-  readonly presetSections: readonly SettingsAiPresetSection[];
-  readonly selectedProfileId: string | null;
+  readonly profiles: readonly AgentProviderCatalogProfile[];
+  readonly quickSetupRoutes: readonly AgentProviderRouteEntry[];
+  readonly localRoutes: readonly AgentProviderRouteEntry[];
   readonly defaultProfileId: string | null;
-  readonly defaultProviderId: string | null;
-  readonly defaultModelNames: readonly string[];
-  readonly selectedPresetId: string | null;
-  readonly selectedPreset: AiProviderPreset | null;
   readonly agentConfig?: AgentConfigSnapshot | null;
   readonly agentAccounts?: AgentAccountsSnapshot | null;
   readonly agentLoginProviders?: AgentLoginProviderCatalogSnapshot | null;
-  readonly draft: SettingsAiDraft;
-  readonly modelSelectionMode: SettingsAiModelSelectionMode;
-  readonly availableModels: readonly AiProviderModelEntry[];
-  readonly selectProfile: (profileId: string | null) => void;
-  readonly applyPreset: (presetId: string) => void;
-  readonly updateDraftName: (value: string) => void;
-  readonly updateDraftModelSelectionMode: (value: SettingsAiModelSelectionMode) => void;
-  readonly updateDraftHeadersText: (value: string) => void;
-  readonly updateDraftModelsText: (value: string) => void;
-  readonly updateDraftField: (
-    target: "connection" | "auth" | "secret",
-    fieldId: string,
-    value: string
-  ) => void;
-  readonly saveProfile: () => Promise<void>;
-  readonly deleteProfile: (profileId?: string) => Promise<void>;
-  readonly deleteProviderModels: (providerId: string) => Promise<void>;
-  readonly deleteConfiguredModel: (profileId: string, modelId: string) => Promise<void>;
+  readonly agentProviderCatalog?: AgentProviderCatalogSnapshot | null;
   readonly setDefaultProfile: (profileId: string) => Promise<void>;
   readonly refreshAgent?: () => Promise<void>;
   readonly openAgentConfigFile?: () => Promise<void>;
@@ -202,6 +164,7 @@ export type SettingsAiModel = {
   readonly saveAgentProviderProfile?: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<void>;
+  readonly refreshAgentModels?: (providerId: string) => Promise<void>;
   readonly startAgentAccountLogin?: (
     request: AgentAccountLoginStartRequest
   ) => Promise<AgentAccountLoginStartResponse | null>;

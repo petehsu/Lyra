@@ -1,15 +1,13 @@
-import { ipcMain } from "electron";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { BrowserWindow, ipcMain } from "electron";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
   LYRA_CHANNELS,
-  type WorkbenchStateKey
+  type WorkbenchStateChangeEvent,
+  type WorkbenchStateKey,
+  type WorkbenchStateSnapshot
 } from "../../shared/desktop-bridge";
-
-type SyncReply<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: string };
 
 const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   preferences: "preferences.v1.json",
@@ -21,6 +19,7 @@ const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   notifications: "notifications.v1.json",
   layout: "layout.v1.json"
 };
+const WORKBENCH_STATE_KEYS = Object.keys(WORKBENCH_STATE_FILENAMES) as WorkbenchStateKey[];
 
 const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
   value === "preferences"
@@ -59,107 +58,171 @@ const resolveStateFilePath = (storageRoot: string, key: WorkbenchStateKey): stri
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-const withSyncReply = <T>(run: () => T): SyncReply<T> => {
-  try {
-    return {
-      ok: true,
-      value: run()
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: toErrorMessage(error)
-    };
-  }
+const createEmptySnapshot = (): Record<WorkbenchStateKey, string | null> => ({
+  preferences: null,
+  "workspace-tabs": null,
+  "browser-session": null,
+  "browser-history": null,
+  "ai-panel-tabs": null,
+  "terminal-dock": null,
+  notifications: null,
+  layout: null
+});
+
+const loadSnapshot = async (storageRoot: string): Promise<Record<WorkbenchStateKey, string | null>> => {
+  await mkdir(storageRoot, { recursive: true });
+  const snapshot = createEmptySnapshot();
+  await Promise.all(
+    WORKBENCH_STATE_KEYS.map(async (key) => {
+      const filePath = resolveStateFilePath(storageRoot, key);
+      try {
+        snapshot[key] = await readFile(filePath, "utf8");
+      } catch (error) {
+        const nodeError = error as NodeJS.ErrnoException;
+        if (nodeError.code === "ENOENT") {
+          snapshot[key] = null;
+          return;
+        }
+        throw error;
+      }
+    })
+  );
+  return snapshot;
 };
 
 export type WorkbenchStateIpcBridge = {
   readonly dispose: () => void;
+  readonly flush: () => Promise<void>;
+  readonly snapshot: () => WorkbenchStateSnapshot;
   readonly readState: (key: WorkbenchStateKey) => string | null;
+  readonly readStateAsync: (key: WorkbenchStateKey) => Promise<string | null>;
   readonly writeState: (key: WorkbenchStateKey, json: string) => void;
+  readonly writeStateAsync: (key: WorkbenchStateKey, json: string) => Promise<void>;
+  readonly removeState: (key: WorkbenchStateKey) => void;
+  readonly removeStateAsync: (key: WorkbenchStateKey) => Promise<void>;
   readonly subscribe: (
-    listener: (event: {
-      readonly key: WorkbenchStateKey;
-      readonly json: string | null;
-    }) => void
+    listener: (event: WorkbenchStateChangeEvent) => void
   ) => () => void;
 };
 
-export const createWorkbenchStateIpcBridge = (
+export const createWorkbenchStateIpcBridge = async (
   storageRoot: string
-): WorkbenchStateIpcBridge => {
-  mkdirSync(storageRoot, { recursive: true });
-  const stateListeners = new Set<(
-    event: { readonly key: WorkbenchStateKey; readonly json: string | null }
-  ) => void>();
+): Promise<WorkbenchStateIpcBridge> => {
+  const stateSnapshot = await loadSnapshot(storageRoot);
+  const stateListeners = new Set<(event: WorkbenchStateChangeEvent) => void>();
+  const writeQueues = new Map<WorkbenchStateKey, Promise<void>>();
 
   const publish = (key: WorkbenchStateKey, json: string | null): void => {
+    const event = { key, json } satisfies WorkbenchStateChangeEvent;
     for (const listener of stateListeners) {
-      listener({ key, json });
+      listener(event);
     }
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) {
+        continue;
+      }
+      window.webContents.send(LYRA_CHANNELS.workbenchStateChanged, event);
+    }
+  };
+
+  const enqueueDiskWrite = (
+    key: WorkbenchStateKey,
+    operation: () => Promise<void>
+  ): Promise<void> => {
+    const previous = writeQueues.get(key) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(operation);
+    const tracked = queued.finally(() => {
+      if (writeQueues.get(key) === tracked) {
+        writeQueues.delete(key);
+      }
+    });
+    writeQueues.set(key, tracked);
+    return queued;
   };
 
   const readState = (key: WorkbenchStateKey): string | null => {
+    normalizeKey(key);
+    return stateSnapshot[key];
+  };
+
+  const readStateAsync = async (key: WorkbenchStateKey): Promise<string | null> =>
+    readState(key);
+
+  const writeStateAsync = async (key: WorkbenchStateKey, json: string): Promise<void> => {
+    normalizeKey(key);
+    const normalizedJson = normalizeJson(json);
     const filePath = resolveStateFilePath(storageRoot, key);
-    try {
-      return readFileSync(filePath, "utf8");
-    } catch (error) {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
+    stateSnapshot[key] = normalizedJson;
+    publish(key, normalizedJson);
+    await enqueueDiskWrite(key, async () => {
+      await writeFile(filePath, normalizedJson, "utf8");
+    });
   };
 
   const writeState = (key: WorkbenchStateKey, json: string): void => {
-    const normalizedJson = normalizeJson(json);
-    const filePath = resolveStateFilePath(storageRoot, key);
-    writeFileSync(filePath, normalizedJson, "utf8");
-    publish(key, normalizedJson);
+    void writeStateAsync(key, json).catch((error: unknown) => {
+      console.error(`[lyra-workbench-state] write failed key=${key}: ${toErrorMessage(error)}`);
+    });
   };
 
-  const listeners: Array<readonly [string, Parameters<typeof ipcMain.on>[1]]> = [
+  const removeStateAsync = async (key: WorkbenchStateKey): Promise<void> => {
+    normalizeKey(key);
+    const filePath = resolveStateFilePath(storageRoot, key);
+    stateSnapshot[key] = null;
+    publish(key, null);
+    await enqueueDiskWrite(key, async () => {
+      await rm(filePath, { force: true });
+    });
+  };
+
+  const removeState = (key: WorkbenchStateKey): void => {
+    void removeStateAsync(key).catch((error: unknown) => {
+      console.error(`[lyra-workbench-state] remove failed key=${key}: ${toErrorMessage(error)}`);
+    });
+  };
+
+  const handlers: Array<readonly [string, Parameters<typeof ipcMain.handle>[1]]> = [
     [
-      LYRA_CHANNELS.workbenchStateReadSync,
-      (event, payload: unknown) => {
-        event.returnValue = withSyncReply(() => {
-          const key = normalizeKey((payload as { readonly key?: unknown })?.key);
-          return readState(key);
-        }) satisfies SyncReply<string | null>;
+      LYRA_CHANNELS.workbenchStateRead,
+      (_event, payload: unknown) =>
+        readState(normalizeKey((payload as { readonly key?: unknown })?.key))
+    ],
+    [
+      LYRA_CHANNELS.workbenchStateWrite,
+      async (_event, payload: unknown) => {
+        const key = normalizeKey((payload as { readonly key?: unknown })?.key);
+        await writeStateAsync(key, (payload as { readonly json?: unknown })?.json as string);
       }
     ],
     [
-      LYRA_CHANNELS.workbenchStateWriteSync,
-      (event, payload: unknown) => {
-        event.returnValue = withSyncReply(() => {
-          const key = normalizeKey((payload as { readonly key?: unknown })?.key);
-          writeState(key, (payload as { readonly json?: unknown })?.json as string);
-          return null;
-        }) satisfies SyncReply<null>;
-      }
-    ],
-    [
-      LYRA_CHANNELS.workbenchStateRemoveSync,
-      (event, payload: unknown) => {
-        event.returnValue = withSyncReply(() => {
-          const key = normalizeKey((payload as { readonly key?: unknown })?.key);
-          const filePath = resolveStateFilePath(storageRoot, key);
-          rmSync(filePath, { force: true });
-          publish(key, null);
-          return null;
-        }) satisfies SyncReply<null>;
+      LYRA_CHANNELS.workbenchStateRemove,
+      async (_event, payload: unknown) => {
+        const key = normalizeKey((payload as { readonly key?: unknown })?.key);
+        await removeStateAsync(key);
       }
     ]
   ];
 
-  for (const [channel, listener] of listeners) {
-    ipcMain.on(channel, listener);
+  for (const [channel, handler] of handlers) {
+    ipcMain.handle(channel, handler);
   }
+
+  const bootstrapSnapshotListener: Parameters<typeof ipcMain.on>[1] = (event) => {
+    event.returnValue = { ...stateSnapshot } satisfies WorkbenchStateSnapshot;
+  };
+  ipcMain.on(LYRA_CHANNELS.workbenchStateBootstrapSnapshot, bootstrapSnapshotListener);
 
   return {
     readState,
+    readStateAsync,
     writeState,
+    writeStateAsync,
+    removeState,
+    removeStateAsync,
+    snapshot: () => ({ ...stateSnapshot }),
+    flush: async () => {
+      await Promise.allSettled([...writeQueues.values()]);
+    },
     subscribe: (listener) => {
       stateListeners.add(listener);
       return () => {
@@ -168,9 +231,13 @@ export const createWorkbenchStateIpcBridge = (
     },
     dispose: () => {
       stateListeners.clear();
-      for (const [channel, listener] of listeners) {
-        ipcMain.removeListener(channel, listener);
+      for (const [channel] of handlers) {
+        ipcMain.removeHandler(channel);
       }
+      ipcMain.removeListener(
+        LYRA_CHANNELS.workbenchStateBootstrapSnapshot,
+        bootstrapSnapshotListener
+      );
     }
   };
 };

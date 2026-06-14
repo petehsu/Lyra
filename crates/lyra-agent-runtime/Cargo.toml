@@ -20,11 +20,13 @@ lyra-tool-fs-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
 glob.workspace = true
+hmac.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
 regex.workspace = true
 rusqlite.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+sha2.workspace = true
 shlex.workspace = true
 thiserror.workspace = true
 url.workspace = true

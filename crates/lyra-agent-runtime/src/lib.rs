@@ -256,14 +256,10 @@ impl AgentRuntimeServices {
                 self.backend.call(method, payload)
             }
             "agent.clarification.respond" => self.clarification.respond_from_payload(payload),
-            "agent.config.read" => self.provider.read_config(payload),
-            "agent.config.update" => self.provider.update_config(payload),
-            "agent.provider.profile.save" => self.provider.save_profile(payload),
-            "agent.provider.options.update" => self.provider.update_options(payload),
-            "agent.models.list" => self.provider.model_catalog_from_payload(payload),
-            "agent.models.switch" => self.provider.switch_model(payload),
-            "agent.models.refresh" => self.provider.refresh_models(payload),
-            "agent.roles.update" => self.provider.update_roles(payload),
+            method if self.provider.handles_method(method) => self
+                .provider
+                .handle_agent_request(method, payload)
+                .expect("provider service handles its declared methods"),
             "agent.action.improve" => self.backend.call(method, payload),
             "agent.action.refactor" => self.backend.call(method, payload),
             "agent.action.poke" => self.backend.call(method, payload),
@@ -278,13 +274,6 @@ impl AgentRuntimeServices {
             "agent.goals.create" => self.backend.call(method, payload),
             "agent.goals.update" => self.backend.call(method, payload),
             "agent.goals.checkpoint" => self.backend.call(method, payload),
-            "agent.accounts.list" => self.provider.accounts(payload),
-            "agent.accounts.login" => self.provider.login_account(payload),
-            "agent.accounts.loginProviders" => self.provider.login_providers(payload),
-            "agent.accounts.loginStart" => self.provider.start_login(payload),
-            "agent.accounts.loginComplete" => self.provider.complete_login(payload),
-            "agent.accounts.switch" => self.provider.switch_account(payload),
-            "agent.accounts.remove" => self.provider.remove_account(payload),
             "agent.proactive.list" => self.backend.call(method, payload),
             "agent.proactive.dismiss" => self.backend.call(method, payload),
             "agent.proactive.openSession" => self.backend.call(method, payload),
@@ -348,6 +337,7 @@ pub fn clear_host_capability_dispatcher() {
 #[cfg(test)]
 mod tests {
     use super::AgentRuntimeServices;
+    use serde_json::json;
 
     #[test]
     fn runtime_declares_expected_services() {
@@ -369,5 +359,22 @@ mod tests {
         let events = services.event_bus.drain();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0]["kind"], "turnStarted");
+    }
+
+    #[test]
+    fn runtime_services_route_provider_catalog_requests_through_provider_service() {
+        let services = AgentRuntimeServices::default();
+        let catalog = services
+            .handle_agent_request("agent.provider.catalog.read", json!({}))
+            .expect("provider catalog request should be routed");
+
+        assert_eq!(catalog["schemaVersion"], "2026-06-14");
+        assert!(
+            catalog["routes"]
+                .as_array()
+                .expect("routes array")
+                .iter()
+                .any(|entry| entry["id"] == "openai")
+        );
     }
 }

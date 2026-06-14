@@ -22,55 +22,53 @@ type SettingsAiViewProps = {
 
 type AgentConfigShape = {
   readonly provider?: {
-    readonly default_model?: string | null;
-    readonly default_provider?: string | null;
-    readonly openai_reasoning_effort?: string | null;
-    readonly openai_service_tier?: string | null;
+    readonly defaultProvider?: string | null;
+    readonly defaultModel?: string | null;
   };
   readonly providers?: Record<string, {
-    readonly base_url?: string;
-    readonly auth?: string;
-    readonly auth_header?: string | null;
-    readonly api_key_env?: string | null;
-    readonly env_file?: string | null;
-    readonly default_model?: string | null;
-    readonly models?: readonly { readonly id?: string }[];
+    readonly label?: string | null;
+    readonly routeId?: string | null;
+    readonly protocolId?: string | null;
+    readonly protocolFamily?: string | null;
+    readonly baseUrl?: string | null;
+    readonly authHeader?: string | null;
+    readonly defaultModel?: string | null;
+    readonly models?: readonly {
+      readonly id?: string;
+      readonly supportsImageInput?: boolean;
+      readonly supportsToolCalling?: boolean;
+      readonly supportsStreaming?: boolean;
+    }[];
   }>;
-  readonly agents?: {
-    readonly swarm_model?: string | null;
-    readonly memory_model?: string | null;
+  readonly roles?: {
+    readonly swarmModel?: string | null;
+    readonly reviewModel?: string | null;
+    readonly judgeModel?: string | null;
+    readonly memoryModel?: string | null;
+    readonly ambientModel?: string | null;
   };
-  readonly autoreview?: {
-    readonly model?: string | null;
-  };
-  readonly autojudge?: {
-    readonly model?: string | null;
-  };
-  readonly ambient?: {
-    readonly model?: string | null;
-  };
-  readonly safety?: {
-    readonly ntfy_topic?: string | null;
-    readonly ntfy_server?: string | null;
-    readonly desktop_notifications?: boolean;
-    readonly email_enabled?: boolean;
-    readonly email_to?: string | null;
-    readonly email_smtp_host?: string | null;
-    readonly email_smtp_port?: number;
-    readonly email_from?: string | null;
-    readonly email_password?: string | null;
-    readonly email_imap_host?: string | null;
-    readonly email_imap_port?: number;
-    readonly email_reply_enabled?: boolean;
-    readonly telegram_enabled?: boolean;
-    readonly telegram_bot_token?: string | null;
-    readonly telegram_chat_id?: string | null;
-    readonly telegram_reply_enabled?: boolean;
-    readonly discord_enabled?: boolean;
-    readonly discord_bot_token?: string | null;
-    readonly discord_channel_id?: string | null;
-    readonly discord_bot_user_id?: string | null;
-    readonly discord_reply_enabled?: boolean;
+  readonly notifications?: {
+    readonly ntfyTopic?: string | null;
+    readonly ntfyServer?: string | null;
+    readonly desktopNotifications?: boolean;
+    readonly emailEnabled?: boolean;
+    readonly emailTo?: string | null;
+    readonly emailSmtpHost?: string | null;
+    readonly emailSmtpPort?: number;
+    readonly emailFrom?: string | null;
+    readonly emailPassword?: string | null;
+    readonly emailImapHost?: string | null;
+    readonly emailImapPort?: number;
+    readonly emailReplyEnabled?: boolean;
+    readonly telegramEnabled?: boolean;
+    readonly telegramBotToken?: string | null;
+    readonly telegramChatId?: string | null;
+    readonly telegramReplyEnabled?: boolean;
+    readonly discordEnabled?: boolean;
+    readonly discordBotToken?: string | null;
+    readonly discordChannelId?: string | null;
+    readonly discordBotUserId?: string | null;
+    readonly discordReplyEnabled?: boolean;
   };
 };
 
@@ -92,6 +90,25 @@ const optionalPort = (value: string): number | undefined => {
   if (trimmed.length === 0) return undefined;
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 65535 ? parsed : undefined;
+};
+
+const splitModelIds = (value: string): string[] =>
+  value
+    .split(/[\n,，、;；]+/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+const uniqueModelIds = (...groups: readonly string[][]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const group of groups) {
+    for (const id of group) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push(id);
+    }
+  }
+  return result;
 };
 
 type SettingsAiSwitchRowProps = {
@@ -191,9 +208,10 @@ const activateRowFromKeyboard = (
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const config = asAgentConfig(model.agentConfig?.config);
-  const providers = useMemo(
-    () => Object.entries(config.providers ?? {}),
-    [config.providers]
+  const profiles = model.profiles;
+  const routeById = useMemo(
+    () => new Map((model.agentProviderCatalog?.routes ?? []).map((route) => [route.id, route])),
+    [model.agentProviderCatalog?.routes]
   );
   const accounts = model.agentAccounts?.accounts ?? [];
   const loginProviders = model.agentLoginProviders?.providers ?? [];
@@ -201,22 +219,27 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const oauthLoginProviders = loginProviders.filter((provider) =>
     provider.requiresCallback && provider.id !== "google"
   );
-  const apiKeyLoginProviders = loginProviders.filter((provider) => provider.requiresApiKey);
-  const defaultProviderName = config.provider?.default_provider ?? "";
+  const quickSetupRoutes = model.quickSetupRoutes;
+  const localRoutes = model.localRoutes;
+  const defaultProviderName = model.defaultProfileId ?? config.provider?.defaultProvider ?? "";
+  const defaultProfile = profiles.find((profile) => profile.id === defaultProviderName) ?? null;
   const defaultProviderConfig = config.providers?.[defaultProviderName] ?? null;
-  const defaultProviderModelIds = useMemo(
-    () => (defaultProviderConfig?.models ?? [])
-      .map((entry) => entry.id?.trim() ?? "")
-      .filter((id) => id.length > 0)
-      .join("\n"),
-    [defaultProviderConfig?.models]
-  );
-  const [selectedApiKeyProvider, setSelectedApiKeyProvider] = useState("openai-compatible");
-  const [profileName, setProfileName] = useState("openai-compatible");
+  const [selectedApiKeyProvider, setSelectedApiKeyProvider] = useState("openai");
+  const [profileName, setProfileName] = useState("openai");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [authHeader, setAuthHeader] = useState("");
+  const [selectedLocalProvider, setSelectedLocalProvider] = useState("");
+  const [localProfileName, setLocalProfileName] = useState("");
+  const [localBaseUrl, setLocalBaseUrl] = useState("");
+  const [localApiKey, setLocalApiKey] = useState("");
+  const [localDefaultModel, setLocalDefaultModel] = useState("");
+  const [localAuthHeader, setLocalAuthHeader] = useState("");
+  const [localModelIds, setLocalModelIds] = useState("");
+  const [localSupportsImageInput, setLocalSupportsImageInput] = useState(true);
+  const [localSupportsToolCalling, setLocalSupportsToolCalling] = useState(true);
+  const [localSupportsStreaming, setLocalSupportsStreaming] = useState(true);
   const [pendingLogin, setPendingLogin] = useState<{
     readonly provider: string;
     readonly label?: string | null;
@@ -254,77 +277,189 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const [discordChannelId, setDiscordChannelId] = useState("");
   const [discordBotUserId, setDiscordBotUserId] = useState("");
   const [discordReplyEnabled, setDiscordReplyEnabled] = useState(false);
+  const selectedQuickSetupRoute = quickSetupRoutes.find((route) => route.id === selectedApiKeyProvider) ?? null;
+  const selectedQuickSetupProfile = selectedQuickSetupRoute === null
+    ? null
+    : profiles.find((profile) => profile.routeId === selectedQuickSetupRoute.id) ?? null;
+  const selectedLocalRoute = localRoutes.find((route) => route.id === selectedLocalProvider) ?? null;
+  const selectedLocalProfile = selectedLocalRoute === null
+    ? null
+    : profiles.find((profile) => profile.routeId === selectedLocalRoute.id) ?? null;
+  const selectedLocalConfig = selectedLocalProfile === null
+    ? null
+    : config.providers?.[selectedLocalProfile.id] ?? null;
 
   useEffect(() => {
-    if (defaultProviderName.length > 0) {
-      setProfileName(defaultProviderName);
+    if (
+      quickSetupRoutes.length > 0
+      && !quickSetupRoutes.some((route) => route.id === selectedApiKeyProvider)
+    ) {
+      setSelectedApiKeyProvider(quickSetupRoutes[0]?.id ?? "");
     }
-    setBaseUrl(defaultProviderConfig?.base_url ?? "");
+  }, [quickSetupRoutes, selectedApiKeyProvider]);
+
+  useEffect(() => {
+    if (
+      localRoutes.length > 0
+      && !localRoutes.some((route) => route.id === selectedLocalProvider)
+    ) {
+      setSelectedLocalProvider(localRoutes[0]?.id ?? "");
+    }
+  }, [localRoutes, selectedLocalProvider]);
+
+  useEffect(() => {
+    const editableProfile = selectedQuickSetupProfile;
+    const editableRoute = selectedQuickSetupRoute;
+    setProfileName(editableProfile?.id ?? editableRoute?.id ?? defaultProviderName);
+    setBaseUrl(editableProfile?.baseUrl ?? editableRoute?.defaultBaseUrl ?? "");
     setDefaultModel(
-      config.provider?.default_model
-      ?? defaultProviderConfig?.default_model
-      ?? defaultProviderModelIds.split("\n").find((id) => id.length > 0)
+      editableProfile?.defaultModel
+      ?? defaultProviderConfig?.defaultModel
+      ?? defaultProfile?.defaultModel
       ?? ""
     );
-    setAuthHeader(defaultProviderConfig?.auth_header ?? "");
+    setAuthHeader(editableProfile?.authHeader ?? "");
     setApiKey("");
-    setSwarmModel(config.agents?.swarm_model ?? "");
-    setReviewModel(config.autoreview?.model ?? "");
-    setJudgeModel(config.autojudge?.model ?? "");
-    setMemoryModel(config.agents?.memory_model ?? "");
-    setAmbientModel(config.ambient?.model ?? "");
-    setDesktopNotifications(config.safety?.desktop_notifications ?? true);
-    setNtfyTopic(config.safety?.ntfy_topic ?? "");
-    setNtfyServer(config.safety?.ntfy_server ?? "https://ntfy.sh");
-    setEmailEnabled(config.safety?.email_enabled ?? false);
-    setEmailTo(config.safety?.email_to ?? "");
-    setEmailSmtpHost(config.safety?.email_smtp_host ?? "");
-    setEmailSmtpPort(String(config.safety?.email_smtp_port ?? 587));
-    setEmailFrom(config.safety?.email_from ?? "");
+    setSwarmModel(config.roles?.swarmModel ?? "");
+    setReviewModel(config.roles?.reviewModel ?? "");
+    setJudgeModel(config.roles?.judgeModel ?? "");
+    setMemoryModel(config.roles?.memoryModel ?? "");
+    setAmbientModel(config.roles?.ambientModel ?? "");
+    setDesktopNotifications(config.notifications?.desktopNotifications ?? true);
+    setNtfyTopic(config.notifications?.ntfyTopic ?? "");
+    setNtfyServer(config.notifications?.ntfyServer ?? "https://ntfy.sh");
+    setEmailEnabled(config.notifications?.emailEnabled ?? false);
+    setEmailTo(config.notifications?.emailTo ?? "");
+    setEmailSmtpHost(config.notifications?.emailSmtpHost ?? "");
+    setEmailSmtpPort(String(config.notifications?.emailSmtpPort ?? 587));
+    setEmailFrom(config.notifications?.emailFrom ?? "");
     setEmailPassword("");
-    setEmailImapHost(config.safety?.email_imap_host ?? "");
-    setEmailImapPort(String(config.safety?.email_imap_port ?? 993));
-    setEmailReplyEnabled(config.safety?.email_reply_enabled ?? false);
-    setTelegramEnabled(config.safety?.telegram_enabled ?? false);
+    setEmailImapHost(config.notifications?.emailImapHost ?? "");
+    setEmailImapPort(String(config.notifications?.emailImapPort ?? 993));
+    setEmailReplyEnabled(config.notifications?.emailReplyEnabled ?? false);
+    setTelegramEnabled(config.notifications?.telegramEnabled ?? false);
     setTelegramBotToken("");
-    setTelegramChatId(config.safety?.telegram_chat_id ?? "");
-    setTelegramReplyEnabled(config.safety?.telegram_reply_enabled ?? false);
-    setDiscordEnabled(config.safety?.discord_enabled ?? false);
+    setTelegramChatId(config.notifications?.telegramChatId ?? "");
+    setTelegramReplyEnabled(config.notifications?.telegramReplyEnabled ?? false);
+    setDiscordEnabled(config.notifications?.discordEnabled ?? false);
     setDiscordBotToken("");
-    setDiscordChannelId(config.safety?.discord_channel_id ?? "");
-    setDiscordBotUserId(config.safety?.discord_bot_user_id ?? "");
-    setDiscordReplyEnabled(config.safety?.discord_reply_enabled ?? false);
+    setDiscordChannelId(config.notifications?.discordChannelId ?? "");
+    setDiscordBotUserId(config.notifications?.discordBotUserId ?? "");
+    setDiscordReplyEnabled(config.notifications?.discordReplyEnabled ?? false);
   }, [
-    config.agents?.memory_model,
-    config.agents?.swarm_model,
-    config.ambient?.model,
-    config.autojudge?.model,
-    config.autoreview?.model,
-    config.provider?.default_model,
-    config.safety?.desktop_notifications,
-    config.safety?.discord_bot_user_id,
-    config.safety?.discord_channel_id,
-    config.safety?.discord_enabled,
-    config.safety?.discord_reply_enabled,
-    config.safety?.email_enabled,
-    config.safety?.email_from,
-    config.safety?.email_imap_host,
-    config.safety?.email_imap_port,
-    config.safety?.email_reply_enabled,
-    config.safety?.email_smtp_host,
-    config.safety?.email_smtp_port,
-    config.safety?.email_to,
-    config.safety?.ntfy_server,
-    config.safety?.ntfy_topic,
-    config.safety?.telegram_chat_id,
-    config.safety?.telegram_enabled,
-    config.safety?.telegram_reply_enabled,
-    defaultProviderConfig?.auth_header,
-    defaultProviderConfig?.base_url,
-    defaultProviderConfig?.default_model,
-    defaultProviderModelIds,
+    config.notifications?.desktopNotifications,
+    config.notifications?.discordBotUserId,
+    config.notifications?.discordChannelId,
+    config.notifications?.discordEnabled,
+    config.notifications?.discordReplyEnabled,
+    config.notifications?.emailEnabled,
+    config.notifications?.emailFrom,
+    config.notifications?.emailImapHost,
+    config.notifications?.emailImapPort,
+    config.notifications?.emailReplyEnabled,
+    config.notifications?.emailSmtpHost,
+    config.notifications?.emailSmtpPort,
+    config.notifications?.emailTo,
+    config.notifications?.ntfyServer,
+    config.notifications?.ntfyTopic,
+    config.notifications?.telegramChatId,
+    config.notifications?.telegramEnabled,
+    config.notifications?.telegramReplyEnabled,
+    config.provider?.defaultModel,
+    config.roles?.ambientModel,
+    config.roles?.judgeModel,
+    config.roles?.memoryModel,
+    config.roles?.reviewModel,
+    config.roles?.swarmModel,
+    defaultProfile?.defaultModel,
+    defaultProviderConfig?.defaultModel,
     defaultProviderName,
+    selectedQuickSetupProfile?.authHeader,
+    selectedQuickSetupProfile?.baseUrl,
+    selectedQuickSetupProfile?.defaultModel,
+    selectedQuickSetupProfile?.id,
+    selectedQuickSetupRoute?.defaultBaseUrl,
+    selectedQuickSetupRoute?.id,
   ]);
+
+  useEffect(() => {
+    const editableProfile = selectedLocalProfile;
+    const editableRoute = selectedLocalRoute;
+    const providerModels = selectedLocalConfig?.models ?? [];
+    setLocalProfileName(editableProfile?.id ?? editableRoute?.id ?? "");
+    setLocalBaseUrl(editableProfile?.baseUrl ?? editableRoute?.defaultBaseUrl ?? "");
+    setLocalDefaultModel(
+      editableProfile?.defaultModel
+      ?? selectedLocalConfig?.defaultModel
+      ?? ""
+    );
+    setLocalAuthHeader(editableProfile?.authHeader ?? "");
+    setLocalApiKey("");
+    setLocalModelIds(
+      providerModels
+        .map((entry) => entry.id?.trim() ?? "")
+        .filter((id) => id.length > 0)
+        .join("\n")
+    );
+    setLocalSupportsImageInput(editableProfile?.capabilities.supportsImageInput ?? true);
+    setLocalSupportsToolCalling(editableProfile?.capabilities.supportsToolCalling ?? true);
+    setLocalSupportsStreaming(editableProfile?.capabilities.supportsStreaming ?? true);
+  }, [
+    selectedLocalConfig?.defaultModel,
+    selectedLocalConfig?.models,
+    selectedLocalProfile?.authHeader,
+    selectedLocalProfile?.baseUrl,
+    selectedLocalProfile?.capabilities.supportsImageInput,
+    selectedLocalProfile?.capabilities.supportsStreaming,
+    selectedLocalProfile?.capabilities.supportsToolCalling,
+    selectedLocalProfile?.defaultModel,
+    selectedLocalProfile?.id,
+    selectedLocalRoute?.defaultBaseUrl,
+    selectedLocalRoute?.id,
+  ]);
+
+  const localModelEntries = useMemo(() => {
+    const ids = uniqueModelIds(
+      splitModelIds(localModelIds),
+      localDefaultModel.trim().length === 0 ? [] : [localDefaultModel.trim()],
+    );
+    return ids.map((id) => ({
+      id,
+      supportsImageInput: localSupportsImageInput,
+      supportsToolCalling: localSupportsToolCalling,
+      supportsStreaming: localSupportsStreaming,
+    }));
+  }, [
+    localDefaultModel,
+    localModelIds,
+    localSupportsImageInput,
+    localSupportsStreaming,
+    localSupportsToolCalling,
+  ]);
+
+  const buildLocalProviderProfileRequest = () => {
+    if (selectedLocalRoute === null) return null;
+    const profile = localProfileName.trim().length === 0
+      ? selectedLocalRoute.id
+      : localProfileName.trim();
+    return {
+      profileName: profile,
+      routeId: selectedLocalRoute.id,
+      baseUrl: localBaseUrl.trim().length === 0
+        ? selectedLocalRoute.defaultBaseUrl ?? ""
+        : localBaseUrl.trim(),
+      apiKey: localApiKey.trim().length === 0 ? null : localApiKey,
+      defaultModel: localDefaultModel.trim().length === 0 ? null : localDefaultModel.trim(),
+      auth: localAuthHeader.trim().length > 0
+        ? "header" as const
+        : localApiKey.trim().length > 0
+          ? "bearer" as const
+          : "none" as const,
+      authHeader: localAuthHeader.trim().length === 0 ? null : localAuthHeader.trim(),
+      setDefault: true,
+      models: localModelEntries,
+    };
+  };
 
   return (
     <section className="lyra-settings-ai-stack">
@@ -361,8 +496,8 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               as="div"
               active
               className="lyra-settings-ai-provider-tab lyra-settings-ai-provider-tab-active"
-              title={config.provider?.default_provider ?? labels.providerAutoFallback}
-              description={config.provider?.default_model ?? labels.defaultModelFallback}
+              title={defaultProfile?.label ?? defaultProviderName ?? labels.providerAutoFallback}
+              description={defaultProfile?.defaultModel ?? config.provider?.defaultModel ?? labels.defaultModelFallback}
             />
           </div>
         </div>
@@ -373,29 +508,172 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               className="lyra-settings-ai-model-card lyra-settings-ai-model-card-active"
               active
               meta={labels.configFileTitle}
-              title={model.agentConfig?.configPath ?? "~/.lyra/modules/agent/config.toml"}
+              title={model.agentConfig?.configPath ?? "~/.lyra/modules/agent/state.json"}
               description={model.agentConfig?.agentHome ?? labels.configFileDescription}
               onClick={() => {
                 void model.openAgentConfigFile?.();
               }}
             />
           </div>
-          {providers.map(([name, provider]) => (
-            <div key={name} className="lyra-settings-ai-model-row">
+          {profiles.map((profile) => {
+            const route = routeById.get(profile.routeId) ?? null;
+            return (
+              <div key={profile.id} className="lyra-settings-ai-model-row">
               <AppObjectRow
                 className="lyra-settings-ai-model-card"
-                title={name}
-                description={provider.default_model ?? provider.base_url ?? labels.customProviderFallback}
+                title={profile.id}
+                description={[
+                  route?.label ?? profile.routeId,
+                  profile.defaultModel ?? profile.baseUrl ?? labels.customProviderFallback,
+                ].filter((value) => value !== null && value !== "").join(" · ")}
                 onClick={() => {
-                  void model.updateAgentConfig?.({
-                    defaultProvider: name,
-                    defaultModel: provider.default_model ?? null,
-                  });
+                  void model.setDefaultProfile(profile.id);
                 }}
               />
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
+      </div>
+
+      <div className="lyra-settings-ai-inline-editor">
+        <header className="lyra-settings-ai-inline-editor-header">
+          <span className="lyra-settings-ai-inline-editor-title-copy">
+            <h3>{labels.localProviderTitle}</h3>
+            <small>{labels.localProviderDescription}</small>
+          </span>
+        </header>
+
+        {localRoutes.length === 0 ? (
+          <AppEmptyState
+            align="start"
+            density="compact"
+            className="lyra-settings-ai-empty"
+            title={labels.emptyTitle}
+            description={labels.emptyDescription}
+          />
+        ) : (
+          <>
+            <div className="lyra-settings-ai-api-provider-strip">
+              {localRoutes.map((route) => (
+                <AppObjectRow
+                  key={route.id}
+                  className={[
+                    "lyra-settings-ai-provider-tab",
+                    selectedLocalProvider === route.id ? "lyra-settings-ai-provider-tab-active" : "",
+                  ].filter(Boolean).join(" ")}
+                  active={selectedLocalProvider === route.id}
+                  disabled={model.isSaving}
+                  icon={<KeyRound size={13} aria-hidden="true" />}
+                  title={route.label}
+                  description={route.description}
+                  onClick={() => {
+                    setSelectedLocalProvider(route.id);
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="lyra-settings-ai-form">
+              <SettingsAiInputField
+                label={labels.profileNameLabel}
+                type="text"
+                value={localProfileName}
+                onValueChange={setLocalProfileName}
+              />
+              <SettingsAiInputField
+                label={labels.urlLabel}
+                type="text"
+                placeholder={selectedLocalRoute?.defaultBaseUrl ?? labels.urlPlaceholder}
+                value={localBaseUrl}
+                onValueChange={setLocalBaseUrl}
+              />
+              <SettingsAiInputField
+                label={labels.mainModelLabel}
+                type="text"
+                placeholder={labels.modelPlaceholder}
+                value={localDefaultModel}
+                onValueChange={setLocalDefaultModel}
+              />
+              <SettingsAiInputField
+                label={labels.authHeaderLabel}
+                type="text"
+                placeholder="Authorization"
+                value={localAuthHeader}
+                onValueChange={setLocalAuthHeader}
+              />
+              <SettingsAiInputField
+                label={labels.keyLabel}
+                type="password"
+                autoComplete="off"
+                placeholder={labels.keyPlaceholder}
+                value={localApiKey}
+                onValueChange={setLocalApiKey}
+              />
+              <SettingsAiTextareaField
+                className="lyra-settings-ai-field-span-2"
+                label={labels.localModelsLabel}
+                placeholder={labels.localModelsPlaceholder}
+                value={localModelIds}
+                onValueChange={setLocalModelIds}
+              />
+              <div className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
+                <span>{labels.localCapabilitiesTitle}</span>
+                <SettingsAiSwitchRow
+                  checked={localSupportsImageInput}
+                  label={labels.localSupportsImageInput}
+                  onCheckedChange={setLocalSupportsImageInput}
+                />
+                <SettingsAiSwitchRow
+                  checked={localSupportsToolCalling}
+                  label={labels.localSupportsToolCalling}
+                  onCheckedChange={setLocalSupportsToolCalling}
+                />
+                <SettingsAiSwitchRow
+                  checked={localSupportsStreaming}
+                  label={labels.localSupportsStreaming}
+                  onCheckedChange={setLocalSupportsStreaming}
+                />
+              </div>
+            </div>
+
+            <footer className="lyra-settings-ai-inline-editor-footer">
+              <span className="lyra-settings-ai-actions">
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  className="lyra-settings-ai-action"
+                  disabled={model.isSaving || selectedLocalRoute === null}
+                  onClick={() => {
+                    const request = buildLocalProviderProfileRequest();
+                    if (request === null) return;
+                    void model.saveAgentProviderProfile?.(request);
+                  }}
+                >
+                  <Save size={14} aria-hidden="true" />
+                  {labels.saveProfile}
+                </AppButton>
+                <AppButton
+                  variant="default"
+                  size="sm"
+                  className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+                  disabled={model.isSaving || selectedLocalRoute === null}
+                  onClick={() => {
+                    const request = buildLocalProviderProfileRequest();
+                    if (request === null) return;
+                    void (async () => {
+                      await model.saveAgentProviderProfile?.(request);
+                      await model.refreshAgentModels?.(request.profileName);
+                    })();
+                  }}
+                >
+                  <RefreshCw size={14} aria-hidden="true" />
+                  {labels.saveAndDiscoverModels}
+                </AppButton>
+              </span>
+            </footer>
+          </>
+        )}
       </div>
 
       <div className="lyra-settings-ai-inline-editor">
@@ -649,21 +927,20 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
         </header>
 
         <div className="lyra-settings-ai-api-provider-strip">
-          {apiKeyLoginProviders.map((provider) => (
+          {quickSetupRoutes.map((route) => (
             <AppObjectRow
-              key={provider.id}
+              key={route.id}
               className={[
                 "lyra-settings-ai-provider-tab",
-                selectedApiKeyProvider === provider.id ? "lyra-settings-ai-provider-tab-active" : "",
+                selectedApiKeyProvider === route.id ? "lyra-settings-ai-provider-tab-active" : "",
               ].filter(Boolean).join(" ")}
-              active={selectedApiKeyProvider === provider.id}
+              active={selectedApiKeyProvider === route.id}
               disabled={model.isSaving}
               icon={<KeyRound size={13} aria-hidden="true" />}
-              title={provider.displayName}
-              description={provider.detail}
+              title={route.label}
+              description={route.description}
               onClick={() => {
-                setSelectedApiKeyProvider(provider.id);
-                setProfileName(provider.id);
+                setSelectedApiKeyProvider(route.id);
               }}
             />
           ))}
@@ -679,7 +956,7 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
           <SettingsAiInputField
             label={labels.urlLabel}
             type="text"
-            placeholder={labels.urlPlaceholder}
+            placeholder={selectedQuickSetupRoute?.defaultBaseUrl ?? labels.urlPlaceholder}
             value={baseUrl}
             onValueChange={setBaseUrl}
           />
@@ -721,12 +998,15 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
               className="lyra-settings-ai-action lyra-settings-ai-action-primary"
               disabled={model.isSaving || selectedApiKeyProvider.length === 0}
               onClick={() => {
-                void model.completeAgentAccountLogin?.({
-                  provider: selectedApiKeyProvider,
+                void model.saveAgentProviderProfile?.({
                   profileName,
-                  baseUrl: baseUrl.trim().length === 0 ? null : baseUrl,
+                  routeId: selectedApiKeyProvider,
+                  baseUrl: baseUrl.trim().length === 0
+                    ? selectedQuickSetupRoute?.defaultBaseUrl ?? ""
+                    : baseUrl,
                   apiKey: apiKey.trim().length === 0 ? null : apiKey,
                   defaultModel: defaultModel.trim().length === 0 ? null : defaultModel,
+                  auth: authHeader.trim().length === 0 ? "bearer" : "header",
                   authHeader: authHeader.trim().length === 0 ? null : authHeader,
                   setDefault: true,
                 });

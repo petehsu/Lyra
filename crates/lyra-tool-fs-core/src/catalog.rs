@@ -7,6 +7,7 @@ use crate::registry::normalize_tool_path;
 use crate::schema::{attach_schema_id, object_schema, schema_id_for_path};
 
 mod browser;
+mod browser_ax;
 mod clarification;
 mod code;
 mod design;
@@ -145,6 +146,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(workbench::manifests());
     entries.extend(software::manifests());
     entries.extend(browser::manifests());
+    entries.extend(browser_ax::manifests());
     entries.extend(filesystem::manifests());
     entries.extend(code::manifests());
     entries.extend(shell::manifests());
@@ -277,7 +279,7 @@ fn description_for(
             "Use when the agent needs to search, reveal, or semantically locate text or a section within a Lyra browser page before mapping nearby controls."
         }
         ("browser", "map" | "focus_scan" | "explain_target") => {
-            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements."
+            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements, including authChallengeSignals for OAuth/identity iframes that cannot be selected as normal DOM controls."
         }
         ("browser", "see") => {
             "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact."
@@ -289,7 +291,13 @@ fn description_for(
             "Use when the agent needs to interact with, navigate, type into, click, wait for, or reveal browser page controls."
         }
         ("browser", "vact") => {
-            "Use only when DOM mapping is unavailable or unreliable (canvas/WebGL apps, custom-rendered widgets, blocked frames, or when map/act returned no usable targetRef): visually click, drag, or scroll using device-pixel coordinates read directly from the latest see screenshot."
+            "Use only when DOM mapping is unavailable or unreliable (canvas/WebGL apps, custom-rendered widgets, blocked frames, OAuth/Google identity iframes, browser-native account choosers, or when map/act returned no usable targetRef): visually click, drag, or scroll using device-pixel coordinates read directly from the latest see screenshot."
+        }
+        ("browser_ax", "map" | "query" | "explain") => {
+            "Use when DOM map/targetRef cannot see or reliably address a control (cross-origin OAuth/identity iframes, FedCM choosers, complex ARIA menus/comboboxes/dialogs): read the page accessibility tree, query AX nodes by role/name/provider, or explain why DOM is blind and whether visual/user action is needed."
+        }
+        ("browser_ax", "act" | "focus" | "press") => {
+            "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, move keyboard focus through the accessibility tree, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
         }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
@@ -666,6 +674,19 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "navigate page",
                 "浏览器操作",
             ],
+            ("browser_ax", _) => vec![
+                "accessibility tree",
+                "ax map",
+                "ax tool",
+                "screen reader view",
+                "oauth iframe button",
+                "cross-origin button",
+                "可访问性树",
+                "无障碍树",
+                "屏幕阅读器",
+                "跨域按钮",
+                "授权弹窗按钮",
+            ],
             ("workbench", _) => vec!["workspace tabs", "active tab", "工作区", "标签页"],
             ("web", "search") => vec!["internet search", "search web", "联网搜索", "网页搜索"],
             ("web", "research") => {
@@ -770,6 +791,14 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Click a canvas control by its screenshot coordinates after see.",
             "用截图坐标点击画布/自定义渲染的控件。",
         ],
+        ("browser_ax", "map" | "query" | "explain") => vec![
+            "Read the accessibility tree to find a Google OAuth iframe button DOM cannot see.",
+            "读取可访问性树定位 DOM 看不到的跨域授权按钮。",
+        ],
+        ("browser_ax", "act" | "focus" | "press") => vec![
+            "Click an AX node by axRef when the DOM selector is unreliable.",
+            "用 axRef 操作 DOM selector 不稳定但 AX 可见的控件。",
+        ],
         ("browser", "scroll") => vec![
             "Scroll the browser down one viewport and map again.",
             "页面没有看到目标时先向下滚动。",
@@ -823,6 +852,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "terminal" => vec!["interactive", "process", "pane"],
             "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
+            "browser_ax" => vec!["page", "accessibility", "ax"],
             "workbench" => vec!["workspace", "tabs", "state"],
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
@@ -862,6 +892,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ("browser", "act" | "vact" | "type" | "press" | "submit" | "navigate" | "elevate") => {
             "browser"
         }
+        ("browser_ax", "act" | "press" | "focus") => "browser",
         (
             "memory",
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
@@ -882,7 +913,8 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
         | ("shell", "run")
         | ("hardware", "session_write" | "run_action")
         | ("git", "stage" | "unstage" | "discard")
-        | ("browser", "elevate") => "ask_on_risk",
+        | ("browser", "elevate")
+        | ("browser_ax", "act" | "press") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
         _ => "runtime_policy",
     }
@@ -905,7 +937,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("shell", _) => "shell",
         ("hardware", _) => "hardware",
         ("terminal", _) => "terminal",
-        ("browser", _) | ("web", _) => "web",
+        ("browser", _) | ("browser_ax", _) | ("web", _) => "web",
         ("workbench", _) => "workbench",
         ("render", _) => "render",
         ("todo", _) => "task",
@@ -916,7 +948,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
 
 fn renderer_hint(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
-        ("browser", _) => "lumen",
+        ("browser", _) | ("browser_ax", _) => "lumen",
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
         ("code", _) => "search",
@@ -1376,6 +1408,170 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("browser_ax", "map") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "strategy",
+                    json!({ "type": "string", "enum": ["interactive", "document", "auth"], "default": "interactive", "description": "interactive: clickable/typable/focusable nodes; document: reading structure; auth: prioritize OAuth/FedCM/dialog/account chooser." }),
+                ),
+                (
+                    "maxNodes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200, "description": "Cap on returned AX nodes to prevent tree explosion." }),
+                ),
+                (
+                    "includeIgnored",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeText",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "includeFrames",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &[],
+        ),
+        ("browser_ax", "query") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "snapshotId",
+                    string(
+                        "snapshotId from a prior browser_ax.map; defaults to the latest snapshot for the tab.",
+                    ),
+                ),
+                (
+                    "role",
+                    string("AX role to match, e.g. button, textbox, link."),
+                ),
+                (
+                    "nameIncludes",
+                    string("Substring the accessible name must contain."),
+                ),
+                (
+                    "provider",
+                    string(
+                        "OAuth provider filter: google, apple, microsoft, okta, auth0, stripe, paypal.",
+                    ),
+                ),
+                (
+                    "visibleOnly",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                (
+                    "maxResults",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
+                ),
+            ],
+            &[],
+        ),
+        ("browser_ax", "act") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "axRef",
+                    string(
+                        "AX node reference from browser_ax.map (ax:<snapshotHash>:<nodeHash>). Not a targetRef or captureId.",
+                    ),
+                ),
+                (
+                    "interaction",
+                    json!({ "type": "string", "enum": ["click", "hover", "focus", "toggle", "select"], "default": "click" }),
+                ),
+                (
+                    "verification",
+                    json!({ "type": "string", "enum": ["fast", "full"], "default": "fast" }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &["axRef"],
+        ),
+        ("browser_ax", "focus") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "direction",
+                    json!({ "type": "string", "enum": ["next", "previous"], "default": "next" }),
+                ),
+                (
+                    "role",
+                    string("Stop when the focused node matches this AX role."),
+                ),
+                (
+                    "nameIncludes",
+                    string("Stop when the focused node name contains this substring."),
+                ),
+                (
+                    "maxSteps",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 40, "default": 20 }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &[],
+        ),
+        ("browser_ax", "press") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "key",
+                    string("Key to press, e.g. Enter, Tab, Space, ArrowDown."),
+                ),
+                (
+                    "axRef",
+                    string("Optional AX node to focus before pressing the key."),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &["key"],
+        ),
+        ("browser_ax", "explain") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                ("axRef", string("AX node reference to explain.")),
+                ("snapshotId", string("Optional snapshotId for context.")),
+            ],
+            &[],
+        ),
         ("terminal", "run") => object_schema(
             [
                 ("command", string("Terminal command.")),
@@ -1711,6 +1907,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
         "browser" => "Operate Lyra browser/Lumen pages with DOM, target, visual, and wait tools.",
+        "browser_ax" => {
+            "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
+        }
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
         "code" => "Search code text, symbols, code graph, and LSP data.",
         "shell" => "Run bounded shell commands in the bound workspace.",

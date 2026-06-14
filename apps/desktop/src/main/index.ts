@@ -24,6 +24,7 @@ import {
   type LyraAppIconVariant
 } from "./app-identity";
 import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
+import { loadAccessibilityNativeBindings } from "./accessibility";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createAgentIpcBridge } from "./agent";
 import { createFilesIpcBridge } from "./files";
@@ -690,7 +691,7 @@ const installLyraDockIconThemeSync = (): (() => void) | null => {
   };
 };
 
-const registerIpcHandlers = (): void => {
+const registerIpcHandlers = async (): Promise<void> => {
   const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
@@ -767,10 +768,16 @@ const registerIpcHandlers = (): void => {
   });
   disposeAgentBridge = agentBridge.dispose;
 
-  const workbenchStateBridge = createWorkbenchStateIpcBridge(
+  const workbenchStateBridge = await createWorkbenchStateIpcBridge(
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  const accessibilityNativeLoadResult = loadAccessibilityNativeBindings();
+  if (accessibilityNativeLoadResult.ok) {
+    console.info(`[lyra-accessibility] native loaded from ${accessibilityNativeLoadResult.loadedFrom}`);
+  } else {
+    console.warn(`[lyra-accessibility] native unavailable: ${accessibilityNativeLoadResult.errorMessage}`);
+  }
   const workspaceSurfacePerformanceSync = createLyraWorkspaceSurfacePerformanceSync({
     workbenchState: workbenchStateBridge,
     performanceScheduler
@@ -780,6 +787,7 @@ const registerIpcHandlers = (): void => {
     getWindow: () => mainWindow,
     downloadManager: downloadManagerBridge,
     loginManager: loginManagerBridge,
+    accessibilityNative: accessibilityNativeLoadResult,
     workbenchState: workbenchStateBridge,
     performanceScheduler
   });
@@ -903,7 +911,7 @@ if (process.platform === "win32") {
 }
 process.title = LYRA_APP_NAME;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   configureApplicationMenu();
   registerWorkbenchInputShortcuts();
   app.once("gpu-info-update", () => {
@@ -919,7 +927,7 @@ app.whenReady().then(() => {
   disposeLyraDockIconThemeSync = installLyraDockIconThemeSync();
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
-  registerIpcHandlers();
+  await registerIpcHandlers();
   mainWindow = createMainWindow();
   publishWindowState(mainWindow);
 
@@ -930,6 +938,9 @@ app.whenReady().then(() => {
     mainWindow = createMainWindow();
     publishWindowState(mainWindow);
   });
+}).catch((error: unknown) => {
+  console.error(`[lyra-main] startup failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+  app.quit();
 });
 
 app.on("window-all-closed", () => {

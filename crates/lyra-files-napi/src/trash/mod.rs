@@ -18,10 +18,6 @@ use trash::{os_limited, TrashItem, TrashItemSize};
 use crate::directory::create_location;
 use crate::dto::{FileManagerReadTrashResponse, FileManagerTrashEntry};
 use crate::error::{core_error, failure, io_error, NapiResult as Result};
-use lyra_files_core::paths::{
-    file_extension, file_name, folder_state_from_path, is_hidden, normalize_path, path_to_string,
-    seconds_since_epoch,
-};
 #[cfg(any(
     target_os = "windows",
     all(
@@ -32,6 +28,10 @@ use lyra_files_core::paths::{
     )
 ))]
 use lyra_files_core::paths::os_to_string;
+use lyra_files_core::paths::{
+    file_extension, file_name, folder_state_from_path, is_hidden, normalize_path, path_to_string,
+    seconds_since_epoch,
+};
 use lyra_files_core::preferences::{
     ensure_storage_root, read_json_file, storage_file, write_json_file,
 };
@@ -64,8 +64,7 @@ fn mac_trash_root() -> Result<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn read_mac_trash_index(storage_root: &Path) -> Result<MacTrashIndex> {
-    read_json_file(&storage_file(storage_root, MAC_TRASH_INDEX_FILE_NAME))
-        .map_err(core_error)
+    read_json_file(&storage_file(storage_root, MAC_TRASH_INDEX_FILE_NAME)).map_err(core_error)
 }
 
 #[cfg(target_os = "macos")]
