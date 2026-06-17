@@ -96,7 +96,15 @@ export const createAgentIpcBridge = ({
       : { resolveSensitiveValueForFill }),
     internalSurfaces: {
       tabResolver: workbenchObservationAdapter,
-      axHandlers: axToolHost.handlers
+      axHandlers: axToolHost.handlers,
+      terminalHandlers: terminalToolHost.handlers,
+      listWorkbenchTabs: async () => {
+        const service = getWorkbenchObservationService();
+        if (service === null) {
+          throw new Error("Workbench observation capability is not available");
+        }
+        return service.listTabs({ scope: "all", includeUnsupported: true });
+      }
     }
   });
 

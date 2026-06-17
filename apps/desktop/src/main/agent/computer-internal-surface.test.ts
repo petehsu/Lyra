@@ -2,8 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   adaptBrowserAxMapToComputerMap,
+  adaptFileManagerObservationToComputerMap,
+  adaptTerminalMapToComputerMap,
   browserAxNodeToComputerNode,
   encodeLyraBrowserOsRef,
+  encodeLyraTerminalOsRef,
   parseLyraBrowserOsRef
 } from "./computer-internal-surface";
 import type { BrowserAxNode, WorkbenchBrowserAxMapResult } from "../workbench-browser/types";
@@ -69,5 +72,38 @@ describe("computer-internal-surface", () => {
       }
     });
     expect(adapted.nodes).toHaveLength(1);
+  });
+
+  test("adapts terminal map envelopes", () => {
+    const adapted = adaptTerminalMapToComputerMap("terminal-tab-1", {
+      sessionId: "session-1",
+      screen: { screenVersion: 3 },
+      regions: [
+        {
+          regionId: "region-1",
+          kind: "button",
+          text: "OK",
+          rowStart: 1,
+          rowEnd: 1,
+          colStart: 1,
+          colEnd: 2,
+          confidence: 0.9,
+          suggestedActions: ["confirm"]
+        }
+      ]
+    });
+    expect(adapted.surface).toBe("lyra-terminal");
+    expect(adapted.nodes?.[0]?.osRef).toBe(encodeLyraTerminalOsRef("session-1", "region-1"));
+  });
+
+  test("adapts file manager observations", () => {
+    const adapted = adaptFileManagerObservationToComputerMap("files-tab-1", {
+      kind: "file-manager",
+      viewKind: "directory",
+      currentLocation: { title: "Documents", path: "/Users/test/Documents" },
+      entries: [{ id: "entry-1", name: "readme.md", kind: "file", path: "/Users/test/Documents/readme.md" }]
+    });
+    expect(adapted.surface).toBe("lyra-files");
+    expect(adapted.nodes).toHaveLength(2);
   });
 });

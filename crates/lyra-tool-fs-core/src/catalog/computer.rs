@@ -7,7 +7,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "computer",
             "map",
             "Map computer accessibility tree",
-            "Read the desktop accessibility tree (osRef) of the focused window for semantic, non-visual control of native apps. Pass surface: lyra-browser (or omit surface when a Lyra browser tab is active) to map the in-app page via Level-1 internal IPC; pass surface: native to force OS accessibility.",
+            "Read the desktop accessibility tree (osRef) of the focused window for semantic, non-visual control. Level-1 Lyra surfaces: surface lyra-browser (browser_ax), lyra-terminal (terminal regions), lyra-files (file-manager entries, read-only). Omit surface to auto-route from the active workbench tab; surface native forces OS accessibility for external apps.",
             Some("computer_map"),
         ),
         super::s(
