@@ -90,11 +90,15 @@ export const createAgentIpcBridge = ({
 
   const softwareCapabilityHost = createSoftwareCapabilityHost({ getWindow });
 
-  const computerToolHost = createComputerToolHost(
-    resolveSensitiveValueForFill === undefined
+  const computerToolHost = createComputerToolHost({
+    ...(resolveSensitiveValueForFill === undefined
       ? {}
-      : { resolveSensitiveValueForFill }
-  );
+      : { resolveSensitiveValueForFill }),
+    internalSurfaces: {
+      tabResolver: workbenchObservationAdapter,
+      axHandlers: axToolHost.handlers
+    }
+  });
 
   const hostCapabilityHandlers: AgentHostCapabilityHandlers = {
     ...workbenchObservationAdapter.handlers,
