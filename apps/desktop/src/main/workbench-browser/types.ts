@@ -375,15 +375,64 @@ export type WorkbenchBrowserAgentObservation = {
   readonly activeElementId: number | null;
   readonly focusOrder: readonly number[];
   readonly authChallengeSignals?: readonly WorkbenchBrowserAuthChallengeSignal[];
+  readonly scrollHints?: readonly WorkbenchBrowserAgentScrollHint[];
   readonly warnings?: readonly string[];
   readonly nextRecommendedAction?: string;
 };
+
+export type WorkbenchBrowserAgentScrollHint = {
+  readonly frameRef: string;
+  readonly tag: string;
+  readonly text: string;
+  readonly pagesDown: number;
+};
+
+export type WorkbenchBrowserAgentElementMatchLevel =
+  | "exact"
+  | "stable"
+  | "axName"
+  | "attribute"
+  | "nearest";
 
 export type WorkbenchBrowserAgentInteraction =
   | "hover"
   | "click"
   | "doubleClick"
-  | "rightClick";
+  | "rightClick"
+  | "select";
+
+export type WorkbenchBrowserAgentRuntimePath =
+  | "fast"
+  | "settled"
+  | "rebound"
+  | "cached"
+  | "twoPhase"
+  | "selfHeal";
+
+export type WorkbenchBrowserAgentElementState = {
+  readonly role: string;
+  readonly label: string;
+  readonly checked?: boolean;
+  readonly expanded?: boolean;
+  readonly disabled: boolean;
+  readonly value?: string;
+  readonly inputType?: string;
+};
+
+export type WorkbenchBrowserAgentElementDiff = {
+  readonly before: WorkbenchBrowserAgentElementState;
+  readonly after: WorkbenchBrowserAgentElementState;
+  readonly changed: readonly string[];
+  readonly noObservableChange?: boolean;
+};
+
+export type WorkbenchBrowserAgentRebound = {
+  readonly from: string;
+  readonly to: string;
+  readonly confidence: number;
+  readonly reason: string;
+  readonly matchLevel?: WorkbenchBrowserAgentElementMatchLevel;
+};
 
 export type WorkbenchBrowserAgentVisualInteraction =
   | WorkbenchBrowserAgentInteraction
@@ -392,7 +441,42 @@ export type WorkbenchBrowserAgentVisualInteraction =
 
 export type WorkbenchBrowserAgentVerification =
   | "none"
+  | "fast"
   | "full";
+
+export type WorkbenchBrowserWorkflowCacheMode =
+  | "off"
+  | "record"
+  | "replay";
+
+export type WorkbenchBrowserAgentWorkflowResolvedStep = {
+  readonly index: number;
+  readonly from: string;
+  readonly to: string;
+  readonly matchLevel: WorkbenchBrowserAgentElementMatchLevel;
+};
+
+export type WorkbenchBrowserPlanCandidate = {
+  readonly targetRef: string;
+  readonly elementId: number;
+  readonly role: string;
+  readonly label: string;
+  readonly interaction: "click" | "type" | "toggle" | "select";
+  readonly actionCapabilities?: readonly WorkbenchBrowserSemanticActionCapability[];
+  readonly sectionHint?: string;
+  readonly sensitiveSlot?: "password" | "username" | "email";
+};
+
+export type WorkbenchBrowserAgentPlanResult = {
+  readonly ok: true;
+  readonly kind: "lyraLumenPlan";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly observationId: string;
+  readonly candidates: readonly WorkbenchBrowserPlanCandidate[];
+  readonly message?: string;
+  readonly nextRecommendedAction?: string;
+};
 
 // --- AX-first browser tool (browser_ax.*) ---
 
@@ -560,6 +644,13 @@ export type WorkbenchBrowserOsAxAdapter = {
   ) => Promise<unknown> | unknown;
 };
 
+export type WorkbenchBrowserAxElementDiff = {
+  readonly before: WorkbenchBrowserAxNodeState;
+  readonly after: WorkbenchBrowserAxNodeState;
+  readonly changed: readonly string[];
+  readonly noObservableChange?: boolean;
+};
+
 export type WorkbenchBrowserAxActionResult = {
   readonly ok: boolean;
   readonly kind: "browserAxActionResult";
@@ -574,6 +665,10 @@ export type WorkbenchBrowserAxActionResult = {
   readonly navigationStarted: boolean;
   readonly focusChanged?: boolean;
   readonly afterObservationId?: string;
+  readonly elementDiff?: WorkbenchBrowserAxElementDiff;
+  readonly diffUnavailable?: boolean;
+  readonly pathTaken?: WorkbenchBrowserAgentRuntimePath;
+  readonly runtimeCostMs?: number;
   readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
   readonly error?: { readonly kind: string; readonly message: string };
   readonly nextRecommendedAction?: string;
@@ -753,6 +848,17 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly focusChanged?: boolean;
   readonly navigationStarted?: boolean;
   readonly verification?: WorkbenchBrowserAgentVerification;
+  readonly elementDiff?: WorkbenchBrowserAgentElementDiff;
+  readonly diffUnavailable?: boolean;
+  readonly rebound?: WorkbenchBrowserAgentRebound;
+  readonly matchLevel?: WorkbenchBrowserAgentElementMatchLevel;
+  readonly pathTaken?: WorkbenchBrowserAgentRuntimePath;
+  readonly runtimeCostMs?: number;
+  readonly workflowId?: string;
+  readonly cacheHit?: boolean;
+  readonly cacheMiss?: boolean;
+  readonly resolvedSteps?: readonly WorkbenchBrowserAgentWorkflowResolvedStep[];
+  readonly twoPhase?: boolean;
   readonly inputValuePreview?: string;
   readonly inputTextChanged?: boolean;
   readonly inputAlreadyMatched?: boolean;

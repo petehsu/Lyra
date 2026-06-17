@@ -350,6 +350,15 @@ export class LumenTargetRegistry {
     return { ok: true, entry };
   }
 
+  getTargetRefSnapshot(
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    targetRef: string
+  ): LumenTargetRegistryEntry | null {
+    const key = targetRegistryKey(tabId, targetMode);
+    return this.entries.get(key)?.get(targetRef) ?? null;
+  }
+
   resolveTargetRef(
     tabId: string,
     targetMode: WorkbenchBrowserAgentTargetMode,

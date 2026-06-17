@@ -870,8 +870,9 @@ describe("Workbench browser semantic tree fixtures", () => {
       verification: "none"
     });
     expect(fastResult.afterObservationId).toBeUndefined();
-    expect(mainFrame.executeJavaScript).toHaveBeenCalledTimes(1);
-    expect(mainFrame.executeJavaScript.mock.calls[0]?.[0]).toContain("window.innerWidth");
+    expect(fastResult.elementDiff ?? fastResult.diffUnavailable).toBeTruthy();
+    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("TARGET_ID"))).toBe(true);
+    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("window.innerWidth"))).toBe(true);
     expect(webContents.executeJavaScript).toHaveBeenCalledTimes(1);
 
     const fullResult = await manager.actOnAgentElement("tab-1", {

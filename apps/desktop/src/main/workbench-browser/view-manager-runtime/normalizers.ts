@@ -886,8 +886,12 @@ const normalizeExecuteScriptTimeoutMs = (value: unknown, fallback = 8_000): numb
 
 const normalizeAgentVerification = (
   value: WorkbenchBrowserAgentVerification | undefined
-): WorkbenchBrowserAgentVerification =>
-  value === "full" ? "full" : "none";
+): WorkbenchBrowserAgentVerification => {
+  if (value === "full" || value === "fast") {
+    return value;
+  }
+  return "none";
+};
 
 const runFrameScriptWithTimeout = async <T>(
   execute: () => Promise<T>,

@@ -46,6 +46,7 @@ pub struct LyraAgentBackend;
 
 mod actions;
 mod activity;
+mod browser_loop_detector;
 mod clarifications;
 mod context;
 mod helpers;

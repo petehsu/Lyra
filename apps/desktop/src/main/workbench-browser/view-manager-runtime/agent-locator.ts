@@ -1,8 +1,18 @@
 import type { WorkbenchBrowserSearchInPageRequest, WorkbenchLumenStaleTarget } from "../../../shared/desktop-bridge";
-import type { WorkbenchBrowserAgentElement, WorkbenchBrowserAgentFindResult, WorkbenchBrowserAgentLocateResult, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObservation, WorkbenchBrowserAgentTargetMode } from "../types";
+import type {
+  WorkbenchBrowserAgentElement,
+  WorkbenchBrowserAgentElementMatchLevel,
+  WorkbenchBrowserAgentFindResult,
+  WorkbenchBrowserAgentLocateResult,
+  WorkbenchBrowserAgentModeRequest,
+  WorkbenchBrowserAgentObservation,
+  WorkbenchBrowserAgentTargetMode
+} from "../types";
+import { buildWorkflowElementIdentity, matchElementIdentity } from "./agent-element-matcher";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
+import { PROBABLE_REBIND_CONFIDENCE_THRESHOLD } from "./agent-plan-runtime";
 import { normalizeAddress, normalizeExecuteScriptTimeoutMs, selectSemanticLocateCandidate, runFrameScriptWithTimeout } from "./normalizers";
 import type { BrowserAgentPageTarget, BrowserPageFindTarget } from "./types";
 
@@ -31,7 +41,7 @@ export const createBrowserAgentLocator = (deps: BrowserAgentLocatorDeps) => {
     resolveBrowserAgentTarget,
     stateStore
   } = deps;
-  const { resolveElementId, resolveTargetRef } = stateStore;
+  const { getTargetRefSnapshot, resolveElementId, resolveTargetRef } = stateStore;
 
   const findAgentElement = async (
     tabId: string,
@@ -45,6 +55,13 @@ export const createBrowserAgentLocator = (deps: BrowserAgentLocatorDeps) => {
     readonly element: WorkbenchBrowserAgentElement | null;
     readonly observationId?: string;
     readonly staleTarget?: WorkbenchLumenStaleTarget;
+    readonly rebound?: {
+      readonly from: string;
+      readonly to: string;
+      readonly confidence: number;
+      readonly reason: string;
+      readonly matchLevel?: WorkbenchBrowserAgentElementMatchLevel;
+    };
   }> => {
     if (request.targetRef !== undefined) {
       const resolved = resolveTargetRef(tabId, targetMode, request.targetRef);
@@ -66,6 +83,47 @@ export const createBrowserAgentLocator = (deps: BrowserAgentLocatorDeps) => {
           element: rebound.entry.element,
           observationId: rebound.entry.observationId
         };
+      }
+      const snapshotEntry = getTargetRefSnapshot(tabId, targetMode, request.targetRef);
+      if (snapshotEntry !== null) {
+        const pageUrl = snapshotEntry.url;
+        const identity = buildWorkflowElementIdentity(pageUrl, snapshotEntry.element);
+        const matched = matchElementIdentity(pageUrl, identity, observed.elements);
+        if (matched !== null) {
+          const reboundResolved = resolveTargetRef(tabId, targetMode, matched.element.targetRef);
+          if (reboundResolved.ok) {
+            return {
+              element: reboundResolved.entry.element,
+              observationId: reboundResolved.entry.observationId ?? observed.observationId,
+              rebound: {
+                from: request.targetRef,
+                to: matched.element.targetRef,
+                confidence: matched.confidence,
+                reason: `identity-${matched.matchLevel}`,
+                matchLevel: matched.matchLevel
+              }
+            };
+          }
+        }
+      }
+      const probableCandidate = rebound.staleTarget?.nearestCandidates
+        ?.filter((candidate) => candidate.confidence >= PROBABLE_REBIND_CONFIDENCE_THRESHOLD)
+        .sort((left, right) => right.confidence - left.confidence)[0];
+      if (probableCandidate !== undefined) {
+        const reboundResolved = resolveTargetRef(tabId, targetMode, probableCandidate.targetRef);
+        if (reboundResolved.ok) {
+          return {
+            element: reboundResolved.entry.element,
+            observationId: reboundResolved.entry.observationId ?? observed.observationId,
+            rebound: {
+              from: request.targetRef,
+              to: probableCandidate.targetRef,
+              confidence: probableCandidate.confidence,
+              reason: probableCandidate.reason,
+              matchLevel: "nearest"
+            }
+          };
+        }
       }
       return {
         element: null,

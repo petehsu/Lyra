@@ -47,6 +47,34 @@ const HARD_MAX_NODES = 400;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const diffAxNodeSnapshots = (
+  before: BrowserAxNode,
+  after: BrowserAxNode
+): readonly string[] => {
+  const changes: string[] = [];
+  if (before.name !== after.name) {
+    changes.push(`name: ${before.name} -> ${after.name}`);
+  }
+  if (before.value !== after.value) {
+    changes.push(`value: ${before.value ?? ""} -> ${after.value ?? ""}`);
+  }
+  const left = before.state;
+  const right = after.state;
+  if (left.checked !== right.checked) {
+    changes.push(`checked: ${String(left.checked)} -> ${String(right.checked)}`);
+  }
+  if (left.expanded !== right.expanded) {
+    changes.push(`expanded: ${String(left.expanded)} -> ${String(right.expanded)}`);
+  }
+  if (left.focused !== right.focused) {
+    changes.push(`focused: ${String(left.focused)} -> ${String(right.focused)}`);
+  }
+  if (left.selected !== right.selected) {
+    changes.push(`selected: ${String(left.selected)} -> ${String(right.selected)}`);
+  }
+  return changes;
+};
+
 type BrowserAxControllerDeps = Pick<
   WorkbenchBrowserAgentControllerHost,
   | "openDebuggerSessionForTarget"
@@ -982,6 +1010,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     }
 
     const { node } = resolution;
+    const beforeNode = node;
     const risk = classifyRisk(node);
     if (risk.highRisk && request.authorized !== true) {
       return {
@@ -1194,7 +1223,8 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     let focusChanged: boolean | undefined;
     let highRiskTargetStillPresent = false;
     let verificationUnavailable = false;
-    if (request.verification === "full" || requiresPostActionVerification) {
+    let afterNode: BrowserAxNode | undefined;
+    if (request.verification === "full" || request.verification === "fast" || requiresPostActionVerification) {
       try {
         const afterMap = await axMapAgentPage(tabId, {
           targetMode: target.targetMode,
@@ -1203,6 +1233,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
         });
         afterObservationId = afterMap.snapshotId;
+        afterNode = afterMap.nodes.find((candidate) => candidate.axRef === request.axRef);
         const focused = afterMap.nodes.find((candidate) => candidate.state.focused === true);
         if (focused !== undefined) {
           focusChanged = focused.axRef !== request.axRef || node.state.focused !== true;
@@ -1263,6 +1294,18 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       result: "success"
     });
 
+    const elementDiff = afterNode === undefined
+      ? undefined
+      : (() => {
+          const changed = diffAxNodeSnapshots(beforeNode, afterNode);
+          return {
+            before: beforeNode.state,
+            after: afterNode.state,
+            changed,
+            ...(changed.length === 0 ? { noObservableChange: true } : {})
+          };
+        })();
+
     return {
       ok: true,
       kind: "browserAxActionResult",
@@ -1277,6 +1320,8 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       navigationStarted,
       ...(focusChanged === undefined ? {} : { focusChanged }),
       ...(afterObservationId === undefined ? {} : { afterObservationId }),
+      ...(elementDiff === undefined ? { diffUnavailable: true } : { elementDiff }),
+      pathTaken: "fast",
       nextRecommendedAction: navigationStarted || pageChanged ? "browser_ax.map" : "browser_ax.query"
     };
   };

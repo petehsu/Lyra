@@ -4,9 +4,16 @@ import { createBrowserAgentInteractionExecutor } from "./agent-interaction-execu
 import { createBrowserAgentLocator } from "./agent-locator";
 import { createBrowserAgentObservationEngine } from "./agent-observation-engine";
 import { createBrowserAgentPageController } from "./agent-page-controller";
+import { createBrowserAgentPlanController } from "./agent-plan-controller";
 import { createBrowserAgentStateStore } from "./agent-state-store";
+import {
+  executeWorkflowReplay,
+  normalizeUrlForWorkflowCache,
+  resolveWorkflowStepTarget
+} from "./agent-workflow-runtime";
 import { createBrowserAxController } from "./ax-controller";
 import { createBrowserAxSnapshotStore } from "./ax-snapshot-store";
+import { agentTargetAddress } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { WorkbenchBrowserAgentTargetMode } from "../types";
 
@@ -32,11 +39,32 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
     stateStore
   });
+  const plan = createBrowserAgentPlanController({
+    observeAgentPage: observationEngine.observeAgentPage,
+    locateAnchorRect: async (tabId, targetMode, anchorText, timeoutMs) => {
+      const found = await locator.findAgentPage(tabId, {
+        query: anchorText,
+        targetMode,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      const rect = found.revealRect;
+      if (rect === undefined) {
+        return null;
+      }
+      return {
+        x: rect.left,
+        y: rect.top,
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height)
+      };
+    }
+  });
   const interaction = createBrowserAgentInteractionExecutor({
     assertSharedControlCanContinue: host.assertSharedControlCanContinue,
     createVisualFrame: host.createVisualFrame,
     cssPointFromVisualFrame: host.cssPointFromVisualFrame,
     findAgentElement: locator.findAgentElement,
+    findFrameInWebContents: host.findFrameInWebContents,
     markSyntheticInput: host.markSyntheticInput,
     observeAgentPage: observationEngine.observeAgentPage,
     publishBrowserAgentActivity: host.publishBrowserAgentActivity,
@@ -130,6 +158,54 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     axSnapshotStore.dispose();
   };
 
+  const replayWorkflowOnPage = async (
+    tabId: string,
+    request: {
+      readonly workflowId: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
+    }
+  ) => {
+    const targetMode = request.targetMode ?? "live";
+    const target = await host.resolveBrowserAgentTarget(tabId, { targetMode }, request.timeoutMs);
+    const normalizedUrl = normalizeUrlForWorkflowCache(agentTargetAddress(target));
+    return executeWorkflowReplay({
+      tabId,
+      targetMode,
+      workflowId: request.workflowId,
+      normalizedUrl,
+      resolveStep: async (step) =>
+        resolveWorkflowStepTarget({
+          tabId,
+          targetMode,
+          normalizedUrl,
+          step,
+          resolveTargetRef: (targetRef) => {
+            const resolved = stateStore.resolveTargetRef(tabId, targetMode, targetRef);
+            return resolved.ok ? { ok: true } : { ok: false };
+          },
+          observePage: () =>
+            observationEngine.observeAgentPage(tabId, {
+              strategy: "interactiveOnly",
+              targetMode,
+              suppressActivity: true,
+              ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+            })
+        }),
+      actStep: async (step, resolved) =>
+        interaction.actOnAgentElement(tabId, {
+          targetRef: resolved.targetRef,
+          interaction: step.interaction,
+          targetMode,
+          cacheMode: "off",
+          ...(step.optionLabel === undefined ? {} : { optionLabel: step.optionLabel }),
+          ...(step.selectValue === undefined ? {} : { selectValue: step.selectValue }),
+          ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+          ...(resolved.matchLevel === undefined ? {} : { matchLevel: resolved.matchLevel })
+        })
+    });
+  };
+
   return {
     actOnAgentElement: interaction.actOnAgentElement,
     actOnAgentPoint: interaction.actOnAgentPoint,
@@ -151,9 +227,11 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     locateAgentPage: locator.locateAgentPage,
     navigateAgentPage: page.navigateAgentPage,
     observeAgentPage: observationEngine.observeAgentPage,
+    planAgentPage: plan.planAgentPage,
     pressAgentKey: focusInput.pressAgentKey,
     readAgentFollowFinalPageState: page.readAgentFollowFinalPageState,
     readAgentPage: page.readAgentPage,
+    replayWorkflowOnPage,
     scheduleBrowserTargetRegistryWarmup: observationEngine.scheduleBrowserTargetRegistryWarmup,
     scrollAgentPage: interaction.scrollAgentPage,
     showAgentActivity: page.showAgentActivity,

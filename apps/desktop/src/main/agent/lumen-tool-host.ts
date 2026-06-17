@@ -1,9 +1,13 @@
+import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentScrollBlock,
   WorkbenchBrowserAgentScrollDirection,
-  WorkbenchBrowserAgentTargetMode
+  WorkbenchBrowserAgentTargetMode,
+  WorkbenchBrowserAgentVerification,
+  WorkbenchBrowserWorkflowCacheMode
 } from "../workbench-browser/types";
+import { normalizeWorkflowCacheMode } from "../workbench-browser/view-manager-runtime/lumen-workflow-cache";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
 import { materializeLumenCapture } from "./artifact-materializer";
@@ -105,12 +109,16 @@ export const createLumenToolHost = ({
   getBrowserBridge,
   tabResolver,
   storageRoot,
-  getBrowserFollowMode
+  getBrowserFollowMode,
+  resolveSensitiveValueForFill
 }: {
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly tabResolver: WorkbenchBrowserTabResolver;
   readonly storageRoot: string;
   readonly getBrowserFollowMode: () => boolean;
+  readonly resolveSensitiveValueForFill?: (
+    ref: LyraSensitiveValueRef
+  ) => Promise<string>;
 }): { readonly handlers: AgentHostCapabilityHandlers } => {
   const {
     resolveBrowserAgentTabId,
@@ -136,6 +144,7 @@ export const createLumenToolHost = ({
     const value = payload.interaction;
     if (value === "double_click" || value === "doubleClick") return "doubleClick";
     if (value === "right_click" || value === "rightClick") return "rightClick";
+    if (value === "select") return "select";
     return value === "hover" || value === "click" ? value : "click";
   };
 
@@ -191,9 +200,45 @@ export const createLumenToolHost = ({
       : "textStable";
   };
 
-  const readLumenVerification = (payload: Record<string, unknown>) => {
+  const readLumenVerification = (payload: Record<string, unknown>): WorkbenchBrowserAgentVerification => {
     const value = payload.verification ?? payload.verify;
-    return value === "full" ? "full" as const : "none" as const;
+    if (value === "full" || value === "fast") {
+      return value;
+    }
+    return "none";
+  };
+
+  const readLumenSettle = (payload: Record<string, unknown>): boolean | undefined => {
+    if (payload.settle === true) return true;
+    if (payload.settle === false) return false;
+    return undefined;
+  };
+
+  const readWorkflowFields = (payload: Record<string, unknown>): {
+    readonly workflowId?: string;
+    readonly cacheMode: WorkbenchBrowserWorkflowCacheMode;
+  } => {
+    const workflowId = readOptionalStringField(payload, "workflowId");
+    const cacheMode = normalizeWorkflowCacheMode(payload.cacheMode);
+    return {
+      ...(workflowId === undefined ? {} : { workflowId }),
+      cacheMode
+    };
+  };
+
+  const readSensitiveFillText = async (payload: Record<string, unknown>): Promise<string> => {
+    const sensitiveRef = payload.sensitiveValueRef;
+    if (sensitiveRef !== undefined) {
+      if (!isLyraSensitiveValueRef(sensitiveRef)) {
+        throw new Error("sensitiveValueRef must be a valid lyra-sensitive-value-ref object.");
+      }
+      if (resolveSensitiveValueForFill === undefined) {
+        throw new Error("Sensitive value fill is not available in this runtime.");
+      }
+      const secret = await resolveSensitiveValueForFill(sensitiveRef);
+      return secret;
+    }
+    return readStringField(payload, "text");
   };
 
   const nextRecommendedActionAfterFastLumenAction = (
@@ -647,12 +692,29 @@ export const createLumenToolHost = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const verification = readLumenVerification(payload);
+      const settle = readLumenSettle(payload);
+      const workflow = readWorkflowFields(payload);
+      const optionLabel = readOptionalStringField(payload, "optionLabel");
+      const selectValue = readOptionalStringField(payload, "selectValue");
+      if (workflow.cacheMode === "replay" && workflow.workflowId !== undefined) {
+        const replayed = await browser.replayWorkflowOnPage(tabId, {
+          workflowId: workflow.workflowId,
+          targetMode,
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        });
+        const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, replayed);
+        return withLumenTargetIds({
+          ...enriched,
+          kind: "lyraLumenActionResult",
+          nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
+        }, tabId, elementId);
+      }
       const result = elementId === undefined && targetRef === undefined
         ? await browser.actOnAgentPoint(tabId, {
           point: readLumenPoint(payload),
           interaction: readLumenInteraction(payload),
           ...readLumenModeRequest(payload, targetMode),
-          ...(verification === "full" ? { verification } : {}),
+          ...(verification === "none" ? {} : { verification }),
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         })
         : await browser.actOnAgentElement(tabId, {
@@ -660,7 +722,12 @@ export const createLumenToolHost = ({
           ...(targetRef === undefined ? {} : { targetRef }),
           interaction: readLumenInteraction(payload),
           ...readLumenModeRequest(payload, targetMode),
-          ...(verification === "full" ? { verification } : {}),
+          ...(verification === "none" ? {} : { verification }),
+          ...(settle === undefined ? {} : { settle }),
+          ...(workflow.workflowId === undefined ? {} : { workflowId: workflow.workflowId }),
+          ...(workflow.cacheMode === "off" ? {} : { cacheMode: workflow.cacheMode }),
+          ...(optionLabel === undefined ? {} : { optionLabel }),
+          ...(selectValue === undefined ? {} : { selectValue }),
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
@@ -669,6 +736,33 @@ export const createLumenToolHost = ({
         kind: "lyraLumenActionResult",
         nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
       }, tabId, elementId);
+    }),
+    "lyraLumen.plan": withLyraLumenResult("lyraLumen.plan", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const anchorText = readOptionalStringField(payload, "anchorText");
+      const labelIncludesRaw = payload.labelIncludes;
+      const rolesRaw = payload.roles;
+      const labelIncludes = Array.isArray(labelIncludesRaw)
+        ? labelIncludesRaw.filter((item): item is string => typeof item === "string")
+        : undefined;
+      const roles = Array.isArray(rolesRaw)
+        ? rolesRaw.filter((item): item is string => typeof item === "string")
+        : undefined;
+      const maxCandidates = readOptionalNumberField(payload, "maxCandidates");
+      const settle = readLumenSettle(payload);
+      return browser.planAgentPage(tabId, {
+        targetMode,
+        ...(anchorText === undefined ? {} : { anchorText }),
+        ...(roles === undefined ? {} : { roles }),
+        ...(labelIncludes === undefined ? {} : { labelIncludes }),
+        ...(maxCandidates === undefined ? {} : { maxCandidates }),
+        ...(settle === undefined ? {} : { settle }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
     }),
     "lyraLumen.vact": withLyraLumenResult("lyraLumen.vact", async (payload) => {
       const browser = getBrowserBridge();
@@ -801,14 +895,18 @@ export const createLumenToolHost = ({
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const verification = readLumenVerification(payload);
+      const fillText = await readSensitiveFillText(payload);
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
-        text: readStringField(payload, "text"),
+        text: fillText,
         clear: payload.clear === true,
         ...readLumenModeRequest(payload, targetMode),
-        ...(verification === "full" ? { verification } : {}),
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
+        ...(verification === "none" ? {} : { verification }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(payload.sensitiveValueRef === undefined
+          ? {}
+          : { sensitiveFill: true, inputValuePreview: "[secret:redacted]" })
       });
       const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({

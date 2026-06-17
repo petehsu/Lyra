@@ -15,6 +15,7 @@ import type {
   WorkbenchBrowserAgentScrollResult,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAgentVerification,
+  WorkbenchBrowserWorkflowCacheMode,
   WorkbenchBrowserViewManager
 } from "../types";
 import {
@@ -25,7 +26,18 @@ import {
   scrollDeltaForDirection,
   scrollDeltaToPlacePoint
 } from "./agent-action-runtime";
+import { shouldSettleBeforeObserve, waitForDomNetworkQuiet } from "./agent-dom-settle";
+import {
+  buildElementDiff,
+  elementStateFromCached,
+  probeElementState
+} from "./agent-element-probe";
 import { agentTargetAddress, agentTargetIsLoading } from "./agent-target-runtime";
+import { buildWorkflowElementIdentity } from "./agent-element-matcher";
+import {
+  appendWorkflowCacheStep,
+  normalizeUrlForWorkflowCache
+} from "./lumen-workflow-cache";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
 import { delay, normalizeAgentVerification, normalizeExecuteScriptTimeoutMs, runFrameScriptWithTimeout } from "./normalizers";
@@ -40,6 +52,12 @@ type FindAgentElement = (
   readonly element: WorkbenchBrowserAgentElement | null;
   readonly observationId?: string;
   readonly staleTarget?: WorkbenchLumenStaleTarget;
+  readonly rebound?: {
+    readonly from: string;
+    readonly to: string;
+    readonly confidence: number;
+    readonly reason: string;
+  };
 }>;
 
 type BrowserAgentInteractionExecutorDeps = Pick<
@@ -47,6 +65,7 @@ type BrowserAgentInteractionExecutorDeps = Pick<
   | "assertSharedControlCanContinue"
   | "createVisualFrame"
   | "cssPointFromVisualFrame"
+  | "findFrameInWebContents"
   | "markSyntheticInput"
   | "publishBrowserAgentActivity"
   | "readAgentViewportState"
@@ -74,6 +93,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     createVisualFrame,
     cssPointFromVisualFrame,
     findAgentElement,
+    findFrameInWebContents,
     markSyntheticInput,
     observeAgentPage,
     publishBrowserAgentActivity,
@@ -88,8 +108,23 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
   const {
     activeEditableElementFromObservation,
     cacheBrowserAgentInputTarget,
-    isAgentEditableElement
+    consumePendingSettle,
+    isAgentEditableElement,
+    markPendingSettle,
+    readBrowserAgentCacheEntry
   } = stateStore;
+
+  const measureElementDiff = async (
+    target: BrowserAgentPageTarget,
+    element: WorkbenchBrowserAgentElement,
+    timeoutMs: number | undefined
+  ) => {
+    const before = elementStateFromCached(element);
+    const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId)
+      ?? target.webContents.mainFrame;
+    const after = await probeElementState(frame, element, timeoutMs);
+    return buildElementDiff(before, after);
+  };
 
   const performAgentPointerInteraction = async ({
     tabId,
@@ -496,11 +531,31 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
+      readonly settle?: boolean;
+      readonly optionLabel?: string;
+      readonly selectValue?: string;
+      readonly workflowId?: string;
+      readonly cacheMode?: WorkbenchBrowserWorkflowCacheMode;
+      readonly matchLevel?: import("../types").WorkbenchBrowserAgentElementMatchLevel;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const startedAt = Date.now();
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     const verification = normalizeAgentVerification(request.verification);
-    const { element, observationId, staleTarget } = await findAgentElement(
+    const previousCache = readBrowserAgentCacheEntry(tabId, target.targetMode);
+    if (
+      shouldSettleBeforeObserve({
+        settle: request.settle,
+        urlChanged: previousCache !== undefined && previousCache.url !== agentTargetAddress(target),
+        afterNavigation: consumePendingSettle(tabId, target.targetMode)
+      })
+    ) {
+      await waitForDomNetworkQuiet(target.webContents, {
+        forceSkip: request.settle === false,
+        deepSettle: request.settle === true
+      });
+    }
+    const { element, observationId, staleTarget, rebound } = await findAgentElement(
       tabId,
       {
         ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
@@ -558,11 +613,22 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const interactionElement = visibleTarget.element ?? element;
     const autoScroll = visibleTarget.effect;
     const beforeUrl = agentTargetAddress(target);
-    const beforeFocus = verification === "full"
-      ? await readFocusedElementSignature(target, request.timeoutMs)
-      : "";
+    const beforeFocus = verification === "none"
+      ? ""
+      : await readFocusedElementSignature(target, request.timeoutMs);
     const { x, y } = centerOfAgentElement(interactionElement);
-    const interaction = request.interaction;
+    let interaction = request.interaction;
+    let twoPhase = false;
+    if (
+      interaction === "select"
+      || (
+        (request.optionLabel !== undefined || request.selectValue !== undefined)
+        && (interactionElement.role === "combobox" || interactionElement.role === "listbox" || interactionElement.tagName === "select")
+      )
+    ) {
+      twoPhase = true;
+      interaction = "click";
+    }
     await performAgentPointerInteraction({
       tabId,
       target,
@@ -571,6 +637,36 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       interaction,
     });
     await delay(interaction === "hover" ? 40 : 30);
+
+    let elementDiffResult = await measureElementDiff(target, interactionElement, request.timeoutMs);
+    if (
+      twoPhase
+      && ("noObservableChange" in elementDiffResult ? elementDiffResult.noObservableChange !== true : true)
+    ) {
+      const observed = await observeAgentPage(tabId, {
+        strategy: "interactiveOnly",
+        targetMode: target.targetMode,
+        suppressActivity: true,
+        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      });
+      const needle = (request.optionLabel ?? request.selectValue ?? "").trim().toLowerCase();
+      const option = observed.elements.find((candidate) => {
+        const label = `${candidate.label} ${candidate.textSnippet ?? ""}`.toLowerCase();
+        return needle.length > 0 && label.includes(needle);
+      });
+      if (option !== undefined) {
+        const optionCenter = centerOfAgentElement(option);
+        await performAgentPointerInteraction({
+          tabId,
+          target,
+          x: optionCenter.x,
+          y: optionCenter.y,
+          interaction: "click"
+        });
+        await delay(30);
+        elementDiffResult = await measureElementDiff(target, interactionElement, request.timeoutMs);
+      }
+    }
 
     const after = verification === "full"
       ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
@@ -584,11 +680,37 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
         after?.observationId ?? observationId
       );
     }
-    const afterFocus = verification === "full"
-      ? await readFocusedElementSignature(target, request.timeoutMs)
-      : "";
+    const afterFocus = verification === "none"
+      ? ""
+      : await readFocusedElementSignature(target, request.timeoutMs);
     const pageChanged = beforeUrl !== agentTargetAddress(target);
     const navigationStarted = agentTargetIsLoading(target);
+    if (navigationStarted) {
+      markPendingSettle(tabId, target.targetMode);
+    }
+    if (
+      request.cacheMode === "record"
+      && request.workflowId !== undefined
+      && request.workflowId.trim().length > 0
+    ) {
+      appendWorkflowCacheStep(
+        request.workflowId.trim(),
+        {
+          normalizedUrl: normalizeUrlForWorkflowCache(beforeUrl),
+          targetMode: target.targetMode
+        },
+        {
+          targetRef: interactionElement.targetRef,
+          interaction: request.interaction,
+          label: interactionElement.label,
+          role: interactionElement.role,
+          identity: buildWorkflowElementIdentity(beforeUrl, interactionElement),
+          ...(request.optionLabel === undefined ? {} : { optionLabel: request.optionLabel }),
+          ...(request.selectValue === undefined ? {} : { selectValue: request.selectValue })
+        }
+      );
+    }
+    const runtimeCostMs = Date.now() - startedAt;
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -605,9 +727,17 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       ...(after === null ? {} : { afterObservationId: after.observationId }),
       ...(autoScroll === undefined ? {} : { autoScroll }),
       pageChanged,
-      ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
+      ...("diffUnavailable" in elementDiffResult
+        ? { diffUnavailable: true }
+        : { elementDiff: elementDiffResult }),
+      ...(rebound === undefined ? {} : { rebound, pathTaken: "rebound" as const }),
+      ...(request.matchLevel === undefined ? {} : { matchLevel: request.matchLevel }),
+      ...(twoPhase ? { twoPhase: true, pathTaken: "twoPhase" as const } : { pathTaken: rebound === undefined ? "fast" as const : "rebound" as const }),
+      ...(verification === "none" ? {} : { focusChanged: beforeFocus !== afterFocus }),
       navigationStarted,
-      message: `${interaction} sent to element ${interactionElement.id} (${interactionElement.targetRef}) with Chromium virtual input.`,
+      runtimeCostMs,
+      ...(request.workflowId === undefined ? {} : { workflowId: request.workflowId }),
+      message: `${request.interaction} sent to element ${interactionElement.id} (${interactionElement.targetRef}) with Chromium virtual input.`,
       nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };

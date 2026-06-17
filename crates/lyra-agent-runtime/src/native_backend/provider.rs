@@ -129,6 +129,7 @@ impl ModelLoopResult {
 struct ModelLoopProgressGuard {
     last_fingerprint: Option<String>,
     repeated_occurrences: usize,
+    browser_loop_detector: browser_loop_detector::BrowserLoopDetector,
 }
 
 #[derive(Debug)]
@@ -424,6 +425,8 @@ pub(crate) fn run_model_loop(
         provider_transcript.push(assistant_message);
 
         let mut provider_tool_results = Vec::new();
+        let mut browser_tool_calls = Vec::new();
+        let mut browser_tool_outputs = Vec::new();
         for call in &tool_calls {
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
@@ -439,6 +442,12 @@ pub(crate) fn run_model_loop(
             );
             let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
             provider_tool_results.push(content.clone());
+            if let Some(parsed) =
+                browser_loop_detector::parse_browser_tool_call(&call.name, &call.arguments)
+            {
+                browser_tool_calls.push(parsed);
+                browser_tool_outputs.push(output.clone());
+            }
             if let Some(evidence_ref) = evidence_ref {
                 emit_context_trimmed(
                     session_id,
@@ -472,6 +481,16 @@ pub(crate) fn run_model_loop(
                 messages.push(user_message.clone());
                 provider_transcript.push(user_message);
             }
+        }
+
+        if let Some(nudge) = progress_guard
+            .browser_loop_detector
+            .observe_browser_tools(&browser_tool_calls, &browser_tool_outputs)
+        {
+            messages.push(json!({
+                "role": "system",
+                "content": nudge,
+            }));
         }
 
         match progress_guard.observe_tool_round(&tool_calls, &provider_tool_results) {

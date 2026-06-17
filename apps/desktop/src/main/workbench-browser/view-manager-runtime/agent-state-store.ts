@@ -31,6 +31,7 @@ export const createBrowserAgentStateStore = () => {
   const browserAgentCache = new Map<string, BrowserAgentCacheEntry>();
   const lumenTargetRegistry = new LumenTargetRegistry();
   const browserAgentInputTargets = new Map<string, CachedInputTarget>();
+  const pendingSettleHints = new Map<string, boolean>();
 
   const invalidateBrowserAgentTargets = (
     tabId: string,
@@ -94,6 +95,13 @@ export const createBrowserAgentStateStore = () => {
   ): ReturnType<LumenTargetRegistry["resolveTargetRef"]> =>
     lumenTargetRegistry.resolveTargetRef(tabId, targetMode, targetRef, now);
 
+  const getTargetRefSnapshot = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    targetRef: string
+  ): ReturnType<LumenTargetRegistry["getTargetRefSnapshot"]> =>
+    lumenTargetRegistry.getTargetRefSnapshot(tabId, targetMode, targetRef);
+
   const explainTargetRef = (
     request: Parameters<LumenTargetRegistry["explainTargetRef"]>[0]
   ): ReturnType<LumenTargetRegistry["explainTargetRef"]> => lumenTargetRegistry.explainTargetRef(request);
@@ -138,24 +146,47 @@ export const createBrowserAgentStateStore = () => {
     };
   };
 
+  const markPendingSettle = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): void => {
+    pendingSettleHints.set(browserAgentCacheKey(tabId, targetMode), true);
+  };
+
+  const consumePendingSettle = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): boolean => {
+    const key = browserAgentCacheKey(tabId, targetMode);
+    const pending = pendingSettleHints.get(key) === true;
+    if (pending) {
+      pendingSettleHints.delete(key);
+    }
+    return pending;
+  };
+
   const dispose = (): void => {
     browserAgentInputTargets.clear();
     browserAgentCache.clear();
     lumenTargetRegistry.clear();
+    pendingSettleHints.clear();
   };
 
   return {
     activeEditableElementFromObservation,
     cacheBrowserAgentInputTarget,
+    consumePendingSettle,
     dispose,
     explainTargetRef,
     invalidateBrowserAgentTargets,
+    markPendingSettle,
     isAgentEditableElement,
     nextMapEpoch,
     readBrowserAgentCacheEntry,
     readCachedBrowserAgentInputTarget,
     registerTargetObservation,
     rememberBrowserAgentObservation,
+    getTargetRefSnapshot,
     resolveElementId,
     resolveTargetRef,
     targetTtlMs

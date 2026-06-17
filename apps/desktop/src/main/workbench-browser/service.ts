@@ -215,6 +215,31 @@ export type WorkbenchBrowserIpcBridge = {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
+      readonly settle?: boolean;
+      readonly optionLabel?: string;
+      readonly selectValue?: string;
+      readonly workflowId?: string;
+      readonly cacheMode?: import("./types").WorkbenchBrowserWorkflowCacheMode;
+    }
+  ) => Promise<WorkbenchBrowserAgentActionResult>;
+  readonly planAgentPage: (
+    tabId: string,
+    request: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly anchorText?: string;
+      readonly roles?: readonly string[];
+      readonly labelIncludes?: readonly string[];
+      readonly maxCandidates?: number;
+      readonly timeoutMs?: number;
+      readonly settle?: boolean;
+    }
+  ) => Promise<import("./types").WorkbenchBrowserAgentPlanResult>;
+  readonly replayWorkflowOnPage: (
+    tabId: string,
+    request: {
+      readonly workflowId: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly timeoutMs?: number;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly actOnAgentPoint: (
@@ -281,6 +306,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
+      readonly sensitiveFill?: boolean;
     }
   ) => Promise<WorkbenchBrowserAgentActionResult>;
   readonly pressAgentKey: (
@@ -589,6 +615,8 @@ export const createWorkbenchBrowserIpcBridge = ({
     axPressAgentKey: manager.axPressAgentKey,
     axExplainNode: manager.axExplainNode,
     actOnAgentElement: manager.actOnAgentElement,
+    planAgentPage: manager.planAgentPage,
+    replayWorkflowOnPage: manager.replayWorkflowOnPage,
     actOnAgentPoint: manager.actOnAgentPoint,
     actOnAgentVisualPoint: manager.actOnAgentVisualPoint,
     focusAgentPage: manager.focusAgentPage,

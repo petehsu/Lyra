@@ -56,6 +56,7 @@ pub fn build_system_prompt(input: &PromptPolicyInput) -> String {
         network_awareness_section().to_string(),
         sensitive_values_section().to_string(),
         verification_section().to_string(),
+        computer_use_section().to_string(),
     ];
     if input.design_research_required || design_skill_active(&input.active_skill_prompt) {
         sections.push(design_research_section().to_string());
@@ -213,7 +214,7 @@ pub fn tool_strategy_section() -> &'static str {
 - When Lyra tools are available, finish the turn through the structured `lyra_turn_finish` tool after required tool evidence is gathered, or when no external capability is needed. Do not use plain assistant text as the final commit path for a tool-capable turn.
 - For browser UI work, one `read`, `map`, or visual pass that does not show a requested control is not proof that the control does not exist. Dynamic pages may lazy-load, hide, scroll, localize, or A/B-test controls. Before declaring a requested browser element unavailable, use a relevant combination of `read_until`/`wait`, `map`, `focus_scan`, reveal/hover, scroll, or reload evidence.
 - For long browser pages, settings screens, lists, documents, or pages with known labels/section text, prefer the stable loop `locate` or `find` the relevant text, reveal it, then `map` nearby controls and use targetRef-based `act`/`type`; avoid blind repeated scrolling when text anchors are available.
-- For browser operation, default to DOM/semantic tools (`map`, `locate`, `find`, targetRef-based `act`/`type`). When DOM mapping is blind or unreliable for cross-origin OAuth/Google identity iframes, FedCM/account choosers, or complex ARIA controls, use `browser_ax.map/query/act` next. Switch to the visual loop `see` -> `vact` only when DOM and AX are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets, browser-native UI that AX cannot expose, or repeated missing targetRefs/axRefs. `vact` coordinates are real device pixels from the exact latest `see` screenshot and require its `captureId`; after scrolling, resizing panels/windows, or moving across DPR displays, call `see` again before any `vact`.
+- For browser operation, default to DOM/semantic tools (`map`, `locate`, `find`, targetRef-based `act`/`type`). For multi-field forms, call `browser.plan` once, then batch `act`/`type` via returned targetRefs. For repeatable flows, use `workflowId` with `cacheMode: "record"` on the first successful run and `cacheMode: "replay"` later; recorded workflows persist element identity for stable replay. Use `verification: "fast"` for checkbox/dropdown/combobox acts; reserve `verification: "full"` for post-navigation checks. Inspect `elementDiff.changed` after acts; when `noObservableChange` is true, escalate with `explain_target`, `browser_ax`, or `see` instead of blind retries. When Lyra injects a browser loop or stagnation hint, treat it as guidance: change strategy instead of repeating the same browser action unless each attempt is clearly advancing. Sensitive fields must use `sensitiveValueRef` on `browser.type`, never plaintext secrets. When DOM mapping is blind or unreliable for cross-origin OAuth/Google identity iframes, FedCM/account choosers, or complex ARIA controls, use `browser_ax.map/query/act` next. Switch to the visual loop `see` -> `vact` only when DOM and AX are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets, browser-native UI that AX cannot expose, or repeated missing targetRefs/axRefs. `vact` coordinates are real device pixels from the exact latest `see` screenshot and require its `captureId`; after scrolling, resizing panels/windows, or moving across DPR displays, call `see` again before any `vact`.
 - When a host capability is unavailable, report the unavailable Lyra capability and the action attempted."#
 }
 
@@ -239,6 +240,17 @@ pub fn verification_section() -> &'static str {
 - When finishing a code turn, include `verificationRecords` in `lyra_turn_finish`; if test, lint, or typecheck was not run, record that check with status `not_run` and a concise `notRunReason`.
 - Keep tool and provider errors out of assistant-only claims; use structured failure details and recoverable next actions.
 - Preserve their work and never imply unrelated dirty files were changed by you."#
+}
+
+pub fn computer_use_section() -> &'static str {
+    r#"Computer use policy (controlling native desktop apps):
+- Computer use is not "screenshot then click coordinates". Operate the desktop semantically: `computer.map`/`computer.find` to read the accessibility tree (osRef), then `computer.act` by osRef. This is non-visual and does not steal the foreground.
+- Loop like the browser: map -> find -> act -> verify. `computer.act` returns a before/after diff; if `changed` is empty, treat it as unverified and re-check with `computer.diff` rather than assuming success. To verify a broad change, pass the earlier `computer.map` `snapshotId` to `computer.diff` as `baselineSnapshotId` and read the added/removed/changed observation diff.
+- An osRef is opaque and may go stale. If `computer.act`/`computer.diff` reports a stale reference, re-run `computer.map` to get a fresh osRef instead of reusing the old one.
+- Prefer Lyra's own surfaces first: use `browser`/`browser_ax` for web, `shell`/`terminal` for CLI work, and files tools for files. Reach for `computer.*` only to drive other native apps' GUI.
+- If `computer.explain` reports semantic control is unavailable on this platform or the node is unreachable, say so and fall back deliberately; do not silently guess coordinates.
+- For background work the member is not watching, pass `mode: "background-semantic"` to `computer.act`. That refuses focus/raise (no foreground steal) and allows only semantic actions (press/setText/toggle/select). Use the default `shared` mode only when a visible, foreground interaction is intended.
+- Never type passwords as plaintext: `computer.act` refuses agent-authored `setText` on secure inputs (`secure: true`, `blocked`). To fill a saved credential, pass its `sensitiveValueRef` to `computer.act` instead of `text` — the plaintext is resolved host-side and never enters your context. If no ref exists, ask the member to enter the credential themselves."#
 }
 
 pub fn design_research_section() -> &'static str {

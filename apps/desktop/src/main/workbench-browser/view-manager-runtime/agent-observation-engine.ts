@@ -9,6 +9,7 @@ import type {
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentObservation,
   WorkbenchBrowserAgentObserveStrategy,
+  WorkbenchBrowserAgentScrollHint,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserFrameGlobalBounds,
@@ -22,6 +23,7 @@ import {
   buildBrowserAgentObservationScript,
   readAxValueText
 } from "./agent-observation-runtime";
+import { shouldSettleBeforeObserve, waitForDomNetworkQuiet } from "./agent-dom-settle";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
@@ -62,6 +64,33 @@ type BrowserAgentObservationEngineDeps = Pick<
   | "updateRuntimeState"
 > & { readonly stateStore: BrowserAgentStateStore };
 
+const buildInteractiveScrollHints = (
+  elements: readonly WorkbenchBrowserAgentElement[],
+  viewportHeight: number,
+  mainFrameRef: string | undefined
+): readonly WorkbenchBrowserAgentScrollHint[] => {
+  if (viewportHeight <= 0) {
+    return [];
+  }
+  return elements
+    .filter((element) =>
+      element.discoveryScope !== "visual"
+      && element.frameRef !== mainFrameRef
+      && element.visibility?.offscreen === true
+      && element.visibility?.covered !== true
+      && element.disabled === false
+    )
+    .slice(0, 8)
+    .map((element) => ({
+      frameRef: element.frameRef,
+      tag: element.tagName,
+      text: element.label.trim().length > 0
+        ? element.label.slice(0, 40)
+        : (element.textSnippet?.slice(0, 40) ?? "(no label)"),
+      pagesDown: Math.max(0, Math.round((element.bounds.y / viewportHeight) * 10) / 10)
+    }));
+};
+
 export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservationEngineDeps) => {
   const {
     findFrameInWebContents,
@@ -76,7 +105,9 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
   const {
     activeEditableElementFromObservation,
     cacheBrowserAgentInputTarget,
+    consumePendingSettle,
     nextMapEpoch,
+    readBrowserAgentCacheEntry,
     registerTargetObservation,
     rememberBrowserAgentObservation,
     targetTtlMs
@@ -594,9 +625,23 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
       readonly timeoutMs?: number;
       readonly suppressActivity?: boolean;
+      readonly settle?: boolean;
     }
   ): Promise<WorkbenchBrowserAgentObservation> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request?.timeoutMs);
+    const previousCache = readBrowserAgentCacheEntry(tabId, target.targetMode);
+    const currentUrl = agentTargetAddress(target);
+    if (
+      shouldSettleBeforeObserve({
+        settle: request?.settle,
+        urlChanged: previousCache !== undefined && previousCache.url !== currentUrl,
+        afterNavigation: consumePendingSettle(tabId, target.targetMode)
+      })
+    ) {
+      await waitForDomNetworkQuiet(target.webContents, {
+        forceSkip: request?.settle === false
+      });
+    }
     const strategy = normalizeAgentObserveStrategy(request?.strategy);
     const timeoutMs = normalizeExecuteScriptTimeoutMs(request?.timeoutMs, 8_000);
     const lightweightObservation = isLightweightAgentObserveStrategy(strategy);
@@ -946,6 +991,22 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         });
       }
     }
+    let scrollHints: readonly WorkbenchBrowserAgentScrollHint[] = [];
+    if (strategy === "interactiveOnly") {
+      const coveredCount = elements.filter((element) => element.visibility?.covered === true).length;
+      if (coveredCount > 0) {
+        graphWarnings.push(`${coveredCount} covered interactive element(s) omitted from map output.`);
+      }
+      elements = elements.filter(
+        (element) => element.discoveryScope === "visual" || element.visibility?.covered !== true
+      );
+      const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
+      scrollHints = buildInteractiveScrollHints(
+        elements,
+        mainFrame?.bounds?.height ?? 0,
+        mainFrame?.frameRef
+      );
+    }
     const targets = elements.map((element) => element.target);
 
     const focusOrder = elements
@@ -1082,6 +1143,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       activeElementId,
       focusOrder,
       ...(authChallengeSignals.length > 0 ? { authChallengeSignals } : {}),
+      ...(scrollHints.length > 0 ? { scrollHints } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       nextRecommendedAction:
         authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind !== "oauth_popup")
