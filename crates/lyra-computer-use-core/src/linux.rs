@@ -25,9 +25,8 @@
 
 use async_io::block_on;
 use atspi::connection::AccessibilityConnection;
-use atspi::proxy::accessible::AccessibleProxy;
-use atspi::proxy::action::ActionProxy;
-use atspi::proxy::editable_text::EditableTextProxy;
+use atspi::proxy::accessible::{AccessibleProxy, ObjectRefExt};
+use atspi::proxy::proxy_ext::ProxyExt;
 use atspi::Role;
 use atspi::State;
 
@@ -41,7 +40,7 @@ use crate::model::{
 /// and Windows backends so the Agent sees one set of roles).
 fn normalize_role(role: Role) -> &'static str {
     match role {
-        Role::PushButton | Role::ToggleButton => "button",
+        Role::Button | Role::ToggleButton => "button",
         Role::Link => "link",
         Role::PasswordText => "securetextbox",
         Role::Entry | Role::Text => "textbox",
@@ -114,29 +113,16 @@ async fn root_proxy(
         .map_err(map_err)
 }
 
-async fn child_at<'a>(
-    parent: &AccessibleProxy<'a>,
+/// Resolves the Nth child of `parent` to an `AccessibleProxy`, using atspi's
+/// canonical `ObjectRef -> proxy` conversion over the same connection.
+async fn child_at(
+    connection: &AccessibilityConnection,
+    parent: &AccessibleProxy<'_>,
     index: i32,
-) -> Result<AccessibleProxy<'a>, BackendError> {
+) -> Result<AccessibleProxy<'static>, BackendError> {
     let object = parent.get_child_at_index(index).await.map_err(map_err)?;
-    object_to_accessible(parent, object).await
-}
-
-/// Builds an AccessibleProxy for a child ObjectRef using the parent's
-/// connection. atspi exposes the `proxies()` extension; we go through the
-/// connection to construct the child proxy from its (bus name, path).
-async fn object_to_accessible<'a>(
-    sibling: &AccessibleProxy<'a>,
-    object: atspi::ObjectRefOwned,
-) -> Result<AccessibleProxy<'a>, BackendError> {
-    let connection = sibling.inner().connection().clone();
-    let object = object.into_inner();
-    AccessibleProxy::builder(&connection)
-        .destination(object.name)
-        .map_err(map_err)?
-        .path(object.path)
-        .map_err(map_err)?
-        .build()
+    object
+        .into_accessible_proxy(connection.connection())
         .await
         .map_err(map_err)
 }
@@ -187,6 +173,7 @@ async fn node_for_proxy(proxy: &AccessibleProxy<'_>, path: &str) -> ComputerNode
 }
 
 async fn traverse(
+    connection: &AccessibilityConnection,
     proxy: &AccessibleProxy<'_>,
     path: &str,
     request: &MapRequest,
@@ -209,17 +196,25 @@ async fn traverse(
         if nodes.len() >= request.max_nodes {
             break;
         }
-        if let Ok(child) = child_at(proxy, index).await {
-            Box::pin(traverse(&child, &format!("{path}/{index}"), request, nodes)).await;
+        if let Ok(child) = child_at(connection, proxy, index).await {
+            Box::pin(traverse(
+                connection,
+                &child,
+                &format!("{path}/{index}"),
+                request,
+                nodes,
+            ))
+            .await;
         }
     }
 }
 
 /// Re-walks a child-index path from the registry root.
-async fn resolve_path<'a>(
-    root: AccessibleProxy<'a>,
+async fn resolve_path(
+    connection: &AccessibilityConnection,
+    root: AccessibleProxy<'_>,
     os_path: &str,
-) -> Option<AccessibleProxy<'a>> {
+) -> Option<AccessibleProxy<'static>> {
     let parts = os_path
         .split('/')
         .filter(|part| !part.is_empty())
@@ -227,10 +222,14 @@ async fn resolve_path<'a>(
     if parts.first().copied() != Some("0") {
         return None;
     }
-    let mut current = root;
-    for part in parts.into_iter().skip(1) {
+    // Walk one level at a time; each step rebuilds an owned proxy from the
+    // child ObjectRef, so the returned proxy does not borrow `root`.
+    let mut current = child_at(connection, &root, parts.get(1)?.parse::<i32>().ok()?)
+        .await
+        .ok()?;
+    for part in parts.into_iter().skip(2) {
         let index = part.parse::<i32>().ok()?;
-        current = child_at(&current, index).await.ok()?;
+        current = child_at(connection, &current, index).await.ok()?;
     }
     Some(current)
 }
@@ -239,43 +238,32 @@ fn os_path_from_ref(os_ref: &str) -> Option<&str> {
     os_ref.strip_prefix("atspi:")
 }
 
-/// Finds the index of the Action whose name looks like an activation verb.
-async fn activation_action_index(proxy: &AccessibleProxy<'_>) -> Option<i32> {
-    let action = ActionProxy::builder(proxy.inner().connection())
-        .destination(proxy.inner().destination().to_owned())
-        .ok()?
-        .path(proxy.inner().path().to_owned())
-        .ok()?
-        .build()
-        .await
-        .ok()?;
-    let actions = action.get_actions().await.ok()?;
-    actions.iter().position(|entry| {
-        let name = entry.name.to_ascii_lowercase();
-        name.contains("click") || name.contains("press") || name.contains("activate")
-    }).map(|index| index as i32)
-}
-
+/// Activates an object through the AT-SPI Action interface. Picks the action
+/// index whose name looks like an activation verb (click/press/activate),
+/// falling back to index 0 (the default/primary action).
 async fn do_activation(proxy: &AccessibleProxy<'_>) -> Result<(), BackendError> {
-    let index = activation_action_index(proxy).await.unwrap_or(0);
-    let action = ActionProxy::builder(proxy.inner().connection())
-        .destination(proxy.inner().destination().to_owned())
-        .map_err(map_err)?
-        .path(proxy.inner().path().to_owned())
-        .map_err(map_err)?
-        .build()
+    let action = proxy.proxies().await.map_err(map_err)?.action().await.map_err(map_err)?;
+    let index = action
+        .get_actions()
         .await
-        .map_err(map_err)?;
+        .ok()
+        .and_then(|actions| {
+            actions.iter().position(|entry| {
+                let name = entry.name.to_ascii_lowercase();
+                name.contains("click") || name.contains("press") || name.contains("activate")
+            })
+        })
+        .map(|index| index as i32)
+        .unwrap_or(0);
     action.do_action(index).await.map_err(map_err).map(|_| ())
 }
 
 async fn do_set_text(proxy: &AccessibleProxy<'_>, text: &str) -> Result<(), BackendError> {
-    let editable = EditableTextProxy::builder(proxy.inner().connection())
-        .destination(proxy.inner().destination().to_owned())
+    let editable = proxy
+        .proxies()
+        .await
         .map_err(map_err)?
-        .path(proxy.inner().path().to_owned())
-        .map_err(map_err)?
-        .build()
+        .editable_text()
         .await
         .map_err(map_err)?;
     editable
@@ -310,7 +298,7 @@ impl ComputerBackend for LinuxBackend {
             let connection = connect().await?;
             let root = root_proxy(&connection).await?;
             let mut nodes = Vec::new();
-            traverse(&root, "0", request, &mut nodes).await;
+            traverse(&connection, &root, "0", request, &mut nodes).await;
             Ok(nodes)
         })
     }
@@ -325,7 +313,7 @@ impl ComputerBackend for LinuxBackend {
         block_on(async {
             let connection = connect().await?;
             let root = root_proxy(&connection).await?;
-            match resolve_path(root, os_path).await {
+            match resolve_path(&connection, root, os_path).await {
                 Some(proxy) => Ok(Some(node_for_proxy(&proxy, os_path).await)),
                 None => Ok(None),
             }
