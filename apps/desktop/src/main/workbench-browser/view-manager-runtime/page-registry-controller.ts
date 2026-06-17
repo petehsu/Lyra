@@ -48,6 +48,15 @@ import {
   toInitialRuntimeState,
   toNativeInputEvent
 } from "./normalizers";
+import type {
+  WorkbenchBrowserPageContextMediaType,
+  WorkbenchBrowserPageContextMenuPayload
+} from "../../../shared/workbench-browser";
+import { executePageContextAction } from "./page-context-actions";
+import type { BrowserContextMenuLocale } from "../../../shared/browser-context-menu-labels";
+import { showNativePageContextMenu } from "./page-context-menu-native";
+
+import { resolvePageElementContextAtPoint } from "../page-element-context-resolver";
 import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
 
 type TopologySyncResult = {
@@ -60,7 +69,23 @@ type ListenerBudgetWebContents = WebContents & {
   readonly setMaxListeners?: (count: number) => void;
 };
 
-const MIN_BROWSER_PAGE_LISTENER_BUDGET = 128;
+const MIN_BROWSER_PAGE_LISTENER_BUDGET = 256;
+
+const normalizePageContextMediaType = (
+  value: string | undefined
+): WorkbenchBrowserPageContextMediaType => {
+  switch (value) {
+    case "image":
+    case "video":
+    case "audio":
+    case "canvas":
+    case "file":
+    case "plugin":
+      return value;
+    default:
+      return "none";
+  }
+};
 
 const ensureBrowserPageListenerBudget = (webContents: WebContents): void => {
   const candidate = webContents as ListenerBudgetWebContents;
@@ -159,6 +184,7 @@ type PageRegistryHost = {
     entry: ReturnType<typeof liveAgentTarget>
   ) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly unregisterBrowserPageResource: (tabId: string) => void;
+  readonly readBrowserContextMenuLocale: () => BrowserContextMenuLocale;
 };
 
 export const createPageRegistryController = (host: PageRegistryHost) => {
@@ -225,7 +251,12 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     return message.includes("ERR_ABORTED") || message.includes("(-3)");
   };
 
+  const markRuntimeAddressChanged = (entry: BrowserPageEntry): void => {
+    entry.runtimeAddressUpdatedAt = Date.now();
+  };
+
   const updateStableAddress = (entry: BrowserPageEntry, address: string): void => {
+    markRuntimeAddressChanged(entry);
     host.updateRuntimeState(entry, {
       address,
       title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? address
@@ -251,6 +282,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       });
       return;
     }
+    markRuntimeAddressChanged(entry);
     host.updateRuntimeState(entry, {
       address: target,
       isLoading: true,
@@ -323,6 +355,8 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         ...(restoredRuntime === undefined ? {} : { restoreReason: "activated" }),
         updatedAt: Date.now()
       },
+      runtimeAddressUpdatedAt: Date.now(),
+      lastTopologySyncAt: 0,
       disposeListeners: () => {
         host.cancelPendingAgentPageLoad(webContents);
         disposeDownloadTracking();
@@ -336,6 +370,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         webContents.removeAllListeners("did-frame-navigate");
         webContents.removeAllListeners("frame-created");
         webContents.removeAllListeners("console-message");
+        webContents.removeAllListeners("context-menu");
         webContents.removeAllListeners("before-mouse-event");
         webContents.removeAllListeners("before-input-event");
         webContents.removeAllListeners("focus");
@@ -455,13 +490,84 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       }
     });
 
+    webContents.on("context-menu", (event, params) => {
+      event.preventDefault();
+      void (async () => {
+        const layout = entry.layout ?? host.findLayout(entry.tabId);
+        const anchorX = (layout?.visible === true ? layout.x : 0) + params.x;
+        const anchorY = (layout?.visible === true ? layout.y : 0) + params.y;
+        const selectionText = normalizeString(params.selectionText);
+        const linkUrl = normalizeString(params.linkURL);
+        const linkText = normalizeString(params.linkText);
+        const srcUrl = normalizeString(params.srcURL);
+        const frameUrl = normalizeString(params.frameURL);
+        const mediaType = normalizePageContextMediaType(params.mediaType);
+        const elementContext = await resolvePageElementContextAtPoint(
+          webContents,
+          params.x,
+          params.y,
+          params.frame
+        );
+        const elementAriaLabel = normalizeString(params.altText)
+          ?? normalizeString(params.titleText)
+          ?? elementContext?.elementAriaLabel
+          ?? null;
+        const menu: WorkbenchBrowserPageContextMenuPayload = {
+          tabId: entry.tabId,
+          anchorX,
+          anchorY,
+          pageUrl: normalizeString(params.pageURL) ?? entry.runtime.address,
+          pageTitle: entry.runtime.title,
+          mediaType,
+          isEditable: params.isEditable === true,
+          canGoBack: entry.runtime.canGoBack,
+          canGoForward: entry.runtime.canGoForward,
+          ...(selectionText === null ? {} : { selectionText }),
+          ...(linkUrl === null ? {} : { linkUrl }),
+          ...(linkText === null ? {} : { linkText }),
+          ...(srcUrl === null ? {} : { srcUrl }),
+          ...(frameUrl === null ? {} : { frameUrl }),
+          ...(elementContext?.elementTag === undefined ? {} : { elementTag: elementContext.elementTag }),
+          ...(elementContext?.elementSelector === undefined ? {} : { elementSelector: elementContext.elementSelector }),
+          ...(elementContext?.elementId === undefined ? {} : { elementId: elementContext.elementId }),
+          ...(elementContext?.elementRole === undefined ? {} : { elementRole: elementContext.elementRole }),
+          ...(elementAriaLabel === null ? {} : { elementAriaLabel })
+        };
+        const window = host.getWindow();
+        if (window === null || window.isDestroyed()) {
+          return;
+        }
+        const tabTitle =
+          entry.titleHint?.trim()
+          || entry.runtime.title?.trim()
+          || menu.pageTitle;
+        showNativePageContextMenu({
+          window,
+          entry,
+          menu,
+          tabTitle,
+          locale: host.readBrowserContextMenuLocale(),
+          host: {
+            publishEvent: host.publishEvent,
+            goBack,
+            goForward,
+            reload
+          }
+        });
+      })();
+    });
+
     webContents.on("before-mouse-event", (event, mouse) => {
       const inputType =
         mouse.type === "mouseMove"
           ? "mouse_move"
           : mouse.type === "mouseWheel" ? "wheel" : "mouse_down";
       host.handleSharedControlInput(entry.tabId, inputType, event);
-      if (mouse.type === "mouseDown") {
+      if (mouse.type === "mouseDown" && mouse.button !== "right") {
+        host.publishEvent({
+          kind: "request-activate-tab",
+          tabId: entry.tabId
+        });
         host.markUserInputDirty(entry.tabId);
         host.syncPerformanceRuntimeState(entry.runtime, entry);
         host.hideTransientChromePopover(entry);
@@ -615,12 +721,13 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       if (entry === null) {
         continue;
       }
-      if (entry.requestedAddress !== page.address) {
-        entry.requestedAddress = page.address;
-      }
+      const previousTopologySyncAt = entry.lastTopologySyncAt;
+      const runtimeAddressChangedSinceLastSync =
+        entry.runtimeAddressUpdatedAt > previousTopologySyncAt;
+      const currentUrl = normalizeAddress(entry.webContents.getURL());
+
       if (entry.runtime.address !== page.address) {
         if (areNavigationAddressesEquivalent(entry.runtime.address, page.address)) {
-          const currentUrl = normalizeAddress(entry.webContents.getURL());
           host.updateRuntimeState(entry, {
             address:
               currentUrl !== null && areNavigationAddressesEquivalent(currentUrl, page.address)
@@ -628,12 +735,21 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
                 : page.address,
             isActive: page.isActive
           });
+        } else if (
+          runtimeAddressChangedSinceLastSync
+          && currentUrl !== null
+          && areNavigationAddressesEquivalent(currentUrl, entry.runtime.address)
+        ) {
+          // In-page navigation (e.g. translation overlays) updated runtime before tab model.
+          host.updateRuntimeState(entry, { isActive: page.isActive });
         } else {
+          entry.requestedAddress = page.address;
           loadRequestedAddress(entry);
         }
       } else {
         host.updateRuntimeState(entry, { isActive: page.isActive });
       }
+      entry.lastTopologySyncAt = Date.now();
     }
 
     host.applyLayout();
@@ -858,6 +974,25 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     syncNavigationFlags(entry);
   };
 
+  const runPageContextAction = (
+    request: import("../../../shared/workbench-browser").WorkbenchBrowserExecutePageContextActionRequest
+  ): void => {
+    const entry = entries.get(request.tabId);
+    if (entry === undefined || entry.isDestroyed) {
+      return;
+    }
+    executePageContextAction(
+      {
+        publishEvent: host.publishEvent,
+        goBack,
+        goForward,
+        reload
+      },
+      entry,
+      request
+    );
+  };
+
   const reload = (tabId: string, ignoreCache = false): void => {
     const entry = entries.get(tabId);
     if (entry === undefined || entry.isDestroyed) {
@@ -993,6 +1128,31 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     }
   };
 
+  const resolvePageDragContextFromWebContents = (
+    webContents: WebContents
+  ): {
+    readonly tabId: string;
+    readonly pageUrl: string;
+    readonly pageTitle: string;
+  } | null => {
+    for (const entry of entries.values()) {
+      if (entry.isDestroyed || entry.webContents.id !== webContents.id) {
+        continue;
+      }
+      const pageUrl = entry.runtime.address.trim() || entry.requestedAddress.trim();
+      const pageTitle = entry.runtime.title.trim() || entry.titleHint?.trim() || pageUrl;
+      if (pageUrl.length === 0) {
+        return null;
+      }
+      return {
+        tabId: entry.tabId,
+        pageUrl,
+        pageTitle: pageTitle.length > 0 ? pageTitle : pageUrl
+      };
+    }
+    return null;
+  };
+
   const toggleDevToolsForActivePage = (): boolean => {
     const targetTabId = host.getActiveOrFocusedTabId();
     if (targetTabId === null) {
@@ -1037,8 +1197,10 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     openDebuggerSession,
     probeFrameDom,
     readPageState,
+    runPageContextAction,
     reload,
     requireEntry,
+    resolvePageDragContextFromWebContents,
     resolveFrameGlobalBounds,
     setElementPickerMode,
     stop,

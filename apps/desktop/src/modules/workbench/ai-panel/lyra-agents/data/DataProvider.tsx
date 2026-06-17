@@ -12,8 +12,14 @@
 // shape. See `MockDataProvider.tsx` for the reference implementation.
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
+import type {
+  AgentPageCitation,
+  AgentRollbackPreviewResponse,
+  AgentTranscriptCitation
+} from "../../../../../shared/agent";
+import type { ComposerInsertableCitation } from "../features/chat/message-citation";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
+import type { WorkbenchLocationControls } from "../../../location";
 import type {
   AgentAutomationSettings,
   AgentGoalItem,
@@ -28,6 +34,20 @@ import type {
   SessionMeta,
   TodoItem
 } from "../core/types";
+
+export type CitationScrollTarget = {
+  readonly messageId: string;
+  readonly blockId?: string | null;
+  readonly startOffset?: number | null;
+  /** Message window size before expanding to reveal the citation target. */
+  readonly visibleCountAtStart: number;
+  readonly token: number;
+};
+
+export type MessageWindowBudgetRequest = {
+  readonly heightBudgetPx: number;
+  readonly contentWidthPx: number;
+};
 
 export interface MessageWindowState {
   /** Number of source session messages represented by the current UI window. */
@@ -68,6 +88,9 @@ export interface DataProviderValue {
   /** Local-config-backed Lyra Agent permission mode controls rendered in the lyra-agents-composer toolbar. */
   permissionModeControls?: ComposerPermissionModeControls | null;
 
+  /** User-authorized physical location controls rendered in the composer toolbar. */
+  locationControls?: WorkbenchLocationControls | null;
+
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;
 
@@ -103,16 +126,87 @@ export interface DataProviderValue {
   sidePanel?: AgentSidePanel | null;
 
   /** Send a new user message. Returns a promise that resolves when delivered. */
-  sendMessage(text: string, images?: readonly AgentImageAttachment[]): Promise<void>;
+  sendMessage(
+    text: string,
+    images?: readonly AgentImageAttachment[],
+    citations?: readonly AgentTranscriptCitation[],
+    pageCitations?: readonly AgentPageCitation[],
+    fileCitations?: readonly import("../../../../../shared/agent").AgentFileCitation[],
+    segments?: readonly import("../features/chat/message-citation").ComposerSegment[]
+  ): Promise<void>;
+
+  /** Queue a transcript citation chip in the composer. */
+  addCitationToComposer(citation: AgentTranscriptCitation): void;
+
+  /** Queue a browser page citation chip in the composer. */
+  addPageCitationToComposer(citation: AgentPageCitation): void;
+
+  /** Resolve a drag payload dropped onto the AI panel and queue it in the composer. */
+  attachDragPayloadToComposer(dataTransfer: DataTransfer): Promise<boolean>;
+
+  /** Pending citation waiting to be inserted into the composer. */
+  readonly pendingCitation: ComposerInsertableCitation | null;
+
+  /** Bumps whenever a new citation is queued for the composer. */
+  readonly pendingCitationNonce: number;
+
+  /** Pending images waiting to be inserted into the composer. */
+  readonly pendingImages: readonly AgentImageAttachment[];
+
+  /** Bumps whenever new images are queued for the composer. */
+  readonly pendingImagesNonce: number;
+
+  /** Pending file attachments waiting to be inserted into the composer. */
+  readonly pendingFiles: readonly import("../features/chat/composer-file").AgentFileAttachment[];
+
+  /** Bumps whenever new file attachments are queued for the composer. */
+  readonly pendingFilesNonce: number;
+
+  /** Switch to a browser tab and reveal a cited page excerpt. */
+  navigateToPageCitation(citation: AgentPageCitation): Promise<void>;
+
+  /** Scroll the chat viewport to a prior message, expanding the UI window if needed. */
+  scrollToMessage(
+    messageId: string,
+    options?: {
+      readonly blockId?: string | null;
+      readonly startOffset?: number | null;
+    }
+  ): Promise<void>;
+
+  /** Active citation jump request consumed by ChatView after the target is visible. */
+  readonly citationScrollTarget: CitationScrollTarget | null;
+
+  /** Called by ChatView once the viewport has landed on the cited message. */
+  reportCitationScrollFinished(messageId: string): void;
+
+  /** Briefly highlight a message after jumping to a citation source. */
+  readonly citationHighlightMessageId: string | null;
 
   /** Expand the rendered chat window with older messages. */
-  loadEarlierMessages(): Promise<void>;
+  loadEarlierMessages(request: MessageWindowBudgetRequest): Promise<void>;
 
-  /** Capture the active Workbench browser page as an image attachment. */
-  captureBrowserScreenshot(): Promise<AgentImageAttachment | null>;
+  /** Size the initial/latest visible window from an adaptive height budget. */
+  syncMessageWindowBudget(request: MessageWindowBudgetRequest): Promise<void>;
+
+  /** Capture the active Workbench tab as an image attachment. */
+  captureWorkspaceScreenshot(): Promise<AgentImageAttachment | null>;
 
   /** Capture the current Lyra window as an image attachment. */
   captureWindowScreenshot(): Promise<AgentImageAttachment | null>;
+
+  /** Pick a file from the Lyra file manager and return an image or file attachment. */
+  pickFileFromFileManager(): Promise<
+    | { readonly kind: "image"; readonly attachment: AgentImageAttachment }
+    | { readonly kind: "file"; readonly attachment: import("../features/chat/composer-file").AgentFileAttachment }
+    | null
+  >;
+
+  /** Workspace tabs available for inline citation from the composer attach menu. */
+  readonly workspaceTabs: readonly import("../../../workspace-tabs/types").WorkspaceTab[];
+
+  /** Terminal tabs available for inline citation from the composer attach menu. */
+  readonly terminalTabs: readonly import("../../../terminal-dock/types").TerminalDockTab[];
 
   /** Cancel the currently running turn when available. */
   cancelTurn(): Promise<void>;
@@ -202,6 +296,9 @@ export interface DataProviderValue {
 
   /** True while the agent turn is still running. */
   readonly isTurnRunning: boolean;
+
+  /** Current turn activity state from the runtime, e.g. calling_model or waiting_for_tool. */
+  readonly followActivity: string | null;
 }
 
 const DataContext = createContext<DataProviderValue | null>(null);

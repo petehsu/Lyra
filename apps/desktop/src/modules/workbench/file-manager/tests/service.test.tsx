@@ -350,6 +350,11 @@ const createDesktopApi = (): {
     shellEvents: {
       onWindowStateChange: () => () => undefined
     },
+    screenshotPreview: {
+      present: async () => ({ previewId: null }),
+      dismiss: async () => undefined,
+      onEvent: () => () => undefined
+    },
     openExternal: async () => false,
     linuxCompat: {
       readStatus: async () => ({
@@ -503,6 +508,7 @@ const createDesktopApi = (): {
         storageCleared: false,
         snapshot: null
       }),
+      executePageContextAction: async () => undefined,
       searchInPage: async () => ({
         tabId: "browser-tab-test",
         address: "https://example.test/",

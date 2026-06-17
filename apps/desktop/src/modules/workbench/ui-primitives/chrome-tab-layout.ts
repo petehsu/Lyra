@@ -1,3 +1,8 @@
+import {
+  estimateTabTitleContentWidth,
+  type TabTitleWidthEstimate
+} from "../text-metrics";
+
 export type ChromeTabDensity = "regular" | "small" | "smaller" | "mini";
 
 export type ChromeTabLayoutItem = {
@@ -15,9 +20,11 @@ export type ChromeTabStripLayout = {
 };
 
 const TAB_CONTENT_MARGIN_PX = 9;
-const TAB_CONTENT_OVERLAP_PX = 1;
-const TAB_CONTENT_MIN_WIDTH_PX = 24;
-const TAB_CONTENT_MAX_WIDTH_PX = 240;
+const TAB_CONTENT_OVERLAP_PX = 0;
+const TAB_CONTENT_MIN_WIDTH_PX = 72;
+const TAB_CONTENT_MAX_WIDTH_PX = 220;
+const TAB_CONTENT_TITLE_CHAR_WIDTH_PX = 7;
+const TAB_CONTENT_TITLE_BASE_WIDTH_PX = 48;
 const TAB_SIZE_SMALL_PX = 84;
 const TAB_SIZE_SMALLER_PX = 60;
 const TAB_SIZE_MINI_PX = 48;
@@ -33,28 +40,60 @@ const densityFromContentWidth = (contentWidth: number): ChromeTabDensity => {
   return "regular";
 };
 
-const computeRegularWidths = (
-  tabCount: number,
-  contentWidth: number
-): readonly number[] => {
-  if (tabCount <= 0 || contentWidth <= 0) return [];
-  const cumulativeOverlap = Math.max(0, tabCount - 1) * TAB_CONTENT_OVERLAP_PX;
-  const targetWidth =
-    (contentWidth - TAB_CONTENT_MARGIN_PX * 2 + cumulativeOverlap) / tabCount;
-  const clampedTargetWidth = Math.max(
-    TAB_CONTENT_MIN_WIDTH_PX,
-    Math.min(TAB_CONTENT_MAX_WIDTH_PX, targetWidth)
-  );
-  const flooredTargetWidth = Math.floor(clampedTargetWidth);
-  const totalTabsWidth =
-    flooredTargetWidth * tabCount + TAB_CONTENT_MARGIN_PX * 2 - cumulativeOverlap;
-  let extraWidthRemaining = contentWidth - totalTabsWidth;
+const preferredTitleContentWidth = (
+  title: string,
+  titleWidthEstimate?: TabTitleWidthEstimate
+): number => {
+  if (titleWidthEstimate === undefined) {
+    return (
+      TAB_CONTENT_TITLE_BASE_WIDTH_PX
+      + title.trim().length * TAB_CONTENT_TITLE_CHAR_WIDTH_PX
+    );
+  }
+  return estimateTabTitleContentWidth(title, titleWidthEstimate);
+};
 
-  return Array.from({ length: tabCount }, () => {
-    const extraWidth =
-      flooredTargetWidth < TAB_CONTENT_MAX_WIDTH_PX && extraWidthRemaining > 0 ? 1 : 0;
-    if (extraWidthRemaining > 0) extraWidthRemaining -= 1;
-    return flooredTargetWidth + extraWidth;
+const computeRegularWidths = (
+  titles: readonly string[],
+  contentWidth: number,
+  titleWidthEstimate?: TabTitleWidthEstimate
+): readonly number[] => {
+  const tabCount = titles.length;
+  if (tabCount <= 0 || contentWidth <= 0) return [];
+  const preferredWidths = titles.map((title) =>
+    Math.max(
+      TAB_CONTENT_MIN_WIDTH_PX,
+      Math.min(
+        TAB_CONTENT_MAX_WIDTH_PX,
+        preferredTitleContentWidth(title, titleWidthEstimate)
+      )
+    )
+  );
+  const availableContentWidth = Math.max(
+    0,
+    contentWidth - TAB_CONTENT_MARGIN_PX * 2
+  );
+  const preferredTotalWidth = preferredWidths.reduce((sum, width) => sum + width, 0);
+  if (preferredTotalWidth <= availableContentWidth) {
+    return preferredWidths.map(Math.floor);
+  }
+
+  const minTotalWidth = TAB_CONTENT_MIN_WIDTH_PX * tabCount;
+  if (availableContentWidth <= minTotalWidth) {
+    return Array.from({ length: tabCount }, () => TAB_CONTENT_MIN_WIDTH_PX);
+  }
+
+  const shrinkableTotal = preferredWidths.reduce(
+    (sum, width) => sum + Math.max(0, width - TAB_CONTENT_MIN_WIDTH_PX),
+    0
+  );
+  const shrinkTarget = preferredTotalWidth - availableContentWidth;
+  return preferredWidths.map((width) => {
+    const shrinkable = Math.max(0, width - TAB_CONTENT_MIN_WIDTH_PX);
+    const shrink = shrinkableTotal <= 0
+      ? 0
+      : shrinkTarget * (shrinkable / shrinkableTotal);
+    return Math.floor(Math.max(TAB_CONTENT_MIN_WIDTH_PX, width - shrink));
   });
 };
 
@@ -66,7 +105,7 @@ const layoutFromContentWidths = (
   return contentWidths.map((contentWidth, index) => {
     const x = position - index * contentOverlap;
     const width = contentWidth + TAB_CONTENT_MARGIN_PX * 2;
-    position += contentWidth;
+    position += width;
     return { width, x, contentWidth };
   });
 };
@@ -91,24 +130,38 @@ const layoutStackedTabs = (
 
 export const computeChromeTabStripLayout = ({
   tabCount,
+  titles,
   stripWidth,
   addButtonWidth,
   activeIndex = 0,
-  stackedMode = false
+  stackedMode = false,
+  titleFont
 }: {
   readonly tabCount: number;
+  readonly titles?: readonly string[];
   readonly stripWidth: number;
   readonly addButtonWidth: number;
   readonly activeIndex?: number;
   readonly stackedMode?: boolean;
+  /** When set, tab widths use text-metrics instead of the char-width heuristic. */
+  readonly titleFont?: string;
 }): ChromeTabStripLayout => {
   const effectiveAddButtonWidth =
     addButtonWidth > 0 ? addButtonWidth : TAB_ADD_BUTTON_FALLBACK_WIDTH_PX;
   const contentWidth = Math.max(0, stripWidth - effectiveAddButtonWidth);
+  const effectiveTitles = Array.from({ length: tabCount }, (_, index) => titles?.[index] ?? "");
+  const titleWidthEstimate =
+    titleFont === undefined
+      ? undefined
+      : {
+          font: titleFont,
+          baseWidthPx: TAB_CONTENT_TITLE_BASE_WIDTH_PX,
+          charWidthFallbackPx: TAB_CONTENT_TITLE_CHAR_WIDTH_PX
+        };
   const items = stackedMode
     ? layoutStackedTabs(tabCount, Math.max(0, Math.min(tabCount - 1, activeIndex)))
     : layoutFromContentWidths(
-        computeRegularWidths(tabCount, contentWidth),
+        computeRegularWidths(effectiveTitles, contentWidth, titleWidthEstimate),
         TAB_CONTENT_OVERLAP_PX
       );
   const totalTabsWidth =

@@ -4,15 +4,27 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let text = string_opt(&payload, "text")
         .or_else(|| string_opt(&payload, "prompt"))
         .unwrap_or_default();
-    let images = payload
-        .get("images")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let inline_images = parse_inline_images(&payload);
+    let uses_inline_image_markers = text_has_inline_image_markers(&text);
+    if uses_inline_image_markers {
+        validate_inline_image_turn_commit(&text, &inline_images).map_err(AgentRuntimeError::Core)?;
+    }
+    let legacy_images = if uses_inline_image_markers {
+        Vec::new()
+    } else {
+        payload
+            .get("images")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let citations = parse_transcript_citations(&payload);
+    let page_citations = parse_page_citations(&payload);
+    let file_citations = parse_file_citations(&payload);
     let requested_session = string_opt(&payload, "sessionId");
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let mut user_message = user_message(text.clone(), images, now.clone());
+    let mut user_message = user_message(text.clone(), legacy_images.clone(), now.clone());
     let user_message_id = user_message
         .get("id")
         .and_then(Value::as_str)
@@ -75,6 +87,26 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
                 "reason": "soft_interrupt_new_user_message"
             }));
         }
+        if !citations.is_empty() {
+            let existing_messages = session
+                .snapshot
+                .get("messages")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let (accepted, rejected) =
+                validate_transcript_citations(&existing_messages, &citations);
+            apply_transcript_citations_to_user_message(&mut user_message, &accepted, &rejected);
+        }
+        if !page_citations.is_empty() {
+            apply_page_citations_to_user_message(&mut user_message, &page_citations);
+        }
+        if !file_citations.is_empty() {
+            apply_file_citations_to_user_message(&mut user_message, &file_citations);
+        }
+        if uses_inline_image_markers {
+            apply_inline_images_to_user_message(&mut user_message, &inline_images);
+        }
         let checkpoint = rollback_checkpoint(&session_id, &turn_id, &user_message_id, session);
         user_message["rollback"] = json!({
             "available": true,
@@ -87,7 +119,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         push_array(&mut session.snapshot, "messages", user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
-        session.snapshot["follow"] = json!({ "running": true, "activity": "Calling model" });
+        session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
         touch_session(session);
         session.runtime_turns.push(runtime_turn(
             &turn_id,
@@ -165,11 +197,16 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
     match model_result {
         Ok(result) => {
             let metadata = result.session_metadata();
+            let assistant_text = if result.ui_text_committed {
+                None
+            } else {
+                result.final_text
+            };
             finish_turn_with_metadata(
                 &session_id,
                 &turn_id,
                 "finished",
-                result.final_text,
+                assistant_text,
                 None,
                 metadata,
             )
@@ -367,8 +404,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             Vec::new()
         },
     });
+    let persona_context = read_host_persona_context(host_dispatcher.as_ref());
     let system_prompt = build_system_prompt(
         &runtime_context,
+        &persona_context,
         &active_skill_prompt(&active_skills),
         design_research_required,
         &combined_memory_prompt(&memory_records, &system_recall_records),
@@ -516,6 +555,35 @@ pub(crate) fn emit_assistant_text(session_id: &str, turn_id: &str, text: &str) -
     Some(message_id)
 }
 
+/// Commit assistant text to the factual UI timeline only for final answers.
+/// Tool-round preambles stay in the provider transcript and must not create chat bubbles.
+pub(crate) fn commit_visible_assistant_reply(
+    session_id: &str,
+    turn_id: &str,
+    reply: &mut crate::native_backend::provider::ModelReply,
+    streamed_message_id: &Option<String>,
+) -> bool {
+    if !reply.tool_calls.is_empty() {
+        return false;
+    }
+    if let Some(message_id) = streamed_message_id
+        .as_ref()
+        .filter(|message_id| !message_id.is_empty())
+    {
+        reply.ui_message_id = Some(message_id.clone());
+        return true;
+    }
+    if let Some(content) = reply
+        .content
+        .as_ref()
+        .filter(|content| !content.trim().is_empty())
+    {
+        reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
+        return reply.ui_message_id.is_some();
+    }
+    false
+}
+
 pub(crate) fn emit_assistant_message_placeholder(
     session_id: &str,
     turn_id: &str,
@@ -569,8 +637,14 @@ pub(crate) fn append_assistant_delta(
                 .ok_or_else(|| {
                     AgentRuntimeError::Core("session messages are invalid".to_string())
                 })?;
+            // Streaming deltas target the most recently appended assistant message,
+            // which lives at the tail of the array. Searching from the back finds it
+            // in O(1) for the common case instead of scanning the whole conversation
+            // on every token. The message id is unique, so the match is identical to a
+            // forward scan.
             let message = messages
                 .iter_mut()
+                .rev()
                 .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
                 .ok_or_else(|| {
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))

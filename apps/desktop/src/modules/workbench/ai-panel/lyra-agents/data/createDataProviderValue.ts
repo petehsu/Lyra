@@ -13,9 +13,24 @@ import type {
   TodoItem
 } from "../core/types";
 import { t } from "../core/i18n";
-import type { AgentRollbackPreviewResponse } from "../../../../../shared/agent";
+import type {
+  AgentFileCitation,
+  AgentPageCitation,
+  AgentRollbackPreviewResponse,
+  AgentTranscriptCitation
+} from "../../../../../shared/agent";
+import type { TerminalDockTab } from "../../../terminal-dock/types";
+import type { WorkspaceTab } from "../../../workspace-tabs/types";
+import type { AgentFileAttachment } from "../features/chat/composer-file";
+import type { ComposerInsertableCitation, ComposerSegment } from "../features/chat/message-citation";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
-import type { DataProviderValue, MessageWindowState } from "./DataProvider";
+import type { WorkbenchLocationControls } from "../../../location";
+import type {
+  CitationScrollTarget,
+  DataProviderValue,
+  MessageWindowBudgetRequest,
+  MessageWindowState
+} from "./DataProvider";
 
 export interface CreateDataProviderValueInput {
   session: SessionMeta;
@@ -27,6 +42,7 @@ export interface CreateDataProviderValueInput {
   permissions?: PermissionRequest[];
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
+  locationControls?: WorkbenchLocationControls | null;
   openModelSettings?: () => Promise<void>;
   browserFollowModeEnabled?: boolean;
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
@@ -41,10 +57,39 @@ export interface CreateDataProviderValueInput {
   canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
   revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
   sidePanel?: AgentSidePanel | null;
-  sendMessage?: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void>;
-  loadEarlierMessages?: () => Promise<void>;
-  captureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
+  sendMessage?: (
+    text: string,
+    images?: readonly AgentImageAttachment[],
+    citations?: readonly AgentTranscriptCitation[],
+    pageCitations?: readonly AgentPageCitation[],
+    fileCitations?: readonly AgentFileCitation[],
+    segments?: readonly ComposerSegment[]
+  ) => Promise<void>;
+  addCitationToComposer?: (citation: AgentTranscriptCitation) => void;
+  addPageCitationToComposer?: (citation: AgentPageCitation) => void;
+  attachDragPayloadToComposer?: (dataTransfer: DataTransfer) => Promise<boolean>;
+  pendingCitation?: ComposerInsertableCitation | null;
+  pendingCitationNonce?: number;
+  pendingImages?: readonly AgentImageAttachment[];
+  pendingImagesNonce?: number;
+  pendingFiles?: readonly AgentFileAttachment[];
+  pendingFilesNonce?: number;
+  navigateToPageCitation?: (citation: AgentPageCitation) => Promise<void>;
+  scrollToMessage?: DataProviderValue["scrollToMessage"];
+  citationScrollTarget?: CitationScrollTarget | null;
+  reportCitationScrollFinished?: DataProviderValue["reportCitationScrollFinished"];
+  citationHighlightMessageId?: string | null;
+  loadEarlierMessages?: (request: MessageWindowBudgetRequest) => Promise<void>;
+  syncMessageWindowBudget?: (request: MessageWindowBudgetRequest) => Promise<void>;
+  captureWorkspaceScreenshot?: () => Promise<AgentImageAttachment | null>;
   captureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
+  pickFileFromFileManager?: () => Promise<
+    | { readonly kind: "image"; readonly attachment: AgentImageAttachment }
+    | { readonly kind: "file"; readonly attachment: AgentFileAttachment }
+    | null
+  >;
+  workspaceTabs?: readonly WorkspaceTab[];
+  terminalTabs?: readonly TerminalDockTab[];
   cancelTurn?: () => Promise<void>;
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
@@ -78,6 +123,7 @@ export interface CreateDataProviderValueInput {
   denyPermission?: (id: string) => Promise<void>;
   isMock?: boolean;
   isTurnRunning?: boolean;
+  followActivity?: string | null;
 }
 
 const resolved = Promise.resolve();
@@ -97,6 +143,7 @@ export function createDataProviderValue({
   permissions = [],
   modelControls = null,
   permissionModeControls = null,
+  locationControls = null,
   openModelSettings = () => resolved,
   browserFollowModeEnabled = false,
   setBrowserFollowMode = () => resolved,
@@ -110,9 +157,27 @@ export function createDataProviderValue({
   },
   sidePanel = null,
   sendMessage = () => resolved,
+  addCitationToComposer = () => undefined,
+  addPageCitationToComposer = () => undefined,
+  attachDragPayloadToComposer = async () => false,
+  pendingCitation = null,
+  pendingCitationNonce = 0,
+  pendingImages = [],
+  pendingImagesNonce = 0,
+  pendingFiles = [],
+  pendingFilesNonce = 0,
+  navigateToPageCitation = () => resolved,
+  scrollToMessage = () => resolved,
+  citationScrollTarget = null,
+  reportCitationScrollFinished = () => undefined,
+  citationHighlightMessageId = null,
   loadEarlierMessages = () => resolved,
-  captureBrowserScreenshot = () => Promise.resolve(null),
+  syncMessageWindowBudget = () => resolved,
+  captureWorkspaceScreenshot = () => Promise.resolve(null),
   captureWindowScreenshot = () => Promise.resolve(null),
+  pickFileFromFileManager = () => Promise.resolve(null),
+  workspaceTabs = [],
+  terminalTabs = [],
   cancelTurn = () => resolved,
   previewRollback = () => Promise.resolve({
     sessionId: "",
@@ -148,6 +213,7 @@ export function createDataProviderValue({
   denyPermission = () => resolved,
   isMock = false,
   isTurnRunning = false,
+  followActivity = null,
 }: CreateDataProviderValueInput): DataProviderValue {
   return {
     session,
@@ -159,6 +225,7 @@ export function createDataProviderValue({
     permissions,
     modelControls,
     permissionModeControls,
+    locationControls,
     openModelSettings,
     browserFollowModeEnabled,
     setBrowserFollowMode,
@@ -170,9 +237,27 @@ export function createDataProviderValue({
     revealSensitiveValueToUser,
     sidePanel,
     sendMessage,
+    addCitationToComposer,
+    addPageCitationToComposer,
+    attachDragPayloadToComposer,
+    pendingCitation,
+    pendingCitationNonce,
+    pendingImages,
+    pendingImagesNonce,
+    pendingFiles,
+    pendingFilesNonce,
+    navigateToPageCitation,
+    scrollToMessage,
+    citationScrollTarget,
+    reportCitationScrollFinished,
+    citationHighlightMessageId,
     loadEarlierMessages,
-    captureBrowserScreenshot,
+    syncMessageWindowBudget,
+    captureWorkspaceScreenshot,
     captureWindowScreenshot,
+    pickFileFromFileManager,
+    workspaceTabs,
+    terminalTabs,
     cancelTurn,
     previewRollback,
     rollbackMessage,
@@ -201,5 +286,6 @@ export function createDataProviderValue({
     denyPermission,
     isMock,
     isTurnRunning,
+    followActivity,
   };
 }

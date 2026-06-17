@@ -73,7 +73,9 @@ describe("useWorkbenchProjectBindChooser", () => {
       useWorkbenchProjectBindChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
-        confirmLabel: "Bind"
+        confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory"
       })
     );
 
@@ -118,7 +120,9 @@ describe("useWorkbenchProjectBindChooser", () => {
       useWorkbenchProjectBindChooser({
         fileManagerModel: fileManager.model,
         tabsModel: tabs.model,
-        confirmLabel: "Bind"
+        confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory"
       })
     );
 

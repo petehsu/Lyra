@@ -183,4 +183,35 @@ describe("browser tab strip render model", () => {
       isCollapsed: false
     });
   });
+
+  test("exposes a spacer for overflowing absolute-positioned tabs", () => {
+    const model = createBrowserTabStripRenderModel({
+      tabs: [
+        createTab("a", "A"),
+        createTab("b", "Very long page title")
+      ],
+      activeTabId: "a",
+      splitGroupTabIds: [],
+      stackedMode: false,
+      closeTabLabel: "Close",
+      isTerminalDropActive: false,
+      dropIndicatorX: null,
+      isSplitDropActive: false,
+      splitDropTargetTabId: null,
+      workspaceDragTabId: null,
+      rightDragPreview: null,
+      layout: {
+        density: "regular",
+        contentWidth: 180,
+        totalTabsWidth: 260,
+        addButtonX: 180,
+        items: [
+          { width: 90, x: 0, contentWidth: 72 },
+          { width: 170, x: 90, contentWidth: 152 }
+        ]
+      }
+    });
+
+    expect(model.listSpacerStyle).toEqual({ width: "260px" });
+  });
 });

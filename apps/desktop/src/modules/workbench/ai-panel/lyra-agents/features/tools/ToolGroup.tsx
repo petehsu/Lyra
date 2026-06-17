@@ -4,7 +4,7 @@ import {
   CheckCircleIcon,
   ChevronIcon,
   ErrorCircleIcon,
-  ToolIcon,
+  ToolCallIcon,
 } from "../../components/Icons";
 import { RenderSurfaceCard, ToolDetails } from "./ToolDetails";
 import { TickingNumber } from "../../components/TickingNumber";
@@ -130,7 +130,7 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
         <span ref={anchorRef} className="lyra-agents-tool-group-icon-slot">
           <span className="lyra-agents-tool-group-lead">
             {isRunning && currentCall ? (
-              <ToolIcon kind={currentCall.kind} />
+              <ToolCallIcon call={currentCall} />
             ) : hasError ? (
               <ErrorCircleIcon />
             ) : (
@@ -217,7 +217,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
       >
         <span ref={anchorRef} className="lyra-agents-icon-swap">
           <span className="lyra-agents-icon-swap-tool">
-            <ToolIcon kind={call.kind} />
+            <ToolCallIcon call={call} />
           </span>
           <span className="lyra-agents-icon-swap-chevron">
             <ChevronIcon open={open} />

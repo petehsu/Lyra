@@ -1984,6 +1984,7 @@ dependencies = [
  "futures",
  "glob",
  "hmac",
+ "image",
  "lyra-agent-api",
  "lyra-agent-kernel",
  "lyra-agent-plugins",

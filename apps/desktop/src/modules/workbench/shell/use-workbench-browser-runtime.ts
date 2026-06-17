@@ -509,6 +509,18 @@ export const useWorkbenchBrowserRuntime = ({
         return;
       }
 
+      if (event.kind === "request-activate-tab") {
+        const tabExists = tabsModel.tabs.some((tab) => tab.id === event.tabId);
+        if (
+          tabExists
+          && tabsModel.activeTabId !== event.tabId
+          && embeddedBrowserPageIds.has(event.tabId) === false
+        ) {
+          tabsModel.setActiveTab(event.tabId);
+        }
+        return;
+      }
+
       if (event.kind === "request-open-tab") {
         tabsModel.openPageInNewTab(
           event.address,

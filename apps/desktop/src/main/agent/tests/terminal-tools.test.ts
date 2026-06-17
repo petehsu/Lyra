@@ -23,6 +23,7 @@ vi.mock("electron", () => ({
 import type { LyraRuntimeClient } from "../../runtime-client";
 import type { WorkbenchObservationService } from "../../workbench-observation/types";
 import { createAgentIpcBridge } from "../service";
+import { createWorkbenchStateMock } from "./workbench-state-mock";
 import {
   TERMINAL_AGENT_TOOL_NAMES,
   mapTerminalAgentTool,
@@ -332,7 +333,8 @@ describe("terminal agent tools", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => ({ openTerminalPane: vi.fn() }) as never
+      getWorkbenchObservationService: () => ({ openTerminalPane: vi.fn() }) as never,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const created = await registered.get("terminal.create")?.({
@@ -443,7 +445,8 @@ describe("terminal agent tools", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("terminal.events.read")?.({
@@ -513,7 +516,8 @@ describe("terminal agent tools", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("terminal.input.execute")?.({
@@ -579,7 +583,8 @@ describe("terminal agent tools", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("terminal.input.execute")?.({
@@ -631,7 +636,8 @@ describe("terminal agent tools", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("terminal.input.execute")?.({

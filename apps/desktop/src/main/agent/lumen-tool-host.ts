@@ -1239,7 +1239,7 @@ export const createLumenToolHost = ({
       if ("imageBase64" in capture === false) {
         return withLumenTargetIds(capture, tabId);
       }
-      const imageArtifact = materializeLumenCapture(storageRoot, tabId, capture);
+      const imageArtifact = await materializeLumenCapture(storageRoot, tabId, capture);
       return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenSee",

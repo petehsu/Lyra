@@ -105,7 +105,16 @@ pub(crate) fn new_session(
     let title = title
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| DEFAULT_SESSION_TITLE.to_string());
-    let working_dir = working_dir.unwrap_or_default();
+    // Every session is bound to a working directory. When the caller does not
+    // specify one (the user sent a message without choosing a project), default
+    // to the user's home directory rather than leaving the session unbound. The
+    // `workingDirIsHome` flag lets the UI label the binding "Home" instead of
+    // showing the home folder's basename (the OS username).
+    let requested_dir = working_dir
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let working_dir_is_home = requested_dir.is_none();
+    let working_dir = requested_dir.unwrap_or_else(home_working_dir);
     let project_bound = !working_dir.trim().is_empty();
     let snapshot = json!({
         "id": id,
@@ -113,6 +122,7 @@ pub(crate) fn new_session(
         "sessionKind": kind,
         "workingDir": working_dir,
         "projectBound": project_bound,
+        "workingDirIsHome": working_dir_is_home,
         "messages": [],
         "tools": [],
         "todos": [],
@@ -144,6 +154,15 @@ pub(crate) fn new_session(
     }
 }
 
+// Resolve the user's home directory across platforms, falling back to the
+// process working directory if the home directory cannot be determined.
+pub(crate) fn home_working_dir() -> String {
+    dirs::home_dir()
+        .map(|path| path.display().to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(current_working_dir)
+}
+
 pub(crate) fn current_working_dir() -> String {
     env::current_dir()
         .map(|path| path.display().to_string())
@@ -155,6 +174,7 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
     let root = state.root.clone();
+    let active_before = state.active_session_id.clone();
     let id = state.resolve_session_id(string_opt(&payload, "sessionId"))?;
     let session = state
         .sessions
@@ -165,7 +185,17 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
         touch_session(session);
     }
     let snapshot = session.snapshot.clone();
-    state.save_state()?;
+    let session_dirty = session.dirty;
+    // A pure read changes nothing on disk, so skip the state-file write this path
+    // used to perform on every UI poll. Persist only when there is something to
+    // persist: this session is dirty (reconciliation, or unsaved prior writes), or
+    // resolve_session_id switched the active session. save_state already skips
+    // unchanged session files; this additionally skips the redundant state.json
+    // write on idle reads while preserving every write the old code would make for
+    // this session.
+    if session_dirty || state.active_session_id != active_before {
+        state.save_state()?;
+    }
     drop(state);
     let mut snapshot = snapshot;
     snapshot["memoryCandidates"] = json!(
@@ -280,8 +310,31 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
         .sessions
         .get_mut(&id)
         .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+    // Re-binding a session to a different project is intentionally not supported:
+    // a session's accumulated tool history, file-read state, and rollback
+    // checkpoints are all relative to its original root, so switching roots would
+    // silently desynchronize them. Once a session is bound to a *real* project the
+    // binding is permanent. A home-defaulted session (projectBound=true but
+    // workingDirIsHome=true) may still be bound to a real project exactly once.
+    // The UI removes the change-project affordance; this is the matching guard.
+    let project_bound = session
+        .snapshot
+        .get("projectBound")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let is_home = session
+        .snapshot
+        .get("workingDirIsHome")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if project_bound && !is_home {
+        return Err(AgentRuntimeError::Core(
+            "session is already bound to a project and cannot be rebound".to_string(),
+        ));
+    }
     set_string(&mut session.snapshot, "workingDir", working_dir);
     set_bool(&mut session.snapshot, "projectBound", true);
+    set_bool(&mut session.snapshot, "workingDirIsHome", false);
     touch_session(session);
     let snapshot = session.snapshot.clone();
     state.save_state()?;

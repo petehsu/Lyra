@@ -18,16 +18,33 @@ export const agentSessionToSessionMeta = (
 ): SessionMeta => {
   const workingDir = normalizeSessionWorkingDir(session?.workingDir);
   const projectBound = session?.projectBound ?? false;
+  const workingDirIsHome = session?.workingDirIsHome ?? false;
   return {
     id: session?.id ?? null,
     title: session?.title ?? "Lyra Agent",
-    project: projectBound ? projectNameFromWorkingDir(workingDir) : "",
+    // Home-bound sessions show "Home" (handled by the UI), not the home folder
+    // basename, so leave the project name empty for them.
+    project: projectBound && !workingDirIsHome ? projectNameFromWorkingDir(workingDir) : "",
     workingDir,
     projectBound,
+    workingDirIsHome,
     automation: session?.automation ?? null,
     totalAdditions: 0,
     totalDeletions: 0
   };
+};
+
+// Surface a draft tab's chosen working directory on the session meta before a
+// session is backed by the runtime, so the composer/empty-state can show the
+// project name. The draft is not a real binding (projectBound stays false); the
+// runtime still treats first-message creation as the moment of binding.
+export const agentSessionMetaWithDraftWorkingDir = (
+  meta: SessionMeta,
+  draftWorkingDir: string | null | undefined
+): SessionMeta => {
+  const trimmed = typeof draftWorkingDir === "string" ? draftWorkingDir.trim() : "";
+  if (trimmed.length === 0) return meta;
+  return { ...meta, workingDir: trimmed, project: projectNameFromWorkingDir(trimmed) };
 };
 
 export const agentSessionToSidePanel = (
@@ -105,6 +122,9 @@ export const agentModelsToModelOptions = (
       label: model.label,
       model: model.model,
       provider: model.providerLabel ?? model.provider ?? null,
+      providerId: model.providerId ?? null,
+      providerKey: model.providerKey ?? null,
       detail: model.detail ?? model.apiMethod ?? null,
-      available: model.available
+      available: model.available,
+      enabled: model.enabled
     }));

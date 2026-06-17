@@ -194,6 +194,8 @@ pub(crate) struct NativeProviderModel {
     pub(crate) supports_tool_calling: bool,
     #[serde(default = "default_true")]
     pub(crate) supports_streaming: bool,
+    #[serde(default = "default_true")]
+    pub(crate) enabled: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -759,7 +759,10 @@ export const syncTerminalSnapshotsState = (
 };
 
 const toRestoreRequest = (state: TerminalDockState): { readonly sessions: readonly TerminalCreateRequest[] } => {
-  const sessions = Object.values(state.panes).map((pane) => ({
+  // One-shot command tabs re-run on first pane mount; bulk restore would respawn them twice.
+  const sessions = Object.values(state.panes)
+    .filter((pane) => pane.mode !== "command")
+    .map((pane) => ({
     sessionId: pane.sessionId,
     title: pane.title,
     ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),

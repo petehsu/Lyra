@@ -52,6 +52,15 @@ pub(crate) fn execute_model_tool_with_runtime(
             "cancelled": true,
         });
     }
+    if call.name == LYRA_SESSION_READ_MESSAGE_TOOL {
+        return execute_session_read_message_model_tool(
+            session_id,
+            turn_id,
+            cancellation,
+            &call,
+            &started_at,
+        );
+    }
     if tool_fs::is_tool_fs_model_tool(&call.name) {
         return tool_fs::execute_tool_fs_model_tool(
             session_id,
@@ -383,6 +392,90 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
             context.arguments,
             Some(output.clone()),
             &started_at,
+            Some(now()),
+        ),
+        "toolFinished",
+    );
+    output
+}
+
+fn execute_session_read_message_model_tool(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    call: &ModelToolCall,
+    started_at: &str,
+) -> Value {
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            &call.id,
+            LYRA_SESSION_READ_MESSAGE_TOOL,
+            "Read session message",
+            "running",
+            call.arguments.clone(),
+            None,
+            started_at,
+            None,
+        ),
+        "toolStarted",
+    );
+    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        let output = tool_failure_output(
+            "cancelled",
+            "Lyra tool call was cancelled.",
+            "Stop this tool call and continue only after a new user turn.",
+            None,
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                &call.id,
+                LYRA_SESSION_READ_MESSAGE_TOOL,
+                "Read session message",
+                "cancelled",
+                call.arguments.clone(),
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
+    let output = match execute_session_read_message_tool(session_id, &call.arguments) {
+        Ok(success) => budgeted_tool_output(
+            session_id,
+            turn_id,
+            &call.id,
+            success.content,
+            success.raw,
+            success.recommended_next_action,
+        ),
+        Err(failure) => tool_failure_output(
+            &failure.code,
+            &failure.message,
+            &failure.recommended_next_action,
+            failure.detail,
+        ),
+    };
+    record_tool_activity(
+        session_id,
+        turn_id,
+        tool_activity(
+            &call.id,
+            LYRA_SESSION_READ_MESSAGE_TOOL,
+            "Read session message",
+            if output.get("error").is_some() {
+                "failed"
+            } else {
+                "completed"
+            },
+            call.arguments.clone(),
+            Some(output.clone()),
+            started_at,
             Some(now()),
         ),
         "toolFinished",

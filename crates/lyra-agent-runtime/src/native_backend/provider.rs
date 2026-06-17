@@ -61,6 +61,7 @@ pub(crate) struct ModelLoopResult {
     pub(crate) metadata: Option<Value>,
     pub(crate) provider_transcript: Vec<Value>,
     pub(crate) provider_replay_items: Vec<Value>,
+    pub(crate) ui_text_committed: bool,
 }
 
 impl ModelLoopResult {
@@ -70,6 +71,7 @@ impl ModelLoopResult {
             metadata: None,
             provider_transcript: Vec::new(),
             provider_replay_items: Vec::new(),
+            ui_text_committed: false,
         }
     }
 
@@ -79,7 +81,13 @@ impl ModelLoopResult {
             metadata: Some(metadata),
             provider_transcript: Vec::new(),
             provider_replay_items: Vec::new(),
+            ui_text_committed: false,
         }
+    }
+
+    fn with_ui_text_committed(mut self, ui_text_committed: bool) -> Self {
+        self.ui_text_committed = ui_text_committed;
+        self
     }
 
     fn with_provider_transcript(mut self, provider_transcript: Vec<Value>) -> Self {
@@ -352,7 +360,20 @@ pub(crate) fn run_model_loop(
                 emit_structured_finish_event(session_id, turn_id, "structuredFinishProtocolRetry");
                 continue;
             }
+            let mut final_assistant = json!({
+                "role": "assistant",
+                "content": final_text,
+            });
+            if let Some(reasoning_content) = reply
+                .reasoning_content
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())
+            {
+                final_assistant["reasoning_content"] = Value::String(reasoning_content.clone());
+                provider_transcript.push(final_assistant);
+            }
             return Ok(ModelLoopResult::final_text(final_text)
+                .with_ui_text_committed(reply.ui_message_id.is_some())
                 .with_provider_transcript(provider_transcript)
                 .with_provider_replay_items(provider_replay_items));
         }
@@ -371,9 +392,6 @@ pub(crate) fn run_model_loop(
                 .with_provider_replay_items(provider_replay_items));
         }
         let assistant_content = reply.content.unwrap_or_default();
-        if !assistant_content.trim().is_empty() {
-            emit_assistant_text(session_id, turn_id, &assistant_content);
-        }
         let assistant_tool_calls = tool_calls
             .iter()
             .map(|call| {
@@ -549,6 +567,7 @@ pub(crate) fn synthesize_after_progress_guard(
     }
     Ok(
         ModelLoopResult::final_text(reply.content.unwrap_or_default())
+            .with_ui_text_committed(reply.ui_message_id.is_some())
             .with_provider_transcript(provider_transcript)
             .with_provider_replay_items(reply.provider_replay_items),
     )
@@ -1014,13 +1033,13 @@ fn call_model_once_inner(
     }
     let mut reply = call_model_once_non_streaming(provider, model, messages, tools)?;
     normalize_model_reply_protocol(&mut reply, tools)?;
-    if commit_assistant_text
-        && let Some(content) = reply
-            .content
-            .as_ref()
-            .filter(|content| !content.trim().is_empty())
-    {
-        reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &None,
+        );
     }
     Ok(reply)
 }
@@ -1342,6 +1361,9 @@ fn build_openai_compatible_request(
     tools: &[Value],
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    if providers::routes::mimo::is_mimo_route(&provider.route_id) {
+        providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
+    }
     let body = openai_chat::build_request_body(model, messages, tools, streaming);
     let client = http_client_builder(Duration::from_secs(120))
         .build()
@@ -1428,7 +1450,14 @@ fn build_anthropic_messages_request(
     tools: &[Value],
     streaming: bool,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
-    let body = anthropic_messages::build_request_body(model, messages, tools, streaming)?;
+    if providers::routes::mimo::is_mimo_route(&provider.route_id) {
+        providers::routes::mimo::validate_thinking_replay(messages, model, tools)?;
+    }
+    let mut body = anthropic_messages::build_request_body(model, messages, tools, streaming)?;
+    if providers::routes::mimo::is_anthropic_route(&provider.route_id) {
+        let tool_calling = !tools.is_empty();
+        providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
+    }
     let client = http_client_builder(Duration::from_secs(120))
         .build()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
@@ -1511,7 +1540,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let buffer_assistant_text = !commit_assistant_text || !tools.is_empty();
+    let buffer_assistant_text = !tools.is_empty();
     let allowed_tool_names = openai_chat::tool_name_set(tools);
 
     for line in reader.lines() {
@@ -1564,23 +1593,25 @@ fn parse_streaming_response_with_commit<R: BufRead>(
         ));
     }
 
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
             .then_some(state.reasoning_content),
         tool_calls,
-        ui_message_id: ui_message_id.filter(|id| !id.is_empty()),
+        ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
     };
     normalize_model_reply_protocol(&mut reply, tools)?;
-    if commit_assistant_text
-        && buffer_assistant_text
-        && let Some(content) = reply
-            .content
-            .as_ref()
-            .filter(|content| !content.trim().is_empty())
-    {
-        reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
     }
     Ok(reply)
 }
@@ -1726,6 +1757,7 @@ fn textual_tool_name_candidates(allowed_tool_names: &HashSet<String>) -> HashSet
         names.insert(name.to_string());
     }
     names.insert(LYRA_TURN_FINISH_TOOL.to_string());
+    names.insert(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }
 

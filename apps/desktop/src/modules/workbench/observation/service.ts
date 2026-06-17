@@ -10,6 +10,7 @@ import type {
   WorkbenchObservationQueryRequest,
   WorkbenchObservationQueryResult
 } from "../../../shared/workbench-observation";
+import { shouldSuppressAgentTabActivation } from "../workspace-tabs/tab-activation-coordinator";
 import type { WorkbenchObservationDependencies } from "./types";
 import { listObservedTabs, readObservedLocalTab } from "./local-tab-readers";
 import { readObservedWorkspace } from "./workspace-readers";
@@ -259,7 +260,17 @@ export const attachWorkbenchObservationBridge = (
               `Workbench tab not found: ${tabId}`
             );
           }
-          dependencies.tabsModel.setActiveTab(tabId);
+          if (shouldSuppressAgentTabActivation()) {
+            return {
+              requestId,
+              ok: true,
+              result: {
+                tabId,
+                activeTabId: dependencies.tabsModel.activeTabId
+              }
+            };
+          }
+          dependencies.tabsModel.setActiveTab(tabId, { source: "agent" });
           return {
             requestId,
             ok: true,

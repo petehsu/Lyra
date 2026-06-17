@@ -100,7 +100,8 @@ const agentModels = {
       detail: "configured",
       supportsImageInput: true,
       supportsToolCalling: true,
-      available: true
+      available: true,
+      enabled: true
     },
     {
       id: "gpt-5",
@@ -114,7 +115,8 @@ const agentModels = {
       detail: "configured",
       supportsImageInput: true,
       supportsToolCalling: true,
-      available: true
+      available: true,
+      enabled: true
     },
     {
       id: "unconfigured-model",
@@ -128,7 +130,8 @@ const agentModels = {
       detail: "not configured",
       supportsImageInput: false,
       supportsToolCalling: false,
-      available: false
+      available: false,
+      enabled: true
     }
   ],
   routes: [],
@@ -926,22 +929,56 @@ describe("AiPanelSurface", () => {
     expect(screen.queryByRole("button", { name: "Configure model" })).not.toBeInTheDocument();
   });
 
-  test("binds the current session to a real project directory from the header", async () => {
-    const { api, bindProject } = createDesktopApi();
+  test("binds a home-defaulted backing session to a real project from the chip", async () => {
+    const { api, bindProject, setReadSnapshot } = createDesktopApi();
     const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Lyra");
+    // A backing session exists but is bound to Home by default, so the chip
+    // (labelled "Home") still binds it to a real project.
+    setReadSnapshot({
+      ...snapshotWithConversation,
+      workingDir: "/Users/petehsu",
+      projectBound: true,
+      workingDirIsHome: true
+    });
     renderPanel(api, requestProjectBind);
 
-    await screen.findByText("新会话");
-    fireEvent.click(screen.getByLabelText("Bind Project"));
+    const chip = await screen.findByLabelText("Home");
+    expect(chip).not.toBeDisabled();
+    fireEvent.click(chip);
 
     await waitFor(() => {
-      expect(requestProjectBind).toHaveBeenCalledWith(undefined);
+      expect(requestProjectBind).toHaveBeenCalled();
       expect(bindProject).toHaveBeenCalledWith({
         sessionId: "session-1",
         workingDir: "/Users/petehsu/Documents/Lyra"
       });
     });
-    expect(await screen.findByText("Lyra")).toBeInTheDocument();
+  });
+
+  test("opens the bound project tree from the composer project chip", async () => {
+    const { api, bindProject, setReadSnapshot } = createDesktopApi();
+    const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Other");
+    const openProjectTree = vi.fn();
+    setReadSnapshot({
+      ...snapshot,
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true,
+      workingDirIsHome: false
+    });
+    renderPanel(api, requestProjectBind, openProjectTree);
+
+    const projectChip = await screen.findByLabelText("Lyra");
+    expect(projectChip).not.toBeDisabled();
+    fireEvent.click(projectChip);
+
+    await waitFor(() => {
+      expect(openProjectTree).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        workingDir: "/Users/petehsu/Documents/Lyra"
+      });
+    });
+    expect(requestProjectBind).not.toHaveBeenCalled();
+    expect(bindProject).not.toHaveBeenCalled();
   });
 
   test("new sessions do not inherit the current bound project directory", async () => {
@@ -953,7 +990,7 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api);
 
-    await screen.findByText("Lyra");
+    await screen.findByLabelText("New session");
     fireEvent.click(screen.getByLabelText("New session"));
 
     await waitFor(() => {
@@ -963,24 +1000,7 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("disables project binding while a turn is running", async () => {
-    const { api, bindProject, setReadSnapshot } = createDesktopApi();
-    const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Lyra");
-    setReadSnapshot({
-      ...snapshot,
-      follow: { running: true, activity: "Streaming" },
-      turnStatus: "running"
-    });
-    renderPanel(api, requestProjectBind);
-
-    const bindButton = await screen.findByLabelText("Bind Project");
-    expect(bindButton).toBeDisabled();
-    fireEvent.click(bindButton);
-    expect(requestProjectBind).not.toHaveBeenCalled();
-    expect(bindProject).not.toHaveBeenCalled();
-  });
-
-  test("opens the bound project tree from the header even while a turn is running", async () => {
+  test("keeps project tree out of the header while a project is bound", async () => {
     const { api, bindProject, setReadSnapshot } = createDesktopApi();
     const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Other");
     const openProjectTree = vi.fn();
@@ -993,63 +1013,11 @@ describe("AiPanelSurface", () => {
     });
     renderPanel(api, requestProjectBind, openProjectTree);
 
-    const openButton = await screen.findByLabelText("Open Project Tree");
-    expect(openButton).not.toBeDisabled();
-    fireEvent.click(openButton);
-
-    await waitFor(() => {
-      expect(openProjectTree).toHaveBeenCalledWith({
-        sessionId: "session-1",
-        workingDir: "/Users/petehsu/Documents/Lyra"
-      });
-    });
+    await screen.findByLabelText("More");
+    expect(screen.queryByRole("button", { name: "Open Project Tree" })).not.toBeInTheDocument();
+    expect(openProjectTree).not.toHaveBeenCalled();
     expect(requestProjectBind).not.toHaveBeenCalled();
     expect(bindProject).not.toHaveBeenCalled();
-  });
-
-  test("allows first project binding after user messages when the session is unbound", async () => {
-    const { api, bindProject, setReadSnapshot } = createDesktopApi();
-    const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Lyra");
-    setReadSnapshot({
-      ...snapshotWithConversation,
-      workingDir: "/",
-      projectBound: false
-    });
-    renderPanel(api, requestProjectBind);
-
-    const bindButton = await screen.findByLabelText("Bind Project");
-    expect(bindButton).not.toBeDisabled();
-    fireEvent.click(bindButton);
-
-    await waitFor(() => {
-      expect(requestProjectBind).toHaveBeenCalledWith(undefined);
-      expect(bindProject).toHaveBeenCalledWith({
-        sessionId: "session-1",
-        workingDir: "/Users/petehsu/Documents/Lyra"
-      });
-    });
-  });
-
-  test("allows changing the project binding after a project is bound", async () => {
-    const { api, bindProject, setReadSnapshot } = createDesktopApi();
-    const requestProjectBind = vi.fn(async () => "/Users/petehsu/Documents/Other");
-    setReadSnapshot({
-      ...snapshot,
-      workingDir: "/Users/petehsu/Documents/Lyra",
-      projectBound: true
-    });
-    renderPanel(api, requestProjectBind);
-
-    await screen.findByText("Lyra");
-    fireEvent.click(screen.getByLabelText("Change Project Binding"));
-
-    await waitFor(() => {
-      expect(requestProjectBind).toHaveBeenCalledWith("/Users/petehsu/Documents/Lyra");
-      expect(bindProject).toHaveBeenCalledWith({
-        sessionId: "session-1",
-        workingDir: "/Users/petehsu/Documents/Other"
-      });
-    });
   });
 
   test("starts improve and refactor from the header more menu and poke from todos", async () => {
@@ -2246,7 +2214,7 @@ describe("AiPanelSurface", () => {
 
     render(<Harness />);
 
-    await screen.findByText("Lyra");
+    await screen.findByLabelText("New session");
     fireEvent.click(screen.getByLabelText("New session"));
 
     await waitFor(() => {
@@ -2332,7 +2300,7 @@ describe("AiPanelSurface", () => {
 
     render(<Harness />);
 
-    await screen.findByText("Lyra");
+    await screen.findByLabelText("New session");
     fireEvent.click(screen.getByLabelText("New session"));
 
     expect(createSession).not.toHaveBeenCalled();
@@ -2484,9 +2452,9 @@ describe("AiPanelSurface", () => {
       });
       const activeTab = container.querySelector(".lyra-agents-session-tab-item-active");
       expect(activeTab)
-        .toHaveStyle({ width: "132px", transform: "translate3d(0px, 0, 0)" });
+        .toHaveStyle({ width: "120px", transform: "translate3d(0px, 0, 0)" });
       expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
-        .toHaveStyle({ width: "525px" });
+        .toHaveStyle({ width: "480px" });
       expect(activeTab?.querySelector(".lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 1");
       expect(container.querySelector("[data-ai-session-tab-id='session-2'] .lyra-agents-session-tab-title"))
@@ -2558,10 +2526,10 @@ describe("AiPanelSurface", () => {
           .not.toHaveClass("lyra-agents-session-tab-strip-stacked");
       });
       expect(container.querySelector(".lyra-agents-session-tab-item-active"))
-        .toHaveStyle({ width: "132px", transform: "translate3d(917px, 0, 0)" });
+        .toHaveStyle({ width: "120px", transform: "translate3d(840px, 0, 0)" });
       await waitFor(() => {
         expect(container.querySelector(".lyra-agents-session-tab-list"))
-          .toHaveProperty("scrollLeft", 861);
+          .toHaveProperty("scrollLeft", 772);
       });
     } finally {
       rectSpy.mockRestore();

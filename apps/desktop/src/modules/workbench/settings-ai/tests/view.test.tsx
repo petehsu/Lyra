@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import { SettingsAiView } from "../view";
+import { SettingsAiModelsView, SettingsAiView } from "../view";
+import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import type {
   SettingsAiLabels,
   SettingsAiModel,
@@ -10,6 +11,27 @@ import type {
 const labels: SettingsAiLabels = {
   categoryLabel: "AI",
   profilesTitle: "Profiles",
+  modelsTitle: "Models",
+  modelsSearchPlaceholder: "Add or search models",
+  modelsEmptyTitle: "No models available",
+  modelsEmptyDescription: "Connect a provider first.",
+  modelsCurrentLabel: "Current model",
+  modelsAddModel: "Add Model",
+  modelsViewAll: "View All Models",
+  modelsProviderTitle: "Choose a provider to discover models.",
+  modelsDiscoverModels: "Discover Models",
+  modelsCustomModel: "Custom Model",
+  modelsCustomModelPlaceholder: "model-id",
+  modelsAddCustomModel: "Add",
+  modelsDisableAll: "Disable All",
+  modelsEnableAll: "Enable All",
+  modelsManualEntryTitle: "Model IDs",
+  modelsManualEntryDescription: "Advanced manual model entry is only needed when discovery is unavailable.",
+  modelsDiscoverEmptyDescription: "No models were discovered. Check the provider credentials, then try again.",
+  modelsDeleteLabel: "Delete model",
+  modelsDeleteConfirmTitle: "Delete model?",
+  modelsDeleteConfirmDescription: "Remove {model} from this provider.",
+  modelsDeleteConfirmAction: "Delete model",
   providerTitle: "Provider",
   connectionTitle: "Connection",
   additionalFieldsTitle: "Additional fields",
@@ -138,6 +160,41 @@ const labels: SettingsAiLabels = {
   memoryConfigStatusInvalidJson: "Invalid JSON",
 };
 
+const mimoRoute = (
+  id: string,
+  label: string,
+  description: string,
+  defaultBaseUrl: string,
+  protocol: "openai" | "anthropic"
+) => ({
+  id,
+  providerId: "mimo",
+  protocolId: protocol === "openai" ? "openai_chat_completions" : "anthropic_messages",
+  protocolFamily: protocol === "openai" ? "openai-compatible" : "anthropic_messages",
+  label,
+  description,
+  defaultBaseUrl,
+  apiMethod: protocol === "openai" ? "chatCompletions" : "messages",
+  authKind: protocol === "openai" ? "bearer_or_header" : "api-key",
+  runtimeSupported: true,
+  modelDiscoverySupported: true,
+  customHeadersSupported: true,
+  localBackend: null,
+  catalogSection: "hosted",
+  quickSetupSupported: id === "mimo" || id === "mimo_anthropic",
+} as const);
+
+const mimoRoutes = [
+  mimoRoute("mimo", "MiMo OpenAI", "MiMo pay-as-you-go OpenAI-compatible endpoint.", "https://api.xiaomimimo.com/v1", "openai"),
+  mimoRoute("mimo_anthropic", "MiMo Anthropic", "MiMo pay-as-you-go Anthropic-compatible endpoint.", "https://api.xiaomimimo.com/anthropic/v1", "anthropic"),
+  mimoRoute("mimo_token_plan_cn", "MiMo Token Plan (CN, OpenAI)", "MiMo Token Plan China OpenAI-compatible endpoint.", "https://token-plan-cn.xiaomimimo.com/v1", "openai"),
+  mimoRoute("mimo_anthropic_token_plan_cn", "MiMo Token Plan (CN, Anthropic)", "MiMo Token Plan China Anthropic-compatible endpoint.", "https://token-plan-cn.xiaomimimo.com/anthropic/v1", "anthropic"),
+  mimoRoute("mimo_token_plan_sgp", "MiMo Token Plan (SGP, OpenAI)", "MiMo Token Plan Singapore OpenAI-compatible endpoint.", "https://token-plan-sgp.xiaomimimo.com/v1", "openai"),
+  mimoRoute("mimo_anthropic_token_plan_sgp", "MiMo Token Plan (SGP, Anthropic)", "MiMo Token Plan Singapore Anthropic-compatible endpoint.", "https://token-plan-sgp.xiaomimimo.com/anthropic/v1", "anthropic"),
+  mimoRoute("mimo_token_plan_ams", "MiMo Token Plan (AMS, OpenAI)", "MiMo Token Plan Europe OpenAI-compatible endpoint.", "https://token-plan-ams.xiaomimimo.com/v1", "openai"),
+  mimoRoute("mimo_anthropic_token_plan_ams", "MiMo Token Plan (AMS, Anthropic)", "MiMo Token Plan Europe Anthropic-compatible endpoint.", "https://token-plan-ams.xiaomimimo.com/anthropic/v1", "anthropic"),
+] as const;
+
 const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel => ({
   isSaving: false,
   errorMessage: null,
@@ -178,6 +235,7 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
     },
   ],
   quickSetupRoutes: [
+    ...mimoRoutes,
     {
       id: "openai",
       providerId: "openai",
@@ -346,6 +404,7 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
       },
     ],
     routes: [
+      ...mimoRoutes,
       {
         id: "openai",
         providerId: "openai",
@@ -400,12 +459,61 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
     ],
     profiles: [],
   },
+  agentModelCatalog: {
+    sessionId: null,
+    currentModel: "mimo-v2.5-pro",
+    currentProvider: "mimo_token_plan",
+    defaultModel: "mimo-v2.5-pro",
+    defaultProvider: "mimo_token_plan",
+    models: [
+      {
+        id: "mimo_token_plan:mimo-v2.5-pro",
+        label: "mimo-v2.5-pro",
+        model: "mimo-v2.5-pro",
+        provider: "mimo_token_plan",
+        providerId: "mimo_token_plan",
+        providerKey: "mimo_token_plan",
+        providerLabel: "MiMo Token Plan",
+        apiMethod: "chatCompletions",
+        detail: "OpenAI-compatible",
+        contextWindow: null,
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        available: true,
+        enabled: true,
+      },
+      {
+        id: "openai-compatible:gpt-5",
+        label: "gpt-5",
+        model: "gpt-5",
+        provider: "custom_openai_compatible",
+        providerId: "custom_openai_compatible",
+        providerKey: "openai-compatible",
+        providerLabel: "Custom OpenAI-Compatible",
+        apiMethod: "chatCompletions",
+        detail: "Manual endpoint",
+        contextWindow: null,
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        available: true,
+        enabled: true,
+      },
+    ],
+    routes: [],
+    reasoningEffort: { current: null, options: [], supported: true },
+    verbosity: { current: null, options: [], supported: true },
+    serviceTier: { current: null, options: [], supported: true },
+  },
   setDefaultProfile: vi.fn(),
   refreshAgent: vi.fn(),
   openAgentConfigFile: vi.fn(),
   updateAgentConfig: vi.fn(),
   saveAgentProviderProfile: vi.fn(),
   refreshAgentModels: vi.fn(),
+  refreshAgentModelCatalog: vi.fn(),
+  setAgentModelEnabled: vi.fn(),
+  deleteAgentModel: vi.fn(),
+  switchAgentModel: vi.fn(),
   startAgentAccountLogin: vi.fn(),
   completeAgentAccountLogin: vi.fn(),
   updateAgentRoles: vi.fn(),
@@ -415,119 +523,389 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
 });
 
 describe("SettingsAiView", () => {
-  test("renders Rust-catalog profiles and local routes in the local section", () => {
+  test("renders agent configuration without provider/model setup blocks", () => {
     const model = createModel();
 
     render(<SettingsAiView labels={labels} model={model} />);
 
-    expect(screen.getByRole("heading", { name: "Profiles" })).toBeInTheDocument();
-    expect(screen.getAllByText("MiMo Token Plan").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("mimo-v2.5-pro").length).toBeGreaterThan(0);
-    expect(screen.getByText("/Users/petehsu/.lyra/modules/agent/state.json")).toBeInTheDocument();
-    expect(screen.getByText("/Users/petehsu/.lyra/modules/agent")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Profiles" })).not.toBeInTheDocument();
+    expect(screen.queryByText("/Users/petehsu/.lyra/modules/agent/state.json")).not.toBeInTheDocument();
+    expect(screen.queryByText("/Users/petehsu/.lyra/modules/agent")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Config" })).not.toBeInTheDocument();
     expect(screen.getByText("Provider Login")).toBeInTheDocument();
-    expect(screen.getByText("Add API Key Provider")).toBeInTheDocument();
-    expect(screen.getByText("Local Models")).toBeInTheDocument();
-    expect(screen.getByText("OpenAI")).toBeInTheDocument();
-    expect(screen.getAllByText("Custom OpenAI-Compatible").length).toBeGreaterThan(0);
-    expect(screen.getByText("LM Studio")).toBeInTheDocument();
-    expect(model.quickSetupRoutes.map((route) => route.id)).not.toContain("lmstudio");
+    expect(screen.queryByText("Add API Key Provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("Local Models")).not.toBeInTheDocument();
+    expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
+    expect(screen.queryByText("LM Studio")).not.toBeInTheDocument();
   });
 
-  test("saves an API key provider through the provider profile bridge", () => {
-    const saveAgentProviderProfile = vi.fn();
-    const completeAgentAccountLogin = vi.fn();
+  test("renders models as a separate settings page and toggles model enablement", () => {
+    const setAgentModelEnabled = vi.fn();
+    const refreshAgentModelCatalog = vi.fn();
     const model = createModel({
-      saveAgentProviderProfile,
-      completeAgentAccountLogin,
+      setAgentModelEnabled,
+      refreshAgentModelCatalog,
     });
 
-    render(<SettingsAiView labels={labels} model={model} />);
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Custom OpenAI-Compatible Manual OpenAI-compatible endpoint\./i })
-    );
-    fireEvent.change(screen.getAllByLabelText("Profile name")[1]!, {
-      target: { value: "xiaomi-mimo-api" },
-    });
-    fireEvent.change(screen.getAllByLabelText("Base URL")[1]!, {
-      target: { value: "https://api.xiaomimimo.com/v1" },
-    });
-    fireEvent.change(screen.getAllByLabelText("Main model")[1]!, {
-      target: { value: "mimo-v2.5-pro" },
-    });
-    fireEvent.change(screen.getAllByLabelText("Auth Header")[1]!, {
-      target: { value: "api-key" },
-    });
-    fireEvent.change(screen.getAllByLabelText("API key")[1]!, {
-      target: { value: "sk-secret-value" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: /Save profile/ })[1]!);
+    expect(screen.getByLabelText("Models")).toHaveValue("");
+    expect(screen.getByText("mimo-v2.5-pro")).toBeInTheDocument();
+    expect(screen.getByText("gpt-5")).toBeInTheDocument();
+    expect(screen.getByText("Current model")).toBeInTheDocument();
 
-    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
-      profileName: "xiaomi-mimo-api",
-      routeId: "custom_openai_compatible",
-      baseUrl: "https://api.xiaomimimo.com/v1",
-      apiKey: "sk-secret-value",
-      defaultModel: "mimo-v2.5-pro",
-      auth: "header",
-      authHeader: "api-key",
-      setDefault: true,
+    fireEvent.change(screen.getByLabelText("Models"), {
+      target: { value: "gpt" },
     });
-    expect(completeAgentAccountLogin).not.toHaveBeenCalled();
+
+    expect(screen.queryByText("mimo-v2.5-pro")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "gpt-5" }));
+
+    expect(setAgentModelEnabled).toHaveBeenCalledWith({
+      model: "gpt-5",
+      provider: "openai-compatible",
+      enabled: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
+    expect(refreshAgentModelCatalog).toHaveBeenCalledTimes(1);
   });
 
-  test("saves and refreshes a local provider profile with model capabilities", async () => {
+  test("confirms before deleting a configured model", () => {
+    const deleteAgentModel = vi.fn();
+    const openDialog = vi.fn((request: GlobalDialogOpenRequest) => {
+      void request;
+    });
+    const model = createModel({ deleteAgentModel });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={openDialog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete model: gpt-5" }));
+
+    expect(deleteAgentModel).not.toHaveBeenCalled();
+    expect(openDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Delete model?",
+      description: "Remove gpt-5 from this provider.",
+    }));
+
+    const request = openDialog.mock.calls[0]?.[0];
+    const deleteAction = request?.actions?.find((action) => action.id === "delete");
+    expect(deleteAction).toMatchObject({
+      label: "Delete model",
+      tone: "danger",
+    });
+
+    deleteAction?.onSelect?.({});
+
+    expect(deleteAgentModel).toHaveBeenCalledWith({
+      provider: "openai-compatible",
+      model: "gpt-5",
+    });
+  });
+
+  test("adds a preset provider from the Models page without exposing base URL", async () => {
+    const discoveredCatalog = {
+      ...createModel().agentModelCatalog!,
+      models: [
+        ...createModel().agentModelCatalog!.models,
+        {
+          id: "openai:gpt-5.1",
+          label: "gpt-5.1",
+          model: "gpt-5.1",
+          provider: "openai",
+          providerId: "openai",
+          providerKey: "openai",
+          providerLabel: "OpenAI",
+          apiMethod: "chatCompletions",
+          detail: "OpenAI",
+          contextWindow: null,
+          supportsImageInput: true,
+          supportsToolCalling: true,
+          available: true,
+          enabled: true,
+        },
+      ],
+    };
     const saveAgentProviderProfile = vi.fn(async () => undefined);
-    const refreshAgentModels = vi.fn(async () => undefined);
+    const refreshAgentModels = vi.fn(async () => discoveredCatalog);
     const model = createModel({
       saveAgentProviderProfile,
       refreshAgentModels,
     });
 
-    render(<SettingsAiView labels={labels} model={model} />);
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
 
-    fireEvent.change(screen.getAllByLabelText("Profile name")[0]!, {
-      target: { value: "local-dev" },
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+
+    expect(screen.getByRole("textbox", { name: "Select provider" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Models" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^OpenAI\b/u })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "opena" },
     });
-    fireEvent.change(screen.getAllByLabelText("Base URL")[0]!, {
-      target: { value: "http://127.0.0.1:1234/v1" },
+    fireEvent.click(screen.getByRole("button", { name: /^OpenAI\b/u }));
+    expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-openai" },
     });
-    fireEvent.change(screen.getAllByLabelText("Main model")[0]!, {
-      target: { value: "local-qwen" },
-    });
-    fireEvent.change(screen.getByLabelText("Model IDs"), {
-      target: { value: "local-qwen\nlocal-vision" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Save & Discover Models/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
 
     await waitFor(() => {
-      expect(refreshAgentModels).toHaveBeenCalledWith("local-dev");
+      expect(refreshAgentModels).toHaveBeenCalledWith("openai");
     });
     expect(saveAgentProviderProfile).toHaveBeenCalledWith({
-      profileName: "local-dev",
-      routeId: "lmstudio",
-      baseUrl: "http://127.0.0.1:1234/v1",
-      apiKey: null,
-      defaultModel: "local-qwen",
-      auth: "none",
+      profileName: "openai",
+      routeId: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "sk-openai",
+      defaultModel: null,
+      auth: "bearer",
       authHeader: null,
-      setDefault: true,
+      setDefault: false,
+    });
+    expect(await screen.findByText("gpt-5.1")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "gpt-5.1" })).toBeChecked();
+    expect(screen.queryByRole("button", { name: "Disable All" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+
+    await waitFor(() => {
+      expect(saveAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+        profileName: "openai",
+        routeId: "openai",
+        models: [
+          {
+            id: "gpt-5.1",
+            enabled: true,
+          },
+        ],
+      }));
+    });
+  });
+
+  test("searches providers with Chinese aliases and cancels from the Add Model button", () => {
+    const model = createModel();
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "自定义搜索" },
+    });
+
+    expect(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("Select provider")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Models")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add Model/ })).toBeInTheDocument();
+  });
+
+  test("shows every MiMo protocol and region when searching Xiaomi", () => {
+    const model = createModel();
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "xiaomi" },
+    });
+
+    expect(screen.getByRole("button", { name: /^MiMo OpenAI\b/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^MiMo Anthropic\b/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(CN, OpenAI\)/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(CN, Anthropic\)/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(SGP, OpenAI\)/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(SGP, Anthropic\)/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(AMS, OpenAI\)/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MiMo Token Plan \(AMS, Anthropic\)/u })).toBeInTheDocument();
+  });
+
+  test("shows custom provider connection fields and saves discovered model enablement", async () => {
+    const discoveredCatalog = {
+      ...createModel().agentModelCatalog!,
       models: [
         {
-          id: "local-qwen",
+          id: "openai-compatible:mimo-v2.5-pro",
+          label: "mimo-v2.5-pro",
+          model: "mimo-v2.5-pro",
+          provider: "custom_openai_compatible",
+          providerId: "custom_openai_compatible",
+          providerKey: "openai-compatible",
+          providerLabel: "Custom OpenAI-Compatible",
+          apiMethod: "chatCompletions",
+          detail: "Manual endpoint",
+          contextWindow: null,
           supportsImageInput: true,
           supportsToolCalling: true,
-          supportsStreaming: true,
+          available: true,
+          enabled: true,
         },
         {
-          id: "local-vision",
+          id: "openai-compatible:mimo-v2.5-vision",
+          label: "mimo-v2.5-vision",
+          model: "mimo-v2.5-vision",
+          provider: "custom_openai_compatible",
+          providerId: "custom_openai_compatible",
+          providerKey: "openai-compatible",
+          providerLabel: "Custom OpenAI-Compatible",
+          apiMethod: "chatCompletions",
+          detail: "Manual endpoint",
+          contextWindow: null,
           supportsImageInput: true,
           supportsToolCalling: true,
-          supportsStreaming: true,
+          available: true,
+          enabled: true,
         },
       ],
+    };
+    const saveAgentProviderProfile = vi.fn(async () => undefined);
+    const refreshAgentModels = vi.fn(async () => discoveredCatalog);
+    const model = createModel({
+      saveAgentProviderProfile,
+      refreshAgentModels,
     });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "custom" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ }));
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://api.xiaomimimo.com/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-secret-value" },
+    });
+    expect(screen.queryByLabelText("Auth Header")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Model IDs")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Image input")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
+
+    expect(await screen.findByText("mimo-v2.5-pro")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "mimo-v2.5-vision" })).toBeChecked();
+    fireEvent.click(screen.getByRole("switch", { name: "mimo-v2.5-vision" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+
+    await waitFor(() => {
+      expect(saveAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+        profileName: "openai-compatible",
+        routeId: "custom_openai_compatible",
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        apiKey: "sk-secret-value",
+        defaultModel: "mimo-v2.5-pro",
+        auth: "bearer",
+        authHeader: null,
+        setDefault: false,
+        models: [
+          {
+            id: "mimo-v2.5-pro",
+            enabled: true,
+          },
+          {
+            id: "mimo-v2.5-vision",
+            enabled: false,
+          },
+        ],
+      }));
+    });
+    expect(refreshAgentModels).toHaveBeenCalledWith("openai-compatible");
+  });
+
+  test("adds a custom model beside discovery and saves it as enabled", async () => {
+    const saveAgentProviderProfile = vi.fn(async () => undefined);
+    const model = createModel({
+      saveAgentProviderProfile,
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "custom" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ }));
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://api.pioneer.ai" },
+    });
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-secret-value" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Custom Model" }));
+    fireEvent.change(screen.getByLabelText("Custom Model"), {
+      target: { value: "claude-sonnet-4-6" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(screen.getByText("claude-sonnet-4-6")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "claude-sonnet-4-6" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+
+    await waitFor(() => {
+      expect(saveAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+        profileName: "openai-compatible",
+        routeId: "custom_openai_compatible",
+        baseUrl: "https://api.pioneer.ai",
+        apiKey: "sk-secret-value",
+        defaultModel: "claude-sonnet-4-6",
+        models: [
+          {
+            id: "claude-sonnet-4-6",
+            enabled: true,
+          },
+        ],
+      }));
+    });
+  });
+
+  test("shows a disable-all action only after discovering more than three models", async () => {
+    const discoveredCatalog = {
+      ...createModel().agentModelCatalog!,
+      models: Array.from({ length: 4 }, (_, index) => ({
+        id: `openai:gpt-test-${index + 1}`,
+        label: `gpt-test-${index + 1}`,
+        model: `gpt-test-${index + 1}`,
+        provider: "openai",
+        providerId: "openai",
+        providerKey: "openai",
+        providerLabel: "OpenAI",
+        apiMethod: "chatCompletions",
+        detail: "OpenAI",
+        contextWindow: null,
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        available: true,
+        enabled: true,
+      })),
+    };
+    const refreshAgentModels = vi.fn(async () => discoveredCatalog);
+    const model = createModel({
+      refreshAgentModels,
+      saveAgentProviderProfile: vi.fn(async () => undefined),
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "openai" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^OpenAI\b/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
+
+    expect(await screen.findByText("gpt-test-4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Disable All" }));
+
+    expect(screen.getByRole("switch", { name: "gpt-test-1" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "gpt-test-4" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Enable All" })).toBeInTheDocument();
   });
 
   test("does not render stored provider secrets as visible text", () => {
@@ -535,37 +913,120 @@ describe("SettingsAiView", () => {
 
     const { container } = render(<SettingsAiView labels={labels} model={model} />);
 
-    for (const input of screen.getAllByLabelText("API key")) {
-      expect(input).toHaveValue("");
-    }
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent("sk-secret-value");
     expect(container).not.toHaveTextContent("tp-secret-value");
   });
 
-  test("updates the Lyra Agent default provider when a provider card is selected", () => {
-    const setDefaultProfile = vi.fn();
-    const model = createModel({ setDefaultProfile });
+  test("models page starts in provider search mode and stays quiet when no models are configured", () => {
+    const model = createModel({
+      profiles: [],
+      agentModelCatalog: {
+        sessionId: null,
+        currentModel: "gpt-5-mini",
+        currentProvider: "openai",
+        defaultModel: "gpt-5-mini",
+        defaultProvider: "openai",
+        models: [],
+        routes: [],
+        reasoningEffort: { current: null, options: [], supported: true },
+        verbosity: { current: null, options: [], supported: true },
+        serviceTier: { current: null, options: [], supported: true },
+      },
+      defaultProfileId: "openai",
+      agentConfig: {
+        agentHome: "/Users/petehsu/.lyra/modules/agent",
+        configPath: "/Users/petehsu/.lyra/modules/agent/state.json",
+        config: {
+          provider: {
+            defaultProvider: "openai",
+            defaultModel: "gpt-5-mini",
+          },
+          providers: {},
+          roles: {},
+          notifications: {},
+        },
+        commands: [],
+      },
+    });
 
-    render(<SettingsAiView labels={labels} model={model} />);
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
 
-    const profileButton = screen
-      .getAllByRole("button", { name: /openai-compatible/i })
-      .find((element) => element.textContent?.includes("gpt-5"));
-    expect(profileButton).toBeDefined();
-    fireEvent.click(profileButton!);
+    expect(screen.getByLabelText("Select provider")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Models")).not.toBeInTheDocument();
+    expect(screen.queryByText("No models available")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connect a provider first.")).not.toBeInTheDocument();
 
-    expect(setDefaultProfile).toHaveBeenCalledWith("openai-compatible");
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "definitely-not-a-provider" },
+    });
+
+    expect(screen.queryByText("No AI profile yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create a profile to use runtime models.")).not.toBeInTheDocument();
   });
 
-  test("opens the Lyra Agent config file from the settings surface", () => {
+  test("add model mode does not render an empty list before provider results exist", () => {
+    const model = createModel();
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+
+    expect(screen.getByLabelText("Select provider")).toBeInTheDocument();
+    expect(screen.queryByText("No AI profile yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create a profile to use runtime models.")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "definitely-not-a-provider" },
+    });
+
+    expect(screen.queryByText("No AI profile yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Create a profile to use runtime models.")).not.toBeInTheDocument();
+  });
+
+  test("models page shows the first nine models before expanding all", () => {
+    const model = createModel({
+      agentModelCatalog: {
+        ...createModel().agentModelCatalog!,
+        models: Array.from({ length: 12 }, (_, index) => ({
+          id: `openai:model-${index + 1}`,
+          label: `model-${index + 1}`,
+          model: `model-${index + 1}`,
+          provider: "openai",
+          providerId: "openai",
+          providerKey: "openai",
+          providerLabel: "OpenAI",
+          apiMethod: "chatCompletions",
+          detail: "OpenAI",
+          contextWindow: null,
+          supportsImageInput: true,
+          supportsToolCalling: true,
+          available: true,
+          enabled: true,
+        })),
+      },
+    });
+
+    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    expect(screen.getByText("model-1")).toBeInTheDocument();
+    expect(screen.getByText("model-9")).toBeInTheDocument();
+    expect(screen.queryByText("model-10")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View All Models" }));
+
+    expect(screen.getByText("model-10")).toBeInTheDocument();
+    expect(screen.getByText("model-12")).toBeInTheDocument();
+  });
+
+  test("does not expose the Lyra Agent config file from the settings surface", () => {
     const openAgentConfigFile = vi.fn();
     const model = createModel({ openAgentConfigFile });
 
     render(<SettingsAiView labels={labels} model={model} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Config" }));
-
-    expect(openAgentConfigFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Open Config" })).not.toBeInTheDocument();
+    expect(openAgentConfigFile).not.toHaveBeenCalled();
   });
 
   test("saves agent role model overrides", () => {

@@ -685,7 +685,15 @@ export const useBrowserTabStripRuntime = ({
     splitTriggerMode
   ]);
 
-  const onTabStripWheel = useCallback((_event: ReactWheelEvent<HTMLDivElement>): void => {}, []);
+  const onTabStripWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>): void => {
+    const list = event.currentTarget.querySelector<HTMLElement>(".lyra-browser-tab-list");
+    if (list === null || list.scrollWidth <= list.clientWidth) return;
+    const delta =
+      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (delta === 0) return;
+    list.scrollLeft += delta;
+    event.preventDefault();
+  }, []);
 
   const onTabItemMouseDown = useCallback((event: ReactMouseEvent<HTMLElement>, tabId: string): void => {
     if (

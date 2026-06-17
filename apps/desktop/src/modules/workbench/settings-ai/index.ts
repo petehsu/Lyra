@@ -1,3 +1,3 @@
 export { useSettingsAiModel } from "./service";
-export { SettingsAiView } from "./view";
+export { SettingsAiModelsView, SettingsAiView } from "./view";
 export type { SettingsAiLabels, SettingsAiModel } from "./types";

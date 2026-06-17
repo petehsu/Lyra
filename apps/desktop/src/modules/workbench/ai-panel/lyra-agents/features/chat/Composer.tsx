@@ -3,41 +3,70 @@ import {
   useRef,
   useEffect,
   type CSSProperties,
-  type ChangeEvent,
   type FormEvent
 } from "react";
+import type {
+  AgentPageCitation,
+  AgentTranscriptCitation
+} from "../../../../../../shared/agent";
 import {
   ArrowUp,
   Camera,
   CircleAlert,
   Crosshair,
-  Image as ImageIcon,
+  File as FileIcon,
+  LayoutGrid,
   Monitor,
   Plus,
-  X
+  Terminal
 } from "lucide-react";
 import {
   AppButton,
   AppIconButton,
-  AppInput,
   AppMenu,
   AppMenuContent,
   AppMenuItem,
+  AppMenuSub,
+  AppMenuSubContent,
+  AppMenuSubTrigger,
   AppMenuTrigger,
   AppModelMenu,
   AppSelect,
-  AppTextarea,
   type AppModelMenuSubmenu
 } from "@renderer/ui/components";
+import {
+  CitationComposerInput,
+  type CitationComposerInputHandle
+} from "./CitationComposerInput";
+import {
+  hasComposerContent,
+  segmentsToCitations,
+  segmentsToPlainText,
+  type ComposerInsertableCitation,
+  type ComposerSegment
+} from "./message-citation";
+import { segmentsToImages } from "./composer-image";
+import { segmentsToFileAttachments } from "./composer-file";
+import { segmentsToPageCitations } from "./page-citation";
+import {
+  ComposerAttachMenuLeadingIcon,
+  TerminalTabAttachMenuIcon,
+  WorkspaceTabAttachMenuIcon
+} from "./composer-attach-menu-icons";
+import { buildTerminalTabPageCitation } from "./terminal-tab-citation";
+import { buildWorkspaceTabPageCitation } from "./workspace-tab-citation";
 import { t } from "../../core/i18n";
+import type { TerminalDockTab } from "../../../../terminal-dock/types";
+import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import type {
   AgentImageAttachment,
   ComposerModelControls,
   ComposerPermissionModeControls
 } from "../../core/types";
+import type { AgentFileAttachment } from "./composer-file";
+import { AgentProviderBrandIcon } from "../../../../agent-provider-brand-icon";
+import { getDesktopApi } from "../../../../shell/service";
 
-const MIN_HEIGHT = 64;
-const MAX_HEIGHT = 200;
 const TOOLBAR_ICON_SIZE = 14;
 const TOOLBAR_ICON_STROKE_WIDTH = 2.1;
 const SEND_LOGO_BURST_MS = 560;
@@ -50,39 +79,14 @@ const SEND_LOGO_STYLE = {
 } as CSSProperties;
 type PermissionPickerValue = "approval" | "full_auto" | "custom";
 
-const attachmentId = (prefix: string): string => {
-  const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-  return prefix + "-" + randomId;
-};
-
-const readImageAttachment = async (file: File): Promise<AgentImageAttachment> => {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-      } else {
-        reject(new Error("Image file could not be read."));
-      }
-    });
-    reader.addEventListener("error", () => reject(reader.error ?? new Error("Image file could not be read.")));
-    reader.readAsDataURL(file);
-  });
-  const [header, data = dataUrl] = dataUrl.split(",", 2);
-  const mediaType = /^data:([^;]+);base64$/u.exec(header ?? "")?.[1] ?? file.type ?? "image/png";
-  return {
-    id: attachmentId("local-image"),
-    mediaType,
-    data,
-    label: file.name,
-    source: "local-file"
-  };
-};
-
 export function Composer({
   onSend,
-  onCaptureBrowserScreenshot,
+  onCaptureWorkspaceScreenshot,
   onCaptureWindowScreenshot,
+  onPickFileFromFileManager,
+  onImageAttachmentClick,
+  workspaceTabs = [],
+  terminalTabs = [],
   modelControls,
   permissionModeControls,
   onOpenModelSettings,
@@ -91,10 +95,41 @@ export function Composer({
   browserFollowModeEnabled,
   onToggleBrowserFollowMode,
   onCancelTurn,
+  onTranscriptCitationClick,
+  onPageCitationClick,
+  pendingCitation = null,
+  pendingCitationNonce = 0,
+  pendingImages = [],
+  pendingImagesNonce = 0,
+  pendingFiles = [],
+  pendingFilesNonce = 0,
 }: {
-  onSend: (text: string, images?: readonly AgentImageAttachment[]) => Promise<void> | void;
-  onCaptureBrowserScreenshot?: () => Promise<AgentImageAttachment | null>;
+  onSend: (
+    text: string,
+    images?: readonly AgentImageAttachment[],
+    citations?: readonly AgentTranscriptCitation[],
+    pageCitations?: readonly AgentPageCitation[],
+    fileCitations?: readonly AgentFileAttachment[],
+    segments?: readonly ComposerSegment[]
+  ) => Promise<void> | void;
+  onTranscriptCitationClick?: (citation: AgentTranscriptCitation) => void;
+  onPageCitationClick?: (citation: AgentPageCitation) => void;
+  pendingCitation?: ComposerInsertableCitation | null;
+  pendingCitationNonce?: number;
+  pendingImages?: readonly AgentImageAttachment[];
+  pendingImagesNonce?: number;
+  pendingFiles?: readonly AgentFileAttachment[];
+  pendingFilesNonce?: number;
+  onCaptureWorkspaceScreenshot?: () => Promise<AgentImageAttachment | null>;
   onCaptureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
+  onPickFileFromFileManager?: () => Promise<
+    | { readonly kind: "image"; readonly attachment: AgentImageAttachment }
+    | { readonly kind: "file"; readonly attachment: AgentFileAttachment }
+    | null
+  >;
+  onImageAttachmentClick?: (image: AgentImageAttachment) => void;
+  workspaceTabs?: readonly WorkspaceTab[];
+  terminalTabs?: readonly TerminalDockTab[];
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
   onOpenModelSettings?: () => Promise<void>;
@@ -104,16 +139,16 @@ export function Composer({
   onToggleBrowserFollowMode: (enabled: boolean) => Promise<void> | void;
   onCancelTurn: () => Promise<void> | void;
 }) {
-  const [value, setValue] = useState("");
-  const [attachments, setAttachments] = useState<AgentImageAttachment[]>([]);
+  const [segments, setSegments] = useState<ComposerSegment[]>([]);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentSubmenuId, setAttachmentSubmenuId] = useState<string | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [sendLogoVisible, setSendLogoVisible] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerInputRef = useRef<CitationComposerInputHandle>(null);
   const sendInFlightRef = useRef(false);
   const sendLogoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -130,16 +165,32 @@ export function Composer({
 
   const submit = async () => {
     if (disabledReason !== undefined || sendInFlightRef.current) return;
-    const trimmed = value.trim();
-    if (trimmed.length === 0 && attachments.length === 0) return;
+    const committedSegments = composerInputRef.current?.readSegments() ?? segments;
+    if (!hasComposerContent(committedSegments)) return;
+    const text = segmentsToPlainText(committedSegments).trim();
+    const citations = segmentsToCitations(committedSegments);
+    const pageCitations = segmentsToPageCitations(committedSegments);
+    const fileCitations = segmentsToFileAttachments(committedSegments);
+    const images = segmentsToImages(committedSegments);
     sendInFlightRef.current = true;
     setSendBusy(true);
+    setSendError(null);
     showSendLogoBurst();
     try {
-      await onSend(trimmed, attachments);
-      setValue("");
-      setAttachments([]);
+      await onSend(
+        text,
+        images,
+        citations.length > 0 ? citations : undefined,
+        pageCitations.length > 0 ? pageCitations : undefined,
+        fileCitations.length > 0 ? fileCitations : undefined,
+        committedSegments
+      );
+      setSegments([]);
+      composerInputRef.current?.clear();
       setAttachmentMenuOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send message.";
+      setSendError(message);
     } finally {
       sendInFlightRef.current = false;
       setSendBusy(false);
@@ -151,18 +202,44 @@ export function Composer({
     void submit();
   };
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/"));
-    event.target.value = "";
-    if (files.length === 0) return;
+  const pickFileAttachment = async () => {
+    if (onPickFileFromFileManager === undefined) return;
     setAttachmentBusy(true);
     try {
-      const next = await Promise.all(files.map(readImageAttachment));
-      setAttachments((items) => [...items, ...next]);
+      const result = await onPickFileFromFileManager();
+      if (result !== null) {
+        if (result.kind === "image") {
+          composerInputRef.current?.insertImage(result.attachment);
+        } else {
+          composerInputRef.current?.insertFile(result.attachment);
+        }
+        composerInputRef.current?.focus();
+      }
       setAttachmentMenuOpen(false);
+      setAttachmentSubmenuId(null);
     } finally {
       setAttachmentBusy(false);
     }
+  };
+
+  const insertWorkspaceTabCitation = (tab: WorkspaceTab) => {
+    composerInputRef.current?.insertCitation({
+      kind: "page",
+      citation: buildWorkspaceTabPageCitation(tab)
+    });
+    composerInputRef.current?.focus();
+    setAttachmentMenuOpen(false);
+    setAttachmentSubmenuId(null);
+  };
+
+  const insertTerminalTabCitation = (tab: TerminalDockTab) => {
+    composerInputRef.current?.insertCitation({
+      kind: "page",
+      citation: buildTerminalTabPageCitation(tab, workspaceTabs)
+    });
+    composerInputRef.current?.focus();
+    setAttachmentMenuOpen(false);
+    setAttachmentSubmenuId(null);
   };
 
   const captureAttachment = async (
@@ -173,7 +250,8 @@ export function Composer({
     try {
       const attachment = await capture();
       if (attachment !== null) {
-        setAttachments((items) => [...items, attachment]);
+        composerInputRef.current?.insertImage(attachment);
+        composerInputRef.current?.focus();
       }
       setAttachmentMenuOpen(false);
     } finally {
@@ -181,19 +259,38 @@ export function Composer({
     }
   };
 
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = MIN_HEIGHT + "px";
-    el.style.overflowY = "hidden";
-    const scrollH = el.scrollHeight;
-    if (scrollH > MAX_HEIGHT) {
-      el.style.height = MAX_HEIGHT + "px";
-      el.style.overflowY = "auto";
-    } else {
-      el.style.height = Math.max(MIN_HEIGHT, scrollH) + "px";
+  const handleImageAttachmentsAccepted = (attachments: readonly AgentImageAttachment[]) => {
+    for (const attachment of attachments) {
+      composerInputRef.current?.insertImage(attachment);
     }
-  }, [value]);
+    if (attachments.length > 0) {
+      composerInputRef.current?.focus();
+      void getDesktopApi()?.screenshotPreview.dismiss().catch(() => undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (pendingCitation === null || pendingCitationNonce === 0) return;
+    composerInputRef.current?.insertCitation(pendingCitation);
+    composerInputRef.current?.focus();
+  }, [pendingCitation, pendingCitationNonce]);
+
+  useEffect(() => {
+    if (pendingImages.length === 0 || pendingImagesNonce === 0) return;
+    for (const attachment of pendingImages) {
+      composerInputRef.current?.insertImage(attachment);
+    }
+    composerInputRef.current?.focus();
+    void getDesktopApi()?.screenshotPreview.dismiss().catch(() => undefined);
+  }, [pendingImages, pendingImagesNonce]);
+
+  useEffect(() => {
+    if (pendingFiles.length === 0 || pendingFilesNonce === 0) return;
+    for (const file of pendingFiles) {
+      composerInputRef.current?.insertFile(file);
+    }
+    composerInputRef.current?.focus();
+  }, [pendingFiles, pendingFilesNonce]);
 
   useEffect(() => () => {
     if (sendLogoTimerRef.current !== null) {
@@ -201,22 +298,31 @@ export function Composer({
     }
   }, []);
 
-  const canSend = disabledReason === undefined && !sendBusy && (value.trim().length > 0 || attachments.length > 0);
-  const hasDraft = value.trim().length > 0 || attachments.length > 0;
+  const canSend = disabledReason === undefined && !sendBusy && hasComposerContent(segments);
+  const hasDraft = hasComposerContent(segments);
   const showPauseButton = isTurnRunning && !hasDraft;
   const primaryActionMode = sendLogoVisible ? "sending" : showPauseButton ? "pause" : "send";
   const primaryActionLabel = primaryActionMode === "pause" ? t("lyra-agents-composer.pause") : t("lyra-agents-composer.send");
   const followLabel = browserFollowModeEnabled
     ? t("lyra-agents-composer.stopFollowingAgent")
     : t("lyra-agents-composer.followAgent");
-  const configuredModels = (modelControls?.models ?? []).filter((model) => model.available);
+  const configuredModels = (modelControls?.models ?? []).filter((model) => model.available && model.enabled);
   const selectedModel =
     configuredModels.find((model) => model.id === modelControls?.currentModel)
     ?? configuredModels.find((model) => model.model === modelControls?.currentModel)
     ?? null;
   const modelPickerOptions = configuredModels.map((model) => ({
     value: model.id,
-    label: model.label
+    label: model.label,
+    icon: (
+      <AgentProviderBrandIcon
+        label={model.provider ?? model.label}
+        modelId={model.model}
+        provider={model.provider}
+        providerId={model.providerId}
+        routeId={model.providerKey}
+      />
+    )
   }));
   const selectedModelValue = selectedModel?.id ?? modelPickerOptions[0]?.value ?? "";
   const permissionModeOptions = permissionModeControls === null || permissionModeControls === undefined
@@ -300,55 +406,36 @@ export function Composer({
 
   return (
     <form className="lyra-agents-composer" onSubmit={handleSubmit}>
-      <AppTextarea
-        ref={textareaRef}
-        className="lyra-agents-composer-input"
-        placeholder={disabledReason ?? t("lyra-agents-composer.placeholder")}
-        value={value}
-        disabled={disabledReason !== undefined}
-        aria-disabled={disabledReason !== undefined}
-        onChange={(e) => setValue(e.target.value)}
-        rows={1}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-      />
-      {attachments.length > 0 ? (
-        <div className="lyra-agents-composer-attachments">
-          {attachments.map((attachment) => (
-            <figure key={attachment.id} className="lyra-agents-composer-attachment">
-              <img
-                src={"data:" + attachment.mediaType + ";base64," + attachment.data}
-                alt={attachment.label ?? t("lyra-agents-message.imageAttachment")}
-              />
-              <figcaption>{attachment.label ?? t("lyra-agents-message.imageAttachment")}</figcaption>
-              <AppButton variant="ghost" size="sm"
-                type="button"
-                aria-label={t("lyra-agents-composer.removeAttachment")}
-                onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}
-              >
-                <X size={12} strokeWidth={2} />
-              </AppButton>
-            </figure>
-          ))}
+      {sendError !== null && (
+        <div className="lyra-agents-composer-send-error" role="alert">
+          <CircleAlert size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} aria-hidden="true" />
+          <span>{sendError}</span>
         </div>
-      ) : null}
-      <AppInput
-        ref={fileInputRef}
-        className="lyra-agents-composer-file-input"
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        multiple
-        tabIndex={-1}
-        onChange={(event) => {
-          void handleFileChange(event);
+      )}
+      <CitationComposerInput
+        ref={composerInputRef}
+        segments={segments}
+        disabled={disabledReason !== undefined}
+        placeholder={disabledReason ?? t("lyra-agents-composer.placeholder")}
+        onSegmentsChange={setSegments}
+        onSubmit={() => {
+          void submit();
         }}
+        {...(onTranscriptCitationClick === undefined ? {} : { onTranscriptCitationClick })}
+        {...(onPageCitationClick === undefined ? {} : { onPageCitationClick })}
+        {...(onImageAttachmentClick === undefined ? {} : { onImageAttachmentClick })}
+        onImageAttachmentsAccepted={handleImageAttachmentsAccepted}
       />
       <div className="lyra-agents-composer-bottom">
-        <AppMenu open={attachmentMenuOpen} onOpenChange={setAttachmentMenuOpen}>
+        <AppMenu
+          open={attachmentMenuOpen}
+          onOpenChange={(nextOpen) => {
+            setAttachmentMenuOpen(nextOpen);
+            if (!nextOpen) {
+              setAttachmentSubmenuId(null);
+            }
+          }}
+        >
           <div className="lyra-agents-composer-attach-menu-wrap">
             <AppMenuTrigger asChild>
               <AppIconButton
@@ -374,28 +461,112 @@ export function Composer({
               sideOffset={8}
             >
               <AppMenuItem
-                className="lyra-app-menu-item-with-icon lyra-agents-composer-attach-menu-item"
-                onSelect={() => fileInputRef.current?.click()}
-              >
-                <ImageIcon size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
-                <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachImage")}</span>
-              </AppMenuItem>
-              <AppMenuItem
-                className="lyra-app-menu-item-with-icon lyra-agents-composer-attach-menu-item"
+                className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-menu-entry"
                 onSelect={() => {
-                  void captureAttachment(onCaptureBrowserScreenshot);
+                  void pickFileAttachment();
                 }}
               >
-                <Camera size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
-                <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachBrowserScreenshot")}</span>
+                <ComposerAttachMenuLeadingIcon>
+                  <FileIcon size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                </ComposerAttachMenuLeadingIcon>
+                <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachFile")}</span>
+              </AppMenuItem>
+              {workspaceTabs.length > 0 ? (
+                <AppMenuSub
+                  open={attachmentSubmenuId === "workspace-tabs"}
+                  onOpenChange={(nextOpen) => {
+                    setAttachmentSubmenuId(nextOpen ? "workspace-tabs" : null);
+                  }}
+                >
+                  <AppMenuSubTrigger
+                    className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-submenu-trigger"
+                    onFocus={() => setAttachmentSubmenuId("workspace-tabs")}
+                    onMouseEnter={() => setAttachmentSubmenuId("workspace-tabs")}
+                    onPointerMove={() => setAttachmentSubmenuId("workspace-tabs")}
+                  >
+                    <ComposerAttachMenuLeadingIcon>
+                      <LayoutGrid size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                    </ComposerAttachMenuLeadingIcon>
+                    <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachWorkspaceTab")}</span>
+                  </AppMenuSubTrigger>
+                  <AppMenuSubContent
+                    className="lyra-agents-composer-attach-submenu"
+                    sideOffset={4}
+                    alignOffset={-4}
+                  >
+                    {workspaceTabs.map((tab) => (
+                      <AppMenuItem
+                        key={tab.id}
+                        className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-menu-entry"
+                        onSelect={() => {
+                          insertWorkspaceTabCitation(tab);
+                        }}
+                      >
+                        <WorkspaceTabAttachMenuIcon tab={tab} />
+                        <span className="lyra-app-menu-item-label">{tab.title.trim() || tab.displayAddress || tab.id}</span>
+                      </AppMenuItem>
+                    ))}
+                  </AppMenuSubContent>
+                </AppMenuSub>
+              ) : null}
+              {terminalTabs.length > 0 ? (
+                <AppMenuSub
+                  open={attachmentSubmenuId === "terminal-tabs"}
+                  onOpenChange={(nextOpen) => {
+                    setAttachmentSubmenuId(nextOpen ? "terminal-tabs" : null);
+                  }}
+                >
+                  <AppMenuSubTrigger
+                    className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-submenu-trigger"
+                    onFocus={() => setAttachmentSubmenuId("terminal-tabs")}
+                    onMouseEnter={() => setAttachmentSubmenuId("terminal-tabs")}
+                    onPointerMove={() => setAttachmentSubmenuId("terminal-tabs")}
+                  >
+                    <ComposerAttachMenuLeadingIcon>
+                      <Terminal size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                    </ComposerAttachMenuLeadingIcon>
+                    <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachTerminalTab")}</span>
+                  </AppMenuSubTrigger>
+                  <AppMenuSubContent
+                    className="lyra-agents-composer-attach-submenu"
+                    sideOffset={4}
+                    alignOffset={-4}
+                  >
+                    {terminalTabs.map((tab) => (
+                      <AppMenuItem
+                        key={tab.id}
+                        className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-menu-entry"
+                        onSelect={() => {
+                          insertTerminalTabCitation(tab);
+                        }}
+                      >
+                        <TerminalTabAttachMenuIcon />
+                        <span className="lyra-app-menu-item-label">{tab.title.trim() || tab.id}</span>
+                      </AppMenuItem>
+                    ))}
+                  </AppMenuSubContent>
+                </AppMenuSub>
+              ) : null}
+              <AppMenuItem
+                className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-menu-entry"
+                onSelect={() => {
+                  void captureAttachment(onCaptureWorkspaceScreenshot);
+                }}
+              >
+                <ComposerAttachMenuLeadingIcon>
+                  <Camera size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                </ComposerAttachMenuLeadingIcon>
+                <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachWorkspaceScreenshot")}</span>
               </AppMenuItem>
               <AppMenuItem
-                className="lyra-app-menu-item-with-icon lyra-agents-composer-attach-menu-item"
+                className="lyra-agents-composer-attach-menu-item lyra-agents-composer-attach-menu-entry"
                 onSelect={() => {
                   void captureAttachment(onCaptureWindowScreenshot);
                 }}
               >
-                <Monitor size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                <ComposerAttachMenuLeadingIcon>
+                  <Monitor size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
+                </ComposerAttachMenuLeadingIcon>
                 <span className="lyra-app-menu-item-label">{t("lyra-agents-composer.attachWindowScreenshot")}</span>
               </AppMenuItem>
             </AppMenuContent>

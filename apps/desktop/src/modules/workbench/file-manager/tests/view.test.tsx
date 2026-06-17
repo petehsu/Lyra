@@ -469,6 +469,8 @@ describe("FileManagerSurface", () => {
       chooser: {
         kind: "ai-project-bind",
         confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory",
         onConfirm
       }
     });
@@ -834,6 +836,8 @@ describe("FileManagerSurface", () => {
       chooser: {
         kind: "ai-project-bind",
         confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory to bind",
         onConfirm: vi.fn()
       }
     });

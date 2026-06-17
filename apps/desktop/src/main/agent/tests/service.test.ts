@@ -25,6 +25,7 @@ import type { LyraRuntimeClient } from "../../runtime-client";
 import { WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID } from "../../workbench-browser/types";
 import type { WorkbenchObservationService } from "../../workbench-observation/types";
 import { createAgentIpcBridge } from "../service";
+import { createWorkbenchStateMock } from "./workbench-state-mock";
 
 type RuntimeListener = (event: string, payload: unknown) => void;
 
@@ -66,7 +67,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(
@@ -334,7 +336,8 @@ describe("Agent IPC bridge", () => {
         }
       }) as never,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     expect(runtimeListener).not.toBeNull();
@@ -371,7 +374,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     expect(runtimeListener).not.toBeNull();
@@ -484,7 +488,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("workbench.listTabs")?.({ scope: "visible" })).resolves.toBe(tabs);
@@ -583,7 +588,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("workbench.readTab")?.({ tabId: "35" })).resolves.toEqual(
@@ -667,7 +673,8 @@ describe("Agent IPC bridge", () => {
       getBrowserBridge: () => null,
       getWorkbenchObservationService: () => ({
         openTerminalPane
-      }) as unknown as WorkbenchObservationService
+      }) as unknown as WorkbenchObservationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(
@@ -797,7 +804,8 @@ describe("Agent IPC bridge", () => {
       }) as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await registered.get("terminal.create")?.({
@@ -868,7 +876,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: true });
@@ -966,7 +975,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock({ createSession, readObservation }) as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const result = await registered.get("terminal.create")?.({
@@ -1043,7 +1053,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(
@@ -1139,7 +1150,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const created = await registered.get("terminal.create")?.({
@@ -1229,7 +1241,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: terminalBridge as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const created = await registered.get("terminal.create")?.({
@@ -1383,7 +1396,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     expect(registered.get("workbench.browser.readSessionSnapshot")?.({})).toBe(snapshot);
@@ -1463,7 +1477,8 @@ describe("Agent IPC bridge", () => {
         terminalBridge: createTerminalBridgeMock() as never,
         getWindow: () => null,
         getBrowserBridge: () => browserBridge as never,
-        getWorkbenchObservationService: () => null
+        getWorkbenchObservationService: () => null,
+        workbenchState: createWorkbenchStateMock()
       });
 
       const promise = registered.get("workbench.browser.readRenderedSnapshot")?.({
@@ -1773,7 +1788,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     expect(registered.has("browser.listTabs")).toBe(false);
@@ -2434,7 +2450,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("lyraLumen.map")?.({ targetMode: "isolated" })).resolves.toMatchObject({
@@ -2506,7 +2523,8 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => browserBridge as never,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("lyraLumen.map")?.({ target: "live" })).resolves.toMatchObject({
@@ -2557,7 +2575,8 @@ describe("Agent IPC bridge", () => {
         }
       }) as never,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const pending = registered.get("software.listCapabilities")?.({ includeSchemas: true });

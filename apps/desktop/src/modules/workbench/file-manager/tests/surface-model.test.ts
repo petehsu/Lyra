@@ -120,6 +120,8 @@ describe("deriveFileManagerSurfaceModel", () => {
       {
         kind: "ai-project-bind",
         confirmLabel: "Bind",
+        promptLabel: "Bind project",
+        selectPlaceholder: "Open a directory",
         onConfirm: () => undefined
       },
       false

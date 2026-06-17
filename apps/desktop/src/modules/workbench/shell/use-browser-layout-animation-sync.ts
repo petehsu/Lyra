@@ -35,15 +35,6 @@ export const useBrowserLayoutAnimationSync = ({
   ]);
 
   useEffect(() => {
-    const isManualLayoutResize =
-      document.body.classList.contains("lyra-layout-resizing");
-    if (isManualLayoutResize) {
-      scheduleBrowserLayoutSync({
-        force: true,
-        followUpFrames: 4
-      });
-      return;
-    }
     beginBrowserLayoutAnimationSync();
   }, [
     activeTabId,

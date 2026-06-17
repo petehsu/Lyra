@@ -49,6 +49,7 @@ export declare const ListChecks: LucideIcon;
 export declare const Lock: LucideIcon;
 export declare const LogIn: LucideIcon;
 export declare const Mail: LucideIcon;
+export declare const MapPin: LucideIcon;
 export declare const MessageSquare: LucideIcon;
 export declare const Minus: LucideIcon;
 export declare const Moon: LucideIcon;

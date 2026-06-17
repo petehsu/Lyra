@@ -310,6 +310,24 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
     setState((current) => normalizeTabs([...current.tabs, draft], draft.tabId, null));
   }, []);
 
+  const setDraftWorkingDir = useCallback((tabId: string, workingDir: string): void => {
+    const trimmedTabId = tabId.trim();
+    const trimmedWorkingDir = workingDir.trim();
+    if (trimmedTabId.length === 0 || trimmedWorkingDir.length === 0) return;
+    setState((current) => {
+      const target = current.tabs.find((tab) => tab.tabId === trimmedTabId);
+      // Only un-backed draft tabs carry an editable working dir. Once a tab has a
+      // real sessionId its binding is owned by the runtime and is immutable.
+      if (target === undefined || target.sessionId !== null) return current;
+      const nextTabs = current.tabs.map((tab) =>
+        tab.tabId === trimmedTabId
+          ? { ...tab, draftWorkingDir: trimmedWorkingDir }
+          : tab
+      );
+      return normalizeTabs(nextTabs, current.activeTabId, current.activeSessionId);
+    });
+  }, []);
+
   const closeSession = useCallback((identity: string): void => {
     const trimmed = identity.trim();
     if (trimmed.length === 0) return;
@@ -438,6 +456,7 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
     removeSession,
     reorderSessionTabs,
     createDraftSession,
+    setDraftWorkingDir,
     createSession,
     upsertSnapshot
   };

@@ -225,7 +225,7 @@ pub(crate) fn build_runtime_context(
         })
         .collect::<Vec<_>>();
     json!({
-        "identity": "Lyra Agent",
+        "identity": "Lyra",
         "workbench": workbench,
         "browserRecovery": browser_recovery_context(dispatcher),
         "browserModePolicy": {
@@ -417,14 +417,28 @@ fn working_dir_is_git_repo(working_dir: Option<&str>) -> bool {
         .is_some_and(|output| output.status.success())
 }
 
+pub(crate) fn read_host_persona_context(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+) -> PersonaContext {
+    let Some(dispatcher) = dispatcher else {
+        return PersonaContext::default();
+    };
+    match invoke_host_capability(dispatcher, "agent.readHostPersonaContext", json!({})) {
+        Ok(value) => prompt_policy::persona_context_from_value(&value),
+        Err(_) => PersonaContext::default(),
+    }
+}
+
 pub(crate) fn build_system_prompt(
     runtime_context: &Value,
+    persona: &PersonaContext,
     active_skill_prompt: &str,
     design_research_required: bool,
     memory_prompt: &str,
 ) -> String {
     prompt_policy::build_system_prompt(&PromptPolicyInput {
         runtime_context: runtime_context.clone(),
+        persona: persona.clone(),
         active_skill_prompt: active_skill_prompt.to_string(),
         memory_prompt: memory_prompt.to_string(),
         design_research_required,
@@ -440,8 +454,42 @@ pub(crate) fn build_system_prompt(
 
 pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
     let mut tools = tools::tool_fs::model_provider_tools();
+    tools.push(session_read_message_model_tool());
     tools.push(turn_finish_model_tool());
     tools
+}
+
+fn session_read_message_model_tool() -> Value {
+    function_tool(
+        LYRA_SESSION_READ_MESSAGE_TOOL,
+        "Read the canonical full text of a prior session message referenced by a lyra-transcript-cite block.",
+        json!({
+            "type": "object",
+            "properties": {
+                "messageId": {
+                    "type": "string",
+                    "description": "Stable message id from a lyra-transcript-cite block."
+                },
+                "blockId": {
+                    "type": "string",
+                    "description": "Optional text block id when the cite targets one block."
+                },
+                "startOffset": {
+                    "type": "integer",
+                    "description": "Optional UTF-16 start offset inside the cited block."
+                },
+                "endOffset": {
+                    "type": "integer",
+                    "description": "Optional UTF-16 end offset inside the cited block."
+                },
+                "includeToolBlocks": {
+                    "type": "boolean",
+                    "description": "Include tool-only blocks as summaries when the cited message has no text."
+                }
+            },
+            "required": ["messageId"]
+        }),
+    )
 }
 
 fn turn_finish_model_tool() -> Value {

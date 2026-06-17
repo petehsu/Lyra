@@ -1,14 +1,37 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject
+} from "react";
 
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
+import {
+  applyPanelLayoutCssVars,
+  buildPanelLayoutCssVars
+} from "./panel-layout-shell-vars";
+import { notifyLayoutResizeEnd } from "./layout-resize-end";
 import {
   resolveCoupledPanelSizes,
   type PanelSizeState,
   resolvePanelSizeBounds
 } from "./service";
 
+export { subscribeLayoutResizeEnd } from "./layout-resize-end";
+
 export type AiPanelSide = "left" | "right";
 export type TerminalPanelSide = "top" | "bottom";
+
+// Cached mirror of the `lyra-layout-resizing` body class. Lets hot resize paths
+// (e.g. the terminal pane ResizeObserver) check "is a splitter drag active?"
+// without a per-tick `classList.contains` read, which forces a style reflush.
+let layoutResizingActive = false;
+
+/** True while a panel-splitter drag is in progress. No DOM read. */
+export const getIsLayoutResizing = (): boolean => layoutResizingActive;
 
 export type PanelLayoutState = {
   readonly leftWidth: number;
@@ -41,6 +64,7 @@ export type PanelLayoutModel = PanelLayoutState &
   };
 
 const WORKBENCH_LAYOUT_STATE_KEY = "layout" as const;
+const POINTER_EVENTS_DISABLED_CLASS = "lyra-pointer-events-disabled";
 
 const readPersistedLayoutState = (): Record<string, unknown> => {
   const raw = readWorkbenchStateSync(WORKBENCH_LAYOUT_STATE_KEY);
@@ -80,18 +104,34 @@ const persistLayoutState = (nextState: Record<string, unknown>): void => {
   );
 };
 
+const readPersistedPanelSize = (
+  value: unknown,
+  fallback: number
+): number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
 const createInitialPanelSizes = (): PanelSizeState => {
+  const parsed = readPersistedLayoutState();
   const bounds = resolvePanelSizeBounds();
   return resolveCoupledPanelSizes(
     {
-      leftWidth: bounds.leftDefaultWidth,
-      bottomHeight: bounds.bottomDefaultHeight
+      leftWidth: readPersistedPanelSize(parsed.leftWidth, bounds.leftDefaultWidth),
+      bottomHeight: readPersistedPanelSize(
+        parsed.bottomHeight,
+        bounds.bottomDefaultHeight
+      )
     },
     bounds
   );
 };
 
-export const usePanelLayoutModel = (): PanelLayoutModel => {
+const resolveShellRoot = (
+  shellRootRef: RefObject<HTMLElement | null> | undefined
+): HTMLElement | null => shellRootRef?.current ?? document.querySelector(".lyra-root");
+
+export const usePanelLayoutModel = (
+  shellRootRef?: RefObject<HTMLElement | null>
+): PanelLayoutModel => {
   const [panelSizes, setPanelSizes] = useState<PanelSizeState>(createInitialPanelSizes);
   const [isLeftPanelVisible, setIsLeftPanelVisible] = useState(true);
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(true);
@@ -99,8 +139,33 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
   const [terminalPanelSide, setTerminalPanelSide] =
     useState<TerminalPanelSide>(readInitialTerminalPanelSide);
 
+  const dragDraftRef = useRef<PanelSizeState | null>(null);
+  const visibilityRef = useRef({
+    isLeftPanelVisible,
+    isBottomPanelVisible
+  });
+  visibilityRef.current = {
+    isLeftPanelVisible,
+    isBottomPanelVisible
+  };
+
   const leftWidth = panelSizes.leftWidth;
   const bottomHeight = panelSizes.bottomHeight;
+
+  const applyLiveShellLayout = useCallback(
+    (sizes: PanelSizeState): void => {
+      applyPanelLayoutCssVars(
+        resolveShellRoot(shellRootRef),
+        buildPanelLayoutCssVars({
+          leftWidth: sizes.leftWidth,
+          bottomHeight: sizes.bottomHeight,
+          isLeftPanelVisible: visibilityRef.current.isLeftPanelVisible,
+          isBottomPanelVisible: visibilityRef.current.isBottomPanelVisible
+        })
+      );
+    },
+    [shellRootRef]
+  );
 
   const beginDrag = useCallback((cursor: string, onMove: (event: MouseEvent) => void): void => {
     const previousCursor = document.body.style.cursor;
@@ -108,6 +173,14 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
     document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
     document.body.classList.add("lyra-layout-resizing");
+    layoutResizingActive = true;
+
+    const pointerShieldTargets = Array.from(
+      document.querySelectorAll("iframe, webview")
+    );
+    for (const target of pointerShieldTargets) {
+      target.classList.add(POINTER_EVENTS_DISABLED_CLASS);
+    }
 
     const handleMouseMove = (event: MouseEvent): void => {
       onMove(event);
@@ -116,9 +189,28 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
     const handleMouseUp = (): void => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+
+      const finalDraft = dragDraftRef.current;
+      dragDraftRef.current = null;
+
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
       document.body.classList.remove("lyra-layout-resizing");
+      layoutResizingActive = false;
+
+      if (finalDraft !== null) {
+        setPanelSizes(finalDraft);
+        persistLayoutState({
+          leftWidth: finalDraft.leftWidth,
+          bottomHeight: finalDraft.bottomHeight
+        });
+      }
+
+      notifyLayoutResizeEnd();
+
+      for (const target of pointerShieldTargets) {
+        target.classList.remove(POINTER_EVENTS_DISABLED_CLASS);
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -129,43 +221,45 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
     event.preventDefault();
     const startX = event.clientX;
     const startLeft = leftWidth;
+    const startBottom = bottomHeight;
     beginDrag("col-resize", (moveEvent) => {
       const deltaX = aiPanelSide === "left"
         ? moveEvent.clientX - startX
         : startX - moveEvent.clientX;
       const bounds = resolvePanelSizeBounds();
-      setPanelSizes((current) =>
-        resolveCoupledPanelSizes(
-          {
-            leftWidth: startLeft + deltaX,
-            bottomHeight: current.bottomHeight
-          },
-          bounds
-        )
+      const nextSizes = resolveCoupledPanelSizes(
+        {
+          leftWidth: startLeft + deltaX,
+          bottomHeight: startBottom
+        },
+        bounds
       );
+      dragDraftRef.current = nextSizes;
+      applyLiveShellLayout(nextSizes);
     });
-  }, [aiPanelSide, beginDrag, leftWidth]);
+  }, [aiPanelSide, applyLiveShellLayout, beginDrag, bottomHeight, leftWidth]);
 
   const onBottomResizeMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
     event.preventDefault();
     const startY = event.clientY;
     const startBottom = bottomHeight;
+    const startLeft = leftWidth;
     beginDrag("row-resize", (moveEvent) => {
       const deltaY = terminalPanelSide === "top"
         ? moveEvent.clientY - startY
         : startY - moveEvent.clientY;
       const bounds = resolvePanelSizeBounds();
-      setPanelSizes((current) =>
-        resolveCoupledPanelSizes(
-          {
-            leftWidth: current.leftWidth,
-            bottomHeight: startBottom + deltaY
-          },
-          bounds
-        )
+      const nextSizes = resolveCoupledPanelSizes(
+        {
+          leftWidth: startLeft,
+          bottomHeight: startBottom + deltaY
+        },
+        bounds
       );
+      dragDraftRef.current = nextSizes;
+      applyLiveShellLayout(nextSizes);
     });
-  }, [beginDrag, bottomHeight, terminalPanelSide]);
+  }, [applyLiveShellLayout, beginDrag, bottomHeight, leftWidth, terminalPanelSide]);
 
   useEffect(() => {
     const bounds = resolvePanelSizeBounds();
@@ -201,14 +295,13 @@ export const usePanelLayoutModel = (): PanelLayoutModel => {
   }, []);
 
   const cssVars = useMemo(
-    () => ({
-      "--left-width": isLeftPanelVisible ? `${leftWidth}px` : "0px",
-      "--left-panel-content-width": `${leftWidth}px`,
-      "--left-panel-mobile-height": isLeftPanelVisible ? "var(--lyra-unit-180)" : "0px",
-      "--left-panel-content-mobile-height": "var(--lyra-unit-180)",
-      "--bottom-height": isBottomPanelVisible ? `${bottomHeight}px` : "0px",
-      "--bottom-panel-content-height": `${bottomHeight}px`
-    }),
+    () =>
+      buildPanelLayoutCssVars({
+        leftWidth,
+        bottomHeight,
+        isLeftPanelVisible,
+        isBottomPanelVisible
+      }),
     [bottomHeight, isBottomPanelVisible, isLeftPanelVisible, leftWidth]
   );
 

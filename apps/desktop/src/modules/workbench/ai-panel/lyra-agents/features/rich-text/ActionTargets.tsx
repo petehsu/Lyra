@@ -234,7 +234,7 @@ export const imagePreviewSourceFromSource = (
 
 export const imagePreviewSource = (image: AgentImageAttachment): string | undefined => {
   const mediaType = image.mediaType.trim().toLowerCase();
-  if (mediaType.startsWith("image/") && image.data.trim().length > 0) {
+  if (mediaType.startsWith("image/") && (image.data ?? "").trim().length > 0) {
     return `data:${image.mediaType};base64,${image.data}`;
   }
   const source = image.source?.trim() ?? "";

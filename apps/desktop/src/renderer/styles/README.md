@@ -76,6 +76,8 @@ Lyra Desktop renderer 样式现在只有一条入口和一套分层：真实颜�
 - 枚举项默认用 `AppSelect` 或 `AppTabs`，不再扩散 text-button 和局部列表样式。
 - 可选中的业务对象列表优先使用 `AppObjectRow`，状态标签用 `AppBadge`，页面级反馈用 `AppStatusMessage`。
 - 命令入口用 `AppCommandMenu`，弹窗表面用 `AppDialog`，组件级 toast 行用 `AppToast`；产品级操作反馈优先走现有 Notification service 或 inline `AppStatusMessage`。
+- Icon-only 小控件只表达 glyph state：hover/active/open 只变图标颜色或透明度，不新增小块背景。顶栏入口、tab close、删除/打开图标、dialog/toast close、模型/provider 小图标都遵守这条。
+- 有容器语义的控件才表达 surface state：设置导航项、列表行、菜单项、输入框、choice/card、tab 本体可以有 hover/selected 背景。
 - 固定格式 UI 要有稳定尺寸，避免 hover、图标、标签或动态文案导致布局跳动。
 
 ## 校验

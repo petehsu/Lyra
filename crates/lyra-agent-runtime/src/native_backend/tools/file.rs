@@ -1104,6 +1104,13 @@ fn lyra_artifact_roots() -> Result<Vec<(PathBuf, &'static str)>, NativeToolFailu
 
 fn find_lyra_artifact_by_id(id: &str) -> Result<LyraArtifactPath, NativeToolFailure> {
     let id = id.trim();
+    if id.starts_with("dropped-image-") {
+        return Err(NativeToolFailure::new(
+            "bad_request",
+            format!("{id} is a session inline image attachment id, not a Lyra artifact id"),
+            "Use the source path on <lyra-image-attach> from the user message, or answer from the vision input already in context.",
+        ));
+    }
     if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains('\0') {
         return Err(NativeToolFailure::new(
             "bad_request",

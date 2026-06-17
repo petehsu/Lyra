@@ -80,6 +80,7 @@ import type {
   WorkbenchLumenTargetRef,
   WorkbenchLumenTargetStaleReason,
   WorkbenchBrowserEvent,
+  WorkbenchBrowserExecutePageContextActionRequest,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
@@ -91,7 +92,8 @@ import type {
   WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserTopologySnapshot,
-  WorkbenchBrowserWebThemeSnapshot
+  WorkbenchBrowserWebThemeSnapshot,
+  type PageDragCitationPayload
 } from "./workbench-browser";
 import type {
   WorkbenchObservationQueryRequest,
@@ -150,6 +152,8 @@ export type {
   AgentMemorySnapshot,
   AgentMemoryTrimRunRequest,
   AgentMessage,
+  AgentMessageResolveRequest,
+  AgentMessageResolveResponse,
   AgentPermissionRespondRequest,
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
@@ -203,6 +207,8 @@ export type {
   AgentLoginProviderSnapshot,
   AgentLoginProviderCatalogSnapshot,
   AgentModelEntry,
+  AgentModelDeleteRequest,
+  AgentModelEnableRequest,
   AgentModelRefreshRequest,
   AgentModelRoute,
   AgentModelCatalogRequest,
@@ -330,6 +336,7 @@ export type {
   WorkbenchLumenTargetRef,
   WorkbenchLumenTargetStaleReason,
   WorkbenchBrowserEvent,
+  WorkbenchBrowserExecutePageContextActionRequest,
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserLayoutSnapshot,
   WorkbenchBrowserNavigateRequest,
@@ -541,7 +548,14 @@ export const LYRA_CHANNELS = {
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
   workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
+  workbenchBrowserExecutePageContextAction: "lyra:workbench-browser/execute-page-context-action",
   workbenchBrowserEvent: "lyra:workbench-browser/event",
+  workbenchBrowserPageDragCitation: "lyra:workbench-browser/page-drag-citation",
+  workbenchBrowserReadActivePageDragCitation:
+    "lyra:workbench-browser/read-active-page-drag-citation",
+  workbenchBrowserConsumePageDragCitation:
+    "lyra:workbench-browser/consume-page-drag-citation",
+  workbenchBrowserResolvePageTabId: "lyra:workbench-browser/resolve-page-tab-id",
   loginManagerList: "lyra:login-manager/list",
   loginManagerUpdateSession: "lyra:login-manager/update-session",
   loginManagerDeleteCredential: "lyra:login-manager/delete-credential",
@@ -626,6 +640,7 @@ export const LYRA_CHANNELS = {
   agentMemorySharedUpdate: "lyra:agent/memory/shared/update",
   agentRollbackPreview: "lyra:agent/rollback/preview",
   agentRollbackRestore: "lyra:agent/rollback/restore",
+  agentMessageResolve: "lyra:agent/message/resolve",
   agentGitStatus: "lyra:agent/git/status",
   agentGitDiff: "lyra:agent/git/diff",
   agentGitStage: "lyra:agent/git/stage",
@@ -641,6 +656,8 @@ export const LYRA_CHANNELS = {
   agentProviderProfileSave: "lyra:agent/provider/profile/save",
   agentModelsList: "lyra:agent/models/list",
   agentModelSwitch: "lyra:agent/models/switch",
+  agentModelEnable: "lyra:agent/models/enable",
+  agentModelDelete: "lyra:agent/models/delete",
   agentModelRefresh: "lyra:agent/models/refresh",
   agentProviderOptionsUpdate: "lyra:agent/provider/options/update",
   agentRolesUpdate: "lyra:agent/roles/update",
@@ -683,7 +700,13 @@ export const LYRA_CHANNELS = {
   workbenchStateRead: "lyra:workbench-state/read",
   workbenchStateWrite: "lyra:workbench-state/write",
   workbenchStateRemove: "lyra:workbench-state/remove",
-  workbenchStateChanged: "lyra:workbench-state/changed"
+  workbenchStateChanged: "lyra:workbench-state/changed",
+  locationReadHostCandidates: "lyra:location/read-host-candidates",
+  locationOpenSystemSettings: "lyra:location/open-system-settings",
+  locationReverseGeocodeCandidates: "lyra:location/reverse-geocode-candidates",
+  screenshotPreviewPresent: "lyra:screenshot-preview/present",
+  screenshotPreviewDismiss: "lyra:screenshot-preview/dismiss",
+  screenshotPreviewEvent: "lyra:screenshot-preview/event"
 } as const;
 
 export type WindowStatePayload = {
@@ -2289,6 +2312,8 @@ export type FilesApi = {
   readonly statFile: (request: FileStatRequest) => Promise<FileStatResult>;
   readonly selectAttachments: () => Promise<readonly FileManagerSelectedAttachment[]>;
   readonly selectDirectories: () => Promise<readonly FileManagerSelectedAttachment[]>;
+  /** Resolve a drag/drop File to an absolute path (required in sandboxed renderers). */
+  readonly getPathForFile: (file: File) => string;
 };
 
 export type DownloadManagerApi = {
@@ -2370,6 +2395,11 @@ export type WorkbenchBrowserApi = {
     request?: WorkbenchVisualCaptureRequest
   ) => Promise<WorkbenchVisualCaptureResult>;
   readonly captureWindow: () => Promise<WorkbenchVisualCaptureResult>;
+  readonly executePageContextAction: (
+    request: WorkbenchBrowserExecutePageContextActionRequest
+  ) => Promise<void>;
+  readonly readActivePageDragCitation: () => PageDragCitationPayload | null;
+  readonly consumePageDragCitation: () => void;
   readonly onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => () => void;
 };
 
@@ -2465,7 +2495,8 @@ export type WorkbenchStateKey =
   | "ai-panel-tabs"
   | "terminal-dock"
   | "notifications"
-  | "layout";
+  | "layout"
+  | "location";
 
 export type WorkbenchStateSnapshot = Readonly<Record<WorkbenchStateKey, string | null>>;
 
@@ -2480,6 +2511,104 @@ export type WorkbenchStateApi = {
   readonly write: (key: WorkbenchStateKey, json: string) => Promise<void>;
   readonly remove: (key: WorkbenchStateKey) => Promise<void>;
   readonly onDidChange: (listener: (event: WorkbenchStateChangeEvent) => void) => () => void;
+};
+
+export type LocationCandidateSource = "browser" | "os" | "ip";
+
+export type LocationCandidateStatus = "ok" | "unsupported" | "error";
+
+export type LocationCandidate = {
+  readonly id: string;
+  readonly source: LocationCandidateSource;
+  readonly status: LocationCandidateStatus;
+  readonly latitude?: number;
+  readonly longitude?: number;
+  readonly accuracyMeters?: number;
+  readonly capturedAt: string;
+  readonly label?: string;
+  readonly errorCode?: string;
+  readonly errorMessage?: string;
+};
+
+export type LocationResolvedAddress = {
+  readonly displayName: string;
+  readonly precision:
+    | "poi"
+    | "house"
+    | "road"
+    | "neighbourhood"
+    | "district"
+    | "city"
+    | "region"
+    | "country"
+    | "coordinate";
+  readonly attribution?: string;
+};
+
+export type LocationResolvedCandidate = LocationCandidate & {
+  readonly resolvedAddress?: LocationResolvedAddress;
+};
+
+export type LocationHostCandidatesRequest = {
+  readonly locale?: string;
+};
+
+export type LocationHostCandidatesResponse = {
+  readonly candidates: readonly LocationCandidate[];
+};
+
+export type LocationReverseGeocodeRequest = {
+  readonly locale?: string;
+  readonly candidates: readonly LocationCandidate[];
+};
+
+export type LocationReverseGeocodeResponse = {
+  readonly candidates: readonly LocationResolvedCandidate[];
+};
+
+export type LocationApi = {
+  readonly readHostCandidates: (
+    request?: LocationHostCandidatesRequest
+  ) => Promise<LocationHostCandidatesResponse>;
+  readonly openSystemSettings: () => Promise<boolean>;
+  readonly reverseGeocodeCandidates: (
+    request: LocationReverseGeocodeRequest
+  ) => Promise<LocationReverseGeocodeResponse>;
+};
+
+export type ScreenshotPreviewPresentRequest = {
+  readonly imageBase64: string;
+  readonly mimeType?: "image/png" | "image/jpeg";
+  readonly label?: string;
+  readonly source?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly workspaceTabId?: string;
+  readonly workspaceTabTitle?: string;
+  readonly workspaceTabPageKind?: string;
+  readonly workspaceTabAddress?: string;
+};
+
+export type ScreenshotPreviewEvent =
+  | {
+      readonly kind: "presented";
+      readonly previewId: string;
+    }
+  | {
+      readonly kind: "dismissed";
+      readonly previewId: string;
+    }
+  | {
+      readonly kind: "drag-started";
+      readonly previewId: string;
+    };
+
+export type ScreenshotPreviewApi = {
+  readonly present: (
+    request: ScreenshotPreviewPresentRequest
+  ) => Promise<{ readonly previewId: string | null }>;
+  readonly dismiss: () => Promise<void>;
+  readonly onEvent: (listener: (event: ScreenshotPreviewEvent) => void) => () => void;
 };
 
 export type WorkbenchObservationBridgeApi = {
@@ -2515,6 +2644,7 @@ export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
   readonly shellEvents: ShellEventsApi;
+  readonly screenshotPreview: ScreenshotPreviewApi;
   readonly openExternal: (url: string) => Promise<boolean>;
   readonly systemNotifications?: SystemNotificationsApi;
   readonly linuxCompat: LinuxCompatApi;
@@ -2532,4 +2662,5 @@ export type LyraDesktopApi = {
   readonly softwareCapabilities?: SoftwareCapabilitiesBridgeApi;
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
+  readonly location?: LocationApi;
 };

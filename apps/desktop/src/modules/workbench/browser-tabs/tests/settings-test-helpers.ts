@@ -10,6 +10,7 @@ export const createBrowserSettingsSurfaceProps = (
   appearanceCategoryLabel: "Appearance",
   workspaceCategoryLabel: "Workspace",
   aiCategoryLabel: "Lyra Agents",
+  modelsCategoryLabel: "Models",
   notificationsCategoryLabel: "Notifications",
   loginManagerCategoryLabel: "Login Manager",
   softwareStoreCategoryLabel: "Lyra Software",
@@ -151,6 +152,7 @@ export const createBrowserSettingsSurfaceProps = (
   ],
   aiLabels: { categoryLabel: "Lyra Agents" } as BrowserSettingsSurfaceProps["aiLabels"],
   aiModel: {} as BrowserSettingsSurfaceProps["aiModel"],
+  openDialog: noop,
   loginManager: {
     desktopApi: null,
     labels: {

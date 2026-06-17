@@ -12,12 +12,37 @@ import type {
   AgentAccountsSnapshot,
   AgentAccountRequest,
   AgentLoginProviderCatalogSnapshot,
+  AgentModelCatalogSnapshot,
+  AgentModelDeleteRequest,
+  AgentModelEnableRequest,
+  AgentModelSwitchRequest,
   AgentProviderProfileSaveRequest,
 } from "../../../shared/desktop-bridge";
 
 export type SettingsAiLabels = {
   readonly categoryLabel: string;
   readonly profilesTitle: string;
+  readonly modelsTitle: string;
+  readonly modelsSearchPlaceholder: string;
+  readonly modelsEmptyTitle: string;
+  readonly modelsEmptyDescription: string;
+  readonly modelsCurrentLabel: string;
+  readonly modelsAddModel: string;
+  readonly modelsViewAll: string;
+  readonly modelsProviderTitle: string;
+  readonly modelsDiscoverModels: string;
+  readonly modelsCustomModel: string;
+  readonly modelsCustomModelPlaceholder: string;
+  readonly modelsAddCustomModel: string;
+  readonly modelsDisableAll: string;
+  readonly modelsEnableAll: string;
+  readonly modelsManualEntryTitle: string;
+  readonly modelsManualEntryDescription: string;
+  readonly modelsDiscoverEmptyDescription: string;
+  readonly modelsDeleteLabel: string;
+  readonly modelsDeleteConfirmTitle: string;
+  readonly modelsDeleteConfirmDescription: string;
+  readonly modelsDeleteConfirmAction: string;
   readonly providerTitle: string;
   readonly connectionTitle: string;
   readonly additionalFieldsTitle: string;
@@ -156,6 +181,7 @@ export type SettingsAiModel = {
   readonly agentConfig?: AgentConfigSnapshot | null;
   readonly agentAccounts?: AgentAccountsSnapshot | null;
   readonly agentLoginProviders?: AgentLoginProviderCatalogSnapshot | null;
+  readonly agentModelCatalog?: AgentModelCatalogSnapshot | null;
   readonly agentProviderCatalog?: AgentProviderCatalogSnapshot | null;
   readonly setDefaultProfile: (profileId: string) => Promise<void>;
   readonly refreshAgent?: () => Promise<void>;
@@ -164,7 +190,17 @@ export type SettingsAiModel = {
   readonly saveAgentProviderProfile?: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<void>;
-  readonly refreshAgentModels?: (providerId: string) => Promise<void>;
+  readonly refreshAgentModels?: (providerId: string) => Promise<AgentModelCatalogSnapshot | null>;
+  readonly refreshAgentModelCatalog?: () => Promise<void>;
+  readonly setAgentModelEnabled?: (
+    request: AgentModelEnableRequest
+  ) => Promise<void>;
+  readonly deleteAgentModel?: (
+    request: AgentModelDeleteRequest
+  ) => Promise<void>;
+  readonly switchAgentModel?: (
+    request: AgentModelSwitchRequest
+  ) => Promise<void>;
   readonly startAgentAccountLogin?: (
     request: AgentAccountLoginStartRequest
   ) => Promise<AgentAccountLoginStartResponse | null>;

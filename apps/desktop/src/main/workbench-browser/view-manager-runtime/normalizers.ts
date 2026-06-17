@@ -644,15 +644,37 @@ const isTransientNavigationParam = (name: string): boolean => {
   );
 };
 
+const unwrapTranslationWrapperUrl = (parsed: URL): URL => {
+  const translationHosts = new Set(["translate.google.com", "translate.google.cn"]);
+  if (
+    translationHosts.has(parsed.hostname)
+    || parsed.hostname.endsWith(".translate.goog")
+  ) {
+    const embedded = parsed.searchParams.get("u");
+    if (embedded !== null && embedded.trim().length > 0) {
+      try {
+        return new URL(decodeURIComponent(embedded.trim()));
+      } catch (_error) {
+        return parsed;
+      }
+    }
+  }
+  return parsed;
+};
+
 const normalizeNavigationComparisonAddress = (value: unknown): string | null => {
   const address = normalizeAddress(value);
   if (address === null || address === "about:blank") {
     return address;
   }
   try {
-    const parsed = new URL(address);
+    let parsed = new URL(address);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return address;
+    }
+    parsed = unwrapTranslationWrapperUrl(parsed);
+    if (parsed.hash.includes("googtrans")) {
+      parsed.hash = "";
     }
     for (const name of [...parsed.searchParams.keys()]) {
       if (isTransientNavigationParam(name)) {

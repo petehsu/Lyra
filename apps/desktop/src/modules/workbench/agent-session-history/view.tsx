@@ -101,11 +101,20 @@ const historyToolStatusLabel = (status: "running" | "success" | "error"): string
 };
 
 const historyImageSrc = (block: Extract<HistoryMessageBlock, { type: "image" }>): string => {
-  const data = block.image.data.trim();
-  if (data.startsWith("data:")) {
-    return data;
+  const data = (block.image.data ?? "").trim();
+  if (data.length > 0) {
+    if (data.startsWith("data:")) {
+      return data;
+    }
+    return `data:${block.image.mediaType};base64,${data}`;
   }
-  return `data:${block.image.mediaType};base64,${data}`;
+  const source = block.image.source?.trim() ?? "";
+  if (source.length === 0) {
+    return "";
+  }
+  const mediaType = block.image.mediaType.trim().toLowerCase();
+  const contentType = mediaType.startsWith("image/") ? block.image.mediaType : "image/png";
+  return `lyra-file://preview?path=${encodeURIComponent(source)}&contentType=${encodeURIComponent(contentType)}`;
 };
 
 const hasProjectBinding = (session: AgentSessionSummary): boolean =>

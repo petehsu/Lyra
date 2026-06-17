@@ -279,11 +279,15 @@ const selectorRules: readonly SelectorRule[] = [
   },
   {
     selector: ".lyra-browser-tab-item",
-    required: [/margin-top:\s*var\(--lyra-unit-3\)\s*;/, /margin-bottom:\s*0\s*;/]
+    required: [
+      /border:\s*var\(--lyra-stroke-thin\)\s+solid\s+transparent\s*;/,
+      /border-radius:\s*var\(--lyra-radius-8\)\s*;/,
+      /background:\s*transparent\s*;/
+    ]
   },
   {
     selector: ".lyra-browser-tabs .lyra-browser-tab-item",
-    required: [/margin-bottom:\s*var\(--lyra-unit-3\)\s*;/],
+    required: [/margin-bottom:\s*var\(--lyra-unit-1\)\s*;/],
     forbidden: [/margin-top:\s*var\(--lyra-unit-3\)\s*;/]
   },
   {
@@ -301,6 +305,10 @@ const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-browser-tab-item:hover .lyra-browser-tab-title",
     required: [/color:\s*var\(--lyra-text-primary\)\s*;/]
+  },
+  {
+    selector: ".lyra-browser-tab-item-active",
+    required: [/background:\s*var\(--lyra-tabstrip-active-bg\)\s*;/]
   },
   {
     selector: ".lyra-ai-agent-send-ready",
@@ -334,8 +342,8 @@ const globalForbiddenPatterns: readonly { readonly pattern: RegExp; readonly mes
     message: "Tab hover must not alter tab dividers; only text brightness may change."
   },
   {
-    pattern: /\.lyra-browser-tab-item:hover\s*\{[^}]*z-index\s*:/gs,
-    message: "Tab hover must not change tab stacking style; only text brightness may change."
+    pattern: /\.lyra-browser-tab-item:hover\s*\{[^}]*box-shadow\s*:/gs,
+    message: "Tab hover must not add a tab shadow."
   }
 ];
 

@@ -1,5 +1,7 @@
 import { useLayoutEffect, type RefObject } from "react";
 
+import { useWindowResizeClass } from "./use-window-resize-class";
+
 const LYRA_SCROLLBAR_HIDDEN_ATTR = "data-lyra-scrollbar-hidden";
 const SCROLLBAR_VISIBILITY_THRESHOLD_PX = 40;
 
@@ -33,6 +35,11 @@ const syncElementScrollbarVisibility = (element: HTMLElement): void => {
 };
 
 export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): void => {
+  // Drop heavy backdrop-filter blur during native window-edge resize (paired
+  // shell-root global resize effect; panel-splitter drags are handled in
+  // use-panel-layout.ts).
+  useWindowResizeClass();
+
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (root === null) {
@@ -41,15 +48,21 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
 
     const observedElements = new Set<HTMLElement>();
     const resizeObserver = new ResizeObserver(() => {
-      scheduleSync();
+      scheduleResync();
     });
     const mutationObserver = new MutationObserver(() => {
-      scheduleSync();
+      scheduleRediscover();
     });
 
     let frameId = 0;
+    // When true the next frame walks the whole subtree to (un)observe elements;
+    // otherwise it only re-evaluates already-observed elements. Resize/scroll set
+    // the cheap path; DOM mutations request the full (expensive) rediscovery.
+    let needsRediscover = false;
 
-    const refreshObservedElements = () => {
+    // Full pass: walk the subtree to start/stop observing scrollable elements.
+    // Only triggered by structural DOM mutations, not by every resize/scroll tick.
+    const rediscoverObservedElements = () => {
       const candidates = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
 
       for (const candidate of candidates) {
@@ -75,16 +88,37 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
       }
     };
 
-    const runSync = () => {
-      frameId = 0;
-      refreshObservedElements();
+    // Cheap pass: only re-evaluate the already-observed set. No subtree walk, so
+    // resize-drag and scroll stay O(observed) instead of O(DOM).
+    const resyncObservedElements = () => {
+      for (const element of observedElements) {
+        if (root.contains(element) === false) {
+          resizeObserver.unobserve(element);
+          observedElements.delete(element);
+          continue;
+        }
+        syncElementScrollbarVisibility(element);
+      }
     };
 
-    const scheduleSync = () => {
-      if (frameId !== 0) {
-        return;
+    const runSync = () => {
+      frameId = 0;
+      if (needsRediscover) {
+        needsRediscover = false;
+        rediscoverObservedElements();
+      } else {
+        resyncObservedElements();
       }
+    };
 
+    const scheduleResync = () => {
+      if (frameId !== 0) return;
+      frameId = window.requestAnimationFrame(runSync);
+    };
+
+    const scheduleRediscover = () => {
+      needsRediscover = true;
+      if (frameId !== 0) return;
       frameId = window.requestAnimationFrame(runSync);
     };
 
@@ -94,16 +128,18 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
       attributes: true,
       attributeFilter: ["class", "style"]
     });
-    window.addEventListener("resize", scheduleSync);
-    root.addEventListener("scroll", scheduleSync, true);
+    window.addEventListener("resize", scheduleResync);
+    root.addEventListener("scroll", scheduleResync, true);
 
+    // Initial pass must discover the elements to observe.
+    needsRediscover = true;
     runSync();
 
     return () => {
       mutationObserver.disconnect();
       resizeObserver.disconnect();
-      window.removeEventListener("resize", scheduleSync);
-      root.removeEventListener("scroll", scheduleSync, true);
+      window.removeEventListener("resize", scheduleResync);
+      root.removeEventListener("scroll", scheduleResync, true);
       if (frameId !== 0) {
         window.cancelAnimationFrame(frameId);
       }

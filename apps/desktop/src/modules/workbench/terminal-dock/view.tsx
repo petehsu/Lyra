@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import {
   useCallback,
-  useMemo,
   useState,
   type DragEvent as ReactDragEvent
 } from "react";
@@ -25,13 +24,8 @@ import {
 } from "./drag-transfer";
 import { TerminalPaneSurface } from "./pane-surface";
 import type { TerminalDockProps } from "./types";
-import { AppButton, AppIconButton, AppSelect } from "@renderer/ui/components";
+import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { cn } from "@renderer/ui/utils";
-import {
-  DEFAULT_TERMINAL_PROFILE_ID,
-  DEFAULT_TERMINAL_PROFILES,
-  resolveTerminalProfile
-} from "../terminal-profiles";
 
 export const TerminalDock = ({
   desktopApi,
@@ -48,15 +42,6 @@ export const TerminalDock = ({
   const activeDockTab = model.activeDockTab;
   const [isWorkspaceDropActive, setIsWorkspaceDropActive] = useState(false);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState<string>(DEFAULT_TERMINAL_PROFILE_ID);
-  const selectedProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, selectedProfileId);
-  const profileOptions = useMemo(
-    () => DEFAULT_TERMINAL_PROFILES.map((profile) => ({
-      value: profile.id,
-      label: profile.name
-    })),
-    []
-  );
 
   const clearDragUiState = useCallback((): void => {
     setIsWorkspaceDropActive(false);
@@ -301,20 +286,11 @@ export const TerminalDock = ({
           ))}
         </nav>
         <div className="lyra-terminal-toolbar-actions">
-          <AppSelect
-            className="lyra-terminal-profile-select"
-            ariaLabel={labels.profile}
-            value={selectedProfile.id}
-            options={profileOptions}
-            onValueChange={(value) => {
-              setSelectedProfileId(value);
-            }}
-          />
           <AppIconButton
-            aria-label={labels.newTabWithProfile}
-            title={labels.newTabWithProfile}
+            aria-label={labels.newTab}
+            title={labels.newTab}
             onClick={() => {
-              model.openTabWithProfile(selectedProfile);
+              model.openTab();
             }}
           >
             <Plus size={14} aria-hidden="true" />

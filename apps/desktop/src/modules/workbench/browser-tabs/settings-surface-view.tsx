@@ -7,6 +7,7 @@ import {
   AppWindow,
   Monitor,
   Moon,
+  Package,
   Palette,
   Search,
   Settings2,
@@ -25,7 +26,7 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
-import { SettingsAiView } from "../settings-ai";
+import { SettingsAiModelsView, SettingsAiView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -55,6 +56,7 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   general: Settings2,
   linux: Terminal,
   loginManager: KeyRound,
+  models: Package,
   notifications: Bell,
   softwareStore: AppWindow,
   search: Search,
@@ -278,6 +280,15 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       }
       if (control.customKind === "software-store") {
         return <SoftwareStoreSurface {...control.props} embedded />;
+      }
+      if (control.customKind === "ai-models") {
+        return (
+          <SettingsAiModelsView
+            labels={control.labels}
+            model={control.model}
+            openDialog={control.openDialog}
+          />
+        );
       }
       return <SettingsAiView labels={control.labels} model={control.model} />;
     case "inline-status-action":

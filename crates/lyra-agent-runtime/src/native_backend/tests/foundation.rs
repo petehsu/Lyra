@@ -1,19 +1,27 @@
 use super::*;
 #[test]
 fn native_backend_creates_and_reads_session() {
+    // A session created without an explicit working directory defaults to the
+    // user's home directory and is bound (projectBound=true, workingDirIsHome=true)
+    // — there are no unbound sessions.
+    let home = dirs::home_dir()
+        .map(|path| path.display().to_string())
+        .expect("home directory");
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method("agent.session.create", json!({ "title": "Test" }))
         .expect("create session");
-    assert_eq!(created["workingDir"], "");
-    assert_eq!(created["projectBound"], false);
+    assert_eq!(created["workingDir"], home);
+    assert_eq!(created["projectBound"], true);
+    assert_eq!(created["workingDirIsHome"], true);
     let session_id = created["id"].as_str().expect("session id").to_string();
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
         .expect("read session");
     assert_eq!(read["title"], "Test");
-    assert_eq!(read["workingDir"], "");
-    assert_eq!(read["projectBound"], false);
+    assert_eq!(read["workingDir"], home);
+    assert_eq!(read["projectBound"], true);
+    assert_eq!(read["workingDirIsHome"], true);
 }
 
 #[test]
@@ -313,6 +321,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: true,
+            enabled: true,
         }],
     };
     let mut config = NativeConfig {
@@ -618,7 +627,12 @@ fn native_state_persists_only_live_pending_requests() {
     );
 }
 #[test]
-fn native_backend_requires_explicit_project_binding_for_workspace_tools() {
+fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
+    // An unbound session (the user sent a message without choosing a project)
+    // defaults both shell and filesystem tools to the user's home directory
+    // instead of rejecting filesystem work. This keeps the two tool families
+    // operating in the same place and lets users start chatting without first
+    // binding a project.
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method("agent.session.create", json!({ "title": "Unbound Test" }))
@@ -637,28 +651,10 @@ fn native_backend_requires_explicit_project_binding_for_workspace_tools() {
             json!({ "path": "." }),
         ),
     );
-    assert_eq!(
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_ne!(
         output.pointer("/error/code").and_then(Value::as_str),
         Some("workspace_unbound")
-    );
-    assert_eq!(output["notRunReason"].as_str(), Some("workspace_unbound"));
-    assert_eq!(
-        output
-            .pointer("/error/detail/toolPath")
-            .and_then(Value::as_str),
-        Some("/tools/filesystem/list_files")
-    );
-    assert!(
-        output["trace"]
-            .as_array()
-            .expect("trace")
-            .iter()
-            .all(|record| {
-                !matches!(
-                    record.get("phase").and_then(Value::as_str),
-                    Some("validated" | "permission_checked" | "executing")
-                )
-            })
     );
 
     let shell = execute_model_tool(
@@ -678,6 +674,51 @@ fn native_backend_requires_explicit_project_binding_for_workspace_tools() {
     assert_ne!(
         shell.pointer("/error/code").and_then(Value::as_str),
         Some("workspace_unbound")
+    );
+}
+
+#[test]
+fn native_backend_rejects_rebinding_a_session_already_bound_to_a_project() {
+    // Once a session is bound to a real project the binding is permanent:
+    // re-binding to a different root would desynchronize the session's tool
+    // history, file-read state, and rollback checkpoints from the new root.
+    let backend = LyraAgentBackend;
+    let first = tempfile::tempdir().expect("first tempdir");
+    let second = tempfile::tempdir().expect("second tempdir");
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Rebind Test" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    // First bind succeeds (session starts home-bound, which may be rebound once).
+    let bound = backend
+        .call_agent_method(
+            "agent.session.bindProject",
+            json!({
+                "sessionId": session_id,
+                "workingDir": first.path().display().to_string()
+            }),
+        )
+        .expect("first bind");
+    assert_eq!(bound["projectBound"], true);
+
+    // Second bind to a different root is rejected.
+    let rebind = backend.call_agent_method(
+        "agent.session.bindProject",
+        json!({
+            "sessionId": session_id,
+            "workingDir": second.path().display().to_string()
+        }),
+    );
+    assert!(rebind.is_err(), "rebinding a bound session must fail");
+
+    // The original binding is preserved.
+    let read = backend
+        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .expect("read session");
+    assert_eq!(
+        read["workingDir"].as_str(),
+        Some(first.path().display().to_string().as_str())
     );
 }
 
@@ -1191,7 +1232,36 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
 
 #[test]
 fn model_catalog_uses_structured_provider_capabilities() {
-    let catalog = list_models(json!({})).expect("model catalog");
+    let mut config = NativeConfig {
+        default_provider: Some("custom".to_string()),
+        default_model: Some("custom-model".to_string()),
+        ..NativeConfig::default()
+    };
+    config.providers.insert(
+        "custom".to_string(),
+        NativeProviderProfile {
+            id: "custom".to_string(),
+            label: "Custom".to_string(),
+            route_id: "custom_openai_compatible".to_string(),
+            base_url: Some("http://localhost:8787/v1".to_string()),
+            default_model: Some("custom-model".to_string()),
+            api_key: Some("sk-test".to_string()),
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: Some("custom-embedding".to_string()),
+            models: vec![NativeProviderModel {
+                id: "custom-model".to_string(),
+                label: Some("Custom Model".to_string()),
+                context_window: Some(128_000),
+                supports_image_input: true,
+                supports_tool_calling: true,
+                supports_streaming: true,
+                enabled: true,
+            }],
+        },
+    );
+    let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+
     assert!(catalog["models"].as_array().is_some());
     assert!(catalog["routes"].as_array().is_some());
     assert!(catalog["models"].as_array().is_some_and(|models| {
@@ -1203,6 +1273,209 @@ fn model_catalog_uses_structured_provider_capabilities() {
         })
     }));
 }
+
+#[test]
+fn model_catalog_does_not_synthesize_models_without_configured_providers() {
+    let catalog =
+        model_catalog_for_config(&NativeConfig::default(), json!({})).expect("model catalog");
+
+    assert_eq!(catalog["currentProvider"], "");
+    assert_eq!(catalog["currentModel"], "");
+    assert!(catalog["models"].as_array().is_some_and(Vec::is_empty));
+    assert!(catalog["routes"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn default_provider_install_does_not_seed_hardcoded_models() {
+    let mut config = NativeConfig::default();
+    install_default_providers(&mut config);
+
+    assert!(
+        config
+            .providers
+            .values()
+            .all(|provider| provider.models.is_empty())
+    );
+    let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+    assert!(catalog["models"].as_array().is_some_and(Vec::is_empty));
+    assert!(catalog["routes"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn save_provider_profile_preserves_omitted_secret_and_models() {
+    let backend = LyraAgentBackend;
+    let profile_name = format!("preserve-profile-{}", Uuid::new_v4());
+    let original_model = format!("preserve-model-{}", Uuid::new_v4());
+    {
+        let mut state = state().lock().expect("state lock");
+        state.config.providers.insert(
+            profile_name.clone(),
+            NativeProviderProfile {
+                id: profile_name.clone(),
+                label: "Preserve Profile".to_string(),
+                route_id: "custom_openai_compatible".to_string(),
+                base_url: Some("https://old.example.com/v1".to_string()),
+                default_model: Some(original_model.clone()),
+                api_key: Some("sk-preserve".to_string()),
+                api_key_env: Some("LYRA_PRESERVE_API_KEY".to_string()),
+                auth_header: Some("api-key".to_string()),
+                embedding_model: Some("embedding-preserve".to_string()),
+                models: vec![NativeProviderModel {
+                    id: original_model.clone(),
+                    label: Some("Preserve Model".to_string()),
+                    context_window: Some(42_000),
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    enabled: true,
+                }],
+            },
+        );
+    }
+
+    backend
+        .call_agent_method(
+            "agent.provider.profile.save",
+            json!({
+                "profileName": profile_name,
+                "routeId": "custom_openai_compatible",
+                "baseUrl": "https://new.example.com/v1",
+            }),
+        )
+        .expect("save provider profile");
+
+    let state = state().lock().expect("state lock");
+    let profile = state
+        .config
+        .providers
+        .get(&profile_name)
+        .expect("profile preserved");
+    assert_eq!(
+        profile.base_url.as_deref(),
+        Some("https://new.example.com/v1")
+    );
+    assert_eq!(
+        profile.default_model.as_deref(),
+        Some(original_model.as_str())
+    );
+    assert_eq!(profile.api_key.as_deref(), Some("sk-preserve"));
+    assert_eq!(
+        profile.api_key_env.as_deref(),
+        Some("LYRA_PRESERVE_API_KEY")
+    );
+    assert_eq!(profile.auth_header.as_deref(), Some("api-key"));
+    assert_eq!(
+        profile.embedding_model.as_deref(),
+        Some("embedding-preserve")
+    );
+    assert_eq!(profile.models.len(), 1);
+    assert_eq!(profile.models[0].id, original_model);
+}
+
+#[test]
+fn save_mimo_anthropic_profile_uses_api_key_header_by_default() {
+    let backend = LyraAgentBackend;
+    let profile_name = format!("mimo-anthropic-profile-{}", Uuid::new_v4());
+
+    backend
+        .call_agent_method(
+            "agent.provider.profile.save",
+            json!({
+                "profileName": profile_name,
+                "routeId": providers::routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID,
+                "apiKey": "tp-secret",
+                "authHeader": null,
+            }),
+        )
+        .expect("save mimo anthropic provider profile");
+
+    let state = state().lock().expect("state lock");
+    let profile = state
+        .config
+        .providers
+        .get(&profile_name)
+        .expect("profile saved");
+    assert_eq!(
+        profile.route_id,
+        providers::routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID
+    );
+    assert_eq!(
+        profile.base_url.as_deref(),
+        Some(providers::routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_BASE_URL)
+    );
+    assert_eq!(profile.api_key.as_deref(), Some("tp-secret"));
+    assert_eq!(profile.auth_header.as_deref(), Some("api-key"));
+}
+
+#[test]
+fn model_catalog_keeps_disabled_models_out_of_routes() {
+    let mut config = NativeConfig {
+        default_provider: Some("custom".to_string()),
+        default_model: Some("enabled-model".to_string()),
+        ..NativeConfig::default()
+    };
+    config.providers.insert(
+        "custom".to_string(),
+        NativeProviderProfile {
+            id: "custom".to_string(),
+            label: "Custom".to_string(),
+            route_id: "custom_openai_compatible".to_string(),
+            base_url: Some("http://localhost:8787/v1".to_string()),
+            default_model: Some("enabled-model".to_string()),
+            api_key: Some("sk-test".to_string()),
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: vec![
+                NativeProviderModel {
+                    id: "enabled-model".to_string(),
+                    label: None,
+                    context_window: None,
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "disabled-model".to_string(),
+                    label: None,
+                    context_window: None,
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    enabled: false,
+                },
+            ],
+        },
+    );
+
+    let catalog = model_catalog_for_config(&config, json!({})).expect("model catalog");
+    let model_ids = catalog["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .filter_map(|model| model["model"].as_str())
+        .collect::<Vec<_>>();
+    let route_models = catalog["routes"]
+        .as_array()
+        .expect("routes")
+        .iter()
+        .filter_map(|route| route["model"].as_str())
+        .collect::<Vec<_>>();
+    let disabled = catalog["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .find(|model| model["model"].as_str() == Some("disabled-model"))
+        .expect("disabled model");
+
+    assert!(model_ids.contains(&"enabled-model"));
+    assert!(model_ids.contains(&"disabled-model"));
+    assert!(route_models.contains(&"enabled-model"));
+    assert!(!route_models.contains(&"disabled-model"));
+    assert_eq!(disabled["enabled"], false);
+}
+
 #[test]
 fn model_request_injects_lyra_identity_and_tools() {
     let backend = LyraAgentBackend;
@@ -1215,7 +1488,7 @@ fn model_request_injects_lyra_identity_and_tools() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("You are Lyra Agent"));
+    assert!(system_prompt.contains("You are Lyra."));
     assert!(system_prompt.contains("answer directly when no external Lyra capability is needed"));
     let names = request
         .tools

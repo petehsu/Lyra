@@ -926,6 +926,15 @@
   gap: var(--lyra-space-12);
 }
 
+.lyra-settings-ai-models-panel {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-10);
+  padding: var(--lyra-space-10);
+  border-radius: var(--lyra-radius-10);
+  background: var(--lyra-settings-row-bg);
+}
+
 .lyra-settings-ai-page-header {
   min-width: 0;
   min-height: var(--lyra-control-h-36);
@@ -933,7 +942,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--lyra-space-8);
-  padding: 0 var(--lyra-space-8);
+  padding: 0;
 }
 
 .lyra-settings-ai-page-header h3 {
@@ -946,7 +955,7 @@
 
 .lyra-settings-ai-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   align-items: start;
   gap: var(--lyra-space-12);
 }
@@ -977,6 +986,28 @@
 
 .lyra-settings-ai-field-span-2 {
   grid-column: 1 / -1;
+}
+
+.lyra-settings-ai-field-action {
+  align-self: end;
+}
+
+.lyra-settings-ai-field-action .lyra-settings-ai-action {
+  white-space: nowrap;
+}
+
+.lyra-settings-ai-model-discovery-action-row,
+.lyra-settings-ai-custom-model-row {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-custom-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .lyra-settings-ai-input {
@@ -1349,13 +1380,15 @@
 .lyra-settings-ai-provider-row:hover .lyra-settings-ai-row-delete,
 .lyra-settings-ai-provider-row:focus-within .lyra-settings-ai-row-delete,
 .lyra-settings-ai-model-row:hover .lyra-settings-ai-row-delete,
-.lyra-settings-ai-model-row:focus-within .lyra-settings-ai-row-delete {
+.lyra-settings-ai-model-row:focus-within .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-option:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-option:focus-within .lyra-settings-ai-row-delete {
   opacity: 1;
 }
 
 .lyra-settings-ai-row-delete:hover {
   color: var(--lyra-settings-danger);
-  background: color-mix(in srgb, var(--lyra-settings-danger) 10%, transparent);
+  background: transparent;
 }
 
 .lyra-settings-ai-inline-editor {
@@ -1366,6 +1399,12 @@
   border: var(--lyra-stroke-thin) solid var(--lyra-settings-border);
   border-radius: var(--lyra-settings-radius-card);
   background: var(--lyra-settings-card-bg);
+}
+
+.lyra-settings-ai-model-flow {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-10);
 }
 
 .lyra-settings-ai-inline-editor-header,
@@ -1403,12 +1442,35 @@
 }
 
 .lyra-settings-ai-login-provider-grid,
-.lyra-settings-ai-api-provider-strip,
 .lyra-settings-ai-selection-list-grid {
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-220)), 1fr));
   gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-provider-search-step {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-provider-search {
+  width: min(100%, var(--lyra-unit-420));
+}
+
+.lyra-settings-ai-provider-search-results {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--lyra-radius-8);
+  background: transparent;
+}
+
+.lyra-settings-ai-provider-hint {
+  justify-self: start;
 }
 
 .lyra-settings-ai-login-provider {
@@ -1519,6 +1581,58 @@
   overflow: auto;
 }
 
+.lyra-settings-ai-model-list-surface {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+}
+
+.lyra-settings-ai-model-list-rows {
+  border-radius: var(--lyra-radius-8);
+  overflow: hidden;
+}
+
+.lyra-settings-ai-discovered-models {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-6);
+}
+
+.lyra-settings-ai-discovered-models-toolbar {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lyra-agent-provider-brand-icon {
+  width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: currentColor;
+}
+
+.lyra-agent-provider-brand-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-agent-provider-brand-icon-initials {
+  min-width: var(--lyra-icon-size-16);
+  height: var(--lyra-icon-size-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  color: currentColor;
+  background: transparent;
+  font-size: var(--lyra-text-size-10);
+  font-weight: 620;
+  line-height: 1;
+}
+
 .lyra-settings-ai-model-list-item,
 .lyra-settings-ai-selection-item-slot {
   min-width: 0;
@@ -1530,14 +1644,78 @@
   align-items: start;
 }
 
+.lyra-settings-ai-model-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-space-6);
+}
+
+.lyra-settings-ai-model-actions .lyra-settings-ai-row-delete {
+  opacity: 0;
+}
+
 .lyra-settings-ai-model-option-static {
   cursor: default;
 }
 
 .lyra-settings-ai-model-option-static:hover {
-  color: var(--lyra-text-secondary);
+  color: var(--lyra-text-primary);
   background: transparent;
   border-color: transparent;
+}
+
+.lyra-settings-ai-model-option-current {
+  color: var(--lyra-text-primary);
+  background: var(--lyra-settings-row-active-bg);
+}
+
+.lyra-settings-ai-model-list-rows > .lyra-app-object-row {
+  border-radius: 0;
+}
+
+.lyra-settings-ai-model-option .lyra-app-object-row-icon,
+.lyra-settings-ai-provider-search-results .lyra-app-object-row-icon {
+  width: var(--lyra-icon-size-18);
+  height: var(--lyra-icon-size-18);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lyra-settings-ai-model-option:hover .lyra-app-object-row-icon,
+.lyra-settings-ai-model-option[data-active="true"] .lyra-app-object-row-icon,
+.lyra-settings-ai-provider-search-results .lyra-app-object-row:hover:not(:disabled) .lyra-app-object-row-icon,
+.lyra-settings-ai-provider-search-results .lyra-app-object-row[data-active="true"] .lyra-app-object-row-icon {
+  background: transparent;
+  box-shadow: none;
+}
+
+.lyra-settings-ai-model-list-rows > .lyra-app-object-row + .lyra-app-object-row {
+  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-settings-border) 56%, transparent);
+}
+
+.lyra-settings-ai-provider-search-results > .lyra-app-object-row {
+  min-height: var(--lyra-control-h-52);
+  border-radius: 0;
+}
+
+.lyra-settings-ai-provider-search-results > .lyra-app-object-row:first-child {
+  border-top-left-radius: var(--lyra-radius-8);
+  border-top-right-radius: var(--lyra-radius-8);
+}
+
+.lyra-settings-ai-provider-search-results > .lyra-app-object-row:last-child {
+  border-bottom-right-radius: var(--lyra-radius-8);
+  border-bottom-left-radius: var(--lyra-radius-8);
+}
+
+.lyra-settings-ai-provider-search-results > .lyra-app-object-row + .lyra-app-object-row {
+  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-settings-border) 48%, transparent);
+}
+
+.lyra-settings-ai-view-all-models {
+  justify-self: start;
+  margin-top: var(--lyra-space-2);
 }
 
 .lyra-settings-ai-inline-meta {
@@ -2722,8 +2900,8 @@
   font-size: var(--lyra-unit-12);
 }
 
-.lyra-global-dialog-action-primary {
-  color: var(--lyra-text-primary);
+.lyra-global-dialog-action-primary.lyra-ui-button {
+  color: var(--lyra-app-primary-button-fg);
 }
 
 .lyra-global-dialog-action-danger.lyra-ui-button {
@@ -5581,7 +5759,7 @@
 
 .lyra-terminal-tab-close.lyra-app-icon-button:hover:not(:disabled) {
   color: var(--lyra-status-error);
-  background: color-mix(in srgb, var(--lyra-status-error) 9%, transparent);
+  background: transparent;
 }
 
 .lyra-terminal-tab-active {
@@ -5598,7 +5776,8 @@
 .lyra-terminal-toolbar-actions {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(4, var(--lyra-control-h-28));
+  grid-template-columns: repeat(4, var(--lyra-control-h-28));
+  justify-content: start;
   align-items: center;
   gap: var(--lyra-space-4);
   padding: var(--lyra-space-8) var(--lyra-space-6) var(--lyra-space-6);
@@ -5613,18 +5792,6 @@
   right: var(--lyra-space-8);
   height: var(--lyra-stroke-thin);
   background: color-mix(in srgb, var(--lyra-terminal-tabstrip-line) 76%, transparent);
-}
-
-.lyra-terminal-profile-select {
-  min-width: 0;
-  width: 100%;
-  height: var(--lyra-control-h-28);
-}
-
-.lyra-terminal-profile-select.lyra-app-select {
-  min-width: 0;
-  height: var(--lyra-control-h-28);
-  font-size: var(--lyra-text-size-12);
 }
 
 .lyra-terminal-toolbar-actions .lyra-app-icon-button {

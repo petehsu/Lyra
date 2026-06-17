@@ -6,16 +6,39 @@
 // permission), and lyra-agents-composer. Drives the scroll-linked decision panel
 // progress value.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, CornerUpLeft } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { ArrowDown, CornerUpLeft, Copy, Link2, MapPin, Undo2 } from "lucide-react";
+import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { ChatMessage } from "../../core/types";
 import { APP_CONFIG } from "../../core/config";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
-import { Message, shouldShowAgentActivityIndicator } from "./Message";
+import { getIsLayoutResizing } from "../../../../shell/use-panel-layout";
+import { createChatLoadGovernor } from "./chat-load-governor";
+import {
+  isEmptyPendingAgentMessage,
+  Message,
+  resolveAgentActivityHostMessageId
+} from "./Message";
 import { Composer } from "./Composer";
+import { ChatEmptyState } from "./ChatEmptyState";
+import { ProjectDirChip } from "./ProjectDirChip";
 import { DecisionPanel, PermissionPanel } from "../panels";
 import { AppButton } from "@renderer/ui/components";
+import {
+  CHAT_INNER_PADDING_TOP_PX,
+  CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
+  CHAT_MESSAGE_GAP_PX
+} from "./chat-layout-constants";
+import { nextStickyMessageId } from "./sticky-message";
+import { useMessageHeightTable } from "./use-message-height-table";
+import { VirtualizedMessageList } from "./virtualized-message-list";
+import {
+  buildFullMessageCitation,
+  messagePlainText,
+  resolveSelectionCitation
+} from "./message-citation";
+import { runCitationScrollIntoView } from "./scroll-to-citation";
 
 interface ChatViewProps {
   /** When true, render the decision panel even if there are no questions. */
@@ -23,7 +46,6 @@ interface ChatViewProps {
   showPermission: boolean;
 }
 
-const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
 
 const textPreviewForMessage = (message: ChatMessage): string => {
@@ -43,59 +65,6 @@ const textPreviewForMessage = (message: ChatMessage): string => {
   return message.blocks.find((block) => block.type === "tools")?.group.label ?? "";
 };
 
-const previousUserMessageAtTop = (
-  scrollElement: HTMLDivElement,
-  messages: readonly ChatMessage[]
-): ChatMessage | null => {
-  const containerTop = scrollElement.getBoundingClientRect().top;
-  const messageById = new Map(messages.map((message) => [message.id, message]));
-  let current: ChatMessage | null = null;
-  const slots = scrollElement.querySelectorAll<HTMLElement>("[data-chat-message-author='user']");
-
-  slots.forEach((slot) => {
-    const messageId = slot.dataset.chatMessageId;
-    if (messageId === undefined) return;
-    const message = messageById.get(messageId);
-    if (message === undefined) return;
-    const bottom = slot.getBoundingClientRect().bottom;
-    if (bottom <= containerTop + STICKY_ANCHOR_TOP_OFFSET_PX) {
-      current = message;
-    }
-  });
-
-  return current;
-};
-
-const nextStickyMessageId = (
-  scrollElement: HTMLDivElement,
-  messages: readonly ChatMessage[],
-  currentStickyMessageId: string | null
-): string | null => {
-  const previousUserMessage = previousUserMessageAtTop(scrollElement, messages);
-  if (previousUserMessage !== null) {
-    return previousUserMessage.id;
-  }
-  if (scrollElement.scrollTop <= APP_CONFIG.scroll.topLoadThreshold) {
-    return null;
-  }
-  if (currentStickyMessageId !== null) {
-    const stickySlot = Array.from(
-      scrollElement.querySelectorAll<HTMLElement>("[data-chat-message-id]")
-    ).find((slot) => slot.dataset.chatMessageId === currentStickyMessageId);
-    if (
-      stickySlot !== undefined &&
-      stickySlot.getBoundingClientRect().bottom > scrollElement.getBoundingClientRect().top +
-        STICKY_ANCHOR_TOP_OFFSET_PX
-    ) {
-      return null;
-    }
-  }
-  return currentStickyMessageId !== null &&
-    messages.some((message) => message.id === currentStickyMessageId)
-    ? currentStickyMessageId
-    : null;
-};
-
 export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const {
     messages,
@@ -104,27 +73,85 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     permissions,
     sendMessage,
     loadEarlierMessages,
-    captureBrowserScreenshot,
+    syncMessageWindowBudget,
+    captureWorkspaceScreenshot,
     captureWindowScreenshot,
+    pickFileFromFileManager,
+    workspaceTabs,
+    terminalTabs,
+    openImageInWorkbench,
+    canOpenImageInWorkbench,
     submitDecisions,
     approvePermission,
     denyPermission,
     modelControls,
     permissionModeControls,
+    locationControls,
     openModelSettings,
     isTurnRunning,
     browserFollowModeEnabled,
     setBrowserFollowMode,
     cancelTurn,
+    session,
+    bindProject,
+    openProjectTree,
+    addCitationToComposer,
+    pendingCitation,
+    pendingCitationNonce,
+    pendingImages,
+    pendingImagesNonce,
+    pendingFiles,
+    pendingFilesNonce,
+    navigateToPageCitation,
+    scrollToMessage,
+    citationScrollTarget,
+    reportCitationScrollFinished,
+    citationHighlightMessageId,
+    previewRollback,
+    rollbackMessage,
   } = useData();
+  const contextMenu = useContextMenuModel();
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const orderedIdsRef = useRef<readonly string[]>([]);
+  const listContentStartRef = useRef(0);
+
+  const messageIds = useMemo(() => messages.map((message) => message.id), [messages]);
+  orderedIdsRef.current = messageIds;
+
+  const heightTable = useMessageHeightTable(
+    scrollRef,
+    CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
+    orderedIdsRef,
+    CHAT_MESSAGE_GAP_PX
+  );
+
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [panelProgress, setPanelProgress] = useState(1);
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
+  const [viewportTop, setViewportTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+
   const hasPendingClarification = showDecisions && decisions.length > 0;
-  const activityIndicatorMessageId =
-    [...messages].reverse().find(shouldShowAgentActivityIndicator)?.id ?? null;
+  const activityIndicatorMessageId = resolveAgentActivityHostMessageId(messages, isTurnRunning);
+  const activityIndicatorMessage =
+    activityIndicatorMessageId === null
+      ? null
+      : messages.find((message) => message.id === activityIndicatorMessageId) ?? null;
+  const activityIndicatorMessageIndex =
+    activityIndicatorMessage === null
+      ? -1
+      : messages.findIndex((message) => message.id === activityIndicatorMessage.id);
+  const activityIndicatorPreviousMessage =
+    activityIndicatorMessageIndex > 0 ? messages[activityIndicatorMessageIndex - 1] : null;
+  const activityIndicatorHostMessageId =
+    activityIndicatorMessage !== null &&
+    isEmptyPendingAgentMessage(activityIndicatorMessage) &&
+    activityIndicatorPreviousMessage?.author === "agent" &&
+    !isEmptyPendingAgentMessage(activityIndicatorPreviousMessage)
+      ? activityIndicatorPreviousMessage.id
+      : activityIndicatorMessageId;
   const stickyMessage = stickyMessageId === null
     ? null
     : messages.find((message) => message.id === stickyMessageId) ?? null;
@@ -134,26 +161,79 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const rafId = useRef(0);
   const accumulatedDelta = useRef(0);
   const loadingEarlierRef = useRef(false);
+  const prependStartedAtRef = useRef<number | null>(null);
+  const loadGovernorRef = useRef(createChatLoadGovernor(APP_CONFIG.messageWindow.governor));
+  const hasSyncedMessageWindowRef = useRef(false);
+  const syncedMessageWindowSessionRef = useRef<string | null>(null);
   const prependRestoreRef = useRef<{
     readonly scrollHeight: number;
     readonly scrollTop: number;
   } | null>(null);
+  const citationScrollSessionRef = useRef<{
+    readonly token: number;
+    readonly anchorScrollHeight: number;
+    readonly anchorScrollTop: number;
+  } | null>(null);
+  const citationScrollCompletedTokenRef = useRef<number | null>(null);
+  const citationScrollCancelRef = useRef<(() => void) | null>(null);
+  const pinnedCitationMessageIds = useMemo(
+    () => (citationScrollTarget === null ? undefined : [citationScrollTarget.messageId]),
+    [citationScrollTarget?.messageId]
+  );
+
+  const resolveContentWidthPx = useCallback((): number => {
+    const innerWidth = innerRef.current?.clientWidth ?? 0;
+    if (innerWidth > 0) return innerWidth;
+    return APP_CONFIG.maxColumnWidth;
+  }, []);
+
+  const syncAdaptiveMessageWindow = useCallback(() => {
+    const scrollEl = scrollRef.current;
+    if (scrollEl === null || scrollEl.clientHeight <= 0) return;
+    const budget = loadGovernorRef.current.requestInitialBudget(scrollEl.clientHeight);
+    void syncMessageWindowBudget({
+      heightBudgetPx: budget,
+      contentWidthPx: resolveContentWidthPx()
+    });
+  }, [resolveContentWidthPx, syncMessageWindowBudget]);
+
+  const syncListContentStart = useCallback((scrollEl: HTMLDivElement): number => {
+    const inner = innerRef.current;
+    if (inner === null) {
+      listContentStartRef.current = 0;
+      return 0;
+    }
+    const start = inner.offsetTop + CHAT_INNER_PADDING_TOP_PX;
+    listContentStartRef.current = start;
+    return start;
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
+    const listContentStart = syncListContentStart(el);
+    const contentViewportTop = Math.max(0, el.scrollTop - listContentStart);
+    setViewportTop(contentViewportTop);
+    setViewportHeight(el.clientHeight);
+
     if (
       messageWindow.canLoadEarlier &&
       !loadingEarlierRef.current &&
-      el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold
+      el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold &&
+      !loadGovernorRef.current.shouldDeferLoad(getIsLayoutResizing())
     ) {
       loadingEarlierRef.current = true;
+      prependStartedAtRef.current = performance.now();
       prependRestoreRef.current = {
         scrollHeight: el.scrollHeight,
         scrollTop: el.scrollTop
       };
-      void loadEarlierMessages().finally(() => {
+      const budget = loadGovernorRef.current.requestLoadBudget(el.clientHeight);
+      void loadEarlierMessages({
+        heightBudgetPx: budget,
+        contentWidthPx: resolveContentWidthPx()
+      }).finally(() => {
         loadingEarlierRef.current = false;
       });
     }
@@ -161,7 +241,18 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     const atBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
-    setStickyMessageId((current) => nextStickyMessageId(el, messages, current));
+    setStickyMessageId((current) =>
+      nextStickyMessageId(
+        heightTable.store,
+        messageIds,
+        messages,
+        el.scrollTop,
+        listContentStart,
+        current,
+        CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
+        CHAT_MESSAGE_GAP_PX
+      )
+    );
 
     const currentTop = el.scrollTop;
     const delta = currentTop - lastScrollTop.current;
@@ -188,11 +279,62 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
         });
       });
     }
-  }, [loadEarlierMessages, messageWindow.canLoadEarlier, messages]);
+  }, [
+    heightTable,
+    loadEarlierMessages,
+    messageIds,
+    messageWindow.canLoadEarlier,
+    messages,
+    resolveContentWidthPx,
+    syncListContentStart
+  ]);
+
+  useEffect(() => {
+    loadGovernorRef.current.reset();
+    hasSyncedMessageWindowRef.current = false;
+    syncedMessageWindowSessionRef.current = null;
+  }, [session.id]);
+
+  useEffect(() => {
+    if (viewportHeight <= 0 || messageWindow.totalCount <= 0) {
+      return;
+    }
+    const sessionKey = session.id ?? "__active-session__";
+    if (
+      hasSyncedMessageWindowRef.current &&
+      syncedMessageWindowSessionRef.current === sessionKey
+    ) {
+      return;
+    }
+    hasSyncedMessageWindowRef.current = true;
+    syncedMessageWindowSessionRef.current = sessionKey;
+    syncAdaptiveMessageWindow();
+  }, [
+    messageWindow.totalCount,
+    session.id,
+    syncAdaptiveMessageWindow,
+    viewportHeight
+  ]);
+
+  useEffect(() => {
+    let frameId = 0;
+    let lastFrameAt = performance.now();
+    const sample = (now: number): void => {
+      loadGovernorRef.current.recordFrameDelta(now - lastFrameAt);
+      lastFrameAt = now;
+      frameId = requestAnimationFrame(sample);
+    };
+    frameId = requestAnimationFrame(sample);
+    return () => cancelAnimationFrame(frameId);
+  }, []);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+
+    syncListContentStart(el);
+    setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
+    setViewportHeight(el.clientHeight);
 
     const prependRestore = prependRestoreRef.current;
     if (prependRestore !== null) {
@@ -202,14 +344,21 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
         el.scrollHeight - prependRestore.scrollHeight + prependRestore.scrollTop
       );
       lastScrollTop.current = el.scrollTop;
+      setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
+      const startedAt = prependStartedAtRef.current;
+      if (startedAt !== null) {
+        loadGovernorRef.current.recordPrependDuration(performance.now() - startedAt);
+        prependStartedAtRef.current = null;
+      }
       return;
     }
 
-    if (isAtBottom) {
+    if (isAtBottom && citationScrollTarget === null) {
       el.scrollTop = el.scrollHeight;
       lastScrollTop.current = el.scrollTop;
+      setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
     }
-  }, [messages, isAtBottom]);
+  }, [citationScrollTarget, isAtBottom, messages, syncListContentStart]);
 
   useEffect(() => {
     if (decisions.length > 0 || permissions.length > 0) {
@@ -232,14 +381,177 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
 
   const scrollToStickyMessage = () => {
     if (stickyMessageId === null) return;
-    const target = Array.from(
-      scrollRef.current?.querySelectorAll<HTMLElement>("[data-chat-message-id]") ?? []
-    ).find((slot) => slot.dataset.chatMessageId === stickyMessageId);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const el = scrollRef.current;
+    if (el === null) return;
+    const index = messageIds.indexOf(stickyMessageId);
+    if (index < 0) return;
+    const targetTop =
+      listContentStartRef.current +
+      heightTable.offsetOf(messageIds, index);
+    el.scrollTo({ top: targetTop, behavior: "smooth" });
   };
+
+  useLayoutEffect(() => {
+    if (citationScrollTarget === null) return;
+    if (citationScrollCompletedTokenRef.current === citationScrollTarget.token) return;
+
+    const el = scrollRef.current;
+    if (el === null) return;
+
+    let session = citationScrollSessionRef.current;
+    if (session === null || session.token !== citationScrollTarget.token) {
+      citationScrollCompletedTokenRef.current = null;
+      session = {
+        token: citationScrollTarget.token,
+        anchorScrollHeight: el.scrollHeight,
+        anchorScrollTop: el.scrollTop
+      };
+      citationScrollSessionRef.current = session;
+    }
+
+    const index = messageIds.indexOf(citationScrollTarget.messageId);
+    if (index < 0) return;
+
+    citationScrollCancelRef.current?.();
+    citationScrollCancelRef.current = null;
+
+    if (messages.length > citationScrollTarget.visibleCountAtStart) {
+      el.scrollTop = Math.max(
+        0,
+        el.scrollHeight - session.anchorScrollHeight + session.anchorScrollTop
+      );
+    }
+
+    syncListContentStart(el);
+    const targetTop =
+      listContentStartRef.current +
+      heightTable.offsetOf(messageIds, index);
+    setIsAtBottom(false);
+
+    const syncViewport = (scrollTop: number): void => {
+      lastScrollTop.current = scrollTop;
+      setViewportTop(Math.max(0, scrollTop - listContentStartRef.current));
+    };
+
+    citationScrollCancelRef.current = runCitationScrollIntoView({
+      scrollEl: el,
+      messageId: citationScrollTarget.messageId,
+      estimatedTop: targetTop,
+      onViewportSync: syncViewport,
+      onComplete: () => {
+        citationScrollCompletedTokenRef.current = citationScrollTarget.token;
+        citationScrollCancelRef.current = null;
+        reportCitationScrollFinished(citationScrollTarget.messageId);
+      }
+    });
+
+    return () => {
+      citationScrollCancelRef.current?.();
+      citationScrollCancelRef.current = null;
+    };
+  }, [
+    citationScrollTarget,
+    heightTable.version,
+    messageIds,
+    messages.length,
+    reportCitationScrollFinished,
+    syncListContentStart
+  ]);
+
+  const openMessageContextMenu = useCallback((
+    event: MouseEvent<HTMLElement>,
+    message: ChatMessage
+  ) => {
+    event.preventDefault();
+    const root = event.currentTarget;
+    const selection = window.getSelection();
+    const selectedText = selection?.toString().trim() ?? "";
+    const hasSelection =
+      selectedText.length > 0 &&
+      selection !== null &&
+      selection.rangeCount > 0 &&
+      root.contains(selection.anchorNode) &&
+      root.contains(selection.focusNode);
+    const copySelection = () => {
+      if (hasSelection) {
+        void navigator.clipboard.writeText(selectedText);
+        return;
+      }
+      void navigator.clipboard.writeText(messagePlainText(message));
+    };
+    const citeSelection = () => {
+      if (hasSelection && selection !== null && selection.rangeCount > 0) {
+        const citation = resolveSelectionCitation(
+          message,
+          selectedText,
+          selection.getRangeAt(0),
+          root
+        );
+        if (citation !== null) {
+          addCitationToComposer(citation);
+        }
+        return;
+      }
+      addCitationToComposer(buildFullMessageCitation(message));
+    };
+    const items = message.author === "user"
+      ? [
+          {
+            id: "cite",
+            label: hasSelection ? t("lyra-agents-message.citeSelection") : t("lyra-agents-message.citeMessage"),
+            icon: <Link2 size={14} strokeWidth={2} />,
+            onSelect: citeSelection
+          },
+          {
+            id: "copy",
+            label: t("lyra-agents-message.copy"),
+            icon: <Copy size={14} strokeWidth={2} />,
+            onSelect: copySelection
+          },
+          ...(message.rollback?.available === true
+            ? [{
+                id: "rollback",
+                label: t("lyra-agents-message.undoMessage"),
+                icon: <Undo2 size={14} strokeWidth={2} />,
+                separatorBefore: true,
+                onSelect: () => {
+                  void previewRollback(message.id).then((preview) => {
+                    if (preview.available) {
+                      void rollbackMessage(message.id);
+                    }
+                  });
+                }
+              }]
+            : [])
+        ]
+      : [
+          {
+            id: "copy",
+            label: t("lyra-agents-message.copy"),
+            icon: <Copy size={14} strokeWidth={2} />,
+            onSelect: copySelection
+          },
+          {
+            id: "cite",
+            label: hasSelection ? t("lyra-agents-message.citeSelection") : t("lyra-agents-message.citeMessage"),
+            icon: <Link2 size={14} strokeWidth={2} />,
+            onSelect: citeSelection
+          }
+        ];
+    contextMenu.openMenu({
+      anchorX: event.clientX,
+      anchorY: event.clientY,
+      items
+    });
+  }, [addCitationToComposer, contextMenu, previewRollback, rollbackMessage]);
 
   return (
     <>
+      <ContextMenuHost
+        state={contextMenu.state}
+        onClose={contextMenu.closeMenu}
+        onSelectItem={contextMenu.selectItem}
+      />
       <div className="lyra-agents-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {stickyMessage !== null && stickyMessagePreview.length > 0 ? (
           <div className="lyra-agents-chat-thread-anchor">
@@ -256,22 +568,37 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
             </AppButton>
           </div>
         ) : null}
-        <div className="lyra-agents-chat-inner">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className="lyra-agents-chat-message-slot"
-              data-chat-message-id={m.id}
-              data-chat-message-author={m.author}
-            >
+        <div className="lyra-agents-chat-inner" ref={innerRef}>
+          {messages.length === 0 ? (
+            <ChatEmptyState
+              projectName={session.project.trim().length > 0 ? session.project.trim() : null}
+              isHome={session.workingDirIsHome}
+              onChooseProject={bindProject}
+            />
+          ) : null}
+          <VirtualizedMessageList
+            messages={messages}
+            heightTable={heightTable}
+            viewportTop={viewportTop}
+            viewportHeight={viewportHeight}
+            {...(pinnedCitationMessageIds === undefined
+              ? {}
+              : { pinnedMessageIds: pinnedCitationMessageIds })}
+            renderMessage={(message) => (
               <Message
-                message={m}
+                message={message}
                 showActivityIndicator={
-                  activityIndicatorMessageId === null || m.id === activityIndicatorMessageId
+                  activityIndicatorHostMessageId === null || message.id === activityIndicatorHostMessageId
                 }
+                activityIndicatorMessage={
+                  message.id === activityIndicatorHostMessageId ? activityIndicatorMessage : null
+                }
+                highlightCitationTarget={citationHighlightMessageId === message.id}
+                onContextMenu={openMessageContextMenu}
+                onCiteMessage={() => addCitationToComposer(buildFullMessageCitation(message))}
               />
-            </div>
-          ))}
+            )}
+          />
         </div>
       </div>
 
@@ -313,8 +640,17 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
 
         <Composer
           onSend={sendMessage}
-          onCaptureBrowserScreenshot={captureBrowserScreenshot}
+          onCaptureWorkspaceScreenshot={captureWorkspaceScreenshot}
           onCaptureWindowScreenshot={captureWindowScreenshot}
+          onPickFileFromFileManager={pickFileFromFileManager}
+          workspaceTabs={workspaceTabs}
+          terminalTabs={terminalTabs}
+          onImageAttachmentClick={(image) => {
+            if (!canOpenImageInWorkbench(image)) {
+              return;
+            }
+            void openImageInWorkbench(image);
+          }}
           modelControls={modelControls ?? null}
           permissionModeControls={permissionModeControls ?? null}
           onOpenModelSettings={openModelSettings}
@@ -322,10 +658,54 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
           browserFollowModeEnabled={browserFollowModeEnabled}
           onToggleBrowserFollowMode={setBrowserFollowMode}
           onCancelTurn={cancelTurn}
+          pendingCitation={pendingCitation}
+          pendingCitationNonce={pendingCitationNonce}
+          pendingImages={pendingImages}
+          pendingImagesNonce={pendingImagesNonce}
+          pendingFiles={pendingFiles}
+          pendingFilesNonce={pendingFilesNonce}
+          onTranscriptCitationClick={(citation) => {
+            void scrollToMessage(citation.messageId, {
+              blockId: citation.blockId ?? null,
+              startOffset: citation.startOffset ?? null
+            });
+          }}
+          onPageCitationClick={(citation) => {
+            void navigateToPageCitation(citation);
+          }}
           disabledReason={
             hasPendingClarification ? t("lyra-agents-composer.answerClarificationFirst") : undefined
           }
         />
+
+        <div className="lyra-agents-project-dir-chip-row lyra-agents-project-meta-row">
+          <ProjectDirChip
+            projectName={session.project.trim().length > 0 ? session.project.trim() : null}
+            isHome={session.workingDirIsHome}
+            canOpenProjectTree={session.projectBound && !session.workingDirIsHome}
+            onChooseProject={bindProject}
+            onOpenProjectTree={openProjectTree}
+          />
+          {locationControls !== null && locationControls !== undefined ? (
+            <AppButton
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="lyra-agents-project-location-chip"
+              aria-label={locationControls.title}
+              title={locationControls.title}
+              aria-busy={locationControls.busy ? "true" : undefined}
+              data-status={locationControls.status}
+              disabled={locationControls.busy}
+              onClick={locationControls.onPress}
+            >
+              <MapPin size={13} strokeWidth={2.1} aria-hidden="true" />
+              {locationControls.status === "located" || locationControls.status === "unavailable" ? (
+                <span>{locationControls.label}</span>
+              ) : null}
+            </AppButton>
+          ) : null}
+        </div>
       </div>
     </>
   );

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 import {
   LYRA_CHANNELS,
@@ -21,6 +21,8 @@ import {
   type AgentPermissionPolicySetModeRequest,
   type AgentPermissionPolicySnapshot,
   type AgentPermissionRespondRequest,
+  type AgentMessageResolveRequest,
+  type AgentMessageResolveResponse,
   type AgentRollbackPreviewResponse,
   type AgentRollbackRequest,
   type AgentRollbackRestoreResponse,
@@ -43,6 +45,8 @@ import {
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
+  type ScreenshotPreviewEvent,
+  type ScreenshotPreviewPresentRequest,
   type AgentAccountLoginCompleteRequest,
   type AgentAccountLoginCompleteResponse,
   type AgentAccountLoginRequest,
@@ -63,6 +67,8 @@ import {
   type AgentGoalsRequest,
   type AgentGoalsResponse,
   type AgentLoginProviderCatalogSnapshot,
+  type AgentModelDeleteRequest,
+  type AgentModelEnableRequest,
   type AgentModelRefreshRequest,
   type AgentModelCatalogRequest,
   type AgentModelCatalogSnapshot,
@@ -101,6 +107,10 @@ import {
   type LinuxCompatRestartResponse,
   type LinuxCompatUpdateConfigRequest,
   type LinuxCompatUpdateConfigResponse,
+  type LocationHostCandidatesRequest,
+  type LocationHostCandidatesResponse,
+  type LocationReverseGeocodeRequest,
+  type LocationReverseGeocodeResponse,
   type LspCompletionRequest,
   type LspCompletionResult,
   type LspDocumentRequest,
@@ -223,6 +233,7 @@ import {
   type SoftwareCapabilitiesQueryResult,
   type InstalledUiuxPack,
   type WorkbenchBrowserEvent,
+  type WorkbenchBrowserExecutePageContextActionRequest,
   type BrowserSessionSnapshot,
   type BrowserStorageStateRef,
   type WorkbenchBrowserChromePopoverRequest,
@@ -296,7 +307,8 @@ const WORKBENCH_STATE_KEYS: readonly WorkbenchStateKey[] = [
   "ai-panel-tabs",
   "terminal-dock",
   "notifications",
-  "layout"
+  "layout",
+  "location"
 ];
 
 const createEmptyWorkbenchStateSnapshot = (): Record<WorkbenchStateKey, string | null> => ({
@@ -307,7 +319,8 @@ const createEmptyWorkbenchStateSnapshot = (): Record<WorkbenchStateKey, string |
   "ai-panel-tabs": null,
   "terminal-dock": null,
   notifications: null,
-  layout: null
+  layout: null,
+  location: null
 });
 
 const normalizeWorkbenchStateSnapshot = (value: unknown): Record<WorkbenchStateKey, string | null> => {
@@ -376,6 +389,8 @@ let terminalDataPortRequested = false;
 let terminalDataPort: MessagePort | null = null;
 const workbenchBrowserEventListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 let workbenchBrowserEventBridgeReady = false;
+const screenshotPreviewEventListeners = new Set<(event: ScreenshotPreviewEvent) => void>();
+let screenshotPreviewEventBridgeReady = false;
 const loginManagerEventListeners = new Set<(event: LoginManagerEvent) => void>();
 let loginManagerEventBridgeReady = false;
 const systemNotificationActivationListeners = new Set<(
@@ -521,6 +536,25 @@ const ensureWorkbenchBrowserEventBridge = (): void => {
         return;
       }
       for (const listener of workbenchBrowserEventListeners) {
+        listener(payload);
+      }
+    }
+  );
+};
+
+const ensureScreenshotPreviewEventBridge = (): void => {
+  if (screenshotPreviewEventBridgeReady) {
+    return;
+  }
+  screenshotPreviewEventBridgeReady = true;
+
+  ipcRenderer.on(
+    LYRA_CHANNELS.screenshotPreviewEvent,
+    (_event: Electron.IpcRendererEvent, payload: ScreenshotPreviewEvent): void => {
+      if (payload === null || typeof payload !== "object" || typeof payload.kind !== "string") {
+        return;
+      }
+      for (const listener of screenshotPreviewEventListeners) {
         listener(payload);
       }
     }
@@ -800,6 +834,21 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
+  screenshotPreview: {
+    present: (request: ScreenshotPreviewPresentRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.screenshotPreviewPresent,
+        request
+      ) as Promise<{ readonly previewId: string | null }>,
+    dismiss: () => ipcRenderer.invoke(LYRA_CHANNELS.screenshotPreviewDismiss) as Promise<void>,
+    onEvent: (listener: (event: ScreenshotPreviewEvent) => void) => {
+      ensureScreenshotPreviewEventBridge();
+      screenshotPreviewEventListeners.add(listener);
+      return () => {
+        screenshotPreviewEventListeners.delete(listener);
+      };
+    }
+  },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
   systemNotifications: {
     readStatus: () =>
@@ -957,7 +1006,14 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     selectAttachments: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.filesSelectAttachments) as Promise<readonly FileManagerSelectedAttachment[]>,
     selectDirectories: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>
+      ipcRenderer.invoke(LYRA_CHANNELS.filesSelectDirectories) as Promise<readonly FileManagerSelectedAttachment[]>,
+    getPathForFile: (file: File) => {
+      try {
+        return webUtils.getPathForFile(file).trim();
+      } catch {
+        return "";
+      }
+    }
   },
   downloads: {
     list: () =>
@@ -1091,6 +1147,18 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserCaptureWindow
       ) as Promise<WorkbenchVisualCaptureResult>,
+    executePageContextAction: (request: WorkbenchBrowserExecutePageContextActionRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.workbenchBrowserExecutePageContextAction,
+        request
+      ) as Promise<void>,
+    readActivePageDragCitation: () =>
+      ipcRenderer.sendSync(
+        LYRA_CHANNELS.workbenchBrowserReadActivePageDragCitation
+      ) as import("../shared/workbench-browser").PageDragCitationPayload | null,
+    consumePageDragCitation: () => {
+      ipcRenderer.send(LYRA_CHANNELS.workbenchBrowserConsumePageDragCitation);
+    },
     onEvent: (listener: (event: WorkbenchBrowserEvent) => void) => {
       ensureWorkbenchBrowserEventBridge();
       workbenchBrowserEventListeners.add(listener);
@@ -1449,6 +1517,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentRollbackRestore,
         request
       ) as Promise<AgentRollbackRestoreResponse>,
+    resolveMessage: (request: AgentMessageResolveRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMessageResolve,
+        request
+      ) as Promise<AgentMessageResolveResponse>,
     readGitStatus: (request: AgentGitStatusRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentGitStatus,
@@ -1511,6 +1584,16 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     switchAgentModel: (request: AgentModelSwitchRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentModelSwitch,
+        request
+      ) as Promise<AgentModelCatalogSnapshot>,
+    setAgentModelEnabled: (request: AgentModelEnableRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentModelEnable,
+        request
+      ) as Promise<AgentModelCatalogSnapshot>,
+    deleteAgentModel: (request: AgentModelDeleteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentModelDelete,
         request
       ) as Promise<AgentModelCatalogSnapshot>,
     refreshAgentModels: (request?: AgentModelRefreshRequest) =>
@@ -1698,6 +1781,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ) as Promise<UiuxRequestActivationResponse>,
     resolveRuntime: (request: UiuxResolveRuntimeRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.uiuxResolveRuntime, request) as Promise<UiuxPackRuntime | null>
+  },
+  location: {
+    readHostCandidates: (request?: LocationHostCandidatesRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.locationReadHostCandidates,
+        request ?? {}
+      ) as Promise<LocationHostCandidatesResponse>,
+    openSystemSettings: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.locationOpenSystemSettings) as Promise<boolean>,
+    reverseGeocodeCandidates: (request: LocationReverseGeocodeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.locationReverseGeocodeCandidates,
+        request
+      ) as Promise<LocationReverseGeocodeResponse>
   },
   workbenchState: {
     readCached: readCachedWorkbenchState,

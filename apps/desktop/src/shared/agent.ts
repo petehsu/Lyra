@@ -36,12 +36,18 @@ export type AgentMessageBlock =
     };
 
 export type AgentImageInput = {
+  readonly id?: string | null;
   readonly mediaType: string;
-  readonly data: string;
+  /** Optional in transit; agent runtime persists path metadata only. */
+  readonly data?: string | null;
   readonly label?: string | null;
   readonly source?: string | null;
   readonly width?: number | null;
   readonly height?: number | null;
+  readonly workspaceTabId?: string | null;
+  readonly workspaceTabTitle?: string | null;
+  readonly workspaceTabPageKind?: string | null;
+  readonly workspaceTabAddress?: string | null;
 };
 
 export type AgentImageAttachmentMaterializeRequest = {
@@ -132,6 +138,7 @@ export type AgentSessionSnapshot = {
   readonly sessionKind: AgentSessionKind;
   readonly workingDir: string;
   readonly projectBound: boolean;
+  readonly workingDirIsHome?: boolean;
   readonly messages: readonly AgentMessage[];
   readonly tools: readonly AgentToolActivity[];
   readonly todos: readonly AgentTodoItem[];
@@ -171,6 +178,7 @@ export type AgentRuntimeTurnState =
   | "calling_model"
   | "streaming_model"
   | "waiting_for_tool"
+  | "retrying_provider"
   | "waiting_for_permission"
   | "waiting_for_user"
   | "recovering_after_reload"
@@ -180,6 +188,9 @@ export type AgentRuntimeTurnState =
   | "failed_recoverable"
   | "failed_terminal"
   | "cancelled_by_user";
+
+/** Desktop follow.activity value while the agent session bridge is connecting. */
+export const AGENT_FOLLOW_ACTIVITY_CONNECTING = "connecting";
 
 export type AgentMemorySessionRecord = {
   readonly sessionId: string;
@@ -337,10 +348,100 @@ export type AgentSessionBindProjectRequest = {
   readonly workingDir: string | null;
 };
 
+export type AgentTranscriptCitationExcerptKind = "selection" | "full_message";
+
+export type AgentTranscriptCitation = {
+  readonly id: string;
+  readonly messageId: string;
+  readonly role: "user" | "assistant";
+  readonly blockId?: string | null;
+  readonly startOffset?: number | null;
+  readonly endOffset?: number | null;
+  readonly excerptKind: AgentTranscriptCitationExcerptKind;
+  readonly preview: string;
+  readonly quotedText: string;
+  readonly truncated: boolean;
+  readonly sourceCreatedAt?: string | null;
+};
+
+export type AgentPageCitationExcerptKind = "selection" | "link" | "page";
+
+export type AgentPageCitationSourceKind =
+  | "browser"
+  | "external-browser"
+  | "workspace-tab"
+  | "terminal-tab";
+
+export type AgentPageCitationCaptureFidelity = "url-only" | "html-parsed";
+
+export type AgentPageCitation = {
+  readonly id: string;
+  readonly tabId: string;
+  readonly tabTitle: string;
+  readonly pageUrl: string;
+  readonly pageTitle: string;
+  readonly frameUrl?: string | null;
+  readonly linkUrl?: string | null;
+  readonly linkText?: string | null;
+  readonly srcUrl?: string | null;
+  readonly mediaType?: string | null;
+  readonly elementTag?: string | null;
+  readonly elementSelector?: string | null;
+  readonly elementId?: string | null;
+  readonly elementRole?: string | null;
+  readonly elementAriaLabel?: string | null;
+  readonly excerptKind: AgentPageCitationExcerptKind;
+  readonly preview: string;
+  readonly quotedText: string;
+  readonly truncated: boolean;
+  readonly sourceCapturedAt?: string | null;
+  readonly sourceKind?: AgentPageCitationSourceKind | null;
+  readonly captureFidelity?: AgentPageCitationCaptureFidelity | null;
+  readonly tabPageKind?: string | null;
+  readonly faviconUrl?: string | null;
+  readonly appId?: string | null;
+  readonly appIconKey?: string | null;
+};
+
+export type AgentFileCitation = {
+  readonly id: string;
+  readonly path: string;
+  readonly name: string;
+  readonly preview: string;
+};
+
 export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly text: string;
   readonly images?: readonly AgentImageInput[];
+  readonly citations?: readonly AgentTranscriptCitation[];
+  readonly pageCitations?: readonly AgentPageCitation[];
+  readonly fileCitations?: readonly AgentFileCitation[];
+};
+
+export type AgentMessageResolveRequest = {
+  readonly sessionId?: string | null;
+  readonly messageId: string;
+  readonly blockId?: string | null;
+  readonly startOffset?: number | null;
+  readonly endOffset?: number | null;
+  readonly includeToolBlocks?: boolean;
+};
+
+export type AgentMessageResolveResponse = {
+  readonly found: boolean;
+  readonly sessionId?: string;
+  readonly messageId?: string;
+  readonly messageIndex?: number;
+  readonly role?: AgentRole;
+  readonly createdAt?: string;
+  readonly text?: string;
+  readonly fullText?: string;
+  readonly truncated?: boolean;
+  readonly blockId?: string | null;
+  readonly startOffset?: number | null;
+  readonly endOffset?: number | null;
+  readonly reason?: string;
 };
 
 export type AgentTurnSendResponse = {
@@ -996,6 +1097,7 @@ export type AgentProviderProfileModelRequest = {
   readonly supportsImageInput?: boolean;
   readonly supportsToolCalling?: boolean;
   readonly supportsStreaming?: boolean;
+  readonly enabled?: boolean;
 };
 
 export type AgentProviderProfileSaveRequest = {
@@ -1081,12 +1183,16 @@ export type AgentModelEntry = {
   readonly providerId?: string | null;
   readonly providerLabel?: string | null;
   readonly providerKey?: string | null;
+  readonly routeId?: string | null;
+  readonly protocolId?: string | null;
+  readonly protocolFamily?: string | null;
   readonly apiMethod?: string | null;
   readonly detail?: string | null;
   readonly contextWindow?: number | null;
   readonly supportsImageInput?: boolean;
   readonly supportsToolCalling?: boolean;
   readonly available: boolean;
+  readonly enabled: boolean;
 };
 
 export type AgentProviderOptionState = {
@@ -1116,6 +1222,19 @@ export type AgentModelSwitchRequest = {
   readonly sessionId?: string | null;
   readonly model: string;
   readonly provider?: string | null;
+};
+
+export type AgentModelEnableRequest = {
+  readonly sessionId?: string | null;
+  readonly provider: string;
+  readonly model: string;
+  readonly enabled: boolean;
+};
+
+export type AgentModelDeleteRequest = {
+  readonly sessionId?: string | null;
+  readonly provider: string;
+  readonly model: string;
 };
 
 export type AgentModelRefreshRequest = {
@@ -1196,6 +1315,9 @@ export type AgentApi = {
   readonly restoreRollback: (
     request: AgentRollbackRequest
   ) => Promise<AgentRollbackRestoreResponse>;
+  readonly resolveMessage: (
+    request: AgentMessageResolveRequest
+  ) => Promise<AgentMessageResolveResponse>;
   readonly readGitStatus: (
     request: AgentGitStatusRequest
   ) => Promise<AgentGitStatusSnapshot>;
@@ -1232,6 +1354,12 @@ export type AgentApi = {
   ) => Promise<AgentModelCatalogSnapshot>;
   readonly switchAgentModel: (
     request: AgentModelSwitchRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly setAgentModelEnabled: (
+    request: AgentModelEnableRequest
+  ) => Promise<AgentModelCatalogSnapshot>;
+  readonly deleteAgentModel: (
+    request: AgentModelDeleteRequest
   ) => Promise<AgentModelCatalogSnapshot>;
   readonly refreshAgentModels: (
     request?: AgentModelRefreshRequest

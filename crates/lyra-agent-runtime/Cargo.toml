@@ -21,6 +21,7 @@ futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
 glob.workspace = true
 hmac.workspace = true
+image = { workspace = true, features = ["png", "jpeg", "webp"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
 regex.workspace = true
 rusqlite.workspace = true

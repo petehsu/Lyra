@@ -23,6 +23,8 @@ export type WorkbenchBrowserSearchInPageRequest = {
   readonly activeIndex?: number;
   readonly direction?: "current" | "next" | "previous";
   readonly reveal?: boolean;
+  /** When true with `reveal`, clears in-page highlights after a short flash (e.g. citation jumps). */
+  readonly ephemeralReveal?: boolean;
 };
 
 export type WorkbenchBrowserSearchInPageMatch = {
@@ -1588,7 +1590,93 @@ export type WorkbenchBrowserAgentActivityEvent =
   | WorkbenchLumenActivityEvent
   | WorkbenchLegacyBrowserAgentActivityEvent;
 
+export type WorkbenchBrowserPageContextMediaType =
+  | "none"
+  | "image"
+  | "video"
+  | "audio"
+  | "canvas"
+  | "file"
+  | "plugin";
+
+export const PAGE_DRAG_CITATION_MIME = "application/x-lyra-page-citation-drag";
+export const PAGE_DRAG_CITATION_PLAIN_PREFIX = "⟦lyra-page-drag:";
+export const PAGE_DRAG_CITATION_PLAIN_SUFFIX = "⟧";
+
+export type PageDragCitationPayload = {
+  readonly tabId: string;
+  readonly pageUrl: string;
+  readonly pageTitle: string;
+  readonly frameUrl?: string;
+  readonly selectionText?: string;
+  readonly linkUrl?: string;
+  readonly linkText?: string;
+  readonly srcUrl?: string;
+  readonly mediaType?: WorkbenchBrowserPageContextMediaType;
+  readonly elementTag?: string;
+  readonly elementSelector?: string;
+  readonly elementId?: string;
+  readonly elementRole?: string;
+  readonly elementAriaLabel?: string;
+};
+
+export type WorkbenchBrowserPageContextMenuPayload = {
+  readonly tabId: string;
+  readonly anchorX: number;
+  readonly anchorY: number;
+  readonly pageUrl: string;
+  readonly pageTitle: string;
+  readonly selectionText?: string;
+  readonly linkUrl?: string;
+  readonly linkText?: string;
+  readonly srcUrl?: string;
+  readonly frameUrl?: string;
+  readonly mediaType: WorkbenchBrowserPageContextMediaType;
+  readonly elementTag?: string;
+  readonly elementSelector?: string;
+  readonly elementId?: string;
+  readonly elementRole?: string;
+  readonly elementAriaLabel?: string;
+  readonly isEditable: boolean;
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
+};
+
+export type WorkbenchBrowserPageContextAction =
+  | "back"
+  | "forward"
+  | "reload"
+  | "copy"
+  | "cut"
+  | "paste"
+  | "copyLink"
+  | "openLinkInNewTab";
+
+export type WorkbenchBrowserExecutePageContextActionRequest = {
+  readonly tabId: string;
+  readonly action: WorkbenchBrowserPageContextAction;
+  readonly linkUrl?: string;
+};
+
 export type WorkbenchBrowserEvent =
+  | {
+      readonly kind: "page-context-menu";
+      readonly menu: WorkbenchBrowserPageContextMenuPayload;
+    }
+  | {
+      readonly kind: "page-context-menu-select";
+      readonly tabId: string;
+      readonly itemId: string;
+      readonly menu: WorkbenchBrowserPageContextMenuPayload;
+      readonly tabTitle?: string;
+    }
+  | {
+      readonly kind: "page-drag-citation-active";
+      readonly payload: PageDragCitationPayload;
+    }
+  | {
+      readonly kind: "page-drag-citation-clear";
+    }
   | {
       readonly kind: "page-runtime-state";
       readonly page: WorkbenchBrowserPageRuntimeState;
@@ -1616,6 +1704,10 @@ export type WorkbenchBrowserEvent =
       readonly tabId: string;
       readonly popoverKind: "security" | "find" | "omnibox";
       readonly visible: boolean;
+    }
+  | {
+      readonly kind: "request-activate-tab";
+      readonly tabId: string;
     }
   | {
       readonly kind: "request-page-find";

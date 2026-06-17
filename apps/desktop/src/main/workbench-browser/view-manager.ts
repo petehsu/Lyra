@@ -58,6 +58,8 @@ import {
   normalizeString,
   normalizeWebOrigin,
 } from "./view-manager-runtime/normalizers";
+import type { WorkbenchStateKey } from "../../shared/desktop-bridge";
+import { readBrowserContextMenuLocaleFromPreferences } from "./view-manager-runtime/page-context-menu-native";
 
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
@@ -71,7 +73,7 @@ export const createWorkbenchBrowserViewManager = ({
   readonly publishEvent: WorkbenchBrowserPublishEvent;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
   readonly workbenchState?: {
-    readonly readState: (key: typeof BROWSER_SESSION_STATE_KEY) => string | null;
+    readonly readState: (key: WorkbenchStateKey) => string | null;
     readonly writeState: (key: typeof BROWSER_SESSION_STATE_KEY, json: string) => void;
   };
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
@@ -206,7 +208,9 @@ export const createWorkbenchBrowserViewManager = ({
     openDebuggerSessionForTarget,
     unregisterBrowserPageResource: (tabId) => {
       performanceScheduler?.unregisterResource(`browserPage:${tabId}`);
-    }
+    },
+    readBrowserContextMenuLocale: () =>
+      readBrowserContextMenuLocaleFromPreferences(workbenchState?.readState("preferences") ?? null)
   });
   const { entries } = pageRegistry;
   agentShadowController = createAgentShadowController({
@@ -641,6 +645,7 @@ export const createWorkbenchBrowserViewManager = ({
     goBack: pageRegistry.goBack,
     goForward: pageRegistry.goForward,
     reload: pageRegistry.reload,
+    runPageContextAction: pageRegistry.runPageContextAction,
     stop: pageRegistry.stop,
     readPageState: pageRegistry.readPageState,
     readSessionSnapshot,
@@ -661,6 +666,7 @@ export const createWorkbenchBrowserViewManager = ({
     searchInPage,
     setChromePopover,
     resolveFrameGlobalBounds: pageRegistry.resolveFrameGlobalBounds,
+    resolvePageDragContextFromWebContents: pageRegistry.resolvePageDragContextFromWebContents,
     reapplyLayout: () => {
       applyLayout();
     },

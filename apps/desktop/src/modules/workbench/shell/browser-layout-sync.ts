@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { LyraDesktopApi, WorkbenchBrowserLayoutSnapshot } from "../../../shared/desktop-bridge";
+import { getIsLayoutResizing } from "./use-panel-layout";
+import { subscribeLayoutResizeEnd } from "./layout-resize-end";
 
 export type BrowserLayoutSyncOptions = {
   readonly force?: boolean;
@@ -51,6 +53,8 @@ const toSnapshot = (
 
 const DEFAULT_ANIMATED_LAYOUT_SYNC_INTERVAL_MS = 16;
 const ANIMATED_LAYOUT_FINAL_SYNC_DELAY_MS = 32;
+/** Cap embedded browser IPC during panel-splitter drags (AI ↔ workspace). */
+const PANEL_DRAG_BROWSER_SYNC_MIN_INTERVAL_MS = 48;
 
 export const useWorkbenchBrowserLayoutSync = ({
   desktopApi,
@@ -74,6 +78,8 @@ export const useWorkbenchBrowserLayoutSync = ({
   const throttledSyncTimerRef = useRef<number | null>(null);
   const lastSyncAtRef = useRef(0);
   const lastSnapshotKeyRef = useRef<string | null>(null);
+  const panelDragSyncTimerRef = useRef<number | null>(null);
+  const panelDragSyncPendingRef = useRef(false);
 
   const scheduleSync = useCallback((options?: BrowserLayoutSyncOptions) => {
     const followUpFrames = Math.max(0, Math.round(options?.followUpFrames ?? 0));
@@ -185,23 +191,68 @@ export const useWorkbenchBrowserLayoutSync = ({
     scheduleFrame(force, followUpFrames);
   }, [desktopApi]);
 
+  const scheduleSyncDuringPanelDrag = useCallback((): void => {
+    panelDragSyncPendingRef.current = true;
+    if (panelDragSyncTimerRef.current !== null) {
+      return;
+    }
+    const elapsed = window.performance.now() - lastSyncAtRef.current;
+    const delay = Math.max(0, PANEL_DRAG_BROWSER_SYNC_MIN_INTERVAL_MS - elapsed);
+    panelDragSyncTimerRef.current = window.setTimeout(() => {
+      panelDragSyncTimerRef.current = null;
+      if (!panelDragSyncPendingRef.current) {
+        return;
+      }
+      panelDragSyncPendingRef.current = false;
+      scheduleSync();
+    }, delay);
+  }, [scheduleSync]);
+
+  const requestLayoutSync = useCallback((): void => {
+    if (getIsLayoutResizing()) {
+      scheduleSyncDuringPanelDrag();
+      return;
+    }
+    scheduleSync();
+  }, [scheduleSync, scheduleSyncDuringPanelDrag]);
+
+  useEffect(() => {
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+      if (panelDragSyncTimerRef.current !== null) {
+        window.clearTimeout(panelDragSyncTimerRef.current);
+        panelDragSyncTimerRef.current = null;
+      }
+      panelDragSyncPendingRef.current = false;
+      scheduleSync({
+        force: true,
+        followUpFrames: 2
+      });
+    });
+    return unsubscribeResizeEnd;
+  }, [scheduleSync]);
+
   useEffect(() => {
     descriptorsRef.current = descriptors;
-    scheduleSync();
-  }, [descriptors, scheduleSync]);
+    requestLayoutSync();
+  }, [descriptors, requestLayoutSync]);
 
   useEffect(() => {
     const handleWindowResize = (): void => {
-      scheduleSync();
+      requestLayoutSync();
     };
     window.addEventListener("resize", handleWindowResize);
     return () => {
       window.removeEventListener("resize", handleWindowResize);
     };
-  }, [scheduleSync]);
+  }, [requestLayoutSync]);
 
   useEffect(
     () => () => {
+      if (panelDragSyncTimerRef.current !== null) {
+        window.clearTimeout(panelDragSyncTimerRef.current);
+        panelDragSyncTimerRef.current = null;
+      }
+      panelDragSyncPendingRef.current = false;
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
@@ -239,21 +290,21 @@ export const useWorkbenchBrowserLayoutSync = ({
       if (element === null) {
         if (previousHost !== undefined) {
           hostByTabIdRef.current.delete(tabId);
-          scheduleSync();
+          requestLayoutSync();
         }
         return;
       }
       hostByTabIdRef.current.set(tabId, element);
       const observer = new ResizeObserver(() => {
-        scheduleSync();
+        requestLayoutSync();
       });
       observer.observe(element);
       observerByTabIdRef.current.set(tabId, observer);
       if (previousHost !== element) {
-        scheduleSync();
+        requestLayoutSync();
       }
     },
-    [scheduleSync]
+    [requestLayoutSync]
   );
 
   return useMemo(

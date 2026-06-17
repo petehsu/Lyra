@@ -496,8 +496,8 @@ const setChromePopover = async (
       : popoverRequest.kind === "omnibox"
         ? pageRelativeTop - popoverHeight + 1
         : spaceBelow >= popoverHeight
-          ? pageRelativeBottom + 6
-          : pageRelativeTop - popoverHeight - 6;
+            ? pageRelativeBottom + 6
+            : pageRelativeTop - popoverHeight - 6;
   const y = Math.max(
     boundaryPadding,
     Math.min(

@@ -11,6 +11,7 @@ import {
 import { Header } from "./features/header";
 import { PillsRail } from "./features/pills";
 import { ChatView } from "./features/chat";
+import { AiPanelDragAttachSurface } from "./features/chat/AiPanelDragAttachSurface";
 import { DebugPanel } from "./features/debug";
 import { RichText } from "./features/rich-text";
 import { AppButton } from "@renderer/ui/components";
@@ -42,7 +43,7 @@ export function LyraAgentsShell({
   }, [isMock]);
 
   return (
-    <div className="lyra-agents-app">
+    <AiPanelDragAttachSurface>
       {headerSlot ?? (showHeader ? <Header /> : null)}
       <PillsRail />
       {sidePanel !== null && sidePanel !== undefined && sidePanel.pages.length > 0 ? (
@@ -57,7 +58,7 @@ export function LyraAgentsShell({
           onTogglePermission={() => setShowPermission((v) => !v)}
         />
       )}
-    </div>
+    </AiPanelDragAttachSurface>
   );
 }
 

@@ -1,23 +1,39 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type MutableRefObject
+} from "react";
 
-import type {
-  AgentModelCatalogSnapshot,
-  AgentPermissionPolicySnapshot,
-  AgentRuntimeEvent,
-  AgentSessionCreateRequest,
-  AgentSessionSnapshot
+import {
+  AGENT_FOLLOW_ACTIVITY_CONNECTING,
+  type AgentModelCatalogSnapshot,
+  type AgentFileCitation,
+  type AgentPageCitation,
+  type AgentPermissionPolicySnapshot,
+  type AgentRuntimeEvent,
+  type AgentSessionCreateRequest,
+  type AgentSessionSnapshot,
+  type AgentTranscriptCitation
 } from "../../../shared/agent";
 import type {
   LyraDesktopApi,
   LyraSensitiveValueRef
 } from "../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../settings-ai";
+import { setBrowserFollowModeEnabled as syncBrowserFollowModeCoordinator } from "../workspace-tabs/tab-activation-coordinator";
 import type { GlobalDialogModel } from "../global-dialog";
+import type { WorkbenchLocationControls } from "../location";
 import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   AgentGoalItem,
   AgentImageAttachment,
+  ChatMessage,
   ComposerModelControls,
+  ComposerPermissionModeControls,
   DecisionOption,
   DecisionQuestion,
   DiffFileEntry,
@@ -34,8 +50,46 @@ import {
   agentSessionToSessionMeta,
   agentSessionToTodos,
   applyAgentRuntimeEventToSnapshot,
-  agentModelsToModelOptions
+  agentModelsToModelOptions,
+  agentSessionMetaWithDraftWorkingDir
 } from "../agent-session-view-model";
+import {
+  CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
+  CHAT_MESSAGE_GAP_PX
+} from "./lyra-agents/features/chat/chat-layout-constants";
+import {
+  createMessageWindowPlanConfig,
+  planAdditionalRevealCount,
+  planRevealCountFromEnd
+} from "./lyra-agents/features/chat/message-window-plan";
+import type {
+  CitationScrollTarget,
+  MessageWindowBudgetRequest
+} from "./lyra-agents/data/DataProvider";
+import type { ComposerInsertableCitation } from "./lyra-agents/features/chat/message-citation";
+import {
+  buildFileAttachmentFromPath,
+  type AgentFileAttachment
+} from "./lyra-agents/features/chat/composer-file";
+import {
+  buildImageTurnPayloadEntry,
+  hasMaterializableImageData,
+  inlineImageMarkerIds,
+  validateImageTurnCommit
+} from "./lyra-agents/features/chat/composer-image";
+import type { ComposerSegment } from "./lyra-agents/features/chat/message-citation";
+import {
+  isOpenableImageSource,
+  readImageAttachmentFromPath
+} from "./lyra-agents/features/chat/read-image-attachment";
+import { isImageViewerSupportedPath } from "../image-viewer";
+import type { TerminalDockTab } from "../terminal-dock/types";
+import type { WorkspaceTab } from "../workspace-tabs/types";
+import { navigateToPageCitation as navigateToPageCitationInWorkbench } from "./lyra-agents/features/chat/scroll-to-page-citation";
+import { resolveAiPanelDragAttachAction } from "./lyra-agents/features/chat/ai-panel-drag-attach";
+import { buildTerminalTabPageCitation } from "./lyra-agents/features/chat/terminal-tab-citation";
+import { buildWorkspaceTabPageCitation } from "./lyra-agents/features/chat/workspace-tab-citation";
+import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
 
 type FileRevealLocation = {
   readonly line: number;
@@ -71,18 +125,6 @@ const inferHomePathFromWorkingDir = (workingDir: string | null | undefined): str
   return match?.[0] ?? null;
 };
 
-const isOpenableImageSource = (source: string | null | undefined): source is string => {
-  const trimmed = source?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return false;
-  }
-  if (/^(?:local-file|browser-screenshot|window-screenshot|inline-data-url)$/u.test(trimmed)) {
-    return false;
-  }
-  return /^(?:\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/]|file:\/\/|(?:apps|crates|web|scripts|packages|vendor|docs|target|参考)\/)/u
-    .test(trimmed);
-};
-
 const imageUrlSource = (source: string | null | undefined): string | null => {
   const trimmed = source?.trim() ?? "";
   if (trimmed.length === 0) {
@@ -95,18 +137,6 @@ const imageUrlSource = (source: string | null | undefined): string | null => {
     return `http://${trimmed}`;
   }
   return /^https?:\/\//iu.test(trimmed) ? trimmed : null;
-};
-
-const hasMaterializableImageData = (image: AgentImageAttachment): boolean => {
-  const mediaType = image.mediaType.trim().toLowerCase();
-  if (!mediaType.startsWith("image/")) {
-    return false;
-  }
-  const data = image.data.replace(/\s+/gu, "");
-  if (data.length === 0 || data.length % 4 === 1) {
-    return false;
-  }
-  return /^[A-Za-z0-9+/_-]+={0,2}$/u.test(data);
 };
 
 type State = {
@@ -300,6 +330,7 @@ type LyraAgentDataProviderCallbacks = {
   ) => Promise<AgentSessionSnapshot> | AgentSessionSnapshot) | undefined;
   readonly onMissingSession?: ((sessionId: string) => void) | undefined;
   readonly onRequestProjectBind?: ((currentPath?: string) => Promise<string | null>) | undefined;
+  readonly onUpdateDraftWorkingDir?: ((workingDir: string) => void) | undefined;
   readonly onOpenProjectTree?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -323,6 +354,13 @@ type LyraAgentDataProviderCallbacks = {
   }) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"] | undefined;
   readonly locale?: Locale | undefined;
+  readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null> | undefined;
+  readonly onSetActiveBrowserTab?: ((tabId: string) => void) | undefined;
+  readonly resolveActiveWorkspaceTab?: (() => WorkspaceTab | undefined) | undefined;
+  readonly onPickFileFromFileManager?: (() => Promise<string | null>) | undefined;
+  readonly listWorkspaceTabs?: (() => readonly WorkspaceTab[]) | undefined;
+  readonly listTerminalTabs?: (() => readonly TerminalDockTab[]) | undefined;
+  readonly locationControls?: WorkbenchLocationControls | undefined;
 };
 
 export const useLyraAgentDataProvider = (
@@ -346,6 +384,7 @@ export const useLyraAgentDataProvider = (
     onCreateSessionTab,
     onMissingSession,
     onRequestProjectBind,
+    onUpdateDraftWorkingDir,
     onOpenProjectTree,
     onOpenSelfDevLab,
     onOpenOvernightLab,
@@ -354,7 +393,14 @@ export const useLyraAgentDataProvider = (
     onOpenFile,
     onOpenTerminalLiveSession,
     openDialog,
-    locale
+    locale,
+    composerCitationSinkRef,
+    onSetActiveBrowserTab,
+    resolveActiveWorkspaceTab,
+    onPickFileFromFileManager,
+    listWorkspaceTabs,
+    listTerminalTabs,
+    locationControls
   } = callbacks;
   if (locale !== undefined) {
     setLocale(locale);
@@ -369,8 +415,17 @@ export const useLyraAgentDataProvider = (
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
   const [visibleMessageLimit, setVisibleMessageLimit] = useState<number>(
-    APP_CONFIG.messageWindow.initialCount
+    APP_CONFIG.messageWindow.minRevealCount
   );
+  const [pendingCitation, setPendingCitation] = useState<ComposerInsertableCitation | null>(null);
+  const [pendingCitationNonce, setPendingCitationNonce] = useState(0);
+  const [pendingImages, setPendingImages] = useState<readonly AgentImageAttachment[]>([]);
+  const [pendingImagesNonce, setPendingImagesNonce] = useState(0);
+  const [pendingFiles, setPendingFiles] = useState<readonly AgentFileAttachment[]>([]);
+  const [pendingFilesNonce, setPendingFilesNonce] = useState(0);
+  const [citationHighlightMessageId, setCitationHighlightMessageId] = useState<string | null>(null);
+  const [citationScrollTarget, setCitationScrollTarget] = useState<CitationScrollTarget | null>(null);
+  const citationHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousMessageWindowRef = useRef<{
@@ -403,6 +458,11 @@ export const useLyraAgentDataProvider = (
     if (previousSessionIdRef.current !== nextSessionId) {
       setPendingClarifications([]);
       setPendingPermissions([]);
+      setVisibleMessageLimit(APP_CONFIG.messageWindow.minRevealCount);
+      previousMessageWindowRef.current = {
+        sessionId: nextSessionId,
+        messageCount: 0
+      };
       previousSessionIdRef.current = nextSessionId;
     }
   }, [state.session?.id]);
@@ -412,8 +472,12 @@ export const useLyraAgentDataProvider = (
     const messageCount = state.session?.messages.length ?? 0;
     const previous = previousMessageWindowRef.current;
 
-    if (previous.sessionId !== sessionId || messageCount < previous.messageCount) {
-      setVisibleMessageLimit(APP_CONFIG.messageWindow.initialCount);
+    if (previous.sessionId !== sessionId) {
+      return;
+    }
+
+    if (messageCount < previous.messageCount) {
+      setVisibleMessageLimit(APP_CONFIG.messageWindow.minRevealCount);
     } else if (messageCount > previous.messageCount) {
       const appendedCount = messageCount - previous.messageCount;
       setVisibleMessageLimit((current) => Math.min(messageCount, current + appendedCount));
@@ -526,12 +590,16 @@ export const useLyraAgentDataProvider = (
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
       setBrowserFollowModeEnabled(false);
+      syncBrowserFollowModeCoordinator(false);
       return;
     }
     let disposed = false;
     void desktopApi.agent.readBrowserFollowMode()
       .then((snapshot) => {
-        if (!disposed) setBrowserFollowModeEnabled(snapshot.enabled);
+        if (!disposed) {
+          setBrowserFollowModeEnabled(snapshot.enabled);
+          syncBrowserFollowModeCoordinator(snapshot.enabled);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -616,11 +684,8 @@ export const useLyraAgentDataProvider = (
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
   const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
-    const draftWorkingDir = activeDraftWorkingDir?.trim() ?? "";
-    const workingDir = draftWorkingDir.length > 0 ? draftWorkingDir : null;
-    return workingDir === null
-      ? { title: "新会话" }
-      : { title: "新会话", workingDir };
+    const workingDir = activeDraftWorkingDir?.trim() ?? "";
+    return workingDir.length > 0 ? { title: "新会话", workingDir } : { title: "新会话" };
   }, [activeDraftWorkingDir]);
 
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
@@ -639,44 +704,248 @@ export const useLyraAgentDataProvider = (
 
   const sendMessage = useCallback(async (
     text: string,
-    images: readonly AgentImageAttachment[] = []
+    images: readonly AgentImageAttachment[] = [],
+    citations: readonly AgentTranscriptCitation[] = [],
+    pageCitations: readonly AgentPageCitation[] = [],
+    fileCitations: readonly AgentFileCitation[] = [],
+    segments: readonly ComposerSegment[] = []
   ): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
     const trimmed = text.trim();
-    if (trimmed.length === 0 && images.length === 0) return;
+    if (
+      trimmed.length === 0
+      && images.length === 0
+      && citations.length === 0
+      && pageCitations.length === 0
+      && fileCitations.length === 0
+    ) {
+      return;
+    }
     const session = await ensureBackingSession();
     if (session === null) return;
+
+    const commitError = validateImageTurnCommit(trimmed, images, segments);
+    if (commitError !== null) {
+      throw new Error(commitError);
+    }
+
+    const materializeImageAttachment = desktopApi.agent?.materializeImageAttachment;
+    const preparedImages = images.length === 0
+      ? []
+      : await Promise.all(images.map(async (image) =>
+          buildImageTurnPayloadEntry(image, materializeImageAttachment)
+        ));
+
+    if (inlineImageMarkerIds(trimmed).length > 0 && preparedImages.length === 0) {
+      throw new Error(
+        "Image markers are present but no image attachments could be committed. Remove and re-attach the image."
+      );
+    }
+
     await desktopApi.agent.sendTurn({
       sessionId: session.id,
       text: trimmed,
-      ...(images.length === 0
-        ? {}
-        : {
-            images: images.map((image) => ({
-              mediaType: image.mediaType,
-              data: image.data,
-              label: image.label ?? null,
-              source: image.source ?? null,
-              width: image.width ?? null,
-              height: image.height ?? null
-            }))
-          })
+      ...(preparedImages.length === 0 ? {} : { images: preparedImages }),
+      ...(citations.length === 0 ? {} : { citations }),
+      ...(pageCitations.length === 0 ? {} : { pageCitations }),
+      ...(fileCitations.length === 0 ? {} : { fileCitations })
     });
   }, [desktopApi, ensureBackingSession]);
 
-  const captureBrowserScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
+  const addCitationToComposer = useCallback((citation: AgentTranscriptCitation): void => {
+    setPendingCitation({ kind: "transcript", citation });
+    setPendingCitationNonce((value) => value + 1);
+  }, []);
+
+  const addPageCitationToComposer = useCallback((citation: AgentPageCitation): void => {
+    setPendingCitation({ kind: "page", citation });
+    setPendingCitationNonce((value) => value + 1);
+  }, []);
+
+  const workspaceTabsForComposer = listWorkspaceTabs?.() ?? [];
+  const terminalTabsForComposer = listTerminalTabs?.() ?? [];
+
+  const attachDragPayloadToComposer = useCallback(async (dataTransfer: DataTransfer): Promise<boolean> => {
+    const action = await resolveAiPanelDragAttachAction(
+      dataTransfer,
+      listWorkspaceTabs?.() ?? [],
+      listTerminalTabs?.() ?? []
+    );
+    if (action === null) {
+      return false;
+    }
+    if (action.kind === "workspace-tab") {
+      addPageCitationToComposer(buildWorkspaceTabPageCitation(action.tab));
+      return true;
+    }
+    if (action.kind === "page-citation") {
+      addPageCitationToComposer(action.citation);
+      return true;
+    }
+    if (action.kind === "terminal-tab") {
+      addPageCitationToComposer(buildTerminalTabPageCitation(action.tab, workspaceTabsForComposer));
+      return true;
+    }
+    if (action.kind === "file") {
+      setPendingFiles([action.file]);
+      setPendingFilesNonce((value) => value + 1);
+      return true;
+    }
+    if (action.kind === "files") {
+      setPendingFiles(action.files);
+      setPendingFilesNonce((value) => value + 1);
+      return true;
+    }
+    setPendingImages(action.images);
+    setPendingImagesNonce((value) => value + 1);
+    return true;
+  }, [addPageCitationToComposer, listTerminalTabs, listWorkspaceTabs]);
+
+  const navigateToPageCitation = useCallback(async (citation: AgentPageCitation): Promise<void> => {
+    const navigationOptions = onOpenTerminalLiveSession === undefined
+      ? {}
+      : {
+          onOpenTerminalLiveSession: (request: {
+            readonly terminalTabId?: string | null;
+          }) => onOpenTerminalLiveSession(request)
+        };
+    await navigateToPageCitationInWorkbench(
+      desktopApi,
+      onSetActiveBrowserTab ?? (() => undefined),
+      citation,
+      {
+        ...navigationOptions,
+        onOpenExternalPageUrl: async (url, title) => {
+          const trimmedUrl = url.trim();
+          if (trimmedUrl.length === 0) {
+            return;
+          }
+          await onOpenUrlInWorkbench?.({
+            url: trimmedUrl,
+            ...(title === undefined ? {} : { title })
+          });
+        }
+      }
+    );
+  }, [desktopApi, onOpenTerminalLiveSession, onOpenUrlInWorkbench, onSetActiveBrowserTab]);
+
+  useEffect(() => {
+    if (composerCitationSinkRef === undefined) return;
+    composerCitationSinkRef.current = { addPageCitation: addPageCitationToComposer };
+    return () => {
+      if (composerCitationSinkRef.current?.addPageCitation === addPageCitationToComposer) {
+        composerCitationSinkRef.current = null;
+      }
+    };
+  }, [addPageCitationToComposer, composerCitationSinkRef]);
+
+  const ensureMessageVisible = useCallback((messageId: string): boolean => {
+    const session = state.session;
+    if (session === null) return false;
+    const index = session.messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return false;
+    const neededFromEnd = session.messages.length - index;
+    setVisibleMessageLimit((current) => Math.max(current, neededFromEnd));
+    return true;
+  }, [state.session]);
+
+  const reportCitationScrollFinished = useCallback((messageId: string): void => {
+    setCitationScrollTarget((current) =>
+      current?.messageId === messageId ? null : current
+    );
+    if (citationHighlightTimerRef.current !== null) {
+      clearTimeout(citationHighlightTimerRef.current);
+      citationHighlightTimerRef.current = null;
+    }
+    const startHighlight = (): void => {
+      setCitationHighlightMessageId(messageId);
+      citationHighlightTimerRef.current = setTimeout(() => {
+        setCitationHighlightMessageId(null);
+        citationHighlightTimerRef.current = null;
+      }, 2600);
+    };
+    setCitationHighlightMessageId((current) => {
+      if (current === messageId) {
+        return null;
+      }
+      return current;
+    });
+    window.requestAnimationFrame(() => {
+      startHighlight();
+    });
+  }, []);
+
+  const scrollToMessage = useCallback(async (
+    messageId: string,
+    options?: {
+      readonly blockId?: string | null;
+      readonly startOffset?: number | null;
+    }
+  ): Promise<void> => {
+    const totalMessageCount = state.session?.messages.length ?? 0;
+    const visibleCountAtStart = Math.min(totalMessageCount, visibleMessageLimit);
+    ensureMessageVisible(messageId);
+    setCitationScrollTarget({
+      messageId,
+      blockId: options?.blockId ?? null,
+      startOffset: options?.startOffset ?? null,
+      visibleCountAtStart,
+      token: performance.now()
+    });
+  }, [ensureMessageVisible, state.session, visibleMessageLimit]);
+
+  const captureWorkspaceScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
-    const capture = await desktopApi.workbenchBrowser.capturePage();
+    const activeTab = resolveActiveWorkspaceTab?.();
+    if (activeTab === undefined) {
+      return null;
+    }
+    const workspaceContext = {
+      workspaceTabId: activeTab.id,
+      workspaceTabTitle: activeTab.title,
+      workspaceTabPageKind: activeTab.pageKind,
+      workspaceTabAddress: activeTab.displayAddress
+    };
+    const capture = activeTab.pageKind === "page"
+      ? await desktopApi.workbenchBrowser.capturePage({ tabId: activeTab.id })
+      : await desktopApi.workbenchBrowser.captureWindow();
     return {
-      id: "browser-screenshot-" + Date.now().toString(36),
+      id: "workspace-screenshot-" + Date.now().toString(36),
       mediaType: capture.mimeType,
       data: capture.imageBase64,
-      label: t("lyra-agents-message.browserScreenshot"),
-      source: "browser-screenshot",
+      label: activeTab.title.trim() || t("lyra-agents-message.workspaceScreenshot"),
+      source: "workspace-screenshot",
       width: capture.width,
-      height: capture.height
+      height: capture.height,
+      ...workspaceContext
     };
-  }, [desktopApi, locale]);
+  }, [desktopApi, locale, resolveActiveWorkspaceTab]);
+
+  const pickFileFromFileManager = useCallback(async (): Promise<
+    | { readonly kind: "image"; readonly attachment: AgentImageAttachment }
+    | { readonly kind: "file"; readonly attachment: AgentFileCitation }
+    | null
+  > => {
+    if (onPickFileFromFileManager === undefined) {
+      return null;
+    }
+    const filePath = await onPickFileFromFileManager();
+    if (filePath === null) {
+      return null;
+    }
+    if (isImageViewerSupportedPath(filePath)) {
+      const image = await readImageAttachmentFromPath(filePath);
+      if (image === null) {
+        return null;
+      }
+      return { kind: "image", attachment: image };
+    }
+    const file = buildFileAttachmentFromPath(filePath);
+    if (file === null) {
+      return null;
+    }
+    return { kind: "file", attachment: file };
+  }, [onPickFileFromFileManager]);
 
   const captureWindowScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
@@ -703,6 +972,7 @@ export const useLyraAgentDataProvider = (
     if (desktopApi?.agent === undefined) return;
     const snapshot = await desktopApi.agent.updateBrowserFollowMode({ enabled });
     setBrowserFollowModeEnabled(snapshot.enabled);
+    syncBrowserFollowModeCoordinator(snapshot.enabled);
   }, [desktopApi]);
 
   const confirmFullAutoMode = useCallback(async (): Promise<boolean> => {
@@ -876,25 +1146,27 @@ export const useLyraAgentDataProvider = (
 
   const bindProject = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined || onRequestProjectBind === undefined) return;
-    const currentPath =
-      state.session?.projectBound === true && typeof state.session.workingDir === "string"
-        ? state.session.workingDir
-        : undefined;
-    const selectedPath = await onRequestProjectBind(currentPath);
+    // A session bound to a real project is permanent (runtime rejects rebinds); a
+    // home-defaulted session may still be bound once. Otherwise stash on the draft
+    // tab (bound for real when the first message creates the session).
+    if (state.session?.projectBound === true && state.session.workingDirIsHome !== true) return;
+    const selectedPath = await onRequestProjectBind(activeDraftWorkingDir ?? undefined);
     if (selectedPath === null) return;
-    const session = await ensureBackingSession();
-    if (session === null) return;
+    if (state.session === null) {
+      onUpdateDraftWorkingDir?.(selectedPath);
+      return;
+    }
     const snapshot = await desktopApi.agent.bindProject({
-      sessionId: session.id,
+      sessionId: state.session.id,
       workingDir: selectedPath
     });
     dispatch({ type: "snapshot", snapshot });
   }, [
+    activeDraftWorkingDir,
     desktopApi,
-    ensureBackingSession,
     onRequestProjectBind,
-    state.session?.projectBound,
-    state.session?.workingDir
+    onUpdateDraftWorkingDir,
+    state.session
   ]);
 
   const openProjectTree = useCallback(async (): Promise<void> => {
@@ -1092,7 +1364,7 @@ export const useLyraAgentDataProvider = (
       return;
     }
 
-    const cacheKey = `${image.id}:${image.mediaType}:${image.data.length}:${image.label ?? ""}`;
+    const cacheKey = `${image.id}:${image.mediaType}:${(image.data ?? "").length}:${image.label ?? ""}`;
     const cachedPath = materializedImagePathsRef.current.get(cacheKey);
     if (cachedPath !== undefined) {
       await openFileInWorkbench(cachedPath);
@@ -1107,7 +1379,7 @@ export const useLyraAgentDataProvider = (
     const result = await materializeImageAttachment({
       id: image.id,
       mediaType: image.mediaType,
-      data: image.data,
+      data: image.data ?? "",
       label: image.label ?? null
     });
     materializedImagePathsRef.current.set(cacheKey, result.path);
@@ -1310,29 +1582,13 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "snapshot", snapshot: response.snapshot });
   }, [currentSessionId, desktopApi]);
 
-  const messageWindowSessionId = state.session?.id ?? null;
-  const visibleMessageLimitForSession =
-    previousMessageWindowRef.current.sessionId === messageWindowSessionId
-      ? visibleMessageLimit
-      : APP_CONFIG.messageWindow.initialCount;
-
-  const loadEarlierMessages = useCallback(async (): Promise<void> => {
-    const messageCount = state.session?.messages.length ?? 0;
-    const sessionId = state.session?.id ?? null;
-    const baseLimit = visibleMessageLimitForSession;
-    setVisibleMessageLimit((current) =>
-      Math.min(
-        messageCount,
-        (previousMessageWindowRef.current.sessionId === sessionId ? current : baseLimit)
-          + APP_CONFIG.messageWindow.batchCount
-      )
-    );
-  }, [state.session?.id, state.session?.messages.length, visibleMessageLimitForSession]);
-
-  const data = useMemo(() => {
-    const totalMessageCount = state.session?.messages.length ?? 0;
-    const visibleMessageCount = Math.min(totalMessageCount, visibleMessageLimitForSession);
-    const modelControls: ComposerModelControls | null = modelState === null ? null : {
+  // Stabilize the composer's control objects so they keep the same identity
+  // across streaming-token re-renders (they do not depend on the message stream).
+  // Without this they were rebuilt inside the `data` memo on every token, forcing
+  // the composer toolbar / header consumers to re-render needlessly.
+  const modelControls = useMemo<ComposerModelControls | null>(() => {
+    if (modelState === null) return null;
+    return {
       currentModel: modelState.currentModel,
       currentProvider: modelState.currentProvider,
       models: agentModelsToModelOptions(modelState),
@@ -1360,19 +1616,101 @@ export const useLyraAgentDataProvider = (
       updateVerbosity,
       updateServiceTier
     };
-    const permissionModeControls = desktopApi?.agent === undefined ? null : {
+  }, [modelState, modelBusy, switchModel, refreshModels, openModelSettings, updateReasoningEffort, updateVerbosity, updateServiceTier]);
+
+  const permissionModeControls = useMemo<ComposerPermissionModeControls | null>(() => {
+    if (desktopApi?.agent === undefined) return null;
+    return {
       currentMode: permissionPolicy?.mode ?? "approval",
       isSwitching: permissionPolicyBusy,
       warning: permissionPolicy?.warning ?? null,
       configPath: permissionPolicy?.configPath ?? null,
       switchMode: switchPermissionMode
     };
-    const input: CreateDataProviderValueInput = {
-      session: agentSessionToSessionMeta(state.session),
-      messages: agentSessionToChatMessages(state.session, {
-        failedTurnMessage: state.turnError,
-        messageLimitFromEnd: visibleMessageLimitForSession
+  }, [desktopApi, permissionPolicy, permissionPolicyBusy, switchPermissionMode]);
+
+  const createPlanConfig = useCallback(
+    (contentWidthPx: number) =>
+      createMessageWindowPlanConfig(contentWidthPx, {
+        minRevealCount: APP_CONFIG.messageWindow.minRevealCount,
+        maxRevealCount: APP_CONFIG.messageWindow.maxRevealCount,
+        messageGapPx: CHAT_MESSAGE_GAP_PX,
+        fallbackHeightPx: CHAT_MESSAGE_FALLBACK_HEIGHT_PX
       }),
+    []
+  );
+
+  const syncMessageWindowBudget = useCallback(
+    async (request: MessageWindowBudgetRequest): Promise<void> => {
+      const session = state.session;
+      const messageCount = session?.messages.length ?? 0;
+      if (session === null || messageCount === 0) {
+        setVisibleMessageLimit(0);
+        return;
+      }
+      const allMessages = agentSessionToChatMessages(session);
+      const nextVisible = planRevealCountFromEnd(
+        allMessages,
+        request.heightBudgetPx,
+        createPlanConfig(request.contentWidthPx)
+      );
+      setVisibleMessageLimit(
+        Math.min(
+          messageCount,
+          Math.max(nextVisible, APP_CONFIG.messageWindow.minRevealCount)
+        )
+      );
+    },
+    [createPlanConfig, state.session]
+  );
+
+  const loadEarlierMessages = useCallback(
+    async (request: MessageWindowBudgetRequest): Promise<void> => {
+      const session = state.session;
+      if (session === null) return;
+      const messageCount = session.messages.length;
+      const sessionId = session.id;
+      const allMessages = agentSessionToChatMessages(session);
+      const planConfig = createPlanConfig(request.contentWidthPx);
+      setVisibleMessageLimit((current) => {
+        const additional = planAdditionalRevealCount(
+          allMessages,
+          current,
+          request.heightBudgetPx,
+          planConfig
+        );
+        return Math.min(messageCount, current + additional);
+      });
+    },
+    [createPlanConfig, state.session]
+  );
+
+  const data = useMemo(() => {
+    const totalMessageCount = state.session?.messages.length ?? 0;
+    const visibleMessageCount = Math.min(totalMessageCount, visibleMessageLimit);
+    const chatMessages = agentSessionToChatMessages(state.session, {
+      failedTurnMessage: state.turnError,
+      messageLimitFromEnd: visibleMessageLimit
+    });
+    const messages: ChatMessage[] =
+      state.loading && chatMessages.length === 0
+        ? [
+            {
+              id: "lyra-agent-connecting",
+              author: "agent",
+              blocks: [
+                {
+                  type: "text",
+                  id: "lyra-agent-connecting-text",
+                  body: ""
+                }
+              ]
+            }
+          ]
+        : chatMessages;
+    const input: CreateDataProviderValueInput = {
+      session: agentSessionMetaWithDraftWorkingDir(agentSessionToSessionMeta(state.session), state.session === null ? activeDraftWorkingDir : null),
+      messages,
       messageWindow: {
         visibleCount: visibleMessageCount,
         hiddenBefore: Math.max(0, totalMessageCount - visibleMessageCount),
@@ -1385,6 +1723,7 @@ export const useLyraAgentDataProvider = (
       permissions: pendingPermissions,
       modelControls,
       permissionModeControls,
+      locationControls: locationControls ?? null,
       openModelSettings,
       browserFollowModeEnabled,
       setBrowserFollowMode,
@@ -1396,9 +1735,27 @@ export const useLyraAgentDataProvider = (
       revealSensitiveValueToUser,
       sidePanel: agentSessionToSidePanel(state.session),
       sendMessage,
+      addCitationToComposer,
+      addPageCitationToComposer,
+      attachDragPayloadToComposer,
+      pendingCitation,
+      pendingCitationNonce,
+      pendingImages,
+      pendingImagesNonce,
+      pendingFiles,
+      pendingFilesNonce,
+      navigateToPageCitation,
+      scrollToMessage,
+      citationScrollTarget,
+      reportCitationScrollFinished,
+      citationHighlightMessageId,
       loadEarlierMessages,
-      captureBrowserScreenshot,
+      syncMessageWindowBudget,
+      captureWorkspaceScreenshot,
       captureWindowScreenshot,
+      pickFileFromFileManager,
+      workspaceTabs: workspaceTabsForComposer,
+      terminalTabs: terminalTabsForComposer,
       cancelTurn: cancel,
       previewRollback,
       rollbackMessage,
@@ -1426,15 +1783,21 @@ export const useLyraAgentDataProvider = (
       approvePermission,
       denyPermission,
       isMock: false,
-      isTurnRunning: state.session?.follow.running ?? state.loading
+      isTurnRunning: state.session?.follow.running ?? state.loading,
+      followActivity:
+        state.session?.follow.activity ??
+        (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null)
     };
     return createDataProviderValue(input);
   }, [
     approvePermission,
     bindProject,
     cancel,
-    captureBrowserScreenshot,
+    captureWorkspaceScreenshot,
     captureWindowScreenshot,
+    pickFileFromFileManager,
+    workspaceTabsForComposer,
+    terminalTabsForComposer,
     createSession,
     desktopApi,
     denyPermission,
@@ -1450,25 +1813,39 @@ export const useLyraAgentDataProvider = (
     openProjectTree,
     openSelfDevLab,
     openOvernightLab,
+    addCitationToComposer,
+    addPageCitationToComposer,
+    attachDragPayloadToComposer,
+    pendingCitation,
+    pendingCitationNonce,
+    pendingImages,
+    pendingImagesNonce,
+    pendingFiles,
+    pendingFilesNonce,
+    navigateToPageCitation,
+    scrollToMessage,
+    citationScrollTarget,
+    reportCitationScrollFinished,
+    citationHighlightMessageId,
     loadEarlierMessages,
-    modelBusy,
-    modelState,
-    permissionPolicy,
-    permissionPolicyBusy,
+    syncMessageWindowBudget,
+    modelControls,
+    permissionModeControls,
+    locationControls,
     pendingClarifications,
     pendingPermissions,
     previewRollback,
-    refreshModels,
     rollbackMessage,
     runImprove,
     runRefactor,
     runReview,
     runSubagent,
     sendMessage,
+    activeDraftWorkingDir,
     state.session,
     state.loading,
     state.turnError,
-    visibleMessageLimitForSession,
+    visibleMessageLimit,
     runJudge,
     askSideQuestion,
     compactContext,
@@ -1481,11 +1858,6 @@ export const useLyraAgentDataProvider = (
     updateAutomation,
     pokeTodos,
     submitDecisions,
-    switchPermissionMode,
-    switchModel,
-    updateReasoningEffort,
-    updateVerbosity,
-    updateServiceTier,
     onOpenFile,
     locale
   ]);
@@ -1493,7 +1865,9 @@ export const useLyraAgentDataProvider = (
   return {
     data,
     followRunning: state.session?.follow.running ?? state.loading,
-    followActivity: state.session?.follow.activity ?? (state.loading ? t("runtime.connecting") : null),
+    followActivity:
+      state.session?.follow.activity ??
+      (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null),
     error: state.error,
     cancel
   };

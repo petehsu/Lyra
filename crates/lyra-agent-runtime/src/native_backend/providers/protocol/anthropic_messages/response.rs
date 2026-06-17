@@ -19,6 +19,7 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         .cloned()
         .unwrap_or_default();
     let text = text_from_content_blocks(&content);
+    let reasoning_content = thinking_from_content_blocks(&content);
     let tool_calls = tool_calls_from_content_blocks(&content, tools);
     if text.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
         if body.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
@@ -33,11 +34,21 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
     }
     Ok(ModelReply {
         content: text,
-        reasoning_content: None,
+        reasoning_content: reasoning_content,
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
     })
+}
+
+pub(crate) fn thinking_from_content_blocks(blocks: &[Value]) -> Option<String> {
+    let thinking = blocks
+        .iter()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
+        .filter_map(|block| block.get("thinking").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("");
+    (!thinking.trim().is_empty()).then_some(thinking)
 }
 
 pub(crate) fn text_from_content_blocks(blocks: &[Value]) -> Option<String> {
@@ -117,5 +128,32 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+    }
+
+    #[test]
+    fn parses_thinking_tool_use_and_text_blocks() {
+        let reply = parse_response_body(
+            &json!({
+                "content": [
+                    { "type": "thinking", "thinking": "I should inspect tabs first." },
+                    { "type": "text", "text": "" },
+                    {
+                        "type": "tool_use",
+                        "id": "call-tabs",
+                        "name": "tool_fs_run",
+                        "input": { "path": "/tools/workbench/list_tabs", "args": {} }
+                    }
+                ],
+                "stop_reason": "tool_use"
+            }),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+        )
+        .expect("reply");
+
+        assert_eq!(
+            reply.reasoning_content.as_deref(),
+            Some("I should inspect tabs first.")
+        );
+        assert_eq!(reply.tool_calls[0].id, "call-tabs");
     }
 }

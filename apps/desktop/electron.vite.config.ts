@@ -47,7 +47,8 @@ export default defineConfig({
       outDir: "out/preload",
       rollupOptions: {
         input: {
-          index: resolve(projectRoot, "src/preload/index.ts")
+          index: resolve(projectRoot, "src/preload/index.ts"),
+          "browser-page-frame": resolve(projectRoot, "src/preload/browser-page-frame.ts")
         },
         output: {
           format: "cjs",

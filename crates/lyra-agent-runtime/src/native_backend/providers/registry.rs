@@ -69,6 +69,16 @@ pub(crate) fn route_model_discovery_hook(
 ) -> Option<&'static dyn routes::RouteModelDiscoveryHook> {
     match route_id {
         routes::lmstudio::ROUTE_ID => Some(routes::lmstudio::model_discovery_hook()),
+        routes::mimo::PAY_AS_YOU_GO_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_CN_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID
+        | routes::mimo::TOKEN_PLAN_AMS_ROUTE_ID
+        | routes::mimo::ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID
+        | routes::mimo::ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID
+        | routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID
+        | routes::mimo::ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID => {
+            Some(routes::mimo::model_discovery_hook())
+        }
         _ => None,
     }
 }
@@ -112,6 +122,7 @@ mod tests {
                 supports_image_input: true,
                 supports_tool_calling: true,
                 supports_streaming: true,
+                enabled: true,
             }],
         }
     }
@@ -199,8 +210,88 @@ mod tests {
         );
         assert_eq!(route.api_method, "converse");
         assert!(route.runtime_supported);
-        assert!(!route.model_discovery_supported);
+        assert!(route.model_discovery_supported);
         assert!(!route.quick_setup_supported);
+    }
+
+    #[test]
+    fn every_runtime_supported_route_supports_model_discovery() {
+        let missing = route_catalog()
+            .into_iter()
+            .filter(|route| route.runtime_supported && !route.model_discovery_supported)
+            .map(|route| route.id)
+            .collect::<Vec<_>>();
+
+        assert!(
+            missing.is_empty(),
+            "runtime routes without model discovery: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn mimo_token_plan_routes_are_runtime_only_not_quick_setup() {
+        let mimo_routes = route_catalog()
+            .into_iter()
+            .filter(|route| route.provider_id == "mimo")
+            .collect::<Vec<_>>();
+        assert_eq!(mimo_routes.len(), 8);
+
+        let pay_as_you_go =
+            require_route(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID).expect("mimo pay-as-you-go route");
+        assert!(pay_as_you_go.runtime_supported);
+        assert!(pay_as_you_go.quick_setup_supported);
+        assert!(pay_as_you_go.model_discovery_supported);
+        assert_eq!(
+            pay_as_you_go.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+
+        for route_id in [
+            routes::mimo::TOKEN_PLAN_CN_ROUTE_ID,
+            routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID,
+            routes::mimo::TOKEN_PLAN_AMS_ROUTE_ID,
+        ] {
+            let route = require_route(route_id).expect("mimo token-plan route");
+
+            assert_eq!(route.catalog_section, "hosted");
+            assert!(route.runtime_supported);
+            assert!(route.model_discovery_supported);
+            assert!(!route.quick_setup_supported);
+            assert_eq!(
+                route.protocol_id,
+                protocol::openai_chat_completions::PROTOCOL_ID
+            );
+        }
+
+        let anthropic_pay_as_you_go = require_route(routes::mimo::ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID)
+            .expect("mimo anthropic pay-as-you-go route");
+        assert!(anthropic_pay_as_you_go.runtime_supported);
+        assert!(anthropic_pay_as_you_go.quick_setup_supported);
+        assert!(anthropic_pay_as_you_go.model_discovery_supported);
+        assert_eq!(
+            anthropic_pay_as_you_go.protocol_id,
+            protocol::anthropic_messages::PROTOCOL_ID
+        );
+        assert_eq!(
+            anthropic_pay_as_you_go.default_base_url.as_deref(),
+            Some(routes::mimo::ANTHROPIC_PAY_AS_YOU_GO_BASE_URL)
+        );
+        assert_eq!(anthropic_pay_as_you_go.auth_kind, "api-key");
+
+        for route_id in [
+            routes::mimo::ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID,
+            routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID,
+            routes::mimo::ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID,
+        ] {
+            let route = require_route(route_id).expect("mimo anthropic token-plan route");
+
+            assert_eq!(route.catalog_section, "hosted");
+            assert!(route.runtime_supported);
+            assert!(route.model_discovery_supported);
+            assert!(!route.quick_setup_supported);
+            assert_eq!(route.protocol_id, protocol::anthropic_messages::PROTOCOL_ID);
+            assert_eq!(route.auth_kind, "api-key");
+        }
     }
 
     #[test]
@@ -222,8 +313,16 @@ mod tests {
     }
 
     #[test]
-    fn lmstudio_has_route_model_discovery_hook_only() {
+    fn route_model_discovery_hooks_cover_special_routes() {
         assert!(route_model_discovery_hook(routes::lmstudio::ROUTE_ID).is_some());
+        assert!(route_model_discovery_hook(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID).is_some());
+        assert!(route_model_discovery_hook(routes::mimo::TOKEN_PLAN_SGP_ROUTE_ID).is_some());
+        assert!(
+            route_model_discovery_hook(routes::mimo::ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID).is_some()
+        );
+        assert!(
+            route_model_discovery_hook(routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID).is_some()
+        );
         assert!(route_model_discovery_hook(routes::llama_cpp_server::ROUTE_ID).is_none());
         assert!(route_model_discovery_hook(routes::vllm::ROUTE_ID).is_none());
     }

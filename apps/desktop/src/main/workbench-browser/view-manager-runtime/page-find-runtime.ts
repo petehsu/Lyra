@@ -347,6 +347,11 @@ export const createPageFindRuntime = ({
     const reveal = request.reveal === true && currentIndex > 0
       ? await revealSearchInPageMatch(target, query, currentIndex, request.caseSensitive === true)
       : { ok: false };
+    if (request.ephemeralReveal === true && reveal.ok === true) {
+      window.setTimeout(() => {
+        void clearSearchInPageOverlay(target);
+      }, 2800);
+    }
     return {
       tabId: target.tabId,
       address: normalizeAddress(target.webContents.getURL()) ?? target.address,

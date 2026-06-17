@@ -262,6 +262,11 @@ export const BrowserTabStripView = ({
         onPointerLeave={onClearTabCloseLock}
       >
         <div className="lyra-browser-tab-list">
+          <div
+            className="lyra-browser-tab-list-spacer"
+            style={renderModel.listSpacerStyle}
+            aria-hidden="true"
+          />
           {renderModel.tabs.map((tabModel) => (
             <div
               key={tabModel.tab.id}

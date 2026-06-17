@@ -9,6 +9,8 @@ import type {
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
 import type { DownloadManagerTask } from "../../../shared/download-manager";
+import { isImageViewerSupportedPath } from "../image-viewer";
+import { findSelectedEntry } from "./state-model";
 import type {
   FileManagerAppState,
   FileManagerChooserMode,
@@ -194,9 +196,11 @@ export type FileManagerBodyModel =
 
 export type FileManagerChooserBarModel =
   | {
-      readonly kind: "ai-project-bind";
+      readonly kind: "ai-project-bind" | "ai-image-attach" | "ai-file-attach";
+      readonly promptLabel: string;
       readonly confirmLabel: string;
       readonly path: string | null;
+      readonly selectionPlaceholder: string;
       readonly canConfirm: boolean;
     }
   | null;
@@ -588,11 +592,29 @@ export const deriveFileManagerSurfaceModel = (
     state.historyIndex >= 0 && state.historyIndex < state.history.length - 1;
   const canGoUp = pageKind === "favorites" || pageKind === "downloads" ? false : state.parentPath !== undefined;
   const favoriteActive = isCurrentFavorite(state);
+  const selectedFileEntry = findSelectedEntry(state);
+  const selectedImagePath =
+    selectedFileEntry?.kind === "file"
+    && isImageViewerSupportedPath(selectedFileEntry.path)
+      ? selectedFileEntry.path.trim()
+      : "";
+  const selectedFilePath =
+    selectedFileEntry?.kind === "file"
+      ? selectedFileEntry.path.trim()
+      : "";
   const canConfirmCurrentDirectory =
     chooser?.kind === "ai-project-bind"
     && state.viewKind === "directory"
     && typeof state.currentLocation?.path === "string"
     && state.currentLocation.path.trim().length > 0;
+  const canConfirmSelectedImage =
+    chooser?.kind === "ai-image-attach"
+    && state.viewKind === "directory"
+    && selectedImagePath.length > 0;
+  const canConfirmSelectedFile =
+    chooser?.kind === "ai-file-attach"
+    && state.viewKind === "directory"
+    && selectedFilePath.length > 0;
   const isLargeMode = state.presentationMode === "large";
   const canRenderBodyContent =
     state.status !== "error" &&
@@ -640,11 +662,31 @@ export const deriveFileManagerSurfaceModel = (
       chooser?.kind === "ai-project-bind"
         ? {
             kind: "ai-project-bind",
+            promptLabel: chooser.promptLabel,
             confirmLabel: chooser.confirmLabel,
             path: canConfirmCurrentDirectory ? state.currentLocation?.path ?? null : null,
+            selectionPlaceholder: chooser.selectPlaceholder,
             canConfirm: canConfirmCurrentDirectory
           }
-        : null,
+        : chooser?.kind === "ai-image-attach"
+          ? {
+              kind: "ai-image-attach",
+              promptLabel: chooser.promptLabel,
+              confirmLabel: chooser.confirmLabel,
+              path: canConfirmSelectedImage ? selectedImagePath : null,
+              selectionPlaceholder: chooser.selectPlaceholder,
+              canConfirm: canConfirmSelectedImage
+            }
+          : chooser?.kind === "ai-file-attach"
+            ? {
+                kind: "ai-file-attach",
+                promptLabel: chooser.promptLabel,
+                confirmLabel: chooser.confirmLabel,
+                path: canConfirmSelectedFile ? selectedFilePath : null,
+                selectionPlaceholder: chooser.selectPlaceholder,
+                canConfirm: canConfirmSelectedFile
+              }
+            : null,
     breadcrumbs,
     canGoBack,
     canGoForward,

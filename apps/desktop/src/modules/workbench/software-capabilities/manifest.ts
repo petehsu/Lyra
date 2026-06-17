@@ -16,7 +16,8 @@ export const SETTING_CATEGORY_IDS = new Set<BrowserSettingsCategoryId>([
   "loginManager",
   "linux",
   "search",
-  "ai"
+  "ai",
+  "models"
 ]);
 
 export const LOGIN_MANAGER_AUTH_METHOD_KINDS: readonly LoginManagerAuthMethodKind[] = [

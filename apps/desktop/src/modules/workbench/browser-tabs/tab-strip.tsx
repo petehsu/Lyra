@@ -54,8 +54,9 @@ export const BrowserTabStrip = ({
   });
   const animationState = useBrowserTabStripAnimationState(tabs);
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId));
+  const tabTitles = useMemo(() => tabs.map((tab) => tab.title), [tabs]);
   const layoutState = useBrowserTabStripLayoutState(
-    tabs.length,
+    tabTitles,
     activeIndex,
     runtime.navRef,
     stackedMode

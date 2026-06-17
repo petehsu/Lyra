@@ -1,6 +1,11 @@
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
 
+use crate::native_backend::inline_images::{
+    effective_inline_images_for_user_turn, enrich_inline_images_for_provider,
+    expand_inline_image_markers_in_content, prepend_inline_images_vision_to_content,
+    provider_image_url_from_value, text_has_inline_image_markers,
+};
 use crate::prompt_policy::PromptAccounting;
 
 #[derive(Clone, Debug)]
@@ -110,9 +115,14 @@ impl ContextBuilder {
             ..ProviderContext::default()
         };
 
-        for message in messages {
-            let provider_messages =
-                provider_messages_from_agent_message(&message, &options, &mut output);
+        for (message_index, message) in messages.iter().enumerate() {
+            let provider_messages = provider_messages_from_agent_message(
+                message,
+                message_index,
+                &messages,
+                &options,
+                &mut output,
+            );
             output.messages.extend(provider_messages);
         }
 
@@ -127,6 +137,8 @@ impl ContextBuilder {
 
 fn provider_messages_from_agent_message(
     message: &Value,
+    message_index: usize,
+    all_messages: &[Value],
     options: &ProviderContextOptions,
     output: &mut ProviderContext,
 ) -> Vec<Value> {
@@ -177,13 +189,271 @@ fn provider_messages_from_agent_message(
     };
 
     if let Some(content) = content {
+        let merged = merge_user_content_with_transcript_citations(message, role, content);
+        let merged = merge_user_content_with_page_citations(message, role, merged);
+        let merged = merge_user_content_with_file_citations(message, role, merged);
+        let inline_images = message
+            .pointer("/metadata/inlineImages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let (effective_inline_images, inherited_session_inline_images) =
+            effective_inline_images_for_user_turn(
+                role,
+                &inline_images,
+                text,
+                all_messages,
+                message_index,
+            );
+        let provider_inline_images =
+            enrich_inline_images_for_provider(&effective_inline_images);
+        let merged =
+            merge_user_content_with_inline_images(role, merged, &provider_inline_images);
+        let merged = if role == "user" && !provider_inline_images.is_empty() {
+            if text_has_inline_image_markers(text) {
+                expand_inline_image_markers_in_content(
+                    merged,
+                    &provider_inline_images,
+                    options,
+                    output,
+                )
+            } else if inherited_session_inline_images {
+                prepend_inline_images_vision_to_content(
+                    merged,
+                    &provider_inline_images,
+                    options,
+                    output,
+                )
+            } else {
+                merged
+            }
+        } else {
+            merged
+        };
         transcript.push(json!({
             "role": role,
-            "content": content,
+            "content": merged,
         }));
     }
 
     transcript
+}
+
+fn merge_user_content_with_transcript_citations(
+    message: &Value,
+    role: &str,
+    content: Value,
+) -> Value {
+    if role != "user" {
+        return content;
+    }
+    let citations = message
+        .pointer("/metadata/transcriptCitations")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty());
+    let Some(citations) = citations else {
+        return content;
+    };
+    let cite_blocks = citations
+        .iter()
+        .filter_map(format_transcript_cite_xml)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if cite_blocks.is_empty() {
+        return content;
+    }
+    let user_text = match &content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    };
+    let merged = if user_text.trim().is_empty() {
+        format!(
+            "The user referenced prior transcript excerpts. Treat every <lyra-transcript-cite> block as a canonical anchor to a message that definitely occurred in this session, even if it is outside the current working context.\n\n{cite_blocks}"
+        )
+    } else {
+        format!(
+            "The user referenced prior transcript excerpts. Treat every <lyra-transcript-cite> block as a canonical anchor to a message that definitely occurred in this session, even if it is outside the current working context. When truncated=\"true\", call lyra_session_read_message with messageId (and offsets when present) before relying on the excerpt alone.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
+        )
+    };
+    Value::String(merged)
+}
+
+fn merged_content_text(content: &Value) -> String {
+    match content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+fn merge_user_content_with_inline_images(
+    role: &str,
+    content: Value,
+    images: &[Value],
+) -> Value {
+    if role != "user" || images.is_empty() {
+        return content;
+    }
+    let image_blocks = images
+        .iter()
+        .filter_map(crate::native_backend::inline_images::format_inline_image_xml)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if image_blocks.is_empty() {
+        return content;
+    }
+    let user_text = match &content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    };
+    let transcript_marker = "The user referenced prior transcript excerpts.";
+    let page_marker = "The user referenced Workbench browser pages.";
+    let image_anchor_hint = "Treat every <lyra-image-attach> block as a canonical inline image anchor for the member's inline image attachment. Attachment ids are session-local and are not artifact ids—never pass them to artifact_read. Use the source path on <lyra-image-attach> or image-viewer tools on that file path. Describe image content from vision input; describe transparency/alpha/format from lyra-image-attach traits (hasAlpha, transparentBackground, transparentPixelPercent, colorMode, visionComposited). When visionComposited=true, vision shows a white-backed composite for visibility—the original file at source may still be transparent.";
+    let merged = if user_text.trim().is_empty() {
+        format!("{image_anchor_hint}\n\n{image_blocks}")
+    } else if user_text.contains(transcript_marker) || user_text.contains(page_marker) {
+        format!("{user_text}\n\n{image_blocks}")
+    } else {
+        format!("{image_anchor_hint}\n\n{image_blocks}\n\nUser message:\n{user_text}")
+    };
+    Value::String(merged)
+}
+
+fn merge_user_content_with_page_citations(
+    message: &Value,
+    role: &str,
+    content: Value,
+) -> Value {
+    if role != "user" {
+        return content;
+    }
+    let citations = message
+        .pointer("/metadata/pageCitations")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty());
+    let Some(citations) = citations else {
+        return content;
+    };
+    let cite_blocks = citations
+        .iter()
+        .filter_map(crate::native_backend::page_citations::format_page_cite_xml)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if cite_blocks.is_empty() {
+        return content;
+    }
+    let user_text = match &content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    };
+    let transcript_marker = "The user referenced prior transcript excerpts.";
+    let merged = if user_text.trim().is_empty() {
+        format!(
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> block as a canonical anchor to a tab/page the user was viewing.\n\n{cite_blocks}"
+        )
+    } else if user_text.contains(transcript_marker) {
+        format!("{user_text}\n\n{cite_blocks}")
+    } else {
+        format!(
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> block as a canonical anchor to a tab/page the user was viewing.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
+        )
+    };
+    Value::String(merged)
+}
+
+fn merge_user_content_with_file_citations(
+    message: &Value,
+    role: &str,
+    content: Value,
+) -> Value {
+    if role != "user" {
+        return content;
+    }
+    let citations = message
+        .pointer("/metadata/fileAttachments")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty());
+    let Some(citations) = citations else {
+        return content;
+    };
+    let cite_blocks = citations
+        .iter()
+        .filter_map(crate::native_backend::file_citations::format_file_cite_xml)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if cite_blocks.is_empty() {
+        return content;
+    }
+    let user_text = match &content {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    };
+    let merged = if user_text.trim().is_empty() {
+        format!(
+            "The user attached local files from the Lyra file manager. Treat every <lyra-file-cite> block as a canonical anchor to a file path the user referenced.\n\n{cite_blocks}"
+        )
+    } else {
+        format!(
+            "The user attached local files from the Lyra file manager. Treat every <lyra-file-cite> block as a canonical anchor to a file path the user referenced.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
+        )
+    };
+    Value::String(merged)
+}
+
+fn format_transcript_cite_xml(citation: &Value) -> Option<String> {
+    let id = citation.get("id").and_then(Value::as_str)?;
+    let message_id = citation.get("messageId").and_then(Value::as_str)?;
+    let role = citation.get("role").and_then(Value::as_str).unwrap_or("assistant");
+    let truncated = citation
+        .get("truncated")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let block_id = citation
+        .get("blockId")
+        .and_then(Value::as_str)
+        .map(|value| format!(" blockId=\"{value}\""))
+        .unwrap_or_default();
+    let start = citation
+        .get("startOffset")
+        .and_then(Value::as_u64)
+        .map(|value| format!(" start=\"{value}\""))
+        .unwrap_or_default();
+    let end = citation
+        .get("endOffset")
+        .and_then(Value::as_u64)
+        .map(|value| format!(" end=\"{value}\""))
+        .unwrap_or_default();
+    let quoted = citation
+        .get("quotedText")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Some(format!(
+        "<lyra-transcript-cite id=\"{id}\" messageId=\"{message_id}\" role=\"{role}\" authentic=\"true\" truncated=\"{truncated}\"{block_id}{start}{end}>\n{quoted}\n</lyra-transcript-cite>"
+    ))
 }
 
 fn provider_transcript_from_agent_message(message: &Value) -> Vec<Value> {
@@ -329,29 +599,7 @@ fn content_from_blocks(
 }
 
 fn provider_image_url(block: &Value) -> Option<String> {
-    let media_type = block
-        .get("mediaType")
-        .or_else(|| block.get("media_type"))
-        .and_then(Value::as_str)
-        .unwrap_or("image/png");
-    let data = block
-        .get("data")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if data.starts_with("data:image/")
-        || data.starts_with("http://")
-        || data.starts_with("https://")
-    {
-        return Some(data.to_string());
-    }
-    if !data.trim().is_empty() {
-        return Some(format!("data:{media_type};base64,{data}"));
-    }
-    block
-        .get("source")
-        .and_then(Value::as_str)
-        .filter(|source| source.starts_with("http://") || source.starts_with("https://"))
-        .map(str::to_string)
+    provider_image_url_from_value(block)
 }
 
 fn image_downgrade(message: &Value, block: &Value, reason: &str) -> Value {
@@ -392,8 +640,38 @@ fn trim_tool_output(
 fn estimate_messages_tokens(messages: &[Value]) -> usize {
     messages
         .iter()
-        .map(|message| estimate_tokens(&serde_json::to_string(message).unwrap_or_default()))
+        .map(estimate_message_tokens)
         .sum()
+}
+
+fn estimate_message_tokens(message: &Value) -> usize {
+    estimate_tokens(
+        &serde_json::to_string(&strip_inline_image_data_for_token_estimate(message.clone()))
+            .unwrap_or_default(),
+    )
+}
+
+fn strip_inline_image_data_for_token_estimate(mut message: Value) -> Value {
+    if let Some(images) = message
+        .pointer_mut("/metadata/inlineImages")
+        .and_then(Value::as_array_mut)
+    {
+        for image in images.iter_mut() {
+            if let Some(object) = image.as_object_mut() {
+                object.remove("data");
+            }
+        }
+    }
+    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
+        for block in blocks.iter_mut() {
+            if block.get("type").and_then(Value::as_str) == Some("image")
+                && let Some(object) = block.as_object_mut()
+            {
+                object.remove("data");
+            }
+        }
+    }
+    message
 }
 
 fn estimate_tokens(text: &str) -> usize {
@@ -534,7 +812,7 @@ fn compact_to_retention_policy(output: &mut ProviderContext, policy: RetentionPo
     let messages = output.messages.iter().skip(1).cloned().collect::<Vec<_>>();
     let message_tokens = messages
         .iter()
-        .map(|message| estimate_tokens(&serde_json::to_string(message).unwrap_or_default()))
+        .map(|message| estimate_message_tokens(message))
         .collect::<Vec<_>>();
     let mut keep = vec![false; messages.len()];
     let mut protected_tokens = 0_usize;
@@ -577,6 +855,8 @@ fn compact_to_retention_policy(output: &mut ProviderContext, policy: RetentionPo
         token_total = token_total.saturating_add(estimate);
     }
 
+    normalize_tool_round_retention(&messages, &mut keep);
+
     let kept = messages
         .into_iter()
         .zip(keep)
@@ -611,6 +891,49 @@ fn compact_to_retention_policy(output: &mut ProviderContext, policy: RetentionPo
             "estimatedTokens": output.token_estimate,
             "recoverable": true,
         }));
+    }
+}
+
+fn assistant_message_has_tool_calls(message: &Value) -> bool {
+    message.get("role").and_then(Value::as_str) == Some("assistant")
+        && message
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|tool_calls| !tool_calls.is_empty())
+}
+
+fn assistant_message_has_reasoning(message: &Value) -> bool {
+    message
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn normalize_tool_round_retention(messages: &[Value], keep: &mut [bool]) {
+    let mut index = 0;
+    while index < messages.len() {
+        if !assistant_message_has_tool_calls(&messages[index]) {
+            index += 1;
+            continue;
+        }
+        let round_start = index;
+        let mut round_end = index + 1;
+        while round_end < messages.len()
+            && messages[round_end].get("role").and_then(Value::as_str) == Some("tool")
+        {
+            round_end += 1;
+        }
+        let round_kept = (round_start..round_end).any(|slot| keep[slot]);
+        if round_kept && !assistant_message_has_reasoning(&messages[round_start]) {
+            for slot in round_start..round_end {
+                keep[slot] = false;
+            }
+        } else if !keep[round_start] {
+            for slot in round_start + 1..round_end {
+                keep[slot] = false;
+            }
+        }
+        index = round_end;
     }
 }
 
@@ -866,6 +1189,113 @@ mod tests {
             },
         );
         assert_eq!(small_policy.trim_trigger_tokens, 3_280);
+    }
+
+    #[test]
+    fn provider_context_drops_incomplete_tool_rounds_missing_reasoning() {
+        let mut messages = vec![json!({
+            "role": "system",
+            "content": "system",
+        })];
+        messages.extend((0..40).map(|index| {
+            json!({
+                "role": "user",
+                "content": format!("filler message {index} {}", "x".repeat(500)),
+            })
+        }));
+        messages.push(json!({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": "call-tabs",
+                "type": "function",
+                "function": {
+                    "name": "tool_fs_run",
+                    "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                }
+            }]
+        }));
+        messages.push(json!({
+            "role": "tool",
+            "tool_call_id": "call-tabs",
+            "content": "tabs: settings",
+        }));
+        messages.push(json!({
+            "role": "user",
+            "content": "latest intent",
+        }));
+
+        let mut output = ProviderContext {
+            messages,
+            ..ProviderContext::default()
+        };
+        let retention = RetentionPolicy::from_context(&output.messages, &ProviderContextOptions {
+            context_window: Some(96),
+            ..ProviderContextOptions::default()
+        });
+        compact_to_retention_policy(&mut output, retention);
+
+        let payload = serde_json::to_string(&output.messages).unwrap();
+        assert!(!payload.contains("call-tabs"));
+        assert!(payload.contains("latest intent"));
+    }
+
+    #[test]
+    fn provider_context_reinjects_vision_on_structural_inline_image_follow_up() {
+        let context = ContextBuilder::default().build_provider_context(
+            "system".to_string(),
+            vec![
+                json!({
+                    "id": "message-image",
+                    "role": "user",
+                    "text": "请看 ⟦image:img-1⟧",
+                    "metadata": {
+                        "inlineImages": [{
+                            "id": "img-1",
+                            "mediaType": "image/png",
+                            "data": "AAAA",
+                            "source": "/tmp/example.png"
+                        }]
+                    }
+                }),
+                json!({
+                    "id": "message-assistant",
+                    "role": "assistant",
+                    "text": "I see an image."
+                }),
+                json!({
+                    "id": "message-follow-up",
+                    "role": "user",
+                    "text": "这张图片是什么"
+                }),
+            ],
+            ProviderContextOptions {
+                supports_image_input: true,
+                ..ProviderContextOptions::default()
+            },
+        );
+
+        let follow_up = context
+            .messages
+            .iter()
+            .rev()
+            .find(|message| {
+                message.get("role").and_then(Value::as_str) == Some("user")
+                    && message
+                        .pointer("/content")
+                        .and_then(|content| content.as_array())
+                        .is_some_and(|parts| {
+                            parts.iter().any(|part| part.get("image_url").is_some())
+                        })
+            })
+            .expect("follow-up user message with vision");
+        let parts = follow_up["content"].as_array().expect("content parts");
+        assert!(parts.iter().any(|part| part.get("image_url").is_some()));
+        assert!(
+            serde_json::to_string(follow_up)
+                .unwrap()
+                .contains("re-attached here")
+        );
     }
 
     #[test]

@@ -23,6 +23,7 @@ vi.mock("electron", () => ({
 import type { LyraRuntimeClient } from "../../runtime-client";
 import type { WorkbenchObservationService } from "../../workbench-observation/types";
 import { createAgentIpcBridge } from "../service";
+import { createWorkbenchStateMock } from "./workbench-state-mock";
 import {
   TERMINAL_AGENT_TOOL_NAMES,
   TERMINAL_AGENT_TOOL_ROUTES,
@@ -161,7 +162,8 @@ describe("terminal agent release gate", () => {
       terminalBridge: createTerminalBridgeMock(longScreen) as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
     });
 
     const created = await registered.get("terminal.create")?.({
@@ -198,7 +200,8 @@ describe("terminal agent release gate", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => null,
       getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => observationService
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
     });
 
     await expect(registered.get("terminal.read")?.({

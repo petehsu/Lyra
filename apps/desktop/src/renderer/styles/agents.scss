@@ -129,6 +129,139 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.lyra-agents-app-drag-host {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.lyra-agents-app-drag-host-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  transition:
+    filter var(--lyra-agents-duration-fast) ease,
+    opacity var(--lyra-agents-duration-fast) ease;
+}
+
+.lyra-agents-app-drag-host[data-drag-attach-active="true"] .lyra-agents-app-drag-host-content {
+  filter: blur(var(--lyra-unit-3));
+  opacity: 0.72;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lyra-ai-panel-drag-attach-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--lyra-unit-24);
+  background: color-mix(in srgb, var(--lyra-agents-content-bg) 52%, transparent);
+  -webkit-backdrop-filter: blur(var(--lyra-unit-2)) saturate(1.15);
+  backdrop-filter: blur(var(--lyra-unit-2)) saturate(1.15);
+  pointer-events: none;
+}
+
+.lyra-ai-panel-drag-attach-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--lyra-unit-14);
+  text-align: center;
+  animation: lyra-ai-panel-drag-attach-hint-in var(--lyra-agents-duration-medium) cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.lyra-ai-panel-drag-attach-icon-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-unit-88);
+  height: var(--lyra-unit-88);
+  border-radius: var(--lyra-radius-16);
+  border: 1px solid color-mix(in srgb, var(--lyra-accent) 28%, var(--lyra-border-subtle));
+  background:
+    radial-gradient(
+      circle at 30% 24%,
+      color-mix(in srgb, var(--lyra-accent) 14%, transparent),
+      transparent 58%
+    ),
+    color-mix(in srgb, var(--lyra-surface-raised) 92%, var(--lyra-accent) 8%);
+  box-shadow: var(--lyra-shadow-elevated-md);
+}
+
+.lyra-ai-panel-drag-attach-hub-back,
+.lyra-ai-panel-drag-attach-hub-mid {
+  stroke: color-mix(in srgb, var(--lyra-text-secondary) 42%, transparent);
+  stroke-width: 1.4;
+}
+
+.lyra-ai-panel-drag-attach-hub-back {
+  fill: color-mix(in srgb, var(--lyra-surface-raised) 52%, transparent);
+}
+
+.lyra-ai-panel-drag-attach-hub-mid {
+  fill: color-mix(in srgb, var(--lyra-surface-raised) 72%, transparent);
+}
+
+.lyra-ai-panel-drag-attach-hub-front {
+  fill: color-mix(in srgb, var(--lyra-surface-raised) 96%, var(--lyra-accent) 4%);
+  stroke: color-mix(in srgb, var(--lyra-text-primary) 72%, var(--lyra-border-subtle));
+  stroke-width: 1.6;
+}
+
+.lyra-ai-panel-drag-attach-hub-line,
+.lyra-ai-panel-drag-attach-hub-thumb-mark {
+  stroke: color-mix(in srgb, var(--lyra-text-secondary) 82%, transparent);
+}
+
+.lyra-ai-panel-drag-attach-hub-thumb {
+  fill: color-mix(in srgb, var(--lyra-accent) 18%, var(--lyra-surface-raised));
+  stroke: color-mix(in srgb, var(--lyra-accent) 42%, var(--lyra-border-subtle));
+  stroke-width: 1.2;
+}
+
+.lyra-ai-panel-drag-attach-hub-badge {
+  fill: color-mix(in srgb, var(--lyra-accent) 88%, var(--lyra-surface-raised));
+  stroke: color-mix(in srgb, var(--lyra-accent) 72%, var(--lyra-text-primary));
+  stroke-width: 1.4;
+}
+
+.lyra-ai-panel-drag-attach-hub-plus {
+  stroke: var(--lyra-surface-raised);
+}
+
+.lyra-ai-panel-drag-attach-label {
+  margin: 0;
+  font-size: var(--lyra-text-size-body);
+  font-weight: var(--lyra-font-weight-medium);
+  letter-spacing: 0.01em;
+  color: var(--lyra-text-primary);
+}
+
+@keyframes lyra-ai-panel-drag-attach-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--lyra-unit-6)) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* -------- Selection policy --------
    Shell and controls should not be copied by drag selection. Only real
    transcript/output content opts back into text selection. */
@@ -196,13 +329,14 @@
   --lyra-agents-session-tab-active-bg: var(--lyra-app-row-active-bg);
   --lyra-agents-session-tab-border: color-mix(in srgb, var(--lyra-app-border) 72%, transparent);
   --lyra-agents-session-header-h: var(--lyra-control-h-40);
-  --lyra-agents-session-tab-h: var(--lyra-control-h-28);
-  --lyra-agents-session-tab-y: var(--lyra-space-6);
+  --lyra-agents-session-tab-h: var(--lyra-control-h-30);
+  --lyra-agents-session-tab-y:
+    calc((var(--lyra-agents-session-header-h) - var(--lyra-agents-session-tab-h)) / 2);
   --lyra-agents-session-tab-radius: var(--lyra-radius-8);
   display: grid;
   grid-template-columns:
     minmax(0, 1fr)
-    minmax(var(--lyra-space-64), min(var(--lyra-unit-240), 38%));
+    auto;
   column-gap: var(--lyra-space-8);
   height: var(--lyra-agents-session-header-h);
   padding: 0 var(--lyra-space-10) 0 var(--lyra-space-8);
@@ -243,7 +377,7 @@
 
 .lyra-agents-session-tab-list {
   min-width: 0;
-  width: calc(100% - var(--lyra-control-h-32));
+  width: 100%;
   height: 100%;
   display: block;
   overflow-x: auto;
@@ -272,7 +406,7 @@
 
 .lyra-agents-session-tab-item {
   box-sizing: border-box;
-  min-width: var(--lyra-unit-132);
+  min-width: var(--lyra-unit-120);
   max-width: none;
   height: var(--lyra-agents-session-tab-h);
   margin-top: var(--lyra-agents-session-tab-y);
@@ -403,37 +537,6 @@
   transition: color var(--lyra-transition-fast);
 }
 
-.lyra-agents-session-tab-add {
-  box-sizing: border-box;
-  width: var(--lyra-control-h-28);
-  min-width: var(--lyra-control-h-28);
-  height: var(--lyra-control-h-28);
-  margin-top: var(--lyra-agents-session-tab-y);
-  padding: 0;
-  border-radius: var(--lyra-agents-session-tab-radius);
-  background: transparent;
-  color: var(--lyra-text-muted);
-  opacity: 1;
-  cursor: pointer;
-  position: absolute;
-  left: 0;
-  top: 0;
-  z-index: 9;
-  display: grid;
-  place-items: center;
-  isolation: isolate;
-  line-height: 1;
-  transition:
-    color var(--lyra-transition-fast),
-    opacity var(--lyra-transition-fast),
-    transform var(--lyra-motion-fast);
-}
-
-.lyra-agents-session-tab-add:hover:not(:disabled) {
-  color: var(--lyra-text-primary);
-  background: var(--lyra-agents-session-tab-hover-bg);
-}
-
 .lyra-agents-session-tab-item-active .lyra-agents-session-tab-main,
 .lyra-agents-session-tab-item-active .lyra-agents-session-tab-icon,
 .lyra-agents-session-tab-item:hover .lyra-agents-session-tab-main,
@@ -460,8 +563,8 @@
 }
 
 .lyra-agents-session-tabs-header .lyra-agents-session-tab-close:hover:not(:disabled) {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-app-row-active-bg) 78%, transparent);
+  color: var(--lyra-status-error);
+  background: transparent;
 }
 
 .lyra-agents-session-tabs-header .lyra-agents-session-tab-item:hover .lyra-agents-session-tab-close,
@@ -472,8 +575,8 @@
 
 .lyra-agents-session-tabs-header .lyra-agents-header-right {
   min-width: 0;
-  width: 100%;
-  max-width: 100%;
+  width: auto;
+  max-width: max-content;
   flex: none;
   justify-self: end;
   justify-content: flex-end;
@@ -481,34 +584,9 @@
   overflow: visible;
 }
 
-.lyra-agents-session-tabs-header .lyra-agents-header-project-controls {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: min(var(--lyra-unit-160), 100%);
-  overflow: hidden;
-}
-
 .lyra-agents-session-tabs-header .lyra-agents-header-action,
 .lyra-agents-session-tabs-header .lyra-agents-header-more {
   flex: 0 0 auto;
-}
-
-.lyra-agents-session-tabs-header .lyra-agents-header-project-bind {
-  flex: 1 1 auto;
-  min-width: var(--lyra-control-h-26);
-  max-width: min(var(--lyra-unit-160), 100%);
-  overflow: hidden;
-}
-
-.lyra-agents-session-tabs-header .lyra-agents-header-project-name {
-  flex: 1 1 auto;
-}
-
-.lyra-agents-session-tabs-header .lyra-agents-header-project-bind > svg {
-  width: var(--lyra-icon-size-14);
-  height: var(--lyra-icon-size-14);
-  flex: 0 0 var(--lyra-icon-size-14);
-  display: block;
 }
 
 .lyra-agents-header-title {
@@ -547,7 +625,7 @@
 
 .lyra-agents-header-action:hover:not(:disabled) {
   color: var(--lyra-text-primary);
-  background: var(--lyra-app-row-hover-bg);
+  background: transparent;
 }
 
 .lyra-agents-header-action:disabled {
@@ -558,30 +636,6 @@
 .lyra-agents-header-action:disabled:hover {
   color: var(--lyra-text-secondary);
   background: transparent;
-}
-
-.lyra-agents-header-project-bind {
-  width: auto;
-  max-width: var(--lyra-unit-160);
-  gap: var(--lyra-space-6);
-  padding: 0 var(--lyra-space-8);
-  justify-content: flex-start;
-}
-
-.lyra-agents-header-project-controls {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-space-2);
-}
-
-.lyra-agents-header-project-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--lyra-text-size-12);
-  color: inherit;
 }
 
 .lyra-agents-header-more {
@@ -893,11 +947,11 @@
 .lyra-agents-chat-scroll:hover::-webkit-scrollbar-thumb,
 .lyra-agents-chat-scroll:focus-within::-webkit-scrollbar-thumb,
 .lyra-agents-chat-scroll:active::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--lyra-app-border) 64%, transparent);
+  background-color: var(--lyra-scrollbar-thumb-idle);
 }
 
 .lyra-agents-chat-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--lyra-app-border) 64%, transparent);
+  background-color: var(--lyra-scrollbar-thumb-hover);
 }
 
 /* Firefox */
@@ -908,14 +962,20 @@
 
 .lyra-agents-chat-scroll:hover,
 .lyra-agents-chat-scroll:focus-within {
-  scrollbar-color: var(--lyra-effect-scrollbar-strong) transparent;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
 }
 
 .lyra-agents-chat-inner {
   display: flex;
   flex-direction: column;
-  gap: var(--lyra-unit-24);
   padding: var(--lyra-unit-24) var(--lyra-unit-24) var(--lyra-unit-32);
+}
+
+/* When the only content is the new-session empty state, fill the scroll area so
+   the Lyra mark + prompt sit centered in the visible AI panel. */
+.lyra-agents-chat-inner:has(> .lyra-agents-chat-empty) {
+  min-height: 100%;
+  justify-content: center;
 }
 
 .lyra-agents-chat-thread-anchor {
@@ -1171,20 +1231,18 @@
 .lyra-agents-message-time .lyra-agents-time-actions .lyra-agents-time-copy {
   position: static;
   opacity: 1;
-  min-width: var(--lyra-control-h-22);
+  width: var(--lyra-control-h-22);
   height: var(--lyra-control-h-22);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 var(--lyra-space-4);
-  border: var(--lyra-stroke-thin) solid var(--lyra-app-border);
-  border-radius: var(--lyra-radius-6);
-  background: var(--lyra-app-popover-bg);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--lyra-text-secondary);
-  box-shadow: var(--lyra-shadow-elevated-sm);
+  box-shadow: none;
   transition:
-    background-color var(--lyra-transition-fast),
-    border-color var(--lyra-transition-fast),
     color var(--lyra-transition-fast),
     opacity var(--lyra-transition-fast);
 }
@@ -1216,8 +1274,8 @@
 }
 
 .lyra-agents-message:hover .lyra-agents-message-time .lyra-agents-time-actions .lyra-agents-time-copy:hover {
-  background: var(--lyra-app-row-hover-bg);
-  border-color: var(--lyra-app-border-strong);
+  background: transparent;
+  border-color: transparent;
 }
 
 .lyra-agents-message-time .lyra-agents-time-copy[aria-disabled="true"] {
@@ -1275,6 +1333,129 @@
   color: var(--lyra-text-muted);
   font-family: monospace;
   letter-spacing: 0;
+}
+
+.lyra-agents-service-status-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-3);
+  height: var(--lyra-unit-16);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-service-status-dots span {
+  width: var(--lyra-unit-3);
+  height: var(--lyra-unit-3);
+  border-radius: var(--lyra-radius-pill);
+  background: currentColor;
+  opacity: 0.38;
+  animation: lyra-agents-service-status-dot 1.15s ease-in-out infinite;
+}
+
+.lyra-agents-service-status-dots span:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.lyra-agents-service-status-dots span:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.lyra-agents-thinking-indicator,
+.lyra-agents-tool-execution-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-unit-16);
+  height: var(--lyra-unit-16);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-thinking-indicator {
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-agents-thinking-indicator span {
+  width: var(--lyra-unit-2);
+  height: var(--lyra-unit-8);
+  border-radius: var(--lyra-radius-pill);
+  background: currentColor;
+  opacity: 0.28;
+  transform-origin: center bottom;
+  animation: lyra-agents-thinking-scan 1.35s ease-in-out infinite;
+}
+
+.lyra-agents-thinking-indicator span:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.lyra-agents-thinking-indicator span:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+.lyra-agents-tool-execution-indicator {
+  gap: var(--lyra-unit-1);
+}
+
+.lyra-agents-tool-execution-indicator span {
+  width: var(--lyra-unit-2);
+  height: var(--lyra-unit-10);
+  border-radius: var(--lyra-radius-pill);
+  background: currentColor;
+  opacity: 0.32;
+  animation: lyra-agents-tool-execution-step 0.95s steps(2, end) infinite;
+}
+
+.lyra-agents-tool-execution-indicator span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.lyra-agents-tool-execution-indicator span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.lyra-agents-tool-execution-indicator span:nth-child(4) {
+  animation-delay: 360ms;
+}
+
+@keyframes lyra-agents-service-status-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+
+  38% {
+    opacity: 0.78;
+    transform: translateY(calc(var(--lyra-unit-1) * -1));
+  }
+}
+
+@keyframes lyra-agents-thinking-scan {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scaleY(0.58);
+  }
+
+  45% {
+    opacity: 0.78;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes lyra-agents-tool-execution-step {
+  0% {
+    opacity: 0.28;
+  }
+
+  50% {
+    opacity: 0.82;
+  }
+
+  100% {
+    opacity: 0.36;
+  }
 }
 
 .lyra-agents-message-loading {
@@ -1337,6 +1518,35 @@
   font: inherit;
   text-align: left;
   align-self: flex-start;
+}
+
+.lyra-agents-tool-group-head.lyra-ui-button,
+.lyra-agents-tool-call-head.lyra-ui-button {
+  height: auto;
+  min-height: 0;
+  padding-inline: 0;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.lyra-agents-tool-group-head.lyra-ui-button:hover:not(:disabled),
+.lyra-agents-tool-group-head.lyra-ui-button:active:not(:disabled),
+.lyra-agents-tool-call-head.lyra-ui-button:hover:not(:disabled),
+.lyra-agents-tool-call-head.lyra-ui-button:active:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.lyra-agents-tool-group-head.lyra-ui-button:focus-visible,
+.lyra-agents-tool-call-head.lyra-ui-button:focus-visible {
+  box-shadow: none;
+  outline: var(--lyra-stroke-strong) solid var(--lyra-app-focus);
+  outline-offset: var(--lyra-space-2);
 }
 
 .lyra-agents-tool-group-head:hover .lyra-agents-tool-group-label {
@@ -1580,6 +1790,10 @@
   color: var(--lyra-text-primary);
 }
 
+.lyra-agents-tool-call-head:not(:disabled):hover .lyra-agents-icon-swap {
+  color: var(--lyra-text-secondary);
+}
+
 /* Overlay container: tool icon and chevron occupy the same box.
    Chevron fades in on hover/open and the tool icon fades out in lockstep. */
 .lyra-agents-icon-swap {
@@ -1611,12 +1825,12 @@
   opacity: 0;
 }
 
-.lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-tool,
+.lyra-agents-tool-call.open .lyra-agents-icon-swap-tool,
 .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-tool {
   opacity: 0;
 }
 
-.lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-chevron,
+.lyra-agents-tool-call.open .lyra-agents-icon-swap-chevron,
 .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-chevron {
   opacity: 1;
 }
@@ -3974,6 +4188,19 @@
     border-color var(--lyra-motion-fast);
 }
 
+.lyra-agents-composer-send-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lyra-space-6);
+  margin-bottom: var(--lyra-space-6);
+  padding: var(--lyra-space-6) var(--lyra-space-8);
+  border-radius: var(--lyra-radius-8);
+  background: color-mix(in srgb, var(--lyra-color-danger-500) 12%, transparent);
+  color: var(--lyra-color-danger-600);
+  font-size: var(--lyra-font-size-12);
+  line-height: var(--lyra-line-height-compact);
+}
+
 .lyra-agents-composer:focus-within {
   background: var(--lyra-app-surface-strong-bg);
   border-color: color-mix(
@@ -4028,6 +4255,232 @@
   color: var(--lyra-text-secondary);
   cursor: default;
   opacity: 1;
+}
+
+.lyra-agents-composer > .lyra-agents-citation-composer-input.lyra-agents-composer-input {
+  width: 100%;
+  flex: none;
+  background: transparent;
+  color: var(--lyra-text-primary);
+  border: 0;
+  border-radius: var(--lyra-radius-8);
+  outline: none;
+  font: inherit;
+  font-size: var(--lyra-text-size-14);
+  padding: var(--lyra-space-8) var(--lyra-space-10);
+  line-height: 1.55;
+  min-height: var(--lyra-space-64);
+  max-height: calc(var(--lyra-space-64) * 4);
+  box-shadow: none;
+}
+
+.lyra-agents-citation-composer-input {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+
+.lyra-agents-citation-composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--lyra-text-muted);
+  pointer-events: none;
+}
+
+.lyra-agents-citation-composer-input:focus-visible {
+  outline: none;
+}
+
+.lyra-agents-citation-composer-input[data-drop-active="true"] {
+  outline: 1px solid color-mix(in srgb, var(--lyra-accent) 72%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--lyra-accent) 8%, var(--lyra-app-surface-strong-bg));
+}
+
+.lyra-agents-citation-chip {
+  --lyra-agents-citation-chip-bg: color-mix(in srgb, var(--lyra-text-secondary) 10%, var(--lyra-app-surface-strong-bg));
+  --lyra-agents-citation-chip-border: color-mix(in srgb, var(--lyra-text-secondary) 28%, transparent);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-space-4);
+  max-width: min(13.5rem, 100%);
+  min-height: calc(var(--lyra-space-14) + var(--lyra-space-4));
+  margin: 0 var(--lyra-space-1);
+  padding: var(--lyra-space-2) var(--lyra-space-6);
+  border-radius: var(--lyra-radius-pill);
+  border: var(--lyra-stroke-thin) solid var(--lyra-agents-citation-chip-border);
+  background: var(--lyra-agents-citation-chip-bg);
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+  line-height: 1.35;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.lyra-agents-citation-composer-input .lyra-agents-citation-chip {
+  -webkit-user-modify: read-only;
+  font-size: var(--lyra-text-size-13);
+  line-height: 1.45;
+  min-height: 0;
+  padding-block: var(--lyra-space-1);
+  vertical-align: -0.06em;
+}
+
+.lyra-agents-message-text .lyra-agents-citation-chip {
+  font-size: inherit;
+  line-height: inherit;
+  min-height: 0;
+  padding-block: 0;
+  vertical-align: -0.06em;
+}
+
+.lyra-agents-citation-chip[role="button"]:hover,
+.lyra-agents-citation-composer-input .lyra-agents-citation-chip:hover {
+  filter: brightness(1.04);
+}
+
+.lyra-agents-citation-chip[role="button"]:focus {
+  outline: none;
+}
+
+.lyra-agents-citation-chip[role="button"]:focus-visible {
+  outline: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-accent) 44%, transparent);
+  outline-offset: var(--lyra-space-2);
+}
+
+.lyra-agents-citation-chip-attachment-file .lyra-agents-citation-chip-icon {
+  color: color-mix(in srgb, var(--lyra-accent) 48%, var(--lyra-text-secondary));
+}
+
+.lyra-agents-citation-chip-attachment-workspace .lyra-agents-citation-chip-icon,
+.lyra-agents-citation-chip-attachment-browser .lyra-agents-citation-chip-icon,
+.lyra-agents-citation-chip-attachment-window .lyra-agents-citation-chip-icon {
+  color: color-mix(in srgb, var(--lyra-accent) 58%, var(--lyra-text-secondary));
+}
+
+.lyra-agents-citation-chip-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-space-14);
+  height: var(--lyra-space-14);
+  color: color-mix(in srgb, var(--lyra-accent) 58%, var(--lyra-text-secondary));
+}
+
+.lyra-agents-citation-chip-icon svg {
+  width: var(--lyra-space-12);
+  height: var(--lyra-space-12);
+}
+
+.lyra-agents-citation-chip-icon-host {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-page-citation-chip-favicon {
+  position: relative;
+  display: inline-flex;
+  width: var(--lyra-space-12);
+  height: var(--lyra-space-12);
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-page-citation-chip-favicon img {
+  width: var(--lyra-space-12);
+  height: var(--lyra-space-12);
+  border-radius: var(--lyra-radius-2);
+  object-fit: contain;
+}
+
+.lyra-agents-page-citation-chip-favicon img[data-failed="true"] {
+  display: none;
+}
+
+.lyra-agents-page-citation-chip-favicon-fallback {
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-page-citation-chip-favicon img[data-failed="true"] + .lyra-agents-page-citation-chip-favicon-fallback {
+  display: inline-flex;
+}
+
+.lyra-agents-citation-chip-preview-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lyra-agents-citation-chip-preview-wrap::before,
+.lyra-agents-citation-chip-preview-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--lyra-space-10);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lyra-agents-citation-chip-preview-wrap::before {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    var(--lyra-agents-citation-chip-bg) 0%,
+    transparent 100%
+  );
+}
+
+.lyra-agents-citation-chip-preview-wrap::after {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    var(--lyra-agents-citation-chip-bg) 0%,
+    transparent 100%
+  );
+}
+
+.lyra-agents-citation-chip-preview {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  padding: 0 var(--lyra-space-2);
+}
+
+.lyra-agents-message-citation-target {
+  animation: lyra-agents-citation-target-highlight 2.6s ease-out forwards;
+}
+
+.lyra-agents-message-user .lyra-agents-message-bubble.lyra-agents-message-citation-target {
+  border-radius: var(--lyra-radius-12);
+}
+
+.lyra-agents-message-agent .lyra-agents-message-body.lyra-agents-message-citation-target {
+  border-radius: var(--lyra-radius-8);
+}
+
+@keyframes lyra-agents-citation-target-highlight {
+  0% {
+    box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--lyra-accent) 24%, transparent);
+  }
+  35% {
+    box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--lyra-accent) 18%, transparent);
+  }
+  70% {
+    box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--lyra-accent) 8%, transparent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 9999px transparent;
+  }
 }
 
 .lyra-agents-composer-file-input {
@@ -4102,6 +4555,88 @@
 
 .lyra-agents-composer-attach-menu-item {
   width: 100%;
+}
+
+.lyra-agents-composer-attach-menu-entry,
+.lyra-agents-composer-attach-submenu-trigger {
+  grid-template-columns: var(--lyra-icon-size-14) minmax(0, 1fr) auto;
+}
+
+.lyra-agents-composer-attach-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-composer-attach-menu-icon svg {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  stroke-width: 1.8;
+}
+
+.lyra-agents-composer-attach-menu-entry[data-highlighted] .lyra-agents-composer-attach-menu-icon,
+.lyra-agents-composer-attach-submenu-trigger[data-highlighted] .lyra-agents-composer-attach-menu-icon {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agents-composer-attach-menu-favicon {
+  position: relative;
+  display: inline-flex;
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-composer-attach-menu-favicon img {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  border-radius: var(--lyra-radius-2);
+  object-fit: contain;
+}
+
+.lyra-agents-composer-attach-menu-favicon img[data-failed="true"] {
+  display: none;
+}
+
+.lyra-agents-composer-attach-menu-favicon-fallback {
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-agents-composer-attach-menu-favicon img[data-failed="true"] + .lyra-agents-composer-attach-menu-favicon-fallback {
+  display: inline-flex;
+}
+
+.lyra-agents-composer-attach-submenu {
+  min-width: max(var(--radix-dropdown-menu-trigger-width, var(--lyra-unit-180)), var(--lyra-unit-180));
+  max-height: min(calc(var(--lyra-unit-160) + var(--lyra-unit-16)), 40vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--lyra-scrollbar-thumb-idle) transparent;
+}
+
+.lyra-agents-composer-attach-submenu::-webkit-scrollbar {
+  width: var(--lyra-unit-6);
+  height: var(--lyra-unit-6);
+}
+
+.lyra-agents-composer-attach-submenu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lyra-agents-composer-attach-submenu::-webkit-scrollbar-thumb {
+  min-height: var(--lyra-unit-32);
+  border-radius: var(--lyra-radius-pill);
+  background-color: var(--lyra-scrollbar-thumb-idle);
+}
+
+.lyra-agents-composer-attach-submenu::-webkit-scrollbar-thumb:hover {
+  background-color: var(--lyra-scrollbar-thumb-hover);
 }
 
 .lyra-agents-composer-bottom {
@@ -4299,14 +4834,15 @@
 }
 
 .lyra-agents-composer-action svg,
-.lyra-agents-composer-follow svg {
+.lyra-agents-composer-follow svg,
+.lyra-agents-composer-location svg {
   width: var(--lyra-agents-composer-toolbar-plain-icon-size);
   height: var(--lyra-agents-composer-toolbar-plain-icon-size);
   flex-basis: var(--lyra-agents-composer-toolbar-plain-icon-size);
 }
 
 .lyra-agents-composer-action:hover {
-  background: var(--lyra-app-row-hover-bg);
+  background: transparent;
   color: var(--lyra-text-primary);
 }
 
@@ -4370,6 +4906,61 @@
 .lyra-agents-composer-follow:disabled {
   cursor: default;
   opacity: 0.28;
+}
+
+.lyra-agents-composer-location {
+  max-width: min(var(--lyra-unit-180), 32cqi);
+  height: var(--lyra-agents-composer-primary-action-size);
+  min-height: var(--lyra-agents-composer-primary-action-size);
+  min-width: var(--lyra-agents-composer-primary-action-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-space-4);
+  border: 0;
+  border-radius: var(--lyra-radius-8);
+  background: transparent;
+  color: var(--lyra-text-primary);
+  opacity: 0.5;
+  padding: 0 var(--lyra-space-4);
+  font-size: var(--lyra-text-size-12);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    opacity 150ms ease,
+    background-color 150ms ease,
+    transform 120ms ease;
+}
+
+.lyra-agents-composer-location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-agents-composer-location:hover {
+  background: var(--lyra-app-row-hover-bg);
+  opacity: 0.84;
+}
+
+.lyra-agents-composer-location[data-status="located"] {
+  opacity: 0.88;
+}
+
+.lyra-agents-composer-location[data-status="unavailable"] {
+  opacity: 0.62;
+}
+
+.lyra-agents-composer-location:active {
+  transform: scale(0.96);
+}
+
+.lyra-agents-composer-location:disabled {
+  cursor: default;
+  opacity: 0.32;
 }
 
 .lyra-agents-composer-send {
@@ -4485,10 +5076,6 @@
     font-size: var(--lyra-unit-11);
   }
 
-  .lyra-agents-header-project-bind {
-    max-width: calc(var(--lyra-unit-96) + var(--lyra-unit-4));
-  }
-
   .lyra-agents-pills-rail {
     max-width: 100%;
   }
@@ -4508,7 +5095,10 @@
 
   .lyra-agents-chat-inner {
     padding: var(--lyra-unit-20) var(--lyra-unit-14) var(--lyra-unit-28);
-    gap: var(--lyra-unit-18);
+  }
+
+  .lyra-agents-chat-message-slot + .lyra-agents-chat-message-slot {
+    margin-top: var(--lyra-unit-18);
   }
 
   .lyra-agents-composer-wrap {
@@ -4586,15 +5176,6 @@
     padding-right: var(--lyra-unit-4);
   }
 
-  .lyra-agents-header-project-bind {
-    max-width: var(--lyra-unit-80);
-    font-size: var(--lyra-unit-10-5);
-  }
-
-  .lyra-agents-session-tabs-header .lyra-agents-header-project-name {
-    display: none;
-  }
-
   .lyra-agents-pills-rail {
     top: var(--lyra-unit-32);
   }
@@ -4621,7 +5202,10 @@
 
   .lyra-agents-chat-inner {
     padding: var(--lyra-unit-18) var(--lyra-unit-10) var(--lyra-unit-24);
-    gap: var(--lyra-unit-16);
+  }
+
+  .lyra-agents-chat-message-slot + .lyra-agents-chat-message-slot {
+    margin-top: var(--lyra-unit-16);
   }
 
   .lyra-agents-composer-wrap {
@@ -4783,22 +5367,13 @@
     opacity: 0;
   }
 
-  .lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-tool,
+  .lyra-agents-tool-call.open .lyra-agents-icon-swap-tool,
   .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-tool {
-    opacity: 1;
+    opacity: 0;
   }
 
-  .lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-chevron,
+  .lyra-agents-tool-call.open .lyra-agents-icon-swap-chevron,
   .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-chevron {
-    opacity: 0;
-  }
-
-  /* On touch, always show chevron for expandable items */
-  .lyra-agents-tool-call-head.has-details .lyra-agents-icon-swap-tool {
-    opacity: 0;
-  }
-
-  .lyra-agents-tool-call-head.has-details .lyra-agents-icon-swap-chevron {
     opacity: 1;
   }
 
@@ -6210,4 +6785,187 @@
     border-right: 0;
     border-bottom: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
   }
+}
+
+/* -------- New-session empty state (centered Lyra mark + project prompt) -------- */
+.lyra-agents-chat-empty {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-space-12);
+  width: 100%;
+  min-height: 100%;
+  padding: var(--lyra-space-16);
+  text-align: center;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-chat-empty-logo {
+  /* The art is 96 columns wide. Size the glyph cell to the container width so
+     the whole mark fits without clipping in the narrow AI panel. cqw needs a
+     container; the chat scroll area provides one below. */
+  margin: 0;
+  font-family: var(--lyra-font-mono);
+  font-size: clamp(var(--lyra-unit-2), 1.5cqw, var(--lyra-text-size-10));
+  line-height: 1.04;
+  white-space: pre;
+  max-width: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+  /* Ocean-wave / card-flip sweep, clipped to the glyphs and built entirely from
+     theme tokens so it adapts to both tones automatically:
+       - troughs use the panel background color, so those glyphs sink INTO the
+         panel and momentarily vanish (the "flip to blank" beat);
+       - crests use the primary text color, so glyphs surface bright (in dark
+         mode that is near-white over the black panel; in light mode dark over
+         light) — exactly the black/white wave the design calls for;
+       - the muted color fills the slopes between, giving the swell its body.
+     Two crests across the band read as a rolling wave. Only `background-position`
+     animates, so paint stays confined to this small text box. */
+  --lyra-logo-wave-trough: var(--lyra-agents-content-bg);
+  --lyra-logo-wave-mid: color-mix(in srgb, var(--lyra-text-muted) 60%, transparent);
+  --lyra-logo-wave-crest: var(--lyra-text-primary);
+  /* Two IDENTICAL wave periods across the gradient (trough at 0/50/100, crest at
+     25/75). Paired with `background-size: 200%`, shifting the position by exactly
+     one box width lands on a pixel-identical pattern, so the loop is perfectly
+     seamless — no jump when the keyframe wraps. */
+  background: linear-gradient(
+    100deg,
+    var(--lyra-logo-wave-trough) 0%,
+    var(--lyra-logo-wave-mid) 12.5%,
+    var(--lyra-logo-wave-crest) 25%,
+    var(--lyra-logo-wave-mid) 37.5%,
+    var(--lyra-logo-wave-trough) 50%,
+    var(--lyra-logo-wave-mid) 62.5%,
+    var(--lyra-logo-wave-crest) 75%,
+    var(--lyra-logo-wave-mid) 87.5%,
+    var(--lyra-logo-wave-trough) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: lyra-logo-wave-sweep 7s linear infinite;
+}
+
+@keyframes lyra-logo-wave-sweep {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+
+/* Honour the OS "reduce motion" preference: drop the wave, keep the static
+   muted mark. */
+@media (prefers-reduced-motion: reduce) {
+  .lyra-agents-chat-empty-logo {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+    color: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+  }
+}
+
+.lyra-agents-chat-empty-question {
+  margin: 0;
+  font-family: var(--lyra-font-ui);
+  font-size: var(--lyra-text-size-body);
+  line-height: var(--lyra-text-line-body);
+  color: var(--lyra-text-secondary);
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--lyra-space-4);
+}
+
+.lyra-agents-chat-empty-project {
+  font-weight: 600;
+  color: var(--lyra-text-primary);
+}
+
+/* -------- Working-directory chip (outside the composer input, bottom-left) -------- */
+.lyra-agents-project-dir-chip-row,
+.lyra-agents-project-meta-row {
+  pointer-events: auto;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--lyra-space-8);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--lyra-space-4);
+  padding-left: var(--lyra-space-2);
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.lyra-agents-project-dir-chip,
+.lyra-agents-project-location-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-space-4);
+  max-width: var(--lyra-unit-180);
+  height: var(--lyra-agents-composer-toolbar-control-size);
+  padding: 0 var(--lyra-space-8);
+  background: transparent;
+  color: var(--lyra-text-muted);
+  border: 0;
+  border-radius: var(--lyra-agents-composer-toolbar-radius);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+
+.lyra-agents-project-dir-chip:hover,
+.lyra-agents-project-location-chip:hover {
+  background: var(--lyra-app-row-hover-bg);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agents-project-dir-chip:disabled,
+.lyra-agents-project-location-chip:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.lyra-agents-project-dir-chip:disabled:hover,
+.lyra-agents-project-location-chip:disabled:hover {
+  background: transparent;
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-project-location-chip[data-status="located"] {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agents-project-location-chip[data-status="unavailable"] {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-project-dir-chip-label,
+.lyra-agents-project-location-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--lyra-font-ui);
+  font-size: var(--lyra-text-size-12);
+  line-height: 1;
+}
+
+.lyra-agents-project-dir-chip svg,
+.lyra-agents-project-location-chip svg {
+  flex: 0 0 auto;
 }

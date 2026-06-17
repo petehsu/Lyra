@@ -14,7 +14,7 @@ type ListenerBudgetWebContents = WebContents & {
   readonly setMaxListeners?: (count: number) => void;
 };
 
-const MIN_WEB_CONTENTS_LISTENER_BUDGET = 128;
+const MIN_WEB_CONTENTS_LISTENER_BUDGET = 256;
 
 const ensureWebContentsListenerBudget = (webContents: WebContents): void => {
   const candidate = webContents as ListenerBudgetWebContents;
@@ -67,42 +67,63 @@ export const createWebContentsLoadWaiter = () => {
       return;
     }
     cancelPendingLoad(webContents);
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      let waitRecord: PendingPageLoadWait | null = null;
-      const finish = (stopLoading: boolean): void => {
-        if (settled) {
+
+    let superseded = false;
+    let activeCancel: (() => void) | null = null;
+    const reservation: PendingPageLoadWait = {
+      cancel: () => {
+        superseded = true;
+        activeCancel?.();
+      }
+    };
+    pendingPageLoadWaits.set(webContents, reservation);
+
+    try {
+      await new Promise<void>((resolve) => {
+        if (superseded) {
+          resolve();
           return;
         }
-        settled = true;
-        if (timer !== null) {
-          clearTimeout(timer);
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const finish = (stopLoading: boolean): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timer !== null) {
+            clearTimeout(timer);
+          }
+          webContents.off("did-stop-loading", onStopLoading);
+          webContents.off("did-fail-load", onFailLoad);
+          webContents.off("destroyed", onDestroyed);
+          if (pendingPageLoadWaits.get(webContents) === reservation) {
+            pendingPageLoadWaits.delete(webContents);
+          }
+          if (stopLoading) {
+            stopWebContentsLoading(webContents);
+          }
+          resolve();
+        };
+        const onStopLoading = (): void => finish(false);
+        const onFailLoad = (): void => finish(false);
+        const onDestroyed = (): void => finish(false);
+        activeCancel = () => finish(true);
+        if (superseded) {
+          resolve();
+          return;
         }
-        webContents.off("did-stop-loading", onStopLoading);
-        webContents.off("did-fail-load", onFailLoad);
-        webContents.off("destroyed", onDestroyed);
-        if (waitRecord !== null && pendingPageLoadWaits.get(webContents) === waitRecord) {
-          pendingPageLoadWaits.delete(webContents);
-        }
-        if (stopLoading) {
-          stopWebContentsLoading(webContents);
-        }
-        resolve();
-      };
-      const onStopLoading = (): void => finish(false);
-      const onFailLoad = (): void => finish(false);
-      const onDestroyed = (): void => finish(false);
-      waitRecord = {
-        cancel: () => finish(true)
-      };
-      pendingPageLoadWaits.set(webContents, waitRecord);
-      timer = setTimeout(() => finish(true), Math.max(250, timeoutMs));
-      webContents.on("did-stop-loading", onStopLoading);
-      webContents.on("did-fail-load", onFailLoad);
-      webContents.on("destroyed", onDestroyed);
-      void webContents.loadURL(url).then(onStopLoading, onFailLoad);
-    });
+        timer = setTimeout(() => finish(true), Math.max(250, timeoutMs));
+        webContents.on("did-stop-loading", onStopLoading);
+        webContents.on("did-fail-load", onFailLoad);
+        webContents.on("destroyed", onDestroyed);
+        void webContents.loadURL(url).then(onStopLoading, onFailLoad);
+      });
+    } finally {
+      if (pendingPageLoadWaits.get(webContents) === reservation) {
+        pendingPageLoadWaits.delete(webContents);
+      }
+    }
   };
 
   return {

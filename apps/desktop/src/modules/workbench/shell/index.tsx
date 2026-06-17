@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,7 +18,9 @@ import {
 import { createTranslator } from "../i18n";
 import { useWorkbenchNotificationModel } from "../notifications";
 import { useWorkbenchPreferencesModel } from "../preferences";
-import { useTerminalDockModel } from "../terminal-dock";
+import { useWorkbenchLocationModel } from "../location";
+import { useTerminalDockModel, useTerminalSessionRestore } from "../terminal-dock";
+import { isAgentSessionHistoryAppId } from "../workspace-apps";
 import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
@@ -27,6 +30,11 @@ import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "
 import { TitlebarNavigation } from "./titlebar-navigation";
 import { createTitlebarSecurityLabels } from "./titlebar-security-labels";
 import { useBrowserSearchModel } from "../browser-search";
+import {
+  useBrowserPageContextMenu,
+  type ComposerCitationSink
+} from "./use-browser-page-context-menu";
+import { usePageDragCitationBridge } from "./use-page-drag-citation-bridge";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
@@ -44,7 +52,8 @@ import {
   createWorkbenchChromeLabels,
   useWorkbenchActionApi
 } from "./use-workbench-action-api";
-import { usePanelLayoutModel } from "./use-panel-layout";
+import { applyPanelLayoutCssVars } from "./panel-layout-shell-vars";
+import { getIsLayoutResizing, usePanelLayoutModel } from "./use-panel-layout";
 import { useOpenTerminalLiveSession } from "./use-open-terminal-live-session";
 import { useSoftwareStoreBuiltinAppOpener } from "./use-software-store-builtin-app-opener";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
@@ -59,6 +68,7 @@ import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-notice";
 import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
+import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-chooser";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
@@ -119,8 +129,13 @@ export const WorkbenchShell = () => {
   const activeBrowserTabId = activeTab?.pageKind === "page" ? activeTab.id : null;
   const visibleWorkspaceLayout = tabsModel.getVisibleWorkspaceLayout();
   const terminalModel = useTerminalDockModel();
+  useTerminalSessionRestore({
+    desktopApi,
+    terminalModel
+  });
   const contextMenuModel = useContextMenuModel();
-  const panelLayoutModel = usePanelLayoutModel();
+  const composerCitationSinkRef = useRef<ComposerCitationSink | null>(null);
+  const panelLayoutModel = usePanelLayoutModel(rootRef);
   const {
 themeVars,
 resolvedThemeId,
@@ -140,8 +155,17 @@ resolvedThemeId,
   const refreshBrowserHistoryEntries = useCallback((): void => {
     setBrowserHistoryEntries(readBrowserHistoryEntries());
   }, []);
+  const agentSessionHistoryTabVisible = useMemo(
+    () => visibleWorkspaceLayout.visibleTabIds.some((tabId) => {
+      const tab = tabsModel.tabs.find((candidate) => candidate.id === tabId);
+      return tab?.pageKind === "app"
+        && tab.appId !== undefined
+        && isAgentSessionHistoryAppId(tab.appId);
+    }),
+    [tabsModel.tabs, visibleWorkspaceLayout.visibleTabIds]
+  );
   const embeddedBrowserPages = useMemo(
-    () => agentHistoryBrowserPreviewPage === null
+    () => agentHistoryBrowserPreviewPage === null || agentSessionHistoryTabVisible === false
       ? []
       : [
           {
@@ -150,8 +174,14 @@ resolvedThemeId,
             titleHint: agentHistoryBrowserPreviewPage.title
           }
         ],
-    [agentHistoryBrowserPreviewPage]
+    [agentHistoryBrowserPreviewPage, agentSessionHistoryTabVisible]
   );
+  useEffect(() => {
+    if (agentSessionHistoryTabVisible || agentHistoryBrowserPreviewPage === null) {
+      return;
+    }
+    setAgentHistoryBrowserPreviewPage(null);
+  }, [agentHistoryBrowserPreviewPage, agentSessionHistoryTabVisible]);
   const {
     activePageRuntimeState,
     browserAgentVisualState,
@@ -200,6 +230,11 @@ resolvedThemeId,
     searchSettings: searchSettingsFacade.browserSearchSettings,
     localSearchReady: localSearchIndexStatus.ready
   });
+  useBrowserPageContextMenu({
+    desktopApi,
+    composerCitationSinkRef
+  });
+  usePageDragCitationBridge({ desktopApi });
   const terminalWorkspaceActions = useTerminalWorkspaceActions({
     desktopApi,
     tabsModel,
@@ -284,6 +319,12 @@ resolvedThemeId,
     [t]
   );
   const globalDialogModel = useGlobalDialogModel(globalDialogDefaults);
+  const locationControls = useWorkbenchLocationModel({
+    desktopApi,
+    openDialog: globalDialogModel.openDialog,
+    locale: preferencesModel.preferences.locale,
+    t
+  });
   useEffect(() => {
     void desktopApi?.workbenchBrowser?.setModalOcclusion?.({
       active: globalDialogModel.state.isOpen
@@ -336,12 +377,32 @@ resolvedThemeId,
     openDialog: globalDialogModel.openDialog,
     publishNotification
   });
-  const { requestProjectBind, resolveFileManagerChooser } =
+  const { requestProjectBind, resolveFileManagerChooser: resolveProjectBindChooser } =
     useWorkbenchProjectBindChooser({
       fileManagerModel,
       tabsModel,
-      confirmLabel: t("ai.bindProjectConfirm")
+      confirmLabel: t("ai.bindProjectConfirm"),
+      promptLabel: t("ai.bindProjectLabel"),
+      selectPlaceholder: labels.fileManager.chooserSelectDirectoryPlaceholder
     });
+  const { requestFileAttach, resolveFileManagerChooser: resolveFileAttachChooser } =
+    useWorkbenchFileAttachChooser({
+      fileManagerModel,
+      tabsModel,
+      confirmLabel: t("ai.attachFileConfirm"),
+      promptLabel: t("ai.attachFileLabel"),
+      selectPlaceholder: t("ai.attachFileSelectPlaceholder")
+    });
+  const resolveFileManagerChooser = useCallback(
+    (instanceId: string) =>
+      resolveProjectBindChooser(instanceId) ?? resolveFileAttachChooser(instanceId),
+    [resolveFileAttachChooser, resolveProjectBindChooser]
+  );
+  const listWorkspaceTabs = useCallback(() => tabsModel.tabs, [tabsModel.tabs]);
+  const listTerminalTabs = useCallback(
+    () => [...terminalModel.dockTabs, ...terminalModel.workspaceTabs],
+    [terminalModel.dockTabs, terminalModel.workspaceTabs]
+  );
   const {
     onOpenAgentProjectTree,
     onOpenAgentGit,
@@ -355,7 +416,7 @@ resolvedThemeId,
   });
   const onOpenAgentModelSettings = useCallback((): void => {
     setSettingsFocusRequest((current) => ({
-      categoryId: "ai",
+      categoryId: "models",
       requestId: (current?.requestId ?? 0) + 1
     }));
     tabsModel.openSettingsTab();
@@ -400,6 +461,11 @@ resolvedThemeId,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
     onOpenTerminalLiveSession,
     onOpenFile: onOpenFileFromManager,
+    resolveActiveWorkspaceTab: () => tabsModel.activeTab,
+    onPickFileFromFileManager: requestFileAttach,
+    listWorkspaceTabs,
+    listTerminalTabs,
+    locationControls,
     openDialog: globalDialogModel.openDialog,
     t
   });
@@ -427,11 +493,17 @@ resolvedThemeId,
     () =>
       ({
         ...themeVars,
-        ...uiRuntime.vars,
-        ...panelLayoutModel.cssVars
+        ...uiRuntime.vars
       }) as CSSProperties,
-    [panelLayoutModel.cssVars, themeVars, uiRuntime.vars]
+    [themeVars, uiRuntime.vars]
   );
+
+  useLayoutEffect(() => {
+    if (getIsLayoutResizing()) {
+      return;
+    }
+    applyPanelLayoutCssVars(rootRef.current, panelLayoutModel.cssVars);
+  }, [panelLayoutModel.cssVars]);
 
   useEffect(() => {
     syncCssVarsToDocumentRoot({
@@ -514,6 +586,8 @@ resolvedThemeId,
   const aiLaunchProps = useWorkbenchAiLaunchProps(t);
   const sidebarAiSurfacePropsWithFileOpen = {
     ...sidebarAiSurfaceProps,
+    composerCitationSinkRef,
+    onSetActiveBrowserTab: tabsModel.setActiveTab,
     activeSessionTabId: aiSessionTabsModel.activeTabId,
     activeSessionId: aiSessionTabsModel.activeSessionId,
     sessionTabs: aiSessionTabsModel.tabs,
@@ -522,7 +596,7 @@ resolvedThemeId,
     onCloseSessionTab: aiSessionTabsModel.closeSession, onReorderSessionTabs: aiSessionTabsModel.reorderSessionTabs,
     onCreateDraftSessionTab: aiSessionTabsModel.createDraftSession,
     onCreateSessionTab: aiSessionTabsModel.createSession, onMissingSession: aiSessionTabsModel.removeSession,
-    onSessionSnapshotChange: aiSessionTabsModel.upsertSnapshot
+    onUpdateDraftWorkingDir: aiSessionTabsModel.setDraftWorkingDir, onSessionSnapshotChange: aiSessionTabsModel.upsertSnapshot
   };
   useWorkbenchEmptyAppTabGuards({
     tabsModel,

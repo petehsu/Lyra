@@ -37,6 +37,7 @@ export type SettingsFieldId =
   | "jsRepl"
   | "aiRichRender"
   | "aiStopBehavior"
+  | "aiModels"
   | "aiProviderSettings";
 
 export type WorkbenchSettingsCategory = {
@@ -73,6 +74,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "appearanceCategoryLabel"
   | "workspaceCategoryLabel"
   | "aiCategoryLabel"
+  | "modelsCategoryLabel"
   | "notificationsCategoryLabel"
   | "loginManagerCategoryLabel"
   | "softwareStoreCategoryLabel"
@@ -147,7 +149,8 @@ export const createWorkbenchSettingsSchema = (
     createField("jsRepl", "ai", props.jsReplLabel, "boolean-choice"),
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
-    createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom")
+    createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom"),
+    createField("aiModels", "models", props.modelsCategoryLabel, "custom")
   ];
 
   const sections: readonly WorkbenchSettingsSection[] = fields.map((field) => ({
@@ -203,6 +206,11 @@ export const createWorkbenchSettingsSchema = (
       id: "ai",
       label: props.aiCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "ai").map((section) => section.id)
+    },
+    {
+      id: "models",
+      label: props.modelsCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "models").map((section) => section.id)
     }
   ];
 

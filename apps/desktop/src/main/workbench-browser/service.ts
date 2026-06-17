@@ -34,6 +34,11 @@ import type { LoginManagerIpcBridge } from "../login-manager";
 import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
+import {
+  normalizePageDragCitationPayload,
+  type PageDragCitationPayload
+} from "../../modules/workbench/browser-tabs/page-drag-transfer";
+import { registerBrowserPageFramePreload } from "./register-browser-page-frame-preload";
 import { createWorkbenchBrowserViewManager } from "./view-manager";
 import type {
   WorkbenchBrowserAgentActionResult,
@@ -99,6 +104,9 @@ export type WorkbenchBrowserIpcBridge = {
   readonly goBack: (tabId: string) => void;
   readonly goForward: (tabId: string) => void;
   readonly reload: (tabId: string, ignoreCache?: boolean) => void;
+  readonly runPageContextAction: (
+    request: import("../../shared/workbench-browser").WorkbenchBrowserExecutePageContextActionRequest
+  ) => void;
   readonly stop: (tabId: string) => void;
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
@@ -320,6 +328,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
 }): WorkbenchBrowserIpcBridge => {
+  registerBrowserPageFramePreload();
   const osAxAdapter = createOsAxAdapter(accessibilityNative);
   const manager: WorkbenchBrowserViewManager = createWorkbenchBrowserViewManager({
     getWindow,
@@ -427,6 +436,76 @@ export const createWorkbenchBrowserIpcBridge = ({
       return await manager.capturePage(tabId);
     }
   );
+  ipcMain.handle(
+    LYRA_CHANNELS.workbenchBrowserExecutePageContextAction,
+    (_event, request: unknown) => {
+      manager.runPageContextAction(
+        request as import("../../shared/workbench-browser").WorkbenchBrowserExecutePageContextActionRequest
+      );
+    }
+  );
+  let activePageDragCitationPayload: PageDragCitationPayload | null = null;
+
+  const publishActivePageDragCitation = (payload: PageDragCitationPayload | null): void => {
+    if (payload === null) {
+      activePageDragCitationPayload = null;
+      publishEvent(getWindow, { kind: "page-drag-citation-clear" });
+      return;
+    }
+    activePageDragCitationPayload = payload;
+    publishEvent(getWindow, {
+      kind: "page-drag-citation-active",
+      payload
+    });
+  };
+
+  const handlePageDragCitation = (
+    event: Electron.IpcMainEvent,
+    message: { readonly phase?: unknown; readonly payload?: unknown }
+  ): void => {
+    if (message?.phase === "end") {
+      return;
+    }
+    if (message?.phase !== "begin") {
+      return;
+    }
+    const pageContext = manager.resolvePageDragContextFromWebContents(event.sender);
+    const rawPayload =
+      typeof message.payload === "object" && message.payload !== null
+        ? message.payload as Record<string, unknown>
+        : {};
+    const payload = normalizePageDragCitationPayload({
+      tabId: rawPayload.tabId ?? pageContext?.tabId,
+      pageUrl: rawPayload.pageUrl ?? pageContext?.pageUrl,
+      pageTitle: rawPayload.pageTitle ?? pageContext?.pageTitle,
+      frameUrl: rawPayload.frameUrl,
+      selectionText: rawPayload.selectionText,
+      linkUrl: rawPayload.linkUrl,
+      linkText: rawPayload.linkText,
+      srcUrl: rawPayload.srcUrl,
+      mediaType: rawPayload.mediaType,
+      elementTag: rawPayload.elementTag,
+      elementSelector: rawPayload.elementSelector,
+      elementId: rawPayload.elementId,
+      elementRole: rawPayload.elementRole,
+      elementAriaLabel: rawPayload.elementAriaLabel
+    });
+    if (payload === null) {
+      return;
+    }
+    publishActivePageDragCitation(payload);
+  };
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserPageDragCitation, handlePageDragCitation);
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserResolvePageTabId, (event) => {
+    event.returnValue = manager.resolvePageDragContextFromWebContents(event.sender)?.tabId ?? null;
+  });
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserReadActivePageDragCitation, (event) => {
+    event.returnValue = activePageDragCitationPayload;
+  });
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserConsumePageDragCitation, () => {
+    publishActivePageDragCitation(null);
+  });
+
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserCaptureWindow, async () => {
     const window = getWindow();
     if (window === null || window.isDestroyed()) {
@@ -464,6 +543,11 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserApplyWebTheme);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCapturePage);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCaptureWindow);
+      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserExecutePageContextAction);
+      ipcMain.removeListener(LYRA_CHANNELS.workbenchBrowserPageDragCitation, handlePageDragCitation);
+      ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserReadActivePageDragCitation);
+      ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserConsumePageDragCitation);
+      ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserResolvePageTabId);
       manager.dispose();
     },
     syncTopology: manager.syncTopology,
@@ -472,6 +556,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     goBack: manager.goBack,
     goForward: manager.goForward,
     reload: manager.reload,
+    runPageContextAction: manager.runPageContextAction,
     stop: manager.stop,
     readPageState: manager.readPageState,
     readSessionSnapshot: manager.readSessionSnapshot,

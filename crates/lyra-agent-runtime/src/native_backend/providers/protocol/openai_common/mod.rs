@@ -5,7 +5,7 @@ mod sse;
 mod tools;
 
 pub(crate) use content::{content_to_plain_text, message_content, message_reasoning_text};
-pub(crate) use discovery::{ModelDiscoveryScope, discover_models};
+pub(crate) use discovery::{ModelDiscoveryScope, discover_models, is_supported_text_model_id};
 pub(crate) use schema::strict_tool_schema;
 pub(crate) use sse::{SseEvent, parse_sse_line};
 pub(crate) use tools::{

@@ -11,31 +11,35 @@ describe("terminal profiles service", () => {
     expect(resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "missing").id).toBe("default");
   });
 
-  test("default profile starts the Lyra Agent CLI and keeps shell escape hatch", () => {
+  test("default profile is a plain terminal shell", () => {
     const defaultProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "default");
-    const shellProfile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "shell");
 
     expect(defaultProfile).toMatchObject({
       id: "default",
-      name: "Lyra",
-      startupCommand: "__lyra_agent_cli__",
-      mode: "command"
+      name: "Terminal"
     });
     expect(createTerminalProfilePaneOptions(defaultProfile, 1)).toMatchObject({
       profileId: "default",
-      command: "__lyra_agent_cli__",
-      mode: "command"
+      title: "Terminal"
     });
-    expect(shellProfile).toMatchObject({
-      id: "shell",
-      name: "Shell"
-    });
-    expect(createTerminalProfilePaneOptions(shellProfile, 2)).not.toHaveProperty("command");
+    expect(createTerminalProfilePaneOptions(defaultProfile, 1)).not.toHaveProperty("command");
+    expect(createTerminalProfilePaneOptions(defaultProfile, 1)).not.toHaveProperty("mode");
+    expect(DEFAULT_TERMINAL_PROFILES).toHaveLength(1);
+    expect(DEFAULT_TERMINAL_PROFILES[0]?.startupCommand).toBeUndefined();
+    expect(DEFAULT_TERMINAL_PROFILES[0]?.name).toBe("Terminal");
   });
 
   test("creates pane options from startup command profile", () => {
-    const profile = resolveTerminalProfile(DEFAULT_TERMINAL_PROFILES, "task");
-    const options = createTerminalProfilePaneOptions(profile, 3);
+    const options = createTerminalProfilePaneOptions(
+      {
+        id: "task",
+        name: "Task",
+        shell: "zsh",
+        startupCommand: "npm test",
+        mode: "command"
+      },
+      3
+    );
 
     expect(options.title).toBe("Task");
     expect(options.profileId).toBe("task");

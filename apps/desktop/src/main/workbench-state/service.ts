@@ -17,7 +17,8 @@ const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   "ai-panel-tabs": "ai-panel-tabs.v1.json",
   "terminal-dock": "terminal-dock.v1.json",
   notifications: "notifications.v1.json",
-  layout: "layout.v1.json"
+  layout: "layout.v1.json",
+  location: "location.v1.json"
 };
 const WORKBENCH_STATE_KEYS = Object.keys(WORKBENCH_STATE_FILENAMES) as WorkbenchStateKey[];
 
@@ -29,7 +30,8 @@ const isWorkbenchStateKey = (value: unknown): value is WorkbenchStateKey =>
   || value === "ai-panel-tabs"
   || value === "terminal-dock"
   || value === "notifications"
-  || value === "layout";
+  || value === "layout"
+  || value === "location";
 
 const normalizeKey = (value: unknown): WorkbenchStateKey => {
   if (isWorkbenchStateKey(value) === false) {
@@ -66,7 +68,8 @@ const createEmptySnapshot = (): Record<WorkbenchStateKey, string | null> => ({
   "ai-panel-tabs": null,
   "terminal-dock": null,
   notifications: null,
-  layout: null
+  layout: null,
+  location: null
 });
 
 const loadSnapshot = async (storageRoot: string): Promise<Record<WorkbenchStateKey, string | null>> => {

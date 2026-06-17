@@ -1,6 +1,11 @@
 import type { AgentMessageBlock, AgentSessionSnapshot, AgentToolActivity } from "../../../shared/agent";
 import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t } from "../ai-panel/lyra-agents/core/i18n";
+import { parseTranscriptCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/message-citation";
+import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-file";
+import { parseInlineImagesFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-image";
+import { parsePageCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/page-citation";
+
 import { toToolGroup } from "./tool-view-model";
 
 export const formatAgentMessageTime = (value: string | undefined): string | undefined => {
@@ -218,10 +223,18 @@ export const agentSessionToChatMessages = (
       const formattedTime = formatAgentMessageTime(message.createdAt);
       const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
       const author = (message.role === "user" && !hasToolBlock) ? "user" : "agent";
+      const transcriptCitations = parseTranscriptCitationsFromMetadata(message.metadata);
+      const pageCitations = parsePageCitationsFromMetadata(message.metadata);
+      const inlineImages = parseInlineImagesFromMetadata(message.metadata);
+      const fileAttachments = parseFileAttachmentsFromMetadata(message.metadata);
       const chatMessage: ChatMessage = {
         id: message.id,
         author,
         ...(formattedTime === undefined ? {} : { time: formattedTime }),
+        ...(transcriptCitations.length === 0 ? {} : { transcriptCitations }),
+        ...(pageCitations.length === 0 ? {} : { pageCitations }),
+        ...(inlineImages.length === 0 ? {} : { inlineImages }),
+        ...(fileAttachments.length === 0 ? {} : { fileAttachments }),
         ...(message.rollback === undefined || message.rollback === null
           ? {}
           : { rollback: message.rollback }),

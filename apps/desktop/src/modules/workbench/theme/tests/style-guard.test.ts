@@ -134,7 +134,7 @@ describe("workbench UI guard", () => {
   test("keeps tab hover from changing the tab chrome", () => {
     const css = `
       .lyra-browser-tab-item:hover {
-        z-index: 4;
+        box-shadow: 0 0 1px currentColor;
       }
 
       .lyra-browser-tab-item:hover .lyra-chrome-tab-background {
@@ -148,7 +148,7 @@ describe("workbench UI guard", () => {
     const violations = validateGlobalPatterns(css);
     expect(violations.some((violation) => violation.includes("tab shape"))).toBe(true);
     expect(violations.some((violation) => violation.includes("tab dividers"))).toBe(true);
-    expect(violations.some((violation) => violation.includes("tab stacking"))).toBe(true);
+    expect(violations.some((violation) => violation.includes("tab shadow"))).toBe(true);
   });
 
   test("keeps AI thread tabs free of colored project logos", () => {

@@ -29,6 +29,7 @@ import {
   createWebSearchTab,
   FALLBACK_TERMINAL_TITLE
 } from "./tab-factory";
+import { recordUserTabActivation } from "./tab-activation-coordinator";
 import type {
   WorkspaceNavigationTarget,
   WorkspaceSearchEngineSelection,
@@ -140,7 +141,15 @@ export const useWorkspaceTabsModel = (
   }, [config.settingsTabTitle]);
 
   const setActiveTab = useCallback(
-    (tabId: string): void => {
+    (
+      tabId: string,
+      options?: {
+        readonly source?: "user" | "agent";
+      }
+    ): void => {
+      if (options?.source !== "agent") {
+        recordUserTabActivation();
+      }
       dispatchWorkspaceTabsAction({
         type: "set-active-tab",
         tabId

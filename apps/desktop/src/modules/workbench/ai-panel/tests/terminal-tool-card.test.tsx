@@ -16,6 +16,7 @@ const session: SessionMeta = {
   project: "Lyra",
   workingDir: "/Users/petehsu/Documents/Lyra",
   projectBound: true,
+  workingDirIsHome: false,
   totalAdditions: 0,
   totalDeletions: 0
 };

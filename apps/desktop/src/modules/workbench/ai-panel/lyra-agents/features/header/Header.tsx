@@ -19,16 +19,15 @@ import {
   CheckCircle,
   CopyPlus,
   FlaskConical,
-  Folder,
   Hammer,
   MessageSquare,
   Moon,
   MoreHorizontal,
   PackageOpen,
+  Plus,
   Search,
   SlidersHorizontal,
   Sparkles,
-  SquarePen,
   Target
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -47,17 +46,17 @@ export function Header() {
 }
 
 export function HeaderControls({
-  showNewSessionButton = true
+  showNewSessionButton = true,
+  forceShowNewSessionButton = false
 }: {
   readonly showNewSessionButton?: boolean;
+  readonly forceShowNewSessionButton?: boolean;
 }) {
   const {
     session,
     messages,
     isTurnRunning,
     createSession,
-    bindProject,
-    openProjectTree,
     openSelfDevLab,
     openOvernightLab,
     runImprove,
@@ -76,7 +75,6 @@ export function HeaderControls({
     updateAutomation
   } = useData();
   const [creating, setCreating] = useState(false);
-  const [bindingProject, setBindingProject] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<"subagent" | "btw" | "goals" | "automation" | null>(null);
   const [actionBusy, setActionBusy] = useState<
@@ -106,13 +104,8 @@ export function HeaderControls({
   const [automationModel, setAutomationModel] = useState("");
   const [automationReview, setAutomationReview] = useState(false);
   const [automationJudge, setAutomationJudge] = useState(false);
-  const projectName = session.project.trim();
-  const projectTitle = session.projectBound && session.workingDir !== null
-    ? session.workingDir
-    : t("header.bindProject");
-  const hasBoundProject =
-    session.projectBound && session.workingDir !== null && projectName.length > 0;
-  const shouldShowNewSessionButton = showNewSessionButton && messages.length > 0;
+  const shouldShowNewSessionButton =
+    showNewSessionButton && (forceShowNewSessionButton || messages.length > 0);
 
   useEffect(() => {
     if (dialog !== "automation") return;
@@ -256,65 +249,12 @@ export function HeaderControls({
     }
   };
 
-  const onProjectAction = async () => {
-    if (bindingProject) return;
-    setBindingProject(true);
-    try {
-      if (hasBoundProject) {
-        await openProjectTree();
-      } else if (!isTurnRunning) {
-        await bindProject();
-      }
-    } finally {
-      setBindingProject(false);
-    }
-  };
-
-  const onChangeProject = async () => {
-    if (bindingProject || isTurnRunning) return;
-    setBindingProject(true);
-    try {
-      await bindProject();
-    } finally {
-      setBindingProject(false);
-    }
-  };
-
   const actionDisabled = isTurnRunning || actionBusy !== null;
   const menuItemClassName = "lyra-app-menu-item-with-icon lyra-agents-header-menu-item";
 
   return (
     <>
       <div className="lyra-agents-header-right">
-        <div className="lyra-agents-header-project-controls">
-          <AppButton
-            className="lyra-agents-header-action lyra-agents-header-project-bind"
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={hasBoundProject ? t("header.openProjectTree") : t("header.bindProject")}
-            title={projectTitle}
-            disabled={bindingProject || (!hasBoundProject && isTurnRunning)}
-            onClick={() => void onProjectAction()}
-          >
-            <Folder aria-hidden="true" size={14} strokeWidth={1.8} />
-            {hasBoundProject ? (
-              <span className="lyra-agents-header-project-name">{projectName}</span>
-            ) : null}
-          </AppButton>
-          {hasBoundProject ? (
-            <AppIconButton
-              className="lyra-agents-header-action app-header-project-change"
-              type="button"
-              aria-label={t("header.changeProjectBinding")}
-              title={t("header.changeProjectBinding")}
-              disabled={bindingProject || isTurnRunning}
-              onClick={() => void onChangeProject()}
-            >
-              <ArrowRightLeft aria-hidden="true" size={13} strokeWidth={1.8} />
-            </AppIconButton>
-          ) : null}
-        </div>
         {shouldShowNewSessionButton ? (
           <AppIconButton
             className="lyra-agents-header-action app-header-new-session"
@@ -324,7 +264,7 @@ export function HeaderControls({
             disabled={creating}
             onClick={() => void onCreateSession()}
           >
-            <SquarePen aria-hidden="true" size={14} strokeWidth={1.8} />
+            <Plus aria-hidden="true" size={14} strokeWidth={1.8} />
           </AppIconButton>
         ) : null}
         <AppMenu open={menuOpen} onOpenChange={setMenuOpen}>

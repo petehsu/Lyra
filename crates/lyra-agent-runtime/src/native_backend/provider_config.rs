@@ -70,6 +70,12 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
     let route = providers::registry::require_route(&route_id)?;
     let base_url = string_opt(&payload, "baseUrl").or_else(|| route.default_base_url.clone());
     let default_model = string_opt(&payload, "defaultModel");
+    let existing_profile = {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        state.config.providers.get(&profile_name).cloned()
+    };
     let models = payload
         .get("models")
         .and_then(Value::as_array)
@@ -100,22 +106,57 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .or_else(|| item.get("supports_streaming"))
                             .and_then(Value::as_bool)
                             .unwrap_or(true),
+                        enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
                     })
                 })
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            existing_profile
+                .as_ref()
+                .map(|profile| profile.models.clone())
+                .unwrap_or_default()
+        });
+    let default_auth_header = default_auth_header_for_route(&route);
     let profile = NativeProviderProfile {
         id: profile_name.clone(),
         label: string_opt(&payload, "label").unwrap_or_else(|| route.label.clone()),
         route_id,
         base_url,
-        default_model: default_model.clone(),
-        api_key: string_opt(&payload, "apiKey"),
-        api_key_env: string_opt(&payload, "apiKeyEnv"),
-        auth_header: string_opt(&payload, "authHeader"),
+        default_model: default_model.clone().or_else(|| {
+            existing_profile
+                .as_ref()
+                .and_then(|profile| profile.default_model.clone())
+        }),
+        api_key: if payload.get("apiKey").is_some() {
+            string_opt(&payload, "apiKey")
+        } else {
+            existing_profile
+                .as_ref()
+                .and_then(|profile| profile.api_key.clone())
+        },
+        api_key_env: if payload.get("apiKeyEnv").is_some() {
+            string_opt(&payload, "apiKeyEnv")
+        } else {
+            existing_profile
+                .as_ref()
+                .and_then(|profile| profile.api_key_env.clone())
+        },
+        auth_header: if payload.get("authHeader").is_some() {
+            string_opt(&payload, "authHeader").or(default_auth_header)
+        } else {
+            existing_profile
+                .as_ref()
+                .and_then(|profile| profile.auth_header.clone())
+                .or(default_auth_header)
+        },
         embedding_model: string_opt(&payload, "embeddingModel")
-            .or_else(|| string_opt(&payload, "embedding_model")),
+            .or_else(|| string_opt(&payload, "embedding_model"))
+            .or_else(|| {
+                existing_profile
+                    .as_ref()
+                    .and_then(|profile| profile.embedding_model.clone())
+            }),
         models,
     };
     let mut state = state()
@@ -135,6 +176,15 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
     state.save_state()?;
     drop(state);
     read_config()
+}
+
+fn default_auth_header_for_route(
+    route: &providers::types::ProviderRouteDescriptor,
+) -> Option<String> {
+    match route.auth_kind.as_str() {
+        "api-key" => Some("api-key".to_string()),
+        _ => None,
+    }
 }
 
 pub(crate) fn update_provider_options(payload: Value) -> AgentRuntimeResult<Value> {
@@ -159,48 +209,37 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
     let state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let current_provider = state
-        .config
-        .default_provider
-        .clone()
-        .unwrap_or_else(|| "openai".to_string());
-    let current_model = state
-        .config
+    model_catalog_for_config(&state.config, payload)
+}
+
+pub(crate) fn model_catalog_for_config(
+    config: &NativeConfig,
+    payload: Value,
+) -> AgentRuntimeResult<Value> {
+    let current_provider = config.default_provider.clone().unwrap_or_default();
+    let current_model = config
         .default_model
         .clone()
         .or_else(|| {
-            state
-                .config
-                .providers
-                .get(&current_provider)
-                .and_then(|provider| provider.default_model.clone())
+            if current_provider.is_empty() {
+                None
+            } else {
+                config
+                    .providers
+                    .get(&current_provider)
+                    .and_then(|provider| provider.default_model.clone())
+            }
         })
-        .unwrap_or_else(|| "gpt-5-mini".to_string());
+        .unwrap_or_default();
     let mut models = Vec::new();
     let mut routes = Vec::new();
-    for provider in state.config.providers.values() {
+    for provider in config.providers.values() {
         let route = providers::registry::require_route(&provider.route_id)?;
         let available = providers::capabilities::provider_profile_available(provider, &route);
-        let provider_models = if provider.models.is_empty() {
-            provider
-                .default_model
-                .clone()
-                .or_else(|| state.config.default_model.clone())
-                .map(|model| {
-                    vec![NativeProviderModel {
-                        id: model.clone(),
-                        label: Some(model),
-                        context_window: None,
-                        supports_image_input: true,
-                        supports_tool_calling: true,
-                        supports_streaming: true,
-                    }]
-                })
-                .unwrap_or_default()
-        } else {
-            provider.models.clone()
-        };
-        for model in provider_models {
+        if !available || provider.models.is_empty() {
+            continue;
+        }
+        for model in provider.models.clone() {
             let selected = provider.id == current_provider && model.id == current_model;
             models.push(json!({
                 "id": model.id,
@@ -221,32 +260,35 @@ pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
                 "supportsStreaming": model.supports_streaming,
                 "embeddingModel": provider.embedding_model,
                 "available": available,
+                "enabled": model.enabled,
                 "selected": selected,
             }));
-            routes.push(json!({
-                "model": model.id,
-                "provider": provider.id,
-                "routeId": provider.route_id,
-                "protocolId": route.protocol_id,
-                "protocolFamily": route.protocol_family,
-                "apiMethod": route.api_method,
-                "embeddingModel": provider.embedding_model,
-                "available": available,
-                "detail": provider.base_url.clone().unwrap_or_else(|| "base URL not configured".to_string())
-            }));
+            if model.enabled {
+                routes.push(json!({
+                    "model": model.id,
+                    "provider": provider.id,
+                    "routeId": provider.route_id,
+                    "protocolId": route.protocol_id,
+                    "protocolFamily": route.protocol_family,
+                    "apiMethod": route.api_method,
+                    "embeddingModel": provider.embedding_model,
+                    "available": available,
+                    "detail": provider.base_url.clone().unwrap_or_else(|| "base URL not configured".to_string())
+                }));
+            }
         }
     }
     Ok(json!({
         "sessionId": payload.get("sessionId").cloned().unwrap_or(Value::Null),
         "currentModel": current_model,
         "currentProvider": current_provider,
-        "defaultModel": state.config.default_model,
-        "defaultProvider": state.config.default_provider,
+        "defaultModel": config.default_model,
+        "defaultProvider": config.default_provider,
         "models": models,
         "routes": routes,
-        "reasoningEffort": option_state(state.config.reasoning_effort.clone(), &["none", "low", "medium", "high", "xhigh"]),
-        "verbosity": option_state(state.config.verbosity.clone(), &["low", "medium", "high"]),
-        "serviceTier": option_state(state.config.service_tier.clone(), &["auto", "default", "flex"]),
+        "reasoningEffort": option_state(config.reasoning_effort.clone(), &["none", "low", "medium", "high", "xhigh"]),
+        "verbosity": option_state(config.verbosity.clone(), &["low", "medium", "high"]),
+        "serviceTier": option_state(config.service_tier.clone(), &["auto", "default", "flex"]),
     }))
 }
 
@@ -260,6 +302,72 @@ pub(crate) fn switch_model(payload: Value) -> AgentRuntimeResult<Value> {
     state.config.default_model = Some(model);
     if let Some(provider) = provider {
         state.config.default_provider = Some(provider);
+    }
+    state.save_state()?;
+    drop(state);
+    list_models(payload)
+}
+
+pub(crate) fn set_model_enabled(payload: Value) -> AgentRuntimeResult<Value> {
+    let provider_id = string_opt(&payload, "provider")
+        .ok_or_else(|| AgentRuntimeError::Core("provider is required".to_string()))?;
+    let model_id = string_opt(&payload, "model")
+        .ok_or_else(|| AgentRuntimeError::Core("model is required".to_string()))?;
+    let enabled = payload
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| AgentRuntimeError::Core("enabled is required".to_string()))?;
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let provider = state
+        .config
+        .providers
+        .get_mut(&provider_id)
+        .ok_or_else(|| {
+            AgentRuntimeError::Core(format!("provider {provider_id} is not configured"))
+        })?;
+    let model = provider
+        .models
+        .iter_mut()
+        .find(|entry| entry.id == model_id)
+        .ok_or_else(|| AgentRuntimeError::Core(format!("model {model_id} is not configured")))?;
+    model.enabled = enabled;
+    state.save_state()?;
+    drop(state);
+    list_models(payload)
+}
+
+pub(crate) fn delete_model(payload: Value) -> AgentRuntimeResult<Value> {
+    let provider_id = string_opt(&payload, "provider")
+        .ok_or_else(|| AgentRuntimeError::Core("provider is required".to_string()))?;
+    let model_id = string_opt(&payload, "model")
+        .ok_or_else(|| AgentRuntimeError::Core("model is required".to_string()))?;
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let provider = state
+        .config
+        .providers
+        .get_mut(&provider_id)
+        .ok_or_else(|| {
+            AgentRuntimeError::Core(format!("provider {provider_id} is not configured"))
+        })?;
+    let previous_len = provider.models.len();
+    provider.models.retain(|entry| entry.id != model_id);
+    if provider.models.len() == previous_len {
+        return Err(AgentRuntimeError::Core(format!(
+            "model {model_id} is not configured"
+        )));
+    }
+    if provider.default_model.as_deref() == Some(model_id.as_str()) {
+        provider.default_model = provider.models.first().map(|entry| entry.id.clone());
+    }
+    let next_provider_default = provider.default_model.clone();
+    if state.config.default_provider.as_deref() == Some(provider_id.as_str())
+        && state.config.default_model.as_deref() == Some(model_id.as_str())
+    {
+        state.config.default_model = next_provider_default;
     }
     state.save_state()?;
     drop(state);
@@ -302,6 +410,8 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
         providers::protocol::anthropic_messages::discover_models(&client, &provider)?
     } else if route.protocol_id == providers::protocol::gemini_generate_content::PROTOCOL_ID {
         providers::protocol::gemini_generate_content::discover_models(&client, &provider)?
+    } else if route.protocol_id == providers::protocol::aws_bedrock_converse::PROTOCOL_ID {
+        providers::protocol::aws_bedrock_converse::discover_models(&client, &provider)?
     } else if route.protocol_id == providers::protocol::openai_chat_completions::PROTOCOL_ID {
         let require_auth = !route.auth_kind.contains("none");
         providers::protocol::openai_common::discover_models(

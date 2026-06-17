@@ -110,19 +110,19 @@ const forbiddenPatternRules: readonly ForbiddenPatternRule[] = [
     scopePrefix: "apps/desktop/src/",
     pattern: /from\s+["'][^"']*\/pretext(?:\/|["'])|import\s+["'][^"']*\/pretext(?:\/|["'])/,
     message:
-      "Workbench source must not import from the local pretext reference repository. Use ai-panel/text-layout internalized modules only."
+      "Workbench source must not import from the local pretext reference repository. Use workbench/text-metrics internalized modules only."
   },
   {
     scopePrefix: "apps/desktop/src/",
     pattern: /@chenglou\/pretext/,
     message:
-      "Workbench source must not import @chenglou/pretext directly. Use ai-panel/text-layout internalized modules only."
+      "Workbench source must not import @chenglou/pretext directly. Use workbench/text-metrics internalized modules only."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/sidebar/composer.tsx",
     pattern: /\bscrollHeight\b/,
     message:
-      "Sidebar composer height must be driven by ai-panel/text-layout service, not direct scrollHeight reads."
+      "Sidebar composer height must be driven by workbench/text-metrics, not direct scrollHeight reads."
   },
   {
     scopePrefix: "apps/desktop/src/modules/workbench/",
@@ -225,7 +225,7 @@ const forbiddenDependencyRules: readonly ForbiddenDependencyRule[] = [
   {
     packageName: "@chenglou/pretext",
     message:
-      "Dependency @chenglou/pretext is forbidden in this repository. Keep text layout internalized under ai-panel/text-layout."
+      "Dependency @chenglou/pretext is forbidden in this repository. Keep text layout internalized under workbench/text-metrics."
   }
 ];
 

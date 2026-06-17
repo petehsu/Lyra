@@ -89,23 +89,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     getTabPanes: vi.fn(() => []),
     setActiveTab: vi.fn(),
     openTab: vi.fn(),
-    openTabWithProfile: vi.fn(() => ({
-      tab: {
-        id: "tab-profile",
-        title: "Developer",
-        orientation: "horizontal" as const,
-        paneIds: ["pane-profile"],
-        activePaneId: "pane-profile",
-        placement: "dock" as const,
-        profileId: "developer"
-      },
-      pane: {
-        id: "pane-profile",
-        sessionId: "session-profile",
-        title: "Developer",
-        profileId: "developer"
-      }
-    })),
+    openTabWithProfile: vi.fn(),
     openTabWithPlacement: vi.fn(() => ({
       tab: {
         id: "tab-2",
@@ -170,16 +154,15 @@ describe("terminal dock view", () => {
     expect(props.onToggleTerminalPanelSide).toHaveBeenCalledTimes(1);
   });
 
-  test("opens a new terminal from the selected profile", () => {
+  test("opens a normal terminal without exposing profile choices", () => {
     const props = createProps();
     render(<TerminalDock {...props} />);
 
-    fireEvent.click(screen.getByRole("combobox", { name: "profile" }));
-    fireEvent.click(screen.getByRole("option", { name: "Developer" }));
-    fireEvent.click(screen.getByRole("button", { name: "new-profile" }));
+    expect(screen.queryByRole("combobox", { name: "profile" })).not.toBeInTheDocument();
 
-    expect(props.model.openTabWithProfile).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "developer" })
-    );
+    fireEvent.click(screen.getByRole("button", { name: "new" }));
+
+    expect(props.model.openTab).toHaveBeenCalledTimes(1);
+    expect(props.model.openTabWithProfile).not.toHaveBeenCalled();
   });
 });

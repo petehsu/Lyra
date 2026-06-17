@@ -29,12 +29,29 @@ export const APP_CONFIG = {
     ignoreDeltaBelow: 3,
   },
 
-  /** Progressive message rendering. Runtime context remains complete; this only limits UI work. */
+  /**
+   * Progressive message rendering. Runtime context remains complete; this only
+   * limits UI work. Reveal batches are sized by adaptive height budgets, not
+   * fixed message counts.
+   */
   messageWindow: {
-    /** Number of latest messages rendered when a long thread is opened. */
-    initialCount: 12,
-    /** Number of older messages prepended each time the user reaches the top. */
-    batchCount: 16,
+    minRevealCount: 3,
+    maxRevealCount: 40,
+    governor: {
+      initialBudgetViewportRatio: 0.8,
+      loadBudgetViewportRatio: 1,
+      minBudgetViewportRatio: 0.5,
+      maxBudgetViewportRatio: 2.5,
+      smoothFrameMs: 20,
+      jankFrameMs: 32,
+      fastPrependMs: 50,
+      slowPrependMs: 120,
+      increaseFactor: 1.25,
+      decreaseFactor: 0.6,
+      frameSampleSize: 30,
+      minMultiplier: 0.5,
+      maxMultiplier: 2
+    }
   },
 
   /** Streaming text playback speed. */

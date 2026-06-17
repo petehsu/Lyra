@@ -26,7 +26,8 @@ describe("createSettingsSurfaceModel", () => {
       "loginManager",
       "softwareStore",
       "search",
-      "ai"
+      "ai",
+      "models"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
       buildSettingsCategoryDomId("general"),
@@ -36,7 +37,8 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("loginManager"),
       buildSettingsCategoryDomId("softwareStore"),
       buildSettingsCategoryDomId("search"),
-      buildSettingsCategoryDomId("ai")
+      buildSettingsCategoryDomId("ai"),
+      buildSettingsCategoryDomId("models")
     ]);
   });
 
@@ -62,6 +64,18 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.frame).toBe("none");
     expect(section?.controls).toHaveLength(1);
     expect(section?.controls[0]?.kind).toBe("custom");
+  });
+
+  test("keeps AI models as a dedicated custom renderer passthrough", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
+    const section = findSection(model, "aiModels");
+
+    expect(section?.frame).toBe("none");
+    expect(section?.controls).toHaveLength(1);
+    expect(section?.controls[0]).toMatchObject({
+      kind: "custom",
+      customKind: "ai-models"
+    });
   });
 
   test("does not expose AI tool display mode settings", () => {

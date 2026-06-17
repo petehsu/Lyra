@@ -147,6 +147,7 @@ fn native_model_from_gemini_model(item: &serde_json::Value) -> Option<NativeProv
         supports_image_input: true,
         supports_tool_calling: true,
         supports_streaming: model_supports_stream_generate_content(item),
+        enabled: true,
     })
 }
 

@@ -313,6 +313,22 @@ export type FileManagerChooserMode =
   | {
       readonly kind: "ai-project-bind";
       readonly confirmLabel: string;
+      readonly promptLabel: string;
+      readonly selectPlaceholder: string;
+      readonly onConfirm: () => void;
+    }
+  | {
+      readonly kind: "ai-image-attach";
+      readonly confirmLabel: string;
+      readonly promptLabel: string;
+      readonly selectPlaceholder: string;
+      readonly onConfirm: () => void;
+    }
+  | {
+      readonly kind: "ai-file-attach";
+      readonly confirmLabel: string;
+      readonly promptLabel: string;
+      readonly selectPlaceholder: string;
       readonly onConfirm: () => void;
     };
 

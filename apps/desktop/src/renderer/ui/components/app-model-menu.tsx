@@ -16,6 +16,7 @@ import { cn } from "../utils";
 
 export type AppModelMenuOption<TValue extends string = string> = {
   readonly disabled?: boolean;
+  readonly icon?: ReactNode;
   readonly label: ReactNode;
   readonly value: TValue;
 };
@@ -60,6 +61,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
   const selectedOption = options.find((option) => option.value === value);
   const triggerLabel = selectedOption?.label ?? placeholder ?? ariaLabel;
+  const triggerIcon = selectedOption?.icon;
   const enabledSubmenus = submenus.filter((submenu) => submenu.options.length > 0);
 
   return (
@@ -77,11 +79,17 @@ export const AppModelMenu = <TModelValue extends string = string>({
         className={cn("lyra-ui-select-trigger lyra-app-model-menu-trigger", className)}
         aria-label={ariaLabel}
         disabled={disabled || options.length === 0}
+        data-has-icon={triggerIcon === undefined ? undefined : "true"}
         onClick={() => {
           setOpen(true);
         }}
       >
         <span className="lyra-ui-select-trigger-value">
+          {triggerIcon === undefined ? null : (
+            <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
+              {triggerIcon}
+            </span>
+          )}
           {triggerLabel}
         </span>
         <ChevronDown className="lyra-ui-select-chevron" aria-hidden="true" />
@@ -104,7 +112,10 @@ export const AppModelMenu = <TModelValue extends string = string>({
             return (
               <DropdownMenuItem
                 key={option.value}
-                className="lyra-app-model-menu-item"
+                className={cn(
+                  "lyra-app-model-menu-item",
+                  option.icon === undefined ? "" : "lyra-app-model-menu-item-with-icon"
+                )}
                 data-active={active ? "true" : undefined}
                 onSelect={() => {
                   onModelChange(option.value);
@@ -114,6 +125,11 @@ export const AppModelMenu = <TModelValue extends string = string>({
                 {...disabledProps}
                 {...textValueProps}
               >
+                {option.icon === undefined ? null : (
+                  <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
+                    {option.icon}
+                  </span>
+                )}
                 <span className="lyra-app-model-menu-item-label">
                   {option.label}
                 </span>
@@ -192,7 +208,10 @@ export const AppModelMenu = <TModelValue extends string = string>({
                         return (
                           <DropdownMenuItem
                             key={option.value}
-                            className="lyra-app-model-menu-item"
+                            className={cn(
+                              "lyra-app-model-menu-item",
+                              option.icon === undefined ? "" : "lyra-app-model-menu-item-with-icon"
+                            )}
                             data-active={active ? "true" : undefined}
                             onSelect={() => {
                               submenu.onValueChange(option.value);
@@ -202,6 +221,11 @@ export const AppModelMenu = <TModelValue extends string = string>({
                             {...disabledProps}
                             {...textValueProps}
                           >
+                            {option.icon === undefined ? null : (
+                              <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
+                                {option.icon}
+                              </span>
+                            )}
                             <span className="lyra-app-model-menu-item-label">
                               {option.label}
                             </span>

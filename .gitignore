@@ -4,6 +4,7 @@ dist/
 coverage/
 apps/desktop/out/
 apps/desktop/native/
+apps/desktop/.dev-electron/
 
 # Python
 __pycache__/

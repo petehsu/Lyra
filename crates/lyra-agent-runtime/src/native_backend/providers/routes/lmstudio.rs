@@ -123,6 +123,7 @@ fn parse_lmstudio_models(body: &Value) -> Vec<NativeProviderModel> {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: true,
+            enabled: true,
         })
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));

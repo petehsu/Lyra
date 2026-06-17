@@ -10,6 +10,8 @@ type UseWorkbenchProjectBindChooserParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly tabsModel: WorkspaceTabsModel;
   readonly confirmLabel: string;
+  readonly promptLabel: string;
+  readonly selectPlaceholder: string;
 };
 
 type WorkbenchProjectBindChooserModel = {
@@ -22,7 +24,9 @@ type WorkbenchProjectBindChooserModel = {
 export const useWorkbenchProjectBindChooser = ({
   fileManagerModel,
   tabsModel,
-  confirmLabel
+  confirmLabel,
+  promptLabel,
+  selectPlaceholder
 }: UseWorkbenchProjectBindChooserParams): WorkbenchProjectBindChooserModel => {
   const pendingResolverRef = useRef<((path: string | null) => void) | null>(null);
   const [chooserInstanceId, setChooserInstanceId] = useState<string | null>(null);
@@ -62,6 +66,8 @@ export const useWorkbenchProjectBindChooser = ({
       return {
         kind: "ai-project-bind",
         confirmLabel,
+        promptLabel,
+        selectPlaceholder,
         onConfirm: () => {
           const state = fileManagerModel.getState(instanceId);
           const selectedPath =
@@ -90,7 +96,7 @@ export const useWorkbenchProjectBindChooser = ({
         }
       };
     },
-    [chooserInstanceId, confirmLabel, fileManagerModel, tabsModel]
+    [chooserInstanceId, confirmLabel, fileManagerModel, promptLabel, selectPlaceholder, tabsModel]
   );
 
   useEffect(() => {

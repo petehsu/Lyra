@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   Menu,
   nativeTheme,
+  session,
   type WebContents,
   type MenuItemConstructorOptions,
   ipcMain,
@@ -27,10 +28,12 @@ import { configureBrowserIdentityCompatibility } from "./browser-identity-compat
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createAgentIpcBridge } from "./agent";
+import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createLoginManagerIpcBridge } from "./login-manager";
+import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import {
@@ -41,6 +44,7 @@ import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
+import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -110,6 +114,7 @@ let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
 let disposeLoginManagerBridge: (() => void) | null = null;
+let disposeLocationBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
@@ -123,6 +128,7 @@ let disposeWorkbenchDocumentsService: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
+let disposeScreenshotPreviewBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
@@ -555,6 +561,44 @@ const readPreventSleepEnabledPreference = (
   }
 };
 
+const readLocationConsentGranted = (rawLocationJson: string | null): boolean => {
+  if (typeof rawLocationJson !== "string" || rawLocationJson.trim().length === 0) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(rawLocationJson) as { readonly consent?: unknown };
+    return parsed.consent === "granted";
+  } catch {
+    return false;
+  }
+};
+
+const configureGeolocationPermissionHandler = (
+  readLocationState: () => string | null
+): (() => void) => {
+  const allowIfGranted = (): boolean => readLocationConsentGranted(readLocationState());
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission !== "geolocation") {
+      callback(false);
+      return;
+    }
+    callback(allowIfGranted());
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission !== "geolocation") {
+      return false;
+    }
+    return allowIfGranted();
+  });
+
+  return () => {
+    session.defaultSession.setPermissionRequestHandler(null);
+    session.defaultSession.setPermissionCheckHandler(null);
+  };
+};
+
 const createPowerSaveBlockerController = (): {
   readonly setEnabled: (enabled: boolean) => void;
   readonly dispose: () => void;
@@ -657,9 +701,9 @@ const createMainWindow = (): BrowserWindow => {
     publishWindowState(window);
     workbenchBrowserBridge?.reapplyLayout();
   });
-  window.on("resize", () => {
+  window.on("resize", createReapplyLayoutScheduler(window, () => {
     workbenchBrowserBridge?.reapplyLayout();
-  });
+  }));
   window.on("enter-full-screen", () => {
     setImmediate(() => {
       exitWindowFullscreen(window);
@@ -758,20 +802,38 @@ const registerIpcHandlers = async (): Promise<void> => {
   console.info(`[lyra-lsp] runtime attached: ${lspBridge.loadResult.loadedFrom}`);
   disposeLspBridge = lspBridge.dispose;
 
+  const workbenchStateBridge = await createWorkbenchStateIpcBridge(
+    storageRoots.modules.workbenchState
+  );
+  disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
     storageRoot: storageRoots.modules.agent,
     terminalBridge,
     getWindow: () => mainWindow,
     getBrowserBridge: () => workbenchBrowserBridge,
-    getWorkbenchObservationService: () => workbenchObservationService
+    getWorkbenchObservationService: () => workbenchObservationService,
+    workbenchState: workbenchStateBridge
   });
   disposeAgentBridge = agentBridge.dispose;
-
-  const workbenchStateBridge = await createWorkbenchStateIpcBridge(
-    storageRoots.modules.workbenchState
+  const disposeGeolocationPermissionHandler = configureGeolocationPermissionHandler(
+    () => workbenchStateBridge.readState("location")
   );
-  disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  const locationBridge = createLocationIpcBridge({
+    readLocationConsentGranted: () =>
+      readLocationConsentGranted(workbenchStateBridge.readState("location")),
+    getWebContents: () => {
+      if (mainWindow !== null && mainWindow.isDestroyed() === false) {
+        return mainWindow.webContents;
+      }
+      return null;
+    }
+  });
+  disposeLocationBridge = () => {
+    disposeGeolocationPermissionHandler();
+    locationBridge.dispose();
+  };
   const accessibilityNativeLoadResult = loadAccessibilityNativeBindings();
   if (accessibilityNativeLoadResult.ok) {
     console.info(`[lyra-accessibility] native loaded from ${accessibilityNativeLoadResult.loadedFrom}`);
@@ -803,6 +865,10 @@ const registerIpcHandlers = async (): Promise<void> => {
     appUserModelId: LYRA_APP_USER_MODEL_ID
   });
   disposeSystemNotificationsBridge = systemNotificationsBridge.dispose;
+  const screenshotPreviewBridge = createScreenshotPreviewIpcBridge({
+    getWindow: () => mainWindow
+  });
+  disposeScreenshotPreviewBridge = screenshotPreviewBridge.dispose;
   const powerSaveBlockerController = createPowerSaveBlockerController();
   powerSaveBlockerController.setEnabled(
     readPreventSleepEnabledPreference(workbenchStateBridge.readState("preferences"))
@@ -971,6 +1037,10 @@ app.on("before-quit", () => {
     disposeLoginManagerBridge();
     disposeLoginManagerBridge = null;
   }
+  if (disposeLocationBridge !== null) {
+    disposeLocationBridge();
+    disposeLocationBridge = null;
+  }
   if (disposeTerminalBridge !== null) {
     disposeTerminalBridge();
     disposeTerminalBridge = null;
@@ -1010,6 +1080,10 @@ app.on("before-quit", () => {
   if (disposeLyraDockIconThemeSync !== null) {
     disposeLyraDockIconThemeSync();
     disposeLyraDockIconThemeSync = null;
+  }
+  if (disposeScreenshotPreviewBridge !== null) {
+    disposeScreenshotPreviewBridge();
+    disposeScreenshotPreviewBridge = null;
   }
   if (disposeSystemNotificationsBridge !== null) {
     disposeSystemNotificationsBridge();

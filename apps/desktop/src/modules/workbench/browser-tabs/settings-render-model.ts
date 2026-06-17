@@ -1,4 +1,5 @@
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
+import type { GlobalDialogModel } from "../global-dialog";
 import type { LoginManagerSurfaceProps } from "../login-manager";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
 import {
@@ -75,9 +76,10 @@ export type SettingsInlineStatusActionControlDescriptor = {
 
 export type SettingsAiCustomControlDescriptor = {
   readonly kind: "custom";
-  readonly customKind: "ai-provider-settings";
+  readonly customKind: "ai-models" | "ai-provider-settings";
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
+  readonly openDialog: GlobalDialogModel["openDialog"];
 };
 
 export type SettingsLoginManagerCustomControlDescriptor = {
@@ -315,6 +317,8 @@ const resolveCategoryHeading = (
       return props.linuxCategoryLabel;
     case "ai":
       return props.aiCategoryLabel;
+    case "models":
+      return props.modelsCategoryLabel;
     default:
       return props.title;
   }
@@ -654,7 +658,23 @@ const createSectionControl = (
             kind: "custom",
             customKind: "ai-provider-settings",
             labels: props.aiLabels,
-            model: props.aiModel
+            model: props.aiModel,
+            openDialog: props.openDialog
+          }
+        ]
+      });
+    case "aiModels":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.modelsCategoryLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "ai-models",
+            labels: props.aiLabels,
+            model: props.aiModel,
+            openDialog: props.openDialog
           }
         ]
       });

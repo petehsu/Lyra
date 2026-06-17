@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { resetWorkbenchStateStorageForTests } from "../../state-storage";
+import { readWorkbenchStateSync, resetWorkbenchStateStorageForTests } from "../../state-storage";
 import { usePanelLayoutModel } from "../use-panel-layout";
 
 describe("usePanelLayoutModel", () => {
@@ -23,13 +23,10 @@ describe("usePanelLayoutModel", () => {
 
     act(() => {
       window.dispatchEvent(new MouseEvent("mousemove", { clientY: 240 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
     });
 
     expect(result.current.bottomHeight).toBeGreaterThan(initialHeight);
-
-    act(() => {
-      window.dispatchEvent(new MouseEvent("mouseup"));
-    });
   });
 
   test("grows the bottom terminal panel when dragging the horizontal divider up", () => {
@@ -51,12 +48,32 @@ describe("usePanelLayoutModel", () => {
 
     act(() => {
       window.dispatchEvent(new MouseEvent("mousemove", { clientY: 200 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
     });
 
     expect(result.current.bottomHeight).toBeGreaterThan(initialHeight);
+  });
+
+  test("persists panel sizes when a drag ends", () => {
+    const { result } = renderHook(() => usePanelLayoutModel());
 
     act(() => {
+      result.current.onLeftResizeMouseDown({
+        clientX: 100,
+        preventDefault: vi.fn()
+      } as unknown as ReactMouseEvent<HTMLDivElement>);
+    });
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 180 }));
       window.dispatchEvent(new MouseEvent("mouseup"));
     });
+
+    const persisted = JSON.parse(readWorkbenchStateSync("layout") ?? "{}") as {
+      readonly leftWidth?: number;
+      readonly bottomHeight?: number;
+    };
+    expect(persisted.leftWidth).toBe(result.current.leftWidth);
+    expect(persisted.bottomHeight).toBe(result.current.bottomHeight);
   });
 });

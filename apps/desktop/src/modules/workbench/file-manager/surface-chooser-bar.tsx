@@ -16,10 +16,10 @@ export const FileManagerChooserBar = ({
     <footer className="lyra-file-manager-chooser-bar">
       <div className="lyra-file-manager-chooser-copy">
         <span className="lyra-file-manager-chooser-label">
-          {labels.chooserBindProjectLabel}
+          {chooserBar.promptLabel}
         </span>
         <span className="lyra-file-manager-chooser-path">
-          {chooserBar.path ?? labels.chooserSelectDirectoryPlaceholder}
+          {chooserBar.path ?? chooserBar.selectionPlaceholder}
         </span>
       </div>
       <AppButton

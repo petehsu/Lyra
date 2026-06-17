@@ -10,7 +10,9 @@ import { createLumenToolHost } from "./lumen-tool-host";
 import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
 import { createTerminalToolHost } from "./terminal-tool-host";
+import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
+import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 
 export type AgentIpcBridge = {
@@ -23,7 +25,8 @@ export const createAgentIpcBridge = ({
   terminalBridge,
   getWindow,
   getBrowserBridge,
-  getWorkbenchObservationService
+  getWorkbenchObservationService,
+  workbenchState
 }: {
   readonly runtimeClient: LyraRuntimeClient;
   readonly storageRoot: string;
@@ -31,6 +34,7 @@ export const createAgentIpcBridge = ({
   readonly getWindow: () => BrowserWindow | null;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly getWorkbenchObservationService: () => WorkbenchObservationService | null;
+  readonly workbenchState: WorkbenchStateIpcBridge;
 }): AgentIpcBridge => {
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
     runtimeClient.request<T>(method, payload);
@@ -82,7 +86,8 @@ export const createAgentIpcBridge = ({
     ...lumenToolHost.handlers,
     ...axToolHost.handlers,
     ...terminalToolHost.handlers,
-    ...softwareCapabilityHost.handlers
+    ...softwareCapabilityHost.handlers,
+    ...createHostPersonaContextHandlers(workbenchState)
   };
 
   for (const [method, handler] of Object.entries(hostCapabilityHandlers)) {

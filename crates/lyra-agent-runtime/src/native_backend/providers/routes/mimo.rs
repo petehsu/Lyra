@@ -1,8 +1,12 @@
 use super::{
     super::{protocol, types::ProviderRouteDescriptor},
-    HostedOpenAiRouteHook,
+    HostedOpenAiRouteHook, RouteModelDiscoveryHook,
 };
-use crate::{AgentRuntimeError, AgentRuntimeResult, native_backend::NativeProviderProfile};
+use crate::{
+    AgentRuntimeError, AgentRuntimeResult,
+    native_backend::providers::{protocol::openai_common::ModelDiscoveryScope, transport},
+    native_backend::{NativeProviderModel, NativeProviderProfile},
+};
 use reqwest::{blocking::RequestBuilder, header::HeaderName};
 use serde_json::{Value, json};
 
@@ -10,10 +14,21 @@ pub(crate) const PAY_AS_YOU_GO_ROUTE_ID: &str = "mimo";
 pub(crate) const TOKEN_PLAN_CN_ROUTE_ID: &str = "mimo_token_plan_cn";
 pub(crate) const TOKEN_PLAN_SGP_ROUTE_ID: &str = "mimo_token_plan_sgp";
 pub(crate) const TOKEN_PLAN_AMS_ROUTE_ID: &str = "mimo_token_plan_ams";
+pub(crate) const ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID: &str = "mimo_anthropic";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID: &str = "mimo_anthropic_token_plan_cn";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID: &str = "mimo_anthropic_token_plan_sgp";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID: &str = "mimo_anthropic_token_plan_ams";
 pub(crate) const PAY_AS_YOU_GO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
 pub(crate) const TOKEN_PLAN_CN_BASE_URL: &str = "https://token-plan-cn.xiaomimimo.com/v1";
 pub(crate) const TOKEN_PLAN_SGP_BASE_URL: &str = "https://token-plan-sgp.xiaomimimo.com/v1";
 pub(crate) const TOKEN_PLAN_AMS_BASE_URL: &str = "https://token-plan-ams.xiaomimimo.com/v1";
+pub(crate) const ANTHROPIC_PAY_AS_YOU_GO_BASE_URL: &str = "https://api.xiaomimimo.com/anthropic/v1";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_CN_BASE_URL: &str =
+    "https://token-plan-cn.xiaomimimo.com/anthropic/v1";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_SGP_BASE_URL: &str =
+    "https://token-plan-sgp.xiaomimimo.com/anthropic/v1";
+pub(crate) const ANTHROPIC_TOKEN_PLAN_AMS_BASE_URL: &str =
+    "https://token-plan-ams.xiaomimimo.com/anthropic/v1";
 
 static PAY_AS_YOU_GO_HOOK: MimoRouteHook = MimoRouteHook {
     route_id: PAY_AS_YOU_GO_ROUTE_ID,
@@ -27,6 +42,7 @@ static TOKEN_PLAN_SGP_HOOK: MimoRouteHook = MimoRouteHook {
 static TOKEN_PLAN_AMS_HOOK: MimoRouteHook = MimoRouteHook {
     route_id: TOKEN_PLAN_AMS_ROUTE_ID,
 };
+static MODEL_DISCOVERY_HOOK: MimoModelDiscoveryHook = MimoModelDiscoveryHook;
 
 pub(crate) fn route_descriptors() -> Vec<ProviderRouteDescriptor> {
     [
@@ -34,6 +50,10 @@ pub(crate) fn route_descriptors() -> Vec<ProviderRouteDescriptor> {
         TOKEN_PLAN_CN_ROUTE_ID,
         TOKEN_PLAN_SGP_ROUTE_ID,
         TOKEN_PLAN_AMS_ROUTE_ID,
+        ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID,
+        ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID,
+        ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID,
+        ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID,
     ]
     .into_iter()
     .map(descriptor_for)
@@ -50,47 +70,300 @@ pub(crate) fn hook(route_id: &str) -> Option<&'static dyn HostedOpenAiRouteHook>
     }
 }
 
+pub(crate) fn model_discovery_hook() -> &'static dyn RouteModelDiscoveryHook {
+    &MODEL_DISCOVERY_HOOK
+}
+
+pub(crate) fn is_anthropic_route(route_id: &str) -> bool {
+    matches!(
+        route_id,
+        ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID
+            | ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID
+            | ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID
+            | ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID
+    )
+}
+
+pub(crate) fn is_mimo_route(route_id: &str) -> bool {
+    is_anthropic_route(route_id)
+        || matches!(
+            route_id,
+            PAY_AS_YOU_GO_ROUTE_ID
+                | TOKEN_PLAN_CN_ROUTE_ID
+                | TOKEN_PLAN_SGP_ROUTE_ID
+                | TOKEN_PLAN_AMS_ROUTE_ID
+        )
+}
+
+pub(crate) fn apply_mimo_model_parameters(body: &mut Value, model: &str, tool_calling: bool) {
+    let model_family = classify_model(model);
+    if tool_calling && body.get("tool_choice").is_none() {
+        if body.get("tools").and_then(Value::as_array).is_some() {
+            body["tool_choice"] = Value::String("auto".to_string());
+        } else {
+            body["tool_choice"] = json!({ "type": "auto" });
+        }
+    }
+    if let Some(thinking_type) = default_thinking_type(model_family, tool_calling) {
+        body["thinking"] = json!({ "type": thinking_type });
+    }
+    if let Some((temperature, top_p)) = default_sampling_params(model_family) {
+        insert_default_number(body, "temperature", temperature);
+        insert_default_number(body, "top_p", top_p);
+    }
+}
+
+pub(crate) fn validate_thinking_replay(
+    messages: &[Value],
+    model: &str,
+    tools: &[Value],
+) -> AgentRuntimeResult<()> {
+    let model_family = classify_model(model);
+    let tool_calling = !tools.is_empty();
+    if default_thinking_type(model_family, tool_calling) != Some("enabled") {
+        return Ok(());
+    }
+    let history_has_tool_calls = messages.iter().any(|message| {
+        message.get("role").and_then(Value::as_str) == Some("tool")
+            || message.get("role").and_then(Value::as_str) == Some("assistant")
+                && message
+                    .get("tool_calls")
+                    .and_then(Value::as_array)
+                    .is_some_and(|tool_calls| !tool_calls.is_empty())
+    });
+    if !history_has_tool_calls {
+        return Ok(());
+    }
+    for message in messages {
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let has_tool_calls = message
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .is_some_and(|tool_calls| !tool_calls.is_empty());
+        if !has_tool_calls {
+            continue;
+        }
+        let has_reasoning = message
+            .get("reasoning_content")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty());
+        if !has_reasoning {
+            return Err(AgentRuntimeError::Core(
+                "MiMo deep thinking requires reasoning_content on every historical assistant message with tool_calls; provider replay chain is incomplete".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn descriptor_for(route_id: &str) -> ProviderRouteDescriptor {
-    let (label, description, default_base_url) = match route_id {
-        PAY_AS_YOU_GO_ROUTE_ID => (
-            "MiMo",
-            "MiMo pay-as-you-go OpenAI-compatible endpoint.",
-            PAY_AS_YOU_GO_BASE_URL,
-        ),
-        TOKEN_PLAN_CN_ROUTE_ID => (
-            "MiMo Token Plan (CN)",
-            "MiMo Token Plan China region endpoint.",
-            TOKEN_PLAN_CN_BASE_URL,
-        ),
-        TOKEN_PLAN_SGP_ROUTE_ID => (
-            "MiMo Token Plan (SGP)",
-            "MiMo Token Plan Singapore region endpoint.",
-            TOKEN_PLAN_SGP_BASE_URL,
-        ),
-        TOKEN_PLAN_AMS_ROUTE_ID => (
-            "MiMo Token Plan (AMS)",
-            "MiMo Token Plan Europe region endpoint.",
-            TOKEN_PLAN_AMS_BASE_URL,
-        ),
-        _ => unreachable!("unsupported MiMo route id"),
-    };
+    let (label, description, default_base_url, protocol_id, protocol_family, api_method, auth_kind) =
+        match route_id {
+            PAY_AS_YOU_GO_ROUTE_ID => (
+                "MiMo OpenAI",
+                "MiMo pay-as-you-go OpenAI-compatible endpoint.",
+                PAY_AS_YOU_GO_BASE_URL,
+                protocol::openai_chat_completions::PROTOCOL_ID,
+                protocol::openai_chat_completions::PROTOCOL_FAMILY,
+                "chatCompletions",
+                "bearer_or_header",
+            ),
+            TOKEN_PLAN_CN_ROUTE_ID => (
+                "MiMo Token Plan (CN, OpenAI)",
+                "MiMo Token Plan China OpenAI-compatible endpoint.",
+                TOKEN_PLAN_CN_BASE_URL,
+                protocol::openai_chat_completions::PROTOCOL_ID,
+                protocol::openai_chat_completions::PROTOCOL_FAMILY,
+                "chatCompletions",
+                "bearer_or_header",
+            ),
+            TOKEN_PLAN_SGP_ROUTE_ID => (
+                "MiMo Token Plan (SGP, OpenAI)",
+                "MiMo Token Plan Singapore OpenAI-compatible endpoint.",
+                TOKEN_PLAN_SGP_BASE_URL,
+                protocol::openai_chat_completions::PROTOCOL_ID,
+                protocol::openai_chat_completions::PROTOCOL_FAMILY,
+                "chatCompletions",
+                "bearer_or_header",
+            ),
+            TOKEN_PLAN_AMS_ROUTE_ID => (
+                "MiMo Token Plan (AMS, OpenAI)",
+                "MiMo Token Plan Europe OpenAI-compatible endpoint.",
+                TOKEN_PLAN_AMS_BASE_URL,
+                protocol::openai_chat_completions::PROTOCOL_ID,
+                protocol::openai_chat_completions::PROTOCOL_FAMILY,
+                "chatCompletions",
+                "bearer_or_header",
+            ),
+            ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID => (
+                "MiMo Anthropic",
+                "MiMo pay-as-you-go Anthropic-compatible endpoint.",
+                ANTHROPIC_PAY_AS_YOU_GO_BASE_URL,
+                protocol::anthropic_messages::PROTOCOL_ID,
+                protocol::anthropic_messages::PROTOCOL_FAMILY,
+                "messages",
+                "api-key",
+            ),
+            ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID => (
+                "MiMo Token Plan (CN, Anthropic)",
+                "MiMo Token Plan China Anthropic-compatible endpoint.",
+                ANTHROPIC_TOKEN_PLAN_CN_BASE_URL,
+                protocol::anthropic_messages::PROTOCOL_ID,
+                protocol::anthropic_messages::PROTOCOL_FAMILY,
+                "messages",
+                "api-key",
+            ),
+            ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID => (
+                "MiMo Token Plan (SGP, Anthropic)",
+                "MiMo Token Plan Singapore Anthropic-compatible endpoint.",
+                ANTHROPIC_TOKEN_PLAN_SGP_BASE_URL,
+                protocol::anthropic_messages::PROTOCOL_ID,
+                protocol::anthropic_messages::PROTOCOL_FAMILY,
+                "messages",
+                "api-key",
+            ),
+            ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID => (
+                "MiMo Token Plan (AMS, Anthropic)",
+                "MiMo Token Plan Europe Anthropic-compatible endpoint.",
+                ANTHROPIC_TOKEN_PLAN_AMS_BASE_URL,
+                protocol::anthropic_messages::PROTOCOL_ID,
+                protocol::anthropic_messages::PROTOCOL_FAMILY,
+                "messages",
+                "api-key",
+            ),
+            _ => unreachable!("unsupported MiMo route id"),
+        };
 
     ProviderRouteDescriptor {
         id: route_id.to_string(),
         provider_id: "mimo".to_string(),
-        protocol_id: protocol::openai_chat_completions::PROTOCOL_ID.to_string(),
-        protocol_family: protocol::openai_chat_completions::PROTOCOL_FAMILY.to_string(),
+        protocol_id: protocol_id.to_string(),
+        protocol_family: protocol_family.to_string(),
         label: label.to_string(),
         description: description.to_string(),
         default_base_url: Some(default_base_url.to_string()),
-        api_method: "chatCompletions".to_string(),
-        auth_kind: "bearer_or_header".to_string(),
+        api_method: api_method.to_string(),
+        auth_kind: auth_kind.to_string(),
         runtime_supported: true,
-        model_discovery_supported: false,
+        model_discovery_supported: true,
         custom_headers_supported: true,
         local_backend: None,
         catalog_section: "hosted".to_string(),
-        quick_setup_supported: true,
+        quick_setup_supported: matches!(
+            route_id,
+            PAY_AS_YOU_GO_ROUTE_ID | ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID
+        ),
+    }
+}
+
+struct MimoModelDiscoveryHook;
+
+impl RouteModelDiscoveryHook for MimoModelDiscoveryHook {
+    fn descriptor(&self) -> ProviderRouteDescriptor {
+        descriptor_for(PAY_AS_YOU_GO_ROUTE_ID)
+    }
+
+    fn discover_models(
+        &self,
+        provider: &NativeProviderProfile,
+    ) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let discovered = if is_anthropic_route(&provider.route_id) {
+            discover_anthropic_models_with_mimo_auth(&client, provider)
+        } else {
+            discover_openai_models_with_mimo_auth(&client, provider)
+        };
+        discovered
+    }
+}
+
+fn discover_anthropic_models_with_mimo_auth(
+    client: &reqwest::blocking::Client,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
+    let provider = openai_model_discovery_profile(provider);
+    discover_openai_models_with_mimo_auth(client, &provider)
+}
+
+fn discover_openai_models_with_mimo_auth(
+    client: &reqwest::blocking::Client,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
+    let url = transport::http::endpoint_url(provider, "models")?;
+    let request = hook(&provider.route_id)
+        .ok_or_else(|| {
+            AgentRuntimeError::Core(format!(
+                "model discovery is not implemented for route {}",
+                provider.route_id
+            ))
+        })?
+        .apply_request_headers(client.get(url), provider)?;
+    let response = request
+        .send()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    if !status.is_success() {
+        return Err(AgentRuntimeError::Core(format!(
+            "MiMo model discovery failed with status {status}: {body}"
+        )));
+    }
+    Ok(body
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.get("id").and_then(Value::as_str))
+        .filter(|id| {
+            protocol::openai_common::is_supported_text_model_id(
+                id,
+                ModelDiscoveryScope::CompatibleText,
+            )
+        })
+        .map(mimo_model)
+        .collect())
+}
+
+fn openai_model_discovery_profile(provider: &NativeProviderProfile) -> NativeProviderProfile {
+    let (route_id, base_url) = match provider.route_id.as_str() {
+        ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID => (PAY_AS_YOU_GO_ROUTE_ID, PAY_AS_YOU_GO_BASE_URL),
+        ANTHROPIC_TOKEN_PLAN_CN_ROUTE_ID => (TOKEN_PLAN_CN_ROUTE_ID, TOKEN_PLAN_CN_BASE_URL),
+        ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID => (TOKEN_PLAN_SGP_ROUTE_ID, TOKEN_PLAN_SGP_BASE_URL),
+        ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID => (TOKEN_PLAN_AMS_ROUTE_ID, TOKEN_PLAN_AMS_BASE_URL),
+        PAY_AS_YOU_GO_ROUTE_ID => (PAY_AS_YOU_GO_ROUTE_ID, PAY_AS_YOU_GO_BASE_URL),
+        TOKEN_PLAN_CN_ROUTE_ID => (TOKEN_PLAN_CN_ROUTE_ID, TOKEN_PLAN_CN_BASE_URL),
+        TOKEN_PLAN_SGP_ROUTE_ID => (TOKEN_PLAN_SGP_ROUTE_ID, TOKEN_PLAN_SGP_BASE_URL),
+        TOKEN_PLAN_AMS_ROUTE_ID => (TOKEN_PLAN_AMS_ROUTE_ID, TOKEN_PLAN_AMS_BASE_URL),
+        _ => (
+            provider.route_id.as_str(),
+            provider.base_url.as_deref().unwrap_or(""),
+        ),
+    };
+    NativeProviderProfile {
+        route_id: route_id.to_string(),
+        base_url: Some(base_url.to_string()),
+        auth_header: Some("api-key".to_string()),
+        ..provider.clone()
+    }
+}
+
+fn mimo_model(id: &str) -> NativeProviderModel {
+    let family = classify_model(id);
+    NativeProviderModel {
+        id: id.to_string(),
+        label: Some(id.to_string()),
+        context_window: None,
+        supports_image_input: matches!(family, MimoModelFamily::Pro | MimoModelFamily::Omni),
+        supports_tool_calling: matches!(family, MimoModelFamily::Pro | MimoModelFamily::Omni),
+        supports_streaming: true,
+        enabled: true,
     }
 }
 
@@ -109,25 +382,11 @@ impl HostedOpenAiRouteHook for MimoRouteHook {
         _provider: &NativeProviderProfile,
         model: &str,
     ) -> AgentRuntimeResult<Value> {
-        let model_family = classify_model(model);
         let tool_calling = body
             .get("tools")
             .and_then(Value::as_array)
             .is_some_and(|tools| !tools.is_empty());
-
-        if tool_calling {
-            body["tool_choice"] = Value::String("auto".to_string());
-        }
-
-        if let Some(thinking_type) = default_thinking_type(model_family, tool_calling) {
-            body["thinking"] = json!({ "type": thinking_type });
-        }
-
-        if let Some((temperature, top_p)) = default_sampling_params(model_family) {
-            insert_default_number(&mut body, "temperature", temperature);
-            insert_default_number(&mut body, "top_p", top_p);
-        }
-
+        apply_mimo_model_parameters(&mut body, model, tool_calling);
         Ok(body)
     }
 
@@ -214,5 +473,59 @@ fn default_sampling_params(model_family: MimoModelFamily) -> Option<(f64, f64)> 
 fn insert_default_number(body: &mut Value, key: &str, value: f64) {
     if body.get(key).is_none() {
         body[key] = Value::from(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider(route_id: &str, base_url: &str) -> NativeProviderProfile {
+        NativeProviderProfile {
+            id: "mimo-test".to_string(),
+            label: "MiMo Test".to_string(),
+            route_id: route_id.to_string(),
+            base_url: Some(base_url.to_string()),
+            default_model: None,
+            api_key: Some("tp-test".to_string()),
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: None,
+            models: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn validate_thinking_replay_requires_reasoning_on_tool_call_assistants() {
+        let messages = vec![
+            json!({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-tabs",
+                    "type": "function",
+                    "function": { "name": "tool_fs_run", "arguments": "{}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call-tabs", "content": "ok" }),
+        ];
+        let tools = vec![json!({ "type": "function", "function": { "name": "tool_fs_run" } })];
+        let error = validate_thinking_replay(&messages, "mimo-v2.5-pro", &tools)
+            .expect_err("missing reasoning should fail");
+        assert!(error
+            .to_string()
+            .contains("reasoning_content on every historical assistant message with tool_calls"));
+    }
+
+    #[test]
+    fn anthropic_sgp_discovery_uses_matching_openai_models_endpoint() {
+        let discovery = openai_model_discovery_profile(&provider(
+            ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID,
+            ANTHROPIC_TOKEN_PLAN_SGP_BASE_URL,
+        ));
+
+        assert_eq!(discovery.route_id, TOKEN_PLAN_SGP_ROUTE_ID);
+        assert_eq!(discovery.base_url.as_deref(), Some(TOKEN_PLAN_SGP_BASE_URL));
+        assert_eq!(discovery.auth_header.as_deref(), Some("api-key"));
     }
 }

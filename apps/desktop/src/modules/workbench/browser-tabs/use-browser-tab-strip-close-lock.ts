@@ -10,6 +10,7 @@ import {
   BROWSER_TAB_RESTORED_WIDTH_PX,
   BROWSER_TAB_OVERLAP_PX
 } from "./tab-strip-layout-constants";
+import { createRafCoalescer } from "../shell/raf-coalesce";
 
 type UseBrowserTabStripCloseLockInput = {
   readonly tabCount: number;
@@ -98,7 +99,8 @@ export const useBrowserTabStripCloseLock = ({
       return;
     }
 
-    const observer = new ResizeObserver(clearWhenTabsFit);
+    const coalescer = createRafCoalescer(clearWhenTabsFit);
+    const observer = new ResizeObserver(() => coalescer.schedule());
     if (strip !== null) {
       observer.observe(strip);
     }
@@ -110,6 +112,7 @@ export const useBrowserTabStripCloseLock = ({
     }
     return () => {
       observer.disconnect();
+      coalescer.cancel();
     };
   }, [closeLockedTabWidth, navRef, tabCount]);
 

@@ -374,6 +374,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
     linuxCompatProfileOptions: labels.settingsOptions.linuxCompatProfile,
     aiLabels: labels.settingsAi,
     aiModel: settingsAiModel,
+    openDialog,
     loginManagerCategoryLabel: labels.loginManager.title,
     loginManager: {
       desktopApi,

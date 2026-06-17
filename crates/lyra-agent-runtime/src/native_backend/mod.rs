@@ -26,7 +26,7 @@ use crate::{
     HostCapabilityDispatcher,
     context_builder::{ContextBuilder, ProviderContextOptions},
     design_tools,
-    prompt_policy::{self, PromptAccounting, PromptPolicyInput},
+    prompt_policy::{self, PersonaContext, PromptAccounting, PromptPolicyInput},
 };
 
 const DEFAULT_TOOL_CONTENT_CHARS: usize = 16_000;
@@ -63,6 +63,10 @@ mod rollback;
 mod sessions;
 mod state;
 mod tools;
+pub mod page_citations;
+pub mod file_citations;
+pub mod inline_images;
+mod transcript_citations;
 mod turns;
 mod types;
 mod workflows;
@@ -74,7 +78,8 @@ use self::{
     actions::*, activity::*, clarifications::*, context::*, helpers::*, memory::*,
     memory_autonomy::*, memory_store::*, network::*, permission_policy::*, permissions::*,
     projections::*, provider::*, provider_config::*, rollback::*, sessions::*, state::*, tools::*,
-    turns::*, types::*, workflows::*,
+    file_citations::*, inline_images::*, page_citations::*, transcript_citations::*, turns::*,
+    types::*, workflows::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
@@ -127,6 +132,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.proactive.openSession" => proactive_open_session(payload),
             "agent.rollback.preview" => rollback_preview(payload),
             "agent.rollback.restore" => rollback_restore(payload),
+            "agent.message.resolve" => resolve_message_from_payload(&payload),
             "agent.permission.respond" => respond_permission(payload),
             "agent.permissionPolicy.read" => read_permission_policy(),
             "agent.permissionPolicy.setMode" => set_permission_policy_mode(payload),
@@ -138,6 +144,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.provider.options.update" => update_provider_options(payload),
             "agent.models.list" => list_models(payload),
             "agent.models.switch" => switch_model(payload),
+            "agent.models.enable" => set_model_enabled(payload),
+            "agent.models.delete" => delete_model(payload),
             "agent.models.refresh" => refresh_models(payload),
             "agent.roles.update" => update_roles(payload),
             "agent.accounts.list" => list_accounts(),

@@ -75,6 +75,73 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
         .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
         .collect::<Vec<_>>();
+    assert!(
+        event_kinds
+            .iter()
+            .all(|kind| kind != "messageCommitted" && kind != "messageDelta"),
+        "tool-round assistant preambles must not be committed to the UI timeline: {event_kinds:?}"
+    );
+    backend.clear_event_callback();
+}
+
+#[test]
+fn streaming_parser_commits_final_answer_once_without_tool_calls() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Stream Final Test" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+        session.runtime_turns.push(runtime_turn(
+            &turn_id,
+            &session_id,
+            "streaming_model",
+            None,
+            None,
+        ));
+        state
+            .active_cancellations
+            .insert(turn_id.clone(), cancellation.clone());
+    }
+
+    let stream = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let reply = parse_streaming_response(
+        BufReader::new(stream.as_bytes()),
+        &session_id,
+        &turn_id,
+        &cancellation,
+        &model_tools(false),
+    )
+    .expect("streaming reply");
+
+    assert_eq!(reply.content.as_deref(), Some("Hello"));
+    assert!(reply.tool_calls.is_empty());
+    assert!(reply.ui_message_id.is_some());
+    let event_kinds = events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
+        .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
+        .collect::<Vec<_>>();
     assert_eq!(&event_kinds[..2], ["messageCommitted", "messageDelta"]);
     backend.clear_event_callback();
 }
@@ -390,6 +457,7 @@ fn streaming_transport_error_falls_back_to_non_streaming() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -450,6 +518,7 @@ fn openai_responses_route_executes_non_streaming_request() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -509,6 +578,7 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -608,6 +678,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -655,6 +726,261 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
         replayed_assistant["reasoning_content"],
         "I should inspect the current tabs before answering."
     );
+    server.join().expect("server join");
+}
+
+#[test]
+fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "MiMo Streaming Reasoning Tool Transcript Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind mimo provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept mimo provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let body = if index == 0 {
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"I should inspect the current tabs before answering.\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-tabs\",\"type\":\"function\",\"function\":{\"name\":\"tool_fs_run\",\"arguments\":\"{\\\"path\\\":\\\"/tools/workbench/list_tabs\\\",\\\"args\\\":{\\\"scope\\\":\\\"all\\\"}}\"}}]}}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string()
+            } else {
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"The tab evidence is enough to finish.\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"finish-1\",\"type\":\"function\",\"function\":{\"name\":\"lyra_turn_finish\",\"arguments\":\"{\\\"status\\\":\\\"completed\\\",\\\"finalText\\\":\\\"Checked the current tabs.\\\"}\"}}]}}]}\n\n",
+                    "data: [DONE]\n\n",
+                )
+                .to_string()
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write mimo streaming response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "mimo".to_string(),
+        label: "MiMo".to_string(),
+        route_id: "mimo".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("mimo-v2.5-pro".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "mimo-v2.5-pro".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: true,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "mimo-v2.5-pro".to_string(),
+        messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
+        tools: model_tools(false),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("mimo streaming model loop");
+
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Checked the current tabs.")
+    );
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["stream"], true);
+    let replayed_assistant = requests[1]["messages"]
+        .as_array()
+        .expect("messages")
+        .iter()
+        .find(|message| {
+            message.get("role").and_then(Value::as_str) == Some("assistant")
+                && message.get("tool_calls").is_some()
+        })
+        .expect("assistant tool-call replay");
+    assert_eq!(
+        replayed_assistant["reasoning_content"],
+        "I should inspect the current tabs before answering."
+    );
+    server.join().expect("server join");
+}
+
+#[test]
+fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "MiMo Anthropic Reasoning Tool Transcript Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind mimo anthropic provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept mimo anthropic request");
+            let (headers, request) = read_http_request(&mut stream);
+            request_tx.send(request.clone()).expect("send request");
+            assert!(headers.to_ascii_lowercase().contains("api-key: test-key"));
+            if index == 0 {
+                assert_eq!(request["thinking"]["type"], "enabled");
+            } else {
+                let replayed_assistant = request["messages"]
+                    .as_array()
+                    .expect("messages")
+                    .iter()
+                    .find(|message| {
+                        message.get("role").and_then(Value::as_str) == Some("assistant")
+                            && message.pointer("/content/0/type").and_then(Value::as_str)
+                                == Some("thinking")
+                    })
+                    .expect("assistant thinking replay");
+                assert_eq!(
+                    replayed_assistant.pointer("/content/0/thinking").and_then(Value::as_str),
+                    Some("I should inspect the current tabs before answering.")
+                );
+            }
+            let body = if index == 0 {
+                json!({
+                    "id": "msg-tool-1",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": "I should inspect the current tabs before answering."
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "call-tabs",
+                            "name": "tool_fs_run",
+                            "input": {
+                                "path": "/tools/workbench/list_tabs",
+                                "args": { "scope": "all" }
+                            }
+                        }
+                    ],
+                    "stop_reason": "tool_use"
+                })
+                .to_string()
+            } else {
+                json!({
+                    "id": "msg-tool-2",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": "The tab evidence is enough to finish."
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "finish-1",
+                            "name": "lyra_turn_finish",
+                            "input": {
+                                "status": "completed",
+                                "finalText": "Checked the current tabs."
+                            }
+                        }
+                    ],
+                    "stop_reason": "tool_use"
+                })
+                .to_string()
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write mimo anthropic response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "mimo-anthropic".to_string(),
+        label: "MiMo Anthropic".to_string(),
+        route_id: "mimo_anthropic".to_string(),
+        base_url: Some(format!("http://{addr}/anthropic/v1")),
+        default_model: Some("mimo-v2.5-pro".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: Some("api-key".to_string()),
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "mimo-v2.5-pro".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: true,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "mimo-v2.5-pro".to_string(),
+        messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
+        tools: model_tools(false),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("mimo anthropic model loop");
+
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Checked the current tabs.")
+    );
+    assert_eq!(
+        result.provider_transcript[0]["reasoning_content"],
+        "I should inspect the current tabs before answering."
+    );
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
     server.join().expect("server join");
 }
 
@@ -751,6 +1077,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -900,6 +1227,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -981,6 +1309,7 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -1112,6 +1441,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -1268,6 +1598,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -1336,6 +1667,7 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -1688,6 +2020,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -1932,6 +2265,7 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            enabled: true,
         }],
     };
 
@@ -2043,6 +2377,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -2162,6 +2497,7 @@ fn model_loop_requires_structured_finish_before_any_tool_result() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -2319,6 +2655,7 @@ fn model_loop_requires_structured_finish_after_tool_result() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -2435,6 +2772,7 @@ fn turn_finish_metadata_records_not_run_verification_checks() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -2615,6 +2953,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {
@@ -2749,6 +3088,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            enabled: true,
         }],
     };
     let request = ModelRequest {

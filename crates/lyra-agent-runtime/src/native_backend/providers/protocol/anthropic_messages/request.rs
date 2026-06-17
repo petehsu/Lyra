@@ -80,7 +80,18 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
 }
 
 fn assistant_blocks(message: &Value, content: &Value) -> Vec<Value> {
-    let mut blocks = text_blocks(content);
+    let mut blocks = Vec::new();
+    if let Some(reasoning_content) = message
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    {
+        blocks.push(json!({
+            "type": "thinking",
+            "thinking": reasoning_content,
+        }));
+    }
+    blocks.extend(text_blocks(content));
     if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
         blocks.extend(tool_calls.iter().filter_map(anthropic_tool_use_block));
     }
@@ -258,5 +269,39 @@ mod tests {
         assert_eq!(body["messages"][2]["content"][0]["type"], "tool_result");
         assert_eq!(body["tools"][0]["name"], "tool_fs_run");
         assert_eq!(body["tool_choice"]["type"], "auto");
+    }
+
+    #[test]
+    fn request_body_replays_reasoning_content_as_thinking_block() {
+        let body = build_request_body(
+            "mimo-v2.5-pro",
+            &[
+                json!({ "role": "user", "content": "List tabs" }),
+                json!({
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "I need to inspect tabs first.",
+                    "tool_calls": [{
+                        "id": "call-tabs",
+                        "type": "function",
+                        "function": {
+                            "name": "tool_fs_run",
+                            "arguments": "{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"
+                        }
+                    }]
+                }),
+                json!({ "role": "tool", "tool_call_id": "call-tabs", "content": "tabs: settings" }),
+            ],
+            &[],
+            false,
+        )
+        .expect("body");
+
+        assert_eq!(body["messages"][1]["content"][0]["type"], "thinking");
+        assert_eq!(
+            body["messages"][1]["content"][0]["thinking"],
+            "I need to inspect tabs first."
+        );
+        assert_eq!(body["messages"][1]["content"][1]["type"], "tool_use");
     }
 }

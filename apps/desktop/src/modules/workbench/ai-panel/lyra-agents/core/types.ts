@@ -7,6 +7,8 @@
 // be reused from a server-side rendering pipeline or type-checked from
 // external data providers.
 
+import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../shared/agent";
+import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 
 export type ToolStatus = "running" | "success" | "error";
@@ -296,11 +298,16 @@ export interface TodoTask {
 export interface AgentImageAttachment {
   id: string;
   mediaType: string;
-  data: string;
+  /** Empty when the attachment is stored by filesystem path in `source`. */
+  data?: string;
   label?: string | null;
   source?: string | null;
   width?: number | null;
   height?: number | null;
+  workspaceTabId?: string | null;
+  workspaceTabTitle?: string | null;
+  workspaceTabPageKind?: string | null;
+  workspaceTabAddress?: string | null;
 }
 
 export interface ToolActionTarget {
@@ -342,6 +349,14 @@ export interface ChatMessage {
   id: string;
   author: "user" | "agent";
   blocks: MessageBlock[];
+  /** Resolved transcript citations attached to a sent user message. */
+  transcriptCitations?: readonly AgentTranscriptCitation[];
+  /** Resolved page citations attached to a sent user message. */
+  pageCitations?: readonly AgentPageCitation[];
+  /** Inline image attachments referenced by ⟦image:id⟧ markers in message text. */
+  inlineImages?: readonly AgentImageAttachment[];
+  /** Inline file attachments referenced by ⟦file:id⟧ markers in message text. */
+  fileAttachments?: readonly AgentFileAttachment[];
   time?: string;
   rollback?: {
     available: boolean;
@@ -356,8 +371,11 @@ export interface ModelOption {
   label: string;
   model: string;
   provider?: string | null;
+  providerId?: string | null;
+  providerKey?: string | null;
   detail?: string | null;
   available: boolean;
+  enabled: boolean;
 }
 
 export interface ProviderOptionControl {
@@ -461,6 +479,8 @@ export interface SessionMeta {
   project: string;
   workingDir: string | null;
   projectBound: boolean;
+  /** True when the session is bound to the user's home directory by default. */
+  workingDirIsHome: boolean;
   automation?: AgentAutomationSettings | null;
   totalAdditions: number;
   totalDeletions: number;

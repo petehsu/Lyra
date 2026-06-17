@@ -6,6 +6,7 @@ import type {
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
 import type { WorkbenchLocale } from "../i18n";
+import type { GlobalDialogModel } from "../global-dialog";
 import type {
   WorkbenchAiStopBehavior,
   WorkbenchOmniboxNonBrowserSubmitTarget,
@@ -28,7 +29,8 @@ export type BrowserSettingsCategoryId =
   | "softwareStore"
   | "linux"
   | "search"
-  | "ai";
+  | "ai"
+  | "models";
 
 export type BrowserSettingsCategoryFocusRequest = {
   readonly categoryId: BrowserSettingsCategoryId;
@@ -48,6 +50,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly appearanceCategoryLabel: string;
   readonly workspaceCategoryLabel: string;
   readonly aiCategoryLabel: string;
+  readonly modelsCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
   readonly loginManagerCategoryLabel: string;
   readonly softwareStoreCategoryLabel: string;
@@ -156,6 +159,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatProfileOptions: readonly SettingsOption<LinuxCompatProfile>[];
   readonly aiLabels: SettingsAiLabels;
   readonly aiModel: SettingsAiModel;
+  readonly openDialog: GlobalDialogModel["openDialog"];
   readonly loginManager: LoginManagerSurfaceProps;
   readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;

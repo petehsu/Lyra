@@ -1,24 +1,50 @@
-import { Check, ExternalLink, FilePenLine, KeyRound, LogIn, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Check, ExternalLink, LogIn, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { ComponentPropsWithoutRef, KeyboardEvent } from "react";
+import type { ComponentPropsWithoutRef } from "react";
 
 import {
   AppButton,
-  AppEmptyState,
   AppIconButton,
   AppInput,
   AppObjectRow,
+  AppSearchField,
   AppSelect,
   AppStatusMessage,
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
+import type { AgentModelEntry, AgentProviderRouteEntry } from "../../../shared/desktop-bridge";
+import { AgentProviderBrandIcon } from "../agent-provider-brand-icon";
+import type { GlobalDialogModel } from "../global-dialog";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
 
 type SettingsAiViewProps = {
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
 };
+
+type SettingsAiModelsViewProps = SettingsAiViewProps & {
+  readonly openDialog: GlobalDialogModel["openDialog"];
+};
+
+type SettingsAiRenderedModelEntry = Pick<
+  AgentModelEntry,
+  | "available"
+  | "detail"
+  | "id"
+  | "label"
+  | "model"
+  | "provider"
+  | "providerId"
+  | "providerKey"
+  | "providerLabel"
+  | "routeId"
+  | "protocolId"
+  | "protocolFamily"
+  | "enabled"
+>;
+
+const MODEL_PREVIEW_LIMIT = 9;
 
 type AgentConfigShape = {
   readonly provider?: {
@@ -38,6 +64,7 @@ type AgentConfigShape = {
       readonly supportsImageInput?: boolean;
       readonly supportsToolCalling?: boolean;
       readonly supportsStreaming?: boolean;
+      readonly enabled?: boolean;
     }[];
   }>;
   readonly roles?: {
@@ -91,12 +118,6 @@ const optionalPort = (value: string): number | undefined => {
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 65535 ? parsed : undefined;
 };
-
-const splitModelIds = (value: string): string[] =>
-  value
-    .split(/[\n,，、;；]+/u)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
 
 const uniqueModelIds = (...groups: readonly string[][]): string[] => {
   const seen = new Set<string>();
@@ -195,51 +216,934 @@ const setValueFromEvent = (
   onValueChange(value);
 };
 
-const activateRowFromKeyboard = (
-  event: KeyboardEvent,
-  onActivate: () => void
-): void => {
-  if (event.key !== "Enter" && event.key !== " ") {
-    return;
+const normalizeProviderSearchText = (value: string): string =>
+  value.trim().toLocaleLowerCase().replaceAll(/[\s._:/-]+/gu, "");
+
+const PROVIDER_ROUTE_ALIASES: readonly {
+  readonly match: (route: AgentProviderRouteEntry) => boolean;
+  readonly values: readonly string[];
+}[] = [
+  {
+    match: (route) => route.catalogSection === "custom" || route.id.includes("custom"),
+    values: [
+      "custom",
+      "custom provider",
+      "custom openai compatible",
+      "openai compatible",
+      "compatible",
+      "manual endpoint",
+      "自定义",
+      "自定义服务商",
+      "自定义提供方",
+      "自定义模型",
+      "自定义搜索",
+      "自定义接口",
+      "自定义端点",
+      "兼容",
+      "兼容 openai",
+      "openai 兼容",
+      "手动",
+      "手动端点",
+      "手动添加",
+    ],
+  },
+  {
+    match: (route) => route.catalogSection === "local" || route.localBackend !== null,
+    values: [
+      "local",
+      "local model",
+      "local provider",
+      "本地",
+      "本地模型",
+      "本地服务",
+      "本地服务商",
+      "本地接口",
+      "局域网",
+    ],
+  },
+  {
+    match: (route) => route.providerId === "mimo" || route.id.includes("mimo"),
+    values: [
+      "mimo",
+      "xiaomi",
+      "xiaomi mimo",
+      "xiaomimimo",
+      "mi mo",
+      "小米",
+      "小米 mimo",
+      "小米模型",
+      "小米妙想",
+    ],
+  },
+  {
+    match: (route) => route.providerId === "openai" || route.id.includes("openai"),
+    values: ["openai", "chatgpt", "gpt", "开放人工智能", "开放ai"],
+  },
+  {
+    match: (route) => route.providerId.includes("google") || route.label.toLocaleLowerCase().includes("gemini"),
+    values: ["google", "gemini", "谷歌", "双子", "谷歌模型"],
+  },
+  {
+    match: (route) => route.providerId.includes("anthropic") || route.label.toLocaleLowerCase().includes("claude"),
+    values: ["anthropic", "claude", "克劳德"],
+  },
+  {
+    match: (route) => route.providerId.includes("qwen") || route.label.toLocaleLowerCase().includes("qwen"),
+    values: ["qwen", "tongyi", "通义", "千问", "阿里"],
+  },
+  {
+    match: (route) => route.providerId.includes("deepseek") || route.label.toLocaleLowerCase().includes("deepseek"),
+    values: ["deepseek", "deep seek", "深度求索", "深度搜索"],
+  },
+  {
+    match: (route) => route.providerId.includes("moonshot") || route.label.toLocaleLowerCase().includes("kimi"),
+    values: ["moonshot", "kimi", "月之暗面", "月之暗面 kimi"],
+  },
+  {
+    match: (route) => route.providerId.includes("baidu") || route.label.toLocaleLowerCase().includes("wenxin"),
+    values: ["baidu", "wenxin", "文心", "百度", "百度文心"],
+  },
+  {
+    match: (route) => route.providerId.includes("doubao") || route.providerId.includes("volcengine"),
+    values: ["doubao", "volcengine", "豆包", "火山", "火山引擎"],
+  },
+  {
+    match: (route) => route.providerId.includes("spark") || route.providerId.includes("iflytek"),
+    values: ["spark", "iflytek", "讯飞", "星火", "讯飞星火"],
+  },
+  {
+    match: (route) => route.providerId.includes("stepfun") || route.label.toLocaleLowerCase().includes("stepfun"),
+    values: ["stepfun", "step", "阶跃", "阶跃星辰"],
+  },
+  {
+    match: (route) => route.providerId.includes("sensenova") || route.label.toLocaleLowerCase().includes("sensenova"),
+    values: ["sensenova", "sense nova", "商汤", "商汤日日新"],
+  },
+  {
+    match: (route) => route.providerId.includes("yi") || route.label.toLocaleLowerCase().includes("01.ai"),
+    values: ["yi", "01ai", "01.ai", "零一", "零一万物"],
+  },
+  {
+    match: (route) => route.providerId.includes("xuanyuan") || route.label.toLocaleLowerCase().includes("xuanyuan"),
+    values: ["xuanyuan", "轩辕", "度小满"],
+  },
+];
+
+const fuzzyScore = (text: string, query: string): number => {
+  if (query.length === 0) {
+    return 0;
   }
-  event.preventDefault();
-  onActivate();
+  let textIndex = 0;
+  let score = 0;
+  let streak = 0;
+  for (const queryChar of query) {
+    const foundIndex = text.indexOf(queryChar, textIndex);
+    if (foundIndex < 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    streak = foundIndex === textIndex ? streak + 1 : 1;
+    score += 4 + streak * 3 - Math.min(foundIndex - textIndex, 8);
+    textIndex = foundIndex + 1;
+  }
+  return score;
+};
+
+const providerRouteSearchValues = (route: AgentProviderRouteEntry): readonly string[] =>
+  [
+    route.label,
+    route.description,
+    route.providerId,
+    route.id,
+    route.protocolId,
+    route.protocolFamily,
+    route.catalogSection,
+    route.defaultBaseUrl,
+    ...PROVIDER_ROUTE_ALIASES.flatMap((entry) => entry.match(route) ? entry.values : []),
+  ].flatMap((value) => {
+    const trimmed = value?.trim() ?? "";
+    return trimmed.length === 0 ? [] : [trimmed];
+  });
+
+const providerRouteScore = (route: AgentProviderRouteEntry, query: string, index: number): number => {
+  const normalizedQuery = normalizeProviderSearchText(query);
+  if (normalizedQuery.length === 0) {
+    return 120 - index;
+  }
+
+  return providerRouteSearchValues(route).reduce((bestScore, value) => {
+    const normalizedValue = normalizeProviderSearchText(value);
+    if (normalizedValue.length === 0) {
+      return bestScore;
+    }
+    let score = fuzzyScore(normalizedValue, normalizedQuery);
+    if (normalizedValue === normalizedQuery) {
+      score += 1000;
+    } else if (normalizedValue.startsWith(normalizedQuery)) {
+      score += 760;
+    } else {
+      const containsAt = normalizedValue.indexOf(normalizedQuery);
+      if (containsAt >= 0) {
+        score += 520 - Math.min(containsAt, 80);
+      }
+      const queryContainsAt = normalizedQuery.indexOf(normalizedValue);
+      if (normalizedValue.length >= 2 && queryContainsAt >= 0) {
+        score += 420 - Math.min(queryContainsAt, 80);
+      }
+    }
+    return Math.max(bestScore, score);
+  }, Number.NEGATIVE_INFINITY);
+};
+
+const modelProviderKeys = (entry: SettingsAiRenderedModelEntry): readonly string[] =>
+  [
+    entry.providerKey,
+    entry.provider,
+    entry.providerId,
+  ].flatMap((value) => {
+    const trimmed = value?.trim() ?? "";
+    return trimmed.length === 0 ? [] : [trimmed];
+  });
+
+const modelMatchesSelectedProvider = (
+  entry: AgentModelEntry,
+  profileName: string,
+  route: AgentProviderRouteEntry
+): boolean => {
+  const providerKeys = [
+    entry.providerKey,
+    entry.provider,
+    entry.providerId,
+    entry.routeId,
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
+  const profileMatched = providerKeys.some((value) =>
+    value === profileName
+    || value === route.id
+    || value === route.providerId
+  );
+  const labelMatched = entry.providerLabel?.trim() === route.label;
+  const baseUrlMatched =
+    route.defaultBaseUrl !== null
+    && route.defaultBaseUrl !== undefined
+    && entry.detail?.trim() === route.defaultBaseUrl;
+  return profileMatched || labelMatched || baseUrlMatched;
+};
+
+const modelEntryIdentity = (entry: AgentModelEntry): string =>
+  [
+    entry.providerKey,
+    entry.provider,
+    entry.providerId,
+    entry.routeId,
+    entry.model,
+  ].map((value) => value?.trim() ?? "").join("\u0000");
+
+const modelIdsFromEntries = (entries: readonly AgentModelEntry[]): string[] =>
+  uniqueModelIds([
+    ...entries
+      .map((entry) => entry.model.trim())
+      .filter((id) => id.length > 0),
+  ]);
+
+const discoveredModelIdsFromCatalog = (
+  entries: readonly AgentModelEntry[],
+  profileName: string,
+  route: AgentProviderRouteEntry,
+  previousEntries: readonly AgentModelEntry[]
+): string[] => {
+  const matchedEntries = entries.filter((entry) =>
+    modelMatchesSelectedProvider(entry, profileName, route)
+  );
+  if (matchedEntries.length > 0) {
+    return modelIdsFromEntries(matchedEntries);
+  }
+
+  const previousKeys = new Set(previousEntries.map(modelEntryIdentity));
+  return modelIdsFromEntries(
+    entries.filter((entry) => !previousKeys.has(modelEntryIdentity(entry)))
+  );
+};
+
+const isCurrentModelEntry = (
+  entry: SettingsAiRenderedModelEntry,
+  model: SettingsAiModel,
+  config: AgentConfigShape
+): boolean => {
+  const catalog = model.agentModelCatalog ?? null;
+  const currentModel =
+    catalog?.currentModel
+    ?? catalog?.defaultModel
+    ?? config.provider?.defaultModel
+    ?? "";
+  if (entry.model !== currentModel) {
+    return false;
+  }
+
+  const currentProvider =
+    catalog?.currentProvider
+    ?? catalog?.defaultProvider
+    ?? model.defaultProfileId
+    ?? config.provider?.defaultProvider
+    ?? "";
+  if (currentProvider.length === 0) {
+    return true;
+  }
+  return modelProviderKeys(entry).includes(currentProvider);
+};
+
+const formatSettingsAiLabel = (
+  template: string,
+  replacements: Record<string, string>
+): string =>
+  Object.entries(replacements).reduce(
+    (result, [key, value]) => result.replaceAll(`{${key}}`, value),
+    template
+  );
+
+export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiModelsViewProps) => {
+  const [query, setQuery] = useState("");
+  const [showAllModels, setShowAllModels] = useState(false);
+  const [isAddingModel, setIsAddingModel] = useState(false);
+  const [providerQuery, setProviderQuery] = useState("");
+  const [selectedProviderRouteId, setSelectedProviderRouteId] = useState("");
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
+  const [providerApiKey, setProviderApiKey] = useState("");
+  const [discoveredModelIds, setDiscoveredModelIds] = useState<readonly string[]>([]);
+  const [isAddingCustomModel, setIsAddingCustomModel] = useState(false);
+  const [customModelId, setCustomModelId] = useState("");
+  const [disabledDiscoveredModelIds, setDisabledDiscoveredModelIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const [isDiscoveringModels, setIsDiscoveringModels] = useState(false);
+  const [discoveryReturnedEmpty, setDiscoveryReturnedEmpty] = useState(false);
+  const config = asAgentConfig(model.agentConfig?.config);
+  const providerRoutes = useMemo<readonly AgentProviderRouteEntry[]>(() => {
+    const sourceRoutes = model.agentProviderCatalog?.routes ?? [
+      ...model.quickSetupRoutes,
+      ...model.localRoutes,
+    ];
+    const seen = new Set<string>();
+    return sourceRoutes.filter((route) => {
+      if (!route.runtimeSupported || seen.has(route.id)) {
+        return false;
+      }
+      seen.add(route.id);
+      return true;
+    });
+  }, [
+    model.agentProviderCatalog?.routes,
+    model.localRoutes,
+    model.quickSetupRoutes,
+  ]);
+  const selectedProviderRoute =
+    providerRoutes.find((route) => route.id === selectedProviderRouteId)
+    ?? null;
+  const selectedProviderProfile = selectedProviderRoute === null
+    ? null
+    : model.profiles.find((profile) => profile.routeId === selectedProviderRoute.id) ?? null;
+  const selectedProviderProfileId = selectedProviderProfile?.id ?? selectedProviderRoute?.id ?? "";
+  const selectedProviderConfig = selectedProviderProfileId.length === 0
+    ? null
+    : config.providers?.[selectedProviderProfileId] ?? null;
+  const selectedRouteNeedsUrl = selectedProviderRoute === null
+    ? false
+    : selectedProviderRoute.defaultBaseUrl === null
+      || selectedProviderRoute.catalogSection === "custom"
+      || selectedProviderRoute.localBackend !== null;
+  const selectedRouteAllowsAuth = selectedProviderRoute === null
+    ? false
+    : !selectedProviderRoute.authKind.startsWith("none");
+  const renderedModels = useMemo<readonly SettingsAiRenderedModelEntry[]>(() =>
+    (model.agentModelCatalog?.models ?? []).filter((entry) => entry.available),
+  [model.agentModelCatalog?.models]);
+  const hasConfiguredModels = renderedModels.length > 0;
+  const isProviderSearchMode = isAddingModel || !hasConfiguredModels;
+  const activeSearchValue = isProviderSearchMode ? providerQuery : query;
+  const activeSearchLabel = isProviderSearchMode ? labels.selectProviderLabel : labels.modelsTitle;
+  const activeSearchPlaceholder = isProviderSearchMode ? labels.selectProviderLabel : labels.modelsSearchPlaceholder;
+  const activeSearchLeading = isProviderSearchMode && selectedProviderRoute !== null ? (
+    <AgentProviderBrandIcon
+      label={selectedProviderRoute.label}
+      providerId={selectedProviderRoute.providerId}
+      routeId={selectedProviderRoute.id}
+    />
+  ) : undefined;
+  const filteredModels = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (normalizedQuery.length === 0) {
+      return renderedModels;
+    }
+    return renderedModels.filter((entry) =>
+      [
+        entry.label,
+        entry.model,
+        entry.providerLabel ?? "",
+        entry.providerKey ?? "",
+        entry.detail ?? "",
+      ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+    );
+  }, [query, renderedModels]);
+  const visibleModels = showAllModels
+    ? filteredModels
+    : filteredModels.slice(0, MODEL_PREVIEW_LIMIT);
+  const canShowAllModels = !showAllModels && filteredModels.length > MODEL_PREVIEW_LIMIT;
+  const providerRouteMatches = useMemo(() => {
+    if (providerQuery.trim().length === 0) {
+      return [];
+    }
+    const ranked = providerRoutes
+      .map((route, index) => ({
+        route,
+        score: providerRouteScore(route, providerQuery, index),
+      }))
+      .filter((entry) => entry.score > Number.NEGATIVE_INFINITY)
+      .sort((a, b) => b.score - a.score || a.route.label.localeCompare(b.route.label));
+    return ranked.map((entry) => entry.route);
+  }, [providerQuery, providerRoutes]);
+  const updateActiveSearch = (nextValue: string): void => {
+    if (isProviderSearchMode) {
+      setProviderQuery(nextValue);
+      if (selectedProviderRoute !== null) {
+        setSelectedProviderRouteId("");
+        setDiscoveredModelIds([]);
+        setIsAddingCustomModel(false);
+        setCustomModelId("");
+        setDisabledDiscoveredModelIds(new Set());
+        setIsDiscoveringModels(false);
+        setDiscoveryReturnedEmpty(false);
+      }
+      return;
+    }
+    setQuery(nextValue);
+  };
+  const discoveredModelEntries = useMemo(() =>
+    discoveredModelIds.map((id) => ({
+      id,
+      enabled: !disabledDiscoveredModelIds.has(id),
+    })),
+  [disabledDiscoveredModelIds, discoveredModelIds]);
+  const shouldShowDisableAllDiscoveredModels = discoveredModelIds.length > 3;
+  const allDiscoveredModelsDisabled =
+    discoveredModelIds.length > 0
+    && discoveredModelIds.every((id) => disabledDiscoveredModelIds.has(id));
+
+  useEffect(() => {
+    if (selectedProviderRoute === null) {
+      return;
+    }
+    setProviderBaseUrl(
+      selectedProviderProfile?.baseUrl
+      ?? selectedProviderConfig?.baseUrl
+      ?? selectedProviderRoute.defaultBaseUrl
+      ?? ""
+    );
+    setProviderApiKey("");
+    setDiscoveredModelIds([]);
+    setIsAddingCustomModel(false);
+    setCustomModelId("");
+    setDisabledDiscoveredModelIds(new Set());
+    setIsDiscoveringModels(false);
+    setDiscoveryReturnedEmpty(false);
+  }, [
+    selectedProviderConfig?.baseUrl,
+    selectedProviderProfile?.baseUrl,
+    selectedProviderRoute,
+  ]);
+
+  const setModelEnabled = (entry: SettingsAiRenderedModelEntry, enabled: boolean): void => {
+    const provider = modelProviderKeys(entry)[0] ?? "";
+    if (provider.length === 0) {
+      return;
+    }
+    void model.setAgentModelEnabled?.({
+      provider,
+      model: entry.model,
+      enabled,
+    });
+  };
+  const confirmDeleteModel = (entry: SettingsAiRenderedModelEntry): void => {
+    const provider = modelProviderKeys(entry)[0] ?? "";
+    if (provider.length === 0) {
+      return;
+    }
+    openDialog({
+      title: labels.modelsDeleteConfirmTitle,
+      description: formatSettingsAiLabel(labels.modelsDeleteConfirmDescription, {
+        model: entry.label,
+      }),
+      source: {
+        title: entry.label,
+        subtitle: [
+          entry.providerLabel ?? provider,
+          entry.detail ?? "",
+        ].filter((value) => value.length > 0).join(" · "),
+        iconLabel: "AI",
+        iconTone: "danger",
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: labels.cancel,
+        },
+        {
+          id: "delete",
+          label: labels.modelsDeleteConfirmAction,
+          tone: "danger",
+          onSelect: () => {
+            void model.deleteAgentModel?.({
+              provider,
+              model: entry.model,
+            });
+          },
+        },
+      ],
+    });
+  };
+  const getProviderProfileName = (): string => {
+    if (selectedProviderRoute === null) {
+      return "";
+    }
+    return selectedProviderProfileId.length === 0
+      ? selectedProviderRoute.id
+      : selectedProviderProfileId;
+  };
+  const buildProviderSaveRequest = (
+    models?: readonly { readonly id: string; readonly enabled: boolean }[]
+  ) => {
+    if (selectedProviderRoute === null) {
+      return null;
+    }
+    const profileName = getProviderProfileName();
+    const baseUrl = selectedRouteNeedsUrl
+      ? providerBaseUrl.trim()
+      : selectedProviderRoute.defaultBaseUrl ?? providerBaseUrl.trim();
+    const apiKey = providerApiKey.trim();
+    const hasNewSecret = apiKey.length > 0;
+
+    return {
+      profileName,
+      routeId: selectedProviderRoute.id,
+      baseUrl,
+      ...(hasNewSecret ? { apiKey } : {}),
+      defaultModel:
+        models?.find((entry) => entry.enabled)?.id
+        ?? models?.[0]?.id
+        ?? selectedProviderConfig?.defaultModel
+        ?? null,
+      auth: hasNewSecret ? "bearer" : "none",
+      authHeader: null,
+      setDefault: (model.agentModelCatalog?.models.length ?? 0) === 0,
+      ...(models === undefined ? {} : { models }),
+    } as const;
+  };
+  const discoverProviderModels = (): void => {
+    const saveRequest = buildProviderSaveRequest();
+    if (selectedProviderRoute === null || saveRequest === null) {
+      return;
+    }
+    const profileName = getProviderProfileName();
+    const previousModelEntries = [...(model.agentModelCatalog?.models ?? [])];
+    setIsDiscoveringModels(true);
+    setDiscoveryReturnedEmpty(false);
+    void (async () => {
+      try {
+        await model.saveAgentProviderProfile?.(saveRequest);
+        const catalog = await model.refreshAgentModels?.(profileName);
+        const discoveredIds = discoveredModelIdsFromCatalog(
+          catalog?.models ?? [],
+          profileName,
+          selectedProviderRoute,
+          previousModelEntries
+        );
+        setDiscoveredModelIds(discoveredIds);
+        setDisabledDiscoveredModelIds(new Set());
+        setDiscoveryReturnedEmpty(discoveredIds.length === 0);
+      } finally {
+        setIsDiscoveringModels(false);
+      }
+    })();
+  };
+  const saveDiscoveredProvider = (): void => {
+    if (discoveredModelEntries.length === 0) {
+      discoverProviderModels();
+      return;
+    }
+    const saveRequest = buildProviderSaveRequest(discoveredModelEntries);
+    if (saveRequest === null) {
+      return;
+    }
+    void (async () => {
+      await model.saveAgentProviderProfile?.(saveRequest);
+      await model.refreshAgentModelCatalog?.();
+      setIsAddingModel(false);
+      setSelectedProviderRouteId("");
+      setProviderQuery("");
+      setDiscoveredModelIds([]);
+      setIsAddingCustomModel(false);
+      setCustomModelId("");
+      setDisabledDiscoveredModelIds(new Set());
+    })();
+  };
+  const addCustomModel = (): void => {
+    const id = customModelId.trim();
+    if (id.length === 0) {
+      return;
+    }
+    setDiscoveredModelIds((current) => uniqueModelIds([...current, id]));
+    setDisabledDiscoveredModelIds((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    setCustomModelId("");
+    setIsAddingCustomModel(false);
+    setDiscoveryReturnedEmpty(false);
+  };
+  const toggleDiscoveredModel = (id: string, enabled: boolean): void => {
+    setDisabledDiscoveredModelIds((current) => {
+      const next = new Set(current);
+      if (enabled) {
+        next.delete(id);
+        return next;
+      }
+      next.add(id);
+      return next;
+    });
+  };
+  const toggleAllDiscoveredModels = (): void => {
+    setDisabledDiscoveredModelIds(
+      allDiscoveredModelsDisabled
+        ? new Set()
+        : new Set(discoveredModelIds)
+    );
+  };
+
+  return (
+    <section className="lyra-settings-ai-stack lyra-settings-ai-models-page">
+      <div className="lyra-settings-ai-models-panel">
+        <div className="lyra-settings-ai-page-header">
+          <AppSearchField
+            ariaLabel={activeSearchLabel}
+            className="lyra-settings-ai-model-search"
+            leading={activeSearchLeading}
+            placeholder={activeSearchPlaceholder}
+            value={activeSearchValue}
+            onValueChange={updateActiveSearch}
+          />
+          <AppButton
+            variant="outline"
+            size="sm"
+            className="lyra-settings-ai-action"
+            disabled={model.isSaving}
+            onClick={() => {
+              void model.refreshAgentModelCatalog?.();
+            }}
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+            {labels.refreshAgent}
+          </AppButton>
+          <AppButton
+            variant={isAddingModel ? "outline" : "default"}
+            size="sm"
+            className={[
+              "lyra-settings-ai-action",
+              isAddingModel ? "" : "lyra-settings-ai-action-primary",
+            ].filter(Boolean).join(" ")}
+            disabled={model.isSaving || providerRoutes.length === 0}
+            onClick={() => {
+              setIsAddingModel((value) => {
+                const nextValue = !value;
+                setProviderQuery("");
+                setSelectedProviderRouteId("");
+                if (!nextValue && !hasConfiguredModels) {
+                  setQuery("");
+                }
+                setDiscoveredModelIds([]);
+                setIsAddingCustomModel(false);
+                setCustomModelId("");
+                setDisabledDiscoveredModelIds(new Set());
+                setIsDiscoveringModels(false);
+                setDiscoveryReturnedEmpty(false);
+                return nextValue;
+              });
+            }}
+          >
+            {isAddingModel ? null : <Plus size={14} aria-hidden="true" />}
+            {isAddingModel ? labels.cancel : labels.modelsAddModel}
+          </AppButton>
+        </div>
+
+        {model.errorMessage === null ? null : (
+          <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
+            {model.errorMessage}
+          </AppStatusMessage>
+        )}
+
+        {isProviderSearchMode && (providerRouteMatches.length > 0 || selectedProviderRoute !== null) ? (
+          <div className="lyra-settings-ai-model-flow lyra-settings-ai-add-model">
+            <div className="lyra-settings-ai-provider-search-step">
+              {selectedProviderRoute !== null || providerRouteMatches.length === 0 ? null : (
+                <div className="lyra-settings-ai-provider-search-results">
+                  {providerRouteMatches.map((route) => (
+                    <AppObjectRow
+                      key={route.id}
+                      className={[
+                        "lyra-settings-ai-provider-tab",
+                        selectedProviderRouteId === route.id ? "lyra-settings-ai-provider-tab-active" : "",
+                      ].filter(Boolean).join(" ")}
+                      active={selectedProviderRouteId === route.id}
+                      disabled={model.isSaving}
+                      icon={(
+                        <AgentProviderBrandIcon
+                          label={route.label}
+                          providerId={route.providerId}
+                          routeId={route.id}
+                        />
+                      )}
+                      title={route.label}
+                      description={route.description}
+                      onClick={() => {
+                        setSelectedProviderRouteId(route.id);
+                        setProviderQuery(route.label);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedProviderRoute === null ? null : (
+              <>
+                <div className="lyra-settings-ai-form lyra-settings-ai-model-provider-form">
+                  {selectedRouteNeedsUrl ? (
+                    <SettingsAiInputField
+                      label={labels.urlLabel}
+                      type="text"
+                      placeholder={selectedProviderRoute.defaultBaseUrl ?? labels.urlPlaceholder}
+                      value={providerBaseUrl}
+                      onValueChange={setProviderBaseUrl}
+                    />
+                  ) : null}
+                  {selectedRouteAllowsAuth ? (
+                    <SettingsAiInputField
+                      label={labels.keyLabel}
+                      type="password"
+                      autoComplete="off"
+                      placeholder={labels.keyPlaceholder}
+                      value={providerApiKey}
+                      onValueChange={setProviderApiKey}
+                    />
+                  ) : null}
+                  <div className="lyra-settings-ai-field lyra-settings-ai-field-action lyra-settings-ai-model-discovery-actions">
+                    <span aria-hidden="true">&nbsp;</span>
+                    <span className="lyra-settings-ai-model-discovery-action-row">
+                      <AppButton
+                        variant="default"
+                        size="sm"
+                        className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+                        disabled={model.isSaving || isDiscoveringModels}
+                        onClick={discoveredModelIds.length === 0
+                          ? discoverProviderModels
+                          : saveDiscoveredProvider}
+                      >
+                        {discoveredModelIds.length === 0
+                          ? <RefreshCw size={14} aria-hidden="true" />
+                          : <Save size={14} aria-hidden="true" />}
+                        {isDiscoveringModels
+                          ? labels.modelsDiscoverModels
+                          : discoveredModelIds.length === 0 ? labels.modelsDiscoverModels : labels.saveProfile}
+                      </AppButton>
+                      <AppButton
+                        variant="ghost"
+                        size="sm"
+                        className="lyra-settings-ai-action"
+                        disabled={model.isSaving || isDiscoveringModels}
+                        onClick={() => {
+                          setIsAddingCustomModel((value) => !value);
+                          setCustomModelId("");
+                        }}
+                      >
+                        <Plus size={14} aria-hidden="true" />
+                        {labels.modelsCustomModel}
+                      </AppButton>
+                    </span>
+                  </div>
+                </div>
+
+                {discoveryReturnedEmpty ? (
+                  <AppStatusMessage className="lyra-settings-ai-error" tone="neutral">
+                    {labels.modelsDiscoverEmptyDescription}
+                  </AppStatusMessage>
+                ) : null}
+
+                {isAddingCustomModel ? (
+                  <div className="lyra-settings-ai-custom-model-row">
+                    <AppInput
+                      className="lyra-settings-ai-input"
+                      aria-label={labels.modelsCustomModel}
+                      placeholder={labels.modelsCustomModelPlaceholder}
+                      value={customModelId}
+                      onChange={(event) => {
+                        setCustomModelId(event.target.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addCustomModel();
+                        }
+                      }}
+                    />
+                    <AppButton
+                      variant="outline"
+                      size="sm"
+                      className="lyra-settings-ai-action"
+                      disabled={customModelId.trim().length === 0}
+                      onClick={addCustomModel}
+                    >
+                      {labels.modelsAddCustomModel}
+                    </AppButton>
+                  </div>
+                ) : null}
+
+                {discoveredModelIds.length === 0 ? null : (
+                  <div className="lyra-settings-ai-discovered-models">
+                    {shouldShowDisableAllDiscoveredModels ? (
+                      <div className="lyra-settings-ai-discovered-models-toolbar">
+                        <AppButton
+                          variant="ghost"
+                          size="sm"
+                          className="lyra-settings-ai-view-all-models"
+                          disabled={model.isSaving}
+                          onClick={toggleAllDiscoveredModels}
+                        >
+                          {allDiscoveredModelsDisabled ? labels.modelsEnableAll : labels.modelsDisableAll}
+                        </AppButton>
+                      </div>
+                    ) : null}
+                    <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+                      {discoveredModelIds.map((id) => (
+                        <AppObjectRow
+                          key={id}
+                          as="div"
+                          role="listitem"
+                          active={false}
+                          className="lyra-settings-ai-model-option lyra-settings-ai-model-option-static"
+                          icon={(
+                            <AgentProviderBrandIcon
+                              label={selectedProviderRoute.label}
+                              modelId={id}
+                              providerId={selectedProviderRoute.providerId}
+                              routeId={selectedProviderRoute.id}
+                            />
+                          )}
+                          title={id}
+                          description={selectedProviderRoute.label}
+                          actions={(
+                            <AppSwitch
+                              checked={!disabledDiscoveredModelIds.has(id)}
+                              disabled={model.isSaving}
+                              aria-label={id}
+                              onCheckedChange={(checked) => {
+                                toggleDiscoveredModel(id, checked);
+                              }}
+                            />
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {hasConfiguredModels && !isProviderSearchMode && filteredModels.length > 0 ? (
+          <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface">
+            <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+              {visibleModels.map((entry) => {
+                const active = isCurrentModelEntry(entry, model, config);
+                const disabled = model.isSaving || !entry.available;
+                const description = [
+                  entry.providerLabel ?? entry.providerKey ?? entry.provider ?? labels.noDefaultProvider,
+                  entry.detail ?? "",
+                ].filter((value) => value.length > 0).join(" · ");
+
+                return (
+                  <AppObjectRow
+                    key={entry.id}
+                    as="div"
+                    role="listitem"
+                    active={false}
+                    aria-disabled={disabled ? "true" : undefined}
+                    className={[
+                      "lyra-settings-ai-model-option",
+                      active ? "lyra-settings-ai-model-option-current" : "",
+                    ].filter(Boolean).join(" ")}
+                    icon={(
+                      <AgentProviderBrandIcon
+                        label={entry.providerLabel ?? entry.label}
+                        modelId={entry.model}
+                        provider={entry.provider}
+                        providerId={entry.providerId}
+                      />
+                    )}
+                    title={entry.label}
+                    description={description}
+                    meta={active ? labels.modelsCurrentLabel : undefined}
+                    actions={(
+                      <span className="lyra-settings-ai-model-actions">
+                        <AppIconButton
+                          aria-label={`${labels.modelsDeleteLabel}: ${entry.label}`}
+                          title={labels.modelsDeleteLabel}
+                          tone="danger"
+                          className="lyra-settings-ai-row-delete"
+                          disabled={disabled}
+                          onClick={() => {
+                            confirmDeleteModel(entry);
+                          }}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </AppIconButton>
+                        <AppSwitch
+                          checked={entry.enabled}
+                          disabled={disabled}
+                          aria-label={entry.label}
+                          onCheckedChange={(checked) => {
+                            setModelEnabled(entry, checked);
+                          }}
+                        />
+                      </span>
+                    )}
+                  />
+                );
+              })}
+              {canShowAllModels ? (
+                <AppButton
+                  variant="ghost"
+                  size="sm"
+                  className="lyra-settings-ai-view-all-models"
+                  onClick={() => {
+                    setShowAllModels(true);
+                  }}
+                >
+                  {labels.modelsViewAll}
+                </AppButton>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 };
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const config = asAgentConfig(model.agentConfig?.config);
-  const profiles = model.profiles;
-  const routeById = useMemo(
-    () => new Map((model.agentProviderCatalog?.routes ?? []).map((route) => [route.id, route])),
-    [model.agentProviderCatalog?.routes]
-  );
-  const accounts = model.agentAccounts?.accounts ?? [];
   const loginProviders = model.agentLoginProviders?.providers ?? [];
   const googleLoginProvider = loginProviders.find((provider) => provider.id === "google");
   const oauthLoginProviders = loginProviders.filter((provider) =>
     provider.requiresCallback && provider.id !== "google"
   );
-  const quickSetupRoutes = model.quickSetupRoutes;
-  const localRoutes = model.localRoutes;
-  const defaultProviderName = model.defaultProfileId ?? config.provider?.defaultProvider ?? "";
-  const defaultProfile = profiles.find((profile) => profile.id === defaultProviderName) ?? null;
-  const defaultProviderConfig = config.providers?.[defaultProviderName] ?? null;
-  const [selectedApiKeyProvider, setSelectedApiKeyProvider] = useState("openai");
-  const [profileName, setProfileName] = useState("openai");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [defaultModel, setDefaultModel] = useState("");
-  const [authHeader, setAuthHeader] = useState("");
-  const [selectedLocalProvider, setSelectedLocalProvider] = useState("");
-  const [localProfileName, setLocalProfileName] = useState("");
-  const [localBaseUrl, setLocalBaseUrl] = useState("");
-  const [localApiKey, setLocalApiKey] = useState("");
-  const [localDefaultModel, setLocalDefaultModel] = useState("");
-  const [localAuthHeader, setLocalAuthHeader] = useState("");
-  const [localModelIds, setLocalModelIds] = useState("");
-  const [localSupportsImageInput, setLocalSupportsImageInput] = useState(true);
-  const [localSupportsToolCalling, setLocalSupportsToolCalling] = useState(true);
-  const [localSupportsStreaming, setLocalSupportsStreaming] = useState(true);
   const [pendingLogin, setPendingLogin] = useState<{
     readonly provider: string;
     readonly label?: string | null;
@@ -277,49 +1181,8 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const [discordChannelId, setDiscordChannelId] = useState("");
   const [discordBotUserId, setDiscordBotUserId] = useState("");
   const [discordReplyEnabled, setDiscordReplyEnabled] = useState(false);
-  const selectedQuickSetupRoute = quickSetupRoutes.find((route) => route.id === selectedApiKeyProvider) ?? null;
-  const selectedQuickSetupProfile = selectedQuickSetupRoute === null
-    ? null
-    : profiles.find((profile) => profile.routeId === selectedQuickSetupRoute.id) ?? null;
-  const selectedLocalRoute = localRoutes.find((route) => route.id === selectedLocalProvider) ?? null;
-  const selectedLocalProfile = selectedLocalRoute === null
-    ? null
-    : profiles.find((profile) => profile.routeId === selectedLocalRoute.id) ?? null;
-  const selectedLocalConfig = selectedLocalProfile === null
-    ? null
-    : config.providers?.[selectedLocalProfile.id] ?? null;
 
   useEffect(() => {
-    if (
-      quickSetupRoutes.length > 0
-      && !quickSetupRoutes.some((route) => route.id === selectedApiKeyProvider)
-    ) {
-      setSelectedApiKeyProvider(quickSetupRoutes[0]?.id ?? "");
-    }
-  }, [quickSetupRoutes, selectedApiKeyProvider]);
-
-  useEffect(() => {
-    if (
-      localRoutes.length > 0
-      && !localRoutes.some((route) => route.id === selectedLocalProvider)
-    ) {
-      setSelectedLocalProvider(localRoutes[0]?.id ?? "");
-    }
-  }, [localRoutes, selectedLocalProvider]);
-
-  useEffect(() => {
-    const editableProfile = selectedQuickSetupProfile;
-    const editableRoute = selectedQuickSetupRoute;
-    setProfileName(editableProfile?.id ?? editableRoute?.id ?? defaultProviderName);
-    setBaseUrl(editableProfile?.baseUrl ?? editableRoute?.defaultBaseUrl ?? "");
-    setDefaultModel(
-      editableProfile?.defaultModel
-      ?? defaultProviderConfig?.defaultModel
-      ?? defaultProfile?.defaultModel
-      ?? ""
-    );
-    setAuthHeader(editableProfile?.authHeader ?? "");
-    setApiKey("");
     setSwarmModel(config.roles?.swarmModel ?? "");
     setReviewModel(config.roles?.reviewModel ?? "");
     setJudgeModel(config.roles?.judgeModel ?? "");
@@ -365,390 +1228,20 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
     config.notifications?.telegramChatId,
     config.notifications?.telegramEnabled,
     config.notifications?.telegramReplyEnabled,
-    config.provider?.defaultModel,
     config.roles?.ambientModel,
     config.roles?.judgeModel,
     config.roles?.memoryModel,
     config.roles?.reviewModel,
     config.roles?.swarmModel,
-    defaultProfile?.defaultModel,
-    defaultProviderConfig?.defaultModel,
-    defaultProviderName,
-    selectedQuickSetupProfile?.authHeader,
-    selectedQuickSetupProfile?.baseUrl,
-    selectedQuickSetupProfile?.defaultModel,
-    selectedQuickSetupProfile?.id,
-    selectedQuickSetupRoute?.defaultBaseUrl,
-    selectedQuickSetupRoute?.id,
   ]);
-
-  useEffect(() => {
-    const editableProfile = selectedLocalProfile;
-    const editableRoute = selectedLocalRoute;
-    const providerModels = selectedLocalConfig?.models ?? [];
-    setLocalProfileName(editableProfile?.id ?? editableRoute?.id ?? "");
-    setLocalBaseUrl(editableProfile?.baseUrl ?? editableRoute?.defaultBaseUrl ?? "");
-    setLocalDefaultModel(
-      editableProfile?.defaultModel
-      ?? selectedLocalConfig?.defaultModel
-      ?? ""
-    );
-    setLocalAuthHeader(editableProfile?.authHeader ?? "");
-    setLocalApiKey("");
-    setLocalModelIds(
-      providerModels
-        .map((entry) => entry.id?.trim() ?? "")
-        .filter((id) => id.length > 0)
-        .join("\n")
-    );
-    setLocalSupportsImageInput(editableProfile?.capabilities.supportsImageInput ?? true);
-    setLocalSupportsToolCalling(editableProfile?.capabilities.supportsToolCalling ?? true);
-    setLocalSupportsStreaming(editableProfile?.capabilities.supportsStreaming ?? true);
-  }, [
-    selectedLocalConfig?.defaultModel,
-    selectedLocalConfig?.models,
-    selectedLocalProfile?.authHeader,
-    selectedLocalProfile?.baseUrl,
-    selectedLocalProfile?.capabilities.supportsImageInput,
-    selectedLocalProfile?.capabilities.supportsStreaming,
-    selectedLocalProfile?.capabilities.supportsToolCalling,
-    selectedLocalProfile?.defaultModel,
-    selectedLocalProfile?.id,
-    selectedLocalRoute?.defaultBaseUrl,
-    selectedLocalRoute?.id,
-  ]);
-
-  const localModelEntries = useMemo(() => {
-    const ids = uniqueModelIds(
-      splitModelIds(localModelIds),
-      localDefaultModel.trim().length === 0 ? [] : [localDefaultModel.trim()],
-    );
-    return ids.map((id) => ({
-      id,
-      supportsImageInput: localSupportsImageInput,
-      supportsToolCalling: localSupportsToolCalling,
-      supportsStreaming: localSupportsStreaming,
-    }));
-  }, [
-    localDefaultModel,
-    localModelIds,
-    localSupportsImageInput,
-    localSupportsStreaming,
-    localSupportsToolCalling,
-  ]);
-
-  const buildLocalProviderProfileRequest = () => {
-    if (selectedLocalRoute === null) return null;
-    const profile = localProfileName.trim().length === 0
-      ? selectedLocalRoute.id
-      : localProfileName.trim();
-    return {
-      profileName: profile,
-      routeId: selectedLocalRoute.id,
-      baseUrl: localBaseUrl.trim().length === 0
-        ? selectedLocalRoute.defaultBaseUrl ?? ""
-        : localBaseUrl.trim(),
-      apiKey: localApiKey.trim().length === 0 ? null : localApiKey,
-      defaultModel: localDefaultModel.trim().length === 0 ? null : localDefaultModel.trim(),
-      auth: localAuthHeader.trim().length > 0
-        ? "header" as const
-        : localApiKey.trim().length > 0
-          ? "bearer" as const
-          : "none" as const,
-      authHeader: localAuthHeader.trim().length === 0 ? null : localAuthHeader.trim(),
-      setDefault: true,
-      models: localModelEntries,
-    };
-  };
 
   return (
     <section className="lyra-settings-ai-stack">
-      <header className="lyra-settings-ai-page-header">
-        <h3>{labels.profilesTitle}</h3>
-        <AppButton
-          variant="outline"
-          size="sm"
-          className="lyra-settings-ai-action"
-          onClick={() => {
-            void model.openAgentConfigFile?.();
-          }}
-        >
-          <FilePenLine size={14} aria-hidden="true" />
-          {labels.openConfigFile}
-        </AppButton>
-        <AppButton
-          variant="outline"
-          size="sm"
-          className="lyra-settings-ai-action"
-          onClick={() => {
-            void model.refreshAgent?.();
-          }}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-          {labels.refreshAgent}
-        </AppButton>
-      </header>
-
-      <div className="lyra-settings-ai-profile-grid">
-        <div className="lyra-settings-ai-provider-list" aria-label={labels.agentConfigAriaLabel}>
-          <div className="lyra-settings-ai-provider-row">
-            <AppObjectRow
-              as="div"
-              active
-              className="lyra-settings-ai-provider-tab lyra-settings-ai-provider-tab-active"
-              title={defaultProfile?.label ?? defaultProviderName ?? labels.providerAutoFallback}
-              description={defaultProfile?.defaultModel ?? config.provider?.defaultModel ?? labels.defaultModelFallback}
-            />
-          </div>
-        </div>
-
-        <div className="lyra-settings-ai-provider-models">
-          <div className="lyra-settings-ai-model-row">
-            <AppObjectRow
-              className="lyra-settings-ai-model-card lyra-settings-ai-model-card-active"
-              active
-              meta={labels.configFileTitle}
-              title={model.agentConfig?.configPath ?? "~/.lyra/modules/agent/state.json"}
-              description={model.agentConfig?.agentHome ?? labels.configFileDescription}
-              onClick={() => {
-                void model.openAgentConfigFile?.();
-              }}
-            />
-          </div>
-          {profiles.map((profile) => {
-            const route = routeById.get(profile.routeId) ?? null;
-            return (
-              <div key={profile.id} className="lyra-settings-ai-model-row">
-              <AppObjectRow
-                className="lyra-settings-ai-model-card"
-                title={profile.id}
-                description={[
-                  route?.label ?? profile.routeId,
-                  profile.defaultModel ?? profile.baseUrl ?? labels.customProviderFallback,
-                ].filter((value) => value !== null && value !== "").join(" · ")}
-                onClick={() => {
-                  void model.setDefaultProfile(profile.id);
-                }}
-              />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="lyra-settings-ai-inline-editor">
-        <header className="lyra-settings-ai-inline-editor-header">
-          <span className="lyra-settings-ai-inline-editor-title-copy">
-            <h3>{labels.localProviderTitle}</h3>
-            <small>{labels.localProviderDescription}</small>
-          </span>
-        </header>
-
-        {localRoutes.length === 0 ? (
-          <AppEmptyState
-            align="start"
-            density="compact"
-            className="lyra-settings-ai-empty"
-            title={labels.emptyTitle}
-            description={labels.emptyDescription}
-          />
-        ) : (
-          <>
-            <div className="lyra-settings-ai-api-provider-strip">
-              {localRoutes.map((route) => (
-                <AppObjectRow
-                  key={route.id}
-                  className={[
-                    "lyra-settings-ai-provider-tab",
-                    selectedLocalProvider === route.id ? "lyra-settings-ai-provider-tab-active" : "",
-                  ].filter(Boolean).join(" ")}
-                  active={selectedLocalProvider === route.id}
-                  disabled={model.isSaving}
-                  icon={<KeyRound size={13} aria-hidden="true" />}
-                  title={route.label}
-                  description={route.description}
-                  onClick={() => {
-                    setSelectedLocalProvider(route.id);
-                  }}
-                />
-              ))}
-            </div>
-
-            <div className="lyra-settings-ai-form">
-              <SettingsAiInputField
-                label={labels.profileNameLabel}
-                type="text"
-                value={localProfileName}
-                onValueChange={setLocalProfileName}
-              />
-              <SettingsAiInputField
-                label={labels.urlLabel}
-                type="text"
-                placeholder={selectedLocalRoute?.defaultBaseUrl ?? labels.urlPlaceholder}
-                value={localBaseUrl}
-                onValueChange={setLocalBaseUrl}
-              />
-              <SettingsAiInputField
-                label={labels.mainModelLabel}
-                type="text"
-                placeholder={labels.modelPlaceholder}
-                value={localDefaultModel}
-                onValueChange={setLocalDefaultModel}
-              />
-              <SettingsAiInputField
-                label={labels.authHeaderLabel}
-                type="text"
-                placeholder="Authorization"
-                value={localAuthHeader}
-                onValueChange={setLocalAuthHeader}
-              />
-              <SettingsAiInputField
-                label={labels.keyLabel}
-                type="password"
-                autoComplete="off"
-                placeholder={labels.keyPlaceholder}
-                value={localApiKey}
-                onValueChange={setLocalApiKey}
-              />
-              <SettingsAiTextareaField
-                className="lyra-settings-ai-field-span-2"
-                label={labels.localModelsLabel}
-                placeholder={labels.localModelsPlaceholder}
-                value={localModelIds}
-                onValueChange={setLocalModelIds}
-              />
-              <div className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
-                <span>{labels.localCapabilitiesTitle}</span>
-                <SettingsAiSwitchRow
-                  checked={localSupportsImageInput}
-                  label={labels.localSupportsImageInput}
-                  onCheckedChange={setLocalSupportsImageInput}
-                />
-                <SettingsAiSwitchRow
-                  checked={localSupportsToolCalling}
-                  label={labels.localSupportsToolCalling}
-                  onCheckedChange={setLocalSupportsToolCalling}
-                />
-                <SettingsAiSwitchRow
-                  checked={localSupportsStreaming}
-                  label={labels.localSupportsStreaming}
-                  onCheckedChange={setLocalSupportsStreaming}
-                />
-              </div>
-            </div>
-
-            <footer className="lyra-settings-ai-inline-editor-footer">
-              <span className="lyra-settings-ai-actions">
-                <AppButton
-                  variant="outline"
-                  size="sm"
-                  className="lyra-settings-ai-action"
-                  disabled={model.isSaving || selectedLocalRoute === null}
-                  onClick={() => {
-                    const request = buildLocalProviderProfileRequest();
-                    if (request === null) return;
-                    void model.saveAgentProviderProfile?.(request);
-                  }}
-                >
-                  <Save size={14} aria-hidden="true" />
-                  {labels.saveProfile}
-                </AppButton>
-                <AppButton
-                  variant="default"
-                  size="sm"
-                  className="lyra-settings-ai-action lyra-settings-ai-action-primary"
-                  disabled={model.isSaving || selectedLocalRoute === null}
-                  onClick={() => {
-                    const request = buildLocalProviderProfileRequest();
-                    if (request === null) return;
-                    void (async () => {
-                      await model.saveAgentProviderProfile?.(request);
-                      await model.refreshAgentModels?.(request.profileName);
-                    })();
-                  }}
-                >
-                  <RefreshCw size={14} aria-hidden="true" />
-                  {labels.saveAndDiscoverModels}
-                </AppButton>
-              </span>
-            </footer>
-          </>
-        )}
-      </div>
-
-      <div className="lyra-settings-ai-inline-editor">
-        <header className="lyra-settings-ai-inline-editor-header">
-          <span className="lyra-settings-ai-inline-editor-title-copy">
-            <h3>{labels.accountsTitle}</h3>
-            <small>
-              {model.agentAccounts?.defaultProvider ?? labels.noDefaultProvider} ·{" "}
-              {model.agentAccounts?.defaultModel ?? labels.noDefaultModel}
-            </small>
-          </span>
-        </header>
-
-        <div className="lyra-settings-ai-provider-list" aria-label={labels.accountsAriaLabel}>
-          {accounts.length === 0 ? (
-            <AppEmptyState
-              align="start"
-              density="compact"
-              className="lyra-settings-ai-empty"
-              title={labels.accountsEmptyTitle}
-              description={labels.accountsEmptyDescription}
-            />
-          ) : (
-            accounts.map((account) => {
-              const disabled = model.isSaving || account.active || account.provider === "google";
-              const switchAccount = (): void => {
-                if (disabled) return;
-                void model.switchAgentAccount?.({
-                  provider: account.provider,
-                  label: account.label,
-                });
-              };
-
-              return (
-                <div key={`${account.provider}:${account.label}`} className="lyra-settings-ai-provider-row">
-                  <AppObjectRow
-                    as="div"
-                    role="button"
-                    tabIndex={disabled ? -1 : 0}
-                    active={account.active}
-                    aria-disabled={disabled ? "true" : undefined}
-                    className={[
-                      "lyra-settings-ai-provider-tab",
-                      account.active ? "lyra-settings-ai-provider-tab-active" : "",
-                    ].filter(Boolean).join(" ")}
-                    icon={account.active ? <Check size={14} aria-hidden="true" /> : undefined}
-                    title={account.label}
-                    description={`${account.provider} · ${account.kind} · ${
-                      account.configured ? labels.accountConfigured : labels.accountNotConfigured
-                    }${account.detail ? ` · ${account.detail}` : ""}`}
-                    actions={(
-                      <AppIconButton
-                        tone="danger"
-                        className="lyra-settings-ai-row-delete"
-                        aria-label={`${labels.removeAccount}: ${account.label}`}
-                        disabled={model.isSaving}
-                        onClick={() => {
-                          void model.removeAgentAccount?.({
-                            provider: account.provider,
-                            label: account.label,
-                          });
-                        }}
-                      >
-                        <Trash2 size={13} aria-hidden="true" />
-                      </AppIconButton>
-                    )}
-                    onClick={switchAccount}
-                    onKeyDown={(event) => activateRowFromKeyboard(event, switchAccount)}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+      {model.errorMessage === null ? null : (
+        <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
+          {model.errorMessage}
+        </AppStatusMessage>
+      )}
 
       <div className="lyra-settings-ai-inline-editor">
         <header className="lyra-settings-ai-inline-editor-header">
@@ -767,7 +1260,13 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
                 provider.configured ? "lyra-settings-ai-login-provider-configured" : "",
               ].filter(Boolean).join(" ")}
               disabled={model.isSaving}
-              icon={<LogIn size={14} aria-hidden="true" />}
+              icon={(
+                <AgentProviderBrandIcon
+                  label={provider.displayName}
+                  provider={provider.id}
+                  providerId={provider.id}
+                />
+              )}
               title={provider.displayName}
               description={`${provider.authKind} · ${provider.configured ? labels.accountConfigured : labels.accountNotConfigured}`}
               meta={<ExternalLink size={13} aria-hidden="true" />}
@@ -916,107 +1415,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             </footer>
           </div>
         )}
-      </div>
-
-      <div className="lyra-settings-ai-inline-editor">
-        <header className="lyra-settings-ai-inline-editor-header">
-          <span className="lyra-settings-ai-inline-editor-title-copy">
-            <h3>{labels.apiKeyProviderTitle}</h3>
-            <small>{labels.apiKeyProviderDescription}</small>
-          </span>
-        </header>
-
-        <div className="lyra-settings-ai-api-provider-strip">
-          {quickSetupRoutes.map((route) => (
-            <AppObjectRow
-              key={route.id}
-              className={[
-                "lyra-settings-ai-provider-tab",
-                selectedApiKeyProvider === route.id ? "lyra-settings-ai-provider-tab-active" : "",
-              ].filter(Boolean).join(" ")}
-              active={selectedApiKeyProvider === route.id}
-              disabled={model.isSaving}
-              icon={<KeyRound size={13} aria-hidden="true" />}
-              title={route.label}
-              description={route.description}
-              onClick={() => {
-                setSelectedApiKeyProvider(route.id);
-              }}
-            />
-          ))}
-        </div>
-
-        <div className="lyra-settings-ai-form">
-          <SettingsAiInputField
-            label={labels.profileNameLabel}
-            type="text"
-            value={profileName}
-            onValueChange={setProfileName}
-          />
-          <SettingsAiInputField
-            label={labels.urlLabel}
-            type="text"
-            placeholder={selectedQuickSetupRoute?.defaultBaseUrl ?? labels.urlPlaceholder}
-            value={baseUrl}
-            onValueChange={setBaseUrl}
-          />
-          <SettingsAiInputField
-            label={labels.mainModelLabel}
-            type="text"
-            placeholder={labels.modelPlaceholder}
-            value={defaultModel}
-            onValueChange={setDefaultModel}
-          />
-          <SettingsAiInputField
-            label={labels.authHeaderLabel}
-            type="text"
-            placeholder="Authorization"
-            value={authHeader}
-            onValueChange={setAuthHeader}
-          />
-          <SettingsAiInputField
-            label={labels.keyLabel}
-            type="password"
-            autoComplete="off"
-            placeholder={labels.keyPlaceholder}
-            value={apiKey}
-            onValueChange={setApiKey}
-          />
-        </div>
-
-        {model.errorMessage === null ? null : (
-          <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
-            {model.errorMessage}
-          </AppStatusMessage>
-        )}
-
-        <footer className="lyra-settings-ai-inline-editor-footer">
-          <span className="lyra-settings-ai-actions">
-            <AppButton
-              variant="default"
-              size="sm"
-              className="lyra-settings-ai-action lyra-settings-ai-action-primary"
-              disabled={model.isSaving || selectedApiKeyProvider.length === 0}
-              onClick={() => {
-                void model.saveAgentProviderProfile?.({
-                  profileName,
-                  routeId: selectedApiKeyProvider,
-                  baseUrl: baseUrl.trim().length === 0
-                    ? selectedQuickSetupRoute?.defaultBaseUrl ?? ""
-                    : baseUrl,
-                  apiKey: apiKey.trim().length === 0 ? null : apiKey,
-                  defaultModel: defaultModel.trim().length === 0 ? null : defaultModel,
-                  auth: authHeader.trim().length === 0 ? "bearer" : "header",
-                  authHeader: authHeader.trim().length === 0 ? null : authHeader,
-                  setDefault: true,
-                });
-              }}
-            >
-              <Save size={14} aria-hidden="true" />
-              {labels.saveProfile}
-            </AppButton>
-          </span>
-        </footer>
       </div>
 
       <div className="lyra-settings-ai-inline-editor">

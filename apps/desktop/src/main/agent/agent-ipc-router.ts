@@ -18,6 +18,8 @@ import type {
   AgentPermissionPolicySetModeRequest,
   AgentPermissionPolicySnapshot,
   AgentPermissionRespondRequest,
+  AgentMessageResolveRequest,
+  AgentMessageResolveResponse,
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
   AgentRollbackRestoreResponse,
@@ -60,6 +62,8 @@ import type {
   AgentGoalsRequest,
   AgentGoalsResponse,
   AgentLoginProviderCatalogSnapshot,
+  AgentModelDeleteRequest,
+  AgentModelEnableRequest,
   AgentModelRefreshRequest,
   AgentModelCatalogRequest,
   AgentModelCatalogSnapshot,
@@ -342,6 +346,14 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
+      LYRA_CHANNELS.agentMessageResolve,
+      (_event, payload) =>
+        requestRuntime<AgentMessageResolveResponse>(
+          "agent.message.resolve",
+          payload as AgentMessageResolveRequest
+        )
+    ],
+    [
       LYRA_CHANNELS.agentGitStatus,
       (_event, payload) =>
         requestRuntime<AgentGitStatusSnapshot>(
@@ -451,6 +463,22 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentModelCatalogSnapshot>(
           "agent.models.switch",
           payload as AgentModelSwitchRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentModelEnable,
+      (_event, payload) =>
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.enable",
+          payload as AgentModelEnableRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentModelDelete,
+      (_event, payload) =>
+        requestRuntime<AgentModelCatalogSnapshot>(
+          "agent.models.delete",
+          payload as AgentModelDeleteRequest
         )
     ],
     [

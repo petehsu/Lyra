@@ -175,12 +175,25 @@ pub(crate) fn session_workspace_root(session_id: &str) -> Result<PathBuf, Native
             (project_bound, working_dir)
         })
         .unwrap_or((false, String::new()));
+    // A session that is not bound to a project (the user sent a message without
+    // choosing a directory) defaults to the user's home directory, mirroring the
+    // shell tool's `shell_base_dir` fallback. This keeps shell and filesystem
+    // tools operating in the same place instead of rejecting fs work outright.
     if !project_bound || working_dir.is_empty() {
-        return Err(NativeToolFailure::new(
-            "workspace_unbound",
-            "session is not bound to a project",
-            "Bind the session to an existing project root and retry.",
-        ));
+        let home = dirs::home_dir().ok_or_else(|| {
+            NativeToolFailure::new(
+                "workspace_unbound",
+                "session is not bound to a project and the home directory is unavailable",
+                "Bind the session to an existing project root and retry.",
+            )
+        })?;
+        return home.canonicalize().map_err(|error| {
+            NativeToolFailure::new(
+                "workspace_root_unavailable",
+                format!("failed to canonicalize home workspace root: {error}"),
+                "Bind the session to an existing project root and retry.",
+            )
+        });
     }
     let root = PathBuf::from(working_dir);
     let root = if root.exists() {

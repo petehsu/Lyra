@@ -111,8 +111,14 @@ pub(crate) fn signed_json_request(
         credentials.access_key_id, credential_scope, signed_headers, signature
     );
 
+    let method = method.to_ascii_uppercase();
     let mut request = client
-        .post(url)
+        .request(
+            method.parse().map_err(|error| {
+                AgentRuntimeError::Core(format!("invalid AWS request method `{method}`: {error}"))
+            })?,
+            url,
+        )
         .header("content-type", "application/json")
         .header("host", host)
         .header("x-amz-date", amz_date)

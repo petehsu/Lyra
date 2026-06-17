@@ -31,6 +31,7 @@ export type BrowserTabStripRenderModel = {
   readonly navStyle?: CSSProperties | undefined;
   readonly stripClassName: string;
   readonly addButtonStyle?: CSSProperties | undefined;
+  readonly listSpacerStyle?: CSSProperties | undefined;
   readonly tabs: readonly BrowserTabStripTabModel[];
   readonly preview: BrowserTabStripPreviewModel | null;
 };
@@ -173,6 +174,9 @@ export const createBrowserTabStripRenderModel = ({
     addButtonStyle: layout === undefined
       ? undefined
       : { transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` },
+    listSpacerStyle: layout === undefined
+      ? undefined
+      : { width: `${Math.ceil(Math.max(layout.contentWidth, layout.totalTabsWidth))}px` },
     tabs: tabModels,
     preview
   };

@@ -45,7 +45,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ResponsesStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let buffer_assistant_text = !commit_assistant_text || !tools.is_empty();
+    let buffer_assistant_text = !tools.is_empty();
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst)
@@ -106,22 +106,23 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
     let mut reply = ModelReply {
         content,
         reasoning_content: None,
         tool_calls,
-        ui_message_id: ui_message_id.filter(|id| !id.is_empty()),
+        ui_message_id: streamed_message_id.clone(),
         provider_replay_items: replay_items,
     };
-    if commit_assistant_text
-        && buffer_assistant_text
-        && let Some(content) = reply
-            .content
-            .as_ref()
-            .filter(|content| !content.trim().is_empty())
-    {
-        reply.ui_message_id =
-            crate::native_backend::turns::emit_assistant_text(session_id, turn_id, content);
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
     }
     Ok(reply)
 }

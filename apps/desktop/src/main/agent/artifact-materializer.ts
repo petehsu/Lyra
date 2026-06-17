@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
@@ -41,10 +41,10 @@ const safeImageAttachmentStem = (request: AgentImageAttachmentMaterializeRequest
   return sanitized.length === 0 ? "agent-image" : sanitized;
 };
 
-export const materializeImageAttachment = (
+export const materializeImageAttachment = async (
   storageRoot: string,
   request: AgentImageAttachmentMaterializeRequest
-): AgentImageAttachmentMaterializeResponse => {
+): Promise<AgentImageAttachmentMaterializeResponse> => {
   const mediaType = request.mediaType.trim().toLowerCase();
   if (!mediaType.startsWith("image/")) {
     throw new Error("Only image attachments can be materialized.");
@@ -61,16 +61,16 @@ export const materializeImageAttachment = (
   }
 
   const directory = join(storageRoot, "message-images");
-  mkdirSync(directory, { recursive: true });
+  await mkdir(directory, { recursive: true });
   const filePath = join(
     directory,
     `${Date.now()}-${randomUUID()}-${safeImageAttachmentStem(request)}.${extensionForImageMediaType(mediaType)}`
   );
-  writeFileSync(filePath, buffer);
+  await writeFile(filePath, buffer);
   return { path: filePath };
 };
 
-export const materializeLumenCapture = (
+export const materializeLumenCapture = async (
   storageRoot: string,
   tabId: string,
   capture: {
@@ -90,7 +90,7 @@ export const materializeLumenCapture = (
     throw new Error("Lumen visual capture size is invalid.");
   }
   const directory = join(storageRoot, "lumen-evidence");
-  mkdirSync(directory, { recursive: true });
+  await mkdir(directory, { recursive: true });
   const artifactId = `lumen-see-${Date.now()}-${randomUUID()}`;
   const sanitizedTabId = tabId
     .replace(/[^A-Za-z0-9._-]+/gu, "-")
@@ -100,7 +100,7 @@ export const materializeLumenCapture = (
     directory,
     `${artifactId}-${sanitizedTabId}.${extensionForImageMediaType(mediaType)}`
   );
-  writeFileSync(filePath, buffer);
+  await writeFile(filePath, buffer);
   return {
     id: artifactId,
     kind: "image",

@@ -813,6 +813,9 @@ export type WorkbenchBrowserViewManager = {
   readonly goBack: (tabId: string) => void;
   readonly goForward: (tabId: string) => void;
   readonly reload: (tabId: string, ignoreCache?: boolean) => void;
+  readonly runPageContextAction: (
+    request: import("../../shared/workbench-browser").WorkbenchBrowserExecutePageContextActionRequest
+  ) => void;
   readonly stop: (tabId: string) => void;
   readonly readPageState: (
     request?: WorkbenchBrowserReadPageStateRequest
@@ -837,6 +840,13 @@ export type WorkbenchBrowserViewManager = {
     snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly readActiveTabId: () => string | null;
+  readonly resolvePageDragContextFromWebContents: (
+    webContents: import("electron").WebContents
+  ) => {
+    readonly tabId: string;
+    readonly pageUrl: string;
+    readonly pageTitle: string;
+  } | null;
   readonly listFrames: (tabId: string) => readonly WorkbenchBrowserFrameDescriptor[];
   readonly probeFrameDom: (
     tabId: string,

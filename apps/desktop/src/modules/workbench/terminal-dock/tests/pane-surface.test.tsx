@@ -1,6 +1,7 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { clearBulkTerminalRestoreStateForTests } from "../bulk-terminal-restore";
 import {
   clearTerminalRendererStateForTests,
   TerminalPaneSurface
@@ -71,6 +72,31 @@ const createProps = (): TerminalPaneSurfaceProps => ({
         truncated: false
       })),
       reloadPrompt: vi.fn(async () => ({ applied: true, deferred: false })),
+      readOutputRange: vi.fn(async () => ({
+        sessionId: "session-1",
+        raw: false,
+        encoding: "utf8",
+        requestedRange: { start: 0, end: 1 },
+        range: { start: 0, end: 0 },
+        nextStart: 0,
+        byteLength: 0,
+        totalBytes: 0,
+        output: "",
+        truncated: false,
+        memory: {
+          eventLogPath: "/tmp/events.jsonl",
+          summaryPath: "/tmp/summary.json",
+          uiTimelinePath: "/tmp/timeline.jsonl",
+          outputTextPath: "/tmp/output.txt",
+          rawOutputPath: "/tmp/output.raw",
+          lineIndexPath: "/tmp/lines.jsonl",
+          errorIndexPath: "/tmp/errors.jsonl",
+          commandsPath: "/tmp/commands.jsonl",
+          outputByteRange: { start: 0, end: 0 },
+          estimatedTokens: 0,
+          truncatedByProjection: false
+        }
+      })),
       resize: vi.fn(async () => undefined),
       signalProcess: vi.fn(async () => ({
         sessionId: "session-1",
@@ -120,6 +146,7 @@ const getTerminalInstances = async (): Promise<Array<{
 
 describe("terminal pane surface", () => {
   afterEach(async () => {
+    clearBulkTerminalRestoreStateForTests();
     clearTerminalRendererStateForTests();
     const terminalInstances = await getTerminalInstances();
     terminalInstances.length = 0;
@@ -156,6 +183,80 @@ describe("terminal pane surface", () => {
     expect(document.querySelector(".lyra-terminal-pane-product-status")).toBeNull();
     expect(document.querySelector(".lyra-terminal-agent-status")).toBeNull();
     expect(document.querySelector(".lyra-terminal-renderer-diagnostics")).toBeNull();
+  });
+
+  test("replays persisted raw scrollback after session attach", async () => {
+    const props = createProps();
+    const terminalApi = props.desktopApi?.terminal as unknown as {
+      readOutputRange: ReturnType<typeof vi.fn>;
+    };
+    terminalApi.readOutputRange = vi.fn(async (request: { readonly start: number; readonly end: number }) => {
+      if (request.end <= 1) {
+        return {
+          sessionId: "session-1",
+          raw: false,
+          encoding: "utf8",
+          requestedRange: { start: 0, end: 1 },
+          range: { start: 0, end: 1 },
+          nextStart: 1,
+          byteLength: 1,
+          totalBytes: 18,
+          output: "p",
+          truncated: false,
+          memory: {
+            eventLogPath: "/tmp/events.jsonl",
+            summaryPath: "/tmp/summary.json",
+            uiTimelinePath: "/tmp/timeline.jsonl",
+            outputTextPath: "/tmp/output.txt",
+            rawOutputPath: "/tmp/output.raw",
+            lineIndexPath: "/tmp/lines.jsonl",
+            errorIndexPath: "/tmp/errors.jsonl",
+            commandsPath: "/tmp/commands.jsonl",
+            outputByteRange: { start: 0, end: 18 },
+            estimatedTokens: 4,
+            truncatedByProjection: false
+          }
+        };
+      }
+      return {
+        sessionId: "session-1",
+        raw: false,
+        encoding: "utf8",
+        requestedRange: { start: request.start, end: request.end },
+        range: { start: 0, end: 18 },
+        nextStart: 18,
+        byteLength: 18,
+        totalBytes: 18,
+        output: "prompt % ls\nok\n",
+        truncated: false,
+        memory: {
+          eventLogPath: "/tmp/events.jsonl",
+          summaryPath: "/tmp/summary.json",
+          uiTimelinePath: "/tmp/timeline.jsonl",
+          outputTextPath: "/tmp/output.txt",
+          rawOutputPath: "/tmp/output.raw",
+          lineIndexPath: "/tmp/lines.jsonl",
+          errorIndexPath: "/tmp/errors.jsonl",
+          commandsPath: "/tmp/commands.jsonl",
+          outputByteRange: { start: 0, end: 18 },
+          estimatedTokens: 4,
+          truncatedByProjection: false
+        }
+      };
+    });
+
+    await act(async () => {
+      render(<TerminalPaneSurface {...props} />);
+      await new Promise((resolve) => window.setTimeout(resolve, 40));
+    });
+
+    await waitFor(() => {
+      expect(terminalApi.readOutputRange).toHaveBeenCalled();
+    });
+
+    const terminalInstances = await getTerminalInstances();
+    expect(terminalInstances[0]?.lines.join("\n")).toContain("prompt % ls");
+    expect(terminalInstances[0]?.lines.join("\n")).toContain("ok");
   });
 
   test("passes terminal runtime identifiers through create env", async () => {

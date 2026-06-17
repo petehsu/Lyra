@@ -424,17 +424,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             api_key_env: Some("OPENAI_API_KEY".to_string()),
             auth_header: None,
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: vec![NativeProviderModel {
-                id: config
-                    .default_model
-                    .clone()
-                    .unwrap_or_else(|| "gpt-5-mini".to_string()),
-                label: None,
-                context_window: None,
-                supports_image_input: true,
-                supports_tool_calling: true,
-                supports_streaming: true,
-            }],
+            models: Vec::new(),
         });
     config
         .providers
@@ -473,14 +463,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
                 auth_header: None,
                 embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-                models: vec![NativeProviderModel {
-                    id: default_model,
-                    label: None,
-                    context_window: None,
-                    supports_image_input: true,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                }],
+                models: Vec::new(),
             }
         });
     config
@@ -503,14 +486,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 api_key_env: Some("GEMINI_API_KEY".to_string()),
                 auth_header: None,
                 embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-                models: vec![NativeProviderModel {
-                    id: default_model,
-                    label: None,
-                    context_window: None,
-                    supports_image_input: true,
-                    supports_tool_calling: true,
-                    supports_streaming: true,
-                }],
+                models: Vec::new(),
             }
         });
     config
@@ -543,14 +519,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 api_key_env: Some("AWS_ACCESS_KEY_ID".to_string()),
                 auth_header: None,
                 embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-                models: vec![NativeProviderModel {
-                    id: default_model,
-                    label: None,
-                    context_window: None,
-                    supports_image_input: true,
-                    supports_tool_calling: true,
-                    supports_streaming: false,
-                }],
+                models: Vec::new(),
             }
         });
     config
@@ -570,7 +539,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             api_key_env: Some("MIMO_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: mimo_default_models(),
+            models: Vec::new(),
         });
     config
         .providers
@@ -589,7 +558,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: mimo_default_models(),
+            models: Vec::new(),
         });
     config
         .providers
@@ -608,7 +577,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: mimo_default_models(),
+            models: Vec::new(),
         });
     config
         .providers
@@ -627,56 +596,11 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
-            models: mimo_default_models(),
+            models: Vec::new(),
         });
     for provider in config.providers.values_mut() {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
         }
     }
-}
-
-fn mimo_default_models() -> Vec<NativeProviderModel> {
-    vec![
-        NativeProviderModel {
-            id: "mimo-v2.5-pro".to_string(),
-            label: Some("MiMo v2.5 Pro".to_string()),
-            context_window: Some(1_000_000),
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: true,
-        },
-        NativeProviderModel {
-            id: "mimo-v2.5".to_string(),
-            label: Some("MiMo v2.5".to_string()),
-            context_window: Some(1_000_000),
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
-        },
-        NativeProviderModel {
-            id: "mimo-v2-flash".to_string(),
-            label: Some("MiMo v2 Flash".to_string()),
-            context_window: Some(256_000),
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: true,
-        },
-        NativeProviderModel {
-            id: "mimo-v2-omni".to_string(),
-            label: Some("MiMo v2 Omni".to_string()),
-            context_window: Some(256_000),
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
-        },
-        NativeProviderModel {
-            id: "mimo-v2-pro".to_string(),
-            label: Some("MiMo v2 Pro".to_string()),
-            context_window: Some(1_000_000),
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: true,
-        },
-    ]
 }

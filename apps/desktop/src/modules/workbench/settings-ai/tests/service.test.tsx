@@ -8,6 +8,27 @@ import type { SettingsAiLabels } from "../types";
 const labels: SettingsAiLabels = {
   categoryLabel: "AI",
   profilesTitle: "Profiles",
+  modelsTitle: "Models",
+  modelsSearchPlaceholder: "Add or search models",
+  modelsEmptyTitle: "No models available",
+  modelsEmptyDescription: "Connect a provider first.",
+  modelsCurrentLabel: "Current model",
+  modelsAddModel: "Add Model",
+  modelsViewAll: "View All Models",
+  modelsProviderTitle: "Choose a provider to discover models.",
+  modelsDiscoverModels: "Discover Models",
+  modelsCustomModel: "Custom Model",
+  modelsCustomModelPlaceholder: "model-id",
+  modelsAddCustomModel: "Add",
+  modelsDisableAll: "Disable All",
+  modelsEnableAll: "Enable All",
+  modelsManualEntryTitle: "Model IDs",
+  modelsManualEntryDescription: "Advanced manual model entry is only needed when discovery is unavailable.",
+  modelsDiscoverEmptyDescription: "No models were discovered. Check the provider credentials, then try again.",
+  modelsDeleteLabel: "Delete model",
+  modelsDeleteConfirmTitle: "Delete model?",
+  modelsDeleteConfirmDescription: "Remove {model} from this provider.",
+  modelsDeleteConfirmAction: "Delete model",
   providerTitle: "Provider",
   connectionTitle: "Connection",
   additionalFieldsTitle: "Additional fields",
@@ -314,6 +335,23 @@ const agentProviderCatalog = {
         supportsStreaming: true,
       },
     },
+    {
+      id: "anthropic",
+      label: "Anthropic",
+      routeId: "anthropic",
+      protocolId: "anthropic_messages",
+      protocolFamily: "anthropic",
+      baseUrl: "https://api.anthropic.com",
+      defaultModel: "claude-sonnet-4-6",
+      configured: false,
+      authHeader: null,
+      modelCount: 1,
+      capabilities: {
+        supportsImageInput: true,
+        supportsToolCalling: true,
+        supportsStreaming: true,
+      },
+    },
   ],
 };
 
@@ -354,11 +392,45 @@ const agentLoginProviders = {
   ],
 };
 
+const agentModelCatalog = {
+  sessionId: null,
+  currentModel: "mimo-v2.5-pro",
+  currentProvider: "mimo_token_plan",
+  defaultModel: "mimo-v2.5-pro",
+  defaultProvider: "mimo_token_plan",
+  models: [
+    {
+      id: "mimo_token_plan:mimo-v2.5-pro",
+      label: "mimo-v2.5-pro",
+      model: "mimo-v2.5-pro",
+      provider: "mimo_token_plan",
+      providerId: "mimo_token_plan",
+      providerKey: "mimo_token_plan",
+      providerLabel: "MiMo Token Plan",
+      apiMethod: "chatCompletions",
+      detail: "OpenAI-compatible",
+      contextWindow: null,
+      supportsImageInput: true,
+      supportsToolCalling: true,
+      available: true,
+      enabled: true,
+    },
+  ],
+  routes: [],
+  reasoningEffort: { current: null, options: [], supported: true },
+  verbosity: { current: null, options: [], supported: true },
+  serviceTier: { current: null, options: [], supported: true },
+};
+
 const createDesktopApi = () => {
   const readAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const readAgentProviderCatalog = vi.fn(async () => agentProviderCatalog);
   const listAccounts = vi.fn(async () => agentAccounts);
   const listLoginProviders = vi.fn(async () => agentLoginProviders);
+  const listAgentModels = vi.fn(async () => agentModelCatalog);
+  const switchAgentModel = vi.fn(async () => agentModelCatalog);
+  const setAgentModelEnabled = vi.fn(async () => agentModelCatalog);
+  const deleteAgentModel = vi.fn(async () => agentModelCatalog);
   const startAccountLogin = vi.fn(async () => ({
     provider: "claude",
     label: "claude-1",
@@ -376,18 +448,7 @@ const createDesktopApi = () => {
   }));
   const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
-  const refreshAgentModels = vi.fn(async () => ({
-    sessionId: null,
-    currentModel: "mimo-v2.5-pro",
-    currentProvider: "mimo_token_plan",
-    defaultModel: "mimo-v2.5-pro",
-    defaultProvider: "mimo_token_plan",
-    models: [],
-    routes: [],
-    reasoningEffort: { current: null, options: [], supported: true },
-    verbosity: { current: null, options: [], supported: true },
-    serviceTier: { current: null, options: [], supported: true },
-  }));
+  const refreshAgentModels = vi.fn(async () => agentModelCatalog);
   const updateAgentRoles = vi.fn(async () => agentConfigSnapshot);
   const openExternal = vi.fn(async () => true);
 
@@ -403,6 +464,10 @@ const createDesktopApi = () => {
         completeAccountLogin,
         updateAgentConfig,
         saveAgentProviderProfile,
+        listAgentModels,
+        switchAgentModel,
+        setAgentModelEnabled,
+        deleteAgentModel,
         refreshAgentModels,
         updateAgentRoles,
       },
@@ -411,6 +476,10 @@ const createDesktopApi = () => {
     readAgentProviderCatalog,
     listAccounts,
     listLoginProviders,
+    listAgentModels,
+    switchAgentModel,
+    setAgentModelEnabled,
+    deleteAgentModel,
     startAccountLogin,
     completeAccountLogin,
     openExternal,
@@ -418,6 +487,22 @@ const createDesktopApi = () => {
     saveAgentProviderProfile,
     refreshAgentModels,
     updateAgentRoles,
+  };
+};
+
+const createDesktopApiOverrides = (
+  overrides: Partial<NonNullable<LyraDesktopApi["agent"]>>
+) => {
+  const base = createDesktopApi();
+  return {
+    ...base,
+    api: {
+      ...base.api,
+      agent: {
+        ...base.api.agent,
+        ...overrides,
+      },
+    } as LyraDesktopApi,
   };
 };
 
@@ -443,8 +528,13 @@ describe("useSettingsAiModel", () => {
     expect(result.current.agentConfig).toBeNull();
   });
 
-  test("loads Lyra Agent config and Rust-owned provider catalog", async () => {
-    const { api, readAgentConfig, readAgentProviderCatalog } = createDesktopApi();
+  test("loads Lyra Agent config and Rust-owned provider and model catalogs", async () => {
+    const {
+      api,
+      listAgentModels,
+      readAgentConfig,
+      readAgentProviderCatalog,
+    } = createDesktopApi();
     const { result } = renderModel(api);
 
     await waitFor(() => {
@@ -453,12 +543,15 @@ describe("useSettingsAiModel", () => {
 
     expect(readAgentConfig).toHaveBeenCalledTimes(1);
     expect(readAgentProviderCatalog).toHaveBeenCalledTimes(1);
+    expect(listAgentModels).toHaveBeenCalledTimes(1);
     expect(result.current.defaultProfileId).toBe("mimo_token_plan");
+    expect(result.current.agentModelCatalog?.models[0]?.model).toBe("mimo-v2.5-pro");
     expect(result.current.profiles[0]).toMatchObject({
       id: "mimo_token_plan",
       routeId: "mimo_token_plan",
       defaultModel: "mimo-v2.5-pro",
     });
+    expect(result.current.profiles.map((profile) => profile.id)).not.toContain("anthropic");
   });
 
   test("derives quick setup routes from the Rust catalog only", async () => {
@@ -491,6 +584,106 @@ describe("useSettingsAiModel", () => {
     });
 
     expect(refreshAgentModels).toHaveBeenCalledWith({ provider: "lmstudio" });
+  });
+
+  test("switches the default model through the Lyra Agent runtime bridge", async () => {
+    const { api, switchAgentModel } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.agentModelCatalog).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.switchAgentModel?.({
+        model: "gpt-5",
+        provider: "openai-compatible",
+      });
+    });
+
+    expect(switchAgentModel).toHaveBeenCalledWith({
+      model: "gpt-5",
+      provider: "openai-compatible",
+    });
+  });
+
+  test("enables and disables models through the Lyra Agent runtime bridge", async () => {
+    const { api, setAgentModelEnabled } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.agentModelCatalog).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.setAgentModelEnabled?.({
+        model: "gpt-5",
+        provider: "openai-compatible",
+        enabled: false,
+      });
+    });
+
+    expect(setAgentModelEnabled).toHaveBeenCalledWith({
+      model: "gpt-5",
+      provider: "openai-compatible",
+      enabled: false,
+    });
+  });
+
+  test("deletes models through the Lyra Agent runtime bridge", async () => {
+    const { api, deleteAgentModel } = createDesktopApi();
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.agentModelCatalog).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.deleteAgentModel?.({
+        model: "gpt-5",
+        provider: "openai-compatible",
+      });
+    });
+
+    expect(deleteAgentModel).toHaveBeenCalledWith({
+      model: "gpt-5",
+      provider: "openai-compatible",
+    });
+  });
+
+  test("falls back to provider profile save when the running runtime does not know model delete", async () => {
+    const deleteAgentModel = vi.fn(async () => {
+      throw new Error("unknown agent runtime method: agent.models.delete");
+    });
+    const { api, saveAgentProviderProfile } = createDesktopApiOverrides({
+      deleteAgentModel,
+    });
+    const { result } = renderModel(api);
+
+    await waitFor(() => {
+      expect(result.current.agentConfig).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.deleteAgentModel?.({
+        model: "gpt-5",
+        provider: "openai-compatible",
+      });
+    });
+
+    expect(deleteAgentModel).toHaveBeenCalledWith({
+      model: "gpt-5",
+      provider: "openai-compatible",
+    });
+    expect(saveAgentProviderProfile).toHaveBeenCalledWith({
+      profileName: "openai-compatible",
+      routeId: "custom_openai_compatible",
+      baseUrl: "https://api.example.com/v1",
+      defaultModel: null,
+      authHeader: null,
+      models: [],
+    });
+    expect(result.current.errorMessage).toBeNull();
   });
 
   test("saves provider profiles through the Lyra Agent runtime bridge", async () => {

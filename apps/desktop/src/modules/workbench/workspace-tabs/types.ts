@@ -146,8 +146,15 @@ export type WorkspaceTabsSessionSnapshot = {
   readonly focusedSplitTabId: string | null;
 };
 
+export type WorkspaceTabActivationSource = "user" | "agent";
+
 export type WorkspaceTabsActions = {
-  readonly setActiveTab: (tabId: string) => void;
+  readonly setActiveTab: (
+    tabId: string,
+    options?: {
+      readonly source?: WorkspaceTabActivationSource;
+    }
+  ) => void;
   readonly reorderTab: (tabId: string, targetIndex: number) => void;
   readonly splitTabWithTarget: (sourceTabId: string, targetTabId: string) => void;
   readonly detachTabFromSplit: (tabId: string) => void;

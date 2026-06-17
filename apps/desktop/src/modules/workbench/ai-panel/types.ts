@@ -1,3 +1,5 @@
+import type { MutableRefObject } from "react";
+
 import type {
   AgentSessionCreateRequest,
   AgentSessionSnapshot
@@ -5,7 +7,9 @@ import type {
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchLocale } from "../i18n";
+import type { WorkbenchLocationControls } from "../location";
 import type { SettingsAiModel } from "../settings-ai";
+import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
 import type { AiPanelSessionTab } from "./session-tabs";
 
 export type AiPanelSurfaceVariant = "sidebar" | "workspace" | "detached";
@@ -29,6 +33,7 @@ export type AiPanelSurfaceProps = {
   readonly onMissingSession?: (sessionId: string) => void;
   readonly onSessionSnapshotChange?: (snapshot: AgentSessionSnapshot) => void;
   readonly onRequestProjectBind?: (currentPath?: string) => Promise<string | null>;
+  readonly onUpdateDraftWorkingDir?: (tabId: string, workingDir: string) => void;
   readonly onOpenProjectTree?: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -61,6 +66,13 @@ export type AiPanelSurfaceProps = {
   readonly onToggleAiPanelSide?: () => void;
   readonly movePanelToLeftLabel?: string;
   readonly movePanelToRightLabel?: string;
+  readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null>;
+  readonly onSetActiveBrowserTab?: (tabId: string) => void;
+  readonly resolveActiveWorkspaceTab?: () => import("../workspace-tabs/types").WorkspaceTab | undefined;
+  readonly onPickFileFromFileManager?: () => Promise<string | null>;
+  readonly listWorkspaceTabs?: () => readonly import("../workspace-tabs/types").WorkspaceTab[];
+  readonly listTerminalTabs?: () => readonly import("../terminal-dock/types").TerminalDockTab[];
+  readonly locationControls?: WorkbenchLocationControls;
 };
 
 export type AiPanelAppId = never;

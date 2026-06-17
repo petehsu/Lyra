@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
+import { createRafCoalescer } from "../shell/raf-coalesce";
+import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
 import { useLoadingVisibility } from "../shell/use-loading-visibility";
+import { getIsLayoutResizing } from "../shell/use-panel-layout";
 import { loadMonaco } from "./monaco";
 import {
   AUTO_SAVE_DELAY_MS,
@@ -180,7 +183,7 @@ export const useFileEditorRuntime = ({
         textModelRef.current = textModel;
         const editor = monaco.editor.create(host, {
           model: textModel,
-          automaticLayout: true,
+          automaticLayout: false,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           tabSize: 2,
@@ -420,7 +423,7 @@ export const useFileEditorRuntime = ({
     const originalModel = monaco.editor.createModel(diffOriginalContent, state.languageId);
     diffOriginalModelRef.current = originalModel;
     const diffEditor = monaco.editor.createDiffEditor(host, {
-      automaticLayout: true,
+      automaticLayout: false,
       readOnly: true,
       renderSideBySide: true,
       originalEditable: false,
@@ -479,6 +482,94 @@ export const useFileEditorRuntime = ({
     }
     setIsDiffMode(false);
   }, [canToggleDiff]);
+
+  useEffect(() => {
+    if (editorReady === false || canShowEditor === false) {
+      return;
+    }
+    const host = hostRef.current;
+    if (host === null) {
+      return;
+    }
+
+    let lastHostWidth = -1;
+    let lastHostHeight = -1;
+    let lastDiffWidth = -1;
+    let lastDiffHeight = -1;
+
+    const layoutEditors = (): void => {
+      const editor = editorRef.current;
+      const hostWidth = host.clientWidth;
+      const hostHeight = host.clientHeight;
+      if (
+        editor !== null &&
+        hostWidth > 0 &&
+        hostHeight > 0 &&
+        (hostWidth !== lastHostWidth || hostHeight !== lastHostHeight)
+      ) {
+        lastHostWidth = hostWidth;
+        lastHostHeight = hostHeight;
+        editor.layout({ width: hostWidth, height: hostHeight });
+      }
+
+      const diffHost = diffHostRef.current;
+      const diffEditor = diffEditorRef.current;
+      if (diffHost === null || diffEditor === null) {
+        return;
+      }
+      const diffWidth = diffHost.clientWidth;
+      const diffHeight = diffHost.clientHeight;
+      if (
+        diffWidth > 0 &&
+        diffHeight > 0 &&
+        (diffWidth !== lastDiffWidth || diffHeight !== lastDiffHeight)
+      ) {
+        lastDiffWidth = diffWidth;
+        lastDiffHeight = diffHeight;
+        diffEditor.layout({ width: diffWidth, height: diffHeight });
+      }
+    };
+
+    const measure = (): void => {
+      if (getIsLayoutResizing()) {
+        return;
+      }
+      layoutEditors();
+    };
+
+    layoutEditors();
+
+    if (typeof ResizeObserver === "undefined") {
+      const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+        lastHostWidth = -1;
+        lastHostHeight = -1;
+        lastDiffWidth = -1;
+        lastDiffHeight = -1;
+        layoutEditors();
+      });
+      return unsubscribeResizeEnd;
+    }
+
+    const coalescer = createRafCoalescer(measure);
+    const observer = new ResizeObserver(() => coalescer.schedule());
+    observer.observe(host);
+    const diffHost = diffHostRef.current;
+    if (diffHost !== null) {
+      observer.observe(diffHost);
+    }
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+      lastHostWidth = -1;
+      lastHostHeight = -1;
+      lastDiffWidth = -1;
+      lastDiffHeight = -1;
+      layoutEditors();
+    });
+    return () => {
+      observer.disconnect();
+      coalescer.cancel();
+      unsubscribeResizeEnd();
+    };
+  }, [canShowEditor, editorReady, isDiffMode]);
 
   useEffect(() => {
     const revealLocation = state?.pendingRevealLocation;

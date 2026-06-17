@@ -36,9 +36,9 @@ describe("terminal dock service", () => {
 
   test("splits with explicit shell options without copying the source startup command", () => {
     const state = openTerminalTabWithProfileState(createDefaultTerminalDockState(), {
-      id: "default",
-      name: "Lyra",
-      startupCommand: "__lyra_agent_cli__",
+      id: "task",
+      name: "Task",
+      startupCommand: "npm test",
       mode: "command"
     }).state;
     const tab = state.tabs[state.tabs.length - 1]!;

@@ -1,10 +1,10 @@
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   type WheelEvent as ReactWheelEvent
@@ -18,6 +18,11 @@ import {
 } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
 import { cn } from "@renderer/ui/utils";
+import { createRafCoalescer } from "../shell/raf-coalesce";
+import {
+  getIsLayoutResizing,
+  subscribeLayoutResizeEnd
+} from "../shell/use-panel-layout";
 import { LyraAgentsApp } from "./lyra-agents/LyraAgentsApp";
 import { t } from "./lyra-agents/core/i18n";
 import { useData } from "./lyra-agents/data/DataProvider";
@@ -25,14 +30,16 @@ import { HeaderControls } from "./lyra-agents/features/header/Header";
 import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
+import { estimateTabTitleContentWidth } from "../text-metrics";
 
 const DEFAULT_SESSION_TITLE = "新会话";
 const AI_SESSION_TAB_DRAG_THRESHOLD_PX = 4;
 const AI_SESSION_TAB_CONTENT_MARGIN_TOTAL_PX = 18;
-const AI_SESSION_TAB_MIN_WIDTH_PX = 132;
+const AI_SESSION_TAB_MIN_WIDTH_PX = 120;
 const AI_SESSION_TAB_MAX_WIDTH_PX = 220;
-const AI_SESSION_TAB_OVERLAP_PX = 1;
-const AI_SESSION_TAB_ADD_BUTTON_FALLBACK_WIDTH_PX = 32;
+const AI_SESSION_TAB_OVERLAP_PX = 0;
+const AI_SESSION_TAB_TITLE_BASE_WIDTH_PX = 52;
+const AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX = 7;
 
 type AiSessionTabLayoutItem = {
   readonly width: number;
@@ -43,7 +50,6 @@ type AiSessionTabLayoutItem = {
 type AiSessionTabStripLayout = {
   readonly density: "regular";
   readonly items: readonly AiSessionTabLayoutItem[];
-  readonly addButtonX: number;
   readonly contentWidth: number;
   readonly totalTabsWidth: number;
 };
@@ -63,36 +69,79 @@ type AiSessionTabDragVisualState = {
   readonly x: number;
 };
 
+const preferredAiSessionTabTitleWidth = (
+  title: string,
+  titleFont?: string
+): number => {
+  if (titleFont === undefined) {
+    return (
+      AI_SESSION_TAB_TITLE_BASE_WIDTH_PX
+      + title.trim().length * AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX
+    );
+  }
+  return estimateTabTitleContentWidth(title, {
+    font: titleFont,
+    baseWidthPx: AI_SESSION_TAB_TITLE_BASE_WIDTH_PX,
+    charWidthFallbackPx: AI_SESSION_TAB_TITLE_CHAR_WIDTH_PX
+  });
+};
+
 const computeAiSessionTabLayout = ({
-  tabCount,
+  titles,
   stripWidth,
-  addButtonWidth
+  titleFont
 }: {
-  readonly tabCount: number;
+  readonly titles: readonly string[];
   readonly stripWidth: number;
-  readonly addButtonWidth: number;
+  readonly titleFont?: string;
 }): AiSessionTabStripLayout => {
-  const effectiveAddButtonWidth =
-    addButtonWidth > 0 ? addButtonWidth : AI_SESSION_TAB_ADD_BUTTON_FALLBACK_WIDTH_PX;
-  const contentWidth = Math.max(0, stripWidth - effectiveAddButtonWidth);
+  const contentWidth = Math.max(0, stripWidth);
+  const tabCount = titles.length;
   if (tabCount <= 0) {
     return {
       density: "regular",
       items: [],
-      addButtonX: contentWidth,
       contentWidth,
       totalTabsWidth: 0
     };
   }
 
-  const idealTabWidth =
-    (contentWidth + Math.max(0, tabCount - 1) * AI_SESSION_TAB_OVERLAP_PX) / tabCount;
-  const tabWidth = Math.floor(Math.max(
-    AI_SESSION_TAB_MIN_WIDTH_PX,
-    Math.min(AI_SESSION_TAB_MAX_WIDTH_PX, idealTabWidth)
-  ));
+  const preferredWidths = titles.map((title) =>
+    Math.max(
+      AI_SESSION_TAB_MIN_WIDTH_PX,
+      Math.min(
+        AI_SESSION_TAB_MAX_WIDTH_PX,
+        preferredAiSessionTabTitleWidth(title, titleFont)
+      )
+    )
+  );
+  const preferredTotalWidth =
+    preferredWidths.reduce((sum, width) => sum + width, 0)
+    - Math.max(0, tabCount - 1) * AI_SESSION_TAB_OVERLAP_PX;
+  const minTotalWidth =
+    AI_SESSION_TAB_MIN_WIDTH_PX * tabCount
+    - Math.max(0, tabCount - 1) * AI_SESSION_TAB_OVERLAP_PX;
+  const widths =
+    preferredTotalWidth <= contentWidth
+      ? preferredWidths
+      : contentWidth <= minTotalWidth
+        ? Array.from({ length: tabCount }, () => AI_SESSION_TAB_MIN_WIDTH_PX)
+        : (() => {
+            const shrinkTarget = preferredTotalWidth - contentWidth;
+            const shrinkableTotal = preferredWidths.reduce(
+              (sum, width) => sum + Math.max(0, width - AI_SESSION_TAB_MIN_WIDTH_PX),
+              0
+            );
+            return preferredWidths.map((width) => {
+              const shrinkable = Math.max(0, width - AI_SESSION_TAB_MIN_WIDTH_PX);
+              const shrink = shrinkableTotal <= 0
+                ? 0
+                : shrinkTarget * (shrinkable / shrinkableTotal);
+              return Math.floor(Math.max(AI_SESSION_TAB_MIN_WIDTH_PX, width - shrink));
+            });
+          })();
   let x = 0;
-  const items = Array.from({ length: tabCount }, () => {
+  const items = widths.map((tabWidth) => {
     const item = {
       width: tabWidth,
       x,
@@ -108,7 +157,6 @@ const computeAiSessionTabLayout = ({
   return {
     density: "regular",
     items,
-    addButtonX: contentWidth,
     contentWidth,
     totalTabsWidth
   };
@@ -130,18 +178,23 @@ const closestAiSessionTabLayoutIndex = (
   return closestIndex;
 };
 
+const readAiSessionTabTitleFont = (strip: HTMLElement): string | undefined => {
+  const sample = strip.querySelector<HTMLElement>(".lyra-agents-session-tab-title");
+  if (sample === null) return undefined;
+  const font = getComputedStyle(sample).font;
+  return font.length > 0 ? font : undefined;
+};
+
 const useAiSessionTabLayout = (
-  tabCount: number,
-  stripRef: RefObject<HTMLDivElement>,
-  addButtonRef: RefObject<HTMLButtonElement>
+  titles: readonly string[],
+  stripRef: RefObject<HTMLDivElement>
 ): {
   readonly layout: AiSessionTabStripLayout;
 } => {
   const [layout, setLayout] = useState<AiSessionTabStripLayout>(() =>
     computeAiSessionTabLayout({
-      tabCount,
-      stripWidth: 0,
-      addButtonWidth: 0
+      titles,
+      stripWidth: 0
     })
   );
 
@@ -149,30 +202,51 @@ const useAiSessionTabLayout = (
     const strip = stripRef.current;
     if (strip === null) {
       setLayout(computeAiSessionTabLayout({
-        tabCount,
-        stripWidth: 0,
-        addButtonWidth: 0
+        titles,
+        stripWidth: 0
       }));
       return;
     }
 
+    // Track the last measured width so resize ticks that don't actually change
+    // the strip width skip the O(n) layout recompute + setState entirely.
+    let lastStripWidth = -1;
+    let lastTitleFont: string | undefined;
     const measure = (): void => {
+      if (getIsLayoutResizing()) {
+        return;
+      }
+      const stripWidth = strip.getBoundingClientRect().width;
+      const titleFont = readAiSessionTabTitleFont(strip);
+      if (stripWidth === lastStripWidth && titleFont === lastTitleFont) return;
+      lastStripWidth = stripWidth;
+      lastTitleFont = titleFont;
       setLayout(computeAiSessionTabLayout({
-        tabCount,
-        stripWidth: strip.getBoundingClientRect().width,
-        addButtonWidth: addButtonRef.current?.getBoundingClientRect().width ?? 0
+        titles,
+        stripWidth,
+        ...(titleFont === undefined ? {} : { titleFont })
       }));
     };
     measure();
 
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
+    if (typeof ResizeObserver === "undefined") {
+      return subscribeLayoutResizeEnd(measure);
+    }
+    // Coalesce the resize storm into one measure per animation frame.
+    const coalescer = createRafCoalescer(measure);
+    const observer = new ResizeObserver(() => coalescer.schedule());
     observer.observe(strip);
-    if (addButtonRef.current !== null) observer.observe(addButtonRef.current);
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+      lastStripWidth = -1;
+      lastTitleFont = undefined;
+      measure();
+    });
     return () => {
       observer.disconnect();
+      coalescer.cancel();
+      unsubscribeResizeEnd();
     };
-  }, [addButtonRef, stripRef, tabCount]);
+  }, [stripRef, titles]);
 
   return {
     layout
@@ -194,15 +268,13 @@ const AiPanelTabsHeader = ({
   readonly onCloseSessionTab?: (sessionId: string) => void;
   readonly onReorderSessionTabs?: (sourceTabId: string, targetTabId: string) => void;
 }) => {
-  const { session, isTurnRunning, createSession } = useData();
+  const { session, isTurnRunning } = useData();
   const stripRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const dragRef = useRef<AiSessionTabDragState | null>(null);
   const suppressNextClickRef = useRef<string | null>(null);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [dragVisual, setDragVisual] = useState<AiSessionTabDragVisualState | null>(null);
-  const newSessionLabel = t("header.newSession");
   const currentSessionId = session.id?.trim() || null;
   const effectiveActiveTabId =
     activeSessionTabId
@@ -233,12 +305,18 @@ const AiPanelTabsHeader = ({
     0,
     visibleTabs.findIndex((tab) => tab.tabId === effectiveActiveTabId)
   );
-  const { layout } = useAiSessionTabLayout(
-    visibleTabs.length,
-    stripRef,
-    addButtonRef
+  const visibleTabTitlesKey = visibleTabs
+    .map((tab) => `${tab.tabId}:${tab.title}`)
+    .join("\n");
+  const visibleTabTitles = useMemo(
+    () => visibleTabs.map((tab) => tab.title),
+    [visibleTabTitlesKey]
   );
-  const listSpacerStyle: CSSProperties = {
+  const { layout } = useAiSessionTabLayout(
+    visibleTabTitles,
+    stripRef
+  );
+  const listSpacerStyle = {
     width: `${Math.ceil(Math.max(layout.contentWidth, layout.totalTabsWidth))}px`
   };
 
@@ -376,7 +454,7 @@ const AiPanelTabsHeader = ({
               : tab.title.trim() || DEFAULT_SESSION_TITLE;
             const running = hasCurrentSnapshot ? isTurnRunning : tab.lastKnownStatus === "running";
             const tabLayout = layout.items[index];
-            const tabStyle: CSSProperties | undefined = tabLayout === undefined
+            const tabStyle = tabLayout === undefined
               ? undefined
               : {
                   width: `${Math.round(tabLayout.width)}px`,
@@ -440,27 +518,14 @@ const AiPanelTabsHeader = ({
             );
           })}
         </div>
-        <AppIconButton
-          ref={addButtonRef}
-          className="lyra-agents-session-tab-add"
-          style={{
-            transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)`
-          }}
-          aria-label={newSessionLabel}
-          title={newSessionLabel}
-          onClick={() => {
-          void createSession();
-        }}
-      >
-        <Plus size={14} aria-hidden="true" />
-      </AppIconButton>
       </div>
-      <HeaderControls showNewSessionButton={false} />
+      <HeaderControls forceShowNewSessionButton />
     </header>
   );
 };
 
 export const AiPanelSurface = ({
+  variant: _variant,
   desktopApi,
   settingsAiModel,
   activeSessionTabId = null,
@@ -475,6 +540,7 @@ export const AiPanelSurface = ({
   onMissingSession,
   onSessionSnapshotChange,
   onRequestProjectBind,
+  onUpdateDraftWorkingDir,
   onOpenProjectTree,
   onOpenSelfDevLab,
   onOpenOvernightLab,
@@ -484,12 +550,27 @@ export const AiPanelSurface = ({
   onOpenFile,
   openDialog,
   locale,
-  title
+  title,
+  composerCitationSinkRef,
+  onSetActiveBrowserTab,
+  resolveActiveWorkspaceTab,
+  onPickFileFromFileManager,
+  listWorkspaceTabs,
+  listTerminalTabs,
+  locationControls
 }: AiPanelSurfaceProps) => {
   const activeTab =
     sessionTabs.find((tab) => tab.tabId === activeSessionTabId)
     ?? sessionTabs.find((tab) => tab.sessionId === activeSessionId)
     ?? null;
+  const activeDraftTabId = activeTab?.sessionId === null ? activeTab.tabId : null;
+  const updateActiveDraftWorkingDir = useCallback(
+    (workingDir: string): void => {
+      if (activeDraftTabId === null) return;
+      onUpdateDraftWorkingDir?.(activeDraftTabId, workingDir);
+    },
+    [activeDraftTabId, onUpdateDraftWorkingDir]
+  );
   const provider = useLyraAgentDataProvider(
     desktopApi,
     settingsAiModel,
@@ -503,6 +584,7 @@ export const AiPanelSurface = ({
       onCreateSessionTab,
       onMissingSession,
       onRequestProjectBind,
+      onUpdateDraftWorkingDir: updateActiveDraftWorkingDir,
       onOpenProjectTree,
       onOpenSelfDevLab,
       onOpenOvernightLab,
@@ -511,7 +593,14 @@ export const AiPanelSurface = ({
       onOpenFile,
       onOpenTerminalLiveSession,
       openDialog,
-      locale
+      locale,
+      composerCitationSinkRef,
+      onSetActiveBrowserTab,
+      resolveActiveWorkspaceTab,
+      onPickFileFromFileManager,
+      listWorkspaceTabs,
+      listTerminalTabs,
+      locationControls
     }
   );
 

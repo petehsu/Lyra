@@ -32,6 +32,7 @@ struct ToolUseDraft {
 #[derive(Default)]
 struct AnthropicStreamState {
     text: String,
+    thinking: String,
     tool_uses: HashMap<usize, ToolUseDraft>,
     stop_reason: Option<String>,
 }
@@ -46,7 +47,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = AnthropicStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let buffer_assistant_text = !commit_assistant_text || !tools.is_empty();
+    let buffer_assistant_text = !tools.is_empty();
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst)
@@ -87,22 +88,23 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         ));
     }
 
+    let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
     let mut reply = ModelReply {
         content: (!state.text.trim().is_empty()).then_some(state.text),
-        reasoning_content: None,
+        reasoning_content: (!state.thinking.trim().is_empty()).then_some(state.thinking),
         tool_calls,
-        ui_message_id: ui_message_id.filter(|id| !id.is_empty()),
+        ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
     };
-    if commit_assistant_text
-        && buffer_assistant_text
-        && let Some(content) = reply
-            .content
-            .as_ref()
-            .filter(|content| !content.trim().is_empty())
-    {
-        reply.ui_message_id =
-            crate::native_backend::turns::emit_assistant_text(session_id, turn_id, content);
+    if commit_assistant_text {
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            session_id,
+            turn_id,
+            &mut reply,
+            &streamed_message_id,
+        );
+    } else {
+        reply.ui_message_id = streamed_message_id;
     }
     Ok(reply)
 }
@@ -130,22 +132,35 @@ fn map_stream_event(
                     draft.input = Some(input.clone());
                 }
             }
-            if block.get("type").and_then(Value::as_str) == Some("text")
-                && let Some(text) = block.get("text").and_then(Value::as_str)
-            {
-                append_text_delta(
-                    text,
-                    state,
-                    ui_message_id,
-                    buffer_assistant_text,
-                    session_id,
-                    turn_id,
-                )?;
+            match block.get("type").and_then(Value::as_str) {
+                Some("text") => {
+                    if let Some(text) = block.get("text").and_then(Value::as_str) {
+                        append_text_delta(
+                            text,
+                            state,
+                            ui_message_id,
+                            buffer_assistant_text,
+                            session_id,
+                            turn_id,
+                        )?;
+                    }
+                }
+                Some("thinking") => {
+                    if let Some(thinking) = block.get("thinking").and_then(Value::as_str) {
+                        state.thinking.push_str(thinking);
+                    }
+                }
+                _ => {}
             }
         }
         Some("content_block_delta") => {
             let delta = event.get("delta").unwrap_or(&Value::Null);
             match delta.get("type").and_then(Value::as_str) {
+                Some("thinking_delta") => {
+                    if let Some(thinking) = delta.get("thinking").and_then(Value::as_str) {
+                        state.thinking.push_str(thinking);
+                    }
+                }
                 Some("text_delta") => {
                     let text = delta
                         .get("text")
@@ -273,5 +288,32 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+    }
+
+    #[test]
+    fn parses_streaming_thinking_text_and_tool_use_events() {
+        let stream = [
+            r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Inspect tabs."}}"#,
+            r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Plan."}}"#,
+            r#"data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"call-tabs","name":"tool_fs_run","input":{}}}"#,
+            r#"data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"/tools/workbench/list_tabs\",\"args\":{}}"}}"#,
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            r#"data: {"type":"message_stop"}"#,
+        ]
+        .join("\n\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &Arc::new(AtomicBool::new(false)),
+            &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
+            false,
+        )
+        .expect("reply");
+
+        assert_eq!(reply.reasoning_content.as_deref(), Some("Inspect tabs."));
+        assert_eq!(reply.content.as_deref(), Some("Plan."));
+        assert_eq!(reply.tool_calls[0].id, "call-tabs");
     }
 }

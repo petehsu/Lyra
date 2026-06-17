@@ -50,6 +50,8 @@ type BrowserPageEntry = {
   layout: WorkbenchBrowserPageLayout | null;
   runtime: WorkbenchBrowserPageRuntimeState;
   historyRestoreAttempted: boolean;
+  runtimeAddressUpdatedAt: number;
+  lastTopologySyncAt: number;
   readonly disposeListeners: () => void;
 };
 

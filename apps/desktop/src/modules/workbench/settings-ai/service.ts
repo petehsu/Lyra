@@ -10,6 +10,10 @@ import type {
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
   AgentLoginProviderCatalogSnapshot,
+  AgentModelCatalogSnapshot,
+  AgentModelDeleteRequest,
+  AgentModelEnableRequest,
+  AgentModelSwitchRequest,
   AgentProviderCatalogSnapshot,
   AgentProviderProfileSaveRequest,
   AgentRolesUpdateRequest,
@@ -33,6 +37,36 @@ type AgentRefreshSnapshot = {
   readonly catalog: AgentProviderCatalogSnapshot;
   readonly accounts: AgentAccountsSnapshot;
   readonly loginProviders: AgentLoginProviderCatalogSnapshot;
+  readonly modelCatalog: AgentModelCatalogSnapshot;
+};
+
+type AgentConfigProviderShape = {
+  readonly label?: string | null;
+  readonly routeId?: string | null;
+  readonly baseUrl?: string | null;
+  readonly defaultModel?: string | null;
+  readonly authHeader?: string | null;
+  readonly models?: readonly {
+    readonly id?: string | null;
+    readonly contextWindow?: number | null;
+    readonly supportsImageInput?: boolean;
+    readonly supportsToolCalling?: boolean;
+    readonly supportsStreaming?: boolean;
+    readonly enabled?: boolean;
+  }[];
+};
+
+type AgentConfigShape = {
+  readonly providers?: Record<string, AgentConfigProviderShape>;
+};
+
+const asAgentConfig = (snapshot: AgentConfigSnapshot | null): AgentConfigShape =>
+  (snapshot?.config ?? {}) as AgentConfigShape;
+
+const isUnknownModelDeleteMethodError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("unknown agent runtime method")
+    && message.includes("agent.models.delete");
 };
 
 export const useSettingsAiModel = ({
@@ -46,6 +80,8 @@ export const useSettingsAiModel = ({
   const [agentAccounts, setAgentAccounts] = useState<AgentAccountsSnapshot | null>(null);
   const [agentLoginProviders, setAgentLoginProviders] =
     useState<AgentLoginProviderCatalogSnapshot | null>(null);
+  const [agentModelCatalog, setAgentModelCatalog] =
+    useState<AgentModelCatalogSnapshot | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -60,16 +96,19 @@ export const useSettingsAiModel = ({
       catalog,
       accounts,
       loginProviders,
+      modelCatalog,
     ]: [
       AgentConfigSnapshot,
       AgentProviderCatalogSnapshot,
       AgentAccountsSnapshot,
       AgentLoginProviderCatalogSnapshot,
+      AgentModelCatalogSnapshot,
     ] = await Promise.all([
       desktopApi.agent.readAgentConfig(),
       desktopApi.agent.readAgentProviderCatalog(),
       desktopApi.agent.listAccounts(),
       desktopApi.agent.listLoginProviders(),
+      desktopApi.agent.listAgentModels(),
     ]);
 
     const snapshot: AgentRefreshSnapshot = {
@@ -77,12 +116,14 @@ export const useSettingsAiModel = ({
       catalog,
       accounts,
       loginProviders,
+      modelCatalog,
     };
 
     setAgentConfig(snapshot.config);
     setAgentProviderCatalog(snapshot.catalog);
     setAgentAccounts(snapshot.accounts);
     setAgentLoginProviders(snapshot.loginProviders);
+    setAgentModelCatalog(snapshot.modelCatalog);
     setErrorMessage(null);
   }, [desktopApi, labels.runtimeUnavailable]);
 
@@ -123,10 +164,27 @@ export const useSettingsAiModel = ({
   }, [desktopApi, refreshAgent]);
 
   const refreshAgentModels = useCallback(async (providerId: string) => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const catalog = await desktopApi.agent.refreshAgentModels({ provider: providerId });
+      setAgentModelCatalog(catalog);
+      await refreshAgent();
+      setErrorMessage(null);
+      return catalog;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshAgent]);
+
+  const refreshAgentModelCatalog = useCallback(async () => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      await desktopApi.agent.refreshAgentModels({ provider: providerId });
+      setAgentModelCatalog(await desktopApi.agent.refreshAgentModels());
       await refreshAgent();
       setErrorMessage(null);
     } catch (error) {
@@ -135,6 +193,77 @@ export const useSettingsAiModel = ({
       setIsSaving(false);
     }
   }, [desktopApi, refreshAgent]);
+
+  const switchAgentModel = useCallback(async (request: AgentModelSwitchRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentModelCatalog(await desktopApi.agent.switchAgentModel(request));
+      await refreshAgent();
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshAgent]);
+
+  const setAgentModelEnabled = useCallback(async (request: AgentModelEnableRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentModelCatalog(await desktopApi.agent.setAgentModelEnabled(request));
+      await refreshAgent();
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi, refreshAgent]);
+
+  const deleteAgentModel = useCallback(async (request: AgentModelDeleteRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentModelCatalog(await desktopApi.agent.deleteAgentModel(request));
+      await refreshAgent();
+      setErrorMessage(null);
+    } catch (error) {
+      if (isUnknownModelDeleteMethodError(error)) {
+        const providerConfig = asAgentConfig(agentConfig).providers?.[request.provider] ?? null;
+        if (providerConfig !== null && providerConfig.routeId !== undefined && providerConfig.routeId !== null) {
+          const remainingModels = (providerConfig.models ?? [])
+            .filter((entry) => entry.id !== undefined && entry.id !== null && entry.id !== request.model)
+            .map((entry) => ({
+              id: entry.id ?? "",
+              ...(entry.contextWindow === undefined ? {} : { contextWindow: entry.contextWindow }),
+              ...(entry.supportsImageInput === undefined ? {} : { supportsImageInput: entry.supportsImageInput }),
+              ...(entry.supportsToolCalling === undefined ? {} : { supportsToolCalling: entry.supportsToolCalling }),
+              ...(entry.supportsStreaming === undefined ? {} : { supportsStreaming: entry.supportsStreaming }),
+              ...(entry.enabled === undefined ? {} : { enabled: entry.enabled }),
+            }));
+          const fallbackDefaultModel = providerConfig.defaultModel === request.model
+            ? remainingModels[0]?.id ?? null
+            : providerConfig.defaultModel ?? null;
+          await desktopApi.agent.saveAgentProviderProfile({
+            profileName: request.provider,
+            routeId: providerConfig.routeId,
+            baseUrl: providerConfig.baseUrl ?? "",
+            defaultModel: fallbackDefaultModel,
+            authHeader: providerConfig.authHeader ?? null,
+            models: remainingModels,
+          });
+          await refreshAgent();
+          setErrorMessage(null);
+          return;
+        }
+      }
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [agentConfig, desktopApi, refreshAgent]);
 
   const startAgentAccountLogin = useCallback(async (
     request: AgentAccountLoginStartRequest,
@@ -249,7 +378,7 @@ export const useSettingsAiModel = ({
   ]);
 
   const profiles = useMemo(
-    () => agentProviderCatalog?.profiles ?? [],
+    () => (agentProviderCatalog?.profiles ?? []).filter((profile) => profile.configured),
     [agentProviderCatalog],
   );
   const quickSetupRoutes = useMemo(
@@ -277,6 +406,7 @@ export const useSettingsAiModel = ({
     agentConfig,
     agentAccounts,
     agentLoginProviders,
+    agentModelCatalog,
     agentProviderCatalog,
     setDefaultProfile: async (profileId: string) => {
       const profile = profiles.find((entry) => entry.id === profileId) ?? null;
@@ -290,6 +420,10 @@ export const useSettingsAiModel = ({
     updateAgentConfig,
     saveAgentProviderProfile,
     refreshAgentModels,
+    refreshAgentModelCatalog,
+    setAgentModelEnabled,
+    deleteAgentModel,
+    switchAgentModel,
     startAgentAccountLogin,
     completeAgentAccountLogin,
     updateAgentRoles,

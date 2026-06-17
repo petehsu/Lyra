@@ -15,7 +15,7 @@ pub(crate) fn descriptor() -> ProviderRouteDescriptor {
         api_method: "converse".to_string(),
         auth_kind: "aws_sigv4_env".to_string(),
         runtime_supported: true,
-        model_discovery_supported: false,
+        model_discovery_supported: true,
         custom_headers_supported: false,
         local_backend: None,
         catalog_section: "hosted".to_string(),

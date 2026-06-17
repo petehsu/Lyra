@@ -632,6 +632,7 @@ fn memory_extraction_uses_background_memory_agent_without_tools() {
                     supports_image_input: false,
                     supports_tool_calling: false,
                     supports_streaming: false,
+                    enabled: true,
                 }],
             },
         );

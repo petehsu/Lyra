@@ -3,8 +3,12 @@ mod response;
 mod sigv4;
 
 use reqwest::blocking::{Client, RequestBuilder};
+use serde_json::Value;
 
-use crate::{AgentRuntimeError, AgentRuntimeResult, native_backend::NativeProviderProfile};
+use crate::{
+    AgentRuntimeError, AgentRuntimeResult,
+    native_backend::{NativeProviderModel, NativeProviderProfile},
+};
 
 use super::super::types::ProtocolCatalogEntry;
 
@@ -90,6 +94,108 @@ pub(crate) fn build_signed_json_request(
         &region,
         SIGNING_SERVICE,
     )
+}
+
+pub(crate) fn discover_models(
+    client: &Client,
+    provider: &NativeProviderProfile,
+) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
+    let url = bedrock_control_url(provider, "foundation-models")?;
+    let body = "{}";
+    let credentials = sigv4::credentials_for_provider(provider)?;
+    let region = region_for_provider(provider)?;
+    let request =
+        sigv4::signed_json_request(client, "GET", &url, body, &credentials, &region, "bedrock")?;
+    let response = request
+        .send()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let status = response.status();
+    let body: Value = response
+        .json()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    if !status.is_success() {
+        return Err(AgentRuntimeError::Core(format!(
+            "AWS Bedrock model discovery failed with status {status}: {body}"
+        )));
+    }
+    Ok(parse_foundation_models(&body))
+}
+
+fn bedrock_control_url(provider: &NativeProviderProfile, path: &str) -> AgentRuntimeResult<String> {
+    let region = region_for_provider(provider)?;
+    let base_url = provider
+        .base_url
+        .as_deref()
+        .and_then(runtime_url_to_control_url)
+        .unwrap_or_else(|| format!("https://bedrock.{region}.amazonaws.com"));
+    Ok(format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    ))
+}
+
+fn runtime_url_to_control_url(value: &str) -> Option<String> {
+    let mut url = url::Url::parse(value).ok()?;
+    let host = url.host_str()?.to_string();
+    let control_host = host.strip_prefix("bedrock-runtime.")?;
+    url.set_host(Some(&format!("bedrock.{control_host}")))
+        .ok()?;
+    url.set_path("");
+    url.set_query(None);
+    Some(url.to_string().trim_end_matches('/').to_string())
+}
+
+fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
+    let mut models = body
+        .get("modelSummaries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| {
+            item.get("outputModalities")
+                .and_then(Value::as_array)
+                .is_none_or(|modalities| {
+                    modalities
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|value| value.eq_ignore_ascii_case("TEXT"))
+                })
+        })
+        .filter_map(|item| {
+            item.get("modelId")
+                .and_then(Value::as_str)
+                .map(|id| (id, item))
+        })
+        .filter(|(id, _)| !id.trim().is_empty())
+        .map(|(id, item)| NativeProviderModel {
+            id: id.to_string(),
+            label: item
+                .get("modelName")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .or_else(|| Some(id.to_string())),
+            context_window: None,
+            supports_image_input: item
+                .get("inputModalities")
+                .and_then(Value::as_array)
+                .is_some_and(|modalities| {
+                    modalities
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|value| value.eq_ignore_ascii_case("IMAGE"))
+                }),
+            supports_tool_calling: true,
+            supports_streaming: item
+                .get("responseStreamingSupported")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            enabled: true,
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|left, right| left.id.cmp(&right.id));
+    models.dedup_by(|left, right| left.id == right.id);
+    models
 }
 
 #[cfg(test)]

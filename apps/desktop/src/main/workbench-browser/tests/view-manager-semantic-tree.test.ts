@@ -470,6 +470,35 @@ describe("Workbench browser semantic tree fixtures", () => {
     delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
   });
 
+  test("does not reload when runtime navigated ahead of stale tab topology", async () => {
+    const translated =
+      "https://example.com/article#googtrans(en|zh-CN)";
+    const stale =
+      "https://example.com/article";
+    const mainFrame = createFrame({
+      id: 1,
+      url: translated,
+      html: "<!doctype html><title>Article</title><main>Translated</main>"
+    });
+
+    const { manager, webContents } = createManager(mainFrame);
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    manager.syncTopology({
+      activeTabId: "tab-1",
+      pages: [{
+        tabId: "tab-1",
+        address: stale,
+        titleHint: "Article",
+        isActive: true
+      }]
+    });
+
+    expect(webContents.loadURL).not.toHaveBeenCalled();
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(translated);
+  });
+
   test("does not reload Cloudflare challenge token variants from topology sync", async () => {
     const tokenA =
       "https://www.dmit.io/clientarea.php?__cf_chl_rt_tk=first-token";

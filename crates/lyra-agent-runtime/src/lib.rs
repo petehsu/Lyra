@@ -245,6 +245,7 @@ impl AgentRuntimeServices {
             "agent.memory.shared.search" => self.memory.search_shared_from_payload(payload),
             "agent.memory.shared.update" => self.memory.write_shared_from_payload(payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
+            "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),
             "agent.git.status" => call_json(git_runtime::git_status_json, payload),
             "agent.git.diff" => call_json(git_runtime::git_diff_json, payload),
@@ -336,8 +337,35 @@ pub fn clear_host_capability_dispatcher() {
 
 #[cfg(test)]
 mod tests {
-    use super::AgentRuntimeServices;
-    use serde_json::json;
+    use super::{
+        AgentRuntimeBackend, AgentRuntimeResult, AgentRuntimeServices, EventCallback,
+        HostCapabilityDispatcher,
+    };
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+
+    struct EchoBackend;
+
+    impl AgentRuntimeBackend for EchoBackend {
+        fn call_agent_method(&self, method: &str, payload: Value) -> AgentRuntimeResult<Value> {
+            Ok(json!({
+                "method": method,
+                "payload": payload,
+            }))
+        }
+
+        fn register_event_callback(&self, _callback: Arc<EventCallback>) {}
+
+        fn clear_event_callback(&self) {}
+
+        fn register_host_capability_dispatcher(&self, _dispatcher: Arc<HostCapabilityDispatcher>) {}
+
+        fn clear_host_capability_dispatcher(&self) {}
+
+        fn call_host_capability(&self, method: &str, _payload: Value) -> Result<Value, String> {
+            Err(format!("unexpected host capability call: {method}"))
+        }
+    }
 
     #[test]
     fn runtime_declares_expected_services() {
@@ -376,5 +404,28 @@ mod tests {
                 .iter()
                 .any(|entry| entry["id"] == "openai")
         );
+    }
+
+    #[test]
+    fn runtime_services_route_model_management_requests_through_provider_service() {
+        let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
+
+        let enabled = services
+            .handle_agent_request(
+                "agent.models.enable",
+                json!({ "provider": "mimo", "model": "mimo-v2.5-pro", "enabled": false }),
+            )
+            .expect("model enable request should be routed");
+        assert_eq!(enabled["method"], "agent.models.enable");
+        assert_eq!(enabled["payload"]["enabled"], false);
+
+        let deleted = services
+            .handle_agent_request(
+                "agent.models.delete",
+                json!({ "provider": "mimo", "model": "mimo-v2.5-pro" }),
+            )
+            .expect("model delete request should be routed");
+        assert_eq!(deleted["method"], "agent.models.delete");
+        assert_eq!(deleted["payload"]["provider"], "mimo");
     }
 }
