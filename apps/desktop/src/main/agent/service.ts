@@ -6,6 +6,7 @@ import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservationService } from "../workbench-observation/types";
 import { createAgentIpcRouter } from "./agent-ipc-router";
 import { createAxToolHost } from "./ax-tool-host";
+import { createComputerToolHost } from "./computer-tool-host";
 import { createLumenToolHost } from "./lumen-tool-host";
 import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
@@ -13,6 +14,7 @@ import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
+import type { LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 
 export type AgentIpcBridge = {
@@ -26,7 +28,8 @@ export const createAgentIpcBridge = ({
   getWindow,
   getBrowserBridge,
   getWorkbenchObservationService,
-  workbenchState
+  workbenchState,
+  resolveSensitiveValueForFill
 }: {
   readonly runtimeClient: LyraRuntimeClient;
   readonly storageRoot: string;
@@ -35,6 +38,9 @@ export const createAgentIpcBridge = ({
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly getWorkbenchObservationService: () => WorkbenchObservationService | null;
   readonly workbenchState: WorkbenchStateIpcBridge;
+  readonly resolveSensitiveValueForFill?: (
+    ref: LyraSensitiveValueRef
+  ) => Promise<string>;
 }): AgentIpcBridge => {
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
     runtimeClient.request<T>(method, payload);
@@ -70,7 +76,10 @@ export const createAgentIpcBridge = ({
     getBrowserBridge,
     tabResolver: workbenchObservationAdapter,
     storageRoot,
-    getBrowserFollowMode: browserFollowMode.read
+    getBrowserFollowMode: browserFollowMode.read,
+    ...(resolveSensitiveValueForFill === undefined
+      ? {}
+      : { resolveSensitiveValueForFill })
   });
 
   const axToolHost = createAxToolHost({
@@ -81,10 +90,17 @@ export const createAgentIpcBridge = ({
 
   const softwareCapabilityHost = createSoftwareCapabilityHost({ getWindow });
 
+  const computerToolHost = createComputerToolHost(
+    resolveSensitiveValueForFill === undefined
+      ? {}
+      : { resolveSensitiveValueForFill }
+  );
+
   const hostCapabilityHandlers: AgentHostCapabilityHandlers = {
     ...workbenchObservationAdapter.handlers,
     ...lumenToolHost.handlers,
     ...axToolHost.handlers,
+    ...computerToolHost.handlers,
     ...terminalToolHost.handlers,
     ...softwareCapabilityHost.handlers,
     ...createHostPersonaContextHandlers(workbenchState)

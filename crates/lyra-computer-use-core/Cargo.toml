@@ -1,0 +1,42 @@
+[package]
+name = "lyra-computer-use-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+# Pure Rust library. This crate owns the cross-platform Computer Use contract
+# (ComputerNode, opaque osRef, ComputerBackend trait), the snapshot store, and
+# the act -> diff closed loop. It exposes a JSON facade that platform N-API
+# shims (currently `lyra-accessibility-napi`) call into. It is intentionally
+# NOT a native-owned desktop module: no napi, no Electron bridge of its own.
+
+[features]
+# Linux AT-SPI2 backend. OFF by default: AT-SPI is D-Bus/async and drags in a
+# full async stack, while this crate is otherwise sync and dependency-light, and
+# Linux is the lowest-ROI platform (Wayland limits, §12/§13). A Linux packager
+# opts in with `--features linux-atspi`; without it, Linux falls through to the
+# `unsupported` status like any other platform.
+linux-atspi = ["dep:atspi", "dep:async-io"]
+
+[dependencies]
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"
+
+# Linux AT-SPI2 backend deps, only present on Linux AND only when the
+# linux-atspi feature is enabled (optional + target-gated).
+[target.'cfg(target_os = "linux")'.dependencies]
+atspi = { version = "0.30.0", optional = true }
+async-io = { version = "2", optional = true }
+
+# Windows UI Automation backend. Only pulled in on Windows; the high-level
+# windows-rs crate (already in the workspace tree at 0.57) exposes the UIA COM
+# client interfaces under Win32_UI_Accessibility.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.57", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Ole",
+  "Win32_System_Variant",
+  "Win32_UI_Accessibility",
+] }
+windows-core = "0.57"

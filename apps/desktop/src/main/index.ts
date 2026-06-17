@@ -814,7 +814,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     getWindow: () => mainWindow,
     getBrowserBridge: () => workbenchBrowserBridge,
     getWorkbenchObservationService: () => workbenchObservationService,
-    workbenchState: workbenchStateBridge
+    workbenchState: workbenchStateBridge,
+    resolveSensitiveValueForFill: sensitiveValuesBridge.resolveForAgentFill
   });
   disposeAgentBridge = agentBridge.dispose;
   const disposeGeolocationPermissionHandler = configureGeolocationPermissionHandler(

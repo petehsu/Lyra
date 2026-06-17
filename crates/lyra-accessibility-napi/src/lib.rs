@@ -41,6 +41,37 @@ pub fn act_on_os_ax_node_json(payload: String) -> Result<String> {
     .map_err(|message| Error::new(Status::GenericFailure, message))
 }
 
+// Computer Use semantic surface. These delegate to `lyra-computer-use-core`,
+// which owns the cross-platform ComputerNode/osRef contract and the act -> diff
+// closed loop. This crate is the macOS N-API shim for that core; Windows/Linux
+// shims plug the same facade behind their own backends. See
+// `Desktop-Computer-Use-Architecture.md`.
+
+#[napi(js_name = "computerMapJson")]
+pub fn computer_map_json(payload: String) -> String {
+    lyra_computer_use_core::map_json(&payload)
+}
+
+#[napi(js_name = "computerFindJson")]
+pub fn computer_find_json(payload: String) -> String {
+    lyra_computer_use_core::find_json(&payload)
+}
+
+#[napi(js_name = "computerActJson")]
+pub fn computer_act_json(payload: String) -> String {
+    lyra_computer_use_core::act_json(&payload)
+}
+
+#[napi(js_name = "computerDiffJson")]
+pub fn computer_diff_json(payload: String) -> String {
+    lyra_computer_use_core::diff_json(&payload)
+}
+
+#[napi(js_name = "computerExplainJson")]
+pub fn computer_explain_json(payload: String) -> String {
+    lyra_computer_use_core::explain_json(&payload)
+}
+
 #[cfg(not(target_os = "macos"))]
 mod os_ax {
     use serde_json::{json, Value};

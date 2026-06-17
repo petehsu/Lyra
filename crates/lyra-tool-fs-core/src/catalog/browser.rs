@@ -11,6 +11,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             Some("browser_map"),
         ),
         super::s(
+            "/tools/browser/plan",
+            "browser",
+            "plan",
+            "Plan browser actions",
+            "Map once and return deterministic targetRef action candidates for batch act/type.",
+            Some("browser_plan"),
+        ),
+        super::s(
             "/tools/browser/read",
             "browser",
             "read",

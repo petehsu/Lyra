@@ -32,6 +32,9 @@ export type SensitiveValuesIpcBridge = {
   readonly revealToUser: (
     request: LyraSensitiveValueRevealRequest
   ) => Promise<LyraSensitiveValueRevealResponse>;
+  readonly resolveForAgentFill: (
+    ref: import("../../shared/sensitive-value").LyraSensitiveValueRef
+  ) => Promise<string>;
 };
 
 type StoredSensitiveValue = {
@@ -84,6 +87,13 @@ const encryptValue = (value: string): string => {
     throw new Error("Electron safeStorage encryption is not available.");
   }
   return safeStorage.encryptString(value).toString("base64");
+};
+
+const decryptValue = (ciphertextBase64: string): string => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Electron safeStorage encryption is not available.");
+  }
+  return safeStorage.decryptString(Buffer.from(ciphertextBase64, "base64"));
 };
 
 const normalizeRevealRequest = (
@@ -185,12 +195,41 @@ export const createSensitiveValuesIpcBridge = ({
   ipcMain.handle(LYRA_CHANNELS.sensitiveValuesStore, async (_event, request: unknown) =>
     await store(request as LyraSensitiveValueStoreRequest));
 
+  const resolveForAgentFill = async (
+    ref: import("../../shared/sensitive-value").LyraSensitiveValueRef
+  ): Promise<string> => {
+    if (!isLyraSensitiveValueRef(ref)) {
+      throw new Error("Invalid sensitive value ref.");
+    }
+    if (!ref.capabilities.includes("fill") && !ref.capabilities.includes("use")) {
+      throw new Error("Sensitive value ref is not authorized for fill/use.");
+    }
+    if (
+      ref.owner === "login-manager"
+      && ref.ownerRef.kind === "login-manager-credential"
+      && ref.valueKind === "password"
+    ) {
+      const revealed = loginManager.revealCredential({
+        credentialId: ref.ownerRef.credentialId,
+        reason: "agent-fill-sensitive-value"
+      });
+      return revealed.password;
+    }
+    const current = readStore();
+    const record = current.values.find((entry) => entry.id === ref.id);
+    if (record === undefined) {
+      throw new Error(`Sensitive value not found: ${ref.id}`);
+    }
+    return decryptValue(record.ciphertextBase64);
+  };
+
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesRevealToUser);
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesStore);
     },
     store,
-    revealToUser
+    revealToUser,
+    resolveForAgentFill
   };
 };

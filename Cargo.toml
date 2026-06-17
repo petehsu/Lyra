@@ -27,6 +27,7 @@ members = [
   "crates/lyra-search-core",
   "crates/lyra-local-inference-core",
   "crates/lyra-performance-core",
+  "crates/lyra-computer-use-core",
 ]
 resolver = "2"
 

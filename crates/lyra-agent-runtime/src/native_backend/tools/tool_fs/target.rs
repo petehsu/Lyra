@@ -109,6 +109,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             host("software.invokeCapability", "software", "invoke_capability")
         }
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
+        "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),
         "/tools/browser/read" => host("lyraLumen.read", "lyra_lumen", "read"),
         "/tools/browser/find" => host("lyraLumen.find", "lyra_lumen", "find"),
         "/tools/browser/locate" => host("lyraLumen.locate", "lyra_lumen", "locate"),
@@ -142,6 +143,11 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/browser_ax/focus" => host("lyraAx.focus", "lyra_ax", "focus"),
         "/tools/browser_ax/press" => host("lyraAx.press", "lyra_ax", "press"),
         "/tools/browser_ax/explain" => host("lyraAx.explain", "lyra_ax", "explain"),
+        "/tools/computer/map" => host("lyraComputer.map", "lyra_computer", "map"),
+        "/tools/computer/find" => host("lyraComputer.find", "lyra_computer", "find"),
+        "/tools/computer/act" => host("lyraComputer.act", "lyra_computer", "act"),
+        "/tools/computer/diff" => host("lyraComputer.diff", "lyra_computer", "diff"),
+        "/tools/computer/explain" => host("lyraComputer.explain", "lyra_computer", "explain"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
         "/tools/filesystem/read_file" | "/tools/filesystem/read_range" => {
             native("file_read", "file", "read")

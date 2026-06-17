@@ -20,7 +20,12 @@ type NodeAddonModule = NodeModule & {
 
 const requiredMethods: readonly (keyof AccessibilityNativeBindings)[] = [
   "readOsAxTreeJson",
-  "actOnOsAxNodeJson"
+  "actOnOsAxNodeJson",
+  "computerMapJson",
+  "computerFindJson",
+  "computerActJson",
+  "computerDiffJson",
+  "computerExplainJson"
 ];
 
 export const resolveAccessibilityNativeCandidates = (cwd: string): readonly string[] =>

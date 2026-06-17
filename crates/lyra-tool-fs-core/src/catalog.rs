@@ -10,6 +10,7 @@ mod browser;
 mod browser_ax;
 mod clarification;
 mod code;
+mod computer;
 mod design;
 mod filesystem;
 mod git;
@@ -147,6 +148,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(software::manifests());
     entries.extend(browser::manifests());
     entries.extend(browser_ax::manifests());
+    entries.extend(computer::manifests());
     entries.extend(filesystem::manifests());
     entries.extend(code::manifests());
     entries.extend(shell::manifests());
@@ -298,6 +300,12 @@ fn description_for(
         }
         ("browser_ax", "act" | "focus" | "press") => {
             "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, move keyboard focus through the accessibility tree, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
+        }
+        ("computer", "map" | "find" | "explain") => {
+            "Use to control native desktop apps outside the Lyra browser through the OS accessibility tree (osRef): read the focused window's semantic tree, find a control by role/name, or explain whether semantic control is available and reachable. Prefer this over screenshots+coordinates."
+        }
+        ("computer", "act" | "diff") => {
+            "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/toggle/select it semantically (no coordinates, no foreground steal), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff."
         }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
@@ -687,6 +695,18 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "跨域按钮",
                 "授权弹窗按钮",
             ],
+            ("computer", _) => vec![
+                "computer use",
+                "control desktop app",
+                "native app automation",
+                "click button in app",
+                "os accessibility",
+                "desktop tree",
+                "电脑操作",
+                "操控桌面应用",
+                "控制软件",
+                "系统无障碍",
+            ],
             ("workbench", _) => vec!["workspace tabs", "active tab", "工作区", "标签页"],
             ("web", "search") => vec!["internet search", "search web", "联网搜索", "网页搜索"],
             ("web", "research") => {
@@ -799,6 +819,14 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Click an AX node by axRef when the DOM selector is unreliable.",
             "用 axRef 操作 DOM selector 不稳定但 AX 可见的控件。",
         ],
+        ("computer", "map" | "find" | "explain") => vec![
+            "Read the focused app's accessibility tree to locate its New Folder button.",
+            "读取前台应用的无障碍树,定位它的「新建文件夹」按钮。",
+        ],
+        ("computer", "act" | "diff") => vec![
+            "Toggle a checkbox in System Settings by osRef, then read back its state.",
+            "用 osRef 勾选系统设置里的开关,再回读它的状态确认生效。",
+        ],
         ("browser", "scroll") => vec![
             "Scroll the browser down one viewport and map again.",
             "页面没有看到目标时先向下滚动。",
@@ -853,6 +881,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
+            "computer" => vec!["desktop", "accessibility", "computer-use"],
             "workbench" => vec!["workspace", "tabs", "state"],
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
@@ -893,6 +922,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
             "browser"
         }
         ("browser_ax", "act" | "press" | "focus") => "browser",
+        ("computer", "act") => "computer",
         (
             "memory",
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
@@ -914,7 +944,8 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
         | ("hardware", "session_write" | "run_action")
         | ("git", "stage" | "unstage" | "discard")
         | ("browser", "elevate")
-        | ("browser_ax", "act" | "press") => "ask_on_risk",
+        | ("browser_ax", "act" | "press")
+        | ("computer", "act") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
         _ => "runtime_policy",
     }
@@ -938,6 +969,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("hardware", _) => "hardware",
         ("terminal", _) => "terminal",
         ("browser", _) | ("browser_ax", _) | ("web", _) => "web",
+        ("computer", _) => "computer",
         ("workbench", _) => "workbench",
         ("render", _) => "render",
         ("todo", _) => "task",
@@ -1572,6 +1604,81 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("computer", "map") => object_schema(
+            [
+                (
+                    "strategy",
+                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive", "description": "interactive: actionable controls only; document: include text/headings for reading structure." }),
+                ),
+                (
+                    "maxNodes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200, "description": "Cap on returned desktop nodes to prevent tree explosion." }),
+                ),
+            ],
+            &[],
+        ),
+        ("computer", "find") => object_schema(
+            [
+                ("role", string("Desktop role to match, e.g. button, textbox, checkbox, menuitem.")),
+                ("nameIncludes", string("Substring the accessible name must contain (case-insensitive).")),
+                (
+                    "strategy",
+                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive" }),
+                ),
+                (
+                    "maxResults",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
+                ),
+            ],
+            &[],
+        ),
+        ("computer", "act") => object_schema(
+            [
+                (
+                    "osRef",
+                    string("Desktop node reference from computer.map/find (osax:<path>). Not an axRef or targetRef."),
+                ),
+                (
+                    "action",
+                    json!({ "type": "string", "enum": ["press", "focus", "setText", "toggle", "select", "scroll"], "default": "press" }),
+                ),
+                ("text", string("Plaintext payload for the setText action; ignored otherwise. Never use this for passwords — pass sensitiveValueRef instead.")),
+                (
+                    "sensitiveValueRef",
+                    json!({ "type": "object", "description": "A lyra-sensitive-value-ref (from the login manager / sensitive-values store) to autofill into a setText target. The plaintext is resolved host-side and never enters the model; this is the only sanctioned way to fill a secure (password) field." }),
+                ),
+                (
+                    "mode",
+                    json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared: user-visible, focus/raise allowed. background-semantic/isolated-session: true background, semantic actions only — focus/raise is refused." }),
+                ),
+            ],
+            &["osRef"],
+        ),
+        ("computer", "diff") => object_schema(
+            [
+                (
+                    "baselineSnapshotId",
+                    string("snapshotId from a prior computer.map/find. When set, returns the observation diff (added/removed/changed) against a fresh read."),
+                ),
+                (
+                    "osRef",
+                    string("Desktop node reference to re-read for single-node verification. Used when baselineSnapshotId is absent."),
+                ),
+                (
+                    "strategy",
+                    json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive", "description": "Strategy for the fresh read in a snapshot diff." }),
+                ),
+                (
+                    "maxNodes",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }),
+                ),
+            ],
+            &[],
+        ),
+        ("computer", "explain") => object_schema(
+            [("osRef", string("Optional desktop node reference to check for reachability."))],
+            &[],
+        ),
         ("terminal", "run") => object_schema(
             [
                 ("command", string("Terminal command.")),
@@ -1909,6 +2016,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "browser" => "Operate Lyra browser/Lumen pages with DOM, target, visual, and wait tools.",
         "browser_ax" => {
             "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
+        }
+        "computer" => {
+            "Control native desktop apps through the OS accessibility tree (osRef): map, find, act, and verify semantically without screenshots or coordinates."
         }
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
         "code" => "Search code text, symbols, code graph, and LSP data.",
