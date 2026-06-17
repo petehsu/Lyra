@@ -34,8 +34,13 @@ pub(crate) fn parse_browser_tool_call(name: &str, args: &Value) -> Option<(Strin
                 return Some(("browser".to_string(), action.to_string(), args.clone()));
             }
         }
+        if let Some(action) = path.strip_prefix("/tools/computer/") {
+            if !action.is_empty() {
+                return Some(("computer".to_string(), action.to_string(), args.clone()));
+            }
+        }
     }
-    if name == "lyra_lumen" {
+    if name == "lyra_lumen" || name == "lyra_computer" {
         let action = args
             .get("action")
             .and_then(Value::as_str)
@@ -47,7 +52,7 @@ pub(crate) fn parse_browser_tool_call(name: &str, args: &Value) -> Option<(Strin
 }
 
 fn browser_tool_action_hash(name: &str, action: &str, args: &Value) -> Option<String> {
-    if name != "lyra_lumen" && name != "browser" {
+    if name != "lyra_lumen" && name != "browser" && name != "lyra_computer" && name != "computer" {
         return None;
     }
     if matches!(action, "wait" | "done") {
@@ -56,6 +61,12 @@ fn browser_tool_action_hash(name: &str, action: &str, args: &Value) -> Option<St
     let mut payload = format!("{name}:{action}");
     if let Some(target_ref) = args.get("targetRef").and_then(Value::as_str) {
         payload.push_str(&format!(":targetRef={target_ref}"));
+    }
+    if let Some(os_ref) = args.get("osRef").and_then(Value::as_str) {
+        payload.push_str(&format!(":osRef={os_ref}"));
+    }
+    if let Some(action_name) = args.get("action").and_then(Value::as_str) {
+        payload.push_str(&format!(":action={action_name}"));
     }
     if let Some(interaction) = args.get("interaction").and_then(Value::as_str) {
         payload.push_str(&format!(":interaction={interaction}"));
@@ -86,16 +97,28 @@ fn page_fingerprint_from_output(output: &Value) -> Option<String> {
         .map(|items| items.len())
         .or_else(|| {
             output
+                .pointer("/nodes")
+                .or_else(|| output.pointer("/data/nodes"))
+                .and_then(Value::as_array)
+                .map(|items| items.len())
+        })
+        .or_else(|| {
+            output
                 .pointer("/elementCount")
                 .or_else(|| output.pointer("/data/elementCount"))
                 .and_then(Value::as_u64)
                 .map(|count| count as usize)
         })
         .unwrap_or(0);
-    if url.is_empty() && element_count == 0 {
+    let status = output
+        .pointer("/status/state")
+        .or_else(|| output.pointer("/data/status/state"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if url.is_empty() && element_count == 0 && status.is_empty() {
         return None;
     }
-    Some(format!("{url}|elements={element_count}"))
+    Some(format!("{url}|elements={element_count}|status={status}"))
 }
 
 impl BrowserLoopDetector {
@@ -130,14 +153,14 @@ impl BrowserLoopDetector {
 
         if REPETITION_NUDGE_AT.contains(&self.max_repetition_count) {
             nudges.push(format!(
-                "Browser loop hint: a similar browser action repeated {} times in the last {} browser steps. If each attempt is making progress, continue. Otherwise change strategy with locate/find, explain_target, browser_ax, or see.",
+                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise change strategy with locate/find, explain_target, browser_ax/computer.explain, or see.",
                 self.max_repetition_count,
                 self.recent_action_hashes.len()
             ));
         }
         if self.consecutive_stagnant_pages >= STAGNANT_PAGE_THRESHOLD {
             nudges.push(format!(
-                "Browser stagnation hint: the page evidence (URL/element count) has not changed across {} consecutive browser tool results. Try a different reveal/locate path, wait for navigation to finish, or escalate with browser_ax/see.",
+                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Try a different reveal/locate path, wait for navigation to finish, or escalate with browser_ax/computer.diff.",
                 self.consecutive_stagnant_pages
             ));
         }
@@ -160,6 +183,33 @@ mod tests {
             normalize_search_query("Site:Example.com ANSWERS votes"),
             normalize_search_query("votes answers site example com")
         );
+    }
+
+    #[test]
+    fn parses_computer_tool_fs_paths() {
+        let parsed = parse_browser_tool_call(
+            "tool_fs_run",
+            &json!({"path": "/tools/computer/map", "strategy": "interactive"}),
+        )
+        .expect("computer path");
+        assert_eq!(parsed.0, "computer");
+        assert_eq!(parsed.1, "map");
+    }
+
+    #[test]
+    fn emits_repetition_nudge_for_computer_actions() {
+        let mut detector = BrowserLoopDetector::default();
+        let call = (
+            "computer".to_string(),
+            "act".to_string(),
+            json!({"osRef": "osax:0/1", "action": "press"}),
+        );
+        let output = json!({"ok": true, "nodes": [], "status": {"state": "ready"}});
+        let mut nudge = None;
+        for _ in 0..5 {
+            nudge = detector.observe_browser_tools(&[call.clone()], &[output.clone()]);
+        }
+        assert!(nudge.is_some());
     }
 
     #[test]
