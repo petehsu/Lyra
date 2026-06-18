@@ -32,6 +32,7 @@ type NextDevLock = {
 const repoRoot = path.resolve(__dirname, "../..");
 const docsRoot = path.join(repoRoot, "web/docs");
 const docsPort = 5174;
+const rendererDevPort = 5173;
 const docsHealthPath = "/docs";
 const docsDevLockPath = path.join(docsRoot, ".next", "dev", "lock");
 const docsNextBin = path.join(
@@ -41,8 +42,19 @@ const docsNextBin = path.join(
   process.platform === "win32" ? "next.cmd" : "next"
 );
 
-const commandName = (command: string): string =>
-  process.platform === "win32" ? `${command}.cmd` : command;
+const spawnCommand = (
+  command: string,
+  args: readonly string[],
+  options: Parameters<typeof spawn>[2] = {}
+): ChildProcessWithoutNullStreams => {
+  if (process.platform === "win32") {
+    return spawn("cmd.exe", ["/d", "/s", "/c", command, ...args], {
+      ...options,
+      windowsVerbatimArguments: false
+    });
+  }
+  return spawn(command, [...args], options);
+};
 
 const isBrokenPipeError = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | undefined)?.code === "EPIPE";
@@ -249,7 +261,7 @@ const resolveDocsPort = async (): Promise<{
 
 const runInstall = async (): Promise<void> => {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(commandName("npm"), ["install"], {
+    const child = spawnCommand("npm", ["install"], {
       cwd: docsRoot,
       stdio: "inherit"
     });
@@ -289,7 +301,7 @@ const startProcess = (
   args: readonly string[],
   options: StartProcessOptions = {}
 ): ManagedProcess => {
-  const child = spawn(commandName(command), [...args], {
+  const child = spawnCommand(command, args, {
     cwd: options.cwd ?? repoRoot,
     detached: process.platform !== "win32",
     env: options.env,
@@ -386,12 +398,15 @@ const main = async (): Promise<void> => {
   if (docsServer.processInfo !== null) {
     processes.push(docsServer.processInfo);
   }
+  const desktopEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    LYRA_RENDERER_PORT: String(rendererDevPort),
+    VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
+  };
+  delete desktopEnv.ELECTRON_RUN_AS_NODE;
   processes.push(
     startProcess("desktop", "pnpm", ["--filter", "@lyra/desktop", "dev"], {
-      env: {
-        ...process.env,
-        VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
-      }
+      env: desktopEnv
     })
   );
 

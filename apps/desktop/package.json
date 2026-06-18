@@ -16,7 +16,7 @@
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
     "release:preflight": "npm run typecheck && npm run test && npm run downloads:verify-aria2-bundles -- --all-targets && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
     "dev:electron-vite": "npm run electron:ensure && npm run dev:electron-vite:raw",
-    "dev:electron-vite:raw": "node --input-type=module -e \"import { spawn } from 'node:child_process'; import { join } from 'node:path'; const env = { ...process.env, ELECTRON_RUN_AS_NODE: '' }; const isLinuxWayland = process.platform === 'linux' && (((env.XDG_SESSION_TYPE ?? '').toLowerCase() === 'wayland') || (typeof env.WAYLAND_DISPLAY === 'string' && env.WAYLAND_DISPLAY.length > 0)); if (isLinuxWayland) { env.ELECTRON_OZONE_PLATFORM_HINT = 'wayland'; env.DISPLAY = ''; } const bin = join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'); const child = spawn(bin, ['dev'], { stdio: 'inherit', env }); child.on('exit', (code, signal) => { if (signal) { process.kill(process.pid, signal); return; } process.exit(code ?? 0); });\"",
+    "dev:electron-vite:raw": "node --import tsx ../../scripts/desktop/dev-electron-vite.ts",
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
     "build": "npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",

@@ -586,6 +586,34 @@ const createPowerSaveBlockerController = (): {
   };
 };
 
+const loadRendererInDevelopment = (window: BrowserWindow, rendererUrl: string): void => {
+  const maxAttempts = 60;
+  let attempt = 0;
+
+  const tryLoad = (): void => {
+    attempt += 1;
+    void window.loadURL(rendererUrl);
+  };
+
+  const onFailLoad = (
+    _event: Electron.Event,
+    errorCode: number,
+    _errorDescription: string,
+    validatedUrl: string
+  ): void => {
+    if (validatedUrl !== rendererUrl || errorCode !== -102 || attempt >= maxAttempts) {
+      return;
+    }
+    setTimeout(tryLoad, 500);
+  };
+
+  window.webContents.on("did-fail-load", onFailLoad);
+  window.webContents.once("did-finish-load", () => {
+    window.webContents.off("did-fail-load", onFailLoad);
+  });
+  tryLoad();
+};
+
 const createMainWindow = (): BrowserWindow => {
   const isMac = process.platform === "darwin";
   const iconPath = resolveLyraAppIconPath();
@@ -613,7 +641,11 @@ const createMainWindow = (): BrowserWindow => {
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (typeof rendererUrl === "string" && rendererUrl.length > 0) {
-    void window.loadURL(rendererUrl);
+    if (isDevelopmentMode()) {
+      loadRendererInDevelopment(window, rendererUrl);
+    } else {
+      void window.loadURL(rendererUrl);
+    }
   } else {
     void window.loadFile(join(currentDir, "../renderer/index.html"));
   }

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, readdir, rm } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,7 +29,6 @@ const nativeAddonPackages = [
   "lyra-lsp-core",
   "lyra-files-napi",
   "lyra-image-napi",
-  "lyra-skills-napi",
   "lyra-docs-napi",
   "lyra-download-napi",
   "lyra-accessibility-napi",
@@ -40,7 +39,6 @@ const artifactStems = [
   "lyra_lsp_core",
   "lyra_files_napi",
   "lyra_image_napi",
-  "lyra_skills_napi",
   "lyra_docs_napi",
   "lyra_download_napi",
   "lyra_accessibility_napi",
@@ -180,6 +178,59 @@ const exists = async (filePath: string): Promise<boolean> => {
   }
 };
 
+const sleep = async (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isBusyCopyError = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EBUSY" || code === "EPERM";
+};
+
+const canReuseStagedArtifact = async (
+  source: string,
+  destination: string
+): Promise<boolean> => {
+  try {
+    const [sourceStat, destinationStat] = await Promise.all([stat(source), stat(destination)]);
+    return (
+      destinationStat.size === sourceStat.size
+      && destinationStat.mtimeMs >= sourceStat.mtimeMs
+    );
+  } catch {
+    return false;
+  }
+};
+
+const copyArtifactWithRetry = async (source: string, destination: string): Promise<void> => {
+  if (await canReuseStagedArtifact(source, destination)) {
+    return;
+  }
+
+  const maxAttempts = 8;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      await copyFile(source, destination);
+      return;
+    } catch (error) {
+      if (!isBusyCopyError(error)) {
+        throw error;
+      }
+      if (attempt === maxAttempts - 1) {
+        if (await exists(destination)) {
+          console.warn(
+            `[lyra-native] ${path.basename(destination)} is locked; reusing existing staged artifact`
+          );
+          return;
+        }
+        throw error;
+      }
+      await sleep(125 * (attempt + 1));
+    }
+  }
+};
+
 const copyFirstExisting = async (
   fromDirs: readonly string[],
   names: readonly string[],
@@ -189,7 +240,7 @@ const copyFirstExisting = async (
     for (const name of names) {
       const source = path.join(fromDir, name);
       if (await exists(source)) {
-        await copyFile(source, path.join(toDir, name));
+        await copyArtifactWithRetry(source, path.join(toDir, name));
         return name;
       }
     }
