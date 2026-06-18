@@ -61,8 +61,9 @@ export default defineConfig({
     root: resolve(projectRoot, "src/renderer"),
     plugins: [react()],
     server: {
+      host: "127.0.0.1",
       port: resolveRendererPort(),
-      strictPort: false
+      strictPort: true
     },
     optimizeDeps: {
       esbuildOptions: {
