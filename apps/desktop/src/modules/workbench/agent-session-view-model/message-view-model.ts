@@ -38,6 +38,14 @@ const isAssistantToolPlaceholderText = (text: string): boolean => {
   return cleaned === "..." || cleaned === "…";
 };
 
+const looksLikeSyntheticToolNarration = (text: string): boolean => {
+  const cleaned = cleanSyntheticImageText(text).trim();
+  if (cleaned.length === 0) return false;
+  const segments = cleaned.split(" · ").map((segment) => segment.trim());
+  if (segments.length === 0) return false;
+  return segments.every((segment) => /^[\w-]+(\.[\w-]+)+$/.test(segment));
+};
+
 const messageBody = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
@@ -73,6 +81,11 @@ const isPendingAgentMessage = (message: ChatMessage): boolean =>
   message.blocks.length > 0 &&
   message.blocks.every((block) => block.type === "text" && block.body.trim().length === 0);
 
+const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
+  if (metadata === null || typeof metadata !== "object") return false;
+  return (metadata as { readonly uiHidden?: boolean }).uiHidden === true;
+};
+
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
@@ -82,12 +95,40 @@ const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
 };
 
+const mergeToolBlocks = (
+  left: Extract<MessageBlock, { type: "tools" }>,
+  right: Extract<MessageBlock, { type: "tools" }>
+): Extract<MessageBlock, { type: "tools" }> => {
+  const combinedCalls = [...left.group.calls, ...right.group.calls];
+  const running = combinedCalls.find((call) => call.status === "running");
+  return {
+    ...left,
+    group: {
+      ...left.group,
+      status: running === undefined ? "done" : "running",
+      label: running?.title ?? left.group.label,
+      hint: running === undefined
+        ? formatMessage("tool.events", { count: combinedCalls.length })
+        : t("tool.running"),
+      ...(running === undefined ? {} : { currentCallId: running.id }),
+      calls: combinedCalls
+    }
+  };
+};
+
+const appendToolBlock = (blocks: MessageBlock[], toolBlock: Extract<MessageBlock, { type: "tools" }>): MessageBlock[] => {
+  const lastBlock = blocks[blocks.length - 1];
+  if (lastBlock?.type === "tools") {
+    return [...blocks.slice(0, -1), mergeToolBlocks(lastBlock, toolBlock)];
+  }
+  return [...blocks, toolBlock];
+};
+
 const chatBlocksForAgentMessage = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
   index: number,
-  toolsById: ReadonlyMap<string, AgentToolActivity>,
-  referencedToolIds: Set<string>
+  toolsById: ReadonlyMap<string, AgentToolActivity>
 ): MessageBlock[] => {
   const sourceBlocks = message.blocks ?? [];
   if (sourceBlocks.length === 0) {
@@ -114,11 +155,12 @@ const chatBlocksForAgentMessage = (
   let pendingTools: AgentToolActivity[] = [];
   const flushTools = () => {
     if (pendingTools.length === 0) return;
-    const group = toToolGroup(pendingTools, `${message.id}-tools-${chatBlocks.length}`);
+    const anchorToolId = pendingTools[0]?.id ?? "tools";
+    const group = toToolGroup(pendingTools, `${message.id}-tool-group-${anchorToolId}`);
     if (group !== null) {
       chatBlocks.push({
         type: "tools",
-        id: `${group.id}-block`,
+        id: `${message.id}-tool-group-${anchorToolId}-block`,
         group
       });
     }
@@ -129,7 +171,8 @@ const chatBlocksForAgentMessage = (
     if (block.type === "text") {
       if (
         hasAssistantToolBlock &&
-        isAssistantToolPlaceholderText(block.text)
+        (isAssistantToolPlaceholderText(block.text) ||
+          looksLikeSyntheticToolNarration(block.text))
       ) {
         continue;
       }
@@ -166,7 +209,6 @@ const chatBlocksForAgentMessage = (
     const toolId = toolIdForBlock(block);
     const tool = toolId === null ? undefined : toolsById.get(toolId);
     if (tool !== undefined) {
-      referencedToolIds.add(tool.id);
       pendingTools.push(tool);
     }
   }
@@ -204,7 +246,6 @@ export const agentSessionToChatMessages = (
 
   const sessionTools = latestToolActivities(session.tools);
   const toolsById = new Map(sessionTools.map((tool) => [tool.id, tool]));
-  const referencedToolIds = new Set<string>();
   const messageLimit = typeof options.messageLimitFromEnd === "number" &&
     Number.isFinite(options.messageLimitFromEnd)
     ? Math.max(0, Math.floor(options.messageLimitFromEnd))
@@ -216,9 +257,11 @@ export const agentSessionToChatMessages = (
     ? session.messages
     : session.messages.slice(sourceMessageStartIndex);
 
-  // 1. Map raw AgentMessages to ChatMessages
   const timedMessages = sourceMessages
-    .map((message, index) => {
+    .flatMap((message, index) => {
+      if (isUiHiddenAgentMessage(message.metadata)) {
+        return [];
+      }
       const originalIndex = sourceMessageStartIndex + index;
       const formattedTime = formatAgentMessageTime(message.createdAt);
       const hasToolBlock = message.blocks?.some((b) => b.type === "tool") ?? false;
@@ -242,17 +285,16 @@ export const agentSessionToChatMessages = (
           session,
           message,
           originalIndex,
-          toolsById,
-          referencedToolIds
+          toolsById
         )
       };
-      return {
+      const item = {
         message: chatMessage,
         atMs: timelineTimeMs(message.createdAt, originalIndex),
         sequence: originalIndex
       };
-    })
-    .filter((item) => item.message.blocks.length > 0);
+      return item.message.blocks.length > 0 ? [item] : [];
+    });
 
   const lastMessage = session.messages.at(-1);
   if (session.turnStatus === "failed" && lastMessage?.role === "user") {
@@ -278,39 +320,6 @@ export const agentSessionToChatMessages = (
     });
   }
 
-  const firstVisibleMessage = sourceMessages[0];
-  const firstVisibleAtMs = firstVisibleMessage === undefined
-    ? null
-    : timelineTimeMs(firstVisibleMessage.createdAt, sourceMessageStartIndex);
-  const orphanTools = sessionTools
-    .filter((tool) => !referencedToolIds.has(tool.id))
-    .filter((tool) => (
-      messageLimit === null ||
-      firstVisibleAtMs === null ||
-      timelineTimeMs(tool.startedAt, 0) >= firstVisibleAtMs
-    ));
-  orphanTools.forEach((tool, index) => {
-    const group = toToolGroup([tool], `lyra-agent-tools-${tool.id}`);
-    if (group === null) return;
-    const formattedTime = formatAgentMessageTime(tool.startedAt);
-    timedMessages.push({
-      message: {
-        id: `lyra-agent-tool-message-${tool.id}`,
-        author: "agent",
-        ...(formattedTime === undefined ? {} : { time: formattedTime }),
-        blocks: [
-          {
-            type: "tools",
-            id: `${group.id}-block`,
-            group
-          }
-        ]
-      },
-      atMs: timelineTimeMs(tool.startedAt, session.messages.length + index),
-      sequence: session.messages.length + index
-    });
-  });
-
   timedMessages.sort((left, right) => {
     if (left.atMs !== right.atMs) return left.atMs - right.atMs;
     return left.sequence - right.sequence;
@@ -335,7 +344,6 @@ export const agentSessionToChatMessages = (
     });
   }
 
-  // 2. Merge pass on ChatMessages to combine consecutive agent messages and unify tool groups
   const finalMessages: ChatMessage[] = [];
   for (const msg of messages) {
     if (finalMessages.length > 0) {
@@ -347,26 +355,10 @@ export const agentSessionToChatMessages = (
         !isPendingAgentMessage(prev) &&
         !isPendingAgentMessage(msg)
       ) {
-        // Merge blocks and combine consecutive tool groups
-        const nextBlocks = [...prev.blocks];
+        let nextBlocks = [...prev.blocks];
         for (const block of msg.blocks) {
-          const lastBlock = nextBlocks[nextBlocks.length - 1];
-          if (lastBlock?.type === "tools" && block.type === "tools") {
-            const combinedCalls = [...lastBlock.group.calls, ...block.group.calls];
-            const running = combinedCalls.find((c) => c.status === "running");
-            nextBlocks[nextBlocks.length - 1] = {
-              ...lastBlock,
-              group: {
-                ...lastBlock.group,
-                status: running === undefined ? "done" : "running",
-                label: running?.title ?? lastBlock.group.label,
-                hint: running === undefined
-                  ? formatMessage("tool.events", { count: combinedCalls.length })
-                  : t("tool.running"),
-                ...(running === undefined ? {} : { currentCallId: running.id }),
-                calls: combinedCalls
-              }
-            };
+          if (block.type === "tools") {
+            nextBlocks = appendToolBlock(nextBlocks, block);
           } else {
             nextBlocks.push(block);
           }

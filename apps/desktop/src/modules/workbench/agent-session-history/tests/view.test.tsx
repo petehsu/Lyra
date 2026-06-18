@@ -23,7 +23,6 @@ const labels: AgentSessionHistoryLabels = {
   refresh: "Refresh",
   categoryFilter: "History categories",
   categorySessions: "Sessions",
-  categoryProjectSessions: "Project sessions",
   categoryArchivedSessions: "Archived sessions",
   categoryBrowserHistory: "Web history",
   loading: "Loading history",
@@ -301,13 +300,12 @@ describe("AgentSessionHistorySurface", () => {
     });
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Sessions 1" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Project sessions 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Archived sessions 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Web history 1" })).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Review UI polish")).toBeInTheDocument();
-    expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
+    expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
+    expect(screen.queryByText("Review UI polish")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search history")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
@@ -335,10 +333,7 @@ describe("AgentSessionHistorySurface", () => {
       onOpenBrowserHistoryEntry
     });
 
-    await screen.findByText("Review UI polish");
-    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 1" }));
-    expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
-    expect(screen.queryByText("Review UI polish")).not.toBeInTheDocument();
+    await screen.findByText("Fix agent storage");
 
     fireEvent.click(await screen.findByRole("button", { name: "Archived sessions 1" }));
     expect(screen.getByText("Archived plan")).toBeInTheDocument();
@@ -403,7 +398,7 @@ describe("AgentSessionHistorySurface", () => {
       onOpenBrowserHistoryEntry: vi.fn()
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 3" }));
+    await screen.findByRole("button", { name: "Sessions 3" });
     expect(screen.getByRole("button", { name: "Lyra 2" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "Launch 1" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Fix agent storage")).toBeInTheDocument();

@@ -102,6 +102,32 @@ describe("agent-element-matcher", () => {
     ).toBe("axName");
   });
 
+  test("matchElementIdentity prefers xpath after stable fingerprint miss", () => {
+    const pageUrl = "https://example.test/menu";
+    const xpath = "/html/body/div[2]/button[1]";
+    const snapshot = buildWorkflowElementIdentity(pageUrl, baseElement({
+      elementFingerprint: "fp-stale",
+      label: "Settings",
+      role: "menuitem",
+      selectorPreview: "div.item-selected",
+      xpath
+    }));
+    const candidate = baseElement({
+      targetRef: "lumen:xpath-hit",
+      elementFingerprint: "fp-other",
+      label: "Different label",
+      role: "menuitem",
+      selectorPreview: "div.item",
+      xpath
+    });
+    expect(
+      matchElementIdentity(pageUrl, {
+        ...snapshot,
+        stableFingerprint: "miss"
+      }, [candidate])?.matchLevel
+    ).toBe("xpath");
+  });
+
   test("matchElementIdentity resolves attribute selectors", () => {
     const pageUrl = "https://example.test/form";
     const snapshot = buildWorkflowElementIdentity(pageUrl, baseElement({

@@ -1,4 +1,4 @@
-import type { BrowserWindow } from "electron";
+import { desktopCapturer, screen, type BrowserWindow } from "electron";
 
 import type { LyraRuntimeClient } from "../runtime-client";
 import type { TerminalIpcBridge } from "../terminal/types";
@@ -16,6 +16,7 @@ import { createWorkbenchObservationAdapter } from "./workbench-observation-adapt
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import type { LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
+import { isRecord } from "./host-payload";
 
 export type AgentIpcBridge = {
   readonly dispose: () => void;
@@ -104,6 +105,51 @@ export const createAgentIpcBridge = ({
           throw new Error("Workbench observation capability is not available");
         }
         return service.listTabs({ scope: "all", includeUnsupported: true });
+      },
+      activateWorkbenchTab: async (tabId) => {
+        const service = getWorkbenchObservationService();
+        if (service === null) {
+          throw new Error("Workbench observation capability is not available");
+        }
+        const result = await service.activateTab({ tabId });
+        return {
+          ok: true,
+          platform: process.platform,
+          mode: "shared",
+          focused: true,
+          lyraTabId: tabId,
+          ...(isRecord(result) ? result : {}),
+          message: `Lyra workbench tab ${tabId} was activated.`
+        };
+      }
+    },
+    visualFallback: {
+      storageRoot,
+      // Level-3 desktop capture via Electron desktopCapturer. Lives in the
+      // platform-bridge layer so the host stays a pure marshaller.
+      captureScreen: async (scope) => {
+        const display = screen.getPrimaryDisplay();
+        const { width, height } = display.size;
+        const scale = display.scaleFactor || 1;
+        const sources = await desktopCapturer.getSources({
+          types: scope === "screen" ? ["screen"] : ["window", "screen"],
+          thumbnailSize: {
+            width: Math.round(width * scale),
+            height: Math.round(height * scale)
+          }
+        });
+        const source = sources[0];
+        if (source === undefined || source.thumbnail.isEmpty()) {
+          return null;
+        }
+        const image = source.thumbnail;
+        const size = image.getSize();
+        return {
+          imageBase64: image.toPNG().toString("base64"),
+          mimeType: "image/png",
+          width: size.width,
+          height: size.height
+        };
       }
     }
   });

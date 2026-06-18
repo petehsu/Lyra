@@ -588,10 +588,16 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_see",
-                "Capture a Lyra browser page as a visual evidence artifact. Returns the screenshot dimensions in real device pixels plus a visualFrame captureId/dpr/viewport metadata block; use that exact captureId with lyra_lumen_vact for visual coordinate actions.",
+                "Capture a Lyra browser page as a visual evidence artifact. Returns the screenshot dimensions in real device pixels plus a visualFrame captureId/dpr/viewport metadata block; use that exact captureId with lyra_lumen_vact for visual coordinate actions. Optionally draws targetRef highlights and downsamples for vision models.",
                 "read",
                 "hostCapability",
                 lumen_target_schema(json!({
+                    "highlightTargets": { "type": "boolean", "default": true },
+                    "highlightTargetRefs": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "downsampleForVision": { "type": "boolean", "default": true },
                     "timeoutMs": { "type": "number" }
                 })),
                 Some("browser.operate"),
@@ -819,6 +825,62 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     }),
                     "isolated",
                 ),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_judge_task",
+                "Verify browser task completion from a tool trajectory and optional final map observation. Returns completed, blocked, incomplete, or uncertain status with confidence and findings.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "goal": { "type": "string" },
+                        "trajectory": {
+                            "type": "object",
+                            "properties": {
+                                "steps": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "toolPath": { "type": "string" },
+                                            "ok": { "type": "boolean" },
+                                            "pathTaken": { "type": "string" },
+                                            "elementDiffChanged": {
+                                                "type": "array",
+                                                "items": { "type": "string" }
+                                            },
+                                            "cacheHit": { "type": "boolean" },
+                                            "cacheMiss": { "type": "boolean" }
+                                        },
+                                        "required": ["toolPath", "ok"]
+                                    }
+                                }
+                            },
+                            "required": ["steps"]
+                        },
+                        "finalObservation": {
+                            "type": "object",
+                            "properties": {
+                                "url": { "type": "string" },
+                                "title": { "type": "string" },
+                                "elements": { "type": "array", "items": { "type": "object" } },
+                                "authChallengeSignals": {
+                                    "type": "array",
+                                    "items": { "type": "object" }
+                                },
+                                "blockedRegions": {
+                                    "type": "array",
+                                    "items": { "type": "object" }
+                                },
+                                "nextRecommendedAction": { "type": "string" }
+                            }
+                        }
+                    },
+                    "required": ["trajectory"]
+                }),
                 Some("browser.operate"),
             ),
             capability(

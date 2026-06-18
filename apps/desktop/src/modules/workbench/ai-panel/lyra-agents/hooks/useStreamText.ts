@@ -19,18 +19,26 @@ export function useStreamText(
 ): { text: string; done: boolean } {
   const [streamIndex, setStreamIndex] = useState(0);
   const prevText = useRef(fullText);
-  const charIndex = enabled ? streamIndex : fullText.length;
+  const settledLength = useRef(0);
 
-  // If fullText changes (new content appended), keep streaming from where we were
   useEffect(() => {
-    if (fullText !== prevText.current) {
-      // Text grew — don't reset, just let the interval catch up
-      prevText.current = fullText;
+    if (fullText === prevText.current) return;
+    prevText.current = fullText;
+    if (fullText.length < settledLength.current) {
+      settledLength.current = 0;
+      setStreamIndex(0);
+      return;
     }
+    setStreamIndex((prev) => Math.max(prev, settledLength.current));
   }, [fullText]);
 
+  const hasSettled = settledLength.current >= fullText.length && fullText.length > 0;
+  const charIndex = !enabled || hasSettled
+    ? fullText.length
+    : streamIndex;
+
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || hasSettled) return;
     if (charIndex >= fullText.length) return;
 
     const timer = window.setInterval(() => {
@@ -38,6 +46,7 @@ export function useStreamText(
         const next = prev + speed;
         if (next >= fullText.length) {
           window.clearInterval(timer);
+          settledLength.current = fullText.length;
           return fullText.length;
         }
         return next;
@@ -45,7 +54,13 @@ export function useStreamText(
     }, interval);
 
     return () => window.clearInterval(timer);
-  }, [fullText, charIndex, speed, interval, enabled]);
+  }, [fullText, charIndex, speed, interval, enabled, hasSettled]);
+
+  useEffect(() => {
+    if (charIndex >= fullText.length && fullText.length > 0) {
+      settledLength.current = fullText.length;
+    }
+  }, [charIndex, fullText.length]);
 
   return {
     text: fullText.slice(0, charIndex),

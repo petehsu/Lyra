@@ -3,7 +3,10 @@ use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile, providers::transport},
+    native_backend::{
+        NativeProviderModel, NativeProviderProfile,
+        providers::{model_capabilities, registry, transport, types::ProviderRouteDescriptor},
+    },
 };
 
 use super::{TAGS_ENDPOINT_PATH, apply_headers};
@@ -25,10 +28,11 @@ pub(crate) fn discover_models(
             "Ollama model discovery failed with status {status}: {body}"
         )));
     }
-    Ok(parse_tag_models(&body))
+    let route = registry::require_route(&provider.route_id).ok();
+    Ok(parse_tag_models(&body, route.as_ref()))
 }
 
-fn parse_tag_models(body: &Value) -> Vec<NativeProviderModel> {
+fn parse_tag_models(body: &Value, route: Option<&ProviderRouteDescriptor>) -> Vec<NativeProviderModel> {
     let mut models = body
         .get("models")
         .and_then(Value::as_array)
@@ -41,15 +45,7 @@ fn parse_tag_models(body: &Value) -> Vec<NativeProviderModel> {
         })
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .map(|id| NativeProviderModel {
-            id: id.to_string(),
-            label: Some(id.to_string()),
-            context_window: None,
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            enabled: true,
-        })
+        .map(|id| model_capabilities::discovered_model(id, Some(id.to_string()), None, route))
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
@@ -64,12 +60,15 @@ mod tests {
 
     #[test]
     fn parses_ollama_tags() {
-        let models = parse_tag_models(&json!({
-            "models": [
-                { "name": "llama3.2:latest" },
-                { "model": "qwen3:8b" }
-            ]
-        }));
+        let models = parse_tag_models(
+            &json!({
+                "models": [
+                    { "name": "llama3.2:latest" },
+                    { "model": "qwen3:8b" }
+                ]
+            }),
+            None,
+        );
 
         assert_eq!(
             models

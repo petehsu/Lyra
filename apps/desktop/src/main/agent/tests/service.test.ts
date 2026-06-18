@@ -264,32 +264,6 @@ describe("Agent IPC bridge", () => {
       }
     });
     await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentOvernightStart)?.({}, {
-        sessionId: "session-1",
-        durationMinutes: 240,
-        mission: "Stabilize tests",
-        inheritContext: true
-      })
-    ).resolves.toEqual({
-      method: "agent.overnight.start",
-      payload: {
-        sessionId: "session-1",
-        durationMinutes: 240,
-        mission: "Stabilize tests",
-        inheritContext: true
-      }
-    });
-    await expect(
-      electronMock.handlers.get(LYRA_CHANNELS.agentOvernightStatus)?.({}, {
-        runId: "overnight-1"
-      })
-    ).resolves.toEqual({
-      method: "agent.overnight.status",
-      payload: {
-        runId: "overnight-1"
-      }
-    });
-    await expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentClarificationRespond)?.({}, {
         sessionId: "session-1",
         clarificationId: "clar-1",
@@ -1796,6 +1770,28 @@ describe("Agent IPC bridge", () => {
     expect(registered.has("browser.click")).toBe(false);
     expect(registered.has("browserAgent.observe")).toBe(false);
     expect(registered.has("lyraLumen.map")).toBe(true);
+    expect(registered.has("lyraLumen.judgeTask")).toBe(true);
+
+    await expect(
+      registered.get("lyraLumen.judgeTask")?.({
+        goal: "open settings",
+        trajectory: {
+          steps: [{
+            toolPath: "/tools/browser/act",
+            ok: true,
+            elementDiffChanged: ["settings-link"]
+          }]
+        },
+        finalObservation: {
+          url: "https://example.com/settings",
+          title: "Settings",
+          elements: [{ label: "Settings", role: "heading" }]
+        }
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenTaskJudge",
+      status: "completed"
+    });
 
     await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
       kind: "lyraLumenMap",

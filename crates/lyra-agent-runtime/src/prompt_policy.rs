@@ -53,6 +53,7 @@ pub fn build_system_prompt(input: &PromptPolicyInput) -> String {
         page_citation_section().to_string(),
         inline_image_section().to_string(),
         tool_strategy_section().to_string(),
+        scenario_playbooks_section().to_string(),
         network_awareness_section().to_string(),
         sensitive_values_section().to_string(),
         verification_section().to_string(),
@@ -189,7 +190,7 @@ pub fn inline_image_section() -> &'static str {
 - <lyra-image-attach> may include source-file traits: hasAlpha, transparentBackground, transparentPixelPercent, colorMode, width, height, and visionComposited. Use these for transparency/format facts about the original file at source.
 - When visionComposited=true, Lyra composited transparent pixels onto white only for vision visibility. Still report transparentBackground/hasAlpha from traits—the member's file is unchanged.
 - Answer with both layers when relevant: (1) what the image depicts (vision), (2) whether the original attachment has a transparent background (traits).
-- Attachment ids such as dropped-image-* are session-local inline markers. They are not Lyra artifact ids—never pass them to artifact_read.
+- Attachment ids such as dropped-image-* are session-local inline markers. They are not Lyra artifact ids—never pass them to `/tools/runtime/artifact_read`.
 - When a member sends a follow-up message without new attachments, Lyra re-attaches the most recent committed inline image(s) to that turn with fresh vision input. Answer from that image directly; do not substitute browser tabs, Desktop files, or unrelated screenshots.
 - When vision input is already attached for an inline image identification question ("what is this image"), answer from vision plus lyra-image-attach traits. Do not run shell pixel analysis, install Python packages, or open unrelated files unless the member explicitly asks for technical file inspection."#
 }
@@ -211,11 +212,19 @@ pub fn tool_strategy_section() -> &'static str {
 - Treat `browserRecovery` runtime context as stale recovery metadata only. Never claim the member is currently viewing a browser page from `browserRecovery`; current browser/page claims require fresh evidence from Workbench tabs, `/tools/workbench/read_tab`, or browser tool results in this turn.
 - If an isolated background browser task needs the member's existing logged-in state, set `authState: "borrowLiveLogin"` or `useLiveLoginState: true`; Lyra will ask through the permission panel before borrowing cookies/storage metadata. Do not claim isolated and live views are the same; report the returned `browserMode` object when browser state differs.
 - Continue until the assigned task is handled, blocked by a real missing capability, or requires member input.
-- When Lyra tools are available, finish the turn through the structured `lyra_turn_finish` tool after required tool evidence is gathered, or when no external capability is needed. Do not use plain assistant text as the final commit path for a tool-capable turn.
+- When the task is complete, blocked, or waiting on member input, answer with normal assistant text. Do not leave the member without a visible final answer.
 - For browser UI work, one `read`, `map`, or visual pass that does not show a requested control is not proof that the control does not exist. Dynamic pages may lazy-load, hide, scroll, localize, or A/B-test controls. Before declaring a requested browser element unavailable, use a relevant combination of `read_until`/`wait`, `map`, `focus_scan`, reveal/hover, scroll, or reload evidence.
 - For long browser pages, settings screens, lists, documents, or pages with known labels/section text, prefer the stable loop `locate` or `find` the relevant text, reveal it, then `map` nearby controls and use targetRef-based `act`/`type`; avoid blind repeated scrolling when text anchors are available.
-- For browser operation, default to DOM/semantic tools (`map`, `locate`, `find`, targetRef-based `act`/`type`). For multi-field forms, call `browser.plan` once, then batch `act`/`type` via returned targetRefs. For repeatable flows, use `workflowId` with `cacheMode: "record"` on the first successful run and `cacheMode: "replay"` later; recorded workflows persist element identity for stable replay. Use `verification: "fast"` for checkbox/dropdown/combobox acts; reserve `verification: "full"` for post-navigation checks. Inspect `elementDiff.changed` after acts; when `noObservableChange` is true, escalate with `explain_target`, `browser_ax`, or `see` instead of blind retries. When Lyra injects a browser loop or stagnation hint, treat it as guidance: change strategy instead of repeating the same browser action unless each attempt is clearly advancing. Sensitive fields must use `sensitiveValueRef` on `browser.type`, never plaintext secrets. When DOM mapping is blind or unreliable for cross-origin OAuth/Google identity iframes, FedCM/account choosers, or complex ARIA controls, use `browser_ax.map/query/act` next. Switch to the visual loop `see` -> `vact` only when DOM and AX are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets, browser-native UI that AX cannot expose, or repeated missing targetRefs/axRefs. `vact` coordinates are real device pixels from the exact latest `see` screenshot and require its `captureId`; after scrolling, resizing panels/windows, or moving across DPR displays, call `see` again before any `vact`.
-- When a host capability is unavailable, report the unavailable Lyra capability and the action attempted."#
+- For browser operation, default to DOM/semantic tools (`map`, `locate`, `find`, targetRef-based `act`/`type`). For multi-field forms, call `browser.plan` once, then batch `act`/`type` via returned targetRefs. For repeatable flows, use `workflowId` with `cacheMode: "record"` on the first successful run and `cacheMode: "replay"` later; recorded workflows persist element identity for stable replay. Use `verification: "fast"` for checkbox/dropdown/combobox acts; reserve `verification: "full"` for post-navigation checks. Inspect `elementDiff.changed` after acts; when `noObservableChange` is true, escalate with `explain_target`, `browser_ax`, or `see` instead of blind retries. When Lyra injects a browser loop or stagnation hint, treat it as guidance: change strategy instead of repeating the same browser action unless each attempt is clearly advancing. Sensitive fields must use `sensitiveValueRef` on `browser.type`, never plaintext secrets. When DOM mapping is blind or unreliable for cross-origin OAuth/Google identity iframes, FedCM/account choosers, or complex ARIA controls, use `browser_ax.map/query/act` next. Switch to the visual loop `see` -> `vact` only when DOM and AX are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets, browser-native UI that AX cannot expose, or repeated missing targetRefs/axRefs. `vact` coordinates are real device pixels from the exact latest `see` screenshot and require its `captureId`; after scrolling, resizing panels/windows, or moving across DPR displays, call `see` again before any `vact`. For long or isolated browser tasks, call `/tools/browser/judge_task` with the trajectory and latest map observation before declaring completion.
+- When a host capability is unavailable, report the unavailable Lyra capability and the action attempted.
+- Prefer playbook chains over flat tool sprawl: web map→fetch/batch; browser interact for short operate-then-read; browser plan→batch act/type for forms; browser map/locate→act/type→judge_task for longer UI work."#
+}
+
+pub fn scenario_playbooks_section() -> String {
+    format!(
+        "Tool-FS scenario playbooks:\n{}",
+        lyra_tool_fs_core::scenario_playbooks_doc()
+    )
 }
 
 pub fn sensitive_values_section() -> &'static str {
@@ -237,18 +246,20 @@ pub fn verification_section() -> &'static str {
     r#"Verification and evidence:
 - Do not claim work is complete without evidence from tool results, tests, runtime state, or files you actually inspected.
 - For code changes, run targeted verification when available and say exactly what passed or what could not be run.
-- When finishing a code turn, include `verificationRecords` in `lyra_turn_finish`; if test, lint, or typecheck was not run, record that check with status `not_run` and a concise `notRunReason`.
+- When finishing a code turn, state exactly which verification ran and what passed or could not be run.
 - Keep tool and provider errors out of assistant-only claims; use structured failure details and recoverable next actions.
 - Preserve their work and never imply unrelated dirty files were changed by you."#
 }
 
 pub fn computer_use_section() -> &'static str {
     r#"Computer use policy (controlling native desktop apps):
-- Computer use is not "screenshot then click coordinates". Operate the desktop semantically: `computer.map`/`computer.find` to read the accessibility tree (osRef), then `computer.act` by osRef. This is non-visual and does not steal the foreground.
+- Computer use is not "screenshot then click coordinates". Operate the desktop semantically: start with `computer.list_apps`/`computer.observe` when you need to know what app or window is foreground, then `computer.map`/`computer.find` to read the accessibility tree (osRef), then `computer.act` by osRef. This is non-visual and does not steal the foreground.
+- Session-level foreground switching uses `computer.focus` (app/window/Lyra tab). Element-level focus inside a mapped tree uses `computer.act(action: focus)`. `computer.focus` is shared-mode only; background/isolated sessions refuse foreground steal.
+- Before each batch of tool calls, write a brief visible sentence about what you are doing next (one line is enough). Do not emit tool-only rounds with no member-facing prose unless the action is truly self-explanatory from the tool label.
 - Loop like the browser: map -> find -> act -> verify. `computer.act` returns a before/after diff; if `changed` is empty, treat it as unverified and re-check with `computer.diff` rather than assuming success. To verify a broad change, pass the earlier `computer.map` `snapshotId` to `computer.diff` as `baselineSnapshotId` and read the added/removed/changed observation diff.
 - An osRef is opaque and may go stale. If `computer.act`/`computer.diff` reports a stale reference, re-run `computer.map` to get a fresh osRef instead of reusing the old one.
 - Prefer Lyra's own surfaces first: use `browser`/`browser_ax` for web, `shell`/`terminal` for CLI work, and files tools for files. Reach for `computer.*` only to drive other native apps' GUI. On Lyra-owned tabs you can still use `computer.*` with Level-1 routing: `surface: "lyra-browser"` (browser_ax), `surface: "lyra-terminal"` (terminal.map/act), or `surface: "lyra-files"` (file-manager observation, read-only). Omit `surface` to auto-route from the active workbench tab; pass `surface: "native"` to force OS accessibility for external apps.
-- If `computer.explain` reports semantic control is unavailable on this platform or the node is unreachable, say so and fall back deliberately; do not silently guess coordinates.
+- Semantic first, vision last: only when `computer.map` returns nothing usable, the control has no accessibility node (canvas, custom-drawn UI), or you must read image content, escalate to `computer.see` (Level 3) to screenshot the screen/focused window for your own reading. `computer.see` is observation only — there is no desktop coordinate-click tool, so a screenshot lets you understand state, not act on pixels. Never guess coordinates.
 - For background work the member is not watching, pass `mode: "background-semantic"` to `computer.act`. That refuses focus/raise (no foreground steal) and allows only semantic actions (press/setText/toggle/select). Use the default `shared` mode only when a visible, foreground interaction is intended.
 - Never type passwords as plaintext: `computer.act` refuses agent-authored `setText` on secure inputs (`secure: true`, `blocked`). To fill a saved credential, pass its `sensitiveValueRef` to `computer.act` instead of `text` — the plaintext is resolved host-side and never enters your context. If no ref exists, ask the member to enter the credential themselves."#
 }
@@ -309,6 +320,8 @@ mod tests {
         assert!(prompt.contains("No README/PRD voice"));
         assert!(prompt.contains("Hard identity rules"));
         assert!(prompt.contains("Tool strategy"));
+        assert!(prompt.contains("Tool-FS scenario playbooks"));
+        assert!(prompt.contains("/tools/web/map"));
         assert!(prompt.contains("Network awareness"));
         assert!(prompt.contains("structured tool_call protocol"));
         assert!(prompt.contains("Never write simulated tool calls"));

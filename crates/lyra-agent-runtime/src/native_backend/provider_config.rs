@@ -95,17 +95,17 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
                             .get("supportsImageInput")
                             .or_else(|| item.get("supports_image_input"))
                             .and_then(Value::as_bool)
-                            .unwrap_or(true),
+                            .unwrap_or(false),
                         supports_tool_calling: item
                             .get("supportsToolCalling")
                             .or_else(|| item.get("supports_tool_calling"))
                             .and_then(Value::as_bool)
-                            .unwrap_or(true),
+                            .unwrap_or(false),
                         supports_streaming: item
                             .get("supportsStreaming")
                             .or_else(|| item.get("supports_streaming"))
                             .and_then(Value::as_bool)
-                            .unwrap_or(true),
+                            .unwrap_or(false),
                         enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
                     })
                 })
@@ -440,7 +440,8 @@ fn save_refreshed_models(
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
     if let Some(profile) = state.config.providers.get_mut(provider_id) {
-        profile.models = models;
+        let existing = profile.models.clone();
+        profile.models = providers::model_capabilities::merge_discovered_models(&existing, models);
     }
     state.save_state()?;
     drop(state);

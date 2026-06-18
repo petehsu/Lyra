@@ -36,8 +36,6 @@ export type WorkbenchNotificationTarget =
         | "image-viewer"
         | "agent-project-tree"
         | "agent-git"
-        | "agent-selfdev"
-        | "agent-overnight"
         | "agent-session-history"
         | "login-manager"
         | "software-store"

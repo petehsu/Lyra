@@ -36,6 +36,7 @@ import {
   resolveInternalSurface,
   type ResolvedInternalSurface
 } from "./computer-surface-resolver";
+import { materializeLumenCapture } from "./artifact-materializer";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import {
   isRecord,
@@ -67,7 +68,63 @@ type ComputerNativeMethod =
   | "computerFindJson"
   | "computerActJson"
   | "computerDiffJson"
-  | "computerExplainJson";
+  | "computerExplainJson"
+  | "computerListAppsJson"
+  | "computerObserveJson"
+  | "computerFocusJson";
+
+const LYRA_TAB_APP_REF_PREFIX = "lytab:";
+
+const parseLyraTabAppRef = (appRef: string): string | null => {
+  if (!appRef.startsWith(LYRA_TAB_APP_REF_PREFIX)) {
+    return null;
+  }
+  const tabId = appRef.slice(LYRA_TAB_APP_REF_PREFIX.length);
+  return tabId.length > 0 ? tabId : null;
+};
+
+const surfaceForWorkbenchTab = (
+  tab: WorkbenchTabsListResult["tabs"][number]
+): ResolvedInternalSurface["kind"] | null => {
+  if (tab.observationKind === "terminal" || tab.pageKind === "terminal") {
+    return LYRA_TERMINAL_SURFACE;
+  }
+  if (tab.observationKind === "file-manager") {
+    return LYRA_FILE_MANAGER_SURFACE;
+  }
+  if (
+    tab.observationKind === "page"
+    || tab.observationKind === "search-home"
+    || tab.observationKind === "search-results"
+    || tab.pageKind === "page"
+    || tab.pageKind === "search"
+    || tab.pageKind === "results"
+  ) {
+    return LYRA_BROWSER_SURFACE;
+  }
+  return null;
+};
+
+const workbenchTabToAppEntry = (
+  tab: WorkbenchTabsListResult["tabs"][number],
+  activeTabId: string | null
+): Record<string, unknown> => {
+  const surface = surfaceForWorkbenchTab(tab);
+  return {
+    appRef: `${LYRA_TAB_APP_REF_PREFIX}${tab.tabId}`,
+    name: tab.title,
+    isForeground: tab.tabId === activeTabId,
+    source: "lyra-internal",
+    ...(surface === null ? {} : { surface, capabilityLevel: 1 }),
+    windows: [
+      {
+        windowRef: `${LYRA_TAB_APP_REF_PREFIX}${tab.tabId}`,
+        title: tab.title,
+        isFocused: tab.active
+      }
+    ]
+  };
+};
 
 const COMPUTER_ACTIONS = new Set([
   "press",
@@ -89,9 +146,28 @@ const unavailableEnvelope = (errorMessage: string): Record<string, unknown> => (
   }
 });
 
+/**
+ * Invokes a capability handler by key. Handler maps are indexed records, so
+ * under `noUncheckedIndexedAccess` a lookup is `Handler | undefined`; this
+ * resolves the handler once and fails loudly if the expected internal-surface
+ * capability is not registered, rather than calling `undefined`.
+ */
+const invokeHandler = async (
+  handlers: AgentHostCapabilityHandlers,
+  key: string,
+  payload: Record<string, unknown>
+): Promise<unknown> => {
+  const handler = handlers[key];
+  if (handler === undefined) {
+    throw new Error(`Internal surface capability "${key}" is not registered.`);
+  }
+  return handler(payload);
+};
+
 export const createComputerToolHost = ({
   resolveSensitiveValueForFill,
-  internalSurfaces
+  internalSurfaces,
+  visualFallback
 }: {
   readonly resolveSensitiveValueForFill?: (ref: LyraSensitiveValueRef) => Promise<string>;
   readonly internalSurfaces?: {
@@ -99,6 +175,19 @@ export const createComputerToolHost = ({
     readonly axHandlers: AgentHostCapabilityHandlers;
     readonly terminalHandlers: AgentHostCapabilityHandlers;
     readonly listWorkbenchTabs: () => Promise<WorkbenchTabsListResult>;
+    readonly activateWorkbenchTab?: (tabId: string) => Promise<Record<string, unknown>>;
+  };
+  /** Level-3 visual fallback (computer.see): desktop screen capture. */
+  readonly visualFallback?: {
+    readonly storageRoot: string;
+    readonly captureScreen: (
+      scope: "screen" | "focused-window"
+    ) => Promise<{
+      readonly imageBase64: string;
+      readonly mimeType: string;
+      readonly width: number;
+      readonly height: number;
+    } | null>;
   };
 } = {}): {
   readonly handlers: AgentHostCapabilityHandlers;
@@ -181,7 +270,7 @@ export const createComputerToolHost = ({
     if (surface.kind === LYRA_BROWSER_SURFACE) {
       const strategy = readOptionalStringField(input, "strategy");
       const maxNodes = readClampedOptionalNumber(input, "maxNodes", 200, 1, 400);
-      const raw = await internalSurfaces.axHandlers["lyraAx.map"]({
+      const raw = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.map", {
         ...input,
         tabId: surface.tabId,
         strategy: strategy === "document" ? "document" : "interactive",
@@ -193,7 +282,7 @@ export const createComputerToolHost = ({
       return isRecord(raw) ? raw : { ok: false, error: { kind: "internal", message: "browser_ax.map returned an invalid result." } };
     }
     if (surface.kind === LYRA_TERMINAL_SURFACE) {
-      const raw = await internalSurfaces.terminalHandlers["terminal.map.read"]({
+      const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.map.read", {
         ...input,
         tabId: surface.tabId
       });
@@ -258,7 +347,7 @@ export const createComputerToolHost = ({
         return { ok: false, error: { kind: "internalSurfaceUnavailable", message: "Internal surface routing is not configured." } };
       }
       const strategy = readOptionalStringField(input, "strategy");
-      const raw = await internalSurfaces.axHandlers["lyraAx.query"]({
+      const raw = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.query", {
         ...input,
         tabId: surface.tabId,
         strategy: strategy === "document" ? "document" : "interactive",
@@ -297,7 +386,153 @@ export const createComputerToolHost = ({
     };
   };
 
+  const mergeLyraTabsIntoListApps = async (
+    result: Record<string, unknown>,
+    maxApps: number
+  ): Promise<Record<string, unknown>> => {
+    if (internalSurfaces === undefined || result.ok !== true) {
+      return result;
+    }
+    const tabsResult = await internalSurfaces.listWorkbenchTabs();
+    const lyraApps = tabsResult.tabs
+      .map((tab) => workbenchTabToAppEntry(tab, tabsResult.activeTabId))
+      .filter((entry) => typeof entry.appRef === "string");
+    const nativeApps = Array.isArray(result.apps) ? (result.apps as Record<string, unknown>[]) : [];
+    const merged = [...lyraApps, ...nativeApps];
+    return {
+      ...result,
+      apps: merged.slice(0, maxApps),
+      lyraTabCount: lyraApps.length,
+      status: isRecord(result.status)
+        ? {
+            ...result.status,
+            appCount: Math.min(merged.length, maxApps)
+          }
+        : result.status
+    };
+  };
+
   const handlers: AgentHostCapabilityHandlers = {
+    "lyraComputer.listApps": async (payload: unknown) => {
+      const input = normalizePayload(payload);
+      const maxApps = readClampedOptionalNumber(input, "maxApps", 50, 1, 100);
+      const request: Record<string, unknown> = {
+        maxApps,
+        includeBackground: input.includeBackground === true
+      };
+      const result = invokeNative("computerListAppsJson", request);
+      return mergeLyraTabsIntoListApps(result, maxApps);
+    },
+
+    "lyraComputer.observe": async (payload: unknown) => {
+      const input = normalizePayload(payload);
+      if (internalSurfaces !== undefined) {
+        const tabsResult = await internalSurfaces.listWorkbenchTabs();
+        const activeTab = tabsResult.tabs.find((tab) => tab.tabId === tabsResult.activeTabId);
+        if (activeTab !== undefined) {
+          const surface = surfaceForWorkbenchTab(activeTab);
+          const appEntry = workbenchTabToAppEntry(activeTab, tabsResult.activeTabId);
+          return {
+            ok: true,
+            platform: process.platform,
+            capabilityLevel: 1,
+            ...(surface === null ? {} : { surface }),
+            foregroundApp: appEntry,
+            focusedWindow: Array.isArray(appEntry.windows) ? appEntry.windows[0] : undefined,
+            status: {
+              ok: true,
+              state: "available",
+              message: "Lyra workbench foreground tab was observed."
+            }
+          };
+        }
+      }
+      void input;
+      return invokeNative("computerObserveJson", {});
+    },
+
+    "lyraComputer.focus": async (payload: unknown) => {
+      const input = normalizePayload(payload);
+      const mode = readOptionalStringField(input, "mode") ?? "shared";
+      if (mode !== "shared" && COMPUTER_MODES.has(mode)) {
+        return {
+          ok: false,
+          mode,
+          error: {
+            kind: "foregroundStealBlocked",
+            message: `computer.focus would raise an app/window; not allowed in ${mode} mode. Use shared mode.`
+          }
+        };
+      }
+
+      const explicitTabId = readOptionalStringField(input, "lyraTabId");
+      const appRef = readOptionalStringField(input, "appRef");
+      const windowRef = readOptionalStringField(input, "windowRef");
+      const lyraTabId =
+        explicitTabId
+        ?? (appRef === undefined ? undefined : parseLyraTabAppRef(appRef) ?? undefined)
+        ?? (windowRef === undefined ? undefined : parseLyraTabAppRef(windowRef) ?? undefined);
+
+      if (lyraTabId !== undefined) {
+        if (internalSurfaces?.activateWorkbenchTab === undefined) {
+          return {
+            ok: false,
+            error: {
+              kind: "internalSurfaceUnavailable",
+              message: "Lyra workbench tab activation is not configured."
+            }
+          };
+        }
+        const activation = await internalSurfaces.activateWorkbenchTab(lyraTabId);
+        return {
+          ok: true,
+          platform: process.platform,
+          mode: "shared",
+          focused: true,
+          lyraTabId,
+          ...(isRecord(activation) ? activation : {}),
+          message: `Lyra workbench tab ${lyraTabId} was activated.`
+        };
+      }
+
+      const request: Record<string, unknown> = { mode: "shared" };
+      if (appRef !== undefined) {
+        request.appRef = appRef;
+      }
+      const pid = input.pid;
+      if (typeof pid === "number") {
+        request.pid = pid;
+      }
+      const bundleId = readOptionalStringField(input, "bundleId");
+      if (bundleId !== undefined) {
+        request.bundleId = bundleId;
+      }
+      const windowTitle = readOptionalStringField(input, "windowTitle");
+      if (windowTitle !== undefined) {
+        request.windowTitle = windowTitle;
+      }
+      if (windowRef !== undefined) {
+        request.windowRef = windowRef;
+      }
+      if (
+        request.appRef === undefined
+        && request.pid === undefined
+        && request.bundleId === undefined
+        && request.windowTitle === undefined
+        && request.windowRef === undefined
+      ) {
+        return {
+          ok: false,
+          error: {
+            kind: "invalidArgument",
+            message:
+              "computer.focus requires appRef, pid, bundleId, windowTitle, windowRef, or lyraTabId."
+          }
+        };
+      }
+      return invokeNative("computerFocusJson", request);
+    },
+
     "lyraComputer.map": async (payload: unknown) => {
       const input = normalizePayload(payload);
       const route = readComputerSurfaceRoute(input);
@@ -406,7 +641,7 @@ export const createComputerToolHost = ({
             error: { kind: "unsupportedAction", message: `Action "${actionValue}" is not supported on Lyra browser.` }
           };
         }
-        const raw = await internalSurfaces.axHandlers["lyraAx.act"]({
+        const raw = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.act", {
           tabId: parsed.tabId,
           axRef: parsed.axRef,
           interaction,
@@ -433,7 +668,7 @@ export const createComputerToolHost = ({
         if (terminalAction === null) {
           return { ok: false, error: { kind: "unsupportedAction", message: `Action "${actionValue}" is not supported on Lyra terminal.` } };
         }
-        const raw = await internalSurfaces.terminalHandlers["terminal.act.execute"]({
+        const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.act.execute", {
           ...input,
           sessionId: parsed.sessionId,
           regionId: parsed.regionId,
@@ -519,7 +754,7 @@ export const createComputerToolHost = ({
         if (parsed === null) {
           return { ok: false, error: { kind: "invalidArgument", message: "Malformed Lyra browser osRef." } };
         }
-        const explanation = await internalSurfaces.axHandlers["lyraAx.explain"]({
+        const explanation = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.explain", {
           tabId: parsed.tabId,
           axRef: parsed.axRef
         });
@@ -537,7 +772,7 @@ export const createComputerToolHost = ({
             message: "Node is no longer present; the osRef is stale."
           };
         }
-        const mapResult = await internalSurfaces.axHandlers["lyraAx.map"]({
+        const mapResult = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.map", {
           tabId: parsed.tabId,
           strategy: "interactive",
           maxNodes: 400
@@ -573,7 +808,7 @@ export const createComputerToolHost = ({
         if (parsed === null) {
           return { ok: false, error: { kind: "invalidArgument", message: "Malformed Lyra terminal osRef." } };
         }
-        const raw = await internalSurfaces.terminalHandlers["terminal.map.read"]({
+        const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.map.read", {
           ...input,
           sessionId: parsed.sessionId
         });
@@ -643,7 +878,7 @@ export const createComputerToolHost = ({
         if (parsed === null) {
           return { ok: false, error: { kind: "invalidArgument", message: "Malformed Lyra browser osRef." } };
         }
-        const raw = await internalSurfaces.axHandlers["lyraAx.explain"]({
+        const raw = await invokeHandler(internalSurfaces.axHandlers, "lyraAx.explain", {
           tabId: parsed.tabId,
           axRef: parsed.axRef
         });
@@ -711,6 +946,55 @@ export const createComputerToolHost = ({
         request.osRef = osRef;
       }
       return invokeNative("computerExplainJson", request);
+    },
+
+    // Level 3 visual fallback: screenshot the desktop so the vision model can
+    // read native UI with no accessibility node. Pure observation — never acts.
+    "lyraComputer.see": async (payload: unknown) => {
+      const input = normalizePayload(payload);
+      if (visualFallback === undefined) {
+        return {
+          ok: false,
+          platform: process.platform,
+          error: {
+            kind: "visualFallbackUnavailable",
+            message: "Desktop screen capture is not configured in this runtime."
+          }
+        };
+      }
+      const scope = readOptionalStringField(input, "scope") === "screen" ? "screen" : "focused-window";
+      const capture = await visualFallback.captureScreen(scope);
+      if (capture === null) {
+        return {
+          ok: false,
+          platform: process.platform,
+          error: {
+            kind: "captureFailed",
+            message: `Could not capture the ${scope}. Screen recording permission may be denied.`
+          }
+        };
+      }
+      const artifact = await materializeLumenCapture(visualFallback.storageRoot, `computer-${scope}`, {
+        mimeType: capture.mimeType,
+        imageBase64: capture.imageBase64,
+        width: capture.width,
+        height: capture.height,
+        visibleOnly: true
+      });
+      return {
+        ok: true,
+        platform: process.platform,
+        kind: "computerSee",
+        scope,
+        capabilityLevel: 3,
+        fallback: "vision",
+        mimeType: capture.mimeType,
+        width: capture.width,
+        height: capture.height,
+        imageArtifact: artifact,
+        evidenceRefs: [artifact.id],
+        message: `Captured desktop ${scope} ${artifact.id} (${capture.width}x${capture.height}). Read it visually; computer.* cannot act on pixels — there is no coordinate-click tool yet.`
+      };
     }
   };
 

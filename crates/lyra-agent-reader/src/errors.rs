@@ -2,6 +2,8 @@
 
 use thiserror::Error;
 
+use crate::types::ReaderEngineAttempt;
+
 /// Convenience alias for reader fallible operations.
 pub type ReaderResult<T> = Result<T, ReaderError>;
 
@@ -56,6 +58,17 @@ pub enum ReaderError {
     /// Local file I/O failure.
     #[error("io failed: {0}")]
     Io(String),
+
+    /// Every configured engine was tried and none produced a usable result.
+    #[error("all reader engines failed: {message}")]
+    EnginesExhausted {
+        /// Human-readable summary of the final failure.
+        message: String,
+        /// Ordered attempts across engines.
+        attempts: Vec<ReaderEngineAttempt>,
+        /// Final URL reached before failure, if known.
+        final_url: Option<String>,
+    },
 }
 
 impl ReaderError {
@@ -85,7 +98,18 @@ impl ReaderError {
             ReaderError::Budget(_) => {
                 Some("Use a narrower target selector, query focus, or overflow=chunks.")
             }
+            ReaderError::EnginesExhausted { .. } => {
+                Some("Retry with a different engine, narrower scope, or a browser session.")
+            }
             _ => None,
+        }
+    }
+
+    /// Engine attempts recorded for this failure, when available.
+    pub fn engine_attempts(&self) -> &[ReaderEngineAttempt] {
+        match self {
+            ReaderError::EnginesExhausted { attempts, .. } => attempts,
+            _ => &[],
         }
     }
 }

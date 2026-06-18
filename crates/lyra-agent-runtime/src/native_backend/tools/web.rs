@@ -133,7 +133,7 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
                 .map(|provider| provider as &dyn lyra_agent_reader::BrowserSnapshotProvider),
         )
     }
-    .map_err(|error| reader_error_to_native_failure(&url, error))?;
+    .map_err(|error| reader_error_to_native_failure(&url, &error))?;
     let index_result = if request.options.index_result {
         index_reader_result(session_id, turn_id, &reader)
     } else {
@@ -143,12 +143,16 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
         .as_ref()
         .and_then(RuntimeBrowserSnapshotProvider::last_raw)
         .unwrap_or(Value::Null);
-    let engine_used = if reader.extraction.method == "browser" {
-        "browser"
-    } else {
-        "http"
-    };
-
+    let engine_used = reader
+        .engine_used
+        .as_deref()
+        .unwrap_or(if reader.extraction.method == "browser" {
+            "browser"
+        } else {
+            "http"
+        });
+    let output_layers = web_fetch_output_layers(&reader);
+    let token_budget = web_fetch_token_budget(&reader, max_chars, &request.options);
     let artifact_ref = if reader.truncated {
         write_tool_artifact_with_kind(
             "web",
@@ -173,6 +177,22 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
     };
     let content_type = reader.mime_type.clone().unwrap_or_default();
     let title = reader.metadata.title.clone();
+    let baseline_snapshot_id = value_string(input, "baselineSnapshotId");
+    let page_snapshot = capture_page_snapshot(
+        session_id,
+        &json!({
+            "url": url,
+            "finalUrl": reader.final_url,
+            "title": title,
+            "compactText": reader.compact_text,
+            "elements": Value::Array(Vec::new()),
+            "elementCount": reader.links.len(),
+        }),
+        Some("web_fetch"),
+    );
+    let page_snapshot_diff = baseline_snapshot_id
+        .as_deref()
+        .and_then(|baseline| page_snapshot.as_ref().and_then(|current| diff_page_snapshots(baseline, current)));
     let screenshot_artifact_ref = browser_raw
         .get("screenshotArtifactRef")
         .cloned()
@@ -191,6 +211,9 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
     let mut raw = json!({
         "url": url,
         "engineUsed": engine_used,
+        "engineAttempts": reader.engine_attempts,
+        "outputLayers": output_layers,
+        "tokenBudget": token_budget,
         "finalUrl": reader.final_url,
         "status": reader.status,
         "contentType": content_type,
@@ -261,6 +284,8 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
         );
         object.insert("artifactRef".to_string(), json!(artifact_ref));
         object.insert("indexResult".to_string(), index_result);
+        object.insert("pageSnapshot".to_string(), json!(page_snapshot));
+        object.insert("pageSnapshotDiff".to_string(), json!(page_snapshot_diff));
     }
     let raw = web_fetch_raw_summary(session_id, turn_id, tool_call_id, &raw);
 
@@ -298,6 +323,9 @@ fn web_fetch_raw_summary(
         "rawArtifactRef": raw_artifact_ref,
         "url": full_raw.get("url").cloned().unwrap_or(Value::Null),
         "engineUsed": full_raw.get("engineUsed").cloned().unwrap_or(Value::Null),
+        "engineAttempts": full_raw.get("engineAttempts").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
+        "outputLayers": full_raw.get("outputLayers").cloned().unwrap_or(Value::Null),
+        "tokenBudget": full_raw.get("tokenBudget").cloned().unwrap_or(Value::Null),
         "finalUrl": full_raw.get("finalUrl").cloned().unwrap_or(Value::Null),
         "status": full_raw.get("status").cloned().unwrap_or(Value::Null),
         "contentType": full_raw.get("contentType").cloned().unwrap_or(Value::Null),
@@ -1150,14 +1178,25 @@ fn redact_browser_snapshot_image(raw: &mut Value, kind: BrowserSnapshotImageKind
     }
 }
 
-fn reader_error_to_native_failure(
+pub(crate) fn reader_error_to_native_failure(
     url: &str,
-    error: lyra_agent_reader::ReaderError,
+    error: &lyra_agent_reader::ReaderError,
 ) -> NativeToolFailure {
     let recommendation = error
         .recommended_next_action()
         .unwrap_or("Retry later or use a browser capability.");
+    let engine_attempts = json!(error.engine_attempts());
+    let engines_exhausted_message = engines_exhausted_summary(error);
     match error {
+        lyra_agent_reader::ReaderError::EnginesExhausted { .. } => NativeToolFailure::new(
+            "engines_exhausted",
+            engines_exhausted_message,
+            recommendation,
+        )
+        .with_detail(json!({
+            "url": url,
+            "engineAttempts": engine_attempts,
+        })),
         lyra_agent_reader::ReaderError::AccessDenied {
             status,
             final_url,
@@ -1172,6 +1211,7 @@ fn reader_error_to_native_failure(
             "finalUrl": final_url,
             "status": status,
             "contentType": content_type,
+            "engineAttempts": engine_attempts,
         })),
         lyra_agent_reader::ReaderError::UnsupportedFormat {
             format,
@@ -1187,6 +1227,7 @@ fn reader_error_to_native_failure(
             "finalUrl": final_url,
             "format": format,
             "mimeType": mime,
+            "engineAttempts": engine_attempts,
             "warnings": [{
                 "code": "unsupported_format",
                 "message": format!("unsupported format: {format} ({mime})")
@@ -1196,28 +1237,135 @@ fn reader_error_to_native_failure(
             message,
             final_url,
             status,
-        } => NativeToolFailure::new("network_failed", message, recommendation).with_detail(json!({
+        } => NativeToolFailure::new("network_failed", message.clone(), recommendation)
+            .with_detail(json!({
             "url": url,
             "finalUrl": final_url,
             "status": status,
+            "engineAttempts": engine_attempts,
         })),
         lyra_agent_reader::ReaderError::Budget(message) => {
-            NativeToolFailure::new("budget_exceeded", message, recommendation)
-                .with_detail(json!({ "url": url }))
+            NativeToolFailure::new("budget_exceeded", message.clone(), recommendation)
+                .with_detail(json!({ "url": url, "engineAttempts": engine_attempts }))
         }
         lyra_agent_reader::ReaderError::Parse(message) => {
-            NativeToolFailure::new("parse_failed", message, recommendation)
-                .with_detail(json!({ "url": url }))
+            NativeToolFailure::new("parse_failed", message.clone(), recommendation)
+                .with_detail(json!({ "url": url, "engineAttempts": engine_attempts }))
         }
         lyra_agent_reader::ReaderError::Decode(message) => {
-            NativeToolFailure::new("decode_failed", message, recommendation)
-                .with_detail(json!({ "url": url }))
+            NativeToolFailure::new("decode_failed", message.clone(), recommendation)
+                .with_detail(json!({ "url": url, "engineAttempts": engine_attempts }))
         }
         lyra_agent_reader::ReaderError::Io(message) => {
-            NativeToolFailure::new("io_failed", message, recommendation)
-                .with_detail(json!({ "url": url }))
+            NativeToolFailure::new("io_failed", message.clone(), recommendation)
+                .with_detail(json!({ "url": url, "engineAttempts": engine_attempts }))
         }
     }
+}
+
+fn engines_exhausted_summary(error: &lyra_agent_reader::ReaderError) -> String {
+    let attempts = error.engine_attempts();
+    if attempts.is_empty() {
+        return error.to_string();
+    }
+    let summary = attempts
+        .iter()
+        .map(|attempt| {
+            let status = attempt
+                .status
+                .map(|value| format!(" status={value}"))
+                .unwrap_or_default();
+            let reason = attempt
+                .reason
+                .as_deref()
+                .unwrap_or(if attempt.success { "ok" } else { "failed" });
+            format!(
+                "{}:{}{} ({})",
+                attempt.engine,
+                if attempt.success { " ok" } else { " failed" },
+                status,
+                reason
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("all reader engines failed after trying: {summary}")
+}
+
+fn layer_size(text: &str) -> Value {
+    let chars = text.chars().count();
+    json!({
+        "chars": chars,
+        "tokenEstimate": lyra_agent_reader::estimate_tokens(text),
+    })
+}
+
+fn web_fetch_output_layers(reader: &lyra_agent_reader::ReaderResult) -> Value {
+    json!({
+        "raw": {
+            "markdown": reader.raw_markdown,
+            "rawSource": reader.raw_source,
+            "size": layer_size(&reader.raw_markdown),
+        },
+        "agent": {
+            "compactText": reader.compact_text,
+            "fitMarkdown": reader.fit_markdown,
+            "plainText": reader.plain_text,
+            "size": layer_size(
+                if reader.fit_markdown.trim().is_empty() {
+                    reader.compact_text.as_str()
+                } else {
+                    reader.fit_markdown.as_str()
+                },
+            ),
+        },
+        "citation": {
+            "markdown": reader.markdown_with_citations,
+            "size": layer_size(&reader.markdown_with_citations),
+        },
+    })
+}
+
+fn web_fetch_token_budget(
+    reader: &lyra_agent_reader::ReaderResult,
+    max_chars: usize,
+    options: &lyra_agent_reader::ReaderOptions,
+) -> Value {
+    let effective_limit = lyra_agent_reader::effective_char_limit(
+        options.max_chars,
+        options.max_tokens,
+        options.token_budget,
+    );
+    let guidance = if reader.truncated {
+        if !reader.chunks.is_empty() {
+            "Output exceeds the requested budget. Continue with nextCursor, read fitChunks, or raise maxChars/maxTokens."
+        } else {
+            "Output exceeds the requested budget. Continue with nextCursor or raise maxChars/maxTokens."
+        }
+    } else if reader.total_chars > max_chars.saturating_mul(2) {
+        "Full document is much larger than the returned budget. Use fitMarkdown/queryFocus or chunks for targeted reading."
+    } else {
+        "Returned content fits the requested budget."
+    };
+    json!({
+        "requestedMaxChars": max_chars,
+        "requestedMaxTokens": options.max_tokens.or(options.token_budget),
+        "effectiveCharLimit": effective_limit,
+        "estimates": {
+            "rawMarkdown": layer_size(&reader.raw_markdown),
+            "agentCompact": layer_size(&reader.compact_text),
+            "agentFit": layer_size(&reader.fit_markdown),
+            "citationMarkdown": layer_size(&reader.markdown_with_citations),
+            "chunks": json!({
+                "count": reader.chunks.len(),
+                "tokenEstimate": reader.chunks.iter().map(|chunk| chunk.token_estimate).sum::<usize>(),
+            }),
+        },
+        "truncated": reader.truncated,
+        "hasMore": reader.has_more,
+        "nextCursor": reader.next_cursor,
+        "guidance": guidance,
+    })
 }
 
 pub(crate) fn tool_web_search(input: &Value) -> NativeToolResult {
@@ -1566,7 +1714,7 @@ pub(crate) fn build_web_research_result_for_session(
                 }));
             }
             Err(error) => {
-                let failure = reader_error_to_native_failure(url, error);
+                let failure = reader_error_to_native_failure(url, &error);
                 failed_reads.push(json!({
                     "sourceId": source_id,
                     "url": url,

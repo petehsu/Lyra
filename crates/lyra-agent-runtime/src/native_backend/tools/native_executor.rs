@@ -246,6 +246,7 @@ pub(crate) fn execute_native_tool_adapter_with_dispatcher(
         tool_call_id,
         &input,
         dispatcher,
+        cancellation,
     );
     let (status, output) = match result {
         Ok(success) => {
@@ -355,6 +356,14 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
     shell_command_requires_permission(command)
 }
 
+fn cancellation_for_turn(turn_id: &str) -> Arc<AtomicBool> {
+    state()
+        .lock()
+        .ok()
+        .and_then(|runtime| runtime.active_cancellations.get(turn_id).cloned())
+        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)))
+}
+
 #[allow(dead_code)]
 pub(crate) fn run_native_tool(
     session_id: &str,
@@ -363,7 +372,16 @@ pub(crate) fn run_native_tool(
     tool_call_id: &str,
     input: &Value,
 ) -> NativeToolResult {
-    run_native_tool_with_dispatcher(session_id, turn_id, tool_name, tool_call_id, input, None)
+    let cancellation = cancellation_for_turn(turn_id);
+    run_native_tool_with_dispatcher(
+        session_id,
+        turn_id,
+        tool_name,
+        tool_call_id,
+        input,
+        None,
+        &cancellation,
+    )
 }
 
 pub(crate) fn run_native_tool_with_dispatcher(
@@ -373,6 +391,7 @@ pub(crate) fn run_native_tool_with_dispatcher(
     tool_call_id: &str,
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    cancellation: &Arc<AtomicBool>,
 ) -> NativeToolResult {
     match tool_name {
         "artifact_read" => tool_artifact_read(session_id, turn_id, tool_call_id, input),
@@ -405,6 +424,8 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "network_status" => tool_network_status(),
         "web_search" => tool_web_search(input),
         "web_research" => tool_web_research(session_id, turn_id, input),
+        "web_map" => tool_web_map(input),
+        "web_batch" => tool_web_batch(session_id, turn_id, tool_call_id, input, dispatcher, cancellation),
         "web_fetch" => tool_web_fetch_with_browser_for_session(
             session_id,
             turn_id,

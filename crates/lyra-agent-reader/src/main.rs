@@ -298,5 +298,6 @@ fn exit_code(error: &lyra_agent_reader::ReaderError) -> i32 {
         lyra_agent_reader::ReaderError::Budget(_) => 4,
         lyra_agent_reader::ReaderError::UnsupportedFormat { .. } => 6,
         lyra_agent_reader::ReaderError::Io(_) => 7,
+        lyra_agent_reader::ReaderError::EnginesExhausted { .. } => 2,
     }
 }

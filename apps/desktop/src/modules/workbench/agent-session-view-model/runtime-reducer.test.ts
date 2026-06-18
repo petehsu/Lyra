@@ -14,15 +14,7 @@ const session = (
   messages: [],
   tools: [],
   todos: [],
-  automation: {
-    subagentModel: null,
-    autoreviewEnabled: null,
-    autojudgeEnabled: null
-  },
-  sidePanel: {
-    focusedPageId: null,
-    pages: []
-  },
+
   turnStatus: "idle",
   activeTurnId: null,
   follow: { running: false, activity: null },

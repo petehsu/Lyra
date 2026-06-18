@@ -7,7 +7,17 @@ import type {
   WorkbenchBrowserAgentVerification,
   WorkbenchBrowserWorkflowCacheMode
 } from "../workbench-browser/types";
+import { compactMapObservation } from "../workbench-browser/view-manager-runtime/agent-map-compaction";
+import {
+  judgeBrowserAgentTask,
+  type BrowserTaskJudgeInput
+} from "../workbench-browser/evals/browser-task-judge";
+import {
+  clampHostActionTimeoutMs,
+  LUMEN_HOST_ACTION_TIMEOUT_MS
+} from "../workbench-browser/view-manager-runtime/lumen-runtime-guards";
 import { normalizeWorkflowCacheMode } from "../workbench-browser/view-manager-runtime/lumen-workflow-cache";
+import type { WorkbenchBrowserAgentObservation } from "../workbench-browser/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
 import { materializeLumenCapture } from "./artifact-materializer";
@@ -433,12 +443,26 @@ export const createLumenToolHost = ({
     };
   };
 
+  const lastMapObservations = new Map<string, WorkbenchBrowserAgentObservation>();
+
   const withLyraLumenResult = (
     requestedMethod: string,
     handler: (payload: Record<string, unknown>) => Promise<unknown>
   ) => async (payload: unknown) => {
+    const normalized = normalizePayload(payload);
+    const actionTimeoutMs = clampHostActionTimeoutMs(
+      readOptionalNumberField(normalized, "timeoutMs"),
+      LUMEN_HOST_ACTION_TIMEOUT_MS
+    );
     try {
-      return await handler(normalizePayload(payload));
+      return await Promise.race([
+        handler(normalized),
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Lyra Lumen ${requestedMethod} timed out after ${actionTimeoutMs}ms`));
+          }, actionTimeoutMs);
+        })
+      ]);
     } catch (error) {
       const handoff = isRecord(error) && isRecord(error.handoff)
         ? error.handoff
@@ -656,31 +680,56 @@ export const createLumenToolHost = ({
         ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      const mapKey = `${targetMode}:${tabId}`;
+      const compacted = compactMapObservation(lastMapObservations.get(mapKey), observation);
+      lastMapObservations.set(mapKey, compacted.observation);
+      const highConfidenceCaptcha = observation.authChallengeSignals
+        ?.find((signal) => signal.confidence === "high" && signal.kind === "captcha");
       const highConfidenceBlockingSignal = observation.authChallengeSignals
-        ?.find((signal) => signal.confidence === "high" && signal.kind !== "oauth_popup");
+        ?.find((signal) =>
+          signal.confidence === "high"
+          && signal.kind !== "oauth_popup"
+          && signal.kind !== "captcha"
+        );
       const highConfidenceOauthSignal = observation.authChallengeSignals
         ?.find((signal) => signal.confidence === "high" && signal.kind === "oauth_popup");
       return withLumenTargetIds({
-        ...observation,
+        ...compacted.observation,
         kind: "lyraLumenMap",
-        ...(highConfidenceBlockingSignal !== undefined
-          ? {
-            needsUserAction: {
-              kind: "auth_challenge",
-              reason: highConfidenceBlockingSignal.kind,
-              signal: highConfidenceBlockingSignal,
-              tabId,
-              targetMode,
-              suggestedAction: "lyra_lumen_elevate"
+        ...(observation.needsUserAction !== undefined
+          ? { needsUserAction: observation.needsUserAction }
+          : highConfidenceBlockingSignal !== undefined
+            ? {
+              needsUserAction: {
+                kind: "auth_challenge",
+                reason: highConfidenceBlockingSignal.kind,
+                signal: highConfidenceBlockingSignal,
+                tabId,
+                targetMode,
+                suggestedAction: "lyra_lumen_elevate"
+              }
             }
-          }
-          : {}),
+            : highConfidenceCaptcha !== undefined
+              ? {
+                needsUserAction: {
+                  kind: "auth_challenge",
+                  reason: "captcha",
+                  signal: highConfidenceCaptcha,
+                  tabId,
+                  targetMode,
+                  suggestedAction: "ask_user"
+                }
+              }
+              : {}),
         nextRecommendedAction:
-          highConfidenceBlockingSignal !== undefined
-            ? "lyra_lumen_elevate"
-            : highConfidenceOauthSignal !== undefined
-              ? "browser_ax.map"
-            : observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+          compacted.observation.nextRecommendedAction
+          ?? (highConfidenceCaptcha !== undefined
+            ? "ask_user"
+            : highConfidenceBlockingSignal !== undefined
+              ? "lyra_lumen_elevate"
+              : highConfidenceOauthSignal !== undefined
+                ? "browser_ax.map"
+                : compacted.observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read")
       }, tabId);
     }),
     "lyraLumen.act": withLyraLumenResult("lyraLumen.act", async (payload) => {
@@ -1302,9 +1351,19 @@ export const createLumenToolHost = ({
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       }
+      const highlightTargetRefs = Array.isArray(payload.highlightTargetRefs)
+        ? payload.highlightTargetRefs.filter((value): value is string => typeof value === "string")
+        : undefined;
       const capture = await browser.captureAgentPage(
         tabId,
-        readLumenModeRequest(payload, targetMode)
+        {
+          ...readLumenModeRequest(payload, targetMode),
+          highlightTargets: readOptionalBooleanField(payload, "highlightTargets") ?? true,
+          downsampleForVision: readOptionalBooleanField(payload, "downsampleForVision") ?? true,
+          ...(highlightTargetRefs === undefined || highlightTargetRefs.length === 0
+            ? {}
+            : { highlightTargetRefs })
+        }
       ).catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("background_visual_capture_unsupported") === false) {
@@ -1349,12 +1408,53 @@ export const createLumenToolHost = ({
         height: capture.height,
         visibleOnly: capture.visibleOnly,
         ...("visualFrame" in capture && capture.visualFrame !== undefined ? { visualFrame: capture.visualFrame } : {}),
+        ...("highlightRegions" in capture && Array.isArray(capture.highlightRegions)
+          ? { highlightRegions: capture.highlightRegions }
+          : {}),
+        ...("highlighted" in capture && capture.highlighted === true ? { highlighted: true } : {}),
+        ...("downsampled" in capture && capture.downsampled === true ? { downsampled: true } : {}),
         imageArtifact,
         evidenceRefs: [imageArtifact.id],
         message:
-          `Captured browser visual evidence ${imageArtifact.id} (${capture.width}x${capture.height}).`,
+          `Captured browser visual evidence ${imageArtifact.id} (${capture.width}x${capture.height})${
+            "highlighted" in capture && capture.highlighted === true ? " with targetRef highlights" : ""
+          }.`,
         nextRecommendedAction: "lyra_lumen.map"
       }, tabId);
+    }),
+    "lyraLumen.judgeTask": withLyraLumenResult("lyraLumen.judgeTask", async (payload) => {
+      const goal = readOptionalStringField(payload, "goal");
+      const trajectory = isRecord(payload.trajectory) && Array.isArray(payload.trajectory.steps)
+        ? {
+            steps: payload.trajectory.steps.filter((step): step is Record<string, unknown> => isRecord(step)).map((step) => ({
+              toolPath: typeof step.toolPath === "string" ? step.toolPath : "unknown",
+              ok: step.ok === true,
+              ...(typeof step.pathTaken === "string" ? { pathTaken: step.pathTaken } : {}),
+              ...(Array.isArray(step.elementDiffChanged)
+                ? { elementDiffChanged: step.elementDiffChanged.filter((value): value is string => typeof value === "string") }
+                : {}),
+              ...(step.cacheHit === true ? { cacheHit: true } : {}),
+              ...(step.cacheMiss === true ? { cacheMiss: true } : {})
+            }))
+          }
+        : { steps: [] };
+      const finalObservation = isRecord(payload.finalObservation)
+        ? payload.finalObservation as BrowserTaskJudgeInput["finalObservation"]
+        : undefined;
+      const verdict = judgeBrowserAgentTask({
+        ...(goal === undefined ? {} : { goal }),
+        trajectory,
+        ...(finalObservation === undefined ? {} : { finalObservation })
+      });
+      return {
+        ok: true,
+        kind: "lyraLumenTaskJudge",
+        status: verdict.status,
+        confidence: verdict.confidence,
+        findings: verdict.findings,
+        trajectory: verdict.trajectory,
+        ...(verdict.recommendedAction === undefined ? {} : { nextRecommendedAction: verdict.recommendedAction })
+      };
     }),
     "lyraLumen.wait": withLyraLumenResult("lyraLumen.wait", async (payload) => {
       const browser = getBrowserBridge();

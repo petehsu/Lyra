@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 
 use crate::backend::{act_outcome, ComputerBackend};
 use crate::model::{
-    BackendError, ComputerAction, ComputerNode, MapRequest, MapStrategy, Platform, SessionMode,
+    BackendError, ComputerAction, ComputerFocusRequest, ComputerNode, ListAppsRequest, MapRequest,
+    MapStrategy, Platform, SessionMode,
 };
 use crate::snapshot_store::{
     get_snapshot, observation_diff, remember_snapshot,
@@ -428,7 +429,9 @@ pub fn explain_json(payload: &str) -> String {
             "platform": Platform::current().as_str(),
             "semanticAvailable": false,
             "recommendation": "vision-fallback",
-            "message": unsupported_message()
+            "fallback": "vision",
+            "nextRecommendedAction": "computer.see",
+            "message": format!("{} Use computer.see to read it visually.", unsupported_message())
         })
         .to_string();
     };
@@ -438,7 +441,9 @@ pub fn explain_json(payload: &str) -> String {
             "platform": Platform::current().as_str(),
             "semanticAvailable": false,
             "recommendation": "vision-fallback",
-            "message": unsupported_message()
+            "fallback": "vision",
+            "nextRecommendedAction": "computer.see",
+            "message": format!("{} Use computer.see to read it visually.", unsupported_message())
         })
         .to_string();
     }
@@ -486,6 +491,196 @@ pub fn explain_json(payload: &str) -> String {
         "node": resolved.as_ref().map(node_to_value)
     })
     .to_string()
+}
+
+/// `computer.list_apps`: enumerate running desktop applications.
+///
+/// Request fields: `maxApps` (1..=100), `includeBackground` (default false).
+pub fn list_apps_json(payload: &str) -> String {
+    let request: Value = serde_json::from_str(payload).unwrap_or_else(|_| json!({}));
+    let max_apps = request
+        .get("maxApps")
+        .and_then(Value::as_u64)
+        .map(|value| value.clamp(1, 100) as usize)
+        .unwrap_or(50);
+    let include_background = request
+        .get("includeBackground")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let list_request = ListAppsRequest {
+        max_apps,
+        include_background,
+    };
+
+    let Some(backend) = active_backend() else {
+        return unsupported_envelope(false).to_string();
+    };
+    if !backend.is_available() {
+        return unsupported_envelope(false).to_string();
+    }
+
+    match backend.list_apps(&list_request) {
+        Ok(apps) => {
+            let values = apps
+                .iter()
+                .map(|app| serde_json::to_value(app).unwrap_or_else(|_| json!({})))
+                .collect::<Vec<_>>();
+            json!({
+                "ok": true,
+                "platform": Platform::current().as_str(),
+                "status": {
+                    "ok": true,
+                    "state": "available",
+                    "message": "Desktop applications were listed.",
+                    "appCount": values.len()
+                },
+                "apps": values
+            })
+            .to_string()
+        }
+        Err(error) => json!({
+            "ok": true,
+            "platform": Platform::current().as_str(),
+            "status": {
+                "ok": false,
+                "state": error.kind,
+                "message": error.message
+            },
+            "apps": []
+        })
+        .to_string(),
+    }
+}
+
+/// `computer.observe`: read foreground app, focused window, and focused control.
+pub fn observe_json(_payload: &str) -> String {
+    let Some(backend) = active_backend() else {
+        return json!({
+            "ok": true,
+            "platform": Platform::current().as_str(),
+            "status": {
+                "ok": false,
+                "state": "unsupported",
+                "message": unsupported_message()
+            }
+        })
+        .to_string();
+    };
+    if !backend.is_available() {
+        return json!({
+            "ok": true,
+            "platform": Platform::current().as_str(),
+            "status": {
+                "ok": false,
+                "state": "unsupported",
+                "message": unsupported_message()
+            }
+        })
+        .to_string();
+    }
+
+    match backend.observe() {
+        Ok(observation) => {
+            let mut value = serde_json::to_value(&observation).unwrap_or_else(|_| json!({}));
+            if let Value::Object(ref mut map) = value {
+                map.insert("ok".to_string(), json!(true));
+                map.insert(
+                    "platform".to_string(),
+                    json!(Platform::current().as_str()),
+                );
+                map.insert(
+                    "status".to_string(),
+                    json!({
+                        "ok": true,
+                        "state": "available",
+                        "message": "Desktop foreground state was observed."
+                    }),
+                );
+            }
+            value.to_string()
+        }
+        Err(error) => json!({
+            "ok": true,
+            "platform": Platform::current().as_str(),
+            "status": {
+                "ok": false,
+                "state": error.kind,
+                "message": error.message
+            }
+        })
+        .to_string(),
+    }
+}
+
+/// `computer.focus`: raise an app or window to the foreground (session-level).
+///
+/// Request fields: `appRef`, `pid`, `bundleId`, `windowTitle`, `windowRef`, `mode`.
+/// Background/isolated modes refuse foreground steal (`foregroundStealBlocked`).
+pub fn focus_json(payload: &str) -> String {
+    let request: Value = serde_json::from_str(payload).unwrap_or_else(|_| json!({}));
+    let mode = request
+        .get("mode")
+        .and_then(Value::as_str)
+        .map(SessionMode::parse)
+        .unwrap_or(SessionMode::Shared);
+
+    if !mode.allows_foreground_steal() {
+        return error_envelope(&BackendError::new(
+            "foregroundStealBlocked",
+            format!(
+                "computer.focus would raise an app/window; not allowed in {} mode. Use shared mode.",
+                mode.as_str()
+            ),
+        ))
+        .to_string();
+    }
+
+    let focus_request = ComputerFocusRequest {
+        app_ref: request
+            .get("appRef")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        pid: request.get("pid").and_then(Value::as_i64),
+        bundle_id: request
+            .get("bundleId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        window_title: request
+            .get("windowTitle")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        window_ref: request
+            .get("windowRef")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    };
+
+    if !focus_request.has_target() {
+        return error_envelope(&BackendError::new(
+            "invalidArgument",
+            "computer.focus requires appRef, pid, bundleId, windowTitle, or windowRef.",
+        ))
+        .to_string();
+    }
+
+    let Some(backend) = active_backend() else {
+        return error_envelope(&BackendError::unsupported(unsupported_message())).to_string();
+    };
+    if !backend.is_available() {
+        return error_envelope(&BackendError::unsupported(unsupported_message())).to_string();
+    }
+
+    match backend.focus(&focus_request) {
+        Ok(()) => json!({
+            "ok": true,
+            "platform": Platform::current().as_str(),
+            "mode": mode.as_str(),
+            "focused": true,
+            "message": "Application or window was brought to the foreground."
+        })
+        .to_string(),
+        Err(error) => error_envelope(&error).to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -546,6 +741,45 @@ mod tests {
         // unsupported platform it then degrades to an unsupported error rather
         // than a foregroundStealBlocked error.
         let out = act_json(r#"{"osRef":"osax:0/1","action":"focus","mode":"shared"}"#);
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_ne!(value["error"]["kind"], json!("foregroundStealBlocked"));
+    }
+
+    #[test]
+    fn list_apps_on_unsupported_platform_reports_status() {
+        let out = list_apps_json("{}");
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_eq!(value["ok"], json!(true));
+        assert!(value.get("apps").is_some());
+    }
+
+    #[test]
+    fn observe_on_unsupported_platform_reports_status() {
+        let out = observe_json("{}");
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_eq!(value["ok"], json!(true));
+        assert!(value.get("status").is_some());
+    }
+
+    #[test]
+    fn focus_requires_target() {
+        let out = focus_json("{}");
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_eq!(value["ok"], json!(false));
+        assert_eq!(value["error"]["kind"], json!("invalidArgument"));
+    }
+
+    #[test]
+    fn session_focus_is_blocked_in_background_mode() {
+        let out = focus_json(r#"{"appRef":"osxapp:42","mode":"background-semantic"}"#);
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_eq!(value["ok"], json!(false));
+        assert_eq!(value["error"]["kind"], json!("foregroundStealBlocked"));
+    }
+
+    #[test]
+    fn session_focus_is_allowed_in_shared_mode_gate() {
+        let out = focus_json(r#"{"appRef":"osxapp:42","mode":"shared"}"#);
         let value: Value = serde_json::from_str(&out).expect("valid json");
         assert_ne!(value["error"]["kind"], json!("foregroundStealBlocked"));
     }

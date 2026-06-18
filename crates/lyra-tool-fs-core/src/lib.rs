@@ -7,7 +7,7 @@ mod scene;
 mod schema;
 mod search;
 
-pub use catalog::domain_summary;
+pub use catalog::{domain_summary, scenario_playbooks_doc};
 pub use error::ToolFsError;
 pub use model::{
     DEFAULT_TOOL_TIMEOUT_MS, MAX_TOOL_TIMEOUT_MS, PROVIDER_VISIBLE_TOOL_NAMES, PinnedToolHandle,

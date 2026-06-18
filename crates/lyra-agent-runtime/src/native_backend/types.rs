@@ -9,16 +9,15 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
     pub(crate) active_skills: HashSet<String>,
-    pub(crate) overnight_runs: HashMap<String, Value>,
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
-    pub(crate) goals: HashMap<String, LyraGoal>,
-    pub(crate) focused_goal_id: Option<String>,
     pub(crate) cancelled_turns: HashSet<String>,
     pub(crate) active_cancellations: HashMap<String, Arc<AtomicBool>>,
     pub(crate) suppressed_tool_usage_by_turn: HashMap<String, HashSet<String>>,
     pub(crate) inspected_tool_descriptors_by_session:
         HashMap<String, HashMap<String, ToolDescriptorCacheEntry>>,
+    /// Maps `session_id:turn_id` to the assistant UI message anchoring the active tool round.
+    pub(crate) active_ui_message_by_turn: HashMap<String, String>,
     pub(crate) event_callback: Option<Arc<EventCallback>>,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
 }
@@ -38,16 +37,16 @@ pub(crate) struct NativeStateFile {
     pub(crate) legacy_shared_memory: Vec<SharedMemoryRecord>,
     #[serde(default)]
     pub(crate) active_skills: HashSet<String>,
-    #[serde(default)]
-    pub(crate) overnight_runs: HashMap<String, Value>,
+    #[serde(default, rename = "overnightRuns", skip_serializing)]
+    pub(crate) legacy_overnight_runs: HashMap<String, Value>,
     #[serde(default)]
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     #[serde(default)]
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
-    #[serde(default)]
-    pub(crate) goals: HashMap<String, LyraGoal>,
-    #[serde(default)]
-    pub(crate) focused_goal_id: Option<String>,
+    #[serde(default, rename = "goals", skip_serializing)]
+    pub(crate) legacy_goals: HashMap<String, Value>,
+    #[serde(default, rename = "focusedGoalId", skip_serializing)]
+    pub(crate) legacy_focused_goal_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -188,11 +187,11 @@ pub(crate) struct NativeProviderModel {
     pub(crate) id: String,
     pub(crate) label: Option<String>,
     pub(crate) context_window: Option<usize>,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub(crate) supports_image_input: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub(crate) supports_tool_calling: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub(crate) supports_streaming: bool,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
@@ -468,49 +467,4 @@ pub(crate) struct ClarificationRequest {
     pub(crate) responded_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct LyraGoal {
-    pub(crate) id: String,
-    pub(crate) title: String,
-    pub(crate) status: String,
-    pub(crate) scope: Option<String>,
-    pub(crate) session_id: Option<String>,
-    pub(crate) description: Option<String>,
-    pub(crate) created_at: String,
-    pub(crate) updated_at: String,
-    pub(crate) checkpoints: Vec<Value>,
-}
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SelfDevState {
-    pub(crate) mode: String,
-    pub(crate) target: String,
-    pub(crate) repo_root: String,
-    pub(crate) capabilities: Vec<SelfDevCapability>,
-    pub(crate) build: SelfDevTaskState,
-    pub(crate) test: SelfDevTaskState,
-    pub(crate) reload: SelfDevTaskState,
-    pub(crate) started_at: String,
-    pub(crate) updated_at: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SelfDevCapability {
-    pub(crate) id: String,
-    pub(crate) label: String,
-    pub(crate) kind: String,
-    pub(crate) available: bool,
-    pub(crate) tool: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SelfDevTaskState {
-    pub(crate) status: String,
-    pub(crate) last_command: Option<String>,
-    pub(crate) last_result: Option<String>,
-    pub(crate) updated_at: String,
-}

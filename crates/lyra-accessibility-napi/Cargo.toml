@@ -13,5 +13,11 @@ serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 lyra-computer-use-core = { path = "../lyra-computer-use-core" }
 
+# On Linux, enable the AT-SPI2 backend so the Computer Use surface is live there
+# too. macOS (AXUIElement) and Windows (UIA) backends auto-activate by target
+# cfg and need no feature; only Linux is feature-gated in the core crate.
+[target.'cfg(target_os = "linux")'.dependencies]
+lyra-computer-use-core = { path = "../lyra-computer-use-core", features = ["linux-atspi"] }
+
 [build-dependencies]
 napi-build = "2.1.4"

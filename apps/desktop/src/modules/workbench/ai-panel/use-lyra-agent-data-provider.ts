@@ -29,7 +29,6 @@ import type { GlobalDialogModel } from "../global-dialog";
 import type { WorkbenchLocationControls } from "../location";
 import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
-  AgentGoalItem,
   AgentImageAttachment,
   ChatMessage,
   ComposerModelControls,
@@ -46,7 +45,7 @@ import {
 } from "./lyra-agents/data/createDataProviderValue";
 import {
   agentSessionToChatMessages,
-  agentSessionToSidePanel,
+  mergeRunningSessionSnapshot,
   agentSessionToSessionMeta,
   agentSessionToTodos,
   applyAgentRuntimeEventToSnapshot,
@@ -160,18 +159,21 @@ const initialState: State = {
   loading: true
 };
 
-const RUNNING_SESSION_REFRESH_MS = 10_000;
-
 const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
   if (event.kind === "sessionSnapshot") {
     if (state.session !== null && event.snapshot.id !== state.session.id) {
       return state;
     }
+    const session = state.session === null
+      ? event.snapshot
+      : state.session.turnStatus === "running"
+        ? mergeRunningSessionSnapshot(state.session, event.snapshot)
+        : event.snapshot;
     return {
       ...state,
-      session: event.snapshot,
+      session,
       loading: false,
-      turnError: event.snapshot.turnStatus === "failed" ? state.turnError : null,
+      turnError: session.turnStatus === "failed" ? state.turnError : null,
       error: null
     };
   }
@@ -302,25 +304,6 @@ const upsertById = <T extends { readonly id: string }>(items: readonly T[], item
   return items.map((existing, existingIndex) => (existingIndex === index ? item : existing));
 };
 
-const stringFromRecord = (value: unknown, key: string): string | null => {
-  if (typeof value !== "object" || value === null || !Object.prototype.hasOwnProperty.call(value, key)) {
-    return null;
-  }
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" && field.trim().length > 0 ? field.trim() : null;
-};
-
-const normalizeGoalItem = (value: unknown): AgentGoalItem | null => {
-  const id = stringFromRecord(value, "id");
-  if (id === null) return null;
-  return {
-    id,
-    title: stringFromRecord(value, "title") ?? id,
-    status: stringFromRecord(value, "status"),
-    scope: stringFromRecord(value, "scope")
-  };
-};
-
 type LyraAgentDataProviderCallbacks = {
   readonly onActiveSessionChange?: ((sessionId: string) => void) | undefined;
   readonly onSessionSnapshotChange?: ((snapshot: AgentSessionSnapshot) => void) | undefined;
@@ -334,12 +317,6 @@ type LyraAgentDataProviderCallbacks = {
   readonly onOpenProjectTree?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenSelfDevLab?: ((request: {
-    readonly parentSessionId: string | null;
-  }) => Promise<void> | void) | undefined;
-  readonly onOpenOvernightLab?: ((request: {
-    readonly parentSessionId: string | null;
   }) => Promise<void> | void) | undefined;
   readonly onOpenModelSettings?: (() => Promise<void> | void) | undefined;
   readonly onOpenUrlInWorkbench?: ((request: {
@@ -386,8 +363,6 @@ export const useLyraAgentDataProvider = (
     onRequestProjectBind,
     onUpdateDraftWorkingDir,
     onOpenProjectTree,
-    onOpenSelfDevLab,
-    onOpenOvernightLab,
     onOpenModelSettings,
     onOpenUrlInWorkbench,
     onOpenFile,
@@ -648,32 +623,6 @@ export const useLyraAgentDataProvider = (
     modelConfigSignature,
     state.session?.id
   ]);
-
-  useEffect(() => {
-    if (
-      desktopApi?.agent === undefined ||
-      state.session === null ||
-      state.session.turnStatus !== "running"
-    ) {
-      return;
-    }
-    const agentApi = desktopApi.agent;
-    let disposed = false;
-    const sessionId = state.session.id;
-    const refresh = (): void => {
-      void agentApi.readSession({ sessionId })
-        .then((snapshot) => {
-          if (disposed || snapshot.id !== sessionId) return;
-          dispatch({ type: "snapshot", snapshot });
-        })
-        .catch(() => undefined);
-    };
-    const timer = window.setInterval(refresh, RUNNING_SESSION_REFRESH_MS);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [desktopApi, state.session?.id, state.session?.turnStatus]);
 
   useEffect(() => {
     if (state.session === null) return;
@@ -1188,18 +1137,6 @@ export const useLyraAgentDataProvider = (
     state.session?.workingDir
   ]);
 
-  const openSelfDevLab = useCallback(async (): Promise<void> => {
-    await onOpenSelfDevLab?.({
-      parentSessionId: resolvedSessionId
-    });
-  }, [onOpenSelfDevLab, resolvedSessionId]);
-
-  const openOvernightLab = useCallback(async (): Promise<void> => {
-    await onOpenOvernightLab?.({
-      parentSessionId: resolvedSessionId
-    });
-  }, [onOpenOvernightLab, resolvedSessionId]);
-
   const submitDecisions = useCallback(async (answers: Record<string, string>) => {
     if (desktopApi?.agent === undefined || state.session === null) return;
     const entries = Object.entries(answers)
@@ -1478,109 +1415,108 @@ export const useLyraAgentDataProvider = (
 
   const runReview = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.runReview({ sessionId: currentSessionId });
-    const snapshot = await desktopApi.agent.readSession({ sessionId: response.sessionId });
-    dispatch({ type: "snapshot", snapshot });
+    await desktopApi.agent.runReview({ sessionId: currentSessionId });
   }, [currentSessionId, desktopApi]);
 
   const runJudge = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.runJudge({ sessionId: currentSessionId });
-    const snapshot = await desktopApi.agent.readSession({ sessionId: response.sessionId });
+    await desktopApi.agent.runJudge({ sessionId: currentSessionId });
+  }, [currentSessionId, desktopApi]);
+
+  const submitSessionRename = useCallback(async (title: string | null): Promise<void> => {
+    if (desktopApi?.agent === undefined || currentSessionId === null) return;
+    await desktopApi.agent.renameSession({ sessionId: currentSessionId, title });
+    const snapshot = await desktopApi.agent.readSession({ sessionId: currentSessionId });
     dispatch({ type: "snapshot", snapshot });
-  }, [currentSessionId, desktopApi]);
+    onSessionSnapshotChange?.(snapshot);
+  }, [currentSessionId, desktopApi, onSessionSnapshotChange]);
 
-  const runSubagent = useCallback(async (options: {
-    prompt: string;
-    subagentType?: string | null;
-    model?: string | null;
-    continueSessionId?: string | null;
-  }): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.runSubagent({
-      sessionId: currentSessionId,
-      prompt: options.prompt,
-      subagentType: options.subagentType ?? null,
-      model: options.model ?? null,
-      continueSessionId: options.continueSessionId ?? null
+  const renameSession = useCallback((): void => {
+    if (openDialog === undefined || currentSessionId === null) return;
+    const sessionTitle = state.session?.title ?? "Lyra Agent";
+    openDialog({
+      title: t("header.renameTitle"),
+      source: {
+        title: "Lyra Agent",
+        subtitle: sessionTitle,
+        iconLabel: "LA",
+        iconTone: "accent"
+      },
+      input: {
+        id: `rename-${currentSessionId}`,
+        label: t("header.renamePlaceholder"),
+        value: sessionTitle,
+        placeholder: t("header.renamePlaceholder"),
+        submitActionId: "save"
+      },
+      actions: [
+        {
+          id: "clear",
+          label: t("header.clearRename"),
+          onSelect: () => {
+            void submitSessionRename(null);
+          }
+        },
+        {
+          id: "cancel",
+          label: t("header.cancelAction")
+        },
+        {
+          id: "save",
+          label: t("header.saveRename"),
+          tone: "primary",
+          onSelect: ({ inputValue }) => {
+            const nextTitle = inputValue?.trim() ?? "";
+            void submitSessionRename(nextTitle.length === 0 ? null : nextTitle);
+          }
+        }
+      ]
     });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
-  }, [currentSessionId, desktopApi]);
+  }, [currentSessionId, openDialog, state.session?.title, submitSessionRename]);
 
-  const askSideQuestion = useCallback(async (question: string): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.runBtw({ sessionId: currentSessionId, question });
-    const snapshot = await desktopApi.agent.readSession({ sessionId: response.sessionId });
-    dispatch({ type: "snapshot", snapshot });
-  }, [currentSessionId, desktopApi]);
-
-  const splitSession = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.splitSession({ sessionId: currentSessionId });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
-  }, [currentSessionId, desktopApi]);
-
-  const transferSession = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.transferSession({ sessionId: currentSessionId });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
-  }, [currentSessionId, desktopApi]);
-
-  const compactContext = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.compactSession({ sessionId: currentSessionId });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
-  }, [currentSessionId, desktopApi]);
-
-  const openGoals = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.openGoals({ sessionId: currentSessionId });
-    if (currentSessionId !== null) {
-      const snapshot = await desktopApi.agent.readSession({ sessionId: currentSessionId });
-      dispatch({ type: "snapshot", snapshot });
-    }
-  }, [currentSessionId, desktopApi]);
-
-  const listGoals = useCallback(async (): Promise<readonly AgentGoalItem[]> => {
-    if (desktopApi?.agent === undefined) return [];
-    const response = await desktopApi.agent.listGoals({ sessionId: currentSessionId });
-    return response.goals
-      .map(normalizeGoalItem)
-      .filter((goal): goal is AgentGoalItem => goal !== null);
-  }, [currentSessionId, desktopApi]);
-
-  const showGoal = useCallback(async (goalId: string): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const trimmed = goalId.trim();
-    if (trimmed.length === 0) return;
-    await desktopApi.agent.showGoal({ sessionId: currentSessionId, goalId: trimmed });
-    if (currentSessionId !== null) {
-      const snapshot = await desktopApi.agent.readSession({ sessionId: currentSessionId });
-      dispatch({ type: "snapshot", snapshot });
-    }
-  }, [currentSessionId, desktopApi]);
-
-  const resumeGoal = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    await desktopApi.agent.resumeGoal({ sessionId: currentSessionId });
-    if (currentSessionId !== null) {
-      const snapshot = await desktopApi.agent.readSession({ sessionId: currentSessionId });
-      dispatch({ type: "snapshot", snapshot });
-    }
-  }, [currentSessionId, desktopApi]);
-
-  const updateAutomation = useCallback(async (settings: {
-    subagentModel?: string | null;
-    autoreviewEnabled?: boolean | null;
-    autojudgeEnabled?: boolean | null;
-  }): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const response = await desktopApi.agent.updateSessionAutomation({
+  const archiveSession = useCallback(async (): Promise<void> => {
+    if (desktopApi?.agent === undefined || currentSessionId === null) return;
+    await desktopApi.agent.archiveSession({
       sessionId: currentSessionId,
-      ...settings
+      archived: true
     });
-    dispatch({ type: "snapshot", snapshot: response.snapshot });
-  }, [currentSessionId, desktopApi]);
+    onMissingSession?.(currentSessionId);
+  }, [currentSessionId, desktopApi, onMissingSession]);
+
+  const confirmDeleteSession = useCallback(async (): Promise<void> => {
+    if (desktopApi?.agent === undefined || currentSessionId === null) return;
+    await desktopApi.agent.deleteSession({ sessionId: currentSessionId });
+    onMissingSession?.(currentSessionId);
+  }, [currentSessionId, desktopApi, onMissingSession]);
+
+  const deleteSession = useCallback((): void => {
+    if (openDialog === undefined || currentSessionId === null) return;
+    const sessionTitle = state.session?.title ?? "Lyra Agent";
+    openDialog({
+      title: t("header.deleteConfirmTitle"),
+      description: t("header.deleteConfirmDescription"),
+      source: {
+        title: "Lyra Agent",
+        subtitle: sessionTitle,
+        iconLabel: "LA",
+        iconTone: "danger"
+      },
+      actions: [
+        {
+          id: "cancel",
+          label: t("header.cancelAction")
+        },
+        {
+          id: "delete",
+          label: t("header.deleteConfirmAction"),
+          tone: "danger",
+          onSelect: () => {
+            void confirmDeleteSession();
+          }
+        }
+      ]
+    });
+  }, [confirmDeleteSession, currentSessionId, openDialog, state.session?.title]);
 
   // Stabilize the composer's control objects so they keep the same identity
   // across streaming-token re-renders (they do not depend on the message stream).
@@ -1733,7 +1669,6 @@ export const useLyraAgentDataProvider = (
       openImageInWorkbench,
       canOpenImageInWorkbench,
       revealSensitiveValueToUser,
-      sidePanel: agentSessionToSidePanel(state.session),
       sendMessage,
       addCitationToComposer,
       addPageCitationToComposer,
@@ -1762,23 +1697,14 @@ export const useLyraAgentDataProvider = (
       createSession,
       bindProject,
       openProjectTree,
-      openSelfDevLab,
-      openOvernightLab,
       runImprove,
       runRefactor,
       pokeTodos,
       runReview,
       runJudge,
-      runSubagent,
-      askSideQuestion,
-      splitSession,
-      transferSession,
-      compactContext,
-      openGoals,
-      listGoals,
-      showGoal,
-      resumeGoal,
-      updateAutomation,
+      renameSession,
+      archiveSession,
+      deleteSession,
       submitDecisions,
       approvePermission,
       denyPermission,
@@ -1811,8 +1737,6 @@ export const useLyraAgentDataProvider = (
     canOpenImageInWorkbench,
     revealSensitiveValueToUser,
     openProjectTree,
-    openSelfDevLab,
-    openOvernightLab,
     addCitationToComposer,
     addPageCitationToComposer,
     attachDragPayloadToComposer,
@@ -1839,7 +1763,6 @@ export const useLyraAgentDataProvider = (
     runImprove,
     runRefactor,
     runReview,
-    runSubagent,
     sendMessage,
     activeDraftWorkingDir,
     state.session,
@@ -1847,15 +1770,9 @@ export const useLyraAgentDataProvider = (
     state.turnError,
     visibleMessageLimit,
     runJudge,
-    askSideQuestion,
-    compactContext,
-    openGoals,
-    listGoals,
-    showGoal,
-    resumeGoal,
-    splitSession,
-    transferSession,
-    updateAutomation,
+    renameSession,
+    archiveSession,
+    deleteSession,
     pokeTodos,
     submitDecisions,
     onOpenFile,

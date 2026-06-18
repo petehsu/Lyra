@@ -76,6 +76,9 @@ const buildBrowserAgentObservationScript = ({
       || element.getAttribute?.("disabled") !== null
       || element.getAttribute?.("aria-disabled") === "true";
 
+    const isFileInputElement = (element, win = window) =>
+      element instanceof (win.HTMLInputElement || HTMLInputElement) && element.type === "file";
+
     const isVisible = (element, win = window) => {
       const ElementCtor = win.Element || Element;
       if (!(element instanceof ElementCtor) || !element.isConnected) return false;
@@ -83,7 +86,12 @@ const buildBrowserAgentObservationScript = ({
       if (rect.width <= 0 || rect.height <= 0) return false;
       const style = win.getComputedStyle(element);
       if (style.display === "none" || style.visibility === "hidden") return false;
-      if (Number.parseFloat(style.opacity || "1") <= 0) return false;
+      if (Number.parseFloat(style.opacity || "1") <= 0) {
+        return isFileInputElement(element, win);
+      }
+      if ((style.pointerEvents || "").toLowerCase() === "none") {
+        return false;
+      }
       return true;
     };
 
@@ -126,6 +134,13 @@ const buildBrowserAgentObservationScript = ({
       .map((entry) => normalizeText(entry.innerText || entry.textContent || "", 80))
       .find(Boolean) || "";
 
+    const cssEscape = (value) => {
+      if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+        return CSS.escape(String(value));
+      }
+      return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+    };
+
     const selectorPreview = (element) => {
       const tagName = String(element.tagName || "div").toLowerCase();
       const parts = [tagName];
@@ -147,6 +162,35 @@ const buildBrowserAgentObservationScript = ({
       if (type) parts.push("[type=\\"" + type + "\\"]");
       const preview = parts.join("");
       return preview.length <= 120 ? preview : preview.slice(0, 117) + "...";
+    };
+
+    const buildElementXPath = (element) => {
+      if (!(element instanceof Element)) return "";
+      if (element.id) {
+        return '//*[@id="' + cssEscape(element.id) + '"]';
+      }
+      const segments = [];
+      let current = element;
+      while (current instanceof Element) {
+        const tag = current.tagName.toLowerCase();
+        const parent = current.parentElement;
+        if (parent === null) {
+          segments.unshift("/" + tag);
+          break;
+        }
+        const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+        const index = siblings.indexOf(current) + 1;
+        segments.unshift(siblings.length > 1 ? tag + "[" + index + "]" : tag);
+        if (current.id) {
+          segments.length = 0;
+          segments.push('//*[@id="' + cssEscape(current.id) + '"]');
+          break;
+        }
+        current = parent;
+      }
+      return segments.join("/").startsWith("//*")
+        ? segments.join("/")
+        : "/" + segments.join("/");
     };
 
     const stateHint = (element) => {
@@ -487,8 +531,11 @@ const buildBrowserAgentObservationScript = ({
           });
         }
         let host = "";
+        let challengeUrl = src.toLowerCase();
         try {
-          host = new URL(src, String(win.location.href || "https://invalid.local")).hostname.toLowerCase();
+          const parsed = new URL(src, String(win.location.href || "https://invalid.local"));
+          host = parsed.hostname.toLowerCase();
+          challengeUrl = parsed.href.toLowerCase();
         } catch (_error) {
           host = src.toLowerCase();
         }
@@ -497,13 +544,17 @@ const buildBrowserAgentObservationScript = ({
           || host.includes("hcaptcha")
           || host.includes("challenges.cloudflare")
           || host.includes("turnstile")
+          || challengeUrl.includes("recaptcha")
+          || challengeUrl.includes("hcaptcha")
+          || challengeUrl.includes("challenges.cloudflare")
+          || challengeUrl.includes("turnstile")
         ) {
           const bounds = boundsFor(frame);
           pushSignal({
             kind: "captcha",
             confidence: "high",
             source: "frame",
-            label: host,
+            label: host || challengeUrl,
             url: src,
             frameRef: FRAME_REF,
             frameTreeNodeId: FRAME_TREE_NODE_ID,
@@ -527,14 +578,22 @@ const buildBrowserAgentObservationScript = ({
         "select",
         "textarea",
         "summary",
+        "label",
         "[contenteditable]",
         "[tabindex]",
+        "[onclick]",
         "[role='button']",
         "[role='link']",
         "[role='checkbox']",
         "[role='textbox']",
         "[role='searchbox']",
-        "[role='menuitem']"
+        "[role='menuitem']",
+        "[role='combobox']",
+        "div[role='button']",
+        "div[role='combobox']",
+        "span[role='button']",
+        "span[role='combobox']",
+        "input[role='combobox']"
       ].join(",");
       const collectCandidates = (root, scope = "document", hostChain = []) => {
         const collected = collectInteractiveCandidates(root, selector, scope, hostChain);
@@ -569,13 +628,34 @@ const buildBrowserAgentObservationScript = ({
         return collected;
       };
       const candidates = collectCandidates(doc, "document");
+      const pointerStyledCandidates = [];
+      if (LIGHTWEIGHT_STRATEGY) {
+        for (const element of collectLimitedElements(doc, MAX_LIGHTWEIGHT_SCAN_NODES, "pointer_scan_limited")) {
+          if (!(element instanceof win.Element) || element.matches?.(selector)) {
+            continue;
+          }
+          const tagName = String(element.tagName || "").toLowerCase();
+          if (tagName !== "div" && tagName !== "span") {
+            continue;
+          }
+          const style = win.getComputedStyle(element);
+          if ((style.cursor || "").toLowerCase() !== "pointer") {
+            continue;
+          }
+          pointerStyledCandidates.push({ element, scope: "document", hostChain: [] });
+          if (pointerStyledCandidates.length >= 48) {
+            warnings.push("pointer_candidate_limit");
+            break;
+          }
+        }
+      }
 
-      for (const candidate of candidates) {
+      for (const candidate of [...candidates, ...pointerStyledCandidates]) {
         const { element, scope, hostChain } = candidate;
         if (!(element instanceof win.Element) || seen.has(element)) continue;
         seen.add(element);
         const visibility = visibilityState(element, win);
-        if (!visibility.visible) continue;
+        if (!visibility.visible && !isFileInputElement(element, win)) continue;
         if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
         const focusable = isFocusable(element);
         if (STRATEGY === "focus" && !focusable) continue;
@@ -606,6 +686,7 @@ const buildBrowserAgentObservationScript = ({
             80
           ),
           selectorPreview: selectorPreview(element),
+          xpath: buildElementXPath(element),
           bounds: {
             x: Math.round(rect.left + offsetX),
             y: Math.round(rect.top + offsetY),

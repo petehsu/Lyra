@@ -34,16 +34,6 @@ import {
   type AgentGitAppId
 } from "../agent-git";
 import {
-  renderAgentSelfDevAppIcon,
-  type AgentSelfDevAppIconKey,
-  type AgentSelfDevAppId
-} from "../agent-selfdev";
-import {
-  renderAgentOvernightAppIcon,
-  type AgentOvernightAppIconKey,
-  type AgentOvernightAppId
-} from "../agent-overnight";
-import {
   renderSoftwareStoreAppIcon,
   type SoftwareStoreAppIconKey,
   type SoftwareStoreAppId
@@ -63,10 +53,6 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
     renderAgentProjectTreeAppIcon(iconKey as AgentProjectTreeAppIconKey),
   "agent-git": (iconKey) =>
     renderAgentGitAppIcon(iconKey as AgentGitAppIconKey),
-  "agent-selfdev": (iconKey) =>
-    renderAgentSelfDevAppIcon(iconKey as AgentSelfDevAppIconKey),
-  "agent-overnight": (iconKey) =>
-    renderAgentOvernightAppIcon(iconKey as AgentOvernightAppIconKey),
   "agent-session-history": (iconKey) =>
     renderAgentSessionHistoryAppIcon(iconKey as AgentSessionHistoryAppIconKey),
   "login-manager": (iconKey) =>
@@ -107,16 +93,6 @@ export const isAgentGitAppId = (
   value: WorkbenchAppId
 ): value is AgentGitAppId =>
   value === "agent-git";
-
-export const isAgentSelfDevAppId = (
-  value: WorkbenchAppId
-): value is AgentSelfDevAppId =>
-  value === "agent-selfdev";
-
-export const isAgentOvernightAppId = (
-  value: WorkbenchAppId
-): value is AgentOvernightAppId =>
-  value === "agent-overnight";
 
 export const isAgentSessionHistoryAppId = (
   value: WorkbenchAppId

@@ -123,7 +123,7 @@ const renderModel = ({
     historyAppPlaceholder: "Search history",
     historyAppSuggestionLabels: {
       sessions: "Sessions",
-      projectSessions: "Project sessions",
+
       archivedSessions: "Archived sessions",
       browserHistory: "Web history"
     },
@@ -447,11 +447,11 @@ describe("useTitlebarNavigationModel", () => {
       {
         value: "Fix agent storage",
         type: "history",
-        label: "Project sessions",
+        label: "Sessions",
         historyTarget: {
           kind: "session",
           sessionId: "session-1",
-          category: "project-sessions"
+          category: "sessions"
         }
       }
     ]);
@@ -464,7 +464,7 @@ describe("useTitlebarNavigationModel", () => {
     expect(onHistoryAppSuggestionSelect).toHaveBeenCalledWith({
       kind: "session",
       sessionId: "session-1",
-      category: "project-sessions"
+      category: "sessions"
     });
     expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
   });

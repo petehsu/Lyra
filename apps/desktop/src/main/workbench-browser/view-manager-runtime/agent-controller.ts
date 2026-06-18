@@ -30,7 +30,16 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     rememberBrowserRestoreState: host.rememberBrowserRestoreState,
     resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
     stateStore,
-    updateRuntimeState: host.updateRuntimeState
+    updateRuntimeState: host.updateRuntimeState,
+    ...(host.consumeBrowserHealthAlerts === undefined
+      ? {}
+      : { consumeBrowserHealthAlerts: host.consumeBrowserHealthAlerts }),
+    ...(host.onBrowserHealthCaptcha === undefined
+      ? {}
+      : { onBrowserHealthCaptcha: host.onBrowserHealthCaptcha }),
+    ...(host.onBrowserHealthPermission === undefined
+      ? {}
+      : { onBrowserHealthPermission: host.onBrowserHealthPermission })
   });
   const locator = createBrowserAgentLocator({
     observeAgentPage: observationEngine.observeAgentPage,

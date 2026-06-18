@@ -49,6 +49,7 @@ import { createSharedControlController } from "./view-manager-runtime/shared-con
 import { createSnapshotProvider } from "./view-manager-runtime/snapshot-provider";
 import { createAgentShadowController } from "./view-manager-runtime/agent-shadow-controller";
 import { createWorkbenchBrowserAgentController } from "./view-manager-runtime/agent-controller";
+import { createBrowserHealthWatchdog } from "./view-manager-runtime/browser-health-watchdog";
 import { createRestoreTombstoneController } from "./view-manager-runtime/restore-tombstone-controller";
 import { createLayoutController } from "./view-manager-runtime/layout-controller";
 import { createPageRegistryController } from "./view-manager-runtime/page-registry-controller";
@@ -93,6 +94,7 @@ export const createWorkbenchBrowserViewManager = ({
   const isolatedElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION);
 
+  const browserHealthWatchdog = createBrowserHealthWatchdog();
   const webContentsLoadWaiter = createWebContentsLoadWaiter();
   const cancelPendingAgentPageLoad = webContentsLoadWaiter.cancelPendingLoad;
   const waitForAgentPageLoad = webContentsLoadWaiter.waitForLoad;
@@ -115,6 +117,7 @@ export const createWorkbenchBrowserViewManager = ({
     targetMode: WorkbenchBrowserAgentTargetMode,
     reason: "navigation" | "frameReload" = "navigation"
   ): void => {
+    browserHealthWatchdog.onDomCacheInvalidated(tabId, reason);
     agentController.invalidateBrowserAgentTargets(tabId, targetMode, reason);
   };
   const scheduleBrowserTargetRegistryWarmup = (
@@ -210,7 +213,13 @@ export const createWorkbenchBrowserViewManager = ({
       performanceScheduler?.unregisterResource(`browserPage:${tabId}`);
     },
     readBrowserContextMenuLocale: () =>
-      readBrowserContextMenuLocaleFromPreferences(workbenchState?.readState("preferences") ?? null)
+      readBrowserContextMenuLocaleFromPreferences(workbenchState?.readState("preferences") ?? null),
+    onBrowserHealthPopup: (tabId, url) => browserHealthWatchdog.onPopupRequested(tabId, url),
+    onBrowserHealthCrash: (tabId) => browserHealthWatchdog.onCrash(tabId),
+    onBrowserHealthNavigationFailed: (tabId, message) =>
+      browserHealthWatchdog.onNavigationFailed(tabId, message),
+    onBrowserHealthDownload: (tabId, url) => browserHealthWatchdog.onDownloadStarted(tabId, url),
+    onBrowserHealthTabClosed: (tabId) => browserHealthWatchdog.clearTab(tabId)
   });
   const { entries } = pageRegistry;
   agentShadowController = createAgentShadowController({
@@ -425,6 +434,9 @@ export const createWorkbenchBrowserViewManager = ({
     ...(osAxAdapter === undefined ? {} : { osAxAdapter }),
     readPageDiagnostics,
     recordPageDiagnostic,
+    consumeBrowserHealthAlerts: (tabId) => browserHealthWatchdog.consumeAlerts(tabId),
+    onBrowserHealthCaptcha: (tabId, label) => browserHealthWatchdog.onCaptchaDetected(tabId, label),
+    onBrowserHealthPermission: (tabId, kind) => browserHealthWatchdog.onPermissionPrompt(tabId, kind),
     publishEvent,
     updateRuntimeState,
     publishBrowserAgentActivity,

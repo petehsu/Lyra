@@ -27,8 +27,12 @@ pub mod windows;
 pub mod linux;
 
 pub use model::{
-    ActOutcome, ActRequest, BackendError, Bounds, ComputerAction, ComputerNode, ComputerNodeSource,
-    ComputerNodeState, MapRequest, MapStrategy, Platform, SessionMode,
+    ActOutcome, ActRequest, BackendError, Bounds, ComputerAction, ComputerAppEntry,
+    ComputerFocusRequest, ComputerNode, ComputerNodeSource, ComputerNodeState,
+    ComputerObserveResult, ComputerWindowEntry, ListAppsRequest, MapRequest, MapStrategy, Platform,
+    SessionMode,
 };
 
-pub use runtime::{act_json, diff_json, explain_json, find_json, map_json};
+pub use runtime::{
+    act_json, diff_json, explain_json, find_json, focus_json, list_apps_json, map_json, observe_json,
+};

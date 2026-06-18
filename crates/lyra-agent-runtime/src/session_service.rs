@@ -156,32 +156,4 @@ impl SessionService {
         self.backend.call("agent.session.bindProject", payload)
     }
 
-    pub fn split(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.session.split", payload)
-    }
-
-    pub fn transfer(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.session.transfer", payload)
-    }
-
-    pub fn compact(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.session.compact", payload)
-    }
-
-    pub fn update_automation(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend
-            .call("agent.session.automation.update", payload)
-    }
 }

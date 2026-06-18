@@ -26,5 +26,21 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Search the web and deep-read top results into an agent-friendly research bundle.",
             Some("web_research"),
         ),
+        super::s(
+            "/tools/web/map",
+            "web",
+            "map",
+            "Map site URLs",
+            "Discover same-origin URLs from a seed page and optional sitemap before selective fetch.",
+            Some("web_map"),
+        ),
+        super::s(
+            "/tools/web/batch",
+            "web",
+            "batch",
+            "Batch fetch URLs",
+            "Fetch multiple URLs synchronously or as a background job with session progress events.",
+            Some("web_batch"),
+        ),
     ]
 }

@@ -150,10 +150,6 @@ export const useWorkspaceSurfaceRouterProps = ({
     agentProjectTreeModel,
     agentProjectTreeLabels: labels.agentProjectTree,
     agentGitLabels: labels.agentGit,
-    agentSelfDevLabels: labels.agentSelfDev,
-    agentSelfDevLocale: preferences.locale,
-    agentOvernightLabels: labels.agentOvernight,
-    agentOvernightLocale: preferences.locale,
     onOpenAgentGit,
     fileEditorReview: {
       editorWorkAcceptLabel: labels.fileEditorReview.accept,

@@ -3,6 +3,30 @@ use crate::model::ToolManifest;
 pub(super) fn manifests() -> Vec<ToolManifest> {
     vec![
         super::s(
+            "/tools/computer/list_apps",
+            "computer",
+            "list_apps",
+            "List desktop applications",
+            "List running desktop applications and their visible windows, including the foreground app. Level-1 merge: also includes open Lyra workbench tabs (browser, terminal, file manager) when internal surface routing is configured.",
+            Some("computer_list_apps"),
+        ),
+        super::s(
+            "/tools/computer/observe",
+            "computer",
+            "observe",
+            "Observe desktop foreground state",
+            "Read the foreground application, focused window, and focused accessibility control without mapping the full tree. Level-1 merge: when a Lyra browser or terminal tab is active, reports that tab as the foreground surface.",
+            Some("computer_observe"),
+        ),
+        super::s(
+            "/tools/computer/focus",
+            "computer",
+            "focus",
+            "Focus desktop application or window",
+            "Raise a native desktop app or window to the foreground (session-level focus). Distinct from computer.act(action: focus) which targets a single accessibility node. Shared mode only — background/isolated sessions refuse foreground steal.",
+            None,
+        ),
+        super::s(
             "/tools/computer/map",
             "computer",
             "map",
@@ -41,6 +65,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Explain computer node",
             "Explain whether semantic OS control is available, whether an osRef is still resolvable, and the recommended next path.",
             Some("computer_explain"),
+        ),
+        super::s(
+            "/tools/computer/see",
+            "computer",
+            "see",
+            "Capture desktop screenshot",
+            "Visual fallback (Level 3): screenshot the screen or focused window so the model can read native UI that has no accessibility node (canvas, custom-drawn widgets). Pure observation — does not steal focus or act. Use only after computer.map/explain shows semantic control cannot reach the target.",
+            Some("computer_see"),
         ),
     ]
 }

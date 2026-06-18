@@ -34,6 +34,7 @@ pub use fetch::{
     ReaderCacheKeyParts, ReaderCacheProvider, ReaderIndexRecord, ReaderIndexSink, SearchProvider,
     SearchRequest, SearchResult, TokenizerProvider,
 };
+pub use budget::{effective_char_limit, estimate_tokens};
 pub use types::*;
 
 /// Read content from a [`ReaderRequest`], fetching over the network if needed.

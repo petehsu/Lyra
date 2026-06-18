@@ -233,7 +233,7 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, tool_fs_run, and lyra_turn_finish."
+                "content": format!("Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run.\n\n{}", crate::scenario_playbooks_doc())
             }));
         }
         if let Some(manifest) = self.lookup_path(&normalized) {

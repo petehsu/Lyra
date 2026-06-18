@@ -185,6 +185,11 @@ type PageRegistryHost = {
   ) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly unregisterBrowserPageResource: (tabId: string) => void;
   readonly readBrowserContextMenuLocale: () => BrowserContextMenuLocale;
+  readonly onBrowserHealthPopup?: (tabId: string, url: string) => void;
+  readonly onBrowserHealthCrash?: (tabId: string) => void;
+  readonly onBrowserHealthNavigationFailed?: (tabId: string, message: string) => void;
+  readonly onBrowserHealthDownload?: (tabId: string, url: string) => void;
+  readonly onBrowserHealthTabClosed?: (tabId: string) => void;
 };
 
 export const createPageRegistryController = (host: PageRegistryHost) => {
@@ -213,6 +218,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     if (entry.isDestroyed) {
       return;
     }
+    host.onBrowserHealthTabClosed?.(entry.tabId);
     entry.isDestroyed = true;
     pendingLoadAddressByTabId.delete(entry.tabId);
     host.clearTabSnapshot(entry.tabId);
@@ -382,6 +388,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     host.markPendingRestoreValidation(spec.tabId, restoredRuntime?.restoreState);
 
     webContents.setWindowOpenHandler(({ url }) => {
+      host.onBrowserHealthPopup?.(entry.tabId, url);
       if (isSupportedWebUrl(url)) {
         host.publishEvent({
           kind: "request-open-tab",
@@ -421,6 +428,10 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       if (errorCode === -3) {
         return;
       }
+      host.onBrowserHealthNavigationFailed?.(
+        entry.tabId,
+        `${errorDescription || "Page load failed"} (${errorCode})`
+      );
       host.recordPageDiagnostic(entry.tabId, {
         source: "navigation",
         severity: "error",
@@ -616,6 +627,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     });
 
     webContents.on("render-process-gone", () => {
+      host.onBrowserHealthCrash?.(entry.tabId);
       destroyEntry(entry, true);
       entries.delete(entry.tabId);
     });

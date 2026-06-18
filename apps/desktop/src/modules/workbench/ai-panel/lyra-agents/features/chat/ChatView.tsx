@@ -176,6 +176,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   } | null>(null);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
   const citationScrollCancelRef = useRef<(() => void) | null>(null);
+  const scrollAnchorDistanceRef = useRef(0);
   const pinnedCitationMessageIds = useMemo(
     () => (citationScrollTarget === null ? undefined : [citationScrollTarget.messageId]),
     [citationScrollTarget?.messageId]
@@ -241,6 +242,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     const atBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
+    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
     setStickyMessageId((current) =>
       nextStickyMessageId(
         heightTable.store,
@@ -344,6 +346,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
         el.scrollHeight - prependRestore.scrollHeight + prependRestore.scrollTop
       );
       lastScrollTop.current = el.scrollTop;
+      scrollAnchorDistanceRef.current = el.scrollHeight - el.scrollTop;
       setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
       const startedAt = prependStartedAtRef.current;
       if (startedAt !== null) {
@@ -353,12 +356,17 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
       return;
     }
 
-    if (isAtBottom && citationScrollTarget === null) {
-      el.scrollTop = el.scrollHeight;
-      lastScrollTop.current = el.scrollTop;
-      setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
+    if (citationScrollTarget === null) {
+      const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
+      el.scrollTop = nextScrollTop;
+      lastScrollTop.current = nextScrollTop;
+      setViewportTop(Math.max(0, nextScrollTop - listContentStartRef.current));
+      const atBottom =
+        el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+      setIsAtBottom(atBottom);
+      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
     }
-  }, [citationScrollTarget, isAtBottom, messages, syncListContentStart]);
+  }, [citationScrollTarget, messages, syncListContentStart]);
 
   useEffect(() => {
     if (decisions.length > 0 || permissions.length > 0) {

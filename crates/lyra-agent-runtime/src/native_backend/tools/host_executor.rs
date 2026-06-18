@@ -191,6 +191,12 @@ pub(crate) fn execute_host_tool_adapter(
         .as_ref()
         .ok_or_else(|| "Lyra host capability bridge is not available".to_string())
         .and_then(|dispatcher| {
+            let concurrency_guard = if display_name == "lyra_lumen" || display_name == "lyra_ax" {
+                Some(BrowserConcurrencyGuard::try_acquire()?)
+            } else {
+                None
+            };
+            let _concurrency_guard = concurrency_guard;
             invoke_host_capability_with_timeout(
                 dispatcher.clone(),
                 host_method.to_string(),

@@ -105,23 +105,13 @@ impl NativeRuntimeState {
                 .as_ref()
                 .map(|state| state.active_skills.clone())
                 .unwrap_or_default(),
-            overnight_runs: state_file
-                .as_ref()
-                .map(|state| state.overnight_runs.clone())
-                .unwrap_or_default(),
             pending_permissions,
             pending_clarifications,
-            goals: state_file
-                .as_ref()
-                .map(|state| state.goals.clone())
-                .unwrap_or_default(),
-            focused_goal_id: state_file
-                .as_ref()
-                .and_then(|state| state.focused_goal_id.clone()),
             cancelled_turns: HashSet::new(),
             active_cancellations: HashMap::new(),
             suppressed_tool_usage_by_turn: HashMap::new(),
             inspected_tool_descriptors_by_session: HashMap::new(),
+            active_ui_message_by_turn: HashMap::new(),
             event_callback: None,
             host_dispatcher: None,
         };
@@ -156,11 +146,11 @@ impl NativeRuntimeState {
             config: self.config.clone(),
             legacy_shared_memory: Vec::new(),
             active_skills: self.active_skills.clone(),
-            overnight_runs: self.overnight_runs.clone(),
+            legacy_overnight_runs: HashMap::new(),
             pending_permissions,
             pending_clarifications,
-            goals: self.goals.clone(),
-            focused_goal_id: self.focused_goal_id.clone(),
+            legacy_goals: HashMap::new(),
+            legacy_focused_goal_id: None,
         };
         write_json(&self.root.join("state.json"), &state)?;
         let sessions_root = self.root.join("sessions");
@@ -363,6 +353,10 @@ fn session_has_active_turn(
 
 pub(crate) fn default_true() -> bool {
     true
+}
+
+pub(crate) fn default_false() -> bool {
+    false
 }
 
 pub(crate) fn runtime_root() -> PathBuf {

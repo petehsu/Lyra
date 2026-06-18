@@ -94,23 +94,40 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
   };
 
   const buildBrowserAgentTextInsertionScript = ({
-    elementId,
     x,
     y,
     text,
-    clear
+    clear,
+    xpath,
+    selectorPreview,
+    tagName,
+    inputType,
+    bounds,
+    hostChainFingerprint
   }: {
-    readonly elementId: number;
     readonly x: number;
     readonly y: number;
     readonly text: string;
     readonly clear: boolean;
+    readonly xpath: string;
+    readonly selectorPreview: string;
+    readonly tagName: string;
+    readonly inputType: string;
+    readonly bounds: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+    readonly hostChainFingerprint: string;
   }): string => `
     (() => {
-      const TARGET_ID = ${JSON.stringify(elementId)};
       const POINT = ${JSON.stringify({ x, y })};
       const TEXT = ${JSON.stringify(text)};
       const CLEAR = ${JSON.stringify(clear)};
+      const TARGET = ${JSON.stringify({
+        xpath,
+        selectorPreview,
+        tagName,
+        inputType,
+        bounds,
+        hostChainFingerprint
+      })};
 
       const normalizeText = (value, maxLength = 160) => {
         if (typeof value !== "string") return "";
@@ -236,6 +253,211 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
           if (isEditable(parent)) return parent;
           parent = parent.parentElement;
         }
+        return null;
+      };
+
+      const cssEscape = (value) => {
+        if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+          return CSS.escape(String(value));
+        }
+        return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+      };
+
+      const normalizeInputType = (value) =>
+        String(value || "text").trim().toLowerCase();
+
+      const expectedInputType = normalizeInputType(TARGET.inputType);
+
+      const isExpectedTextLikeInput = (element) => {
+        const win = element?.ownerDocument?.defaultView || window;
+        if (!(element instanceof win.HTMLInputElement)) return true;
+        const actual = normalizeInputType(element.type);
+        if (actual === "checkbox" || actual === "radio" || actual === "file") {
+          return false;
+        }
+        const textLikeTypes = [
+          "",
+          "text",
+          "search",
+          "email",
+          "password",
+          "tel",
+          "url",
+          "number"
+        ];
+        if (
+          expectedInputType.length > 0
+          && textLikeTypes.includes(expectedInputType)
+          && !textLikeTypes.includes(actual)
+        ) {
+          return false;
+        }
+        if (
+          expectedInputType.length > 0
+          && !textLikeTypes.includes(expectedInputType)
+          && actual !== expectedInputType
+        ) {
+          return false;
+        }
+        return true;
+      };
+
+      const acceptsResolvedElement = (element) => {
+        const resolved = editableNear(element);
+        if (resolved === null || !isEditable(resolved)) return false;
+        if (TARGET.tagName) {
+          const actualTag = String(resolved.tagName || "").toLowerCase();
+          if (actualTag.length > 0 && actualTag !== TARGET.tagName) {
+            return false;
+          }
+        }
+        return isExpectedTextLikeInput(resolved);
+      };
+
+      const resolveEditableTarget = (element) => {
+        if (!acceptsResolvedElement(element)) return null;
+        return editableNear(element);
+      };
+
+      const resolveSearchRoot = (doc, hostChainFingerprint) => {
+        if (!hostChainFingerprint) return doc;
+        let root = doc;
+        for (const hostPreview of hostChainFingerprint.split(">").filter(Boolean)) {
+          if (!root?.querySelectorAll) return null;
+          let host = null;
+          try {
+            host = root.querySelector(hostPreview);
+          } catch (_error) {
+            host = null;
+          }
+          if (host === null) {
+            const tagName = hostPreview.split(/[#.\\[]/)[0];
+            if (tagName) {
+              host = Array.from(root.querySelectorAll(tagName)).find((candidate) => {
+                const preview = [
+                  String(candidate.tagName || "").toLowerCase(),
+                  candidate.id ? "#" + candidate.id : "",
+                  ...Array.from(candidate.classList || []).slice(0, 2).map((item) => "." + item)
+                ].join("");
+                return preview === hostPreview || preview.startsWith(hostPreview);
+              }) ?? null;
+            }
+          }
+          if (host === null || !host.shadowRoot) return null;
+          root = host.shadowRoot;
+        }
+        return root;
+      };
+
+      const selectorPreviewCandidates = (preview) => {
+        if (!preview) return [];
+        const candidates = [preview];
+        if (preview.endsWith("...")) {
+          candidates.push(preview.slice(0, -3));
+        }
+        return candidates;
+      };
+
+      const evaluateXPath = (doc, xpath, searchRoot) => {
+        if (!xpath) return null;
+        try {
+          const context = searchRoot ?? doc;
+          const result = doc.evaluate(
+            xpath,
+            context,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+          );
+          return result.singleNodeValue;
+        } catch (_error) {
+          return null;
+        }
+      };
+
+      const boundsMatch = (element, expected, tolerance = 8) => {
+        const rect = element.getBoundingClientRect();
+        const actual = {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        };
+        return Math.abs(actual.x - expected.x) <= tolerance
+          && Math.abs(actual.y - expected.y) <= tolerance
+          && Math.abs(actual.width - expected.width) <= tolerance
+          && Math.abs(actual.height - expected.height) <= tolerance;
+      };
+
+      const crawlEditableElements = (searchRoot, doc, win) => {
+        const items = [];
+        const seen = new Set();
+        const walk = (root) => {
+          const nodes = root.querySelectorAll?.(
+            "input:not([type='hidden']), textarea, select, [contenteditable], [role='textbox'], [role='searchbox']"
+          ) ?? [];
+          for (const element of Array.from(nodes)) {
+            if (!(element instanceof win.Element) || seen.has(element)) continue;
+            seen.add(element);
+            if (!isVisible(element, win) || isDisabled(element)) continue;
+            if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
+            if (!isEditable(element)) continue;
+            items.push(element);
+          }
+          for (const host of Array.from(root.querySelectorAll?.("*") ?? [])) {
+            if (host.shadowRoot) {
+              walk(host.shadowRoot);
+            }
+          }
+        };
+        walk(searchRoot ?? doc);
+        return items;
+      };
+
+      const resolveByStableLocators = (doc) => {
+        const win = doc.defaultView || window;
+        const searchRoot = resolveSearchRoot(doc, TARGET.hostChainFingerprint) ?? doc;
+
+        if (TARGET.xpath) {
+          const byXPath = resolveEditableTarget(evaluateXPath(doc, TARGET.xpath, searchRoot));
+          if (byXPath !== null) return byXPath;
+        }
+
+        for (const preview of selectorPreviewCandidates(TARGET.selectorPreview)) {
+          try {
+            const bySelector = resolveEditableTarget(searchRoot.querySelector?.(preview) ?? null);
+            if (bySelector !== null) return bySelector;
+          } catch (_error) {
+            // Ignore invalid selector previews from truncated observations.
+          }
+        }
+
+        const idMatch = TARGET.selectorPreview.match(/#([a-zA-Z][\\w:-]*)/);
+        if (idMatch?.[1]) {
+          const byId = searchRoot.getElementById?.(idMatch[1])
+            ?? searchRoot.querySelector?.("#" + cssEscape(idMatch[1]))
+            ?? null;
+          const resolvedById = resolveEditableTarget(byId);
+          if (resolvedById !== null) return resolvedById;
+        }
+
+        if (TARGET.bounds?.width > 0 && TARGET.bounds?.height > 0) {
+          const matches = crawlEditableElements(searchRoot, doc, win)
+            .filter((element) => boundsMatch(element, TARGET.bounds));
+          if (matches.length === 1) {
+            const resolved = resolveEditableTarget(matches[0]);
+            if (resolved !== null) return resolved;
+          }
+          if (matches.length > 1 && TARGET.inputType) {
+            const typed = matches.find((element) =>
+              element instanceof win.HTMLInputElement
+              && normalizeInputType(element.type) === expectedInputType
+            );
+            const resolvedTyped = resolveEditableTarget(typed ?? null);
+            if (resolvedTyped !== null) return resolvedTyped;
+          }
+        }
+
         return null;
       };
 
@@ -366,9 +588,8 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
         };
       };
 
-      const byId = collectCandidates().find((item) => item.id === TARGET_ID)?.element ?? null;
-      const byPoint = document.elementFromPoint(POINT.x, POINT.y);
-      const target = editableNear(byId) ?? editableNear(byPoint);
+      const target = resolveByStableLocators(document)
+        ?? resolveEditableTarget(document.elementFromPoint(POINT.x, POINT.y));
       const targetWindow = target?.ownerDocument?.defaultView || window;
       if (!(target instanceof targetWindow.Element)) {
         return { ok: false, errorKind: "editable_not_found" };
@@ -482,11 +703,21 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     const raw = await runFrameScriptWithTimeout(
       () => frame.executeJavaScript(
         buildBrowserAgentTextInsertionScript({
-          elementId: element.id,
           x: localPoint.x,
           y: localPoint.y,
           text,
-          clear
+          clear,
+          xpath: element.xpath ?? "",
+          selectorPreview: element.selectorPreview ?? "",
+          tagName: element.tagName ?? "",
+          inputType: element.inputType ?? "",
+          bounds: element.localBounds ?? {
+            x: element.bounds.x - (element.frameBounds?.x ?? 0),
+            y: element.bounds.y - (element.frameBounds?.y ?? 0),
+            width: element.bounds.width,
+            height: element.bounds.height
+          },
+          hostChainFingerprint: element.hostChainFingerprint ?? ""
         }),
         true
       ),

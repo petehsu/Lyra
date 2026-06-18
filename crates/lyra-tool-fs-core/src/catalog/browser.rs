@@ -3,6 +3,14 @@ use crate::model::ToolManifest;
 pub(super) fn manifests() -> Vec<ToolManifest> {
     vec![
         super::s(
+            "/tools/browser/interact",
+            "browser",
+            "interact",
+            "Browser interact",
+            "Run a short declarative action sequence (navigate, wait, click, scroll, type) then extract read/map in one call.",
+            Some("browser_interact"),
+        ),
+        super::s(
             "/tools/browser/map",
             "browser",
             "map",
@@ -185,6 +193,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Elevate browser task",
             "Elevate an isolated browser task.",
             None,
+        ),
+        super::s(
+            "/tools/browser/judge_task",
+            "browser",
+            "judge_task",
+            "Judge browser task",
+            "Verify browser task completion from trajectory and final observation.",
+            Some("browser_judge_task"),
         ),
     ]
 }

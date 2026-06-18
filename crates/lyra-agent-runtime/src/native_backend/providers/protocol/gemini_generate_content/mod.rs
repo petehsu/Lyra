@@ -6,7 +6,10 @@ use reqwest::{blocking::Client, blocking::RequestBuilder, header::HeaderName};
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile, providers::transport},
+    native_backend::{
+        NativeProviderModel, NativeProviderProfile,
+        providers::{model_capabilities, registry, transport, types::ProviderRouteDescriptor},
+    },
 };
 
 use super::super::types::ProtocolCatalogEntry;
@@ -104,13 +107,14 @@ pub(crate) fn discover_models(
             "provider model discovery failed with status {status}: {body}"
         )));
     }
+    let route = registry::require_route(&provider.route_id).ok();
     let mut models = body
         .get("models")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
         .filter(|item| model_supports_generate_content(item))
-        .filter_map(native_model_from_gemini_model)
+        .filter_map(|item| native_model_from_gemini_model(item, route.as_ref()))
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
@@ -126,29 +130,28 @@ fn model_supports_generate_content(item: &serde_json::Value) -> bool {
         .any(|method| method == GENERATE_CONTENT_METHOD || method == STREAM_GENERATE_CONTENT_METHOD)
 }
 
-fn native_model_from_gemini_model(item: &serde_json::Value) -> Option<NativeProviderModel> {
+fn native_model_from_gemini_model(
+    item: &serde_json::Value,
+    route: Option<&ProviderRouteDescriptor>,
+) -> Option<NativeProviderModel> {
     let raw_name = item.get("name").and_then(serde_json::Value::as_str)?;
     let id = raw_name.trim().strip_prefix("models/").unwrap_or(raw_name);
     let id = id.trim();
     if id.is_empty() {
         return None;
     }
-    Some(NativeProviderModel {
-        id: id.to_string(),
-        label: item
-            .get("displayName")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_string)
-            .or_else(|| Some(id.to_string())),
-        context_window: item
-            .get("inputTokenLimit")
-            .and_then(serde_json::Value::as_u64)
-            .map(|value| value as usize),
-        supports_image_input: true,
-        supports_tool_calling: true,
-        supports_streaming: model_supports_stream_generate_content(item),
-        enabled: true,
-    })
+    let label = item
+        .get("displayName")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+        .or_else(|| Some(id.to_string()));
+    let mut model = model_capabilities::discovered_model(id, label, None, route);
+    model.context_window = item
+        .get("inputTokenLimit")
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| value as usize);
+    model.supports_streaming = model_supports_stream_generate_content(item);
+    Some(model)
 }
 
 fn model_supports_stream_generate_content(item: &serde_json::Value) -> bool {

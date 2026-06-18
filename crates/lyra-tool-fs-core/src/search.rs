@@ -171,7 +171,64 @@ fn search_intent_adjustment(
         };
     }
 
+    if is_browser_judge_intent(&query, normalized_query) && path == "/tools/browser/judge_task" {
+        return IntentAdjustment {
+            score: 22.0,
+            reason: "browser-judge intent boost".to_string(),
+        };
+    }
+
+    if is_web_crawl_intent(&query, normalized_query)
+        && matches!(path, "/tools/web/map" | "/tools/web/batch")
+    {
+        return IntentAdjustment {
+            score: 28.0,
+            reason: "web-crawl intent boost".to_string(),
+        };
+    }
+
+    if is_browser_interact_intent(&query, normalized_query) && path == "/tools/browser/interact" {
+        return IntentAdjustment {
+            score: 30.0,
+            reason: "browser-interact intent boost".to_string(),
+        };
+    }
+
+    if is_browser_interact_intent(&query, normalized_query)
+        && matches!(
+            path,
+            "/tools/browser/navigate" | "/tools/browser/wait" | "/tools/browser/act"
+        )
+    {
+        return IntentAdjustment {
+            score: -16.0,
+            reason: "browser-interact intent penalty for single-step tools".to_string(),
+        };
+    }
+
     IntentAdjustment::default()
+}
+
+fn is_web_crawl_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("crawl")
+        || normalized_query.contains("whole site")
+        || normalized_query.contains("all pages")
+        || normalized_query.contains("batch fetch")
+        || normalized_query.contains("map site")
+        || normalized_query.contains("discover urls")
+        || query.contains("整站")
+        || query.contains("批量抓取")
+        || query.contains("发现链接")
+}
+
+fn is_browser_interact_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("click then read")
+        || normalized_query.contains("operate then")
+        || normalized_query.contains("after clicking")
+        || normalized_query.contains("navigate wait")
+        || query.contains("先操作")
+        || query.contains("操作后读取")
+        || query.contains("点击后读取")
 }
 
 fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {
@@ -235,6 +292,16 @@ fn is_semantic_locate_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("定位页面")
         || query.contains("定位文本")
         || query.contains("附近控件")
+}
+
+fn is_browser_judge_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("judge browser")
+        || normalized_query.contains("verify browser task")
+        || normalized_query.contains("browser task complete")
+        || normalized_query.contains("task completion")
+        || query.contains("浏览器任务验收")
+        || query.contains("任务完成判断")
+        || query.contains("验收浏览器")
 }
 
 fn is_browser_navigate_tool(path: &str, operation: &str) -> bool {

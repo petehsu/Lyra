@@ -35,7 +35,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = OllamaStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let buffer_assistant_text = !tools.is_empty();
+    let buffer_assistant_text = false;
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst)

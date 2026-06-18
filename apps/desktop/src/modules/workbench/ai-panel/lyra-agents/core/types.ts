@@ -411,34 +411,6 @@ export interface ComposerPermissionModeControls {
   switchMode(mode: Exclude<ComposerPermissionMode, "custom">): Promise<void>;
 }
 
-export interface AgentSidePanelPage {
-  id: string;
-  title: string;
-  content: string;
-  updatedAtMs: number;
-  filePath?: string | null;
-  format?: string | null;
-  source?: string | null;
-}
-
-export interface AgentSidePanel {
-  focusedPageId?: string | null;
-  pages: AgentSidePanelPage[];
-}
-
-export interface AgentAutomationSettings {
-  subagentModel?: string | null;
-  autoreviewEnabled?: boolean | null;
-  autojudgeEnabled?: boolean | null;
-}
-
-export interface AgentGoalItem {
-  id: string;
-  title: string;
-  status?: string | null;
-  scope?: string | null;
-}
-
 // Session-level state surfaced through the data provider ------------------
 
 export interface TodoItem {
@@ -481,7 +453,6 @@ export interface SessionMeta {
   projectBound: boolean;
   /** True when the session is bound to the user's home directory by default. */
   workingDirIsHome: boolean;
-  automation?: AgentAutomationSettings | null;
   totalAdditions: number;
   totalDeletions: number;
 }

@@ -11,6 +11,10 @@ import {
 } from "./computer-internal-surface";
 import type { BrowserAxNode, WorkbenchBrowserAxMapResult } from "../workbench-browser/types";
 
+/** Adapters return `Record<string, unknown>`; narrow `nodes` for assertions. */
+const nodesOf = (envelope: Record<string, unknown>): Array<Record<string, unknown>> =>
+  Array.isArray(envelope.nodes) ? (envelope.nodes as Array<Record<string, unknown>>) : [];
+
 const sampleNode = (axRef: string): BrowserAxNode => ({
   axRef,
   role: "button",
@@ -93,7 +97,7 @@ describe("computer-internal-surface", () => {
       ]
     });
     expect(adapted.surface).toBe("lyra-terminal");
-    expect(adapted.nodes?.[0]?.osRef).toBe(encodeLyraTerminalOsRef("session-1", "region-1"));
+    expect(nodesOf(adapted)[0]?.osRef).toBe(encodeLyraTerminalOsRef("session-1", "region-1"));
   });
 
   test("adapts file manager observations", () => {

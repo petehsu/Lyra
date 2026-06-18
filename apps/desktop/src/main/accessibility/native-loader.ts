@@ -25,7 +25,10 @@ const requiredMethods: readonly (keyof AccessibilityNativeBindings)[] = [
   "computerFindJson",
   "computerActJson",
   "computerDiffJson",
-  "computerExplainJson"
+  "computerExplainJson",
+  "computerListAppsJson",
+  "computerObserveJson",
+  "computerFocusJson"
 ];
 
 export const resolveAccessibilityNativeCandidates = (cwd: string): readonly string[] =>

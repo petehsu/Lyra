@@ -131,7 +131,6 @@ type UseTitlebarNavigationModelOptions = {
   readonly onHistoryAppReload?: () => void;
   readonly historyAppSuggestionLabels?: {
     readonly sessions: string;
-    readonly projectSessions: string;
     readonly archivedSessions: string;
     readonly browserHistory: string;
   };
@@ -183,16 +182,13 @@ type HistoryAppWorkspaceTab = WorkspaceTab & {
 const isHistoryAppTab = (tab: WorkspaceTab | undefined): tab is HistoryAppWorkspaceTab =>
   tab?.pageKind === "app" && tab.appId === "agent-session-history";
 
-const hasProjectBinding = (session: AgentSessionSummary): boolean =>
-  (session.workingDir ?? "").trim().length > 0;
-
 const getSessionHistoryCategory = (
   session: AgentSessionSummary
 ): Exclude<AgentSessionHistoryCategory, "browser-history"> => {
   if (session.archived) {
     return "archived-sessions";
   }
-  return hasProjectBinding(session) ? "project-sessions" : "sessions";
+  return "sessions";
 };
 
 const getHistoryCategoryLabel = (
@@ -202,8 +198,6 @@ const getHistoryCategoryLabel = (
   switch (category) {
     case "sessions":
       return labels.sessions;
-    case "project-sessions":
-      return labels.projectSessions;
     case "archived-sessions":
       return labels.archivedSessions;
     case "browser-history":

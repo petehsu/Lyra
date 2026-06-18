@@ -1,12 +1,14 @@
 import type {
   AgentModelCatalogSnapshot,
-  AgentSessionSnapshot,
-  AgentSidePanelSnapshot
+  AgentSessionSnapshot
 } from "../../shared/agent";
-import type { AgentSidePanel, ModelOption, SessionMeta, TodoItem } from "./ai-panel/lyra-agents/core/types";
+import type { ModelOption, SessionMeta, TodoItem } from "./ai-panel/lyra-agents/core/types";
 import { formatMessage } from "./ai-panel/lyra-agents/core/i18n";
 
-export { applyAgentRuntimeEventToSnapshot } from "./agent-session-view-model/runtime-reducer";
+export {
+  applyAgentRuntimeEventToSnapshot,
+  mergeRunningSessionSnapshot
+} from "./agent-session-view-model/runtime-reducer";
 export {
   agentSessionToChatMessages,
   cleanSyntheticImageText,
@@ -28,7 +30,6 @@ export const agentSessionToSessionMeta = (
     workingDir,
     projectBound,
     workingDirIsHome,
-    automation: session?.automation ?? null,
     totalAdditions: 0,
     totalDeletions: 0
   };
@@ -46,30 +47,6 @@ export const agentSessionMetaWithDraftWorkingDir = (
   if (trimmed.length === 0) return meta;
   return { ...meta, workingDir: trimmed, project: projectNameFromWorkingDir(trimmed) };
 };
-
-export const agentSessionToSidePanel = (
-  session: AgentSessionSnapshot | null
-): AgentSidePanel | null => {
-  if (session?.sidePanel === undefined || session.sidePanel.pages.length === 0) {
-    return null;
-  }
-  return sidePanelSnapshotToViewModel(session.sidePanel);
-};
-
-const sidePanelSnapshotToViewModel = (
-  snapshot: AgentSidePanelSnapshot
-): AgentSidePanel => ({
-  focusedPageId: snapshot.focusedPageId ?? null,
-  pages: snapshot.pages.map((page) => ({
-    id: page.id,
-    title: page.title,
-    content: page.content,
-    updatedAtMs: page.updatedAtMs,
-    filePath: page.filePath,
-    format: page.format,
-    source: page.source
-  }))
-});
 
 const normalizeSessionWorkingDir = (value: string | null | undefined): string | null => {
   const trimmed = typeof value === "string" ? value.trim() : "";

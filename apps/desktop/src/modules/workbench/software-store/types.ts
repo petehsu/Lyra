@@ -19,8 +19,6 @@ export type SoftwareStoreBuiltinAppId =
   | "agent-history"
   | "agent-project-tree"
   | "agent-git"
-  | "agent-selfdev"
-  | "agent-overnight"
   | "login-manager"
   | "software-store";
 

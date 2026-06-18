@@ -23,10 +23,6 @@ import type {
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
   AgentRollbackRestoreResponse,
-  AgentSelfDevStartRequest,
-  AgentSelfDevStartResponse,
-  AgentSelfDevStatusRequest,
-  AgentSelfDevStatusResponse,
   AgentSessionArchiveRequest,
   AgentSessionBindProjectRequest,
   AgentSessionCreateRequest,
@@ -50,17 +46,11 @@ import type {
   AgentAccountLoginStartResponse,
   AgentAccountRequest,
   AgentAccountsSnapshot,
-  AgentAutomationUpdateRequest,
-  AgentAutomationUpdateResponse,
-  AgentBtwRunRequest,
-  AgentCompactResponse,
   AgentFeedbackRunRequest,
   AgentConfigSnapshot,
   AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
   AgentRolesUpdateRequest,
-  AgentGoalsRequest,
-  AgentGoalsResponse,
   AgentLoginProviderCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
@@ -68,23 +58,13 @@ import type {
   AgentModelCatalogRequest,
   AgentModelCatalogSnapshot,
   AgentModelSwitchRequest,
-  AgentOvernightListResponse,
-  AgentOvernightRunRequest,
-  AgentOvernightRunResponse,
-  AgentOvernightStartRequest,
-  AgentOvernightStartResponse,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
   AgentPokeRequest,
   AgentPokeResponse,
-  AgentSessionActionRequest,
-  AgentSessionForkResponse,
   AgentSessionSummary,
   AgentSessionListRequest,
-  AgentSessionListResponse,
-  AgentSidePanelActionResponse,
-  AgentSubagentRunRequest,
-  AgentSubagentRunResponse
+  AgentSessionListResponse
 } from "../../shared/agent";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { materializeImageAttachment } from "./artifact-materializer";
@@ -216,30 +196,6 @@ export const createAgentIpcRouter = ({
           enabled: browserFollowMode.read()
         } satisfies AgentBrowserFollowModeSnapshot;
       }
-    ],
-    [
-      LYRA_CHANNELS.agentSelfDevStart,
-      (_event, payload) =>
-        requestRuntime<AgentSelfDevStartResponse>(
-          "agent.selfdev.start",
-          (payload as AgentSelfDevStartRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSelfDevStatus,
-      (_event, payload) =>
-        requestRuntime<AgentSelfDevStatusResponse>(
-          "agent.selfdev.status",
-          (payload as AgentSelfDevStatusRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSelfDevSendTurn,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.selfdev.sendTurn",
-          payload as AgentTurnSendRequest
-        )
     ],
     [
       LYRA_CHANNELS.agentTurnStart,
@@ -546,86 +502,6 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
-      LYRA_CHANNELS.agentSubagentRun,
-      (_event, payload) =>
-        requestRuntime<AgentSubagentRunResponse>(
-          "agent.subagent.run",
-          payload as AgentSubagentRunRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentBtwRun,
-      (_event, payload) =>
-        requestRuntime<AgentSidePanelActionResponse>(
-          "agent.btw.run",
-          payload as AgentBtwRunRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSessionSplit,
-      (_event, payload) =>
-        requestRuntime<AgentSessionForkResponse>(
-          "agent.session.split",
-          (payload as AgentSessionActionRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSessionTransfer,
-      (_event, payload) =>
-        requestRuntime<AgentSessionForkResponse>(
-          "agent.session.transfer",
-          (payload as AgentSessionActionRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSessionCompact,
-      (_event, payload) =>
-        requestRuntime<AgentCompactResponse>(
-          "agent.session.compact",
-          (payload as AgentSessionActionRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentSessionAutomationUpdate,
-      (_event, payload) =>
-        requestRuntime<AgentAutomationUpdateResponse>(
-          "agent.session.automation.update",
-          payload as AgentAutomationUpdateRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentGoalsList,
-      (_event, payload) =>
-        requestRuntime<AgentGoalsResponse>(
-          "agent.goals.list",
-          (payload as AgentGoalsRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentGoalsOpen,
-      (_event, payload) =>
-        requestRuntime<AgentGoalsResponse>(
-          "agent.goals.open",
-          (payload as AgentGoalsRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentGoalsResume,
-      (_event, payload) =>
-        requestRuntime<AgentGoalsResponse>(
-          "agent.goals.resume",
-          (payload as AgentGoalsRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentGoalsShow,
-      (_event, payload) =>
-        requestRuntime<AgentGoalsResponse>(
-          "agent.goals.show",
-          payload as AgentGoalsRequest
-        )
-    ],
-    [
       LYRA_CHANNELS.agentAccountsList,
       () => requestRuntime<AgentAccountsSnapshot>("agent.accounts.list")
     ],
@@ -673,50 +549,6 @@ export const createAgentIpcRouter = ({
           payload as AgentAccountRequest
         )
     ],
-    [
-      LYRA_CHANNELS.agentOvernightStart,
-      (_event, payload) =>
-        requestRuntime<AgentOvernightStartResponse>(
-          "agent.overnight.start",
-          payload as AgentOvernightStartRequest
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOvernightList,
-      () => requestRuntime<AgentOvernightListResponse>("agent.overnight.list")
-    ],
-    [
-      LYRA_CHANNELS.agentOvernightStatus,
-      (_event, payload) =>
-        requestRuntime<AgentOvernightRunResponse>(
-          "agent.overnight.status",
-          (payload as AgentOvernightRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOvernightLog,
-      (_event, payload) =>
-        requestRuntime<AgentOvernightRunResponse>(
-          "agent.overnight.log",
-          (payload as AgentOvernightRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOvernightReview,
-      (_event, payload) =>
-        requestRuntime<AgentOvernightRunResponse>(
-          "agent.overnight.review",
-          (payload as AgentOvernightRunRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentOvernightCancel,
-      (_event, payload) =>
-        requestRuntime<AgentOvernightRunResponse>(
-          "agent.overnight.cancel",
-          (payload as AgentOvernightRunRequest | undefined) ?? {}
-        )
-    ]
   ];
 
   for (const [channel, handler] of handlers) {

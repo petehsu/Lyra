@@ -18,7 +18,10 @@
 
 #![cfg(windows)]
 
+use std::collections::HashMap;
+
 use windows::core::BSTR;
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
@@ -32,11 +35,16 @@ use windows::Win32::UI::Accessibility::{
     UIA_SelectionItemPatternId, UIA_SplitButtonControlTypeId, UIA_TextControlTypeId,
     UIA_TogglePatternId, UIA_ValuePatternId, UIA_WindowControlTypeId,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow,
+};
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    BackendError, ComputerAction, ComputerNode, ComputerNodeSource, ComputerNodeState, MapRequest,
-    MapStrategy, Platform,
+    BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
+    ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 /// Maps a UIA control type id to our normalized role vocabulary (shared with
@@ -319,6 +327,150 @@ fn os_path_from_ref(os_ref: &str) -> Option<&str> {
     os_ref.strip_prefix("uia:")
 }
 
+fn app_ref_for_pid(pid: u32) -> String {
+    format!("winapp:{pid}")
+}
+
+fn window_ref_for_hwnd(hwnd: HWND) -> String {
+    format!("winwin:{:#x}", hwnd.0 as usize)
+}
+
+fn parse_app_ref(app_ref: &str) -> Option<u32> {
+    app_ref.strip_prefix("winapp:")?.parse().ok()
+}
+
+fn parse_window_ref(window_ref: &str) -> Option<HWND> {
+    let remainder = window_ref.strip_prefix("winwin:")?;
+    let value = if let Some(hex) = remainder.strip_prefix("0x") {
+        usize::from_str_radix(hex, 16).ok()?
+    } else {
+        remainder.parse().ok()?
+    };
+    Some(HWND(value as isize))
+}
+
+fn hwnd_title(hwnd: HWND) -> String {
+    // SAFETY: reads the window title for a valid HWND.
+    unsafe {
+        let length = GetWindowTextLengthW(hwnd);
+        if length <= 0 {
+            return String::new();
+        }
+        let mut buffer = vec![0_u16; length as usize + 1];
+        let copied = GetWindowTextW(hwnd, &mut buffer);
+        if copied <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buffer[..copied as usize])
+    }
+}
+
+struct VisibleWindow {
+    hwnd: HWND,
+    title: String,
+    pid: u32,
+}
+
+struct EnumWindowsState {
+    foreground: HWND,
+    windows: Vec<VisibleWindow>,
+}
+
+unsafe extern "system" fn collect_visible_windows(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let state = &mut *(lparam.0 as *mut EnumWindowsState);
+    if hwnd.0 == 0 {
+        return BOOL::from(true);
+    }
+    if IsWindowVisible(hwnd).as_bool() == false {
+        return BOOL::from(true);
+    }
+    let title = hwnd_title(hwnd);
+    if title.is_empty() {
+        return BOOL::from(true);
+    }
+    let mut pid = 0_u32;
+    // SAFETY: writes the owning process id for a valid HWND.
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    }
+    if pid == 0 {
+        return BOOL::from(true);
+    }
+    state.windows.push(VisibleWindow { hwnd, title, pid });
+    BOOL::from(true)
+}
+
+fn visible_windows() -> Result<(HWND, Vec<VisibleWindow>), BackendError> {
+    // SAFETY: EnumWindows invokes the callback for each top-level window.
+    unsafe {
+        let foreground = GetForegroundWindow();
+        let mut state = EnumWindowsState {
+            foreground,
+            windows: Vec::new(),
+        };
+        EnumWindows(
+            Some(collect_visible_windows),
+            LPARAM(&mut state as *mut EnumWindowsState as isize),
+        )
+        .map_err(|error| BackendError::new("enumWindowsFailed", error.message().to_string()))?;
+        Ok((foreground, state.windows))
+    }
+}
+
+fn apps_from_windows(
+    windows: &[VisibleWindow],
+    foreground: HWND,
+    request: &ListAppsRequest,
+) -> Vec<ComputerAppEntry> {
+    let mut grouped: HashMap<u32, ComputerAppEntry> = HashMap::new();
+    for window in windows {
+        let entry = grouped.entry(window.pid).or_insert_with(|| ComputerAppEntry {
+            app_ref: app_ref_for_pid(window.pid),
+            name: window.title.clone(),
+            pid: Some(window.pid as i64),
+            bundle_id: None,
+            is_foreground: false,
+            windows: Vec::new(),
+        });
+        let is_focused = window.hwnd == foreground;
+        if is_focused {
+            entry.is_foreground = true;
+            entry.name = window.title.clone();
+        }
+        entry.windows.push(ComputerWindowEntry {
+            window_ref: Some(window_ref_for_hwnd(window.hwnd)),
+            title: window.title.clone(),
+            is_focused,
+        });
+    }
+    let mut apps = grouped.into_values().collect::<Vec<_>>();
+    if !request.include_background {
+        apps.retain(|app| app.is_foreground || !app.windows.is_empty());
+    }
+    apps.sort_by(|left, right| {
+        right
+            .is_foreground
+            .cmp(&left.is_foreground)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    apps.truncate(request.max_apps);
+    apps
+}
+
+fn focus_hwnd(hwnd: HWND) -> Result<(), BackendError> {
+    // SAFETY: raises an existing visible top-level window.
+    unsafe {
+        if SetForegroundWindow(hwnd).as_bool() {
+            Ok(())
+        } else {
+            Err(BackendError::new(
+                "focusFailed",
+                "SetForegroundWindow returned false; the target may be unavailable.",
+            ))
+        }
+    }
+}
+
 /// The Windows UIA [`ComputerBackend`].
 pub struct WindowsBackend;
 
@@ -457,5 +609,99 @@ impl ComputerBackend for WindowsBackend {
                 }
             }
         }
+    }
+
+    fn list_apps(&self, request: &ListAppsRequest) -> Result<Vec<ComputerAppEntry>, BackendError> {
+        let (foreground, windows) = visible_windows()?;
+        Ok(apps_from_windows(&windows, foreground, request))
+    }
+
+    fn observe(&self) -> Result<ComputerObserveResult, BackendError> {
+        let (foreground, windows) = visible_windows()?;
+        let apps = apps_from_windows(
+            &windows,
+            foreground,
+            &ListAppsRequest {
+                max_apps: 100,
+                include_background: true,
+            },
+        );
+        let foreground_app = apps.into_iter().find(|app| app.is_foreground);
+        let focused_window = foreground_app.as_ref().and_then(|app| {
+            app.windows
+                .iter()
+                .find(|window| window.is_focused)
+                .cloned()
+        });
+        let automation = automation()?;
+        let focused_control = unsafe {
+            automation
+                .GetFocusedElement()
+                .ok()
+                .map(|element| node_for_element(&element, "focused"))
+        };
+        Ok(ComputerObserveResult {
+            foreground_app,
+            focused_window,
+            focused_control,
+        })
+    }
+
+    fn focus(&self, request: &ComputerFocusRequest) -> Result<(), BackendError> {
+        if request.bundle_id.is_some() {
+            return Err(BackendError::new(
+                "unsupported",
+                "bundleId focus is not implemented on Windows yet; use appRef, pid, or windowRef.",
+            ));
+        }
+        if let Some(window_ref) = request.window_ref.as_deref() {
+            let Some(hwnd) = parse_window_ref(window_ref) else {
+                return Err(BackendError::new(
+                    "invalidArgument",
+                    "windowRef must use the winwin:<hwnd> scheme on Windows.",
+                ));
+            };
+            return focus_hwnd(hwnd);
+        }
+        if let Some(title) = request.window_title.as_deref() {
+            let (_, windows) = visible_windows()?;
+            let window = windows
+                .iter()
+                .find(|window| window.title == title)
+                .ok_or_else(|| {
+                    BackendError::new(
+                        "windowNotFound",
+                        format!("No window titled {title:?} was found."),
+                    )
+                })?;
+            return focus_hwnd(window.hwnd);
+        }
+        let pid = if let Some(app_ref) = request.app_ref.as_deref() {
+            parse_app_ref(app_ref).ok_or_else(|| {
+                BackendError::new(
+                    "invalidArgument",
+                    "appRef must use the winapp:<pid> scheme on Windows.",
+                )
+            })?
+        } else if let Some(pid) = request.pid {
+            pid as u32
+        } else {
+            return Err(BackendError::new(
+                "invalidArgument",
+                "computer.focus requires appRef, pid, windowRef, or windowTitle on Windows.",
+            ));
+        };
+        let (foreground, windows) = visible_windows()?;
+        let window = windows
+            .iter()
+            .find(|window| window.pid == pid)
+            .ok_or_else(|| {
+                BackendError::new(
+                    "appNotFound",
+                    format!("No visible window was found for pid {pid}."),
+                )
+            })?;
+        let _ = foreground;
+        focus_hwnd(window.hwnd)
     }
 }

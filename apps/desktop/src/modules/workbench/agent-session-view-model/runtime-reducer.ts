@@ -1,9 +1,55 @@
 import type {
+  AgentMessage,
   AgentMessageBlock,
   AgentRuntimeEvent,
   AgentSessionSnapshot,
   AgentToolActivity
 } from "../../../shared/agent";
+
+const messageRichness = (message: AgentMessage): number => {
+  const blockCount = message.blocks?.length ?? 0;
+  const textLength = message.text.length;
+  return blockCount * 1_000 + textLength;
+};
+
+const chooseRicherMessage = (left: AgentMessage, right: AgentMessage): AgentMessage =>
+  messageRichness(left) >= messageRichness(right) ? left : right;
+
+export const mergeRunningSessionSnapshot = (
+  current: AgentSessionSnapshot,
+  incoming: AgentSessionSnapshot
+): AgentSessionSnapshot => {
+  if (current.id !== incoming.id) return incoming;
+
+  const incomingById = new Map(incoming.messages.map((message) => [message.id, message]));
+  const mergedMessages: AgentMessage[] = [];
+  const seen = new Set<string>();
+
+  for (const message of current.messages) {
+    const replacement = incomingById.get(message.id);
+    mergedMessages.push(
+      replacement === undefined ? message : chooseRicherMessage(message, replacement)
+    );
+    seen.add(message.id);
+  }
+  for (const message of incoming.messages) {
+    if (!seen.has(message.id)) {
+      mergedMessages.push(message);
+      seen.add(message.id);
+    }
+  }
+
+  const toolsById = new Map(current.tools.map((tool) => [tool.id, tool]));
+  for (const tool of incoming.tools) {
+    toolsById.set(tool.id, tool);
+  }
+
+  return {
+    ...incoming,
+    messages: mergedMessages,
+    tools: [...toolsById.values()]
+  };
+};
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -100,7 +146,10 @@ export const applyAgentRuntimeEventToSnapshot = (
   event: AgentRuntimeEvent
 ): AgentSessionSnapshot => {
   if (event.kind === "sessionSnapshot") {
-    return event.snapshot.id === session.id ? event.snapshot : session;
+    if (event.snapshot.id !== session.id) return session;
+    return session.turnStatus === "running"
+      ? mergeRunningSessionSnapshot(session, event.snapshot)
+      : event.snapshot;
   }
 
   if ("sessionId" in event && event.sessionId !== session.id) {

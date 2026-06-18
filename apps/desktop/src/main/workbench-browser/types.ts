@@ -354,6 +354,7 @@ export type WorkbenchBrowserAgentElement = {
   readonly hostChain?: readonly string[];
   readonly hostChainFingerprint?: string;
   readonly confidence?: number;
+  readonly xpath?: string;
 };
 
 export type WorkbenchBrowserAgentObservation = {
@@ -376,6 +377,11 @@ export type WorkbenchBrowserAgentObservation = {
   readonly focusOrder: readonly number[];
   readonly authChallengeSignals?: readonly WorkbenchBrowserAuthChallengeSignal[];
   readonly scrollHints?: readonly WorkbenchBrowserAgentScrollHint[];
+  readonly hiddenBelowCount?: number;
+  readonly mapAppendix?: string;
+  readonly mapCompaction?: WorkbenchBrowserAgentMapCompaction;
+  readonly browserHealth?: readonly BrowserHealthAlert[];
+  readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
   readonly warnings?: readonly string[];
   readonly nextRecommendedAction?: string;
 };
@@ -387,9 +393,51 @@ export type WorkbenchBrowserAgentScrollHint = {
   readonly pagesDown: number;
 };
 
+export type BrowserHealthWatchdogKind =
+  | "dom_cache"
+  | "popup"
+  | "captcha"
+  | "crash"
+  | "download"
+  | "permission";
+
+export type BrowserHealthAlert = {
+  readonly kind: BrowserHealthWatchdogKind;
+  readonly severity: "info" | "warning" | "error";
+  readonly message: string;
+  readonly at: number;
+};
+
+export type WorkbenchBrowserAgentMapCompaction = {
+  readonly kind: "delta";
+  readonly previousObservationId?: string;
+  readonly unchangedCount: number;
+  readonly addedCount: number;
+  readonly removedCount: number;
+  readonly changedCount: number;
+  readonly summary: string;
+  readonly deltas: readonly {
+    readonly id: number;
+    readonly targetRef: string;
+    readonly role: string;
+    readonly label: string;
+    readonly change: "added" | "removed" | "changed";
+  }[];
+};
+
+export type LumenScreenshotHighlightRegion = {
+  readonly targetRef: string;
+  readonly elementId: number;
+  readonly label: string;
+  readonly role: string;
+  readonly bounds: WorkbenchBrowserAgentElementBounds;
+  readonly deviceBounds: WorkbenchBrowserAgentElementBounds;
+};
+
 export type WorkbenchBrowserAgentElementMatchLevel =
   | "exact"
   | "stable"
+  | "xpath"
   | "axName"
   | "attribute"
   | "nearest";

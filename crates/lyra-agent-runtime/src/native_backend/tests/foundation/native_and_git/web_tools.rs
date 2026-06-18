@@ -172,8 +172,13 @@ fn native_web_tools_parse_fetch_and_return_structured_failures() {
         &json!({ "url": forbidden_url, "allowPrivateNetwork": true }),
     )
     .expect_err("forbidden response");
-    assert_eq!(forbidden.code, "permission_denied");
-    assert_eq!(forbidden.detail.unwrap()["status"], 403);
+    assert_eq!(forbidden.code, "engines_exhausted");
+    let forbidden_detail = forbidden.detail.expect("forbidden detail");
+    assert!(
+        forbidden_detail["engineAttempts"]
+            .as_array()
+            .is_some_and(|attempts| !attempts.is_empty())
+    );
     let oversized_url = serve_http_once(
         "HTTP/1.1 200 OK",
         "text/html; charset=utf-8",
@@ -534,6 +539,11 @@ fn native_web_fetch_auto_falls_back_for_spa_shell() {
     .expect("auto browser fetch");
 
     assert_eq!(fetched.raw["engineUsed"], "browser");
+    assert!(
+        fetched.raw["engineAttempts"]
+            .as_array()
+            .is_some_and(|attempts| attempts.len() >= 2)
+    );
     assert!(fetched.content.contains("SPA rendered evidence"));
 }
 

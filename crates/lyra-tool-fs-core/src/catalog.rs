@@ -274,6 +274,9 @@ fn description_for(
         ("git", "stage" | "unstage" | "discard") => {
             "Use when the agent needs to mutate Git index or working tree state."
         }
+        ("browser", "interact") => {
+            "Use when the agent needs a short declarative operate-then-extract flow (navigate, wait, click, scroll, type, then read/map) in one call instead of many separate browser tools."
+        }
         ("browser", "read" | "read_until") => {
             "Use when the agent needs readable text, page state, or content from a Lyra browser or Lumen page."
         }
@@ -281,10 +284,13 @@ fn description_for(
             "Use when the agent needs to search, reveal, or semantically locate text or a section within a Lyra browser page before mapping nearby controls."
         }
         ("browser", "map" | "focus_scan" | "explain_target") => {
-            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements, including authChallengeSignals for OAuth/identity iframes that cannot be selected as normal DOM controls."
+            "Use when the agent needs to discover clickable, typable, focusable, or targetable browser elements, including authChallengeSignals for OAuth/identity iframes that cannot be selected as normal DOM controls. Repeated maps may return mapCompaction and scrollHints when the page is unchanged or content is below the fold."
         }
         ("browser", "see") => {
-            "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact."
+            "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact. Optionally draws targetRef highlights and downsamples for vision models."
+        }
+        ("browser", "judge_task") => {
+            "Use when the agent needs to verify browser task completion, detect captcha/auth blocks, or decide whether to escalate after a multi-step browser trajectory."
         }
         ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => {
             "Use when the agent needs to scroll a browser page, bring an offscreen button or input into view, keep the Agent cursor visible, or recover after a mapped target is outside the viewport."
@@ -301,11 +307,20 @@ fn description_for(
         ("browser_ax", "act" | "focus" | "press") => {
             "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, move keyboard focus through the accessibility tree, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
         }
+        ("computer", "list_apps" | "observe") => {
+            "Use before driving an external app to see what is running and which app/window/control has focus. computer.list_apps enumerates apps and windows; computer.observe returns the current foreground app, focused window, and focused control without mapping the full tree."
+        }
+        ("computer", "focus") => {
+            "Use to switch the member's desktop to a specific native app or window (session-level foreground focus). Distinct from computer.act(action: focus), which only moves accessibility focus to one control. Requires shared mode; background/isolated sessions refuse foreground steal."
+        }
         ("computer", "map" | "find" | "explain") => {
             "Use to control native desktop apps outside the Lyra browser through the OS accessibility tree (osRef): read the focused window's semantic tree, find a control by role/name, or explain whether semantic control is available and reachable. Prefer this over screenshots+coordinates."
         }
         ("computer", "act" | "diff") => {
             "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/toggle/select it semantically (no coordinates, no foreground steal), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff."
+        }
+        ("computer", "see") => {
+            "Use only as a visual fallback when semantic control fails: computer.map returned nothing usable, the control has no accessibility node, or you must read image/canvas content. Screenshots the screen or focused window for the vision model; it does not act or steal focus. Prefer semantic map/find/act whenever the node exists."
         }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
@@ -315,6 +330,12 @@ fn description_for(
         }
         ("web", "research") => {
             "Use when the agent needs current web results plus reader-backed deep summaries from top sources."
+        }
+        ("web", "map") => {
+            "Use before bulk crawling: discover same-origin URLs from a seed page and optional sitemap, then selectively fetch."
+        }
+        ("web", "batch") => {
+            "Use for multiple known URLs. Small batches run inline; larger batches return a jobId and emit session progress events."
         }
         ("web", "fetch") => {
             "Use when the agent needs to fetch a known URL as agent-friendly markdown, metadata, chunks, or document/image recommendations."
@@ -523,6 +544,14 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "找到复制按钮",
                 "找到输入框",
             ],
+            ("browser", "interact") => vec![
+                "browser interact",
+                "operate then read",
+                "click then read",
+                "navigate wait click read",
+                "页面操作后读取",
+                "先操作再提取",
+            ],
             ("browser", "map" | "focus_scan" | "explain_target") => {
                 vec![
                     "map browser page",
@@ -558,7 +587,25 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "控件列表",
                 ]
             }
-            ("browser", "see") => vec!["screenshot", "visual page", "截图", "看页面"],
+            ("browser", "see") => vec![
+                "screenshot",
+                "visual page",
+                "highlight targets",
+                "target highlights",
+                "截图",
+                "看页面",
+                "高亮控件",
+            ],
+            ("browser", "judge_task") => vec![
+                "judge browser task",
+                "verify browser completion",
+                "check browser task",
+                "browser task verdict",
+                "trajectory judge",
+                "任务完成判断",
+                "浏览器任务验收",
+                "验收浏览器任务",
+            ],
             ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => vec![
                 "scroll page",
                 "scroll down",
@@ -712,6 +759,10 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             ("web", "research") => {
                 vec!["research web", "deep read search", "联网调研", "搜索并阅读"]
             }
+            ("web", "map") => vec!["map site", "discover urls", "sitemap", "发现链接", "站点地图"],
+            ("web", "batch") => {
+                vec!["batch fetch", "crawl urls", "bulk fetch", "批量抓取", "批量读取"]
+            }
             ("web", "fetch") => vec!["fetch url", "download page", "读取链接", "抓取网页"],
             ("hardware", _) => vec![
                 "development board",
@@ -789,6 +840,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Inspect the exact changes before summarizing.",
             "查看某个文件 diff。",
         ],
+        ("browser", "interact") => vec![
+            "Navigate to settings, wait for load, click Privacy, then read the section.",
+            "打开页面、等待加载、点击按钮并读取结果。",
+        ],
         ("browser", "read" | "read_until") => {
             vec!["Read the visible browser page text.", "读取当前网页内容。"]
         }
@@ -819,6 +874,14 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Click an AX node by axRef when the DOM selector is unreliable.",
             "用 axRef 操作 DOM selector 不稳定但 AX 可见的控件。",
         ],
+        ("computer", "list_apps" | "observe") => vec![
+            "List running desktop apps to find Finder before computer.map.",
+            "列出正在运行的桌面应用,在 computer.map 之前找到 Finder。",
+        ],
+        ("computer", "focus") => vec![
+            "Bring System Settings to the foreground before mapping its accessibility tree.",
+            "在映射无障碍树之前把「系统设置」切到前台。",
+        ],
         ("computer", "map" | "find" | "explain") => vec![
             "Read the focused app's accessibility tree to locate its New Folder button.",
             "读取前台应用的无障碍树,定位它的「新建文件夹」按钮。",
@@ -826,6 +889,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
         ("computer", "act" | "diff") => vec![
             "Toggle a checkbox in System Settings by osRef, then read back its state.",
             "用 osRef 勾选系统设置里的开关,再回读它的状态确认生效。",
+        ],
+        ("computer", "see") => vec![
+            "Screenshot the focused window to read a canvas-drawn chart that has no accessibility node.",
+            "截图前台窗口,读取没有无障碍节点的 canvas 图表内容。",
         ],
         ("browser", "scroll") => vec![
             "Scroll the browser down one viewport and map again.",
@@ -839,6 +906,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Ensure an offscreen targetRef is visible before act or type.",
             "光标定位到按钮但按钮不在可见区域时先拉回可见区域。",
         ],
+        ("browser", "judge_task") => vec![
+            "Judge whether the login flow completed after act/type steps.",
+            "判断浏览器任务是否完成。",
+        ],
         ("workbench", _) => vec![
             "Inspect open Lyra tabs and active workspace state.",
             "查看当前工作区标签页。",
@@ -847,6 +918,14 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
         ("web", "research") => vec![
             "Research a topic by searching and deep-reading top results.",
             "联网搜索并阅读多个来源。",
+        ],
+        ("web", "map") => vec![
+            "Map URLs from a documentation site before selective fetch.",
+            "先发现站点链接再决定抓哪些页面。",
+        ],
+        ("web", "batch") => vec![
+            "Fetch several known URLs as one batch job.",
+            "批量抓取多个已知 URL。",
         ],
         ("web", "fetch") => vec!["Fetch a known documentation URL.", "读取指定网页。"],
         ("memory", "search") => vec![
@@ -922,7 +1001,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
             "browser"
         }
         ("browser_ax", "act" | "press" | "focus") => "browser",
-        ("computer", "act") => "computer",
+        ("computer", "act" | "focus") => "computer",
         (
             "memory",
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
@@ -945,7 +1024,7 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
         | ("git", "stage" | "unstage" | "discard")
         | ("browser", "elevate")
         | ("browser_ax", "act" | "press")
-        | ("computer", "act") => "ask_on_risk",
+        | ("computer", "act" | "focus") => "ask_on_risk",
         ("software", "invoke_capability") | ("mcp", "tool_execute") => "host_policy",
         _ => "runtime_policy",
     }
@@ -954,7 +1033,7 @@ fn permission_policy(domain: &str, operation: &str) -> &'static str {
 fn output_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "read") => "text",
-        ("browser", "see") => "artifact",
+        ("browser", "see") | ("computer", "see") => "artifact",
         ("render", _) => "render",
         _ => "json",
     }
@@ -1309,6 +1388,123 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("browser", "see") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "highlightTargets",
+                    json!({ "type": "boolean", "default": true, "description": "Draw targetRef bounding boxes on the screenshot for vision models." }),
+                ),
+                (
+                    "highlightTargetRefs",
+                    string_array("Optional targetRefs to highlight; defaults to mapped targets when highlightTargets is true."),
+                ),
+                (
+                    "downsampleForVision",
+                    json!({ "type": "boolean", "default": true, "description": "Downsample screenshots to <=2000px longest edge before returning vision artifacts." }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &[],
+        ),
+        ("browser", "interact") => object_schema(
+            [
+                (
+                    "actions",
+                    json!({
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kind": { "type": "string", "enum": ["navigate", "wait", "read_until", "click", "hover", "scroll", "scroll_to_target", "ensure_visible", "type", "press", "submit", "reveal"] },
+                                "url": { "type": "string" },
+                                "targetRef": { "type": "string" },
+                                "text": { "type": "string" },
+                                "key": { "type": "string" },
+                                "timeoutMs": { "type": "integer", "minimum": 250, "maximum": 120000 }
+                            },
+                            "required": ["kind"]
+                        },
+                        "description": "Ordered browser actions to run before extract."
+                    }),
+                ),
+                (
+                    "extract",
+                    json!({ "type": "string", "enum": ["read", "map", "both"], "default": "read" }),
+                ),
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                ("workflowId", string("Optional workflow id for record/replay.")),
+                (
+                    "cacheMode",
+                    json!({ "type": "string", "enum": ["record", "replay"], "description": "Workflow cache mode when workflowId is set." }),
+                ),
+                (
+                    "baselineSnapshotId",
+                    string("Optional prior pageSnapshot id to diff after extract."),
+                ),
+            ],
+            &["actions"],
+        ),
+        ("browser", "judge_task") => object_schema(
+            [
+                (
+                    "goal",
+                    string("Optional task goal text to check against the final page observation."),
+                ),
+                (
+                    "trajectory",
+                    json!({
+                        "type": "object",
+                        "description": "Browser tool trajectory from this turn or isolated session.",
+                        "properties": {
+                            "steps": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "toolPath": { "type": "string" },
+                                        "ok": { "type": "boolean" },
+                                        "pathTaken": { "type": "string" },
+                                        "elementDiffChanged": { "type": "array", "items": { "type": "string" } },
+                                        "cacheHit": { "type": "boolean" },
+                                        "cacheMiss": { "type": "boolean" }
+                                    },
+                                    "required": ["toolPath", "ok"]
+                                }
+                            }
+                        },
+                        "required": ["steps"]
+                    }),
+                ),
+                (
+                    "finalObservation",
+                    json!({
+                        "type": "object",
+                        "description": "Latest browser map/read observation used to judge task completion.",
+                        "properties": {
+                            "url": { "type": "string" },
+                            "title": { "type": "string" },
+                            "elements": { "type": "array", "items": { "type": "object" } },
+                            "authChallengeSignals": { "type": "array", "items": { "type": "object" } },
+                            "blockedRegions": { "type": "array", "items": { "type": "object" } },
+                            "nextRecommendedAction": { "type": "string" }
+                        }
+                    }),
+                ),
+            ],
+            &["trajectory"],
+        ),
         ("browser", "vact") => object_schema(
             [
                 ("tabId", string("Lyra browser tab id.")),
@@ -1604,6 +1800,35 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("computer", "list_apps") => object_schema(
+            [
+                (
+                    "maxApps",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50, "description": "Cap on returned desktop apps." }),
+                ),
+                (
+                    "includeBackground",
+                    json!({ "type": "boolean", "default": false, "description": "Include apps without a visible/focused window." }),
+                ),
+            ],
+            &[],
+        ),
+        ("computer", "observe") => object_schema([], &[]),
+        ("computer", "focus") => object_schema(
+            [
+                ("appRef", string("Opaque app reference from computer.list_apps (e.g. osxapp:<pid>, winapp:<pid>, atspiapp:<index>, lytab:<tabId>).")),
+                ("pid", json!({ "type": "integer", "description": "Process id on macOS/Windows when appRef is unknown." })),
+                ("bundleId", string("Application bundle id (platform-dependent; may be unsupported).")),
+                ("windowTitle", string("Exact window title to raise when appRef is unknown.")),
+                ("windowRef", string("Opaque window reference from computer.list_apps.")),
+                ("lyraTabId", string("Lyra workbench tab id to activate (Level-1 internal surface).")),
+                (
+                    "mode",
+                    json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared only: computer.focus refuses foreground steal in background/isolated modes." }),
+                ),
+            ],
+            &[],
+        ),
         ("computer", "map") => object_schema(
             [
                 (
@@ -1679,6 +1904,19 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [("osRef", string("Optional desktop node reference to check for reachability."))],
             &[],
         ),
+        ("computer", "see") => object_schema(
+            [
+                (
+                    "scope",
+                    json!({ "type": "string", "enum": ["screen", "focused-window"], "default": "focused-window", "description": "screen: full primary display. focused-window: only the frontmost app window." }),
+                ),
+                (
+                    "downsampleForVision",
+                    json!({ "type": "boolean", "default": true, "description": "Downsample to <=2000px longest edge before returning the vision artifact." }),
+                ),
+            ],
+            &[],
+        ),
         ("terminal", "run") => object_schema(
             [
                 ("command", string("Terminal command.")),
@@ -1742,6 +1980,63 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("indexResult", json!({ "type": "boolean", "default": true })),
             ],
             &["query"],
+        ),
+        ("web", "map") => object_schema(
+            [
+                ("url", string("Seed URL to map.")),
+                (
+                    "limit",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 500, "default": 50 }),
+                ),
+                (
+                    "includeSitemap",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "sameOriginOnly",
+                    json!({ "type": "boolean", "default": true }),
+                ),
+                (
+                    "allowPrivateNetwork",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+            ],
+            &["url"],
+        ),
+        ("web", "batch") => object_schema(
+            [
+                (
+                    "urls",
+                    json!({
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Absolute URLs to fetch."
+                    }),
+                ),
+                (
+                    "mode",
+                    json!({ "type": "string", "enum": ["sync", "async", "status", "cancel"], "default": "sync" }),
+                ),
+                ("jobId", string("Existing batch job id when mode=status.")),
+                (
+                    "maxCharsPerUrl",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 20000, "default": 4000 }),
+                ),
+                (
+                    "engine",
+                    json!({ "type": "string", "enum": ["auto", "http", "browser"], "default": "auto" }),
+                ),
+                (
+                    "allowPrivateNetwork",
+                    json!({ "type": "boolean", "default": false }),
+                ),
+                ("queryFocus", string("Optional query focus passed to each fetch.")),
+                (
+                    "preset",
+                    json!({ "type": "string", "enum": ["agent", "research", "index", "reader", "raw"], "default": "agent" }),
+                ),
+            ],
+            &["urls"],
         ),
         ("web", "fetch") => object_schema(
             [
@@ -2006,6 +2301,31 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
     attach_schema_id(path, schema)
 }
 
+pub fn scenario_playbooks_doc() -> &'static str {
+    r#"Lyra Tool-FS scenario decision tree (pick one primary path):
+
+Web / external content
+- Need one known URL as agent markdown → /tools/web/fetch (engine auto: http then browser)
+- Need search results only → /tools/web/search
+- Need search + deep read top hits → /tools/web/research
+- Need many URLs on a site first → /tools/web/map, then selective /tools/web/fetch or /tools/web/batch
+- Need many known URLs at once → /tools/web/batch (sync small batches; async + jobId for large)
+
+Lyra browser / Lumen (interactive pages)
+- Short operate-then-read flow → /tools/browser/interact (navigate → wait → click/scroll/type → read/map)
+- Repeatable multi-step UI flow → browser.interact or workflowId cacheMode record/replay on act/type
+- Discover controls on current page → /tools/browser/map (or locate/find for long pages)
+- Multi-field form → /tools/browser/plan once, then batch act/type by targetRef
+- DOM blind (OAuth iframe, ARIA) → /tools/browser_ax/map then browser_ax/act
+- Visual last resort → /tools/browser/see then /tools/browser/vact
+- Verify completion → /tools/browser/judge_task
+
+Project / code / shell
+- Repo survey or code change → code search/grep → read_file → strict_edit/apply_patch → shell run → git diff
+
+Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
+}
+
 pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
@@ -2013,7 +2333,7 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "clarification" => "Structured user clarification through the Lyra decision panel.",
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
-        "browser" => "Operate Lyra browser/Lumen pages with DOM, target, visual, and wait tools.",
+        "browser" => "Operate Lyra browser/Lumen pages. Prefer /tools/browser/interact for short operate-then-extract flows; use map/locate/plan for discovery and batch act/type for forms.",
         "browser_ax" => {
             "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
         }
@@ -2026,7 +2346,7 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "terminal" => "Control Lyra terminal sessions and terminal panes.",
         "git" => "Inspect and mutate Git repository state for the bound project.",
         "network" => "Inspect native network status.",
-        "web" => "Fetch and search web resources through native network tools.",
+        "web" => "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads.",
         "render" => "Create inline render surfaces in the chat timeline.",
         "todo" => "Read and update Lyra task todos.",
         "design" => "Use Lyra design reference tools.",

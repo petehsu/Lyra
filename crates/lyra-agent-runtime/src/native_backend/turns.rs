@@ -21,6 +21,10 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let citations = parse_transcript_citations(&payload);
     let page_citations = parse_page_citations(&payload);
     let file_citations = parse_file_citations(&payload);
+    let ui_hidden = payload
+        .get("uiHidden")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let requested_session = string_opt(&payload, "sessionId");
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -107,15 +111,23 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         if uses_inline_image_markers {
             apply_inline_images_to_user_message(&mut user_message, &inline_images);
         }
-        let checkpoint = rollback_checkpoint(&session_id, &turn_id, &user_message_id, session);
-        user_message["rollback"] = json!({
-            "available": true,
-            "anchorId": checkpoint.id,
-            "checkpointAt": checkpoint.created_at,
-            "unavailableReason": Value::Null
-        });
-        session.rollback_checkpoints.push(checkpoint);
-        maybe_title_session_from_first_user_message(session, &text);
+        if ui_hidden {
+            user_message["metadata"] = json!({ "uiHidden": true });
+            user_message["rollback"] = json!({
+                "available": false,
+                "unavailableReason": "Rollback is unavailable for menu action turns."
+            });
+        } else {
+            let checkpoint = rollback_checkpoint(&session_id, &turn_id, &user_message_id, session);
+            user_message["rollback"] = json!({
+                "available": true,
+                "anchorId": checkpoint.id,
+                "checkpointAt": checkpoint.created_at,
+                "unavailableReason": Value::Null
+            });
+            session.rollback_checkpoints.push(checkpoint);
+            maybe_title_session_from_first_user_message(session, &text);
+        }
         push_array(&mut session.snapshot, "messages", user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
@@ -555,33 +567,159 @@ pub(crate) fn emit_assistant_text(session_id: &str, turn_id: &str, text: &str) -
     Some(message_id)
 }
 
-/// Commit assistant text to the factual UI timeline only for final answers.
-/// Tool-round preambles stay in the provider transcript and must not create chat bubbles.
+fn active_ui_turn_key(session_id: &str, turn_id: &str) -> String {
+    format!("{session_id}:{turn_id}")
+}
+
+pub(crate) fn set_active_ui_message_id(session_id: &str, turn_id: &str, message_id: &str) {
+    if let Ok(mut state) = state().lock() {
+        state
+            .active_ui_message_by_turn
+            .insert(active_ui_turn_key(session_id, turn_id), message_id.to_string());
+    }
+}
+
+pub(crate) fn active_ui_message_id(session_id: &str, turn_id: &str) -> Option<String> {
+    state()
+        .lock()
+        .ok()
+        .and_then(|state| {
+            state
+                .active_ui_message_by_turn
+                .get(&active_ui_turn_key(session_id, turn_id))
+                .cloned()
+        })
+}
+
+pub(crate) fn clear_active_ui_message_id(session_id: &str, turn_id: &str) {
+    if let Ok(mut state) = state().lock() {
+        state
+            .active_ui_message_by_turn
+            .remove(&active_ui_turn_key(session_id, turn_id));
+    }
+}
+
+pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str, tool_id: &str) {
+    let (callback, committed_message) = match state().lock() {
+        Ok(mut state) => {
+            let callback = state.event_callback.clone();
+            let committed_message = {
+                let Some(session) = state.sessions.get_mut(session_id) else {
+                    return;
+                };
+                let Some(messages) = session
+                    .snapshot
+                    .get_mut("messages")
+                    .and_then(Value::as_array_mut)
+                else {
+                    return;
+                };
+                let Some(message) = messages
+                    .iter_mut()
+                    .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
+                else {
+                    return;
+                };
+                if !message.get("blocks").is_some_and(Value::is_array) {
+                    message["blocks"] = json!([]);
+                }
+                let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
+                    return;
+                };
+                let already_present = blocks.iter().any(|block| {
+                    block.get("type").and_then(Value::as_str) == Some("tool")
+                        && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+                });
+                if already_present {
+                    return;
+                }
+                blocks.push(json!({
+                    "type": "tool",
+                    "id": format!("tool-{tool_id}"),
+                    "toolId": tool_id,
+                }));
+                let committed_message = message.clone();
+                touch_session(session);
+                committed_message
+            };
+            let _ = state.save_state();
+            (callback, committed_message)
+        }
+        Err(_) => return,
+    };
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "messageCommitted",
+            "sessionId": session_id,
+            "message": committed_message,
+        }),
+    );
+}
+
+fn assistant_reply_visible_text(
+    reply: &crate::native_backend::provider::ModelReply,
+) -> Option<String> {
+    reply
+        .content
+        .as_ref()
+        .filter(|content| !content.trim().is_empty())
+        .cloned()
+}
+
+/// Commit assistant text to the factual UI timeline.
+/// Tool-round preambles are anchored in the chat transcript and receive tool blocks.
 pub(crate) fn commit_visible_assistant_reply(
     session_id: &str,
     turn_id: &str,
     reply: &mut crate::native_backend::provider::ModelReply,
     streamed_message_id: &Option<String>,
 ) -> bool {
-    if !reply.tool_calls.is_empty() {
+    if reply.tool_calls.is_empty() {
+        clear_active_ui_message_id(session_id, turn_id);
+        if let Some(message_id) = streamed_message_id
+            .as_ref()
+            .filter(|message_id| !message_id.is_empty())
+        {
+            reply.ui_message_id = Some(message_id.clone());
+            return true;
+        }
+        if let Some(content) = reply
+            .content
+            .as_ref()
+            .filter(|content| !content.trim().is_empty())
+        {
+            reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
+            return reply.ui_message_id.is_some();
+        }
         return false;
     }
-    if let Some(message_id) = streamed_message_id
+
+    let message_id = streamed_message_id
         .as_ref()
         .filter(|message_id| !message_id.is_empty())
-    {
-        reply.ui_message_id = Some(message_id.clone());
-        return true;
-    }
-    if let Some(content) = reply
+        .cloned()
+        .or_else(|| emit_assistant_message_placeholder(session_id, turn_id));
+    let Some(message_id) = message_id else {
+        return false;
+    };
+    let streamed_live = streamed_message_id
+        .as_ref()
+        .is_some_and(|message_id| !message_id.is_empty());
+    let has_streamed_text = reply
         .content
         .as_ref()
-        .filter(|content| !content.trim().is_empty())
-    {
-        reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
-        return reply.ui_message_id.is_some();
+        .is_some_and(|content| !content.trim().is_empty());
+    if !(streamed_live && has_streamed_text) {
+        if let Some(visible_text) = assistant_reply_visible_text(reply)
+            && append_assistant_delta(session_id, turn_id, &message_id, &visible_text).is_err()
+        {
+            return false;
+        }
     }
-    false
+    set_active_ui_message_id(session_id, turn_id, &message_id);
+    reply.ui_message_id = Some(message_id);
+    true
 }
 
 pub(crate) fn emit_assistant_message_placeholder(
@@ -734,6 +872,9 @@ pub(crate) fn finish_turn_with_metadata(
             let root = state.root.clone();
             state.active_cancellations.remove(turn_id);
             state.cancelled_turns.remove(turn_id);
+            state
+                .active_ui_message_by_turn
+                .remove(&active_ui_turn_key(session_id, turn_id));
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
                     let latest_user = latest_user_text(
@@ -964,4 +1105,42 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
         "turnId": turn_id,
         "status": "cancelled"
     }))
+}
+
+#[cfg(test)]
+mod narration_tests {
+    use super::*;
+    use crate::native_backend::provider::ModelToolCall;
+
+    #[test]
+    fn omits_visible_text_when_model_returns_tool_calls_without_prose() {
+        let visible = assistant_reply_visible_text(&crate::native_backend::provider::ModelReply {
+            content: None,
+            reasoning_content: None,
+            tool_calls: vec![ModelToolCall {
+                id: "call-1".to_string(),
+                name: "tool_fs_run".to_string(),
+                arguments: json!({ "path": "/tools/browser/map" }),
+            }],
+            ui_message_id: None,
+            provider_replay_items: Vec::new(),
+        });
+        assert_eq!(visible, None);
+    }
+
+    #[test]
+    fn returns_model_prose_for_tool_rounds() {
+        let visible = assistant_reply_visible_text(&crate::native_backend::provider::ModelReply {
+            content: Some("Opening Google.".to_string()),
+            reasoning_content: None,
+            tool_calls: vec![ModelToolCall {
+                id: "call-1".to_string(),
+                name: "tool_fs_run".to_string(),
+                arguments: json!({ "path": "/tools/browser/navigate" }),
+            }],
+            ui_message_id: None,
+            provider_replay_items: Vec::new(),
+        });
+        assert_eq!(visible.as_deref(), Some("Opening Google."));
+    }
 }

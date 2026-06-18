@@ -23,10 +23,7 @@ import type {
   AgentProjectTreeModel
 } from "../agent-project-tree";
 import type { AgentGitLabels } from "../agent-git";
-import type { AgentSelfDevLabels } from "../agent-selfdev";
-import type { AgentOvernightLabels } from "../agent-overnight";
 import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
-import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
 import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/types";
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
@@ -104,10 +101,6 @@ export type WorkspaceSurfaceRouterProps = {
   readonly agentProjectTreeModel: AgentProjectTreeModel;
   readonly agentProjectTreeLabels: AgentProjectTreeLabels;
   readonly agentGitLabels: AgentGitLabels;
-  readonly agentSelfDevLabels: AgentSelfDevLabels;
-  readonly agentSelfDevLocale?: WorkbenchLocale;
-  readonly agentOvernightLabels: AgentOvernightLabels;
-  readonly agentOvernightLocale?: WorkbenchLocale;
   readonly onOpenAgentGit: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -207,14 +200,6 @@ const renderSurfaceModel = (
     }
     case "agentGit": {
       const Adapter = surfaceAdapters.agentGit;
-      return <Adapter {...model.props} />;
-    }
-    case "agentSelfDev": {
-      const Adapter = surfaceAdapters.agentSelfDev;
-      return <Adapter {...model.props} />;
-    }
-    case "agentOvernight": {
-      const Adapter = surfaceAdapters.agentOvernight;
       return <Adapter {...model.props} />;
     }
     case "notificationCenter": {

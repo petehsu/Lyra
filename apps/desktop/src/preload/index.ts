@@ -27,10 +27,6 @@ import {
   type AgentRollbackRequest,
   type AgentRollbackRestoreResponse,
   type AgentRuntimeEvent,
-  type AgentSelfDevStartRequest,
-  type AgentSelfDevStartResponse,
-  type AgentSelfDevStatusRequest,
-  type AgentSelfDevStatusResponse,
   type AgentSessionArchiveRequest,
   type AgentSessionBindProjectRequest,
   type AgentSessionCreateRequest,
@@ -54,18 +50,12 @@ import {
   type AgentAccountLoginStartResponse,
   type AgentAccountRequest,
   type AgentAccountsSnapshot,
-  type AgentAutomationUpdateRequest,
-  type AgentAutomationUpdateResponse,
-  type AgentBtwRunRequest,
-  type AgentCompactResponse,
   type AgentConfigSnapshot,
   type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
   type AgentActionRunRequest,
   type AgentRolesUpdateRequest,
   type AgentFeedbackRunRequest,
-  type AgentGoalsRequest,
-  type AgentGoalsResponse,
   type AgentLoginProviderCatalogSnapshot,
   type AgentModelDeleteRequest,
   type AgentModelEnableRequest,
@@ -73,23 +63,13 @@ import {
   type AgentModelCatalogRequest,
   type AgentModelCatalogSnapshot,
   type AgentModelSwitchRequest,
-  type AgentOvernightListResponse,
-  type AgentOvernightRunRequest,
-  type AgentOvernightRunResponse,
-  type AgentOvernightStartRequest,
-  type AgentOvernightStartResponse,
   type AgentProviderOptionsUpdateRequest,
   type AgentProviderProfileSaveRequest,
   type AgentPokeRequest,
   type AgentPokeResponse,
-  type AgentSessionActionRequest,
-  type AgentSessionForkResponse,
   type AgentSessionSummary,
   type AgentSessionListRequest,
   type AgentSessionListResponse,
-  type AgentSidePanelActionResponse,
-  type AgentSubagentRunRequest,
-  type AgentSubagentRunResponse,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
@@ -1408,50 +1388,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionBindProject,
         request
       ) as Promise<AgentSessionSnapshot>,
-    startSelfDev: (request?: AgentSelfDevStartRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSelfDevStart,
-        request ?? {}
-      ) as Promise<AgentSelfDevStartResponse>,
-    readSelfDevStatus: (request?: AgentSelfDevStatusRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSelfDevStatus,
-        request ?? {}
-      ) as Promise<AgentSelfDevStatusResponse>,
-    sendSelfDevTurn: (request: AgentTurnSendRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSelfDevSendTurn,
-        request
-      ) as Promise<AgentTurnSendResponse>,
-    startOvernight: (request: AgentOvernightStartRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightStart,
-        request
-      ) as Promise<AgentOvernightStartResponse>,
-    listOvernightRuns: () =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightList
-      ) as Promise<AgentOvernightListResponse>,
-    readOvernightStatus: (request?: AgentOvernightRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightStatus,
-        request ?? {}
-      ) as Promise<AgentOvernightRunResponse>,
-    readOvernightLog: (request?: AgentOvernightRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightLog,
-        request ?? {}
-      ) as Promise<AgentOvernightRunResponse>,
-    readOvernightReview: (request?: AgentOvernightRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightReview,
-        request ?? {}
-      ) as Promise<AgentOvernightRunResponse>,
-    cancelOvernight: (request?: AgentOvernightRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentOvernightCancel,
-        request ?? {}
-      ) as Promise<AgentOvernightRunResponse>,
     startTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnStart,
@@ -1636,56 +1572,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentJudgeRun,
         request ?? {}
       ) as Promise<AgentTurnSendResponse>,
-    runSubagent: (request: AgentSubagentRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSubagentRun,
-        request
-      ) as Promise<AgentSubagentRunResponse>,
-    runBtw: (request: AgentBtwRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentBtwRun,
-        request
-      ) as Promise<AgentSidePanelActionResponse>,
-    splitSession: (request?: AgentSessionActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSessionSplit,
-        request ?? {}
-      ) as Promise<AgentSessionForkResponse>,
-    transferSession: (request?: AgentSessionActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSessionTransfer,
-        request ?? {}
-      ) as Promise<AgentSessionForkResponse>,
-    compactSession: (request?: AgentSessionActionRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSessionCompact,
-        request ?? {}
-      ) as Promise<AgentCompactResponse>,
-    updateSessionAutomation: (request: AgentAutomationUpdateRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentSessionAutomationUpdate,
-        request
-      ) as Promise<AgentAutomationUpdateResponse>,
-    listGoals: (request?: AgentGoalsRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentGoalsList,
-        request ?? {}
-      ) as Promise<AgentGoalsResponse>,
-    openGoals: (request?: AgentGoalsRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentGoalsOpen,
-        request ?? {}
-      ) as Promise<AgentGoalsResponse>,
-    resumeGoal: (request?: AgentGoalsRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentGoalsResume,
-        request ?? {}
-      ) as Promise<AgentGoalsResponse>,
-    showGoal: (request: AgentGoalsRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentGoalsShow,
-        request
-      ) as Promise<AgentGoalsResponse>,
     listAccounts: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentAccountsList) as Promise<AgentAccountsSnapshot>,
     loginAccount: (request: AgentAccountLoginRequest) =>

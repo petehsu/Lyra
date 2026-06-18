@@ -21,10 +21,7 @@ import type { ComposerInsertableCitation } from "../features/chat/message-citati
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 import type { WorkbenchLocationControls } from "../../../location";
 import type {
-  AgentAutomationSettings,
-  AgentGoalItem,
   AgentImageAttachment,
-  AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
   ComposerPermissionModeControls,
@@ -121,9 +118,6 @@ export interface DataProviderValue {
 
   /** Reveal a model-opaque sensitive value to the user in the UI without returning it to Agent context. */
   revealSensitiveValueToUser(ref: LyraSensitiveValueRef): Promise<string>;
-
-  /** Lyra Agent side-panel pages such as `/btw` answers and goals. */
-  sidePanel?: AgentSidePanel | null;
 
   /** Send a new user message. Returns a promise that resolves when delivered. */
   sendMessage(
@@ -226,12 +220,6 @@ export interface DataProviderValue {
   /** Open the current bound project in a workspace file tree. */
   openProjectTree(): Promise<void>;
 
-  /** Open the Lyra Agent self-development workspace. */
-  openSelfDevLab(): Promise<void>;
-
-  /** Open the long-running supervised task workspace. */
-  openOvernightLab(): Promise<void>;
-
   /** Start Lyra Agent improvement mode from the GUI. */
   runImprove(options?: { planOnly?: boolean; focus?: string | null }): Promise<void>;
 
@@ -247,40 +235,14 @@ export interface DataProviderValue {
   /** Launch a one-shot Lyra Agent judge session from the GUI. */
   runJudge(): Promise<void>;
 
-  /** Run a manual Lyra Agent subagent tool action. */
-  runSubagent(options: {
-    prompt: string;
-    subagentType?: string | null;
-    model?: string | null;
-    continueSessionId?: string | null;
-  }): Promise<void>;
+  /** Rename the current Lyra Agent session. */
+  renameSession(): void;
 
-  /** Ask a side question and render the answer in the Lyra Agent side panel. */
-  askSideQuestion(question: string): Promise<void>;
+  /** Archive the current Lyra Agent session. */
+  archiveSession(): Promise<void>;
 
-  /** Clone this session into a new session and make it active. */
-  splitSession(): Promise<void>;
-
-  /** Create a compacted handoff child session and make it active. */
-  transferSession(): Promise<void>;
-
-  /** Request manual Lyra Agent context compaction. */
-  compactContext(): Promise<void>;
-
-  /** Open Lyra Agent goals overview in the side panel. */
-  openGoals(): Promise<void>;
-
-  /** Read selectable Lyra Agent goals. */
-  listGoals(): Promise<readonly AgentGoalItem[]>;
-
-  /** Open one Lyra Agent goal in the side panel. */
-  showGoal(goalId: string): Promise<void>;
-
-  /** Resume the best current Lyra Agent goal in the side panel. */
-  resumeGoal(): Promise<void>;
-
-  /** Update current-session automation settings. */
-  updateAutomation(settings: AgentAutomationSettings): Promise<void>;
+  /** Delete the current Lyra Agent session. */
+  deleteSession(): void;
 
   /** Answer one or more decision questions. */
   submitDecisions(answers: Record<string, string>): Promise<void>;

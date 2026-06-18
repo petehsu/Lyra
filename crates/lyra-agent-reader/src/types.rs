@@ -1192,6 +1192,22 @@ pub struct Frontmatter {
     pub truncated: bool,
 }
 
+/// One engine attempt in a multi-engine fetch/render pipeline.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderEngineAttempt {
+    /// Engine label, for example `http` or `browser`.
+    pub engine: String,
+    /// Whether this attempt produced the final successful output.
+    pub success: bool,
+    /// Why the attempt failed or why the pipeline switched to the next engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// HTTP status observed by this attempt, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+}
+
 /// The full result of a read.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1268,4 +1284,10 @@ pub struct ReaderResult {
     /// Deterministic cache key for this read, if enough inputs were available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_key: Option<String>,
+    /// Engine that produced the final successful output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_used: Option<String>,
+    /// Ordered engine attempts, including failures and fallback switches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub engine_attempts: Vec<ReaderEngineAttempt>,
 }

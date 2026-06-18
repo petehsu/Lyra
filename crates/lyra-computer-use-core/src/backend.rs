@@ -5,7 +5,10 @@
 //! facade and runs the act -> diff closed loop, so a new platform only has to
 //! satisfy this trait.
 
-use crate::model::{ActOutcome, BackendError, ComputerNode, MapRequest};
+use crate::model::{
+    ActOutcome, BackendError, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ComputerObserveResult, ListAppsRequest, MapRequest,
+};
 
 /// One platform's accessibility integration.
 ///
@@ -33,6 +36,15 @@ pub trait ComputerBackend: Send + Sync {
         action: crate::model::ComputerAction,
         text: Option<&str>,
     ) -> Result<(), BackendError>;
+
+    /// List running desktop applications and their visible windows.
+    fn list_apps(&self, request: &ListAppsRequest) -> Result<Vec<ComputerAppEntry>, BackendError>;
+
+    /// Read the foreground app, focused window, and focused accessibility control.
+    fn observe(&self) -> Result<ComputerObserveResult, BackendError>;
+
+    /// Raise an app or window to the foreground (session-level focus).
+    fn focus(&self, request: &ComputerFocusRequest) -> Result<(), BackendError>;
 }
 
 /// Builds the human-readable change list between two snapshots of one node

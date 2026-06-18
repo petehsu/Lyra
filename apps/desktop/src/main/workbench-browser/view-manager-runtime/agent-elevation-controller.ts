@@ -210,7 +210,9 @@ export const createBrowserAgentElevationController = (deps: BrowserAgentElevatio
     };
     elevationSessions.set(existing.sessionId, verifyingSession);
     const target = await resolveBrowserAgentTarget(tabId, "isolated", request?.timeoutMs);
-    await waitForAgentPageLoad(target.webContents, liveAddress, request?.timeoutMs ?? 8_000);
+    await waitForAgentPageLoad(target.webContents, liveAddress, request?.timeoutMs ?? 8_000, {
+      waitForReady: true
+    });
     const observation = await observeAgentPage(tabId, {
       targetMode: "isolated",
       strategy: "hybrid",

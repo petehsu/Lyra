@@ -1,8 +1,5 @@
 import type {
-  AgentAutomationSettings,
-  AgentGoalItem,
   AgentImageAttachment,
-  AgentSidePanel,
   ChatMessage,
   ComposerModelControls,
   ComposerPermissionModeControls,
@@ -56,7 +53,6 @@ export interface CreateDataProviderValueInput {
   openImageInWorkbench?: (image: AgentImageAttachment) => Promise<void>;
   canOpenImageInWorkbench?: (image: AgentImageAttachment) => boolean;
   revealSensitiveValueToUser?: (ref: LyraSensitiveValueRef) => Promise<string>;
-  sidePanel?: AgentSidePanel | null;
   sendMessage?: (
     text: string,
     images?: readonly AgentImageAttachment[],
@@ -96,28 +92,14 @@ export interface CreateDataProviderValueInput {
   createSession?: () => Promise<void>;
   bindProject?: () => Promise<void>;
   openProjectTree?: () => Promise<void>;
-  openSelfDevLab?: () => Promise<void>;
-  openOvernightLab?: () => Promise<void>;
   runImprove?: (options?: { planOnly?: boolean; focus?: string | null }) => Promise<void>;
   runRefactor?: (options?: { planOnly?: boolean; focus?: string | null }) => Promise<void>;
   pokeTodos?: () => Promise<void>;
   runReview?: () => Promise<void>;
   runJudge?: () => Promise<void>;
-  runSubagent?: (options: {
-    prompt: string;
-    subagentType?: string | null;
-    model?: string | null;
-    continueSessionId?: string | null;
-  }) => Promise<void>;
-  askSideQuestion?: (question: string) => Promise<void>;
-  splitSession?: () => Promise<void>;
-  transferSession?: () => Promise<void>;
-  compactContext?: () => Promise<void>;
-  openGoals?: () => Promise<void>;
-  listGoals?: () => Promise<readonly AgentGoalItem[]>;
-  showGoal?: (goalId: string) => Promise<void>;
-  resumeGoal?: () => Promise<void>;
-  updateAutomation?: (settings: AgentAutomationSettings) => Promise<void>;
+  renameSession?: () => void;
+  archiveSession?: () => Promise<void>;
+  deleteSession?: () => void;
   submitDecisions?: (answers: Record<string, string>) => Promise<void>;
   approvePermission?: (id: string) => Promise<void>;
   denyPermission?: (id: string) => Promise<void>;
@@ -155,7 +137,6 @@ export function createDataProviderValue({
   revealSensitiveValueToUser = async () => {
     throw new Error("Sensitive value bridge is unavailable.");
   },
-  sidePanel = null,
   sendMessage = () => resolved,
   addCitationToComposer = () => undefined,
   addPageCitationToComposer = () => undefined,
@@ -191,23 +172,14 @@ export function createDataProviderValue({
   createSession = () => resolved,
   bindProject = () => resolved,
   openProjectTree = () => resolved,
-  openSelfDevLab = () => resolved,
-  openOvernightLab = () => resolved,
   runImprove = () => resolved,
   runRefactor = () => resolved,
   pokeTodos = () => resolved,
   runReview = () => resolved,
   runJudge = () => resolved,
-  runSubagent = () => resolved,
-  askSideQuestion = () => resolved,
-  splitSession = () => resolved,
-  transferSession = () => resolved,
-  compactContext = () => resolved,
-  openGoals = () => resolved,
-  listGoals = () => Promise.resolve([]),
-  showGoal = () => resolved,
-  resumeGoal = () => resolved,
-  updateAutomation = () => resolved,
+  renameSession = () => undefined,
+  archiveSession = () => resolved,
+  deleteSession = () => undefined,
   submitDecisions = () => resolved,
   approvePermission = () => resolved,
   denyPermission = () => resolved,
@@ -235,7 +207,6 @@ export function createDataProviderValue({
     openImageInWorkbench,
     canOpenImageInWorkbench,
     revealSensitiveValueToUser,
-    sidePanel,
     sendMessage,
     addCitationToComposer,
     addPageCitationToComposer,
@@ -264,23 +235,14 @@ export function createDataProviderValue({
     createSession,
     bindProject,
     openProjectTree,
-    openSelfDevLab,
-    openOvernightLab,
     runImprove,
     runRefactor,
     pokeTodos,
     runReview,
     runJudge,
-    runSubagent,
-    askSideQuestion,
-    splitSession,
-    transferSession,
-    compactContext,
-    openGoals,
-    listGoals,
-    showGoal,
-    resumeGoal,
-    updateAutomation,
+    renameSession,
+    archiveSession,
+    deleteSession,
     submitDecisions,
     approvePermission,
     denyPermission,

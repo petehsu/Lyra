@@ -108,6 +108,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/software/invoke_capability" => {
             host("software.invokeCapability", "software", "invoke_capability")
         }
+        "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),
         "/tools/browser/read" => host("lyraLumen.read", "lyra_lumen", "read"),
@@ -137,17 +138,22 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         }
         "/tools/browser/audit" => host("lyraLumen.audit", "lyra_lumen", "audit"),
         "/tools/browser/elevate" => host("lyraLumen.elevate", "lyra_lumen", "elevate"),
+        "/tools/browser/judge_task" => host("lyraLumen.judgeTask", "lyra_lumen", "judge_task"),
         "/tools/browser_ax/map" => host("lyraAx.map", "lyra_ax", "map"),
         "/tools/browser_ax/query" => host("lyraAx.query", "lyra_ax", "query"),
         "/tools/browser_ax/act" => host("lyraAx.act", "lyra_ax", "act"),
         "/tools/browser_ax/focus" => host("lyraAx.focus", "lyra_ax", "focus"),
         "/tools/browser_ax/press" => host("lyraAx.press", "lyra_ax", "press"),
         "/tools/browser_ax/explain" => host("lyraAx.explain", "lyra_ax", "explain"),
+        "/tools/computer/list_apps" => host("lyraComputer.listApps", "lyra_computer", "list_apps"),
+        "/tools/computer/observe" => host("lyraComputer.observe", "lyra_computer", "observe"),
+        "/tools/computer/focus" => host("lyraComputer.focus", "lyra_computer", "focus"),
         "/tools/computer/map" => host("lyraComputer.map", "lyra_computer", "map"),
         "/tools/computer/find" => host("lyraComputer.find", "lyra_computer", "find"),
         "/tools/computer/act" => host("lyraComputer.act", "lyra_computer", "act"),
         "/tools/computer/diff" => host("lyraComputer.diff", "lyra_computer", "diff"),
         "/tools/computer/explain" => host("lyraComputer.explain", "lyra_computer", "explain"),
+        "/tools/computer/see" => host("lyraComputer.see", "lyra_computer", "see"),
         "/tools/filesystem/list_files" => native("file_list", "file", "list"),
         "/tools/filesystem/read_file" | "/tools/filesystem/read_range" => {
             native("file_read", "file", "read")
@@ -195,6 +201,8 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/network/status" => native("network_status", "network", "status"),
         "/tools/web/search" => native("web_search", "web", "search"),
         "/tools/web/research" => native("web_research", "web", "research"),
+        "/tools/web/map" => native("web_map", "web", "map"),
+        "/tools/web/batch" => native("web_batch", "web", "batch"),
         "/tools/web/fetch" => native("web_fetch", "web", "fetch"),
         "/tools/render/surface" => native("render_surface", "render", "surface"),
         "/tools/todo/read" => native("todo_read", "todo", "read"),

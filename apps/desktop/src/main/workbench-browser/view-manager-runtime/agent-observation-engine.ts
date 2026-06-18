@@ -19,11 +19,21 @@ import type {
   WorkbenchBrowserSemanticTree
 } from "../types";
 import {
+  applyCdpEnhancementsToElements,
+  captureDomObservationEnhancements,
+  discoverJsListenerObservationItems,
+  filterElementsByParentContainment,
+  type DomObservationEnhancements,
+  type JsListenerDiscoveryItem
+} from "./agent-observation-cdp-enhancements";
+import {
   boundsFromCdpBoxModel,
   buildBrowserAgentObservationScript,
   readAxValueText
 } from "./agent-observation-runtime";
+import { formatScrollHintsForMap } from "./agent-map-format";
 import { shouldSettleBeforeObserve, waitForDomNetworkQuiet } from "./agent-dom-settle";
+import { browserHealthWarningsFromAlerts } from "./browser-health-watchdog";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
@@ -62,33 +72,42 @@ type BrowserAgentObservationEngineDeps = Pick<
   | "rememberBrowserRestoreState"
   | "resolveBrowserAgentTarget"
   | "updateRuntimeState"
-> & { readonly stateStore: BrowserAgentStateStore };
+> & {
+  readonly stateStore: BrowserAgentStateStore;
+  readonly consumeBrowserHealthAlerts?: (tabId: string) => readonly import("../types").BrowserHealthAlert[];
+  readonly onBrowserHealthCaptcha?: (tabId: string, label: string) => void;
+  readonly onBrowserHealthPermission?: (tabId: string, kind: string) => void;
+};
 
-const buildInteractiveScrollHints = (
+const collectInteractiveScrollHints = (
   elements: readonly WorkbenchBrowserAgentElement[],
   viewportHeight: number,
   mainFrameRef: string | undefined
-): readonly WorkbenchBrowserAgentScrollHint[] => {
+): {
+  readonly hints: readonly WorkbenchBrowserAgentScrollHint[];
+  readonly totalHidden: number;
+} => {
   if (viewportHeight <= 0) {
-    return [];
+    return { hints: [], totalHidden: 0 };
   }
-  return elements
-    .filter((element) =>
-      element.discoveryScope !== "visual"
-      && element.frameRef !== mainFrameRef
-      && element.visibility?.offscreen === true
-      && element.visibility?.covered !== true
-      && element.disabled === false
-    )
-    .slice(0, 8)
-    .map((element) => ({
+  const hiddenCandidates = elements.filter((element) =>
+    element.discoveryScope !== "visual"
+    && element.frameRef !== mainFrameRef
+    && element.visibility?.offscreen === true
+    && element.visibility?.covered !== true
+    && element.disabled === false
+  );
+  return {
+    hints: hiddenCandidates.slice(0, 8).map((element) => ({
       frameRef: element.frameRef,
       tag: element.tagName,
       text: element.label.trim().length > 0
         ? element.label.slice(0, 40)
         : (element.textSnippet?.slice(0, 40) ?? "(no label)"),
       pagesDown: Math.max(0, Math.round((element.bounds.y / viewportHeight) * 10) / 10)
-    }));
+    })),
+    totalHidden: hiddenCandidates.length
+  };
 };
 
 export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservationEngineDeps) => {
@@ -100,7 +119,10 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     rememberBrowserRestoreState,
     resolveBrowserAgentTarget,
     stateStore,
-    updateRuntimeState
+    updateRuntimeState,
+    consumeBrowserHealthAlerts,
+    onBrowserHealthCaptcha,
+    onBrowserHealthPermission
   } = deps;
   const {
     activeEditableElementFromObservation,
@@ -757,6 +779,27 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       }
     }
 
+    let cdpEnhancements: DomObservationEnhancements | null = null;
+    if (
+      strategy === "interactiveOnly"
+      || strategy === "picker"
+      || strategy === "focus"
+      || strategy === "hybrid"
+    ) {
+      let debuggerSession: WorkbenchBrowserDebuggerSession | null = null;
+      try {
+        debuggerSession = await openDebuggerSessionForTarget(target);
+        cdpEnhancements = await captureDomObservationEnhancements(debuggerSession);
+        if (cdpEnhancements === null) {
+          graphWarnings.push("cdp_observation_enhancement_unavailable");
+        }
+      } catch {
+        graphWarnings.push("cdp_observation_enhancement_unavailable");
+      } finally {
+        await debuggerSession?.close().catch(() => undefined);
+      }
+    }
+
     const mainRaw = frameObservations.find((entry) => entry.frame.isMainFrame)?.raw ?? {};
     const rawUrl = typeof mainRaw.url === "string" ? mainRaw.url : agentTargetAddress(target);
     const observedAt = Date.now();
@@ -880,6 +923,9 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           ...(typeof record.inputType === "string" && record.inputType.length > 0
             ? { inputType: record.inputType }
             : {}),
+          ...(typeof record.xpath === "string" && record.xpath.length > 0
+            ? { xpath: record.xpath }
+            : {}),
           ...(frameUrl.length > 0
             ? { frameUrl }
             : {})
@@ -912,6 +958,87 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         return element;
       })
       .filter((item): item is WorkbenchBrowserAgentElement => item !== null);
+
+    const buildDomElementFromListenerItem = (
+      item: JsListenerDiscoveryItem
+    ): WorkbenchBrowserAgentElement => {
+      const baseElement = {
+        id: item.id,
+        frameTreeNodeId: item.frameTreeNodeId,
+        frameRef: item.frameRef,
+        tagName: item.tagName,
+        role: item.role,
+        label: item.label,
+        selectorPreview: item.selectorPreview,
+        bounds: item.bounds,
+        localBounds: item.localBounds,
+        frameBounds: item.frameBounds,
+        focusable: item.focusable,
+        disabled: item.disabled,
+        editable: item.editable,
+        visibility: item.visibility,
+        discoveryScope: item.discoveryScope,
+        actionHint: item.actionHint,
+        ...(item.frameUrl.length > 0 ? { frameUrl: item.frameUrl } : {})
+      } satisfies Omit<
+        WorkbenchBrowserAgentElement,
+        "stableId" | "targetRef" | "target" | "elementFingerprint" | "semanticNodeKey" | "actionCapabilities"
+      >;
+      const targetRef = createBrowserAgentTargetRef(rawUrl, baseElement);
+      const targetMetadata: WorkbenchLumenTargetRef = {
+        targetRef: targetRef.targetRef,
+        targetKind: browserAgentTargetKind(baseElement),
+        tabId,
+        frameRef: item.frameRef,
+        frameChain: [item.frameRef],
+        elementFingerprint: targetRef.elementFingerprint,
+        mapEpoch,
+        expiresAt: observedAt + targetTtlMs()
+      };
+      return {
+        ...baseElement,
+        semanticNodeKey: semanticNodeKeyForTarget(targetRef.targetRef, "dom", item.frameRef),
+        actionCapabilities: actionCapabilitiesForElement(baseElement),
+        stableId: targetRef.stableId,
+        targetRef: targetRef.targetRef,
+        target: targetMetadata,
+        elementFingerprint: targetRef.elementFingerprint
+      };
+    };
+
+    let refinedDomElements = domElements;
+    if (cdpEnhancements !== null) {
+      const applied = applyCdpEnhancementsToElements(domElements, cdpEnhancements);
+      refinedDomElements = applied.elements;
+      graphWarnings.push(...applied.warnings);
+
+      const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
+      if (mainFrame !== undefined) {
+        const listenerItems = discoverJsListenerObservationItems({
+          enhancements: cdpEnhancements,
+          existingElements: refinedDomElements,
+          frameTreeNodeId: mainFrame.frameTreeNodeId,
+          frameRef: mainFrame.frameRef,
+          frameBounds: mainFrame.bounds ?? { x: 0, y: 0, width: 1_280, height: 720 },
+          frameUrl: rawUrl,
+          startingElementId: nextElementId
+        });
+        if (listenerItems.length > 0) {
+          refinedDomElements = [
+            ...refinedDomElements,
+            ...listenerItems.map((item) => buildDomElementFromListenerItem(item))
+          ];
+          graphWarnings.push(`${listenerItems.length} js-listener element(s) added from CDP discovery.`);
+        }
+      }
+    }
+    refinedDomElements = filterElementsByParentContainment(refinedDomElements);
+    if (refinedDomElements.length < domElements.length) {
+      graphWarnings.push(
+        `${domElements.length - refinedDomElements.length} nested duplicate element(s) removed by parent containment filter.`
+      );
+    }
+
     const axElements = lightweightObservation
       ? []
       : await readBrowserAgentAxOnlyElements({
@@ -921,12 +1048,12 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           frameGraph,
           mapEpoch,
           observedAt,
-          existingElements: domElements,
+          existingElements: refinedDomElements,
           startingElementId: nextElementId
         });
     let elements: readonly WorkbenchBrowserAgentElement[] = axElements.length > 0
-      ? [...domElements, ...axElements]
-      : domElements;
+      ? [...refinedDomElements, ...axElements]
+      : refinedDomElements;
     const visualFallbackFrames = lightweightObservation ? [] : graphBlockedRegions
       .filter((region) =>
         (region.kind === "cross-origin" || region.kind === "frame-unavailable")
@@ -992,6 +1119,8 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       }
     }
     let scrollHints: readonly WorkbenchBrowserAgentScrollHint[] = [];
+    let hiddenBelowCount = 0;
+    let mapAppendix = "";
     if (strategy === "interactiveOnly") {
       const coveredCount = elements.filter((element) => element.visibility?.covered === true).length;
       if (coveredCount > 0) {
@@ -1001,11 +1130,14 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         (element) => element.discoveryScope === "visual" || element.visibility?.covered !== true
       );
       const mainFrame = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
-      scrollHints = buildInteractiveScrollHints(
+      const scrollHintResult = collectInteractiveScrollHints(
         elements,
         mainFrame?.bounds?.height ?? 0,
         mainFrame?.frameRef
       );
+      scrollHints = scrollHintResult.hints;
+      hiddenBelowCount = scrollHintResult.totalHidden;
+      mapAppendix = formatScrollHintsForMap(scrollHints, hiddenBelowCount);
     }
     const targets = elements.map((element) => element.target);
 
@@ -1048,7 +1180,6 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         confidence: record.confidence === "high" || record.confidence === "medium" ? record.confidence : "low"
       });
     }
-    const warnings = [...new Set([...graphWarnings, ...rawWarnings])];
     const rawAuthChallengeSignals = frameObservations.flatMap((entry) =>
       Array.isArray(entry.raw.authChallengeSignals) ? entry.raw.authChallengeSignals : []
     );
@@ -1113,6 +1244,28 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
             };
           })
       .filter((value): value is NonNullable<WorkbenchBrowserAgentObservation["authChallengeSignals"]>[number] => value !== null);
+    const highConfidenceCaptcha = authChallengeSignals.find(
+      (signal) => signal.kind === "captcha" && signal.confidence === "high"
+    );
+    if (highConfidenceCaptcha !== undefined) {
+      await waitForDomNetworkQuiet(target.webContents, {
+        budgetMs: 1_200,
+        quietMs: 400
+      });
+      onBrowserHealthCaptcha?.(
+        tabId,
+        highConfidenceCaptcha.label ?? "captcha challenge detected"
+      );
+      graphWarnings.push("captcha_detected:agent_blocked_until_user_completes_challenge");
+    }
+    for (const signal of authChallengeSignals) {
+      if (signal.kind === "permission_prompt" || signal.kind === "payment_auth") {
+        onBrowserHealthPermission?.(tabId, signal.kind);
+      }
+    }
+    const browserHealth = consumeBrowserHealthAlerts?.(tabId) ?? [];
+    const healthWarnings = browserHealthWarningsFromAlerts(browserHealth);
+    const warnings = [...new Set([...graphWarnings, ...rawWarnings, ...healthWarnings])];
     const observedFrameGraph: BrowserAgentSemanticFrameGraph = {
       ...frameGraph,
       warnings: graphWarnings,
@@ -1144,15 +1297,39 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       focusOrder,
       ...(authChallengeSignals.length > 0 ? { authChallengeSignals } : {}),
       ...(scrollHints.length > 0 ? { scrollHints } : {}),
+      ...(hiddenBelowCount > 0 ? { hiddenBelowCount } : {}),
+      ...(mapAppendix.length > 0 ? { mapAppendix } : {}),
+      ...(browserHealth.length > 0 ? { browserHealth } : {}),
+      ...(highConfidenceCaptcha !== undefined
+        ? {
+            needsUserAction: {
+              kind: "auth_challenge",
+              reason: "captcha",
+              signal: highConfidenceCaptcha,
+              suggestedAction: "ask_user"
+            }
+          }
+        : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       nextRecommendedAction:
-        authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind !== "oauth_popup")
-          || semanticTree.blockedRegions.some((region) => region.fallback === "elevate")
-          ? "lyra_lumen_elevate"
-          : authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind === "oauth_popup")
-            || semanticTree.blockedRegions.some((region) => region.fallback === "ax")
-            ? "browser_ax.map"
-            : semanticTree.coverage.visualCoverage > 0 ? "lyra_lumen.see" : elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read"
+        highConfidenceCaptcha !== undefined
+          ? "ask_user"
+          : authChallengeSignals.some(
+              (signal) =>
+                signal.confidence === "high"
+                && signal.kind !== "oauth_popup"
+                && signal.kind !== "captcha"
+            )
+            || semanticTree.blockedRegions.some((region) => region.fallback === "elevate")
+            ? "lyra_lumen_elevate"
+            : authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind === "oauth_popup")
+              || semanticTree.blockedRegions.some((region) => region.fallback === "ax")
+              ? "browser_ax.map"
+              : semanticTree.coverage.visualCoverage > 0
+                ? "lyra_lumen.see"
+                : elements.length > 0
+                  ? "lyra_lumen.act"
+                  : "lyra_lumen.read"
     };
     rememberBrowserAgentObservation(tabId, target.targetMode, observation);
     registerTargetObservation({

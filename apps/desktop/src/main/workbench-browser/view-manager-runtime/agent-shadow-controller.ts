@@ -45,7 +45,8 @@ type AgentShadowControllerHost = {
   readonly waitForAgentPageLoad: (
     webContents: WebContents,
     url: string,
-    timeoutMs: number
+    timeoutMs: number,
+    options?: { readonly waitForReady?: boolean }
   ) => Promise<void>;
   readonly disposeCdpAuditSession: (
     tabId: string,
@@ -99,7 +100,7 @@ export const createAgentShadowController = ({
   ): void => {
     webContents.setWindowOpenHandler(({ url }) => {
       if (isSupportedWebUrl(url)) {
-        void waitForAgentPageLoad(webContents, url, 8_000).then(() => {
+        void waitForAgentPageLoad(webContents, url, 8_000, { waitForReady: true }).then(() => {
           shadow.address = normalizeAddress(webContents.getURL()) ?? url;
           shadow.title = normalizeString(webContents.getTitle()) ?? shadow.address;
           shadow.detached = true;
@@ -229,7 +230,9 @@ export const createAgentShadowController = ({
       shadow.detached === false
       && normalizeAddress(shadow.webContents.getURL()) !== sourceAddress;
     if (shouldSyncFromSource) {
-      await waitForAgentPageLoad(shadow.webContents, sourceAddress, timeoutMs ?? 8_000);
+      await waitForAgentPageLoad(shadow.webContents, sourceAddress, timeoutMs ?? 8_000, {
+        waitForReady: true
+      });
       shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? sourceAddress;
       shadow.title = normalizeString(shadow.webContents.getTitle()) ?? source.runtime.title;
     }

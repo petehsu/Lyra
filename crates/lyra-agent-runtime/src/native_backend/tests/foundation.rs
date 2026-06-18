@@ -272,15 +272,13 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         active_session_id: None,
         config: NativeConfig::default(),
         active_skills: HashSet::new(),
-        overnight_runs: HashMap::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
-        goals: HashMap::new(),
-        focused_goal_id: None,
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
+        active_ui_message_by_turn: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -346,18 +344,6 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         },
     )
     .expect("create memory");
-    let goal_id = format!("goal-{}", Uuid::new_v4());
-    let goal = LyraGoal {
-        id: goal_id.clone(),
-        title: "Preserved goal".to_string(),
-        status: "active".to_string(),
-        scope: Some(temp.path().display().to_string()),
-        session_id: Some(legacy_session_id.clone()),
-        description: Some("Goal must survive Tool-FS session reset.".to_string()),
-        created_at: now(),
-        updated_at: now(),
-        checkpoints: vec![json!({ "summary": "before migration" })],
-    };
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
         tool_runtime_migration_diagnostics: Vec::new(),
@@ -366,7 +352,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         config,
         legacy_shared_memory: Vec::new(),
         active_skills: HashSet::from(["lyra-design-research".to_string()]),
-        overnight_runs: HashMap::new(),
+        legacy_overnight_runs: HashMap::new(),
         pending_permissions: HashMap::from([(
             "permission-legacy".to_string(),
             PermissionRequest {
@@ -404,8 +390,8 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
                 responded_at: None,
             },
         )]),
-        goals: HashMap::from([(goal_id.clone(), goal)]),
-        focused_goal_id: Some(goal_id.clone()),
+        legacy_goals: HashMap::new(),
+        legacy_focused_goal_id: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -426,11 +412,6 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
     );
     assert!(loaded.config.providers.contains_key("custom-provider"));
     assert!(loaded.active_skills.contains("lyra-design-research"));
-    assert_eq!(loaded.focused_goal_id.as_deref(), Some(goal_id.as_str()));
-    assert_eq!(
-        loaded.goals.get(&goal_id).map(|goal| goal.title.as_str()),
-        Some("Preserved goal")
-    );
     let memory_records = list_long_term_memory(
         temp.path(),
         MemoryQuery {
@@ -458,8 +439,6 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         Some("custom-provider")
     );
     assert!(persisted.active_skills.contains("lyra-design-research"));
-    assert_eq!(persisted.focused_goal_id.as_deref(), Some(goal_id.as_str()));
-    assert!(persisted.goals.contains_key(&goal_id));
 }
 
 #[test]
@@ -477,11 +456,11 @@ fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
         config: NativeConfig::default(),
         legacy_shared_memory: Vec::new(),
         active_skills: HashSet::new(),
-        overnight_runs: HashMap::new(),
+        legacy_overnight_runs: HashMap::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
-        goals: HashMap::new(),
-        focused_goal_id: None,
+        legacy_goals: HashMap::new(),
+        legacy_focused_goal_id: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -562,7 +541,6 @@ fn native_state_persists_only_live_pending_requests() {
         active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
         active_skills: HashSet::new(),
-        overnight_runs: HashMap::new(),
         pending_permissions: HashMap::from([
             (
                 "permission-live".to_string(),
@@ -596,12 +574,11 @@ fn native_state_persists_only_live_pending_requests() {
                 clarification("clarification-stale", &stale_turn_id, "pending", None),
             ),
         ]),
-        goals: HashMap::new(),
-        focused_goal_id: None,
         cancelled_turns: HashSet::new(),
         active_cancellations: HashMap::new(),
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
+        active_ui_message_by_turn: HashMap::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -1581,7 +1558,10 @@ fn provider_visible_tool_schema_snapshot_is_tool_fs_only() {
         assert!(tools.iter().all(|tool| {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)
-                .is_some_and(|name| name.starts_with("tool_fs_") || name == LYRA_TURN_FINISH_TOOL)
+                .is_some_and(|name| {
+                    name.starts_with("tool_fs_")
+                        || name == LYRA_SESSION_READ_MESSAGE_TOOL
+                })
         }));
         assert!(!tools.iter().any(|tool| {
             tool.pointer("/function/name")
@@ -1670,7 +1650,7 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
 #[test]
 fn tool_filesystem_scene_uses_runtime_state_signals() {
     assert_eq!(
-        infer_tool_filesystem_scene(Some("selfdev"), None, false, &HashSet::new(), &json!({})),
+        infer_tool_filesystem_scene(Some("project-code"), None, false, &HashSet::new(), &json!({})),
         "project-code"
     );
     assert_eq!(

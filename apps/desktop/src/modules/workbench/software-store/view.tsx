@@ -34,9 +34,7 @@ import {
   Settings2,
   ShieldCheck,
   ShieldOff,
-  Sparkles,
-  SquareTerminal,
-  Timer
+  SquareTerminal
 } from "lucide-react";
 import {
   useCallback,
@@ -252,8 +250,7 @@ const BuiltinSoftwareIcon = ({
   if (id === "agent-history") return <History size={size} />;
   if (id === "agent-project-tree") return <FolderTree size={size} />;
   if (id === "agent-git") return <GitBranch size={size} />;
-  if (id === "agent-selfdev") return <Sparkles size={size} />;
-  if (id === "agent-overnight") return <Timer size={size} />;
+
   if (id === "login-manager") return <KeyRound size={size} />;
   if (id === "software-store") return <AppWindow size={size} />;
   return <Layers3 size={size} />;

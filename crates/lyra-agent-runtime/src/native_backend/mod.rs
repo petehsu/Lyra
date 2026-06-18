@@ -40,8 +40,6 @@ const MAX_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
 pub(crate) const DEFAULT_SESSION_TITLE: &str = "新会话";
 pub(crate) const LEGACY_DEFAULT_SESSION_TITLE: &str = "Lyra Agent";
-pub(crate) const LYRA_TURN_FINISH_TOOL: &str = "lyra_turn_finish";
-
 pub struct LyraAgentBackend;
 
 mod actions;
@@ -70,7 +68,7 @@ pub mod inline_images;
 mod transcript_citations;
 mod turns;
 mod types;
-mod workflows;
+
 
 #[cfg(test)]
 mod tests;
@@ -80,7 +78,7 @@ use self::{
     memory_autonomy::*, memory_store::*, network::*, permission_policy::*, permissions::*,
     projections::*, provider::*, provider_config::*, rollback::*, sessions::*, state::*, tools::*,
     file_citations::*, inline_images::*, page_citations::*, transcript_citations::*, turns::*,
-    types::*, workflows::*,
+    types::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
@@ -95,19 +93,14 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.session.archive" => archive_session(payload),
             "agent.session.delete" => delete_session(payload),
             "agent.session.bindProject" => bind_project(payload),
-            "agent.session.split" => fork_session(payload, "Split Session"),
-            "agent.session.transfer" => fork_session(payload, "Transferred Session"),
-            "agent.session.compact" => compact_session(payload),
-            "agent.session.automation.update" => update_automation(payload),
+
             "agent.cli.follow.read" => read_cli_follow(payload),
             "agent.cli.follow.update" => update_cli_follow(payload),
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" | "agent.turn.retry" => {
                 send_turn(payload)
             }
             "agent.turn.cancel" => cancel_turn(payload),
-            "agent.selfdev.start" => start_selfdev(payload),
-            "agent.selfdev.status" => selfdev_status(payload),
-            "agent.selfdev.sendTurn" => send_turn(payload),
+
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),
             "agent.memory.trim.run" => trim_memory(payload),
@@ -161,21 +154,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.action.review" => action_turn(payload, "Review the current work."),
             "agent.action.judge" => action_turn(payload, "Judge the current result."),
             "agent.action.poke" => poke_session(payload),
-            "agent.subagent.run" => run_subagent(payload),
-            "agent.btw.run" => run_btw(payload),
-            "agent.goals.list"
-            | "agent.goals.open"
-            | "agent.goals.resume"
-            | "agent.goals.show"
-            | "agent.goals.create"
-            | "agent.goals.update"
-            | "agent.goals.checkpoint" => goals(method, payload),
-            "agent.overnight.start" => start_overnight(payload),
-            "agent.overnight.list" => list_overnight(),
-            "agent.overnight.status" | "agent.overnight.log" | "agent.overnight.review" => {
-                read_overnight(payload)
-            }
-            "agent.overnight.cancel" => cancel_overnight(payload),
+
             _ => Err(AgentRuntimeError::UnknownMethod(method.to_string())),
         }
     }

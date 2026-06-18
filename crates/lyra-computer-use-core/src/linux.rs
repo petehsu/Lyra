@@ -27,13 +27,15 @@ use async_io::block_on;
 use atspi::connection::AccessibilityConnection;
 use atspi::proxy::accessible::{AccessibleProxy, ObjectRefExt};
 use atspi::proxy::proxy_ext::ProxyExt;
+use atspi::zbus;
 use atspi::Role;
 use atspi::State;
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    BackendError, ComputerAction, ComputerNode, ComputerNodeSource, ComputerNodeState, MapRequest,
-    MapStrategy, Platform,
+    BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
+    ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 /// Maps an AT-SPI role to our normalized role vocabulary (shared with the macOS
@@ -114,15 +116,17 @@ async fn root_proxy(
 }
 
 /// Resolves the Nth child of `parent` to an `AccessibleProxy`, using atspi's
-/// canonical `ObjectRef -> proxy` conversion over the same connection.
-async fn child_at(
-    connection: &AccessibilityConnection,
+/// canonical `ObjectRef -> proxy` conversion over the same connection. The
+/// returned proxy borrows the connection (`'c`), matching what
+/// `into_accessible_proxy` yields.
+async fn child_at<'c>(
+    connection: &'c zbus::Connection,
     parent: &AccessibleProxy<'_>,
     index: i32,
-) -> Result<AccessibleProxy<'static>, BackendError> {
+) -> Result<AccessibleProxy<'c>, BackendError> {
     let object = parent.get_child_at_index(index).await.map_err(map_err)?;
     object
-        .into_accessible_proxy(connection.connection())
+        .into_accessible_proxy(connection)
         .await
         .map_err(map_err)
 }
@@ -173,7 +177,7 @@ async fn node_for_proxy(proxy: &AccessibleProxy<'_>, path: &str) -> ComputerNode
 }
 
 async fn traverse(
-    connection: &AccessibilityConnection,
+    connection: &zbus::Connection,
     proxy: &AccessibleProxy<'_>,
     path: &str,
     request: &MapRequest,
@@ -209,12 +213,13 @@ async fn traverse(
     }
 }
 
-/// Re-walks a child-index path from the registry root.
-async fn resolve_path(
-    connection: &AccessibilityConnection,
+/// Re-walks a child-index path from the registry root. The returned proxy
+/// borrows the connection (`'c`).
+async fn resolve_path<'c>(
+    connection: &'c zbus::Connection,
     root: AccessibleProxy<'_>,
     os_path: &str,
-) -> Option<AccessibleProxy<'static>> {
+) -> Option<AccessibleProxy<'c>> {
     let parts = os_path
         .split('/')
         .filter(|part| !part.is_empty())
@@ -222,8 +227,8 @@ async fn resolve_path(
     if parts.first().copied() != Some("0") {
         return None;
     }
-    // Walk one level at a time; each step rebuilds an owned proxy from the
-    // child ObjectRef, so the returned proxy does not borrow `root`.
+    // Walk one level at a time; each step rebuilds a proxy from the child
+    // ObjectRef bound to `connection`, so the result does not borrow `root`.
     let mut current = child_at(connection, &root, parts.get(1)?.parse::<i32>().ok()?)
         .await
         .ok()?;
@@ -236,6 +241,147 @@ async fn resolve_path(
 
 fn os_path_from_ref(os_ref: &str) -> Option<&str> {
     os_ref.strip_prefix("atspi:")
+}
+
+fn app_ref_for_index(index: usize) -> String {
+    format!("atspiapp:{index}")
+}
+
+fn window_ref_for_indices(app_index: usize, window_index: usize) -> String {
+    format!("atspiwin:{app_index}/{window_index}")
+}
+
+fn parse_app_ref(app_ref: &str) -> Option<usize> {
+    app_ref.strip_prefix("atspiapp:")?.parse().ok()
+}
+
+fn parse_window_ref(window_ref: &str) -> Option<(usize, usize)> {
+    let remainder = window_ref.strip_prefix("atspiwin:")?;
+    let (app_index, window_index) = remainder.split_once('/')?;
+    Some((app_index.parse().ok()?, window_index.parse().ok()?))
+}
+
+async fn grab_focus_proxy(proxy: &AccessibleProxy<'_>) -> Result<(), BackendError> {
+    let component = proxy
+        .proxies()
+        .await
+        .map_err(map_err)?
+        .component()
+        .await
+        .map_err(map_err)?;
+    if component.grab_focus().await.map_err(map_err)? {
+        Ok(())
+    } else {
+        Err(BackendError::new(
+            "focusFailed",
+            "AT-SPI Component.grab_focus returned false.",
+        ))
+    }
+}
+
+async fn application_at<'c>(
+    connection: &'c AccessibilityConnection,
+    app_index: usize,
+) -> Result<AccessibleProxy<'c>, BackendError> {
+    let root = root_proxy(connection).await?;
+    child_at(connection.connection(), &root, app_index as i32).await
+}
+
+async fn window_at<'c>(
+    connection: &'c AccessibilityConnection,
+    app_index: usize,
+    window_index: usize,
+) -> Result<AccessibleProxy<'c>, BackendError> {
+    let app = application_at(connection, app_index).await?;
+    child_at(connection.connection(), &app, window_index as i32).await
+}
+
+async fn list_application_entries(
+    connection: &AccessibilityConnection,
+    request: &ListAppsRequest,
+) -> Result<Vec<ComputerAppEntry>, BackendError> {
+    let root = root_proxy(connection).await?;
+    let children = root.get_children().await.map_err(map_err)?;
+    let mut apps = Vec::new();
+    for (app_index, child) in children.into_iter().enumerate() {
+        let proxy = child
+            .into_accessible_proxy(connection.connection())
+            .await
+            .map_err(map_err)?;
+        let name = proxy.name().await.unwrap_or_default();
+        let state = proxy.get_state().await.unwrap_or_default();
+        let is_foreground = state.contains(State::Active);
+        let mut windows = Vec::new();
+        let window_count = proxy.child_count().await.unwrap_or(0);
+        for window_index in 0..window_count {
+            if let Ok(window_proxy) =
+                child_at(connection.connection(), &proxy, window_index).await
+            {
+                let role = normalize_role(window_proxy.get_role().await.unwrap_or(Role::Unknown));
+                if role != "window" {
+                    continue;
+                }
+                let window_state = read_state(&window_proxy, role).await;
+                windows.push(ComputerWindowEntry {
+                    window_ref: Some(window_ref_for_indices(app_index, window_index as usize)),
+                    title: window_proxy.name().await.unwrap_or_default(),
+                    is_focused: window_state.focused.unwrap_or(false),
+                });
+            }
+        }
+        if !request.include_background && !is_foreground && windows.is_empty() {
+            continue;
+        }
+        apps.push(ComputerAppEntry {
+            app_ref: app_ref_for_index(app_index),
+            name,
+            pid: None,
+            bundle_id: None,
+            is_foreground,
+            windows,
+        });
+        if apps.len() >= request.max_apps {
+            break;
+        }
+    }
+    apps.sort_by(|left, right| {
+        right
+            .is_foreground
+            .cmp(&left.is_foreground)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(apps)
+}
+
+async fn find_focused_control(
+    connection: &zbus::Connection,
+    proxy: &AccessibleProxy<'_>,
+    path: &str,
+    depth: usize,
+) -> Option<ComputerNode> {
+    if depth == 0 {
+        return None;
+    }
+    let state = read_state(proxy, "group").await;
+    if state.focused == Some(true) {
+        return Some(node_for_proxy(proxy, path).await);
+    }
+    let count = proxy.child_count().await.unwrap_or(0);
+    for index in 0..count {
+        if let Ok(child) = child_at(connection, proxy, index).await {
+            if let Some(node) = Box::pin(find_focused_control(
+                connection,
+                &child,
+                &format!("{path}/{index}"),
+                depth - 1,
+            ))
+            .await
+            {
+                return Some(node);
+            }
+        }
+    }
+    None
 }
 
 /// Activates an object through the AT-SPI Action interface. Picks the action
@@ -298,7 +444,7 @@ impl ComputerBackend for LinuxBackend {
             let connection = connect().await?;
             let root = root_proxy(&connection).await?;
             let mut nodes = Vec::new();
-            traverse(&connection, &root, "0", request, &mut nodes).await;
+            traverse(connection.connection(), &root, "0", request, &mut nodes).await;
             Ok(nodes)
         })
     }
@@ -313,7 +459,7 @@ impl ComputerBackend for LinuxBackend {
         block_on(async {
             let connection = connect().await?;
             let root = root_proxy(&connection).await?;
-            match resolve_path(&connection, root, os_path).await {
+            match resolve_path(connection.connection(), root, os_path).await {
                 Some(proxy) => Ok(Some(node_for_proxy(&proxy, os_path).await)),
                 None => Ok(None),
             }
@@ -335,11 +481,13 @@ impl ComputerBackend for LinuxBackend {
         block_on(async {
             let connection = connect().await?;
             let root = root_proxy(&connection).await?;
-            let proxy = resolve_path(root, os_path).await.ok_or_else(|| {
-                BackendError::stale_os_ref(
-                    "Computer osRef is no longer present in the accessibility tree.",
-                )
-            })?;
+            let proxy = resolve_path(connection.connection(), root, os_path)
+                .await
+                .ok_or_else(|| {
+                    BackendError::stale_os_ref(
+                        "Computer osRef is no longer present in the accessibility tree.",
+                    )
+                })?;
             match action {
                 ComputerAction::SetText => do_set_text(&proxy, text.unwrap_or_default()).await,
                 ComputerAction::Focus => {
@@ -351,6 +499,127 @@ impl ComputerBackend for LinuxBackend {
                 // interface in AT-SPI: the object exposes the relevant verb.
                 _ => do_activation(&proxy).await,
             }
+        })
+    }
+
+    fn list_apps(&self, request: &ListAppsRequest) -> Result<Vec<ComputerAppEntry>, BackendError> {
+        block_on(async {
+            let connection = connect().await?;
+            list_application_entries(&connection, request).await
+        })
+    }
+
+    fn observe(&self) -> Result<ComputerObserveResult, BackendError> {
+        block_on(async {
+            let connection = connect().await?;
+            let apps = list_application_entries(
+                &connection,
+                &ListAppsRequest {
+                    max_apps: 100,
+                    include_background: true,
+                },
+            )
+            .await?;
+            let foreground_app = apps.iter().find(|app| app.is_foreground).cloned();
+            let focused_window = foreground_app.as_ref().and_then(|app| {
+                app.windows
+                    .iter()
+                    .find(|window| window.is_focused)
+                    .or_else(|| app.windows.first())
+                    .cloned()
+            });
+            let focused_control = if let Some(app_index) = foreground_app
+                .as_ref()
+                .and_then(|app| parse_app_ref(&app.app_ref))
+            {
+                application_at(&connection, app_index)
+                    .await
+                    .ok()
+                    .and_then(|app| {
+                        Box::pin(find_focused_control(
+                            connection.connection(),
+                            &app,
+                            &format!("0/{app_index}"),
+                            5,
+                        ))
+                        .await
+                    })
+            } else {
+                None
+            };
+            Ok(ComputerObserveResult {
+                foreground_app,
+                focused_window,
+                focused_control,
+            })
+        })
+    }
+
+    fn focus(&self, request: &ComputerFocusRequest) -> Result<(), BackendError> {
+        block_on(async {
+            let connection = connect().await?;
+            if request.bundle_id.is_some() || request.pid.is_some() {
+                return Err(BackendError::new(
+                    "unsupported",
+                    "pid/bundleId focus is not implemented on Linux; use appRef, windowRef, or windowTitle.",
+                ));
+            }
+            if let Some(window_ref) = request.window_ref.as_deref() {
+                let Some((app_index, window_index)) = parse_window_ref(window_ref) else {
+                    return Err(BackendError::new(
+                        "invalidArgument",
+                        "windowRef must use the atspiwin:<appIndex>/<windowIndex> scheme on Linux.",
+                    ));
+                };
+                let window = window_at(&connection, app_index, window_index).await?;
+                return grab_focus_proxy(&window).await;
+            }
+            if let Some(title) = request.window_title.as_deref() {
+                let apps = list_application_entries(
+                    &connection,
+                    &ListAppsRequest {
+                        max_apps: 100,
+                        include_background: true,
+                    },
+                )
+                .await?;
+                for app in &apps {
+                    if let Some((app_index, window_index)) = app
+                        .windows
+                        .iter()
+                        .enumerate()
+                        .find(|(_, window)| window.title == title)
+                        .and_then(|(window_index, window)| {
+                            window.window_ref.as_deref().and_then(parse_window_ref).or(Some((
+                                parse_app_ref(&app.app_ref)?,
+                                window_index,
+                            )))
+                        })
+                    {
+                        let window = window_at(&connection, app_index, window_index).await?;
+                        return grab_focus_proxy(&window).await;
+                    }
+                }
+                return Err(BackendError::new(
+                    "windowNotFound",
+                    format!("No window titled {title:?} was found."),
+                ));
+            }
+            let app_index = if let Some(app_ref) = request.app_ref.as_deref() {
+                parse_app_ref(app_ref).ok_or_else(|| {
+                    BackendError::new(
+                        "invalidArgument",
+                        "appRef must use the atspiapp:<index> scheme on Linux.",
+                    )
+                })?
+            } else {
+                return Err(BackendError::new(
+                    "invalidArgument",
+                    "computer.focus requires appRef, windowRef, or windowTitle on Linux.",
+                ));
+            };
+            let app = application_at(&connection, app_index).await?;
+            grab_focus_proxy(&app).await
         })
     }
 }

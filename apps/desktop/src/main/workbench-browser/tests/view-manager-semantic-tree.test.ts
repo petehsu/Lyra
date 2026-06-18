@@ -318,6 +318,12 @@ const createWebContents = (
       if (method === "Accessibility.getFullAXTree") {
         return { nodes: [] };
       }
+      if (method === "DOMSnapshot.captureSnapshot") {
+        return { documents: [], strings: [], computedStyles: [] };
+      }
+      if (method === "Runtime.evaluate") {
+        return { result: { type: "object", subtype: "null", value: null } };
+      }
       if (method === "Page.addScriptToEvaluateOnNewDocument") {
         return { identifier: `script-${Math.random().toString(16).slice(2)}` };
       }
@@ -635,7 +641,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect((input as HTMLInputElement).value).toBe("Ada");
   });
 
-  test("uses a lightweight interactive-only map without frame graph or AX debugger", async () => {
+  test("uses a lightweight interactive-only map with CDP enhancement but without frame graph or AX debugger", async () => {
     const mainFrame = createFrame({
       id: 1,
       url: "https://app.test/quick",
@@ -663,7 +669,14 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(observation.elements.map((element) => element.label)).toEqual(["Save", "Name"]);
     expect(mainFrame.executeJavaScript).toHaveBeenCalledTimes(1);
     expect(mainFrame.executeJavaScript.mock.calls[0]?.[0]).toContain("const INCLUDE_CHILD_FRAMES = true");
-    expect(webContents.debugger.attach).not.toHaveBeenCalled();
+    expect(webContents.debugger.attach).toHaveBeenCalledWith("1.3");
+    expect(
+      webContents.debugger.sendCommand.mock.calls.some(
+        ([method, params]) =>
+          method === "DOMSnapshot.captureSnapshot"
+          && (params as { includePaintOrder?: boolean })?.includePaintOrder === true
+      )
+    ).toBe(true);
     expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith("Accessibility.getFullAXTree");
   });
 
@@ -1022,6 +1035,58 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(input?.value).toBe("64.186.233.226");
   });
 
+  test("types into text inputs using stable locators when observation-local ids drift", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://github.com/petehsu/KiroProxy/settings/branch_protection_rules/new",
+      html: `
+        <!doctype html>
+        <title>Branch protection</title>
+        <form>
+          ${Array.from({ length: 44 }, (_, index) =>
+            `<label><input type="checkbox" name="opt-${index}" /> Option ${index}</label>`
+          ).join("")}
+          <label>
+            Branch name pattern
+            <input id="rule_field" class="form-control long" name="rule" type="text" />
+          </label>
+        </form>
+      `
+    });
+    const checkboxes = Array.from(mainFrame.window.document.querySelectorAll("input[type='checkbox']"));
+    for (const [index, checkbox] of checkboxes.entries()) {
+      setRect(checkbox, { x: 40, y: 40 + index * 28, width: 16, height: 16 });
+    }
+    const textInput = mainFrame.window.document.querySelector("#rule_field");
+    expect(textInput).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(textInput as Element, { x: 313, y: 440, width: 653, height: 32 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+    const branchInput = observation.elements.find(
+      (element) => element.selectorPreview.includes("#rule_field") && element.inputType === "text"
+    );
+    expect(branchInput).toBeTruthy();
+
+    await expect(
+      manager.typeIntoAgentElement("tab-1", {
+        targetMode: "live",
+        targetRef: branchInput!.targetRef,
+        text: "main",
+        clear: true
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      targetRef: branchInput!.targetRef,
+      inputValuePreview: "main",
+      inputTextChanged: true
+    });
+    expect((textInput as HTMLInputElement).value).toBe("main");
+  });
+
   test("returns blocked regions and visual fallback target for cross-origin iframe", async () => {
     const mainFrame = createFrame({
       id: 1,
@@ -1185,6 +1250,50 @@ describe("Workbench browser semantic tree fixtures", () => {
       ])
     );
     expect(observation.nextRecommendedAction).toBe("browser_ax.map");
+  });
+
+  test("detects captcha iframe and returns ask_user with map appendix support", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/login",
+      html: `
+        <!doctype html>
+        <title>Login</title>
+        <button>Sign in</button>
+        <iframe src="https://www.google.com/recaptcha/api2/anchor"></iframe>
+      `
+    });
+    const iframe = mainFrame.window.document.querySelector("iframe");
+    expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
+    setRect(iframe as Element, { x: 120, y: 180, width: 304, height: 78 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+
+    expect(observation.authChallengeSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "captcha",
+          confidence: "high",
+          source: "frame"
+        })
+      ])
+    );
+    expect(observation.needsUserAction).toMatchObject({
+      kind: "auth_challenge",
+      reason: "captcha",
+      suggestedAction: "ask_user"
+    });
+    expect(observation.nextRecommendedAction).toBe("ask_user");
+    expect(observation.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("captcha_detected"),
+        expect.stringContaining("browser_health:captcha:")
+      ])
+    );
   });
 
   test("visual point action converts screenshot device pixels to css coordinates", async () => {

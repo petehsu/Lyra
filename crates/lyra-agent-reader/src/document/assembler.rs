@@ -218,6 +218,8 @@ pub(super) fn assemble(
         debug_trace,
         raw_source,
         cache_key,
+        engine_used: None,
+        engine_attempts: Vec::new(),
     })
 }
 

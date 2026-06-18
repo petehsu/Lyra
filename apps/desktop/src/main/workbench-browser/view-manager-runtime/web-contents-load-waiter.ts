@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 
+import { waitForPageReady } from "./lumen-runtime-guards";
 import {
   areNavigationAddressesEquivalent,
   normalizeAddress
@@ -51,7 +52,8 @@ export const createWebContentsLoadWaiter = () => {
   const waitForLoad = async (
     webContents: WebContents,
     url: string,
-    timeoutMs: number
+    timeoutMs: number,
+    options?: { readonly waitForReady?: boolean }
   ): Promise<void> => {
     if (webContents.isDestroyed()) {
       return;
@@ -64,9 +66,13 @@ export const createWebContentsLoadWaiter = () => {
       && currentUrl !== null
       && areNavigationAddressesEquivalent(currentUrl, targetUrl)
     ) {
+      if (options?.waitForReady === true) {
+        await waitForPageReady(webContents, timeoutMs);
+      }
       return;
     }
     cancelPendingLoad(webContents);
+    const loadStartedAt = Date.now();
 
     let superseded = false;
     let activeCancel: (() => void) | null = null;
@@ -105,7 +111,14 @@ export const createWebContentsLoadWaiter = () => {
           }
           resolve();
         };
-        const onStopLoading = (): void => finish(false);
+        const onStopLoading = (): void => {
+          if (options?.waitForReady === true) {
+            const remainingMs = Math.max(250, timeoutMs - (Date.now() - loadStartedAt));
+            void waitForPageReady(webContents, remainingMs).finally(() => finish(false));
+            return;
+          }
+          finish(false);
+        };
         const onFailLoad = (): void => finish(false);
         const onDestroyed = (): void => finish(false);
         activeCancel = () => finish(true);

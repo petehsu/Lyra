@@ -77,6 +77,7 @@ import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surfa
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
+import { useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
 import {
   useWorkbenchSystemNotificationActivation,
   useWorkbenchSystemNotificationPermissionGuard,
@@ -148,7 +149,6 @@ resolvedThemeId,
   );
   const historyAppSuggestionLabels = useMemo(() => ({
     sessions: labels.agentSessionHistory.categorySessions,
-    projectSessions: labels.agentSessionHistory.categoryProjectSessions,
     archivedSessions: labels.agentSessionHistory.categoryArchivedSessions,
     browserHistory: labels.agentSessionHistory.categoryBrowserHistory
   }), [labels.agentSessionHistory]);
@@ -221,6 +221,12 @@ resolvedThemeId,
   });
   const localSearchIndexStatus = useLocalSearchIndexStatus({
     desktopApi,
+    publishNotification,
+    t
+  });
+  useWorkbenchProviderFaultNotifications({
+    desktopApi,
+    notificationModel,
     publishNotification,
     t
   });
@@ -406,13 +412,9 @@ resolvedThemeId,
   const {
     onOpenAgentProjectTree,
     onOpenAgentGit,
-    onOpenAgentSelfDevLab,
-    onOpenAgentOvernightLab
   } = useWorkbenchAgentAppOpeners({
     tabsModel,
     agentProjectTreeModel,
-    agentSelfDevTitle: labels.agentSelfDev.title,
-    agentOvernightTitle: labels.agentOvernight.title
   });
   const onOpenAgentModelSettings = useCallback((): void => {
     setSettingsFocusRequest((current) => ({
@@ -455,8 +457,6 @@ resolvedThemeId,
     },
     onRequestProjectBind: requestProjectBind,
     onOpenProjectTree: onOpenAgentProjectTree,
-    onOpenSelfDevLab: onOpenAgentSelfDevLab,
-    onOpenOvernightLab: onOpenAgentOvernightLab,
     onOpenModelSettings: onOpenAgentModelSettings,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
     onOpenTerminalLiveSession,

@@ -68,6 +68,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         "/tools/workbench/list_tabs"
     );
     assert_eq!(reply.tool_calls[0].arguments["args"]["scope"], "all");
+    assert!(reply.ui_message_id.is_some());
     let event_kinds = events
         .lock()
         .expect("events lock")
@@ -75,12 +76,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
         .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
         .collect::<Vec<_>>();
-    assert!(
-        event_kinds
-            .iter()
-            .all(|kind| kind != "messageCommitted" && kind != "messageDelta"),
-        "tool-round assistant preambles must not be committed to the UI timeline: {event_kinds:?}"
-    );
+    assert_eq!(&event_kinds[..2], ["messageCommitted", "messageDelta"]);
     backend.clear_event_callback();
 }
 
@@ -637,16 +633,8 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
                     "choices": [{
                         "message": {
                             "role": "assistant",
-                            "content": "",
-                            "reasoning_content": "The tab evidence is enough to finish.",
-                            "tool_calls": [{
-                                "id": "finish-1",
-                                "type": "function",
-                                "function": {
-                                    "name": "lyra_turn_finish",
-                                    "arguments": "{\"status\":\"completed\",\"finalText\":\"Checked the current tabs.\"}"
-                                }
-                            }]
+                            "content": "Checked the current tabs.",
+                            "reasoning_content": "The tab evidence is enough to finish."
                         }
                     }]
                 })
@@ -758,7 +746,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             } else {
                 concat!(
                     "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"The tab evidence is enough to finish.\"}}]}\n\n",
-                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"finish-1\",\"type\":\"function\",\"function\":{\"name\":\"lyra_turn_finish\",\"arguments\":\"{\\\"status\\\":\\\"completed\\\",\\\"finalText\\\":\\\"Checked the current tabs.\\\"}\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Checked the current tabs.\"}}]}\n\n",
                     "data: [DONE]\n\n",
                 )
                 .to_string()
@@ -908,16 +896,11 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
                             "thinking": "The tab evidence is enough to finish."
                         },
                         {
-                            "type": "tool_use",
-                            "id": "finish-1",
-                            "name": "lyra_turn_finish",
-                            "input": {
-                                "status": "completed",
-                                "finalText": "Checked the current tabs."
-                            }
+                            "type": "text",
+                            "text": "Checked the current tabs."
                         }
                     ],
-                    "stop_reason": "tool_use"
+                    "stop_reason": "end_turn"
                 })
                 .to_string()
             };
@@ -1042,11 +1025,12 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
                     "id": "resp-tool-2",
                     "status": "completed",
                     "output": [{
-                        "type": "function_call",
-                        "id": "fc-finish",
-                        "call_id": "call-finish",
-                        "name": "lyra_turn_finish",
-                        "arguments": "{\"status\":\"completed\",\"finalText\":\"Checked the current tabs.\"}"
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{
+                            "type": "output_text",
+                            "text": "Checked the current tabs."
+                        }]
                     }]
                 })
                 .to_string()
@@ -1112,10 +1096,6 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
     assert!(result.provider_replay_items.iter().any(|item| {
         item.get("type").and_then(Value::as_str) == Some("function_call_output")
             && item.get("call_id").and_then(Value::as_str) == Some("call-tabs")
-    }));
-    assert!(!result.provider_replay_items.iter().any(|item| {
-        item.get("type").and_then(Value::as_str) == Some("function_call")
-            && item.get("name").and_then(Value::as_str) == Some("lyra_turn_finish")
     }));
     assert!(result.provider_replay_items.iter().any(|item| {
         item.get("type").and_then(Value::as_str) == Some("message")
@@ -1189,15 +1169,10 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
                     "type": "message",
                     "role": "assistant",
                     "content": [{
-                        "type": "tool_use",
-                        "id": "call-finish",
-                        "name": "lyra_turn_finish",
-                        "input": {
-                            "status": "completed",
-                            "finalText": "Checked the current tabs."
-                        }
+                        "type": "text",
+                        "text": "Checked the current tabs."
                     }],
-                    "stop_reason": "tool_use"
+                    "stop_reason": "end_turn"
                 })
                 .to_string()
             };
@@ -1401,13 +1376,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
                         "content": {
                             "role": "model",
                             "parts": [{
-                                "functionCall": {
-                                    "name": "lyra_turn_finish",
-                                    "args": {
-                                        "status": "completed",
-                                        "finalText": "Checked the current tabs."
-                                    }
-                                }
+                                "text": "Checked the current tabs."
                             }]
                         },
                         "finishReason": "STOP"
@@ -1557,18 +1526,11 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
                         "message": {
                             "role": "assistant",
                             "content": [{
-                                "toolUse": {
-                                    "toolUseId": "call-finish",
-                                    "name": "lyra_turn_finish",
-                                    "input": {
-                                        "status": "completed",
-                                        "finalText": "Checked the current tabs."
-                                    }
-                                }
+                                "text": "Checked the current tabs."
                             }]
                         }
                     },
-                    "stopReason": "tool_use"
+                    "stopReason": "end_turn"
                 })
                 .to_string()
             };
@@ -1978,17 +1940,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
                 json!({
                     "message": {
                         "role": "assistant",
-                        "content": "",
-                        "tool_calls": [{
-                            "id": "call-finish",
-                            "function": {
-                                "name": "lyra_turn_finish",
-                                "arguments": {
-                                    "status": "completed",
-                                    "finalText": "Checked the current tabs."
-                                }
-                            }
-                        }]
+                        "content": "Checked the current tabs."
                     },
                     "done": true
                 })
@@ -2337,15 +2289,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
                     "choices": [{
                         "message": {
                             "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": "finish-after-forty",
-                                "type": "function",
-                                "function": {
-                                    "name": "lyra_turn_finish",
-                                    "arguments": "{\"status\":\"completed\",\"finalText\":\"Completed after forty tool rounds.\"}"
-                                }
-                            }]
+                            "content": "Completed after forty tool rounds."
                         }
                     }]
                 })
@@ -2420,435 +2364,8 @@ fn model_loop_has_no_fixed_tool_round_cap() {
     server.join().expect("server join");
 }
 
-#[test]
-fn model_loop_requires_structured_finish_before_any_tool_result() {
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Structured Finish Guard Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
-    let addr = listener.local_addr().expect("local addr");
-    let (request_tx, request_rx) = mpsc::channel();
-    let server = thread::spawn(move || {
-        for index in 0..2 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send captured request");
-            let body = match index {
-                0 => {
-                    json!({
-                        "choices": [{
-                            "message": {
-                                "role": "assistant",
-                                "content": "好的，我帮你打开QQ空间。"
-                            }
-                        }]
-                    })
-                    .to_string()
-                }
-                _ => {
-                    json!({
-                        "choices": [{
-                            "message": {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{
-                                    "id": "finish-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "lyra_turn_finish",
-                                        "arguments": "{\"status\":\"blocked\",\"finalText\":\"我还没有调用浏览器工具，不能确认已经打开QQ空间。\"}"
-                                    }
-                                }]
-                            }
-                        }]
-                    })
-                    .to_string()
-                }
-            };
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write response");
-        }
-    });
-    let provider = NativeProviderProfile {
-        id: "local".to_string(),
-        label: "Local Test".to_string(),
-        route_id: "custom_openai_compatible".to_string(),
-        base_url: Some(format!("http://{addr}")),
-        default_model: Some("test-model".to_string()),
-        api_key: Some("test-key".to_string()),
-        api_key_env: None,
-        auth_header: None,
-        embedding_model: None,
-        models: vec![NativeProviderModel {
-            id: "test-model".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: false,
-            enabled: true,
-        }],
-    };
-    let request = ModelRequest {
-        provider: provider.clone(),
-        model: "test-model".to_string(),
-        messages: vec![json!({ "role": "user", "content": "帮我定位到QQ空间" })],
-        tools: model_tools(false),
-        host_dispatcher: None,
-        capabilities: model_capabilities(&provider, "test-model"),
-        input_downgrades: Vec::new(),
-        evidence_refs: Vec::new(),
-        token_estimate: 0,
-        context_trimmed: false,
-    };
 
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &Arc::new(AtomicBool::new(false)),
-    )
-    .expect("model loop");
 
-    assert_eq!(
-        result.final_text.as_deref(),
-        Some("我还没有调用浏览器工具，不能确认已经打开QQ空间。")
-    );
-    server.join().expect("server join");
-    let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 2);
-    assert!(requests[0]["tools"].as_array().is_some_and(|tools| {
-        tools.iter().any(|tool| {
-            tool.pointer("/function/name").and_then(Value::as_str) == Some("lyra_turn_finish")
-        })
-    }));
-    assert_eq!(
-        model_tool_names(&requests[1]),
-        model_tool_names(&requests[0])
-    );
-    let retry_messages = requests[1]["messages"].as_array().expect("retry messages");
-    assert!(retry_messages.iter().any(|message| {
-        message.get("role").and_then(Value::as_str) == Some("system")
-            && message
-                .get("content")
-                .and_then(Value::as_str)
-                .is_some_and(|content| content.contains("lyra_turn_finish"))
-    }));
-    assert!(retry_messages.iter().any(|message| {
-        message.get("role").and_then(Value::as_str) == Some("assistant")
-            && message.get("content").and_then(Value::as_str) == Some("好的，我帮你打开QQ空间。")
-    }));
-    let read = backend
-        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
-        .expect("read session");
-    assert!(
-        !serde_json::to_string(&read["messages"])
-            .expect("messages json")
-            .contains("好的，我帮你打开QQ空间。")
-    );
-}
-
-#[test]
-fn model_loop_requires_structured_finish_after_tool_result() {
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Post Tool Structured Finish Guard Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
-    let addr = listener.local_addr().expect("local addr");
-    let (request_tx, request_rx) = mpsc::channel();
-    let server = thread::spawn(move || {
-        for index in 0..3 {
-            let (mut stream, _) = listener.accept().expect("accept provider request");
-            let request = read_http_json_body(&mut stream);
-            request_tx.send(request).expect("send captured request");
-            let body = match index {
-                0 => {
-                    json!({
-                        "choices": [{
-                            "message": {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{
-                                    "id": "remember-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "tool_fs_run",
-                                        "arguments": "{\"path\":\"/tools/memory/remember\",\"args\":{\"scope\":\"session\",\"category\":\"task\",\"fact\":\"GitHub page has a Google login option.\"}}"
-                                    }
-                                }]
-                            }
-                        }]
-                    })
-                    .to_string()
-                }
-                1 => {
-                    json!({
-                        "choices": [{
-                            "message": {
-                                "role": "assistant",
-                                "content": "让我继续点击 Continue with Google。"
-                            }
-                        }]
-                    })
-                    .to_string()
-                }
-                _ => {
-                    json!({
-                        "choices": [{
-                            "message": {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [{
-                                    "id": "finish-1",
-                                    "type": "function",
-                                    "function": {
-                                        "name": "lyra_turn_finish",
-                                        "arguments": "{\"status\":\"completed\",\"finalText\":\"已完成结构化收口。\"}"
-                                    }
-                                }]
-                            }
-                        }]
-                    })
-                    .to_string()
-                }
-            };
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("write response");
-        }
-    });
-    let provider = NativeProviderProfile {
-        id: "local".to_string(),
-        label: "Local Test".to_string(),
-        route_id: "custom_openai_compatible".to_string(),
-        base_url: Some(format!("http://{addr}")),
-        default_model: Some("test-model".to_string()),
-        api_key: Some("test-key".to_string()),
-        api_key_env: None,
-        auth_header: None,
-        embedding_model: None,
-        models: vec![NativeProviderModel {
-            id: "test-model".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: false,
-            enabled: true,
-        }],
-    };
-    let request = ModelRequest {
-        provider: provider.clone(),
-        model: "test-model".to_string(),
-        messages: vec![json!({ "role": "user", "content": "点击 GitHub 的 Google 登录" })],
-        tools: model_tools(false),
-        host_dispatcher: None,
-        capabilities: model_capabilities(&provider, "test-model"),
-        input_downgrades: Vec::new(),
-        evidence_refs: Vec::new(),
-        token_estimate: 0,
-        context_trimmed: false,
-    };
-
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &Arc::new(AtomicBool::new(false)),
-    )
-    .expect("model loop");
-
-    assert_eq!(result.final_text.as_deref(), Some("已完成结构化收口。"));
-    server.join().expect("server join");
-    let requests = request_rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(
-        model_tool_names(&requests[2]),
-        expected_provider_tool_names()
-    );
-    let retry_messages = requests[2]["messages"].as_array().expect("retry messages");
-    assert!(retry_messages.iter().any(|message| {
-        message.get("role").and_then(Value::as_str) == Some("system")
-            && message
-                .get("content")
-                .and_then(Value::as_str)
-                .is_some_and(|content| content.contains("plain text"))
-    }));
-    assert!(retry_messages.iter().any(|message| {
-        message.get("role").and_then(Value::as_str) == Some("assistant")
-            && message.get("content").and_then(Value::as_str)
-                == Some("让我继续点击 Continue with Google。")
-    }));
-}
-
-#[test]
-fn turn_finish_metadata_records_not_run_verification_checks() {
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Verification Metadata Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
-    let addr = listener.local_addr().expect("local addr");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept provider request");
-        let _request = read_http_json_body(&mut stream);
-        let arguments = json!({
-            "status": "completed",
-            "finalText": "完成。",
-            "evidenceSummary": "Read and patched the target file.",
-            "verificationRecords": [{
-                "kind": "test",
-                "status": "passed",
-                "command": "cargo test -p lyra-tool-fs-core",
-                "summary": "Core tests passed."
-            }]
-        })
-        .to_string();
-        let body = json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [{
-                        "id": "finish-verification",
-                        "type": "function",
-                        "function": {
-                            "name": "lyra_turn_finish",
-                            "arguments": arguments
-                        }
-                    }]
-                }
-            }]
-        })
-        .to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        )
-        .expect("write response");
-    });
-    let provider = NativeProviderProfile {
-        id: "local".to_string(),
-        label: "Local Test".to_string(),
-        route_id: "custom_openai_compatible".to_string(),
-        base_url: Some(format!("http://{addr}")),
-        default_model: Some("test-model".to_string()),
-        api_key: Some("test-key".to_string()),
-        api_key_env: None,
-        auth_header: None,
-        embedding_model: None,
-        models: vec![NativeProviderModel {
-            id: "test-model".to_string(),
-            label: None,
-            context_window: None,
-            supports_image_input: false,
-            supports_tool_calling: true,
-            supports_streaming: false,
-            enabled: true,
-        }],
-    };
-    let request = ModelRequest {
-        provider: provider.clone(),
-        model: "test-model".to_string(),
-        messages: vec![json!({ "role": "user", "content": "完成代码改动" })],
-        tools: model_tools(false),
-        host_dispatcher: None,
-        capabilities: model_capabilities(&provider, "test-model"),
-        input_downgrades: Vec::new(),
-        evidence_refs: Vec::new(),
-        token_estimate: 0,
-        context_trimmed: false,
-    };
-
-    let result = run_model_loop(
-        &session_id,
-        &turn_id,
-        request,
-        &Arc::new(AtomicBool::new(false)),
-    )
-    .expect("model loop");
-    assert_eq!(result.final_text.as_deref(), Some("完成。"));
-    let metadata = result.metadata.clone().expect("finish metadata");
-    assert_eq!(
-        metadata
-            .pointer("/verificationRecords/0/status")
-            .and_then(Value::as_str),
-        Some("passed")
-    );
-    assert!(
-        metadata
-            .get("verificationRecords")
-            .and_then(Value::as_array)
-            .is_some_and(|records| records.iter().any(|record| {
-                record.get("kind").and_then(Value::as_str) == Some("lint")
-                    && record.get("status").and_then(Value::as_str) == Some("not_run")
-                    && record.get("notRunReason").and_then(Value::as_str)
-                        == Some("not_reported_by_model")
-            }))
-    );
-    assert!(
-        metadata
-            .get("verificationRecords")
-            .and_then(Value::as_array)
-            .is_some_and(|records| records.iter().any(|record| {
-                record.get("kind").and_then(Value::as_str) == Some("typecheck")
-                    && record.get("status").and_then(Value::as_str) == Some("not_run")
-            }))
-    );
-
-    finish_turn_with_metadata(
-        &session_id,
-        &turn_id,
-        "finished",
-        result.final_text,
-        None,
-        result.metadata,
-    );
-    let read = backend
-        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
-        .expect("read session");
-    let assistant = read["messages"]
-        .as_array()
-        .expect("messages")
-        .iter()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
-        .expect("assistant message");
-    assert_eq!(
-        assistant
-            .pointer("/metadata/verificationRecords/1/status")
-            .and_then(Value::as_str),
-        Some("not_run")
-    );
-    server.join().expect("server join");
-}
 
 #[test]
 fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
@@ -2913,15 +2430,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
                     "choices": [{
                         "message": {
                             "role": "assistant",
-                            "content": "",
-                            "tool_calls": [{
-                                "id": "finish-vision",
-                                "type": "function",
-                                "function": {
-                                    "name": "lyra_turn_finish",
-                                    "arguments": "{\"status\":\"answered\",\"finalText\":\"我已经读取了截图。\"}"
-                                }
-                            }]
+                            "content": "我已经读取了截图。"
                         }
                     }]
                 })

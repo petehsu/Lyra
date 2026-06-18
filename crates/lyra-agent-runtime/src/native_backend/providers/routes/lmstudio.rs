@@ -3,7 +3,10 @@ use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile, providers::transport},
+    native_backend::{
+        NativeProviderModel, NativeProviderProfile,
+        providers::{model_capabilities, registry, transport},
+    },
 };
 
 use super::{
@@ -74,7 +77,8 @@ impl RouteModelDiscoveryHook for LmStudioModelDiscoveryHook {
                 "LM Studio model discovery failed with status {status}: {body}"
             )));
         }
-        Ok(parse_lmstudio_models(&body))
+        let route = registry::require_route(&provider.route_id).ok();
+        Ok(parse_lmstudio_models(&body, route.as_ref()))
     }
 }
 
@@ -98,7 +102,10 @@ fn lmstudio_native_models_url(provider: &NativeProviderProfile) -> AgentRuntimeR
     Ok(format!("{api_base}/models"))
 }
 
-fn parse_lmstudio_models(body: &Value) -> Vec<NativeProviderModel> {
+fn parse_lmstudio_models(
+    body: &Value,
+    route: Option<&ProviderRouteDescriptor>,
+) -> Vec<NativeProviderModel> {
     let items = body
         .get("data")
         .or_else(|| body.get("models"))
@@ -116,15 +123,7 @@ fn parse_lmstudio_models(body: &Value) -> Vec<NativeProviderModel> {
         })
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .map(|id| NativeProviderModel {
-            id: id.to_string(),
-            label: Some(id.to_string()),
-            context_window: None,
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            enabled: true,
-        })
+        .map(|id| model_capabilities::discovered_model(id, Some(id.to_string()), None, route))
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));
     models.dedup_by(|left, right| left.id == right.id);
@@ -162,13 +161,16 @@ mod tests {
 
     #[test]
     fn parses_native_model_arrays() {
-        let models = parse_lmstudio_models(&json!({
-            "data": [
-                { "id": "qwen3" },
-                { "model": "gemma3" },
-                { "name": "llama3" }
-            ]
-        }));
+        let models = parse_lmstudio_models(
+            &json!({
+                "data": [
+                    { "id": "qwen3" },
+                    { "model": "gemma3" },
+                    { "name": "llama3" }
+                ]
+            }),
+            None,
+        );
 
         assert_eq!(
             models

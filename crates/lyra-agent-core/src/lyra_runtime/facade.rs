@@ -140,19 +140,8 @@ json_facade!(unsave_session_json, "agent.session.unsave");
 json_facade!(rename_session_json, "agent.session.rename");
 json_facade!(archive_session_json, "agent.session.archive");
 json_facade!(delete_session_json, "agent.session.delete");
-json_facade!(split_agent_session_json, "agent.session.split");
-json_facade!(transfer_agent_session_json, "agent.session.transfer");
-json_facade!(compact_agent_session_json, "agent.session.compact");
-json_facade!(
-    update_agent_session_automation_json,
-    "agent.session.automation.update"
-);
-
 json_facade!(send_turn_json, "agent.turn.send");
 json_facade!(cancel_turn_json, "agent.turn.cancel");
-json_facade!(start_selfdev_session_json, "agent.selfdev.start");
-json_facade!(selfdev_status_json, "agent.selfdev.status");
-json_facade!(send_selfdev_turn_json, "agent.selfdev.sendTurn");
 
 json_facade!(agent_memory_snapshot_json, "agent.memory.snapshot");
 json_facade!(agent_memory_audit_json, "agent.memory.audit");
@@ -192,14 +181,6 @@ json_facade!(refactor_session_json, "agent.action.refactor");
 json_facade!(trigger_poke_session_json, "agent.action.poke");
 json_facade!(run_review_session_json, "agent.action.review");
 json_facade!(run_judge_session_json, "agent.action.judge");
-json_facade!(run_agent_subagent_json, "agent.subagent.run");
-json_facade!(run_agent_btw_json, "agent.btw.run");
-
-json_facade!(list_agent_goals_json, "agent.goals.list");
-json_facade!(open_agent_goals_json, "agent.goals.open");
-json_facade!(resume_agent_goal_json, "agent.goals.resume");
-json_facade!(show_agent_goal_json, "agent.goals.show");
-
 json_facade!(list_agent_accounts_json, "agent.accounts.list");
 json_facade!(login_agent_account_json, "agent.accounts.login");
 json_facade!(
@@ -214,9 +195,4 @@ json_facade!(
 json_facade!(switch_agent_account_json, "agent.accounts.switch");
 json_facade!(remove_agent_account_json, "agent.accounts.remove");
 
-json_facade!(start_agent_overnight_json, "agent.overnight.start");
-json_facade!(list_agent_overnight_json, "agent.overnight.list");
-json_facade!(status_agent_overnight_json, "agent.overnight.status");
-json_facade!(log_agent_overnight_json, "agent.overnight.log");
-json_facade!(review_agent_overnight_json, "agent.overnight.review");
-json_facade!(cancel_agent_overnight_json, "agent.overnight.cancel");
+

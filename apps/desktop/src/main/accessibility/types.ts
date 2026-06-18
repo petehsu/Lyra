@@ -8,6 +8,9 @@ export type AccessibilityNativeBindings = {
   readonly computerActJson: (payload: string) => string;
   readonly computerDiffJson: (payload: string) => string;
   readonly computerExplainJson: (payload: string) => string;
+  readonly computerListAppsJson: (payload: string) => string;
+  readonly computerObserveJson: (payload: string) => string;
+  readonly computerFocusJson: (payload: string) => string;
 };
 
 export type AccessibilityNativeLoadResult =

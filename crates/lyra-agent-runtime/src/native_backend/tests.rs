@@ -56,7 +56,6 @@ fn expected_provider_tool_names() -> Vec<String> {
         "tool_fs_inspect".to_string(),
         "tool_fs_run".to_string(),
         LYRA_SESSION_READ_MESSAGE_TOOL.to_string(),
-        LYRA_TURN_FINISH_TOOL.to_string(),
     ]
 }
 

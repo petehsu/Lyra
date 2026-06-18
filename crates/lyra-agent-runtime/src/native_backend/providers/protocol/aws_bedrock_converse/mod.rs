@@ -185,11 +185,11 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
                         .filter_map(Value::as_str)
                         .any(|value| value.eq_ignore_ascii_case("IMAGE"))
                 }),
-            supports_tool_calling: true,
+            supports_tool_calling: false,
             supports_streaming: item
                 .get("responseStreamingSupported")
                 .and_then(Value::as_bool)
-                .unwrap_or(true),
+                .unwrap_or(false),
             enabled: true,
         })
         .collect::<Vec<_>>();

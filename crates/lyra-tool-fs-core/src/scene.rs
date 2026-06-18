@@ -63,7 +63,7 @@ pub fn infer_scene(signals: &ToolSceneSignals) -> ToolScene {
     if matches!(session_kind, "design") {
         return ToolScene::Design;
     }
-    if matches!(session_kind, "selfdev" | "project-code" | "code") {
+    if matches!(session_kind, "project-code" | "code") {
         return ToolScene::ProjectCode;
     }
     if matches!(session_kind, "automation") {

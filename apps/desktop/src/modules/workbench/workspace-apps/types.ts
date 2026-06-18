@@ -16,14 +16,6 @@ import type {
   AgentGitAppId
 } from "../agent-git";
 import type {
-  AgentSelfDevAppIconKey,
-  AgentSelfDevAppId
-} from "../agent-selfdev";
-import type {
-  AgentOvernightAppIconKey,
-  AgentOvernightAppId
-} from "../agent-overnight";
-import type {
   SoftwareStoreAppIconKey,
   SoftwareStoreAppId
 } from "../software-store";
@@ -44,14 +36,6 @@ export type {
   AgentGitAppIconKey,
   AgentGitAppId
 } from "../agent-git";
-export type {
-  AgentSelfDevAppIconKey,
-  AgentSelfDevAppId
-} from "../agent-selfdev";
-export type {
-  AgentOvernightAppIconKey,
-  AgentOvernightAppId
-} from "../agent-overnight";
 export type {
   SoftwareStoreAppIconKey,
   SoftwareStoreAppId
@@ -75,8 +59,6 @@ export type WorkbenchAppId =
   | ImageViewerAppId
   | AgentProjectTreeAppId
   | AgentGitAppId
-  | AgentSelfDevAppId
-  | AgentOvernightAppId
   | AgentSessionHistoryAppId
   | LoginManagerAppId
   | NotificationCenterAppId
@@ -93,8 +75,6 @@ export type WorkspaceAppIconKey =
   | ImageViewerAppIconKey
   | AgentProjectTreeAppIconKey
   | AgentGitAppIconKey
-  | AgentSelfDevAppIconKey
-  | AgentOvernightAppIconKey
   | AgentSessionHistoryAppIconKey
   | LoginManagerAppIconKey
   | NotificationCenterAppIconKey

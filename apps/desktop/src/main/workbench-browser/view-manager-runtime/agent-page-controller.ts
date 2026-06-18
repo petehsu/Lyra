@@ -6,6 +6,10 @@ import type { WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, W
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
+import {
+  buildHighlightRegionsFromElements,
+  prepareVisionCapturePng
+} from "./lumen-screenshot-highlights";
 import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout } from "./normalizers";
 import type { BrowserAgentShadowEntry, BrowserAgentPageTarget } from "./types";
 
@@ -37,7 +41,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     stateStore,
     waitForAgentPageLoad
   } = deps;
-  const { invalidateBrowserAgentTargets } = stateStore;
+  const { invalidateBrowserAgentTargets, readBrowserAgentCacheEntry } = stateStore;
 
   const readAgentDomSummaryFromTarget = async (
     target: BrowserAgentPageTarget,
@@ -249,7 +253,9 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     }
     const shadow = target as BrowserAgentShadowEntry;
     shadow.detached = true;
-    await waitForAgentPageLoad(shadow.webContents, address, request.timeoutMs ?? 8_000);
+    await waitForAgentPageLoad(shadow.webContents, address, request.timeoutMs ?? 8_000, {
+      waitForReady: true
+    });
     shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? address;
     shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.address;
     invalidateBrowserAgentTargets(tabId, shadow.targetMode, "navigation");
@@ -287,10 +293,17 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
 
   const captureAgentPage = async (
     tabId: string,
-    request?: WorkbenchBrowserAgentModeRequest
+    request?: WorkbenchBrowserAgentModeRequest & {
+      readonly highlightTargets?: boolean;
+      readonly highlightTargetRefs?: readonly string[];
+      readonly downsampleForVision?: boolean;
+    }
   ): Promise<WorkbenchVisualCaptureResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+    readonly highlightRegions?: readonly import("../types").LumenScreenshotHighlightRegion[];
+    readonly highlighted?: boolean;
+    readonly downsampled?: boolean;
   }> => {
     const target = await resolveBrowserAgentTarget(tabId, request, undefined);
     publishBrowserAgentActivity({
@@ -300,7 +313,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       visibleFollow: target.browserMode.visibleFollow,
       durationMs: 1_500
     });
-    const capture = await captureTargetPage(tabId, target);
+    let capture = await captureTargetPage(tabId, target);
     const visualFrame = await createVisualFrame({
       tabId,
       target,
@@ -308,11 +321,54 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       imageHeight: capture.height
     });
     rememberVisualFrame(tabId, target.targetMode, visualFrame);
+
+    const shouldHighlight = request?.highlightTargets !== false;
+    const cacheEntry = readBrowserAgentCacheEntry(tabId, target.targetMode);
+    const highlightRegions = shouldHighlight
+      ? buildHighlightRegionsFromElements(cacheEntry?.elements ?? [], {
+        dpr: visualFrame.dpr,
+        scrollX: visualFrame.scrollX,
+        scrollY: visualFrame.scrollY,
+        viewOffsetX: 0,
+        viewOffsetY: 0,
+        ...(request?.highlightTargetRefs === undefined
+          ? {}
+          : { targetRefs: request.highlightTargetRefs })
+      })
+      : [];
+
+    let highlighted = false;
+    let downsampled = false;
+    if (
+      highlightRegions.length > 0
+      || request?.downsampleForVision !== false
+    ) {
+      try {
+        const prepared = prepareVisionCapturePng(capture.imageBase64, {
+          highlightRegions,
+          ...(request?.downsampleForVision === false ? { maxDimension: Number.MAX_SAFE_INTEGER } : {})
+        });
+        capture = {
+          ...capture,
+          imageBase64: prepared.imageBase64,
+          width: prepared.width,
+          height: prepared.height
+        };
+        highlighted = prepared.highlighted;
+        downsampled = prepared.downsampled;
+      } catch {
+        // Keep the raw capture when native image processing is unavailable.
+      }
+    }
+
     return {
       ...capture,
       targetMode: target.targetMode,
       browserMode: target.browserMode,
-      visualFrame
+      visualFrame,
+      ...(highlightRegions.length === 0 ? {} : { highlightRegions }),
+      ...(highlighted ? { highlighted: true } : {}),
+      ...(downsampled ? { downsampled: true } : {})
     };
   };
 

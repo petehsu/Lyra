@@ -265,6 +265,19 @@ fn dedupe_activity_values(values: Vec<Value>) -> Vec<Value> {
 }
 
 pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value, event_kind: &str) {
+    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
+    if event_kind == "toolStarted" {
+        if let (Some(message_id), Some(tool_id)) = (
+            ui_message_id.as_deref(),
+            tool.get("id").and_then(Value::as_str),
+        ) {
+            crate::native_backend::turns::append_tool_block_to_ui_message(
+                session_id,
+                message_id,
+                tool_id,
+            );
+        }
+    }
     let callback = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
@@ -282,15 +295,16 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
         }
         Err(_) => return,
     };
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": event_kind,
-            "sessionId": session_id,
-            "turnId": turn_id,
-            "tool": tool,
-        }),
-    );
+    let mut event = json!({
+        "kind": event_kind,
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "tool": tool,
+    });
+    if let Some(message_id) = ui_message_id.filter(|message_id| !message_id.is_empty()) {
+        event["messageId"] = Value::String(message_id);
+    }
+    emit_with_callback(&callback, event);
     emit_with_callback(
         &callback,
         json!({
@@ -1138,6 +1152,53 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                     ));
                 }
             }
+            if let Some(compaction) = value.get("mapCompaction") {
+                if let Some(summary) = compaction.get("summary").and_then(Value::as_str) {
+                    if !summary.trim().is_empty() {
+                        lines.push(summary.to_string());
+                    }
+                }
+            }
+            if let Some(appendix) = value.get("mapAppendix").and_then(Value::as_str) {
+                if !appendix.trim().is_empty() {
+                    lines.push(appendix.to_string());
+                }
+            } else if let Some(scroll_hints) = value.get("scrollHints").and_then(Value::as_array) {
+                if !scroll_hints.is_empty() {
+                    let total_hidden = scroll_hints.len();
+                    let remaining = value
+                        .get("hiddenBelowCount")
+                        .and_then(Value::as_u64)
+                        .map(|count| count.saturating_sub(total_hidden as u64))
+                        .unwrap_or(0);
+                    if remaining > 0 {
+                        lines.push(format!(
+                            "... ({remaining} more element{} below - scroll to reveal):",
+                            if remaining == 1 { "" } else { "s" }
+                        ));
+                    } else {
+                        lines.push("... (scroll to reveal hidden iframe controls):".to_string());
+                    }
+                    for hint in scroll_hints.iter().take(8) {
+                        let frame_ref = hint
+                            .get("frameRef")
+                            .and_then(Value::as_str)
+                            .unwrap_or("iframe");
+                        let tag = hint.get("tag").and_then(Value::as_str).unwrap_or("element");
+                        let text = hint.get("text").and_then(Value::as_str).unwrap_or("");
+                        let pages_down = hint.get("pagesDown").and_then(Value::as_f64).unwrap_or(0.0);
+                        let pages_suffix = if pages_down > 0.0 {
+                            format!(" ~{pages_down} page{} down", if pages_down == 1.0 { "" } else { "s" })
+                        } else {
+                            String::new()
+                        };
+                        let label = if text.is_empty() { "(no label)" } else { text };
+                        lines.push(format!(
+                            "  [{frame_ref}] <{tag}> \"{label}\"{pages_suffix}"
+                        ));
+                    }
+                }
+            }
             lines.join("\n")
         }
         "see" => {
@@ -1293,6 +1354,9 @@ pub(crate) fn tool_result_content(output: &Value) -> String {
 }
 
 pub(crate) fn fallback_response(error: AgentRuntimeError) -> String {
+    if let Some(fault) = super::providers::mimo_faults::parse_mimo_fault_from_error(&error) {
+        return super::providers::mimo_faults::mimo_fault_user_message(&fault);
+    }
     if is_empty_model_reply_error(&error) {
         return "模型这次返回了空响应，Lyra 没有把无效内容提交到会话。请重试一次；如果连续出现，切换到支持 OpenAI 兼容文本和工具调用的 provider/model。".to_string();
     }
@@ -1385,6 +1449,50 @@ pub(crate) fn emit_context_trimmed(session_id: &str, detail: Value) {
             "detail": detail,
         }),
     );
+}
+
+pub(crate) fn emit_provider_fault(
+    session_id: &str,
+    turn_id: &str,
+    provider_id: &str,
+    model_id: &str,
+    fault: &super::providers::mimo_faults::MimoProviderFault,
+) {
+    let callback = state()
+        .lock()
+        .ok()
+        .and_then(|state| state.event_callback.clone());
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "providerFault",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "fault": {
+                "httpStatus": fault.http_status,
+                "code": fault.code,
+                "category": mimo_fault_category_label(&fault.category),
+                "providerId": provider_id,
+                "modelId": model_id,
+                "dedupeKey": super::providers::mimo_faults::mimo_fault_dedupe_key(fault, provider_id),
+                "titleKey": fault.title_key,
+                "bodyKey": fault.body_key,
+            },
+        }),
+    );
+}
+
+fn mimo_fault_category_label(category: &super::providers::mimo_faults::MimoFaultCategory) -> &'static str {
+    match category {
+        super::providers::mimo_faults::MimoFaultCategory::Format => "format",
+        super::providers::mimo_faults::MimoFaultCategory::Auth => "auth",
+        super::providers::mimo_faults::MimoFaultCategory::Balance => "balance",
+        super::providers::mimo_faults::MimoFaultCategory::Access => "access",
+        super::providers::mimo_faults::MimoFaultCategory::Vision => "vision",
+        super::providers::mimo_faults::MimoFaultCategory::ContentModeration => "content",
+        super::providers::mimo_faults::MimoFaultCategory::RateLimit => "rate_limit",
+        super::providers::mimo_faults::MimoFaultCategory::Server => "server",
+    }
 }
 
 pub(crate) fn emit_provider_protocol_event(session_id: &str, turn_id: &str, detail: Value) {

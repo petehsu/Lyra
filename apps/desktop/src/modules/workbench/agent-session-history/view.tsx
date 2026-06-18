@@ -731,8 +731,7 @@ export const AgentSessionHistorySurface = ({
   }, [desktopApi]);
 
   const categorySessions = useMemo(() => ({
-    sessions: state.sessions.filter((session) => !session.archived && !hasProjectBinding(session)),
-    "project-sessions": state.sessions.filter((session) => !session.archived && hasProjectBinding(session)),
+    sessions: state.sessions.filter((session) => !session.archived && hasProjectBinding(session)),
     "archived-sessions": state.sessions.filter((session) => session.archived)
   }), [state.sessions]);
   const selectedSessions = category === "browser-history"
@@ -797,11 +796,6 @@ export const AgentSessionHistorySurface = ({
       count: categorySessions.sessions.length
     },
     {
-      id: "project-sessions" as const,
-      label: labels.categoryProjectSessions,
-      count: categorySessions["project-sessions"].length
-    },
-    {
       id: "archived-sessions" as const,
       label: labels.categoryArchivedSessions,
       count: categorySessions["archived-sessions"].length
@@ -816,7 +810,6 @@ export const AgentSessionHistorySurface = ({
     categorySessions,
     labels.categoryArchivedSessions,
     labels.categoryBrowserHistory,
-    labels.categoryProjectSessions,
     labels.categorySessions
   ]);
 
@@ -879,7 +872,11 @@ export const AgentSessionHistorySurface = ({
     }
     locateRequestKeyRef.current = locateRequest.requestKey;
     if (locateRequest.target.kind === "session") {
-      setCategory(locateRequest.target.category);
+      const locateCategory =
+        (locateRequest.target.category as string) === "project-sessions"
+          ? "sessions"
+          : locateRequest.target.category;
+      setCategory(locateCategory);
       void previewSession(locateRequest.target.sessionId);
       return;
     }
@@ -1174,7 +1171,7 @@ export const AgentSessionHistorySurface = ({
                   />
                 ))}
               </div>
-            ) : category === "project-sessions" ? (
+            ) : category === "sessions" ? (
               <div className="lyra-agent-history-group-list">
                 {projectSessionGroups.map((group) => {
                   const collapsed = collapsedProjectGroupIds.has(group.id);

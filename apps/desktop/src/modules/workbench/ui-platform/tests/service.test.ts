@@ -28,9 +28,7 @@ describe("workbench ui platform service", () => {
     expect(pack.adapters.workspaceSurface).toBeTypeOf("function");
     expect(Object.keys(pack.adapters.surfaces).sort()).toEqual([
       "agentGit",
-      "agentOvernight",
       "agentProjectTree",
-      "agentSelfDev",
       "agentSessionHistory",
       "browserPage",
       "fileEditor",

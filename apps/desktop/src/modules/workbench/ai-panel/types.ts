@@ -38,12 +38,6 @@ export type AiPanelSurfaceProps = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void;
-  readonly onOpenSelfDevLab?: (request: {
-    readonly parentSessionId: string | null;
-  }) => Promise<void> | void;
-  readonly onOpenOvernightLab?: (request: {
-    readonly parentSessionId: string | null;
-  }) => Promise<void> | void;
   readonly onOpenModelSettings?: () => Promise<void> | void;
   readonly onOpenUrlInWorkbench?: (request: {
     readonly url: string;

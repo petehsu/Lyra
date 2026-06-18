@@ -20,19 +20,17 @@ const snapshot: AgentSessionSnapshot = {
   messages: [],
   tools: [],
   todos: [],
-  automation: {
-    subagentModel: null,
-    autoreviewEnabled: null,
-    autojudgeEnabled: null
-  },
-  sidePanel: {
-    focusedPageId: null,
-    pages: []
-  },
   turnStatus: "idle",
   activeTurnId: null,
   follow: { running: false, activity: null },
   updatedAt: "2026-05-13T00:00:00.000Z"
+};
+
+const projectBoundSnapshot: AgentSessionSnapshot = {
+  ...snapshot,
+  workingDir: "/Users/petehsu/Documents/Lyra",
+  projectBound: true,
+  workingDirIsHome: false
 };
 
 const snapshotWithConversation: AgentSessionSnapshot = {
@@ -1020,10 +1018,20 @@ describe("AiPanelSurface", () => {
     expect(bindProject).not.toHaveBeenCalled();
   });
 
+  test("hides project action menu items until the session is bound to a project", async () => {
+    const { api } = createDesktopApi();
+    renderPanel(api);
+
+    fireEvent.click(await screen.findByLabelText("More"));
+    expect(screen.queryByRole("menuitem", { name: "Improve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Refactor" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+  });
+
   test("starts improve and refactor from the header more menu and poke from todos", async () => {
     const { api, runImprove, runRefactor, triggerPoke, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
-      ...snapshot,
+      ...projectBoundSnapshot,
       todos: [{
         id: "todo-1",
         content: "finish GUI poke",
@@ -2049,7 +2057,8 @@ describe("AiPanelSurface", () => {
   });
 
   test("starts review and judge from the header more menu", async () => {
-    const { api, runReview, runJudge } = createDesktopApi();
+    const { api, runReview, runJudge, setReadSnapshot } = createDesktopApi();
+    setReadSnapshot(projectBoundSnapshot);
     renderPanel(api);
 
     await waitFor(() => {
@@ -3132,23 +3141,23 @@ describe("AiPanelSurface", () => {
         kind: "sessionSnapshot",
         snapshot: {
           ...snapshot,
-          id: "selfdev-session",
-          title: "Self-Dev Lab",
-          sessionKind: "selfdev"
+          id: "other-session",
+          title: "Other Session",
+          sessionKind: "normal"
         }
       });
       emit({
         kind: "turnFinished",
-        sessionId: "selfdev-session",
-        turnId: "turn-selfdev",
+        sessionId: "other-session",
+        turnId: "turn-other",
         status: "finished"
       });
     });
 
     expect(api.agent?.readSession).not.toHaveBeenCalledWith({
-      sessionId: "selfdev-session"
+      sessionId: "other-session"
     });
-    expect(screen.queryByText("Self-Dev Lab")).not.toBeInTheDocument();
+    expect(screen.queryByText("Other Session")).not.toBeInTheDocument();
     expect(screen.getByText("新会话")).toBeInTheDocument();
   });
 });

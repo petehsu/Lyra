@@ -56,6 +56,31 @@ pub(super) fn browser_snapshot_source(snapshot: &BrowserSnapshotInput) -> Source
     }
 }
 
+pub(super) fn auto_browser_fallback_reason(
+    request: &ReaderRequest,
+    result: &ReaderResult,
+) -> String {
+    if request.options.wait_for_selector.is_some() {
+        return "waitForSelector requires a rendered browser snapshot".to_string();
+    }
+    if result
+        .warnings
+        .iter()
+        .any(|warning| warning.code == WarningCode::BrowserRecommended)
+    {
+        return result
+            .warnings
+            .iter()
+            .find(|warning| warning.code == WarningCode::BrowserRecommended)
+            .map(|warning| warning.message.clone())
+            .unwrap_or_else(|| "browser rendering recommended".to_string());
+    }
+    let text_chars = result.plain_text.trim().chars().count();
+    format!(
+        "http rendered only {text_chars} chars of extractable text; likely SPA shell or blocked content"
+    )
+}
+
 pub(super) fn should_auto_browser_fallback(request: &ReaderRequest, result: &ReaderResult) -> bool {
     if !matches!(request.options.engine, ReaderEngine::Auto) {
         return false;
@@ -289,7 +314,11 @@ mod tests {
         };
 
         let error = run(&request, None).expect_err("missing browser provider");
-        assert!(matches!(error, ReaderError::Fetch { .. }));
+        assert!(matches!(
+            error,
+            ReaderError::EnginesExhausted { .. } | ReaderError::Fetch { .. }
+        ));
+        assert!(!error.engine_attempts().is_empty());
         assert!(
             error
                 .recommended_next_action()
@@ -313,6 +342,10 @@ mod tests {
         let result =
             run_with_browser(&request, Some(&fetch), Some(&browser)).expect("browser fallback");
         assert_eq!(result.extraction.method, "browser");
+        assert_eq!(result.engine_used.as_deref(), Some("browser"));
+        assert_eq!(result.engine_attempts.len(), 2);
+        assert!(!result.engine_attempts[0].success);
+        assert!(result.engine_attempts[1].success);
         assert!(result.compact_text.contains("Dynamic browser text"));
     }
 

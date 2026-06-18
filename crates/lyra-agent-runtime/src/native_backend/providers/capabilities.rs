@@ -37,9 +37,9 @@ fn provider_base_url_configured(provider: &NativeProviderProfile) -> bool {
 fn summarize_models(models: &[NativeProviderModel]) -> ProviderCapabilitySummary {
     if models.is_empty() {
         return ProviderCapabilitySummary {
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
         };
     }
     ProviderCapabilitySummary {

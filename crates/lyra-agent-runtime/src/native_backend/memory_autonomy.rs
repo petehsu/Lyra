@@ -318,8 +318,7 @@ pub(crate) fn memory_explain_injection(payload: Value) -> AgentRuntimeResult<Val
 pub(crate) fn proactive_trigger_registry() -> Value {
     json!({
         "triggers": [
-            { "type": "goal_due", "defaultMode": "notification_only" },
-            { "type": "overnight_complete", "defaultMode": "notification_only" },
+
             { "type": "memory_conflict", "defaultMode": "draft_message" },
             { "type": "long_task_blocked", "defaultMode": "draft_message" },
             { "type": "scheduled_reminder", "defaultMode": "notification_only" },
@@ -645,61 +644,6 @@ fn ensure_state_proactive_triggers(
     root: &Path,
     disabled: &HashSet<String>,
 ) -> AgentRuntimeResult<()> {
-    if !disabled.contains("goal_due") {
-        let goals = state()
-            .lock()
-            .ok()
-            .map(|state| state.goals.values().cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
-        let existing = list_proactive_events(root, None, 500)?;
-        for goal in goals {
-            if !matches!(goal.status.as_str(), "due" | "overdue") {
-                continue;
-            }
-            let already_exists = existing.iter().any(|event| {
-                event.trigger_type == "goal_due"
-                    && event.source.get("goalId").and_then(Value::as_str) == Some(goal.id.as_str())
-            });
-            if !already_exists {
-                let _ = create_proactive_event(
-                    root,
-                    "goal_due",
-                    &format!("Goal needs attention: {}", goal.title),
-                    "A Lyra goal is due or overdue.",
-                    json!({ "goalId": goal.id, "status": goal.status }),
-                    "notification_only",
-                    goal.session_id.as_deref(),
-                );
-            }
-        }
-    }
-    if !disabled.contains("overnight_complete") {
-        let runs = state()
-            .lock()
-            .ok()
-            .map(|state| state.overnight_runs.clone())
-            .unwrap_or_default();
-        let existing = list_proactive_events(root, None, 500)?;
-        for (run_id, run) in runs {
-            if run.get("status").and_then(Value::as_str) != Some("completed") {
-                continue;
-            }
-            let already_exists = existing.iter().any(|event| {
-                event.trigger_type == "overnight_complete"
-                    && event.source.get("runId").and_then(Value::as_str) == Some(run_id.as_str())
-            });
-            if !already_exists {
-                let _ = create_proactive_event(
-                    root,
-                    "overnight_complete",
-                    "Overnight task completed",
-                    "A background Lyra task finished and is ready for review.",
-                    json!({ "runId": run_id }),
-                    "notification_only",
-                    run.get("sessionId").and_then(Value::as_str),
-                );
-            }
-        }
-    }
+
     Ok(())
 }

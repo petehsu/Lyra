@@ -311,10 +311,11 @@ pub(crate) fn tool_filesystem_runtime_context(
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
+        "scenarioPlaybooks": lyra_tool_fs_core::scenario_playbooks_doc(),
         "policy": {
             "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
-            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles directly when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback.",
+            "discovery": "Use inspectedDescriptors, presearchHints, cachedHandles, or scenarioPlaybooks when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
@@ -455,7 +456,6 @@ pub(crate) fn build_system_prompt(
 pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
     let mut tools = tools::tool_fs::model_provider_tools();
     tools.push(session_read_message_model_tool());
-    tools.push(turn_finish_model_tool());
     tools
 }
 
@@ -492,61 +492,6 @@ fn session_read_message_model_tool() -> Value {
     )
 }
 
-fn turn_finish_model_tool() -> Value {
-    function_tool(
-        LYRA_TURN_FINISH_TOOL,
-        "Finish the current Lyra turn with a structured outcome after required tools are complete, or when no tool is needed.",
-        json!({
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["answered", "completed", "blocked", "needs_user_input"]
-                },
-                "finalText": {
-                    "type": "string",
-                    "description": "The exact user-visible final answer to commit to the factual timeline."
-                },
-                "blocker": {
-                    "type": "string",
-                    "description": "Required when status is blocked."
-                },
-                "question": {
-                    "type": "string",
-                    "description": "Required when status is needs_user_input."
-                },
-                "evidenceSummary": {
-                    "type": "string",
-                    "description": "Brief summary of the Lyra tool evidence used, if any."
-                },
-                "verificationRecords": {
-                    "type": "array",
-                    "description": "Structured verification records. Include test/lint/typecheck records; use status not_run with notRunReason when a check was not run.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": ["test", "lint", "typecheck"]
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": ["passed", "failed", "skipped", "not_run"]
-                            },
-                            "command": { "type": "string" },
-                            "summary": { "type": "string" },
-                            "notRunReason": { "type": "string" },
-                            "artifactRef": { "type": "object", "additionalProperties": true }
-                        },
-                        "required": ["kind", "status"]
-                    }
-                }
-            },
-            "required": ["status", "finalText"]
-        }),
-    )
-}
-
 pub(crate) fn function_tool(name: &str, description: &str, parameters: Value) -> Value {
     json!({
         "type": "function",
@@ -569,6 +514,6 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 
 pub(crate) fn model_tool_names(_design_research_required: bool) -> Vec<String> {
     let mut names = tools::tool_fs::model_tool_names();
-    names.push(LYRA_TURN_FINISH_TOOL.to_string());
+    names.push(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }

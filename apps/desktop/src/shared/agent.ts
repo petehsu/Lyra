@@ -1,7 +1,7 @@
 export type AgentRole = "user" | "assistant" | "system";
 export type AgentTurnStatus = "idle" | "running" | "cancelled" | "finished" | "failed";
 export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled";
-export type AgentSessionKind = "normal" | "selfdev" | "overnight";
+export type AgentSessionKind = "normal";
 
 export type AgentMessage = {
   readonly id: string;
@@ -111,27 +111,6 @@ export type AgentBrowserFollowModeUpdateRequest = {
   readonly enabled: boolean;
 };
 
-export type AgentSessionAutomationSnapshot = {
-  readonly subagentModel?: string | null;
-  readonly autoreviewEnabled?: boolean | null;
-  readonly autojudgeEnabled?: boolean | null;
-};
-
-export type AgentSidePanelPageSnapshot = {
-  readonly id: string;
-  readonly title: string;
-  readonly filePath: string;
-  readonly format: string;
-  readonly source: string;
-  readonly content: string;
-  readonly updatedAtMs: number;
-};
-
-export type AgentSidePanelSnapshot = {
-  readonly focusedPageId?: string | null;
-  readonly pages: readonly AgentSidePanelPageSnapshot[];
-};
-
 export type AgentSessionSnapshot = {
   readonly id: string;
   readonly title: string;
@@ -142,8 +121,6 @@ export type AgentSessionSnapshot = {
   readonly messages: readonly AgentMessage[];
   readonly tools: readonly AgentToolActivity[];
   readonly todos: readonly AgentTodoItem[];
-  readonly automation: AgentSessionAutomationSnapshot;
-  readonly sidePanel: AgentSidePanelSnapshot;
   readonly turnStatus: AgentTurnStatus;
   readonly activeTurnId?: string | null;
   readonly follow: AgentFollowState;
@@ -473,158 +450,6 @@ export type AgentFeedbackRunRequest = {
   readonly sessionId?: string | null;
 };
 
-export type AgentSelfDevStartRequest = {
-  readonly prompt?: string | null;
-  readonly target?: "agent-core" | "desktop-gui" | "validation" | "general" | null;
-  readonly inheritContext?: boolean;
-  readonly parentSessionId?: string | null;
-};
-
-export type AgentSelfDevStartResponse = {
-  readonly sessionId: string;
-  readonly repoDir: string;
-  readonly snapshot: AgentSessionSnapshot;
-  readonly turnId?: string | null;
-  readonly status: "idle" | "running";
-  readonly inheritedContext: boolean;
-};
-
-export type AgentSelfDevStatusRequest = {
-  readonly sessionId?: string | null;
-};
-
-export type AgentSelfDevStatusResponse = {
-  readonly available: boolean;
-  readonly repoDir?: string | null;
-  readonly sessionId?: string | null;
-  readonly output: string;
-  readonly title?: string | null;
-  readonly metadata?: unknown;
-};
-
-export type AgentOvernightStartRequest = {
-  readonly sessionId?: string | null;
-  readonly durationMinutes: number;
-  readonly mission?: string | null;
-  readonly inheritContext?: boolean;
-};
-
-export type AgentOvernightRunRequest = {
-  readonly runId?: string | null;
-};
-
-export type AgentOvernightRunSnapshot = {
-  readonly runId: string;
-  readonly parentSessionId: string;
-  readonly coordinatorSessionId: string;
-  readonly coordinatorSessionName: string;
-  readonly status: string;
-  readonly mission?: string | null;
-  readonly workingDir?: string | null;
-  readonly providerName: string;
-  readonly model: string;
-  readonly startedAt: string;
-  readonly targetWakeAt: string;
-  readonly handoffReadyAt: string;
-  readonly postWakeGraceUntil: string;
-  readonly lastActivityAt: string;
-  readonly completedAt?: string | null;
-  readonly cancelRequestedAt?: string | null;
-  readonly runDir: string;
-  readonly logPath: string;
-  readonly reviewPath: string;
-  readonly manifest: unknown;
-  readonly progress: unknown;
-  readonly events: readonly unknown[];
-  readonly taskCards: readonly unknown[];
-  readonly statusMarkdown: string;
-  readonly logMarkdown: string;
-  readonly reviewHtml?: string | null;
-  readonly coordinatorSnapshot?: AgentSessionSnapshot | null;
-};
-
-export type AgentOvernightStartResponse = {
-  readonly run: AgentOvernightRunSnapshot;
-  readonly inheritedContext: boolean;
-};
-
-export type AgentOvernightListResponse = {
-  readonly runs: readonly AgentOvernightRunSnapshot[];
-  readonly latestRunId?: string | null;
-};
-
-export type AgentOvernightRunResponse = {
-  readonly run?: AgentOvernightRunSnapshot | null;
-};
-
-export type AgentSubagentRunRequest = {
-  readonly sessionId?: string | null;
-  readonly prompt: string;
-  readonly subagentType?: string | null;
-  readonly model?: string | null;
-  readonly continueSessionId?: string | null;
-};
-
-export type AgentSubagentRunResponse = {
-  readonly sessionId: string;
-  readonly toolId: string;
-  readonly snapshot: AgentSessionSnapshot;
-};
-
-export type AgentBtwRunRequest = {
-  readonly sessionId?: string | null;
-  readonly question: string;
-};
-
-export type AgentSidePanelActionResponse = {
-  readonly sessionId: string;
-  readonly turnId?: string | null;
-  readonly status: "idle" | "running";
-  readonly sidePanel: AgentSidePanelSnapshot;
-};
-
-export type AgentSessionActionRequest = {
-  readonly sessionId?: string | null;
-};
-
-export type AgentSessionForkResponse = {
-  readonly sessionId: string;
-  readonly parentSessionId: string;
-  readonly snapshot: AgentSessionSnapshot;
-};
-
-export type AgentCompactResponse = {
-  readonly sessionId: string;
-  readonly message: string;
-  readonly success: boolean;
-  readonly snapshot: AgentSessionSnapshot;
-};
-
-export type AgentAutomationUpdateRequest = {
-  readonly sessionId?: string | null;
-  readonly subagentModel?: string | null;
-  readonly autoreviewEnabled?: boolean | null;
-  readonly autojudgeEnabled?: boolean | null;
-};
-
-export type AgentAutomationUpdateResponse = {
-  readonly sessionId: string;
-  readonly automation: AgentSessionAutomationSnapshot;
-  readonly snapshot: AgentSessionSnapshot;
-};
-
-export type AgentGoalsRequest = {
-  readonly sessionId?: string | null;
-  readonly goalId?: string | null;
-};
-
-export type AgentGoalsResponse = {
-  readonly sessionId: string;
-  readonly goals: readonly unknown[];
-  readonly focusedGoal?: unknown;
-  readonly sidePanel: AgentSidePanelSnapshot;
-};
-
 export type AgentAccountSnapshot = {
   readonly provider: string;
   readonly label: string;
@@ -860,6 +685,27 @@ export type AgentPermissionPolicySetModeRequest = {
   readonly elevationCredentialRef?: unknown;
 };
 
+export type AgentProviderFaultCategory =
+  | "format"
+  | "auth"
+  | "balance"
+  | "access"
+  | "vision"
+  | "content"
+  | "rate_limit"
+  | "server";
+
+export type AgentProviderFault = {
+  readonly httpStatus: number;
+  readonly code: string;
+  readonly category: AgentProviderFaultCategory;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly dedupeKey: string;
+  readonly titleKey: string;
+  readonly bodyKey: string;
+};
+
 export type AgentRuntimeEvent =
   | {
       readonly kind: "sessionSnapshot";
@@ -960,6 +806,12 @@ export type AgentRuntimeEvent =
       readonly sessionId: string;
       readonly turnId: string;
       readonly message: string;
+    }
+  | {
+      readonly kind: "providerFault";
+      readonly sessionId: string;
+      readonly turnId: string;
+      readonly fault: AgentProviderFault;
     }
   | {
       readonly kind: "turnInterrupted";
@@ -1271,31 +1123,6 @@ export type AgentApi = {
     request: AgentSessionDeleteRequest
   ) => Promise<AgentSessionDeleteResponse>;
   readonly bindProject: (request: AgentSessionBindProjectRequest) => Promise<AgentSessionSnapshot>;
-  readonly startSelfDev: (
-    request?: AgentSelfDevStartRequest
-  ) => Promise<AgentSelfDevStartResponse>;
-  readonly readSelfDevStatus: (
-    request?: AgentSelfDevStatusRequest
-  ) => Promise<AgentSelfDevStatusResponse>;
-  readonly sendSelfDevTurn: (
-    request: AgentTurnSendRequest
-  ) => Promise<AgentTurnSendResponse>;
-  readonly startOvernight: (
-    request: AgentOvernightStartRequest
-  ) => Promise<AgentOvernightStartResponse>;
-  readonly listOvernightRuns: () => Promise<AgentOvernightListResponse>;
-  readonly readOvernightStatus: (
-    request?: AgentOvernightRunRequest
-  ) => Promise<AgentOvernightRunResponse>;
-  readonly readOvernightLog: (
-    request?: AgentOvernightRunRequest
-  ) => Promise<AgentOvernightRunResponse>;
-  readonly readOvernightReview: (
-    request?: AgentOvernightRunRequest
-  ) => Promise<AgentOvernightRunResponse>;
-  readonly cancelOvernight: (
-    request?: AgentOvernightRunRequest
-  ) => Promise<AgentOvernightRunResponse>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
@@ -1383,26 +1210,6 @@ export type AgentApi = {
   readonly runJudge: (
     request?: AgentFeedbackRunRequest
   ) => Promise<AgentTurnSendResponse>;
-  readonly runSubagent: (
-    request: AgentSubagentRunRequest
-  ) => Promise<AgentSubagentRunResponse>;
-  readonly runBtw: (request: AgentBtwRunRequest) => Promise<AgentSidePanelActionResponse>;
-  readonly splitSession: (
-    request?: AgentSessionActionRequest
-  ) => Promise<AgentSessionForkResponse>;
-  readonly transferSession: (
-    request?: AgentSessionActionRequest
-  ) => Promise<AgentSessionForkResponse>;
-  readonly compactSession: (
-    request?: AgentSessionActionRequest
-  ) => Promise<AgentCompactResponse>;
-  readonly updateSessionAutomation: (
-    request: AgentAutomationUpdateRequest
-  ) => Promise<AgentAutomationUpdateResponse>;
-  readonly listGoals: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
-  readonly openGoals: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
-  readonly resumeGoal: (request?: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
-  readonly showGoal: (request: AgentGoalsRequest) => Promise<AgentGoalsResponse>;
   readonly listAccounts: () => Promise<AgentAccountsSnapshot>;
   readonly loginAccount: (request: AgentAccountLoginRequest) => Promise<AgentAccountsSnapshot>;
   readonly listLoginProviders: () => Promise<AgentLoginProviderCatalogSnapshot>;

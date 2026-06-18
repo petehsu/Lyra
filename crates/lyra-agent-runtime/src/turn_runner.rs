@@ -68,26 +68,6 @@ impl TurnRunner {
         self.backend.call("agent.turn.cancel", payload)
     }
 
-    pub fn start_selfdev(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.selfdev.start", payload)
-    }
-
-    pub fn selfdev_status(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.selfdev.status", payload)
-    }
-
-    pub fn send_selfdev(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.selfdev.sendTurn", payload)
-    }
 }
 
 #[derive(Clone, Debug, Default)]

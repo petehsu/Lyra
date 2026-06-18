@@ -13,9 +13,6 @@ const REPEATED_TOOL_ROUND_HARD_OCCURRENCES: usize = 5;
 const MAX_PROVIDER_IMAGE_TOOL_BYTES: u64 = 8 * 1024 * 1024;
 const PROGRESS_GUARD_WARNING_PROMPT: &str = "Lyra's dynamic progress guard detected repeated identical tool calls with identical provider-visible results. Do not repeat the exact same tool call again unless the page, file, or external state has actually changed. Change strategy, inspect different evidence, use a more specific wait/read_until condition, or produce the final answer/blocker summary from the evidence already gathered.";
 const PROGRESS_GUARD_FINAL_SYNTHESIS_PROMPT: &str = "Lyra's dynamic progress guard detected repeated identical tool calls with no new provider-visible evidence. Do not call more tools in this response. Produce the best possible final answer from the gathered evidence. If the task is incomplete, state what was attempted, the exact blocker, and one concrete next action. Do not ask the user to restate the same request. If completion truly depends on a missing user decision, ask one precise clarification question.";
-const STRUCTURED_FINISH_RETRY_PROMPT: &str = "The previous assistant response was plain text, so Lyra did not commit it as the final answer for this tool-capable turn. Continue the same user request now. If a Lyra capability is needed, call the appropriate tool. If the task is complete, blocked, or waiting on user input, call lyra_turn_finish alone with the correct status and finalText. Do not repeat the same plain text response.";
-const STRUCTURED_FINISH_REPAIR_LIMIT: u8 = 3;
-
 pub(crate) struct ModelRequest {
     pub(crate) provider: NativeProviderProfile,
     pub(crate) model: String,
@@ -69,16 +66,6 @@ impl ModelLoopResult {
         Self {
             final_text: Some(text),
             metadata: None,
-            provider_transcript: Vec::new(),
-            provider_replay_items: Vec::new(),
-            ui_text_committed: false,
-        }
-    }
-
-    fn final_text_with_metadata(text: String, metadata: Value) -> Self {
-        Self {
-            final_text: Some(text),
-            metadata: Some(metadata),
             provider_transcript: Vec::new(),
             provider_replay_items: Vec::new(),
             ui_text_committed: false,
@@ -213,7 +200,7 @@ pub(crate) struct ModelCapabilityProfile {
 pub(crate) fn run_model_loop(
     session_id: &str,
     turn_id: &str,
-    request: ModelRequest,
+    mut request: ModelRequest,
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     let mut messages = request.messages.clone();
@@ -233,13 +220,12 @@ pub(crate) fn run_model_loop(
         );
     }
     let mut retried_after_context_error = false;
+    let mut retried_after_image_input_error = false;
     let mut retried_after_empty_reply = false;
-    let mut structured_finish_repairs = 0_u8;
     let mut transient_provider_retries = 0_u8;
     let mut progress_guard = ModelLoopProgressGuard::default();
     let mut provider_transcript = Vec::new();
     let mut provider_replay_items = Vec::new();
-    let requires_structured_finish = request_requires_structured_finish(&request);
     loop {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
@@ -264,7 +250,54 @@ pub(crate) fn run_model_loop(
             &request.capabilities,
             cancellation,
         ) {
-            Ok(reply) => reply,
+            Ok(reply) => {
+                observe_successful_provider_capabilities(session_id, &request, &messages, &reply);
+                reply
+            }
+            Err(error)
+                if !retried_after_image_input_error
+                    && providers::model_capabilities::is_image_input_unsupported_error(&error) =>
+            {
+                retried_after_image_input_error = true;
+                let evidence = error.to_string();
+                let _ = providers::model_capabilities::record_observed_model_capability(
+                    session_id,
+                    &request.provider.id,
+                    &request.model,
+                    providers::model_capabilities::ObservedCapability::ImageInput,
+                    false,
+                    &evidence,
+                );
+                request.capabilities.supports_image_input = false;
+                let (stripped, downgrades) =
+                    providers::model_capabilities::strip_images_from_provider_messages(messages);
+                messages = stripped;
+                if !downgrades.is_empty() {
+                    messages.insert(
+                        1,
+                        json!({
+                            "role": "system",
+                            "content": format!(
+                                "Structured input downgrade report: {}",
+                                serde_json::to_string(&downgrades)
+                                    .unwrap_or_else(|_| "[]".to_string())
+                            ),
+                        }),
+                    );
+                }
+                messages.push(json!({
+                    "role": "system",
+                    "content": "The active model/provider endpoint rejected image input. Lyra marked this model as non-vision for the current provider profile and retried without images. Prefer lyra_lumen.map and lyra_lumen.act with targetRef instead of visual capture for this model on this provider.",
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_image_input_downgrade_retry",
+                    1,
+                    &evidence,
+                );
+                continue;
+            }
             Err(error)
                 if !retried_after_context_error && is_context_length_error(&error.to_string()) =>
             {
@@ -303,6 +336,60 @@ pub(crate) fn run_model_loop(
                 );
                 continue;
             }
+            Err(error)
+                if providers::routes::mimo::is_mimo_route(&request.provider.route_id)
+                    && providers::mimo_faults::parse_mimo_fault_from_error(&error).is_some_and(
+                        |fault| providers::mimo_faults::is_mimo_notify_and_fail_fault(&fault),
+                    ) =>
+            {
+                let fault =
+                    providers::mimo_faults::parse_mimo_fault_from_error(&error).expect("fault");
+                emit_provider_fault(
+                    session_id,
+                    turn_id,
+                    &request.provider.id,
+                    &request.model,
+                    &fault,
+                );
+                return Err(error);
+            }
+            Err(error)
+                if providers::routes::mimo::is_mimo_route(&request.provider.route_id)
+                    && transient_provider_retries
+                        < providers::mimo_faults::MIMO_TRANSIENT_RETRY_LIMIT
+                    && providers::mimo_faults::parse_mimo_fault_from_error(&error)
+                        .is_some_and(|fault| providers::mimo_faults::is_mimo_backoff_fault(&fault))
+            =>
+            {
+                transient_provider_retries += 1;
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "mimo_provider_backoff_retry",
+                    transient_provider_retries,
+                    &error.to_string(),
+                );
+                sleep_before_provider_retry(transient_provider_retries, cancellation)?;
+                continue;
+            }
+            Err(error)
+                if providers::routes::mimo::is_mimo_route(&request.provider.route_id)
+                    && providers::mimo_faults::parse_mimo_fault_from_error(&error)
+                        .is_some_and(|fault| {
+                            providers::mimo_faults::should_notify_for_mimo_fault(&fault, true)
+                        }) =>
+            {
+                let fault =
+                    providers::mimo_faults::parse_mimo_fault_from_error(&error).expect("fault");
+                emit_provider_fault(
+                    session_id,
+                    turn_id,
+                    &request.provider.id,
+                    &request.model,
+                    &fault,
+                );
+                return Err(error);
+            }
             Err(error) if transient_provider_retries < 2 && is_retryable_provider_error(&error) => {
                 transient_provider_retries += 1;
                 emit_provider_retry(
@@ -321,45 +408,6 @@ pub(crate) fn run_model_loop(
             let final_text = reply.content.unwrap_or_default();
             if !reply.provider_replay_items.is_empty() {
                 provider_replay_items.extend(reply.provider_replay_items.clone());
-            }
-            if requires_structured_finish {
-                if structured_finish_repairs >= STRUCTURED_FINISH_REPAIR_LIMIT {
-                    emit_structured_finish_event(session_id, turn_id, "structuredFinishRejected");
-                    return Err(AgentRuntimeError::Core(
-                        "provider did not produce a structured Lyra turn finish after repeated protocol repair prompts".to_string(),
-                    ));
-                }
-                structured_finish_repairs += 1;
-                let mut assistant_message = json!({
-                    "role": "assistant",
-                    "content": final_text,
-                });
-                if let Some(reasoning_content) = reply
-                    .reasoning_content
-                    .as_ref()
-                    .filter(|value| !value.trim().is_empty())
-                {
-                    assistant_message["reasoning_content"] =
-                        Value::String(reasoning_content.clone());
-                }
-                if !reply.provider_replay_items.is_empty() {
-                    assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-                    messages.extend(reply.provider_replay_items.clone());
-                }
-                messages.push(assistant_message);
-                messages.push(json!({
-                    "role": "system",
-                    "content": STRUCTURED_FINISH_RETRY_PROMPT,
-                }));
-                emit_provider_retry(
-                    session_id,
-                    turn_id,
-                    "structured_finish_protocol_retry",
-                    structured_finish_repairs,
-                    "plain assistant text cannot finish a tool-capable Lyra turn",
-                );
-                emit_structured_finish_event(session_id, turn_id, "structuredFinishProtocolRetry");
-                continue;
             }
             let mut final_assistant = json!({
                 "role": "assistant",
@@ -385,13 +433,6 @@ pub(crate) fn run_model_loop(
             messages.extend(response_replay_items);
         }
         let tool_calls = reply.tool_calls;
-        if let Some(result) = try_finish_from_turn_finish_tool(&tool_calls)? {
-            let provider_replay_items =
-                replay_items_for_finished_turn(provider_replay_items, result.final_text.as_deref());
-            return Ok(result
-                .with_provider_transcript(provider_transcript)
-                .with_provider_replay_items(provider_replay_items));
-        }
         let assistant_content = reply.content.unwrap_or_default();
         let assistant_tool_calls = tool_calls
             .iter()
@@ -530,13 +571,6 @@ pub(crate) fn run_model_loop(
     }
 }
 
-fn request_requires_structured_finish(request: &ModelRequest) -> bool {
-    request.capabilities.supports_tool_calling
-        && request.tools.iter().any(|tool| {
-            tool.pointer("/function/name").and_then(Value::as_str) == Some(LYRA_TURN_FINISH_TOOL)
-        })
-}
-
 pub(crate) fn synthesize_after_progress_guard(
     session_id: &str,
     turn_id: &str,
@@ -590,238 +624,6 @@ pub(crate) fn synthesize_after_progress_guard(
             .with_provider_transcript(provider_transcript)
             .with_provider_replay_items(reply.provider_replay_items),
     )
-}
-
-fn emit_structured_finish_event(session_id: &str, turn_id: &str, event_type: &str) {
-    emit_provider_protocol_event(
-        session_id,
-        turn_id,
-        json!({
-            "type": event_type,
-            "reason": "assistant_plain_text_without_structured_finish",
-        }),
-    );
-}
-
-fn try_finish_from_turn_finish_tool(
-    tool_calls: &[ModelToolCall],
-) -> AgentRuntimeResult<Option<ModelLoopResult>> {
-    let finish_calls = tool_calls
-        .iter()
-        .filter(|call| call.name == LYRA_TURN_FINISH_TOOL)
-        .collect::<Vec<_>>();
-    if finish_calls.is_empty() {
-        return Ok(None);
-    }
-    if finish_calls.len() != 1 || tool_calls.len() != 1 {
-        return Err(AgentRuntimeError::Core(
-            "lyra_turn_finish must be called alone after any required Lyra tools have finished"
-                .to_string(),
-        ));
-    }
-    let call = finish_calls[0];
-    let status = call
-        .arguments
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or("answered");
-    let final_text = call
-        .arguments
-        .get("finalText")
-        .or_else(|| call.arguments.get("message"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    let metadata = turn_finish_metadata(&call.arguments);
-    if !final_text.is_empty() {
-        return Ok(Some(ModelLoopResult::final_text_with_metadata(
-            final_text.to_string(),
-            metadata,
-        )));
-    }
-    let fallback = match status {
-        "blocked" => call
-            .arguments
-            .get("blocker")
-            .and_then(Value::as_str)
-            .unwrap_or("这个任务被阻塞了，但模型没有提供阻塞详情。"),
-        "needs_user_input" => call
-            .arguments
-            .get("question")
-            .and_then(Value::as_str)
-            .unwrap_or("我需要更多信息才能继续。"),
-        _ => "任务已结束，但模型没有提供可显示的最终文本。",
-    };
-    Ok(Some(ModelLoopResult::final_text_with_metadata(
-        fallback.to_string(),
-        metadata,
-    )))
-}
-
-fn replay_items_for_finished_turn(items: Vec<Value>, final_text: Option<&str>) -> Vec<Value> {
-    let mut output = items
-        .into_iter()
-        .filter(|item| !is_lyra_turn_finish_response_item(item))
-        .collect::<Vec<_>>();
-    let final_text = final_text.map(str::trim).filter(|value| !value.is_empty());
-    if let Some(final_text) = final_text
-        && !responses_replay_has_assistant_text(&output)
-    {
-        output.push(json!({
-            "type": "message",
-            "role": "assistant",
-            "content": [{ "type": "output_text", "text": final_text }],
-        }));
-    }
-    output
-}
-
-fn is_lyra_turn_finish_response_item(item: &Value) -> bool {
-    item.get("type").and_then(Value::as_str) == Some("function_call")
-        && item.get("name").and_then(Value::as_str) == Some(LYRA_TURN_FINISH_TOOL)
-}
-
-fn responses_replay_has_assistant_text(items: &[Value]) -> bool {
-    items
-        .iter()
-        .filter(|item| item.get("type").and_then(Value::as_str) == Some("message"))
-        .flat_map(|item| {
-            item.get("content")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-        })
-        .any(|part| {
-            part.get("text")
-                .or_else(|| part.get("content"))
-                .and_then(Value::as_str)
-                .is_some_and(|text| !text.trim().is_empty())
-        })
-}
-
-fn turn_finish_metadata(arguments: &Value) -> Value {
-    let evidence_summary = arguments
-        .get("evidenceSummary")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let provided_records = arguments
-        .get("verificationRecords")
-        .or_else(|| arguments.get("verification"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let verification_records = normalized_verification_records(provided_records);
-    json!({
-        "schemaVersion": 1,
-        "kind": "lyra_turn_finish",
-        "status": arguments
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("answered"),
-        "evidenceSummary": evidence_summary,
-        "verificationRecords": verification_records,
-    })
-}
-
-fn normalized_verification_records(records: Vec<Value>) -> Vec<Value> {
-    let mut normalized = records
-        .into_iter()
-        .filter_map(normalize_verification_record)
-        .collect::<Vec<_>>();
-    for kind in ["test", "lint", "typecheck"] {
-        if !normalized
-            .iter()
-            .any(|record| record.get("kind").and_then(Value::as_str) == Some(kind))
-        {
-            normalized.push(json!({
-                "schemaVersion": 1,
-                "kind": kind,
-                "status": "not_run",
-                "notRunReason": "not_reported_by_model",
-                "summary": format!("{kind} was not reported by lyra_turn_finish."),
-            }));
-        }
-    }
-    normalized
-}
-
-fn normalize_verification_record(record: Value) -> Option<Value> {
-    let object = record.as_object()?;
-    let kind = object
-        .get("kind")
-        .or_else(|| object.get("type"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?
-        .to_ascii_lowercase();
-    let kind = match kind.as_str() {
-        "tests" | "test" => "test",
-        "lint" | "lints" => "lint",
-        "typecheck" | "type_check" | "type-check" | "tsc" => "typecheck",
-        other => other,
-    };
-    let status = object
-        .get("status")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("not_run")
-        .to_ascii_lowercase();
-    let status = match status.as_str() {
-        "passed" | "pass" | "success" | "ok" => "passed",
-        "failed" | "fail" | "error" => "failed",
-        "skipped" | "skip" => "skipped",
-        "not-run" | "not_run" | "notrun" => "not_run",
-        other => other,
-    };
-    let mut output = serde_json::Map::new();
-    output.insert(
-        "schemaVersion".to_string(),
-        Value::Number(serde_json::Number::from(1)),
-    );
-    output.insert("kind".to_string(), Value::String(kind.to_string()));
-    output.insert("status".to_string(), Value::String(status.to_string()));
-    if let Some(command) = object
-        .get("command")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        output.insert("command".to_string(), Value::String(command.to_string()));
-    }
-    if let Some(summary) = object
-        .get("summary")
-        .or_else(|| object.get("message"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        output.insert("summary".to_string(), Value::String(summary.to_string()));
-    }
-    if let Some(reason) = object
-        .get("notRunReason")
-        .or_else(|| object.get("not_run_reason"))
-        .or_else(|| object.get("reason"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        output.insert(
-            "notRunReason".to_string(),
-            Value::String(reason.to_string()),
-        );
-    } else if status == "not_run" {
-        output.insert(
-            "notRunReason".to_string(),
-            Value::String("not_reported_by_model".to_string()),
-        );
-    }
-    if let Some(artifact_ref) = object.get("artifactRef").filter(|value| value.is_object()) {
-        output.insert("artifactRef".to_string(), artifact_ref.clone());
-    }
-    Some(Value::Object(output))
 }
 
 fn provider_image_message_from_tool_output(
@@ -1010,7 +812,27 @@ fn call_model_once_for_loop(
         tools,
         capabilities,
         cancellation,
-        false,
+        true,
+    )
+}
+
+fn provider_response_error(
+    provider: &NativeProviderProfile,
+    status: reqwest::StatusCode,
+    body: &Value,
+) -> AgentRuntimeError {
+    providers::mimo_faults::provider_http_error(&provider.route_id, status.as_u16(), body)
+}
+
+fn provider_response_error_text(
+    provider: &NativeProviderProfile,
+    status: reqwest::StatusCode,
+    body_text: &str,
+) -> AgentRuntimeError {
+    providers::mimo_faults::provider_http_error_from_text(
+        &provider.route_id,
+        status.as_u16(),
+        body_text,
     )
 }
 
@@ -1078,9 +900,7 @@ pub(crate) fn call_model_once_non_streaming(
             .json()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if !status.is_success() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error(provider, status, &body));
         }
         let mut reply = openai_responses::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
@@ -1095,9 +915,7 @@ pub(crate) fn call_model_once_non_streaming(
             .json()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if !status.is_success() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error(provider, status, &body));
         }
         let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
@@ -1113,9 +931,7 @@ pub(crate) fn call_model_once_non_streaming(
             .json()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if !status.is_success() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error(provider, status, &body));
         }
         let mut reply = gemini_generate_content::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
@@ -1130,9 +946,7 @@ pub(crate) fn call_model_once_non_streaming(
             .json()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if !status.is_success() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error(provider, status, &body));
         }
         let mut reply = aws_bedrock_converse::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
@@ -1147,9 +961,7 @@ pub(crate) fn call_model_once_non_streaming(
             .json()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         if !status.is_success() {
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error(provider, status, &body));
         }
         let mut reply = ollama_chat::parse_response_body(&body, tools)?;
         normalize_model_reply_protocol(&mut reply, tools)?;
@@ -1163,9 +975,7 @@ pub(crate) fn call_model_once_non_streaming(
         .json()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     if !status.is_success() {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider request failed with status {status}: {body}"
-        )));
+        return Err(provider_response_error(provider, status, &body));
     }
     let message = body.pointer("/choices/0/message").ok_or_else(|| {
         AgentRuntimeError::Core("provider returned no assistant message".to_string())
@@ -1246,9 +1056,7 @@ fn call_model_once_streaming_inner(
             let body = response
                 .text()
                 .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error_text(provider, status, &body));
         }
         let mut reply = openai_responses::parse_streaming_response(
             BufReader::new(response),
@@ -1270,9 +1078,7 @@ fn call_model_once_streaming_inner(
             let body = response
                 .text()
                 .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error_text(provider, status, &body));
         }
         let mut reply = anthropic_messages::parse_streaming_response(
             BufReader::new(response),
@@ -1295,9 +1101,7 @@ fn call_model_once_streaming_inner(
             let body = response
                 .text()
                 .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error_text(provider, status, &body));
         }
         let mut reply = gemini_generate_content::parse_streaming_response(
             BufReader::new(response),
@@ -1325,9 +1129,7 @@ fn call_model_once_streaming_inner(
             let body = response
                 .text()
                 .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(AgentRuntimeError::Core(format!(
-                "provider request failed with status {status}: {body}"
-            )));
+            return Err(provider_response_error_text(provider, status, &body));
         }
         let mut reply = ollama_chat::parse_streaming_response(
             BufReader::new(response),
@@ -1348,9 +1150,7 @@ fn call_model_once_streaming_inner(
         let body = response
             .text()
             .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-        return Err(AgentRuntimeError::Core(format!(
-            "provider request failed with status {status}: {body}"
-        )));
+        return Err(provider_response_error_text(provider, status, &body));
     }
     parse_streaming_response_with_commit(
         BufReader::new(response),
@@ -1559,7 +1359,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let buffer_assistant_text = !tools.is_empty();
+    let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
 
     for line in reader.lines() {
@@ -1659,6 +1459,13 @@ pub(crate) fn map_provider_stream_chunk(
     if let Some(text) = openai_chat::message_content(delta.get("content"))
         && !text.is_empty()
     {
+        let candidate = format!("{}{}", state.content, text);
+        if find_ascii_case_insensitive(&candidate, TEXTUAL_TOOL_CALL_MARKER, 0).is_some() {
+            return Err(AgentRuntimeError::Core(
+                "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
+                    .to_string(),
+            ));
+        }
         if !buffer_assistant_text {
             let message_id = ui_message_id
                 .get_or_insert_with(|| {
@@ -1775,7 +1582,6 @@ fn textual_tool_name_candidates(allowed_tool_names: &HashSet<String>) -> HashSet
     for name in PROVIDER_VISIBLE_TOOL_NAMES {
         names.insert(name.to_string());
     }
-    names.insert(LYRA_TURN_FINISH_TOOL.to_string());
     names.insert(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }
@@ -1803,16 +1609,63 @@ pub(crate) fn model_capabilities(
         .models
         .iter()
         .find(|candidate| candidate.id == model);
+    if let Some(profile) = profile {
+        return ModelCapabilityProfile {
+            supports_image_input: profile.supports_image_input,
+            supports_tool_calling: profile.supports_tool_calling,
+            supports_streaming: profile.supports_streaming,
+            context_window: profile.context_window,
+        };
+    }
+    let route = providers::registry::require_route(&provider.route_id).ok();
+    let discovered = providers::model_capabilities::discovered_model(
+        model.to_string(),
+        Some(model.to_string()),
+        None,
+        route.as_ref(),
+    );
     ModelCapabilityProfile {
-        supports_image_input: profile
-            .map(|candidate| candidate.supports_image_input)
-            .unwrap_or(true),
-        supports_tool_calling: profile
-            .map(|candidate| candidate.supports_tool_calling)
-            .unwrap_or(true),
-        supports_streaming: profile
-            .map(|candidate| candidate.supports_streaming)
-            .unwrap_or(true),
-        context_window: profile.and_then(|candidate| candidate.context_window),
+        supports_image_input: discovered.supports_image_input,
+        supports_tool_calling: discovered.supports_tool_calling,
+        supports_streaming: discovered.supports_streaming,
+        context_window: discovered.context_window,
+    }
+}
+
+fn observe_successful_provider_capabilities(
+    session_id: &str,
+    request: &ModelRequest,
+    messages: &[Value],
+    reply: &ModelReply,
+) {
+    if providers::model_capabilities::messages_contain_provider_images(messages) {
+        let _ = providers::model_capabilities::record_observed_model_capability(
+            session_id,
+            &request.provider.id,
+            &request.model,
+            providers::model_capabilities::ObservedCapability::ImageInput,
+            true,
+            "provider_request_with_images_succeeded",
+        );
+    }
+    if !request.tools.is_empty() && !reply.tool_calls.is_empty() {
+        let _ = providers::model_capabilities::record_observed_model_capability(
+            session_id,
+            &request.provider.id,
+            &request.model,
+            providers::model_capabilities::ObservedCapability::ToolCalling,
+            true,
+            "provider_returned_tool_calls",
+        );
+    }
+    if request.capabilities.supports_streaming {
+        let _ = providers::model_capabilities::record_observed_model_capability(
+            session_id,
+            &request.provider.id,
+            &request.model,
+            providers::model_capabilities::ObservedCapability::Streaming,
+            true,
+            "provider_streaming_request_succeeded",
+        );
     }
 }

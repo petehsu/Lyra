@@ -2,7 +2,10 @@ use reqwest::blocking::Client;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::{NativeProviderModel, NativeProviderProfile, providers::transport},
+    native_backend::{
+        NativeProviderModel, NativeProviderProfile,
+        providers::{model_capabilities, registry, transport},
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,14 +46,9 @@ pub(crate) fn discover_models(
         .flatten()
         .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
         .filter(|id| is_supported_text_model_id(id, scope))
-        .map(|id| NativeProviderModel {
-            id: id.to_string(),
-            label: Some(id.to_string()),
-            context_window: None,
-            supports_image_input: true,
-            supports_tool_calling: true,
-            supports_streaming: true,
-            enabled: true,
+        .map(|id| {
+            let route = registry::require_route(&provider.route_id).ok();
+            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref())
         })
         .collect::<Vec<_>>();
     models.sort_by(|left, right| left.id.cmp(&right.id));

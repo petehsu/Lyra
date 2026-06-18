@@ -50,11 +50,15 @@ export type WorkbenchBrowserAgentControllerHost = {
   readonly waitForAgentPageLoad: (
     webContents: BrowserAgentPageTarget["webContents"],
     url: string,
-    timeoutMs: number
+    timeoutMs: number,
+    options?: { readonly waitForReady?: boolean }
   ) => Promise<void>;
   readonly openDebuggerSessionForTarget: (target: BrowserAgentPageTarget) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
   readonly readPageDiagnostics: (tabId: string) => readonly import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry[];
+  readonly consumeBrowserHealthAlerts?: (tabId: string) => readonly import("../types").BrowserHealthAlert[];
+  readonly onBrowserHealthCaptcha?: (tabId: string, label: string) => void;
+  readonly onBrowserHealthPermission?: (tabId: string, kind: string) => void;
   readonly recordPageDiagnostic: (
     tabId: string,
     entry: Omit<import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry, "id" | "at">

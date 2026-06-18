@@ -402,7 +402,9 @@ const AgentMessage = memo(function AgentMessage({
   const working = isAgentMessageWorking(message);
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = message.blocks.filter((b) => b.type === "text");
+  const lastBlock = message.blocks.at(-1);
   const lastTextId = textBlocks.at(-1)?.id ?? null;
+  const lastBlockIsText = lastBlock?.type === "text";
   const isEmptyPendingAgent = isEmptyPendingAgentMessage(message);
   const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
   const hasImages = message.blocks.some((b) => b.type === "image");
@@ -437,9 +439,10 @@ const AgentMessage = memo(function AgentMessage({
         {isEmptyPendingAgent ? null : (
           message.blocks.map((b) => {
             if (b.type === "text") {
-              // Stream the last text block if the message is still working
+              // Only stream text that is actively being written (trailing block).
+              // Avoid re-animating earlier narration when a new tool round starts.
               const isLastText = b.id === lastTextId;
-              const shouldStream = working && isLastText;
+              const shouldStream = working && isLastText && lastBlockIsText;
               return (
                 <div
                   key={b.id}

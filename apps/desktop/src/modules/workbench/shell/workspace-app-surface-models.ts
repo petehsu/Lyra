@@ -4,8 +4,6 @@ import {
   isImageViewerAppId,
   isAgentGitAppId,
   isAgentProjectTreeAppId,
-  isAgentSelfDevAppId,
-  isAgentOvernightAppId,
   isAgentSessionHistoryAppId,
   isLoginManagerAppId,
   isNotificationCenterAppId,
@@ -177,34 +175,6 @@ export const createAppSurfaceRenderModel = (
         agentSessionId: tab.fileSessionId ?? tab.appInstanceId ?? tab.id,
         rootPath,
         title: tab.title
-      }
-    };
-  }
-
-  if (isAgentSelfDevAppId(tab.appId)) {
-    return {
-      kind: "agentSelfDev",
-      props: {
-        desktopApi: context.desktopApi,
-        labels: context.agentSelfDevLabels,
-        parentSessionId: tab.fileSessionId ?? null,
-        ...(context.agentSelfDevLocale === undefined
-          ? {}
-          : { locale: context.agentSelfDevLocale })
-      }
-    };
-  }
-
-  if (isAgentOvernightAppId(tab.appId)) {
-    return {
-      kind: "agentOvernight",
-      props: {
-        desktopApi: context.desktopApi,
-        labels: context.agentOvernightLabels,
-        parentSessionId: tab.fileSessionId ?? null,
-        ...(context.agentOvernightLocale === undefined
-          ? {}
-          : { locale: context.agentOvernightLocale })
       }
     };
   }

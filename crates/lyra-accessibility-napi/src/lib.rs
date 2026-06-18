@@ -72,6 +72,21 @@ pub fn computer_explain_json(payload: String) -> String {
     lyra_computer_use_core::explain_json(&payload)
 }
 
+#[napi(js_name = "computerListAppsJson")]
+pub fn computer_list_apps_json(payload: String) -> String {
+    lyra_computer_use_core::list_apps_json(&payload)
+}
+
+#[napi(js_name = "computerObserveJson")]
+pub fn computer_observe_json(payload: String) -> String {
+    lyra_computer_use_core::observe_json(&payload)
+}
+
+#[napi(js_name = "computerFocusJson")]
+pub fn computer_focus_json(payload: String) -> String {
+    lyra_computer_use_core::focus_json(&payload)
+}
+
 #[cfg(not(target_os = "macos"))]
 mod os_ax {
     use serde_json::{json, Value};

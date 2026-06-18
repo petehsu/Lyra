@@ -31,15 +31,7 @@ const makeSnapshot = (
   messages: [],
   tools: [],
   todos: [],
-  automation: {
-    subagentModel: null,
-    autoreviewEnabled: null,
-    autojudgeEnabled: null
-  },
-  sidePanel: {
-    focusedPageId: null,
-    pages: []
-  },
+
   turnStatus,
   activeTurnId: turnStatus === "running" ? "turn-1" : null,
   follow: {

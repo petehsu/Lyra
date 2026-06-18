@@ -30,7 +30,7 @@ fn manifest_input_schemas_have_stable_ids() {
 #[test]
 fn scene_package_uses_state_signals() {
     let signals = ToolSceneSignals {
-        session_kind: Some("selfdev".to_string()),
+        session_kind: Some("project-code".to_string()),
         ..ToolSceneSignals::default()
     };
     assert_eq!(infer_scene(&signals), ToolScene::ProjectCode);

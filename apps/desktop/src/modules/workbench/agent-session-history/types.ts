@@ -11,7 +11,6 @@ export type AgentSessionHistoryAppId = "agent-session-history";
 export type AgentSessionHistoryAppIconKey = "agent-session-history-default";
 export type AgentSessionHistoryCategory =
   | "sessions"
-  | "project-sessions"
   | "archived-sessions"
   | "browser-history";
 
@@ -41,7 +40,6 @@ export type AgentSessionHistoryLabels = {
   readonly refresh: string;
   readonly categoryFilter: string;
   readonly categorySessions: string;
-  readonly categoryProjectSessions: string;
   readonly categoryArchivedSessions: string;
   readonly categoryBrowserHistory: string;
   readonly loading: string;

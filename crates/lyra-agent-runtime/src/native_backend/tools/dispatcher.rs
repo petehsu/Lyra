@@ -32,7 +32,7 @@ impl ToolExecutionRuntime {
 impl Default for ToolExecutionRuntime {
     fn default() -> Self {
         Self {
-            supports_image_input: true,
+            supports_image_input: false,
         }
     }
 }
@@ -327,6 +327,18 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     context.arguments,
                     &started_at,
                 ),
+                "browser" if *tool_name == "browser_interact" => {
+                    return execute_browser_interact_tool_adapter(
+                        context.session_id,
+                        context.turn_id,
+                        context.dispatcher,
+                        context.cancellation,
+                        context.runtime,
+                        context.tool_call_id,
+                        context.arguments,
+                        &started_at,
+                    );
+                }
                 _ => execute_native_tool_adapter(
                     context.session_id,
                     context.turn_id,

@@ -4,7 +4,9 @@ use super::{
 };
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::providers::{protocol::openai_common::ModelDiscoveryScope, transport},
+    native_backend::providers::{
+        model_capabilities, protocol::openai_common::ModelDiscoveryScope, registry, transport,
+    },
     native_backend::{NativeProviderModel, NativeProviderProfile},
 };
 use reqwest::{blocking::RequestBuilder, header::HeaderName};
@@ -327,7 +329,10 @@ fn discover_openai_models_with_mimo_auth(
                 ModelDiscoveryScope::CompatibleText,
             )
         })
-        .map(mimo_model)
+        .map(|id| {
+            let route = registry::require_route(&provider.route_id).ok();
+            model_capabilities::discovered_model(id, Some(id.to_string()), None, route.as_ref())
+        })
         .collect())
 }
 
@@ -351,19 +356,6 @@ fn openai_model_discovery_profile(provider: &NativeProviderProfile) -> NativePro
         base_url: Some(base_url.to_string()),
         auth_header: Some("api-key".to_string()),
         ..provider.clone()
-    }
-}
-
-fn mimo_model(id: &str) -> NativeProviderModel {
-    let family = classify_model(id);
-    NativeProviderModel {
-        id: id.to_string(),
-        label: Some(id.to_string()),
-        context_window: None,
-        supports_image_input: matches!(family, MimoModelFamily::Pro | MimoModelFamily::Omni),
-        supports_tool_calling: matches!(family, MimoModelFamily::Pro | MimoModelFamily::Omni),
-        supports_streaming: true,
-        enabled: true,
     }
 }
 

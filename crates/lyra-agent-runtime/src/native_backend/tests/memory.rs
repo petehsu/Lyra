@@ -272,11 +272,11 @@ fn legacy_shared_memory_migration_is_idempotent_and_state_json_drops_array() {
         config: NativeConfig::default(),
         legacy_shared_memory: vec![legacy],
         active_skills: HashSet::new(),
-        overnight_runs: HashMap::new(),
+        legacy_overnight_runs: HashMap::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
-        goals: HashMap::new(),
-        focused_goal_id: None,
+        legacy_goals: HashMap::new(),
+        legacy_focused_goal_id: None,
     };
     let serialized = serde_json::to_string(&state_file).expect("state json");
     assert!(!serialized.contains("sharedMemory"));

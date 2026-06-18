@@ -1,7 +1,7 @@
 import type { WorkbenchBrowserAgentElement } from "../types";
 import { browserAgentTargetFingerprint } from "./normalizers";
 
-export type ElementMatchLevel = "exact" | "stable" | "axName" | "attribute" | "nearest";
+export type ElementMatchLevel = "exact" | "stable" | "xpath" | "axName" | "attribute" | "nearest";
 
 export type WorkflowElementIdentity = {
   readonly elementFingerprint: string;
@@ -10,6 +10,7 @@ export type WorkflowElementIdentity = {
   readonly role: string;
   readonly frameRef: string;
   readonly selectorPreview: string;
+  readonly xpath?: string;
   readonly semanticNodeKey?: string;
 };
 
@@ -87,6 +88,7 @@ export const buildWorkflowElementIdentity = (
   role: element.role,
   frameRef: element.frameRef,
   selectorPreview: element.selectorPreview,
+  ...(element.xpath === undefined ? {} : { xpath: element.xpath }),
   ...(element.semanticNodeKey === undefined ? {} : { semanticNodeKey: element.semanticNodeKey })
 });
 
@@ -178,6 +180,15 @@ export const matchElementIdentity = (
   for (const candidate of candidates) {
     if (buildStableElementFingerprint(pageUrl, candidate) === snapshot.stableFingerprint) {
       return { element: candidate, matchLevel: "stable", confidence: 0.95 };
+    }
+  }
+
+  if (typeof snapshot.xpath === "string" && snapshot.xpath.length > 0) {
+    const xpathMatches = candidates.filter(
+      (candidate) => candidate.xpath === snapshot.xpath && snapshot.frameRef === candidate.frameRef
+    );
+    if (xpathMatches.length === 1) {
+      return { element: xpathMatches[0]!, matchLevel: "xpath", confidence: 0.9 };
     }
   }
 

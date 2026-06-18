@@ -58,9 +58,8 @@ pub struct LyraAgentError {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum AgentSessionKind {
+    #[serde(rename = "normal", alias = "selfdev", alias = "overnight")]
     Normal,
-    Selfdev,
-    Overnight,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -302,17 +301,6 @@ pub struct AgentMemoryProjection {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentSessionAutomationSnapshot {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subagent_model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub autoreview_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub autojudge_enabled: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub struct AgentFollowState {
     pub running: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,7 +321,6 @@ pub struct AgentSessionSnapshot {
     pub tools: Vec<AgentToolActivity>,
     #[serde(default)]
     pub todos: Vec<ActiveTodo>,
-    pub automation: AgentSessionAutomationSnapshot,
     pub turn_status: AgentSessionStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_turn_id: Option<AgentTurnId>,
@@ -711,7 +698,6 @@ mod tests {
             }],
             tools: Vec::new(),
             todos: Vec::new(),
-            automation: AgentSessionAutomationSnapshot::default(),
             turn_status: AgentSessionStatus::Idle,
             active_turn_id: None,
             follow: AgentFollowState::default(),

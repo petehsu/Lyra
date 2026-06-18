@@ -212,16 +212,11 @@ impl AgentRuntimeServices {
             "agent.session.archive" => self.session.archive_from_payload(payload),
             "agent.session.delete" => self.session.delete_from_payload(payload),
             "agent.session.bindProject" => self.session.bind_project_from_payload(payload),
-            "agent.session.split" => self.session.split(payload),
-            "agent.session.transfer" => self.session.transfer(payload),
-            "agent.session.compact" => self.session.compact(payload),
-            "agent.session.automation.update" => self.session.update_automation(payload),
+
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
             }
-            "agent.selfdev.start" => self.turn_runner.start_selfdev(payload),
-            "agent.selfdev.status" => self.turn_runner.selfdev_status(payload),
-            "agent.selfdev.sendTurn" => self.turn_runner.send_selfdev(payload),
+
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" | "agent.turn.retry" => {
                 self.turn_runner.send(payload)
             }
@@ -266,24 +261,11 @@ impl AgentRuntimeServices {
             "agent.action.poke" => self.backend.call(method, payload),
             "agent.action.review" => self.backend.call(method, payload),
             "agent.action.judge" => self.backend.call(method, payload),
-            "agent.subagent.run" => self.backend.call(method, payload),
-            "agent.btw.run" => self.backend.call(method, payload),
-            "agent.goals.list" => self.backend.call(method, payload),
-            "agent.goals.open" => self.backend.call(method, payload),
-            "agent.goals.resume" => self.backend.call(method, payload),
-            "agent.goals.show" => self.backend.call(method, payload),
-            "agent.goals.create" => self.backend.call(method, payload),
-            "agent.goals.update" => self.backend.call(method, payload),
-            "agent.goals.checkpoint" => self.backend.call(method, payload),
+
             "agent.proactive.list" => self.backend.call(method, payload),
             "agent.proactive.dismiss" => self.backend.call(method, payload),
             "agent.proactive.openSession" => self.backend.call(method, payload),
-            "agent.overnight.start" => self.backend.call(method, payload),
-            "agent.overnight.list" => self.backend.call(method, payload),
-            "agent.overnight.status" => self.backend.call(method, payload),
-            "agent.overnight.log" => self.backend.call(method, payload),
-            "agent.overnight.review" => self.backend.call(method, payload),
-            "agent.overnight.cancel" => self.backend.call(method, payload),
+
             _ => Err(AgentRuntimeError::UnknownMethod(method.to_string())),
         }
     }

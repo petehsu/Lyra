@@ -309,3 +309,85 @@ impl BackendError {
         Self::new("unsupported", message)
     }
 }
+
+/// A normalized desktop window entry for `computer.list_apps`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerWindowEntry {
+    /// Opaque window handle the backend can re-resolve at focus time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_ref: Option<String>,
+    pub title: String,
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_focused: bool,
+}
+
+/// A running desktop application entry for `computer.list_apps`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerAppEntry {
+    /// Opaque app handle the backend can re-resolve at focus time.
+    pub app_ref: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_foreground: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<ComputerWindowEntry>,
+}
+
+/// Request to list running desktop applications.
+#[derive(Clone, Debug)]
+pub struct ListAppsRequest {
+    /// Hard cap on returned apps; backends must respect it.
+    pub max_apps: usize,
+    /// When true, include apps without a focused/visible window.
+    pub include_background: bool,
+}
+
+impl Default for ListAppsRequest {
+    fn default() -> Self {
+        Self {
+            max_apps: 50,
+            include_background: false,
+        }
+    }
+}
+
+/// Snapshot of foreground app / window / focused control for `computer.observe`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerObserveResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreground_app: Option<ComputerAppEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_window: Option<ComputerWindowEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_control: Option<ComputerNode>,
+}
+
+/// Request to raise an app or window to the foreground (`computer.focus`).
+///
+/// Session-level focus is distinct from element-level `computer.act(action: focus)`.
+/// At least one target field must be populated.
+#[derive(Clone, Debug, Default)]
+pub struct ComputerFocusRequest {
+    pub app_ref: Option<String>,
+    pub pid: Option<i64>,
+    pub bundle_id: Option<String>,
+    pub window_title: Option<String>,
+    pub window_ref: Option<String>,
+}
+
+impl ComputerFocusRequest {
+    pub fn has_target(&self) -> bool {
+        self.app_ref.is_some()
+            || self.pid.is_some()
+            || self.bundle_id.is_some()
+            || self.window_title.is_some()
+            || self.window_ref.is_some()
+    }
+}
