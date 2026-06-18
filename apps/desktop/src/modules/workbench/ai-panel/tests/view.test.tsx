@@ -2747,7 +2747,8 @@ describe("AiPanelSurface", () => {
       });
     });
 
-    expect(await screen.findByText("The turn failed: provider request timed out"))
+    expect(screen.queryByText("The turn failed: provider request timed out")).not.toBeInTheDocument();
+    expect(await screen.findByText("The model timed out. Try again in a moment."))
       .toBeInTheDocument();
   });
 

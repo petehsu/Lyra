@@ -68,7 +68,6 @@ const ZH_MESSAGES = {
   "header.cancelAction": "取消",
 
   "runtime.desktopBridgeUnavailable": "Lyra 桌面桥接不可用。",
-  "runtime.connecting": "正在连接",
 
   "permissionPolicy.fullAutoWarningTitle": "开启全自动模式",
   "permissionPolicy.fullAutoWarningDescription": "全自动模式会让 Lyra Agent 在本机会话中跳过逐项审批，直接执行它认为必要的操作。Lyra 能读写项目文件、运行命令、操作浏览器页面、调用已授权账号，也可能调度系统能力、项目代码与外部设备；这正是它强大的地方，也意味着误用时风险真实存在。若你不清楚此模式的含义，请不要开启。请只在你信任当前任务、工作区和模型输出时继续。",
@@ -103,8 +102,6 @@ const ZH_MESSAGES = {
   "todo.plan": "执行计划",
   "todo.fallback": "待办 {index}",
 
-  "diff.files": "个文件",
-
   "debug.title": "调试面板",
   "debug.decisions": "提问面板",
   "debug.permission": "权限申请面板",
@@ -125,8 +122,12 @@ const ZH_MESSAGES = {
   "lyra-agents-message.rollbackErrorTitle": "无法撤销",
   "lyra-agents-message.rollbackClose": "关闭",
 
-  "lyra-agents-message.turnFailedNoResponse": "回复失败，未收到模型回复。",
-  "lyra-agents-message.turnFailedWithReason": "回复失败：{message}",
+  "lyra-agents-turnFailure.generic": "这轮对话没有完成，你可以重新发送消息。",
+  "lyra-agents-turnFailure.emptyResponse": "模型没有返回有效内容，请再试一次或换个模型。",
+  "lyra-agents-turnFailure.timeout": "模型响应超时，请稍后再试。",
+  "lyra-agents-turnFailure.providerAuth": "模型服务认证失败，请检查 API 配置。",
+  "lyra-agents-turnFailure.contextLength": "对话上下文过长，请新建会话或缩短历史消息后重试。",
+  "lyra-agents-turnFailure.cancelled": "这轮对话已取消。",
   "lyra-agents-message.imageAttachment": "图片附件",
   "lyra-agents-message.workspaceScreenshot": "工作区截图",
   "lyra-agents-message.windowScreenshot": "窗口截图",
@@ -140,9 +141,6 @@ const ZH_MESSAGES = {
   "lyra-agents-citation.jumpToSource": "跳转到引用来源",
   "lyra-agents-page-citation.chipLabel": "{tab}：{preview}",
 
-  "working": "处理中",
-
-  "tool.ask.prefix": "已询问：",
   "tool.collapseGroup": "收起工具组",
     "tool.collapseCall": "收起工具调用",
   "tool.collapseEditDetails": "收起编辑详情",
@@ -218,7 +216,6 @@ const EN_MESSAGES: Messages = {
   "header.cancelAction": "Cancel",
 
   "runtime.desktopBridgeUnavailable": "Lyra desktop bridge is unavailable.",
-  "runtime.connecting": "Connecting",
 
   "permissionPolicy.fullAutoWarningTitle": "Enable full auto mode",
   "permissionPolicy.fullAutoWarningDescription": "Full auto mode lets Lyra Agent skip per-action approvals in this local session and directly run the operations it decides are needed. Lyra can read and write project files, run commands, operate browser pages, use authorized accounts, and may coordinate system capabilities, project code, and external devices. That is part of its power, and it also makes misuse genuinely risky. If you do not understand this mode, do not enable it. Continue only when you trust the current task, workspace, and model output.",
@@ -253,8 +250,6 @@ const EN_MESSAGES: Messages = {
   "todo.plan": "Execution plan",
   "todo.fallback": "Todo {index}",
 
-  "diff.files": "files",
-
   "debug.title": "Debug",
   "debug.decisions": "Decisions panel",
   "debug.permission": "Permissions panel",
@@ -275,8 +270,12 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-message.rollbackErrorTitle": "Cannot undo",
   "lyra-agents-message.rollbackClose": "Close",
 
-  "lyra-agents-message.turnFailedNoResponse": "The turn failed before a model response was received.",
-  "lyra-agents-message.turnFailedWithReason": "The turn failed: {message}",
+  "lyra-agents-turnFailure.generic": "This turn did not complete. You can send your message again.",
+  "lyra-agents-turnFailure.emptyResponse": "The model returned no usable response. Try again or switch models.",
+  "lyra-agents-turnFailure.timeout": "The model timed out. Try again in a moment.",
+  "lyra-agents-turnFailure.providerAuth": "Model provider authentication failed. Check your API configuration.",
+  "lyra-agents-turnFailure.contextLength": "The conversation context is too long. Start a new session or shorten history.",
+  "lyra-agents-turnFailure.cancelled": "This turn was cancelled.",
   "lyra-agents-message.imageAttachment": "Image attachment",
   "lyra-agents-message.workspaceScreenshot": "Workspace screenshot",
   "lyra-agents-message.windowScreenshot": "Window screenshot",
@@ -290,9 +289,6 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-citation.jumpToSource": "Jump to citation source",
   "lyra-agents-page-citation.chipLabel": "{tab}: {preview}",
 
-  "working": "Working",
-
-  "tool.ask.prefix": "Asked:",
   "tool.collapseGroup": "Collapse tool group",
   "tool.collapseCall": "Collapse tool call",
   "tool.collapseEditDetails": "Collapse edit details",

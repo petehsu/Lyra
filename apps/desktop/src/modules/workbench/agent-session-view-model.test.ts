@@ -730,6 +730,20 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
     expect(messages).toEqual([]);
   });
 
+  test("hides legacy runtime fallback assistant bubbles from the transcript", () => {
+    const messages = agentSessionToChatMessages(baseSession({
+      turnStatus: "finished",
+      messages: [{
+        id: "assistant-fallback",
+        role: "assistant",
+        text: "Lyra native agent runtime is active, but the model call could not run: boom.",
+        createdAt: "2026-06-05T00:00:02.000Z"
+      }]
+    }));
+
+    expect(messages).toEqual([]);
+  });
+
   test("keeps a pending assistant shell while the turn is running", () => {
     const messages = agentSessionToChatMessages(baseSession({
       turnStatus: "running",

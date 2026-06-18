@@ -185,13 +185,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
 
 pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
     let model_result = build_model_request(&session_id).and_then(|request| {
-        run_model_loop(&session_id, &turn_id, request, &cancellation).or_else(|error| {
-            if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(&session_id, &turn_id) {
-                Err(error)
-            } else {
-                Ok(ModelLoopResult::final_text(fallback_response(error)))
-            }
-        })
+        run_model_loop(&session_id, &turn_id, request, &cancellation)
     });
     thread::sleep(Duration::from_millis(25));
 

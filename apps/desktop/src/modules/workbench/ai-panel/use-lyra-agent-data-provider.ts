@@ -39,6 +39,7 @@ import type {
   PermissionRequest
 } from "./lyra-agents/core/types";
 import { setLocale, t, type Locale } from "./lyra-agents/core/i18n";
+import { mapTurnFailureMessage } from "./lyra-agents/core/turn-failure-message";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
@@ -352,6 +353,7 @@ export const useLyraAgentDataProvider = (
   readonly followRunning: boolean;
   readonly followActivity: string | null;
   readonly error: string | null;
+  readonly turnFailureMessage: string | null;
   readonly cancel: () => Promise<void>;
 } => {
   const {
@@ -1625,7 +1627,6 @@ export const useLyraAgentDataProvider = (
     const totalMessageCount = state.session?.messages.length ?? 0;
     const visibleMessageCount = Math.min(totalMessageCount, visibleMessageLimit);
     const chatMessages = agentSessionToChatMessages(state.session, {
-      failedTurnMessage: state.turnError,
       messageLimitFromEnd: visibleMessageLimit
     });
     const messages: ChatMessage[] =
@@ -1779,6 +1780,11 @@ export const useLyraAgentDataProvider = (
     locale
   ]);
 
+  const turnFailureMessage =
+    state.session?.turnStatus === "failed"
+      ? mapTurnFailureMessage(state.turnError)
+      : null;
+
   return {
     data,
     followRunning: state.session?.follow.running ?? state.loading,
@@ -1786,6 +1792,7 @@ export const useLyraAgentDataProvider = (
       state.session?.follow.activity ??
       (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null),
     error: state.error,
+    turnFailureMessage,
     cancel
   };
 };

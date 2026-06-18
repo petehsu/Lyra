@@ -1,6 +1,7 @@
 import type { AgentMessageBlock, AgentSessionSnapshot, AgentToolActivity } from "../../../shared/agent";
 import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t } from "../ai-panel/lyra-agents/core/i18n";
+import { isInternalRuntimeFallbackText } from "../ai-panel/lyra-agents/core/turn-failure-message";
 import { parseTranscriptCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-file";
 import { parseInlineImagesFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-image";
@@ -58,8 +59,10 @@ const stripInternalProtocolMarkers = (text: string): string => {
   return output.replace(/\s+/g, " ").trim();
 };
 
-const visibleAssistantText = (text: string): string =>
-  stripInternalProtocolMarkers(cleanSyntheticImageText(text));
+const visibleAssistantText = (text: string): string => {
+  const visible = stripInternalProtocolMarkers(cleanSyntheticImageText(text));
+  return isInternalRuntimeFallbackText(visible) ? "" : visible;
+};
 
 const isAssistantToolPlaceholderText = (text: string): boolean => {
   const cleaned = visibleAssistantText(text);
@@ -294,7 +297,6 @@ const chatBlocksForAgentMessage = (
 export const agentSessionToChatMessages = (
   session: AgentSessionSnapshot | null,
   options: {
-    readonly failedTurnMessage?: string | null;
     readonly messageLimitFromEnd?: number | null;
   } = {}
 ): ChatMessage[] => {
@@ -351,30 +353,6 @@ export const agentSessionToChatMessages = (
       };
       return item.message.blocks.length > 0 ? [item] : [];
     });
-
-  const lastMessage = session.messages.at(-1);
-  if (session.turnStatus === "failed" && lastMessage?.role === "user") {
-    const errorDetail = options.failedTurnMessage?.trim();
-    const formattedTime = formatAgentMessageTime(session.updatedAt);
-    timedMessages.push({
-      message: {
-        id: `${session.id}-turn-failed`,
-        author: "agent",
-        ...(formattedTime === undefined ? {} : { time: formattedTime }),
-        blocks: [
-          {
-            type: "text",
-            id: `${session.id}-turn-failed-text`,
-            body: errorDetail === undefined || errorDetail.length === 0
-              ? t("lyra-agents-message.turnFailedNoResponse")
-              : formatMessage("lyra-agents-message.turnFailedWithReason", { message: errorDetail })
-          }
-        ]
-      },
-      atMs: timelineTimeMs(session.updatedAt, session.messages.length),
-      sequence: session.messages.length
-    });
-  }
 
   timedMessages.sort((left, right) => {
     if (left.atMs !== right.atMs) return left.atMs - right.atMs;

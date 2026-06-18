@@ -607,6 +607,11 @@ export const AiPanelSurface = ({
           {provider.error}
         </AppStatusMessage>
       )}
+      {provider.turnFailureMessage === null ? null : (
+        <AppStatusMessage className="lyra-ai-panel-turn-failure" role="status" tone="warning">
+          {provider.turnFailureMessage}
+        </AppStatusMessage>
+      )}
       <div className="lyra-agents-host">
         <LyraAgentsApp
           data={provider.data}
