@@ -46,6 +46,7 @@ const ZH_MESSAGES = {
   "lyra-agents-empty.questionSuffix": " 中做什么？",
 
   "header.more": "更多",
+  "header.moreDisabled": "空会话暂无可用操作",
   "header.openProjectTree": "打开项目文件树",
   "header.cancelTurn": "取消当前回复",
   "header.newSession": "新建会话",
@@ -194,6 +195,7 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-empty.questionSuffix": "?",
 
   "header.more": "More",
+  "header.moreDisabled": "No actions for an empty session",
   "header.openProjectTree": "Open Project Tree",
   "header.cancelTurn": "Cancel turn",
   "header.newSession": "New session",

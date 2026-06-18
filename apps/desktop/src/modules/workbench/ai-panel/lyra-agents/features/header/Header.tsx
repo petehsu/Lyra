@@ -67,6 +67,7 @@ export function HeaderControls({
     session.projectBound && !session.workingDirIsHome;
   const canManageSession =
     typeof session.id === "string" && session.id.trim().length > 0;
+  const hasMenuItems = showProjectActions || canManageSession;
 
   const onCreateSession = async () => {
     if (creating) return;
@@ -110,6 +111,7 @@ export function HeaderControls({
           <Plus aria-hidden="true" size={14} strokeWidth={1.8} />
         </AppIconButton>
       ) : null}
+      {hasMenuItems ? (
       <AppMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <div className="lyra-agents-header-more">
           <AppMenuTrigger asChild>
@@ -119,11 +121,6 @@ export function HeaderControls({
               aria-label={t("header.more")}
               title={t("header.more")}
               active={menuOpen}
-              onClick={() => {
-                if (!menuOpen) {
-                  setMenuOpen(true);
-                }
-              }}
             >
               <MoreHorizontal aria-hidden="true" size={15} strokeWidth={1.8} />
             </AppIconButton>
@@ -210,6 +207,17 @@ export function HeaderControls({
           </AppMenuContent>
         </div>
       </AppMenu>
+      ) : (
+        <AppIconButton
+          className="lyra-agents-header-action app-header-more-button"
+          type="button"
+          disabled
+          aria-label={t("header.more")}
+          title={t("header.moreDisabled")}
+        >
+          <MoreHorizontal aria-hidden="true" size={15} strokeWidth={1.8} />
+        </AppIconButton>
+      )}
     </div>
   );
 }

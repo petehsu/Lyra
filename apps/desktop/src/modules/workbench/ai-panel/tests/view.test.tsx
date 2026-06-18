@@ -1028,6 +1028,31 @@ describe("AiPanelSurface", () => {
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
   });
 
+  test("disables the more menu on an empty draft session", async () => {
+    const { api } = createDesktopApi();
+    render(
+      <AiPanelSurface
+        variant="sidebar"
+        desktopApi={api}
+        activeSessionTabId="draft-1"
+        activeSessionId={null}
+        sessionTabs={[{
+          tabId: "draft-1",
+          sessionId: null,
+          title: "新会话",
+          lastKnownStatus: null
+        }]}
+        title="Agent"
+        emptyThreadLabel="No messages"
+        locale="en-US"
+      />
+    );
+
+    const moreButton = await screen.findByLabelText("More");
+    expect(moreButton).toBeDisabled();
+    expect(moreButton).toHaveAttribute("title", "No actions for an empty session");
+  });
+
   test("starts improve and refactor from the header more menu and poke from todos", async () => {
     const { api, runImprove, runRefactor, triggerPoke, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
