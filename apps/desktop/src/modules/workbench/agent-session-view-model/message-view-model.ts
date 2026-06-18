@@ -33,28 +33,77 @@ export const cleanSyntheticImageText = (text: string): string => {
     .trim();
 };
 
+const INTERNAL_PROTOCOL_MARKERS = [
+  "[Tool call:",
+  "[Tool result ref:",
+  "[Image omitted:",
+  "[Tool output truncated"
+] as const;
+
+const stripInternalProtocolMarkers = (text: string): string => {
+  let output = text;
+  for (const marker of INTERNAL_PROTOCOL_MARKERS) {
+    const lower = marker.toLowerCase();
+    let searchFrom = 0;
+    while (searchFrom < output.length) {
+      const haystack = output.slice(searchFrom).toLowerCase();
+      const relative = haystack.indexOf(lower);
+      if (relative < 0) break;
+      const start = searchFrom + relative;
+      const end = output.indexOf("]", start);
+      output = end < 0 ? output.slice(0, start) : `${output.slice(0, start)}${output.slice(end + 1)}`;
+      searchFrom = start;
+    }
+  }
+  return output.replace(/\s+/g, " ").trim();
+};
+
+const visibleAssistantText = (text: string): string =>
+  stripInternalProtocolMarkers(cleanSyntheticImageText(text));
+
 const isAssistantToolPlaceholderText = (text: string): boolean => {
-  const cleaned = cleanSyntheticImageText(text).trim();
+  const cleaned = visibleAssistantText(text);
   return cleaned === "..." || cleaned === "…";
 };
 
 const looksLikeSyntheticToolNarration = (text: string): boolean => {
-  const cleaned = cleanSyntheticImageText(text).trim();
+  const cleaned = visibleAssistantText(text);
   if (cleaned.length === 0) return false;
   const segments = cleaned.split(" · ").map((segment) => segment.trim());
   if (segments.length === 0) return false;
   return segments.every((segment) => /^[\w-]+(\.[\w-]+)+$/.test(segment));
 };
 
+const isLastAssistantMessage = (
+  session: AgentSessionSnapshot,
+  message: AgentSessionSnapshot["messages"][number],
+  index: number
+): boolean => message.role === "assistant" && index === session.messages.length - 1;
+
+const shouldRetainPendingAssistantShell = (
+  session: AgentSessionSnapshot,
+  message: AgentSessionSnapshot["messages"][number],
+  index: number
+): boolean =>
+  isLastAssistantMessage(session, message, index) && session.turnStatus === "running";
+
 const messageBody = (
   session: AgentSessionSnapshot,
   message: AgentSessionSnapshot["messages"][number],
   index: number
 ): string => {
-  if (message.text.length > 0) return cleanSyntheticImageText(message.text);
-  const isLastAssistant = message.role === "assistant" && index === session.messages.length - 1;
-  return isLastAssistant && session.turnStatus === "running" ? "" : t("lyra-agents-message.noResponseText");
+  const visible = visibleAssistantText(message.text);
+  if (visible.length > 0) return visible;
+  return shouldRetainPendingAssistantShell(session, message, index) ? "" : "";
 };
+
+const emptyPendingTextBlock = (
+  message: AgentSessionSnapshot["messages"][number]
+): MessageBlock => ({
+  type: "text",
+  id: `${message.id}-text`,
+  body: ""
+});
 
 const timelineTimeMs = (value: string | undefined, fallback: number): number => {
   if (value === undefined) return fallback;
@@ -134,12 +183,17 @@ const chatBlocksForAgentMessage = (
   if (sourceBlocks.length === 0) {
     if (
       message.role === "assistant" &&
-      message.text.trim().length === 0 &&
-      !(index === session.messages.length - 1 && session.turnStatus === "running")
+      visibleAssistantText(message.text).length === 0 &&
+      !shouldRetainPendingAssistantShell(session, message, index)
     ) {
       return [];
     }
     const body = messageBody(session, message, index);
+    if (body.length === 0) {
+      return shouldRetainPendingAssistantShell(session, message, index)
+        ? [emptyPendingTextBlock(message)]
+        : [];
+    }
     return [
       {
         type: "text",
@@ -177,7 +231,7 @@ const chatBlocksForAgentMessage = (
         continue;
       }
       flushTools();
-      const cleaned = cleanSyntheticImageText(block.text);
+      const cleaned = visibleAssistantText(block.text);
       if (cleaned.length > 0) {
         chatBlocks.push({
           type: "text",
@@ -223,8 +277,10 @@ const chatBlocksForAgentMessage = (
     return [];
   }
   const body = messageBody(session, message, index);
-  if (body.trim().length === 0) {
-    return [];
+  if (body.length === 0) {
+    return shouldRetainPendingAssistantShell(session, message, index)
+      ? [emptyPendingTextBlock(message)]
+      : [];
   }
   return [
     {

@@ -710,4 +710,45 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
 
     expect(messages[0]?.blocks.map((block) => block.type)).toEqual(["tools"]);
   });
+
+  test("hides finished assistant shells that only contain protocol leak text", () => {
+    const messages = agentSessionToChatMessages(baseSession({
+      turnStatus: "finished",
+      messages: [{
+        id: "assistant-leak",
+        role: "assistant",
+        text: "[Tool result ref: call_abc]",
+        createdAt: "2026-06-05T00:00:02.000Z",
+        blocks: [{
+          type: "text",
+          id: "text-0",
+          text: "[Tool result ref: call_abc]"
+        }]
+      }]
+    }));
+
+    expect(messages).toEqual([]);
+  });
+
+  test("keeps a pending assistant shell while the turn is running", () => {
+    const messages = agentSessionToChatMessages(baseSession({
+      turnStatus: "running",
+      follow: { running: true, activity: "streaming_model" },
+      messages: [{
+        id: "assistant-pending",
+        role: "assistant",
+        text: "",
+        createdAt: "2026-06-05T00:00:02.000Z"
+      }]
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.blocks).toEqual([
+      {
+        type: "text",
+        id: "assistant-pending-text",
+        body: ""
+      }
+    ]);
+  });
 });

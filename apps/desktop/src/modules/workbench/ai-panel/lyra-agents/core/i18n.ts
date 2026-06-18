@@ -124,7 +124,7 @@ const ZH_MESSAGES = {
   "lyra-agents-message.rollbackAction": "撤销",
   "lyra-agents-message.rollbackErrorTitle": "无法撤销",
   "lyra-agents-message.rollbackClose": "关闭",
-  "lyra-agents-message.noResponseText": "没有收到回复文本。",
+
   "lyra-agents-message.turnFailedNoResponse": "回复失败，未收到模型回复。",
   "lyra-agents-message.turnFailedWithReason": "回复失败：{message}",
   "lyra-agents-message.imageAttachment": "图片附件",
@@ -274,7 +274,7 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-message.rollbackAction": "Undo",
   "lyra-agents-message.rollbackErrorTitle": "Cannot undo",
   "lyra-agents-message.rollbackClose": "Close",
-  "lyra-agents-message.noResponseText": "No response text received.",
+
   "lyra-agents-message.turnFailedNoResponse": "The turn failed before a model response was received.",
   "lyra-agents-message.turnFailedWithReason": "The turn failed: {message}",
   "lyra-agents-message.imageAttachment": "Image attachment",

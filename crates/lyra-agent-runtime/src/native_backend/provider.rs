@@ -472,7 +472,37 @@ pub(crate) fn run_model_loop(
                 );
                 continue;
             }
-            let final_text = reply.content.unwrap_or_default();
+            if reply
+                .content
+                .as_ref()
+                .is_none_or(|text| text.trim().is_empty())
+            {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
+                {
+                    let _ = remove_assistant_message(session_id, message_id);
+                } else {
+                    clear_failed_assistant_draft(session_id, turn_id);
+                }
+                if !retried_after_empty_reply {
+                    retried_after_empty_reply = true;
+                    messages.push(json!({
+                        "role": "system",
+                        "content": "The previous provider response produced no visible assistant text and could not be committed to Lyra's factual timeline. Continue the same user request now. If a capability is needed, emit a structured tool_call. Otherwise answer with normal assistant text. Do not return an empty assistant message or internal placeholders."
+                    }));
+                    emit_provider_retry(
+                        session_id,
+                        turn_id,
+                        "provider_empty_visible_reply_retry",
+                        1,
+                        "assistant reply contained no visible text",
+                    );
+                    continue;
+                }
+                return Err(AgentRuntimeError::Core(
+                    "provider returned no assistant text or tool call".to_string(),
+                ));
+            }
+            let final_text = reply.content.clone().unwrap_or_default();
             if !reply.provider_replay_items.is_empty() {
                 provider_replay_items.extend(reply.provider_replay_items.clone());
             }
@@ -1614,6 +1644,16 @@ pub(crate) fn normalize_model_reply_protocol(
         ));
     }
     reply.content = sanitized;
+    if reply.tool_calls.is_empty()
+        && reply
+            .content
+            .as_ref()
+            .is_none_or(|value| value.trim().is_empty())
+    {
+        return Err(AgentRuntimeError::Core(
+            "provider returned no assistant text or tool call".to_string(),
+        ));
+    }
     Ok(())
 }
 

@@ -251,6 +251,14 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_empty_when_only_protocol_marker_remains() {
+        assert_eq!(
+            sanitize_visible_assistant_text("[Tool result ref: call_abc]"),
+            None
+        );
+    }
+
+    #[test]
     fn should_retry_when_placeholder_leaks_without_tool_calls() {
         assert!(should_retry_missing_tool_call(
             Some("让我搜索一下。 [Tool result ref: call_abc]"),

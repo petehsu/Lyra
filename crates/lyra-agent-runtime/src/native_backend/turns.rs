@@ -887,6 +887,52 @@ pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bo
     removed
 }
 
+fn assistant_message_has_visible_timeline_content(message: &Value) -> bool {
+    if message
+        .get("text")
+        .and_then(Value::as_str)
+        .is_some_and(|text| {
+            crate::native_backend::tool_protocol::sanitize_visible_assistant_text(text).is_some()
+        })
+    {
+        return true;
+    }
+    let Some(blocks) = message.get("blocks").and_then(Value::as_array) else {
+        return false;
+    };
+    for block in blocks {
+        match block.get("type").and_then(Value::as_str) {
+            Some("tool") | Some("image") => return true,
+            Some("text") => {
+                if block
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| {
+                        crate::native_backend::tool_protocol::sanitize_visible_assistant_text(text)
+                            .is_some()
+                    })
+                {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn prune_empty_assistant_messages(snapshot: &mut Value) -> usize {
+    let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) else {
+        return 0;
+    };
+    let original_len = messages.len();
+    messages.retain(|message| {
+        message.get("role").and_then(Value::as_str) != Some("assistant")
+            || assistant_message_has_visible_timeline_content(message)
+    });
+    original_len.saturating_sub(messages.len())
+}
+
 pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
     let next_text = format!(
         "{}{}",
@@ -914,7 +960,10 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
                     .unwrap_or_default(),
                 delta
             );
-            block["text"] = Value::String(text);
+            block["text"] = Value::String(
+                crate::native_backend::tool_protocol::sanitize_visible_assistant_text(&text)
+                    .unwrap_or_default(),
+            );
         } else {
             blocks.insert(
                 0,
@@ -996,6 +1045,7 @@ pub(crate) fn finish_turn_with_metadata(
                     session.snapshot["follow"] =
                         json!({ "running": false, "activity": Value::Null });
                     update_runtime_turn(session, turn_id, status);
+                    let _ = prune_empty_assistant_messages(&mut session.snapshot);
                     let retention_metrics = prune_transient_tool_outputs(session);
                     touch_session(session);
                     let _ = index_session_messages_for_recall(&root, session);
