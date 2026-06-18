@@ -329,7 +329,7 @@ fn execute_interact_action(
         }
         _ => {}
     }
-    let timeout_ms = action
+    let _timeout_ms = action
         .get("timeoutMs")
         .and_then(Value::as_u64)
         .unwrap_or_else(|| default_tool_timeout_ms("lyra_lumen", host_action));

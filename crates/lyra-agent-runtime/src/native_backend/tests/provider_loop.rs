@@ -157,7 +157,42 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
         .expect_err("textual tool calls must be rejected");
-    assert!(error.to_string().contains("textual tool-call syntax"));
+    assert!(error.to_string().contains("textual tool"));
+}
+
+#[test]
+fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
+    let mut reply = ModelReply {
+        content: Some(
+            "让我搜索一下黑盒安全测试相关的开源项目。 [Tool result ref: call_2eddf41e08cf48b88bb7bc80]"
+                .to_string(),
+        ),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        provider_replay_items: Vec::new(),
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+        .expect_err("tool result ref placeholders must be rejected");
+    assert!(error.to_string().contains("textual tool protocol leak"));
+}
+
+#[test]
+fn missing_tool_preamble_is_rejected_for_retry() {
+    let mut reply = ModelReply {
+        content: Some("让我搜索一下黑盒安全测试相关的开源项目。".to_string()),
+        reasoning_content: None,
+        tool_calls: Vec::new(),
+        ui_message_id: None,
+        provider_replay_items: Vec::new(),
+    };
+
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+        .expect_err("tool preambles without tool calls must be rejected");
+    assert!(error
+        .to_string()
+        .contains("assistant promised tool use without structured tool_call"));
 }
 
 #[test]
@@ -272,7 +307,7 @@ fn streaming_textual_tool_call_is_rejected() {
     )
     .expect_err("streaming textual tool call must be rejected");
 
-    assert!(error.to_string().contains("textual tool-call syntax"));
+    assert!(error.to_string().contains("textual tool"));
     let emitted_text = events
         .lock()
         .expect("events lock")

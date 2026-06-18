@@ -1,6 +1,12 @@
+use std::collections::HashMap;
+
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
 
+use crate::native_backend::tool_protocol::{
+    TOOL_OUTPUT_CLEARED_SUMMARY, TOOL_OUTPUT_OMITTED_SUMMARY, message_has_provider_transcript,
+    tool_activity_output_summary,
+};
 use crate::native_backend::inline_images::{
     effective_inline_images_for_user_turn, enrich_inline_images_for_provider,
     expand_inline_image_markers_in_content, prepend_inline_images_vision_to_content,
@@ -27,6 +33,7 @@ pub struct ProviderContextOptions {
     pub session_tool_count: usize,
     pub last_turn_tool_count: usize,
     pub openai_responses_replay: bool,
+    pub tool_outputs_by_id: HashMap<String, String>,
 }
 
 impl Default for ProviderContextOptions {
@@ -38,6 +45,7 @@ impl Default for ProviderContextOptions {
             session_tool_count: 0,
             last_turn_tool_count: 0,
             openai_responses_replay: false,
+            tool_outputs_by_id: HashMap::new(),
         }
     }
 }
@@ -565,6 +573,9 @@ fn content_from_blocks(
                 }
             }
             Some("tool") => {
+                if message_has_provider_transcript(message) {
+                    continue;
+                }
                 let tool_id = block
                     .get("toolId")
                     .or_else(|| block.get("tool_id"))
@@ -576,9 +587,36 @@ fn content_from_blocks(
                     "messageId": message.get("id").cloned().unwrap_or(Value::Null),
                 });
                 output.evidence_refs.push(evidence_ref);
+                let summary = options
+                    .tool_outputs_by_id
+                    .get(tool_id)
+                    .cloned()
+                    .filter(|text| !text.trim().is_empty())
+                    .unwrap_or_else(|| TOOL_OUTPUT_OMITTED_SUMMARY.to_string());
+                let (summary, maybe_ref) = if options.max_tool_output_chars == 0 {
+                    (TOOL_OUTPUT_CLEARED_SUMMARY.to_string(), None)
+                } else if summary.chars().count() > options.max_tool_output_chars {
+                    let trimmed = tool_activity_output_summary(
+                        &json!({ "content": summary }),
+                        options.max_tool_output_chars,
+                    );
+                    let evidence_ref = json!({
+                        "kind": "truncated_tool_output",
+                        "toolId": tool_id,
+                        "messageId": message.get("id").cloned().unwrap_or(Value::Null),
+                        "originalChars": summary.chars().count(),
+                        "keptChars": options.max_tool_output_chars,
+                    });
+                    (trimmed, Some(evidence_ref))
+                } else {
+                    (summary, None)
+                };
+                if let Some(evidence_ref) = maybe_ref {
+                    output.evidence_refs.push(evidence_ref);
+                }
                 parts.push(json!({
                     "type": "text",
-                    "text": format!("[Tool result ref: {tool_id}]"),
+                    "text": summary,
                 }));
             }
             _ => {}
@@ -1116,6 +1154,35 @@ mod tests {
         );
         assert_eq!(context.messages[2]["tool_call_id"], "call-1");
         assert_eq!(context.messages[3]["content"], "Done.");
+    }
+
+    #[test]
+    fn provider_context_resolves_tool_blocks_from_session_outputs() {
+        let mut tool_outputs = HashMap::new();
+        tool_outputs.insert(
+            "call-1".to_string(),
+            "OWASP ZAP is a popular black-box scanner.".to_string(),
+        );
+        let context = ContextBuilder::default().build_provider_context(
+            "system".to_string(),
+            vec![json!({
+                "id": "message-assistant",
+                "role": "assistant",
+                "text": "Here are the findings.",
+                "blocks": [
+                    { "type": "text", "id": "text-0", "text": "Here are the findings." },
+                    { "type": "tool", "id": "tool-call-1", "toolId": "call-1" }
+                ]
+            })],
+            ProviderContextOptions {
+                tool_outputs_by_id: tool_outputs,
+                ..ProviderContextOptions::default()
+            },
+        );
+
+        let serialized = serde_json::to_string(&context.messages).unwrap();
+        assert!(serialized.contains("OWASP ZAP"));
+        assert!(!serialized.contains("[Tool result ref:"));
     }
 
     #[test]

@@ -65,6 +65,7 @@ mod tools;
 pub mod page_citations;
 pub mod file_citations;
 pub mod inline_images;
+pub(crate) mod tool_protocol;
 mod transcript_citations;
 mod turns;
 mod types;
@@ -77,8 +78,8 @@ use self::{
     actions::*, activity::*, clarifications::*, context::*, helpers::*, memory::*,
     memory_autonomy::*, memory_store::*, network::*, permission_policy::*, permissions::*,
     projections::*, provider::*, provider_config::*, rollback::*, sessions::*, state::*, tools::*,
-    file_citations::*, inline_images::*, page_citations::*, transcript_citations::*, turns::*,
-    types::*,
+    file_citations::*, inline_images::*, page_citations::*, tool_protocol::*, transcript_citations::*,
+    turns::*, types::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {

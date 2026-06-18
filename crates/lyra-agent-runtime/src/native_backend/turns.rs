@@ -435,6 +435,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             session_tool_count: session_tools.len(),
             last_turn_tool_count,
             openai_responses_replay,
+            tool_outputs_by_id: tool_outputs_by_id_from_session_tools(&session_tools),
         },
     );
     if let Some(overflow) = context.overflow.clone() {
@@ -810,6 +811,82 @@ pub(crate) fn append_assistant_delta(
     Ok(())
 }
 
+fn attach_metadata_to_assistant_message(
+    snapshot: &mut Value,
+    message_id: &str,
+    metadata: Value,
+) -> Option<Value> {
+    if metadata.is_null() || metadata.as_object().is_some_and(Map::is_empty) {
+        return None;
+    }
+    let messages = snapshot.get_mut("messages").and_then(Value::as_array_mut)?;
+    let message = messages
+        .iter_mut()
+        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
+    if message.get("role").and_then(Value::as_str) != Some("assistant") {
+        return None;
+    }
+    let existing = message
+        .get("metadata")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut merged = existing;
+    if let Some(incoming) = metadata.as_object() {
+        for (key, value) in incoming {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    message["metadata"] = Value::Object(merged);
+    Some(message.clone())
+}
+
+pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bool {
+    let (callback, removed) = match state().lock() {
+        Ok(mut state) => {
+            let callback = state.event_callback.clone();
+            let Some(session) = state.sessions.get_mut(session_id) else {
+                return false;
+            };
+            let Some(messages) = session
+                .snapshot
+                .get_mut("messages")
+                .and_then(Value::as_array_mut)
+            else {
+                return false;
+            };
+            let original_len = messages.len();
+            messages.retain(|message| message.get("id").and_then(Value::as_str) != Some(message_id));
+            let removed = messages.len() < original_len;
+            if removed {
+                touch_session(session);
+                let _ = state.save_state();
+            }
+            (callback, removed)
+        }
+        Err(_) => return false,
+    };
+    if removed {
+        emit_with_callback(
+            &callback,
+            json!({
+                "kind": "sessionSnapshot",
+                "snapshot": state()
+                    .lock()
+                    .ok()
+                    .and_then(|state| {
+                        state
+                            .sessions
+                            .get(session_id)
+                            .map(|session| session.snapshot.clone())
+                    })
+                    .unwrap_or(Value::Null),
+            }),
+        );
+    }
+    removed
+}
+
 pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
     let next_text = format!(
         "{}{}",
@@ -819,6 +896,7 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
             .unwrap_or_default(),
         delta
     );
+    let next_text = sanitize_visible_assistant_text(&next_text).unwrap_or_default();
     message["text"] = Value::String(next_text.clone());
     if !message.get("blocks").is_some_and(Value::is_array) {
         message["blocks"] = json!([{ "type": "text", "id": "text-0", "text": "" }]);
@@ -872,6 +950,10 @@ pub(crate) fn finish_turn_with_metadata(
             let root = state.root.clone();
             state.active_cancellations.remove(turn_id);
             state.cancelled_turns.remove(turn_id);
+            let streamed_message_id = state
+                .active_ui_message_by_turn
+                .get(&active_ui_turn_key(session_id, turn_id))
+                .cloned();
             state
                 .active_ui_message_by_turn
                 .remove(&active_ui_turn_key(session_id, turn_id));
@@ -894,6 +976,20 @@ pub(crate) fn finish_turn_with_metadata(
                             "sessionId": session_id,
                             "message": message
                         }));
+                    } else if let (Some(metadata), Some(message_id)) =
+                        (metadata.clone(), streamed_message_id)
+                    {
+                        if let Some(message) = attach_metadata_to_assistant_message(
+                            &mut session.snapshot,
+                            &message_id,
+                            metadata,
+                        ) {
+                            events.push(json!({
+                                "kind": "messageCommitted",
+                                "sessionId": session_id,
+                                "message": message
+                            }));
+                        }
                     }
                     session.snapshot["turnStatus"] = Value::String(status.to_string());
                     session.snapshot["activeTurnId"] = Value::Null;

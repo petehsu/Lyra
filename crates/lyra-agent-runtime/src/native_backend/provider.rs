@@ -222,6 +222,8 @@ pub(crate) fn run_model_loop(
     let mut retried_after_context_error = false;
     let mut retried_after_image_input_error = false;
     let mut retried_after_empty_reply = false;
+    let mut protocol_leak_retries = 0_u8;
+    let mut missing_tool_retries = 0_u8;
     let mut transient_provider_retries = 0_u8;
     let mut progress_guard = ModelLoopProgressGuard::default();
     let mut provider_transcript = Vec::new();
@@ -323,6 +325,7 @@ pub(crate) fn run_model_loop(
             }
             Err(error) if !retried_after_empty_reply && is_empty_model_reply_error(&error) => {
                 retried_after_empty_reply = true;
+                clear_failed_assistant_draft(session_id, turn_id);
                 messages.push(json!({
                     "role": "system",
                     "content": "The previous provider response was empty and could not be committed to Lyra's factual timeline. Continue the same user request now. If a capability is needed, emit a structured tool_call. Otherwise answer with normal assistant text. Do not return an empty assistant message."
@@ -332,6 +335,44 @@ pub(crate) fn run_model_loop(
                     turn_id,
                     "provider_empty_reply_retry",
                     1,
+                    &error.to_string(),
+                );
+                continue;
+            }
+            Err(error)
+                if protocol_leak_retries < max_protocol_leak_retry()
+                    && is_textual_protocol_leak_error(&error) =>
+            {
+                protocol_leak_retries += 1;
+                clear_failed_assistant_draft(session_id, turn_id);
+                messages.push(json!({
+                    "role": "system",
+                    "content": protocol_leak_corrective_prompt(),
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_textual_protocol_leak_retry",
+                    protocol_leak_retries,
+                    &error.to_string(),
+                );
+                continue;
+            }
+            Err(error)
+                if missing_tool_retries < max_missing_tool_retry()
+                    && is_missing_tool_call_reply_error(&error) =>
+            {
+                missing_tool_retries += 1;
+                clear_failed_assistant_draft(session_id, turn_id);
+                messages.push(json!({
+                    "role": "system",
+                    "content": no_tools_used_corrective_prompt(!request.tools.is_empty()),
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_missing_tool_call_retry",
+                    missing_tool_retries,
                     &error.to_string(),
                 );
                 continue;
@@ -405,6 +446,32 @@ pub(crate) fn run_model_loop(
             Err(error) => return Err(error),
         };
         if reply.tool_calls.is_empty() {
+            if should_retry_missing_tool_call(
+                reply.content.as_deref(),
+                &request.tools,
+                true,
+            ) && missing_tool_retries < max_missing_tool_retry()
+            {
+                missing_tool_retries += 1;
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
+                {
+                    let _ = remove_assistant_message(session_id, message_id);
+                } else {
+                    clear_failed_assistant_draft(session_id, turn_id);
+                }
+                messages.push(json!({
+                    "role": "system",
+                    "content": no_tools_used_corrective_prompt(!request.tools.is_empty()),
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_missing_tool_call_retry",
+                    missing_tool_retries,
+                    "assistant promised tool use without structured tool_call",
+                );
+                continue;
+            }
             let final_text = reply.content.unwrap_or_default();
             if !reply.provider_replay_items.is_empty() {
                 provider_replay_items.extend(reply.provider_replay_items.clone());
@@ -1460,9 +1527,9 @@ pub(crate) fn map_provider_stream_chunk(
         && !text.is_empty()
     {
         let candidate = format!("{}{}", state.content, text);
-        if find_ascii_case_insensitive(&candidate, TEXTUAL_TOOL_CALL_MARKER, 0).is_some() {
+        if contains_leaked_internal_protocol_markers(&candidate) {
             return Err(AgentRuntimeError::Core(
-                "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
+                "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
                     .to_string(),
             ));
         }
@@ -1506,8 +1573,6 @@ pub(crate) fn map_provider_stream_chunk(
     Ok(())
 }
 
-pub(crate) const TEXTUAL_TOOL_CALL_MARKER: &str = "[Tool call:";
-
 pub(crate) fn normalize_model_reply_protocol(
     reply: &mut ModelReply,
     tools: &[Value],
@@ -1519,31 +1584,55 @@ pub(crate) fn normalize_model_reply_protocol(
         }
     }
     let Some(content) = reply.content.take() else {
+        if reply.tool_calls.is_empty()
+            && should_retry_missing_tool_call(None, tools, true)
+        {
+            return Err(AgentRuntimeError::Core(
+                "assistant promised tool use without structured tool_call".to_string(),
+            ));
+        }
         return Ok(());
     };
+    if contains_leaked_internal_protocol_markers(&content) {
+        return Err(AgentRuntimeError::Core(
+            "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
+                .to_string(),
+        ));
+    }
     if contains_textual_tool_call_marker(&content, &allowed_tool_names) {
         return Err(AgentRuntimeError::Core(
             "provider emitted textual tool-call syntax instead of a structured Lyra tool call"
                 .to_string(),
         ));
     }
-    reply.content = normalize_visible_assistant_text(&content);
+    let sanitized = sanitize_visible_assistant_text(&content);
+    if reply.tool_calls.is_empty()
+        && should_retry_missing_tool_call(sanitized.as_deref(), tools, true)
+    {
+        return Err(AgentRuntimeError::Core(
+            "assistant promised tool use without structured tool_call".to_string(),
+        ));
+    }
+    reply.content = sanitized;
     Ok(())
 }
 
 pub(crate) fn normalize_visible_assistant_text(content: &str) -> Option<String> {
-    let text = content.trim();
-    (!text.is_empty()).then(|| text.to_string())
+    sanitize_visible_assistant_text(content)
 }
 
 pub(crate) fn contains_textual_tool_call_marker(
     content: &str,
     allowed_tool_names: &HashSet<String>,
 ) -> bool {
-    if find_ascii_case_insensitive(content, TEXTUAL_TOOL_CALL_MARKER, 0).is_some() {
-        return true;
-    }
     contains_textual_structured_tool_shape(content, allowed_tool_names)
+}
+
+fn clear_failed_assistant_draft(session_id: &str, turn_id: &str) {
+    if let Some(message_id) = active_ui_message_id(session_id, turn_id) {
+        let _ = remove_assistant_message(session_id, &message_id);
+    }
+    clear_active_ui_message_id(session_id, turn_id);
 }
 
 fn contains_textual_structured_tool_shape(
@@ -1591,14 +1680,7 @@ pub(crate) fn find_ascii_case_insensitive(
     needle: &str,
     from: usize,
 ) -> Option<usize> {
-    if from >= haystack.len() {
-        return None;
-    }
-    let haystack_lower = haystack[from..].to_ascii_lowercase();
-    let needle_lower = needle.to_ascii_lowercase();
-    haystack_lower
-        .find(&needle_lower)
-        .map(|offset| from + offset)
+    crate::native_backend::tool_protocol::find_ascii_case_insensitive(haystack, needle, from)
 }
 
 pub(crate) fn model_capabilities(
