@@ -155,5 +155,4 @@ impl SessionService {
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend.call("agent.session.bindProject", payload)
     }
-
 }

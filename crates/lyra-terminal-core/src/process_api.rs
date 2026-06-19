@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::lifecycle::{command_lifecycle, command_wait_lifecycle, terminal_lifecycle};
 use crate::memory;
 use crate::process_model;
 use crate::protocol::*;
@@ -120,6 +121,15 @@ pub(crate) fn read_processes(
         limited: Some(snapshot.limited),
         processes,
         memory: memory_json(&request.storage_root, &request.session_id, false),
+        lifecycle: Some(terminal_lifecycle(
+            &request.session_id,
+            "processes",
+            running,
+            exit_code,
+            Some("processes"),
+            None,
+            None,
+        )),
     })
 }
 
@@ -201,6 +211,12 @@ pub(crate) fn read_command_status(
     Ok(TerminalCommandStatusResponse {
         session_id: request.session_id.clone(),
         command_id,
+        lifecycle: Some(command_lifecycle(
+            &request.session_id,
+            "command_status",
+            command.as_ref(),
+            Some("status"),
+        )),
         command,
         memory: memory_json(&request.storage_root, &request.session_id, false),
     })
@@ -236,6 +252,12 @@ pub(crate) fn wait_command(
                     exit_code: command.exit_code,
                     signal: command.signal.clone(),
                     memory: status_response.memory,
+                    lifecycle: Some(command_lifecycle(
+                        &request.session_id,
+                        "command_wait",
+                        Some(command),
+                        Some("status"),
+                    )),
                 });
             }
         } else if request.command_id.is_some() {
@@ -247,24 +269,44 @@ pub(crate) fn wait_command(
                 exit_code: None,
                 signal: None,
                 memory: status_response.memory,
+                lifecycle: Some(command_wait_lifecycle(
+                    &request.session_id,
+                    request.command_id.as_deref(),
+                    "unknown",
+                    "notFound",
+                    None,
+                    None,
+                )),
             });
         }
         if Instant::now() >= deadline {
             let command = status_response.command;
+            let command_id = command
+                .as_ref()
+                .map(|command| command.command_id.clone())
+                .or(request.command_id.clone());
+            let status = command
+                .as_ref()
+                .map(|command| command.status.clone())
+                .unwrap_or_else(|| "timeout".to_string());
+            let exit_code = command.as_ref().and_then(|command| command.exit_code);
+            let signal = command.as_ref().and_then(|command| command.signal.clone());
             return Ok(TerminalCommandWaitResponse {
                 session_id: request.session_id.clone(),
-                command_id: command
-                    .as_ref()
-                    .map(|command| command.command_id.clone())
-                    .or(request.command_id.clone()),
-                status: command
-                    .as_ref()
-                    .map(|command| command.status.clone())
-                    .unwrap_or_else(|| "timeout".to_string()),
+                command_id: command_id.clone(),
+                status: status.clone(),
                 reason: "timeout".to_string(),
-                exit_code: command.as_ref().and_then(|command| command.exit_code),
-                signal: command.as_ref().and_then(|command| command.signal.clone()),
+                exit_code,
+                signal: signal.clone(),
                 memory: status_response.memory,
+                lifecycle: Some(command_wait_lifecycle(
+                    &request.session_id,
+                    command_id.as_deref(),
+                    status.as_str(),
+                    "timeout",
+                    exit_code,
+                    signal.as_deref(),
+                )),
             });
         }
         if let Some(runtime) = runtime.as_ref() {
@@ -277,18 +319,59 @@ pub(crate) fn wait_command(
                 .wait_timeout(state, remaining.min(Duration::from_millis(250)))
                 .map_err(|_| to_error("failed to wait for command status"))?;
         } else {
-            break;
+            return Ok(wait_response_from_status(
+                &request,
+                status_response,
+                "runtimeUnavailable",
+            ));
         }
     }
-    Ok(TerminalCommandWaitResponse {
+}
+
+fn wait_response_from_status(
+    request: &TerminalCommandWaitRequest,
+    status_response: TerminalCommandStatusResponse,
+    reason: &str,
+) -> TerminalCommandWaitResponse {
+    let command = status_response.command;
+    let command_id = command
+        .as_ref()
+        .map(|command| command.command_id.clone())
+        .or_else(|| request.command_id.clone());
+    let status = command
+        .as_ref()
+        .map(|command| command.status.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let exit_code = command.as_ref().and_then(|command| command.exit_code);
+    let signal = command.as_ref().and_then(|command| command.signal.clone());
+    let reason = command
+        .as_ref()
+        .filter(|command| status_matches(&command.status, request.status.as_deref()))
+        .map(|command| {
+            if command.signal.is_some() {
+                "signal".to_string()
+            } else {
+                "status".to_string()
+            }
+        })
+        .unwrap_or_else(|| reason.to_string());
+    TerminalCommandWaitResponse {
         session_id: request.session_id.clone(),
-        command_id: request.command_id,
-        status: "timeout".to_string(),
-        reason: "timeout".to_string(),
-        exit_code: None,
-        signal: None,
-        memory: memory_json(&request.storage_root, &request.session_id, false),
-    })
+        command_id: command_id.clone(),
+        status: status.clone(),
+        reason: reason.clone(),
+        exit_code,
+        signal: signal.clone(),
+        memory: status_response.memory,
+        lifecycle: Some(command_wait_lifecycle(
+            &request.session_id,
+            command_id.as_deref(),
+            status.as_str(),
+            reason.as_str(),
+            exit_code,
+            signal.as_deref(),
+        )),
+    }
 }
 
 pub(crate) fn read_command_output(
@@ -360,4 +443,100 @@ pub(crate) fn read_command_output(
             .and_then(|memory| serde_json::to_string(memory).ok())
             .or_else(|| memory_json(&request.storage_root, &request.session_id, false)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wait_request(status: Option<&str>) -> TerminalCommandWaitRequest {
+        TerminalCommandWaitRequest {
+            session_id: "terminal-test".to_string(),
+            storage_root: "/tmp/lyra-terminal-test".to_string(),
+            command_id: Some("command-1".to_string()),
+            status: status.map(str::to_string),
+            timeout_ms: Some(1),
+            actor_json: None,
+            correlation_json: None,
+        }
+    }
+
+    fn command_snapshot(status: &str, exit_code: Option<i32>) -> TerminalCommandSnapshot {
+        TerminalCommandSnapshot {
+            command_id: "command-1".to_string(),
+            session_id: "terminal-test".to_string(),
+            command_text: Some("exit 42".to_string()),
+            normalized_command_text: Some("exit 42".to_string()),
+            status: status.to_string(),
+            exit_code,
+            signal: None,
+            submitted_at: None,
+            started_at: None,
+            completed_at: None,
+            duration_ms: None,
+            cwd_before: None,
+            cwd_after: None,
+            output_range: None,
+            raw_output_range: None,
+            screen_version_range: None,
+            artifact_root_path: None,
+            command_meta_path: None,
+            command_output_text_path: None,
+            command_raw_output_path: None,
+            command_events_path: None,
+            command_summary_path: None,
+            confidence: None,
+        }
+    }
+
+    #[test]
+    fn wait_response_from_status_preserves_completed_exit_code_without_runtime() {
+        let response = wait_response_from_status(
+            &wait_request(Some("any")),
+            TerminalCommandStatusResponse {
+                session_id: "terminal-test".to_string(),
+                command_id: Some("command-1".to_string()),
+                command: Some(command_snapshot("failed", Some(42))),
+                memory: Some("{}".to_string()),
+                lifecycle: None,
+            },
+            "runtimeUnavailable",
+        );
+
+        assert_eq!(response.status, "failed");
+        assert_eq!(response.reason, "status");
+        assert_eq!(response.exit_code, Some(42));
+        assert_eq!(response.command_id.as_deref(), Some("command-1"));
+        assert_eq!(
+            response.lifecycle.as_ref().map(|item| item.state.as_str()),
+            Some("failed")
+        );
+        assert_eq!(
+            response.lifecycle.as_ref().map(|item| item.phase.as_str()),
+            Some("command_wait")
+        );
+    }
+
+    #[test]
+    fn wait_response_from_status_reports_runtime_unavailable_for_running_command() {
+        let response = wait_response_from_status(
+            &wait_request(Some("completed")),
+            TerminalCommandStatusResponse {
+                session_id: "terminal-test".to_string(),
+                command_id: Some("command-1".to_string()),
+                command: Some(command_snapshot("running", None)),
+                memory: None,
+                lifecycle: None,
+            },
+            "runtimeUnavailable",
+        );
+
+        assert_eq!(response.status, "running");
+        assert_eq!(response.reason, "runtimeUnavailable");
+        assert_eq!(response.exit_code, None);
+        assert_eq!(
+            response.lifecycle.as_ref().map(|item| item.state.as_str()),
+            Some("runtimeUnavailable")
+        );
+    }
 }

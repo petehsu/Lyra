@@ -1,5 +1,26 @@
 use super::*;
 
+fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn git_output(cwd: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
 #[test]
 fn memory_tool_persists_shared_memory_for_future_turns() {
     let backend = LyraAgentBackend;
@@ -220,66 +241,6 @@ fn memory_tool_activity_does_not_commit_memory_events_as_chat_messages() {
             .and_then(Value::as_array)
             .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == "memory"))
     );
-}
-
-#[test]
-fn legacy_shared_memory_migration_is_idempotent_and_state_json_drops_array() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let timestamp = now();
-    let legacy = SharedMemoryRecord {
-        id: format!("legacy-memory-{}", Uuid::new_v4()),
-        scope: "global".to_string(),
-        content: json!({
-            "fact": "legacy shared memory migrated",
-            "category": "user_profile",
-            "source": "user_declaration"
-        }),
-        created_at: timestamp.clone(),
-        updated_at: timestamp,
-        status: "active".to_string(),
-        priority: 82,
-        injection_count: 7,
-        last_injected_at: Some(now()),
-        category: Some("user_profile".to_string()),
-        confidence: Some(1.0),
-        source: Some("user_declaration".to_string()),
-    };
-
-    let first =
-        migrate_legacy_shared_memory(temp.path(), std::slice::from_ref(&legacy)).expect("migrate");
-    let second = migrate_legacy_shared_memory(temp.path(), std::slice::from_ref(&legacy))
-        .expect("migrate again");
-    assert_eq!(first["inserted"], 1);
-    assert_eq!(second["inserted"], 0);
-
-    let records = list_long_term_memory(
-        temp.path(),
-        MemoryQuery {
-            query: Some("legacy shared memory migrated".to_string()),
-            limit: 10,
-            ..MemoryQuery::default()
-        },
-    )
-    .expect("list migrated memory");
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].access_count, 7);
-
-    let state_file = NativeStateFile {
-        tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
-        tool_runtime_migration_diagnostics: Vec::new(),
-        tool_usage_cache: HashMap::new(),
-        active_session_id: None,
-        config: NativeConfig::default(),
-        legacy_shared_memory: vec![legacy],
-        active_skills: HashSet::new(),
-        legacy_overnight_runs: HashMap::new(),
-        pending_permissions: HashMap::new(),
-        pending_clarifications: HashMap::new(),
-        legacy_goals: HashMap::new(),
-        legacy_focused_goal_id: None,
-    };
-    let serialized = serde_json::to_string(&state_file).expect("state json");
-    assert!(!serialized.contains("sharedMemory"));
 }
 
 #[test]
@@ -780,6 +741,103 @@ fn memory_conflict_auto_supersedes_low_confidence_and_confirms_high_confidence()
 }
 
 #[test]
+fn memory_candidate_events_record_to_session_ledger() {
+    if !git_available() {
+        return;
+    }
+    let temp = tempfile::tempdir().expect("tempdir");
+    let session_id = format!("session-{}", Uuid::new_v4());
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    let session = NativeSession {
+        id: session_id.clone(),
+        snapshot: json!({
+            "id": session_id,
+            "title": "Memory Ledger",
+            "sessionKind": "normal",
+            "workingDir": "/tmp",
+            "projectBound": true,
+            "workingDirIsHome": false,
+            "turnStatus": "idle",
+            "messages": [],
+            "tools": [],
+            "updatedAt": "2026-06-19T00:00:00.000Z"
+        }),
+        created_at: "2026-06-19T00:00:00.000Z".to_string(),
+        saved: false,
+        save_label: None,
+        archived: false,
+        custom_title: None,
+        short_name: None,
+        runtime_turns: Vec::new(),
+        rollback_checkpoints: Vec::new(),
+        file_read_state: HashMap::new(),
+        dirty: true,
+    };
+    save_session(temp.path(), &session).expect("save session");
+
+    let created = process_extracted_candidate(
+        temp.path(),
+        &session_id,
+        &turn_id,
+        MemoryCandidateMutation {
+            fact: "Ledger should remember project cadence".to_string(),
+            content: json!({ "kind": "project_fact", "value": "cadence" }),
+            category: "project".to_string(),
+            scope: "project".to_string(),
+            confidence: 0.8,
+            source_type: "agent_inference".to_string(),
+            source_ref: Some(format!("{session_id}:{turn_id}:memory_agent")),
+            proposed_action: "create".to_string(),
+            ..MemoryCandidateMutation::default()
+        },
+    )
+    .expect("process candidate");
+    let created_id = created
+        .pointer("/candidate/id")
+        .and_then(Value::as_str)
+        .expect("candidate id")
+        .to_string();
+    apply_memory_candidate(temp.path(), &created_id).expect("apply candidate");
+
+    let rejected = create_memory_candidate(
+        temp.path(),
+        MemoryCandidateMutation {
+            fact: "Ledger should reject a stale candidate".to_string(),
+            content: json!({ "kind": "project_fact", "value": "stale" }),
+            category: "project".to_string(),
+            scope: "project".to_string(),
+            confidence: 0.8,
+            source_type: "agent_inference".to_string(),
+            source_ref: Some(format!("{session_id}:{turn_id}:memory_agent")),
+            proposed_action: "create".to_string(),
+            ..MemoryCandidateMutation::default()
+        },
+    )
+    .expect("create rejected candidate");
+    reject_memory_candidate(temp.path(), &rejected.id, Some("stale")).expect("reject candidate");
+
+    let ledger = ledger_dir(temp.path(), &session_id);
+    let events = fs::read_to_string(ledger.join("events.jsonl")).expect("ledger events");
+    assert!(events.contains("\"eventType\":\"memory_candidate_created\""));
+    assert!(events.contains("\"eventType\":\"memory_candidate_applied\""));
+    assert!(events.contains("\"eventType\":\"memory_candidate_rejected\""));
+    assert!(!events.contains("\"content\""));
+    let tracked = git_output(&ledger, &["ls-files"]);
+    assert!(!tracked.contains(".sqlite"));
+
+    let records = list_long_term_memory(
+        temp.path(),
+        MemoryQuery {
+            include_archived: true,
+            limit: 20,
+            ..MemoryQuery::default()
+        },
+    )
+    .expect("list long-term memory");
+    assert!(records.iter().any(|record| record.fact.contains("cadence")));
+}
+
+#[test]
 fn memory_explain_injection_records_ranked_long_term_memory_reasons() {
     let temp = tempfile::tempdir().expect("tempdir");
     create_long_term_memory(
@@ -893,6 +951,9 @@ fn shared_memory_injection_rotates_records() {
             category: "other".to_string(),
             fact: format!("rotation fact {index}"),
             content: json!({ "fact": format!("rotation fact {index}") }),
+            layer: "shared".to_string(),
+            value_class: "semantic".to_string(),
+            abstract_text: Some(format!("rotation fact {index}")),
             confidence: 1.0,
             source_type: "agent_inference".to_string(),
             source_ref: Some("test".to_string()),
@@ -907,6 +968,9 @@ fn shared_memory_injection_rotates_records() {
             expires_at: None,
             supersedes: None,
             superseded_by: None,
+            source_device: None,
+            revision: 1,
+            sync_origin: None,
         })
         .collect::<Vec<_>>();
 
@@ -955,6 +1019,7 @@ fn system_recall_selects_long_term_memory_with_source_markers() {
 
     let recall = select_system_recall_for_injection(
         temp.path(),
+        None,
         "我的邮箱是什么",
         None,
         &[json!({ "role": "user", "text": "我的邮箱是什么" })],
@@ -1003,6 +1068,7 @@ fn system_recall_indexes_session_messages_and_dedupes_current_context() {
 
     let recall = select_system_recall_for_injection(
         temp.path(),
+        None,
         "我叫什么你还记得吗？",
         None,
         &[json!({ "role": "user", "text": "我叫什么你还记得吗？" })],
@@ -1017,6 +1083,7 @@ fn system_recall_indexes_session_messages_and_dedupes_current_context() {
 
     let duplicate = select_system_recall_for_injection(
         temp.path(),
+        None,
         "我叫什么你还记得吗？",
         None,
         &[
@@ -1058,6 +1125,7 @@ fn system_recall_retrieves_prior_tool_like_session_message() {
 
     let recall = select_system_recall_for_injection(
         temp.path(),
+        None,
         "你之前是不是用摄像头给我拍过一张照片",
         None,
         &[json!({ "role": "user", "text": "你之前是不是用摄像头给我拍过一张照片" })],
@@ -1130,6 +1198,7 @@ fn system_recall_dedupes_repeated_session_facts() {
 
     let recall = select_system_recall_for_injection(
         temp.path(),
+        None,
         "我叫什么",
         None,
         &[json!({ "role": "user", "text": "我叫什么" })],

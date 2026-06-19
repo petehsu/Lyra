@@ -29,11 +29,11 @@ use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern,
     IUIAutomationSelectionItemPattern, IUIAutomationTogglePattern, IUIAutomationTreeWalker,
     IUIAutomationValuePattern, ToggleState_On, UIA_ButtonControlTypeId, UIA_CheckBoxControlTypeId,
-    UIA_ComboBoxControlTypeId, UIA_CONTROLTYPE_ID, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
+    UIA_ComboBoxControlTypeId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
     UIA_HyperlinkControlTypeId, UIA_ImageControlTypeId, UIA_InvokePatternId,
     UIA_ListItemControlTypeId, UIA_MenuItemControlTypeId, UIA_RadioButtonControlTypeId,
     UIA_SelectionItemPatternId, UIA_SplitButtonControlTypeId, UIA_TextControlTypeId,
-    UIA_TogglePatternId, UIA_ValuePatternId, UIA_WindowControlTypeId,
+    UIA_TogglePatternId, UIA_ValuePatternId, UIA_WindowControlTypeId, UIA_CONTROLTYPE_ID,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
@@ -160,7 +160,12 @@ fn read_role(element: &IUIAutomationElement) -> String {
             .CurrentControlType()
             .unwrap_or(UIA_CONTROLTYPE_ID(0));
         let base = normalize_control_type(control_type);
-        if base == "textbox" && element.CurrentIsPassword().map(|b| b.as_bool()).unwrap_or(false) {
+        if base == "textbox"
+            && element
+                .CurrentIsPassword()
+                .map(|b| b.as_bool())
+                .unwrap_or(false)
+        {
             "securetextbox".to_string()
         } else {
             base.to_string()
@@ -424,14 +429,16 @@ fn apps_from_windows(
 ) -> Vec<ComputerAppEntry> {
     let mut grouped: HashMap<u32, ComputerAppEntry> = HashMap::new();
     for window in windows {
-        let entry = grouped.entry(window.pid).or_insert_with(|| ComputerAppEntry {
-            app_ref: app_ref_for_pid(window.pid),
-            name: window.title.clone(),
-            pid: Some(window.pid as i64),
-            bundle_id: None,
-            is_foreground: false,
-            windows: Vec::new(),
-        });
+        let entry = grouped
+            .entry(window.pid)
+            .or_insert_with(|| ComputerAppEntry {
+                app_ref: app_ref_for_pid(window.pid),
+                name: window.title.clone(),
+                pid: Some(window.pid as i64),
+                bundle_id: None,
+                is_foreground: false,
+                windows: Vec::new(),
+            });
         let is_focused = window.hwnd == foreground;
         if is_focused {
             entry.is_foreground = true;
@@ -595,8 +602,8 @@ impl ComputerBackend for WindowsBackend {
                 // Press / Focus / Scroll: prefer InvokePattern; fall back to
                 // SetFocus so focusable-but-not-invokable controls still work.
                 _ => {
-                    if let Ok(invoke) =
-                        element.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+                    if let Ok(invoke) = element
+                        .GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
                     {
                         invoke.Invoke().map_err(|error| {
                             BackendError::new("uiaActionFailed", error.message().to_string())
@@ -627,12 +634,9 @@ impl ComputerBackend for WindowsBackend {
             },
         );
         let foreground_app = apps.into_iter().find(|app| app.is_foreground);
-        let focused_window = foreground_app.as_ref().and_then(|app| {
-            app.windows
-                .iter()
-                .find(|window| window.is_focused)
-                .cloned()
-        });
+        let focused_window = foreground_app
+            .as_ref()
+            .and_then(|app| app.windows.iter().find(|window| window.is_focused).cloned());
         let automation = automation()?;
         let focused_control = unsafe {
             automation

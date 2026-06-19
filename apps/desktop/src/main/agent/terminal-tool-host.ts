@@ -155,7 +155,9 @@ export const createTerminalToolHost = ({
     paneId: pane.paneId,
     title: pane.title,
     placement: pane.placement,
-    ...(pane.cwd === undefined ? {} : { cwd: pane.cwd })
+    ...(pane.currentCwd !== undefined || pane.cwd !== undefined
+      ? { cwd: pane.currentCwd ?? pane.cwd }
+      : {})
   });
 
   const privateTerminalMapForSession = (
@@ -329,6 +331,7 @@ export const createTerminalToolHost = ({
   };
 
   const resolveUiTerminal = async (
+    agentSessionId: string,
     payload: Record<string, unknown>,
     openIfMissing: boolean,
     options: {
@@ -375,6 +378,7 @@ export const createTerminalToolHost = ({
       pane = await service.openTerminalPane({
         placement: "dock",
         title: title ?? "Agent Terminal",
+        sourceAgentSessionId: agentSessionId,
         ...(cwd === undefined ? {} : { cwd })
       });
       await waitForTerminalSessionReady(pane.sessionId);
@@ -412,7 +416,7 @@ export const createTerminalToolHost = ({
       || hasUiRef
       || (preference === "auto" && getBrowserFollowMode())
     ) {
-      return await resolveUiTerminal(payload, options.uiOpenIfMissing, {
+      return await resolveUiTerminal(agentSessionId, payload, options.uiOpenIfMissing, {
         fallbackToActiveWhenOnlySessionId:
           preference === "auto" && getBrowserFollowMode() && !hasUiRef
       });
@@ -455,6 +459,7 @@ export const createTerminalToolHost = ({
   };
 
   const openReplacementUiTerminal = async (
+    agentSessionId: string,
     payload: Record<string, unknown>
   ): Promise<TerminalToolTarget> => {
     const service = getWorkbenchObservationService();
@@ -466,6 +471,7 @@ export const createTerminalToolHost = ({
     const pane = await service.openTerminalPane({
       placement: "dock",
       title: title ?? "Agent Terminal",
+      sourceAgentSessionId: agentSessionId,
       ...(cwd === undefined ? {} : { cwd })
     });
     await waitForTerminalSessionReady(pane.sessionId);
@@ -498,7 +504,7 @@ export const createTerminalToolHost = ({
     }
     if (target.type === "ui") {
       if (targetPreference === "ui" || (targetPreference === "auto" && getBrowserFollowMode())) {
-        return await openReplacementUiTerminal(payload);
+        return await openReplacementUiTerminal(agentSessionId, payload);
       }
     } else if (targetPreference !== "ui") {
       privateTerminalsByAgentSession.get(agentSessionId)?.delete(target.sessionId);
@@ -567,6 +573,7 @@ export const createTerminalToolHost = ({
       output: projected.output,
       running: response.running,
       exitCode: response.exitCode,
+      lifecycle: response.lifecycle,
       truncated: response.truncated || projected.truncated,
       ...(memory === undefined ? {} : { memory }),
       ...(readHint === undefined ? {} : { readHint }),
@@ -638,10 +645,12 @@ export const createTerminalToolHost = ({
         activeCommand: response.activeCommand,
         prompt: response.prompt,
         regions: response.regions,
+        lifecycle: response.lifecycle,
         truncated: response.truncated || visibleProjection.truncated
       },
       running: response.running,
       exitCode: response.exitCode,
+      lifecycle: response.lifecycle,
       truncated: response.truncated || visibleProjection.truncated,
       ...(memory === undefined ? {} : { memory }),
       ...(readHint === undefined ? {} : { readHint })
@@ -800,7 +809,7 @@ export const createTerminalToolHost = ({
       const useUi = preference === "ui"
         || (preference === "auto" && getBrowserFollowMode());
       if (useUi) {
-        let target = await resolveUiTerminal(request, true);
+        let target = await resolveUiTerminal(agentSessionId, request, true);
         await waitForTerminalSessionReady(target.sessionId);
         target = await ensureWritableTerminalTarget(
           agentSessionId,
@@ -919,7 +928,8 @@ export const createTerminalToolHost = ({
             reason: "status",
             exitCode: command.exitCode ?? null,
             signal: command.signal ?? null,
-            memory: commandStatus?.memory
+            memory: commandStatus?.memory,
+            lifecycle: commandStatus?.lifecycle
           }
           : await terminalBridge.waitCommand({
             sessionId: target.sessionId,
@@ -940,7 +950,8 @@ export const createTerminalToolHost = ({
             reason: `command:${waited.status}`,
             commandId: waited.commandId ?? command.commandId,
             running: false,
-            exitCode: waited.exitCode ?? response.exitCode
+            exitCode: waited.exitCode ?? response.exitCode,
+            lifecycle: waited.lifecycle ?? commandStatus?.lifecycle ?? response.lifecycle
           });
         }
       }
@@ -1172,6 +1183,7 @@ export const createTerminalToolHost = ({
         output: projected.output,
         memory: response.memory,
         readHint: terminalReadHintFromMemory(response.memory),
+        lifecycle: response.lifecycle,
         running: false,
         exitCode: null,
         truncated: projected.truncated
@@ -1259,6 +1271,7 @@ export const createTerminalToolHost = ({
         permissionId: inputResponse.permissionId ?? null,
         events: inputResponse.events,
         inputMemory: inputResponse.memory,
+        lifecycle: inputResponse.lifecycle ?? response.lifecycle,
         wrote:
           command !== undefined
             ? command
@@ -1434,6 +1447,7 @@ export const createTerminalToolHost = ({
         output: `Mapped ${response.regions.length} terminal regions.`,
         running: response.screen.running,
         exitCode: response.screen.exitCode,
+        lifecycle: screenResult.lifecycle ?? response.screen.lifecycle,
         truncated: response.screen.truncated
       };
     },
@@ -1492,6 +1506,7 @@ export const createTerminalToolHost = ({
         output: `Terminal act ${response.actId} status=${response.status}.`,
         running: screenResult?.running ?? false,
         exitCode: screenResult?.exitCode ?? null,
+        lifecycle: screenResult?.lifecycle ?? response.map?.screen.lifecycle,
         truncated: screenResult?.truncated ?? false
       };
     },

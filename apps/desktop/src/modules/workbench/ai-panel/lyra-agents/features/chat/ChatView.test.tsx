@@ -289,15 +289,18 @@ describe("ChatView progressive message window", () => {
     });
   });
 
-  test("virtualizes off-screen messages out of the DOM", () => {
-    const { container } = render(<ProgressiveChatHarness />);
+  test("mounts every message in the current window", async () => {
+    const { container } = render(<ProgressiveChatHarness fixedVisibleCount={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 120 });
-    scroll.scrollTop = 0;
-    fireEvent.scroll(scroll);
+    primeScrollViewport(scroll);
+
+    await waitFor(() => {
+      expect(screen.getByText("Message 30")).toBeInTheDocument();
+      expect(screen.getByText("Message 19")).toBeInTheDocument();
+    });
 
     const mountedSlots = container.querySelectorAll("[data-chat-message-id]").length;
-    expect(mountedSlots).toBeLessThan(12);
+    expect(mountedSlots).toBe(12);
   });
 
   test("hides the sticky anchor once its message is visible at the top", async () => {

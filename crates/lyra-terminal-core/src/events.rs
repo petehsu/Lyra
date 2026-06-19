@@ -47,6 +47,10 @@ pub(crate) struct NativeEvent {
     pub(crate) source: Option<String>,
     pub(crate) mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) current_cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) command_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) command: Option<NativeCommandCompletionEvent>,
@@ -101,8 +105,26 @@ pub(crate) fn emit_command_completion(
         error: None,
         source: Some(source.to_string()),
         mode: Some(mode.to_string()),
+        cwd: None,
+        current_cwd: None,
         command_id: Some(command_id),
         command: Some(native_command_completion(completion)),
+    });
+}
+
+pub(crate) fn emit_cwd_changed(session_id: &str, source: &str, mode: &str, cwd: &str) {
+    emit_event(NativeEvent {
+        kind: "cwdChanged".to_string(),
+        session_id: session_id.to_string(),
+        data: None,
+        exit_code: None,
+        error: None,
+        source: Some(source.to_string()),
+        mode: Some(mode.to_string()),
+        cwd: Some(cwd.to_string()),
+        current_cwd: Some(cwd.to_string()),
+        command_id: None,
+        command: None,
     });
 }
 

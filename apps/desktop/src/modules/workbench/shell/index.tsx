@@ -25,6 +25,7 @@ import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
 import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
+
 import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
 import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
 import { TitlebarNavigation } from "./titlebar-navigation";
@@ -58,6 +59,8 @@ import { useOpenTerminalLiveSession } from "./use-open-terminal-live-session";
 import { useSoftwareStoreBuiltinAppOpener } from "./use-software-store-builtin-app-opener";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
+import { useTerminalIdentityProjection } from "./use-terminal-identity-projection";
+import { useWorkspaceAppIdentityProjection } from "./use-workspace-app-identity-projection";
 import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
 import { useWorkbenchFileAppModels } from "./use-workbench-file-app-models";
 import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
@@ -133,6 +136,15 @@ export const WorkbenchShell = () => {
   useTerminalSessionRestore({
     desktopApi,
     terminalModel
+  });
+  const terminalIdentityByTabId = useTerminalIdentityProjection({
+    desktopApi,
+    terminalModel,
+    aiSessionTabs: aiSessionTabsModel.tabs
+  });
+  const workspaceAppIdentityByTabId = useWorkspaceAppIdentityProjection({
+    desktopApi,
+    tabs: tabsModel.tabs
   });
   const contextMenuModel = useContextMenuModel();
   const composerCitationSinkRef = useRef<ComposerCitationSink | null>(null);
@@ -331,11 +343,7 @@ resolvedThemeId,
     locale: preferencesModel.preferences.locale,
     t
   });
-  useEffect(() => {
-    void desktopApi?.workbenchBrowser?.setModalOcclusion?.({
-      active: globalDialogModel.state.isOpen
-    });
-  }, [desktopApi, globalDialogModel.state.isOpen]);
+
   const {
     onOpenFileFromManager,
     onRevealPathInFileManager,
@@ -739,6 +747,8 @@ resolvedThemeId,
   const titlebarSecurityLabels = useMemo(() => createTitlebarSecurityLabels(t), [t]);
   const workspaceTabsProps = useWorkbenchWorkspaceTabsProps({
     tabsModel,
+    terminalIdentityByTabId,
+    workspaceAppIdentityByTabId,
     activeTabPageKind,
     canGoBack: pageNavigationState.canGoBack,
     canGoForward: pageNavigationState.canGoForward,
@@ -821,6 +831,7 @@ resolvedThemeId,
         themeSignature={preferencesModel.preferences.theme}
         uiThemeId={resolvedThemeId}
         model={terminalModel}
+        terminalIdentityByTabId={terminalIdentityByTabId}
         terminalPanelSide={panelLayoutModel.terminalPanelSide}
         onRequestCloseTab={terminalWorkspaceActions.closeTerminalTabEverywhere}
         onRequestTabContextMenu={(request) => {

@@ -33,20 +33,12 @@ pub(crate) struct NativeStateFile {
     pub(crate) tool_usage_cache: HashMap<String, ToolUsageCacheEntry>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
-    #[serde(default, rename = "sharedMemory", skip_serializing)]
-    pub(crate) legacy_shared_memory: Vec<SharedMemoryRecord>,
     #[serde(default)]
     pub(crate) active_skills: HashSet<String>,
-    #[serde(default, rename = "overnightRuns", skip_serializing)]
-    pub(crate) legacy_overnight_runs: HashMap<String, Value>,
     #[serde(default)]
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     #[serde(default)]
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
-    #[serde(default, rename = "goals", skip_serializing)]
-    pub(crate) legacy_goals: HashMap<String, Value>,
-    #[serde(default, rename = "focusedGoalId", skip_serializing)]
-    pub(crate) legacy_focused_goal_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -210,35 +202,15 @@ pub(crate) struct NativeAccount {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SharedMemoryRecord {
-    pub(crate) id: String,
-    pub(crate) scope: String,
-    pub(crate) content: Value,
-    pub(crate) created_at: String,
-    pub(crate) updated_at: String,
-    pub(crate) status: String,
-    #[serde(default)]
-    pub(crate) priority: i64,
-    #[serde(default)]
-    pub(crate) injection_count: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) last_injected_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) category: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) confidence: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct LongTermMemoryRecord {
     pub(crate) id: String,
     pub(crate) scope: String,
     pub(crate) category: String,
     pub(crate) fact: String,
     pub(crate) content: Value,
+    pub(crate) layer: String,
+    pub(crate) value_class: String,
+    pub(crate) abstract_text: Option<String>,
     pub(crate) confidence: f64,
     pub(crate) source_type: String,
     pub(crate) source_ref: Option<String>,
@@ -253,6 +225,12 @@ pub(crate) struct LongTermMemoryRecord {
     pub(crate) expires_at: Option<String>,
     pub(crate) supersedes: Option<String>,
     pub(crate) superseded_by: Option<String>,
+    #[serde(default)]
+    pub(crate) source_device: Option<String>,
+    #[serde(default)]
+    pub(crate) revision: u64,
+    #[serde(default)]
+    pub(crate) sync_origin: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -270,6 +248,8 @@ pub(crate) struct MemoryQuery {
     pub(crate) query: Option<String>,
     pub(crate) scope: Option<String>,
     pub(crate) category: Option<String>,
+    pub(crate) layer: Option<String>,
+    pub(crate) value_class: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) include_archived: bool,
     pub(crate) include_related: bool,
@@ -337,6 +317,9 @@ pub(crate) struct MemoryMutation {
     pub(crate) category: Option<String>,
     pub(crate) fact: Option<String>,
     pub(crate) content: Option<Value>,
+    pub(crate) layer: Option<String>,
+    pub(crate) value_class: Option<String>,
+    pub(crate) abstract_text: Option<String>,
     pub(crate) confidence: Option<f64>,
     pub(crate) source_type: Option<String>,
     pub(crate) source_ref: Option<String>,
@@ -347,6 +330,9 @@ pub(crate) struct MemoryMutation {
     pub(crate) expires_at: Option<String>,
     pub(crate) supersedes: Option<String>,
     pub(crate) superseded_by: Option<String>,
+    pub(crate) source_device: Option<String>,
+    pub(crate) revision: Option<u64>,
+    pub(crate) sync_origin: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -357,6 +343,14 @@ pub(crate) struct MemoryCandidate {
     pub(crate) content: Value,
     pub(crate) category: String,
     pub(crate) scope: String,
+    #[serde(default)]
+    pub(crate) layer: Option<String>,
+    #[serde(default)]
+    pub(crate) value_class: Option<String>,
+    #[serde(default)]
+    pub(crate) trigger_event: Option<String>,
+    #[serde(default)]
+    pub(crate) evidence_json: Option<Value>,
     pub(crate) confidence: f64,
     pub(crate) source_type: String,
     pub(crate) source_ref: Option<String>,
@@ -368,6 +362,10 @@ pub(crate) struct MemoryCandidate {
     pub(crate) created_at: String,
     pub(crate) reviewed_at: Option<String>,
     pub(crate) expires_at: Option<String>,
+    #[serde(default)]
+    pub(crate) stability_review_at: Option<String>,
+    #[serde(default)]
+    pub(crate) stability_window_hours: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -376,6 +374,11 @@ pub(crate) struct MemoryCandidateMutation {
     pub(crate) content: Value,
     pub(crate) category: String,
     pub(crate) scope: String,
+    pub(crate) layer: Option<String>,
+    pub(crate) value_class: Option<String>,
+    pub(crate) abstract_text: Option<String>,
+    pub(crate) trigger_event: Option<String>,
+    pub(crate) evidence_json: Option<Value>,
     pub(crate) confidence: f64,
     pub(crate) source_type: String,
     pub(crate) source_ref: Option<String>,
@@ -385,6 +388,19 @@ pub(crate) struct MemoryCandidateMutation {
     pub(crate) relation_type: Option<String>,
     pub(crate) status: Option<String>,
     pub(crate) expires_at: Option<String>,
+    pub(crate) stability_review_at: Option<String>,
+    pub(crate) stability_window_hours: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryJobRecord {
+    pub(crate) id: String,
+    pub(crate) session_id: String,
+    pub(crate) turn_id: String,
+    pub(crate) job_type: String,
+    pub(crate) payload: Value,
+    pub(crate) status: String,
+    pub(crate) created_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -466,5 +482,3 @@ pub(crate) struct ClarificationRequest {
     pub(crate) created_at: String,
     pub(crate) responded_at: Option<String>,
 }
-
-

@@ -17,14 +17,16 @@ pub(crate) fn user_message(text: String, images: Vec<Value>, created_at: String)
             "height": image.get("height").cloned().unwrap_or(Value::Null),
         }));
     }
-    json!({
+    let mut message = json!({
         "id": format!("message-{}", Uuid::new_v4()),
         "role": "user",
         "text": text,
         "blocks": blocks,
         "createdAt": created_at,
         "rollback": { "available": false, "unavailableReason": "No checkpoint was captured for this message." }
-    })
+    });
+    super::pinned_context::stamp_message_timestamps(&mut message, Some(created_at.as_str()));
+    message
 }
 
 pub(crate) fn assistant_message(text: String) -> Value {
@@ -32,13 +34,17 @@ pub(crate) fn assistant_message(text: String) -> Value {
 }
 
 pub(crate) fn assistant_message_with_id(id: String, text: String) -> Value {
-    json!({
+    let timestamp = now();
+    let mut message = json!({
         "id": id,
         "role": "assistant",
         "text": text,
         "blocks": [{ "type": "text", "id": "text-0", "text": text }],
-        "createdAt": now()
-    })
+        "createdAt": timestamp
+    });
+    super::pinned_context::stamp_message_timestamps(&mut message, Some(timestamp.as_str()));
+    super::message_render::enrich_assistant_message_render(&mut message, false);
+    message
 }
 
 pub(crate) fn assistant_message_with_metadata(text: String, metadata: Option<Value>) -> Value {

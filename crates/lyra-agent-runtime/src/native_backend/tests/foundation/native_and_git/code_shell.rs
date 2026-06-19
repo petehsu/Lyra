@@ -193,6 +193,48 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn shell_run_cleans_up_background_descendant_pipe_leak() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Shell Pipe Leak", "workingDir": temp.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    let started = Instant::now();
+    let result = tool_shell_run(
+        &session_id,
+        "turn-shell-leak",
+        "tool-shell-leak",
+        &json!({ "command": "sleep 5 & printf done", "timeoutMs": 3000 }),
+    )
+    .expect("shell result should not hang on inherited pipes");
+
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "shell_run should not wait for background descendants that hold stdout open"
+    );
+    assert_eq!(result.raw["timedOut"].as_bool(), Some(false));
+    assert_eq!(result.raw["processGroupTerminated"].as_bool(), Some(true));
+    assert_eq!(result.raw["success"].as_bool(), Some(false));
+    assert!(
+        result.raw["stdout"]
+            .as_str()
+            .is_some_and(|stdout| stdout.contains("done"))
+    );
+    assert!(
+        result
+            .recommended_next_action
+            .as_deref()
+            .is_some_and(|action| action.contains("terminal session"))
+    );
+}
+
 #[test]
 fn native_shell_code_lsp_and_budget_guards_are_structured() {
     let backend = LyraAgentBackend;

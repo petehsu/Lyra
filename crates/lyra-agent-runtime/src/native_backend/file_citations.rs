@@ -34,10 +34,7 @@ pub(crate) fn apply_file_citations_to_user_message(user_message: &mut Value, cit
 pub(crate) fn format_file_cite_xml(citation: &Value) -> Option<String> {
     let id = citation.get("id").and_then(Value::as_str)?;
     let path = citation.get("path").and_then(Value::as_str)?;
-    let name = citation
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or(path);
+    let name = citation.get("name").and_then(Value::as_str).unwrap_or(path);
     let preview = citation
         .get("preview")
         .and_then(Value::as_str)
@@ -54,14 +51,8 @@ fn normalize_file_citation(raw: Value) -> Option<Value> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .unwrap_or_else(|| format!("file-{}", Uuid::new_v4()));
-    let name = raw
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or(path);
-    let preview = raw
-        .get("preview")
-        .and_then(Value::as_str)
-        .unwrap_or(name);
+    let name = raw.get("name").and_then(Value::as_str).unwrap_or(path);
+    let preview = raw.get("preview").and_then(Value::as_str).unwrap_or(name);
     Some(json!({
         "id": id,
         "path": path,

@@ -28,7 +28,7 @@ use browser_source::{
     should_auto_browser_fallback_error,
 };
 use render_dispatch::render_source;
-use source::{input_url, resolve_source, Source};
+use source::{Source, input_url, resolve_source};
 
 /// Run the full pipeline for `request`, fetching via `fetch` when needed.
 pub fn run(
@@ -148,12 +148,7 @@ fn run_with_optional_browser(
                 let reason = auto_browser_fallback_reason(request, &result);
                 attempts.push(engine_attempt("http", false, Some(reason), status));
                 if let Some(browser) = browser {
-                    return try_browser_after_http(
-                        request,
-                        browser,
-                        &mut attempts,
-                        total_start,
-                    );
+                    return try_browser_after_http(request, browser, &mut attempts, total_start);
                 }
                 result.warnings.push(ReaderWarning {
                     code: WarningCode::BrowserRecommended,
@@ -184,7 +179,12 @@ fn run_with_optional_browser(
                 error_status(&error),
             ));
             if browser.is_some() {
-                return try_browser_after_http(request, browser.unwrap(), &mut attempts, total_start);
+                return try_browser_after_http(
+                    request,
+                    browser.unwrap(),
+                    &mut attempts,
+                    total_start,
+                );
             }
             Err(attach_attempts_to_error(error, attempts))
         }
@@ -218,7 +218,12 @@ fn try_browser_after_http(
                 Some("recovered after http failure or thin static render".to_string()),
                 browser_result.status,
             ));
-            attach_engine_metadata(&mut browser_result, "browser", attempts.clone(), total_start);
+            attach_engine_metadata(
+                &mut browser_result,
+                "browser",
+                attempts.clone(),
+                total_start,
+            );
             Ok(browser_result)
         }
         Err(error) => {

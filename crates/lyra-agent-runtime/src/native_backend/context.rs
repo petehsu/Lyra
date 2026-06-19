@@ -455,8 +455,55 @@ pub(crate) fn build_system_prompt(
 
 pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
     let mut tools = tools::tool_fs::model_provider_tools();
+    tools.push(clarification_ask_model_tool());
     tools.push(session_read_message_model_tool());
     tools
+}
+
+fn clarification_ask_model_tool() -> Value {
+    function_tool(
+        LYRA_CLARIFICATION_ASK_TOOL,
+        "Ask the member one concise structured clarification question through Lyra's decision panel when progress genuinely depends on their input. Prefer reasonable assumptions and continue when they are safe.",
+        json!({
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The concise question to show in the decision panel."
+                },
+                "options": {
+                    "type": "array",
+                    "description": "Optional choices. Use 2-4 objects when there are clear mutually exclusive options; omit or leave empty for free-form answers.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {
+                                "type": "string",
+                                "description": "Short option label."
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Optional explanation of the tradeoff."
+                            }
+                        },
+                        "required": ["label"],
+                        "additionalProperties": false
+                    },
+                    "default": []
+                },
+                "allowCustomAnswer": {
+                    "type": "boolean",
+                    "description": "Whether the member can type a custom answer.",
+                    "default": true
+                },
+                "detail": {
+                    "type": "string",
+                    "description": "Optional short supporting detail."
+                }
+            },
+            "required": ["question"]
+        }),
+    )
 }
 
 fn session_read_message_model_tool() -> Value {
@@ -514,6 +561,7 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 
 pub(crate) fn model_tool_names(_design_research_required: bool) -> Vec<String> {
     let mut names = tools::tool_fs::model_tool_names();
+    names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }

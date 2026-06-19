@@ -69,11 +69,7 @@ pub(crate) fn capture_page_snapshot(
         .unwrap_or(0);
     let text_chars = text.chars().count();
     let snapshot = PageSnapshot {
-        id: format!(
-            "page-snap-{}-{}",
-            session_id,
-            Uuid::new_v4().simple()
-        ),
+        id: format!("page-snap-{}-{}", session_id, Uuid::new_v4().simple()),
         session_id: session_id.to_string(),
         url: url.to_string(),
         title,

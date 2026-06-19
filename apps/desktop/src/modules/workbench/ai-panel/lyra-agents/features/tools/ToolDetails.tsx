@@ -1,35 +1,38 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   ToolDetails as ToolDetailsType,
-  ToolActionTarget,
   WorkbenchTabSummary
 } from "../../core/types";
 import { ChevronIcon } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { TickingNumber } from "../../components/TickingNumber";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
 import {
   ActionTargetList,
   ActionText,
-  ClickableImage,
-  isImageFileReference
+  ClickableImage
 } from "../rich-text/ActionTargets";
-import { ToolPeekStrip } from "./ToolPeek";
 import { TerminalToolCard } from "./TerminalToolCard";
 import { RenderSurfacePreview } from "./RenderSurfacePreview";
 import { AppButton } from "@renderer/ui/components";
+import { InlineDiffStats } from "./InlineDiffStats";
 
 /**
  * Level-3 renderer. Rendered inline without surrounding borders or panels so
  * it reads as a continuation of the message, not a nested card.
  */
-export function ToolDetails({ details }: { details: ToolDetailsType }) {
+export function ToolDetails({
+  details,
+  running = false
+}: {
+  details: ToolDetailsType;
+  running?: boolean;
+}) {
   switch (details.type) {
     case "edit":
-      return <EditCard details={details} />;
+      return <EditCard details={details} running={running} />;
     case "read":
       return <ReadCard details={details} />;
     case "search":
@@ -66,13 +69,8 @@ function LumenCard({
 }: {
   details: Extract<ToolDetailsType, { type: "lumen" }>;
 }) {
-  const visibleTargets = details.screenshot === undefined
-    ? details.targets
-    : details.targets?.filter((target) => !isImageActionTarget(target));
-
   return (
     <div className="lyra-agents-info-block lyra-agents-lumen-card">
-      <ToolPeekStrip peek={details.peek} className="lyra-agents-lumen-card-peek" />
       {details.screenshot && (
         <div className="lyra-agents-tool-screenshot-container">
           <ClickableImage
@@ -84,7 +82,6 @@ function LumenCard({
           />
         </div>
       )}
-      <ActionTargetList targets={visibleTargets} />
       {details.text && (
         <pre className="lyra-agents-info-pre lyra-agents-lumen-output">
           {details.text}
@@ -101,37 +98,16 @@ export function RenderSurfaceCard({
 }) {
   return (
     <div className="lyra-agents-render-surface">
-      <div className="lyra-agents-render-surface-header">
-        <div className="lyra-agents-render-surface-title">
-          <span>{details.title}</span>
-          <span className="lyra-agents-render-surface-format">{details.format}</span>
-        </div>
-        <div className="lyra-agents-render-surface-meta">
-          <span>{details.operation}</span>
-          <span>{details.surfaceId}</span>
-        </div>
-      </div>
+      <div className="lyra-agents-render-surface-title">{details.title}</div>
       {details.summary ? (
         <p className="lyra-agents-render-surface-summary">
           <ActionText text={details.summary} />
         </p>
       ) : null}
       <RenderSurfacePreview details={details} />
-      <div className="lyra-agents-render-surface-footer">
-        <span>{details.interactive ? "Interactive sandbox" : "Static surface"}</span>
-        {details.security?.node === false ? <span>No Node</span> : null}
-        <span>{details.height}px</span>
-      </div>
     </div>
   );
 }
-
-const isImageActionTarget = (target: ToolActionTarget): boolean => {
-  if ((target.mediaType ?? "").toLowerCase().startsWith("image/")) {
-    return true;
-  }
-  return isImageFileReference(target.value);
-};
 
 function SoftwareCard({
   details,
@@ -141,12 +117,6 @@ function SoftwareCard({
   return (
     <div className="lyra-agents-info-block">
       <ActionTargetList targets={details.targets} />
-      {details.softwareId || details.actionId ? (
-        <div className="lyra-agents-info-line">
-          {details.softwareId ? <span className="lyra-agents-info-dim">{details.softwareId}</span> : null}
-          {details.actionId ? <span className="lyra-agents-info-strong">{details.actionId}</span> : null}
-        </div>
-      ) : null}
       {details.text ? (
         <pre className="lyra-agents-info-pre">
           {details.text}
@@ -158,14 +128,25 @@ function SoftwareCard({
 
 function EditCard({
   details,
+  running = false,
 }: {
   details: Extract<ToolDetailsType, { type: "edit" }>;
+  running?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(running);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
+  const hasDiff = details.hunks.length > 0;
+  const showStats = details.additions > 0 || details.deletions > 0;
+
+  useEffect(() => {
+    if (running) {
+      setOpen(true);
+    }
+  }, [running]);
+
   return (
-    <div className={`lyra-agents-edit-card ${open ? "open" : ""}`}>
+    <div className={`lyra-agents-edit-card ${open ? "open" : ""} ${running ? "is-running" : ""}`}>
       <AppButton variant="ghost" size="sm"
         type="button"
         className="lyra-agents-edit-card-head"
@@ -180,15 +161,16 @@ function EditCard({
             <ChevronIcon open={open} />
           </span>
         </span>
-        <span className="lyra-agents-edit-card-file">{details.file}</span>
-        <span className="lyra-agents-edit-card-stats">
-          <span className="lyra-agents-diff-add">
-            +<TickingNumber value={details.additions} direction="up" />
-          </span>
-          <span className="lyra-agents-diff-del">
-            -<TickingNumber value={details.deletions} direction="down" />
-          </span>
+        <span className={`lyra-agents-edit-card-file ${running && !hasDiff ? "lyra-agents-shimmer" : ""}`}>
+          {details.file}
         </span>
+        {showStats ? (
+          <InlineDiffStats
+            additions={details.additions}
+            deletions={details.deletions}
+            className="lyra-agents-edit-card-stats lyra-agents-inline-stats"
+          />
+        ) : null}
       </AppButton>
 
       {open && !anchorVisible && (
@@ -203,6 +185,11 @@ function EditCard({
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
           <div className="lyra-agents-edit-card-body">
+            {running && !hasDiff ? (
+              <div className="lyra-agents-edit-card-waiting lyra-agents-shimmer">
+                {t("tool.streamingDiff")}
+              </div>
+            ) : null}
             {details.hunks.map((hunk, i) => (
               <div key={i} className="lyra-agents-diff-hunk">
                 {hunk.lines.map((line, j) => {
@@ -210,7 +197,7 @@ function EditCard({
                   return (
                     <div
                       key={j}
-                      className={`lyra-agents-diff-line diff-line-${line.kind} lyra-agents-stagger-item`}
+                      className={`lyra-agents-diff-line lyra-agents-diff-line-${line.kind} lyra-agents-stagger-item`}
                       style={{ "--stagger-index": j } as React.CSSProperties}
                     >
                       <span className="lyra-agents-diff-gutter">{lineNumber}</span>
@@ -359,9 +346,6 @@ function WebCard({
             </AppButton>
           </div>
           {details.title && <div className="lyra-agents-web-fetch-title">{details.title}</div>}
-          {typeof details.fetchedBytes === "number" && details.fetchedBytes > 0 ? (
-            <div className="lyra-agents-info-dim">{details.fetchedBytes.toLocaleString()} bytes</div>
-          ) : null}
         </>
       )}
       {details.summary && (
@@ -397,15 +381,6 @@ function WorkbenchCard({
 
   return (
     <div className="lyra-agents-info-block lyra-agents-workbench-card">
-      <div className="lyra-agents-workbench-card-summary">
-        <span className="lyra-agents-workbench-action-label">{details.label}</span>
-        {tabs.length > 0 && (
-          <span className="lyra-agents-info-dim">
-            {tabs.length === 1 ? "1 tab" : `${tabs.length} tabs`}
-          </span>
-        )}
-      </div>
-
       {tabs.length > 0 && (
         <div className="lyra-agents-workbench-tab-list">
           {tabs.map((tab) => (
@@ -442,48 +417,24 @@ function WorkbenchTabRow({
   const hasUrl = tab.url !== undefined;
   return (
     <div className="lyra-agents-workbench-tab-row">
-      <span
-        className="lyra-agents-workbench-tab-state"
-        data-active={tab.flags.includes("active")}
-        aria-hidden
-      />
-      <div className="lyra-agents-workbench-tab-main">
-        <div className="lyra-agents-workbench-tab-title-row">
-          {hasUrl ? (
-            <AppButton variant="ghost" size="sm"
-              type="button"
-              className="lyra-agents-workbench-tab-title"
-              title={tab.url}
-              onClick={onOpen}
-            >
-              <span>{tab.title}</span>
-              <ExternalLink size={13} strokeWidth={1.8} aria-hidden />
-            </AppButton>
-          ) : (
-            <span className="lyra-agents-workbench-tab-title-static">{tab.title}</span>
-          )}
-        </div>
-        <div className="lyra-agents-workbench-tab-meta">
-          <span>{tab.tabId}</span>
-          <span>{tab.kind}</span>
-          {tab.observationKind && <span>{tab.observationKind}</span>}
-        </div>
-        {tab.flags.length > 0 && (
-          <div className="lyra-agents-workbench-tab-flags">
-            {tab.flags.map((flag) => (
-              <span key={flag} className="lyra-agents-workbench-tab-flag">
-                {flag}
-              </span>
-            ))}
-          </div>
-        )}
-        {tab.url && <div className="lyra-agents-workbench-tab-url">{webResultHost(tab.url)}</div>}
-        {tab.excerpt && (
-          <p className="lyra-agents-workbench-tab-preview">
-            <ActionText text={tab.excerpt} />
-          </p>
-        )}
-      </div>
+      {hasUrl ? (
+        <AppButton variant="ghost" size="sm"
+          type="button"
+          className="lyra-agents-workbench-tab-title"
+          title={tab.url}
+          onClick={onOpen}
+        >
+          <span>{tab.title}</span>
+          <ExternalLink size={13} strokeWidth={1.8} aria-hidden />
+        </AppButton>
+      ) : (
+        <span className="lyra-agents-workbench-tab-title-static">{tab.title}</span>
+      )}
+      {tab.excerpt ? (
+        <p className="lyra-agents-workbench-tab-preview">
+          <ActionText text={tab.excerpt} />
+        </p>
+      ) : null}
     </div>
   );
 }

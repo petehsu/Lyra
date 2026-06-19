@@ -1,5 +1,6 @@
 use lyra_render_core::{
-    highlight_request, invalidate_cache, render_document, HighlightRequest, RenderDocumentOptions,
+    apply_render_document_overrides, highlight_request, invalidate_cache, render_document,
+    HighlightRequest, RenderDocumentOptions,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -36,29 +37,21 @@ fn parse_json<T: DeserializeOwned>(input: &str) -> Result<T, String> {
 }
 
 fn stringify_json<T: Serialize>(value: &T) -> Result<String, String> {
-    serde_json::to_string(value).map_err(|error| format!("failed to serialize JSON payload: {error}"))
+    serde_json::to_string(value)
+        .map_err(|error| format!("failed to serialize JSON payload: {error}"))
 }
 
 fn build_render_options(request: &JsonRenderDocumentRequest) -> RenderDocumentOptions {
     let mut options = RenderDocumentOptions::default();
-    if let Some(theme) = request.theme.as_deref() {
-        options.theme = match theme {
-            "light" => lyra_render_core::RenderTheme::Light,
-            "auto" => lyra_render_core::RenderTheme::Auto,
-            _ => lyra_render_core::RenderTheme::Dark,
-        };
-    }
-    if let Some(enable_math) = request.enable_math {
-        options.enable_math = enable_math;
-    }
-    if let Some(enable_mermaid) = request.enable_mermaid {
-        options.enable_mermaid = enable_mermaid;
-    }
-    if let Some(highlight_code) = request.highlight_code {
-        options.highlight_code = highlight_code;
-    }
-    options.locale = request.locale.clone();
-    let _ = request.mode.as_deref();
+    apply_render_document_overrides(
+        &mut options,
+        request.mode.as_deref(),
+        request.theme.as_deref(),
+        request.enable_math,
+        request.enable_mermaid,
+        request.highlight_code,
+        request.locale.clone(),
+    );
     options
 }
 
@@ -84,9 +77,8 @@ pub fn highlight_spans_json(input: &str) -> Result<String, JsValue> {
             _ => lyra_render_core::RenderTheme::Dark,
         },
     };
-    let spans = highlight_request(&highlight).map_err(|error| {
-        JsValue::from_str(&format!("RENDER_ERROR::HIGHLIGHT::{}", error))
-    })?;
+    let spans = highlight_request(&highlight)
+        .map_err(|error| JsValue::from_str(&format!("RENDER_ERROR::HIGHLIGHT::{}", error)))?;
     stringify_json(&spans).map_err(|error| JsValue::from_str(&error))
 }
 

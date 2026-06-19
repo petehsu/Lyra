@@ -15,6 +15,9 @@ export type AiPanelSessionTab = {
   readonly title: string;
   readonly lastKnownStatus: AgentTurnStatus | null;
   readonly updatedAt?: string | null;
+  readonly workingDir?: string | null;
+  readonly projectBound?: boolean;
+  readonly workingDirIsHome?: boolean;
   readonly draftWorkingDir?: string | null;
 };
 
@@ -84,6 +87,7 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
   if (tabId === undefined) return null;
   const title = sanitizeOptionalString(value.title) ?? DEFAULT_SESSION_TITLE;
   const updatedAt = sanitizeOptionalString(value.updatedAt);
+  const workingDir = sanitizeOptionalString(value.workingDir);
   const draftWorkingDir = sanitizeOptionalString(value.draftWorkingDir);
   return {
     tabId,
@@ -91,6 +95,9 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
     title,
     lastKnownStatus: sanitizeStatus(value.lastKnownStatus),
     ...(updatedAt === undefined ? {} : { updatedAt }),
+    ...(workingDir === undefined ? {} : { workingDir }),
+    ...(typeof value.projectBound === "boolean" ? { projectBound: value.projectBound } : {}),
+    ...(typeof value.workingDirIsHome === "boolean" ? { workingDirIsHome: value.workingDirIsHome } : {}),
     ...(draftWorkingDir === undefined ? {} : { draftWorkingDir })
   };
 };
@@ -112,12 +119,16 @@ const normalizeTabs = (
     seenTabIds.add(tabId);
     if (sessionId !== null) seenSessionIds.add(sessionId);
     const draftWorkingDir = sanitizeOptionalString(tab.draftWorkingDir);
+    const workingDir = sanitizeOptionalString(tab.workingDir);
     normalizedTabs.push({
       tabId,
       sessionId,
       title: tab.title.trim() || DEFAULT_SESSION_TITLE,
       lastKnownStatus: tab.lastKnownStatus,
       ...(tab.updatedAt === undefined ? {} : { updatedAt: tab.updatedAt }),
+      ...(workingDir === undefined ? {} : { workingDir }),
+      ...(tab.projectBound === undefined ? {} : { projectBound: tab.projectBound }),
+      ...(tab.workingDirIsHome === undefined ? {} : { workingDirIsHome: tab.workingDirIsHome }),
       ...(draftWorkingDir === undefined ? {} : { draftWorkingDir })
     });
   }
@@ -188,7 +199,10 @@ const tabFromSnapshot = (
   sessionId: snapshot.id,
   title: snapshot.title.trim() || DEFAULT_SESSION_TITLE,
   lastKnownStatus: snapshot.turnStatus,
-  updatedAt: snapshot.updatedAt
+  updatedAt: snapshot.updatedAt,
+  workingDir: snapshot.workingDir,
+  projectBound: snapshot.projectBound,
+  ...(snapshot.workingDirIsHome === undefined ? {} : { workingDirIsHome: snapshot.workingDirIsHome })
 });
 
 const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
@@ -208,13 +222,16 @@ const statusFromRuntimeEvent = (event: AgentRuntimeEvent): AgentTurnStatus | nul
     if (
       event.state === "completed" ||
       event.state === "cancelled_by_user" ||
+      event.state === "cancelled" ||
       event.state === "failed_recoverable" ||
       event.state === "failed_terminal" ||
       event.state === "interrupted"
     ) {
       return event.state === "completed"
         ? "finished"
-        : event.state === "cancelled_by_user" || event.state === "interrupted"
+        : event.state === "cancelled_by_user" ||
+            event.state === "cancelled" ||
+            event.state === "interrupted"
           ? "cancelled"
           : "failed";
     }

@@ -84,7 +84,10 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
 fn streaming_parser_commits_final_answer_once_without_tool_calls() {
     let backend = LyraAgentBackend;
     let created = backend
-        .call_agent_method("agent.session.create", json!({ "title": "Stream Final Test" }))
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Stream Final Test" }),
+        )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -190,9 +193,11 @@ fn missing_tool_preamble_is_rejected_for_retry() {
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
         .expect_err("tool preambles without tool calls must be rejected");
-    assert!(error
-        .to_string()
-        .contains("assistant promised tool use without structured tool_call"));
+    assert!(
+        error
+            .to_string()
+            .contains("assistant promised tool use without structured tool_call")
+    );
 }
 
 #[test]
@@ -893,7 +898,9 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
                     })
                     .expect("assistant thinking replay");
                 assert_eq!(
-                    replayed_assistant.pointer("/content/0/thinking").and_then(Value::as_str),
+                    replayed_assistant
+                        .pointer("/content/0/thinking")
+                        .and_then(Value::as_str),
                     Some("I should inspect the current tabs before answering.")
                 );
             }
@@ -2398,9 +2405,6 @@ fn model_loop_has_no_fixed_tool_round_cap() {
     }));
     server.join().expect("server join");
 }
-
-
-
 
 #[test]
 fn model_loop_attaches_lyra_artifact_images_as_vision_input() {

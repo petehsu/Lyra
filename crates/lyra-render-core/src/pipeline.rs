@@ -4,13 +4,18 @@ use crate::highlight::highlight_code;
 use crate::markdown::parse_markdown;
 use crate::math::{render_math, split_math_in_text, MathTextSegment};
 use crate::mermaid::render_mermaid;
-use crate::options::RenderDocumentOptions;
-use crate::preprocess::fix_common_markdown_issues;
+use crate::options::{RenderDocumentMode, RenderDocumentOptions};
+use crate::preprocess::fix_markdown_issues;
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 
+fn preprocess_content(content: &str, mode: RenderDocumentMode) -> String {
+    let streaming = matches!(mode, RenderDocumentMode::Fragment);
+    fix_markdown_issues(content, streaming)
+}
+
 pub fn render_document(content: &str, options: &RenderDocumentOptions) -> LyraRenderDocument {
-    let normalized = fix_common_markdown_issues(content);
+    let normalized = preprocess_content(content, options.mode);
     let key = cache_key(&normalized, options);
     if let Some(cached) = get_cached_document(&key) {
         return cached;
@@ -26,10 +31,7 @@ fn enrich_document(document: &mut LyraRenderDocument, options: &RenderDocumentOp
     document.blocks = enrich_blocks(&document.blocks, options);
 }
 
-fn enrich_blocks(
-    blocks: &[RenderBlock],
-    options: &RenderDocumentOptions,
-) -> Vec<RenderBlock> {
+fn enrich_blocks(blocks: &[RenderBlock], options: &RenderDocumentOptions) -> Vec<RenderBlock> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         return blocks
@@ -49,9 +51,7 @@ fn enrich_blocks(
 fn enrich_block(block: RenderBlock, options: &RenderDocumentOptions) -> RenderBlock {
     match block {
         RenderBlock::CodeBlock {
-            language,
-            source,
-            ..
+            language, source, ..
         } => enrich_code_block(language, source, options),
         RenderBlock::Paragraph { children } => RenderBlock::Paragraph {
             children: enrich_inline_nodes(children, options),
@@ -92,6 +92,13 @@ fn enrich_block(block: RenderBlock, options: &RenderDocumentOptions) -> RenderBl
                         .map(|cell| enrich_inline_nodes(cell, options))
                         .collect()
                 })
+                .collect(),
+        },
+        RenderBlock::Details { summary, children } => RenderBlock::Details {
+            summary: enrich_inline_nodes(summary, options),
+            children: children
+                .into_iter()
+                .map(|child| enrich_block(child, options))
                 .collect(),
         },
         other => other,
@@ -198,6 +205,50 @@ mod tests {
         let first = render_document("**hello**", &options);
         let second = render_document("**hello**", &options);
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn fragment_mode_skips_bold_auto_close() {
+        invalidate_cache_for_tests();
+        let fragment = RenderDocumentOptions {
+            mode: RenderDocumentMode::Fragment,
+            ..RenderDocumentOptions::default()
+        };
+        let document = RenderDocumentOptions::default();
+        let input = "Hello **world";
+
+        let fragment_rendered = render_document(input, &fragment);
+        let document_rendered = render_document(input, &document);
+
+        assert_ne!(fragment_rendered, document_rendered);
+    }
+
+    #[test]
+    fn repairs_ai_ordered_list_markdown_before_rendering() {
+        invalidate_cache_for_tests();
+        let options = RenderDocumentOptions::default();
+        let input = "开始之前需要确认几个点：\n\n1. **这是哪个公司/产品的官网？** 名称、行业、一句话定位\n2. **需要哪些页面/模块？**比如首页、关于我们、产品介绍、联系方式等3. **技术栈偏好？** 纯静态（HTML/CSS/JS）、React、Vue、Next.js、还是其他？\n4. **设计风格？** 有没有参考网站？";
+        let doc = render_document(input, &options);
+        let items = doc
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                RenderBlock::List { ordered, items } if *ordered => Some(items),
+                _ => None,
+            })
+            .expect("ordered list");
+        assert_eq!(items.len(), 4);
+        let stray_star_count = items
+            .iter()
+            .flat_map(|item| item.children.iter())
+            .filter_map(|block| match block {
+                RenderBlock::Paragraph { children } => Some(children),
+                _ => None,
+            })
+            .flat_map(|children| children.iter())
+            .filter(|node| matches!(node, InlineNode::Text { value } if value == "*"))
+            .count();
+        assert_eq!(stray_star_count, 0);
     }
 
     fn invalidate_cache_for_tests() {

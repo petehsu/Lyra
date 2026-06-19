@@ -3,14 +3,17 @@ use std::collections::HashMap;
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
 
-use crate::native_backend::tool_protocol::{
-    TOOL_OUTPUT_CLEARED_SUMMARY, TOOL_OUTPUT_OMITTED_SUMMARY, message_has_provider_transcript,
-    tool_activity_output_summary,
-};
 use crate::native_backend::inline_images::{
     effective_inline_images_for_user_turn, enrich_inline_images_for_provider,
     expand_inline_image_markers_in_content, prepend_inline_images_vision_to_content,
     provider_image_url_from_value, text_has_inline_image_markers,
+};
+use crate::native_backend::token_estimate::{
+    estimate_message_tokens, estimate_messages_tokens, estimate_tokens,
+};
+use crate::native_backend::tool_protocol::{
+    TOOL_OUTPUT_CLEARED_SUMMARY, TOOL_OUTPUT_OMITTED_SUMMARY, message_has_provider_transcript,
+    tool_activity_output_summary,
 };
 use crate::prompt_policy::PromptAccounting;
 
@@ -213,10 +216,8 @@ fn provider_messages_from_agent_message(
                 all_messages,
                 message_index,
             );
-        let provider_inline_images =
-            enrich_inline_images_for_provider(&effective_inline_images);
-        let merged =
-            merge_user_content_with_inline_images(role, merged, &provider_inline_images);
+        let provider_inline_images = enrich_inline_images_for_provider(&effective_inline_images);
+        let merged = merge_user_content_with_inline_images(role, merged, &provider_inline_images);
         let merged = if role == "user" && !provider_inline_images.is_empty() {
             if text_has_inline_image_markers(text) {
                 expand_inline_image_markers_in_content(
@@ -303,11 +304,7 @@ fn merged_content_text(content: &Value) -> String {
     }
 }
 
-fn merge_user_content_with_inline_images(
-    role: &str,
-    content: Value,
-    images: &[Value],
-) -> Value {
+fn merge_user_content_with_inline_images(role: &str, content: Value, images: &[Value]) -> Value {
     if role != "user" || images.is_empty() {
         return content;
     }
@@ -341,11 +338,7 @@ fn merge_user_content_with_inline_images(
     Value::String(merged)
 }
 
-fn merge_user_content_with_page_citations(
-    message: &Value,
-    role: &str,
-    content: Value,
-) -> Value {
+fn merge_user_content_with_page_citations(message: &Value, role: &str, content: Value) -> Value {
     if role != "user" {
         return content;
     }
@@ -388,11 +381,7 @@ fn merge_user_content_with_page_citations(
     Value::String(merged)
 }
 
-fn merge_user_content_with_file_citations(
-    message: &Value,
-    role: &str,
-    content: Value,
-) -> Value {
+fn merge_user_content_with_file_citations(message: &Value, role: &str, content: Value) -> Value {
     if role != "user" {
         return content;
     }
@@ -435,7 +424,10 @@ fn merge_user_content_with_file_citations(
 fn format_transcript_cite_xml(citation: &Value) -> Option<String> {
     let id = citation.get("id").and_then(Value::as_str)?;
     let message_id = citation.get("messageId").and_then(Value::as_str)?;
-    let role = citation.get("role").and_then(Value::as_str).unwrap_or("assistant");
+    let role = citation
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or("assistant");
     let truncated = citation
         .get("truncated")
         .and_then(Value::as_bool)
@@ -673,47 +665,6 @@ fn trim_tool_output(
         ),
         Some(evidence_ref),
     )
-}
-
-fn estimate_messages_tokens(messages: &[Value]) -> usize {
-    messages
-        .iter()
-        .map(estimate_message_tokens)
-        .sum()
-}
-
-fn estimate_message_tokens(message: &Value) -> usize {
-    estimate_tokens(
-        &serde_json::to_string(&strip_inline_image_data_for_token_estimate(message.clone()))
-            .unwrap_or_default(),
-    )
-}
-
-fn strip_inline_image_data_for_token_estimate(mut message: Value) -> Value {
-    if let Some(images) = message
-        .pointer_mut("/metadata/inlineImages")
-        .and_then(Value::as_array_mut)
-    {
-        for image in images.iter_mut() {
-            if let Some(object) = image.as_object_mut() {
-                object.remove("data");
-            }
-        }
-    }
-    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
-        for block in blocks.iter_mut() {
-            if block.get("type").and_then(Value::as_str) == Some("image")
-                && let Some(object) = block.as_object_mut()
-            {
-                object.remove("data");
-            }
-        }
-    }
-    message
-}
-
-fn estimate_tokens(text: &str) -> usize {
-    (text.chars().count() / 4).max(1)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1296,10 +1247,13 @@ mod tests {
             messages,
             ..ProviderContext::default()
         };
-        let retention = RetentionPolicy::from_context(&output.messages, &ProviderContextOptions {
-            context_window: Some(96),
-            ..ProviderContextOptions::default()
-        });
+        let retention = RetentionPolicy::from_context(
+            &output.messages,
+            &ProviderContextOptions {
+                context_window: Some(96),
+                ..ProviderContextOptions::default()
+            },
+        );
         compact_to_retention_policy(&mut output, retention);
 
         let payload = serde_json::to_string(&output.messages).unwrap();

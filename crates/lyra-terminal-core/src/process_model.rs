@@ -172,7 +172,7 @@ pub fn snapshot_from_windows_process_json(
                 root_pid.into(),
                 foreground_pid,
                 "windows process json has unsupported shape",
-            )
+            );
         }
     };
     let processes = values

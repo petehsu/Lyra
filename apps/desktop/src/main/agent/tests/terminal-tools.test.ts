@@ -73,6 +73,26 @@ const terminalMemory = {
   commandsPath: "/tmp/lyra-agent-test/terminal-memory/sessions/private/commands.jsonl"
 };
 
+const terminalLifecycle = (
+  sessionId: string,
+  overrides: Record<string, unknown> = {}
+) => ({
+  sessionId,
+  state: "running",
+  phase: "terminal_read",
+  reason: null,
+  terminalRunning: true,
+  commandId: null,
+  commandStatus: null,
+  exitCode: null,
+  signal: null,
+  source: "agent",
+  mode: "shell",
+  waiting: false,
+  background: false,
+  ...overrides
+});
+
 const terminalScreen = {
   sessionId: "private-terminal-1",
   cursor: "screen-2",
@@ -105,7 +125,8 @@ const terminalScreen = {
   running: true,
   exitCode: null,
   truncated: false,
-  memory: terminalMemory
+  memory: terminalMemory,
+  lifecycle: terminalLifecycle("private-terminal-1", { phase: "screen_read" })
 };
 
 const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
@@ -135,11 +156,13 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
     truncated: false,
     source: "agent",
     mode: "shell",
-    memory: terminalMemory
+    memory: terminalMemory,
+    lifecycle: terminalLifecycle(request.sessionId)
   })),
   readScreen: vi.fn(async (request: { readonly sessionId: string }) => ({
     ...terminalScreen,
-    sessionId: request.sessionId
+    sessionId: request.sessionId,
+    lifecycle: terminalLifecycle(request.sessionId, { phase: "screen_read" })
   })),
   readEvents: vi.fn(async (request: { readonly sessionId: string }) => ({
     sessionId: request.sessionId,
@@ -169,7 +192,13 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
     screenCursor: "screen-2",
     commandId: "command-1",
     output: "ready",
-    memory: terminalMemory
+    memory: terminalMemory,
+    lifecycle: terminalLifecycle(request.sessionId, {
+      state: "waiting",
+      phase: "wait_until",
+      reason: "output",
+      waiting: true
+    })
   })),
   executeInput: vi.fn(async (request: { readonly sessionId: string; readonly action: string }) => ({
     sessionId: request.sessionId,
@@ -177,7 +206,11 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
     action: request.action,
     status: "executed",
     events: [],
-    memory: terminalMemory
+    memory: terminalMemory,
+    lifecycle: terminalLifecycle(request.sessionId, {
+      state: "inputSent",
+      phase: `input:${request.action}`
+    })
   })),
   evaluatePermission: vi.fn(),
   respondPermission: vi.fn(),
@@ -189,7 +222,8 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
     exitCode: null,
     signal: null,
     processes: [{ pid: 42, foreground: true, running: true, name: "zsh" }],
-    memory: terminalMemory
+    memory: terminalMemory,
+    lifecycle: terminalLifecycle(request.sessionId, { phase: "processes_read" })
   })),
   signalProcess: vi.fn(async (request: { readonly sessionId: string; readonly signal: string }) => ({
     sessionId: request.sessionId,
@@ -209,13 +243,22 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
       exitCode: null,
       outputRange: { start: 0, end: 5 }
     },
-    memory: terminalMemory
+    memory: terminalMemory,
+    lifecycle: terminalLifecycle(request.sessionId, {
+      phase: "command_status",
+      commandId: "command-1",
+      commandStatus: "running"
+    })
   })),
   waitCommand: vi.fn(),
   readCommandOutput: vi.fn(),
   readMap: vi.fn(async (request: { readonly sessionId: string }) => ({
     sessionId: request.sessionId,
-    screen: { ...terminalScreen, sessionId: request.sessionId },
+    screen: {
+      ...terminalScreen,
+      sessionId: request.sessionId,
+      lifecycle: terminalLifecycle(request.sessionId, { phase: "screen_read" })
+    },
     regions: [
       {
         regionId: "region-1",
@@ -240,7 +283,12 @@ const createTerminalBridgeMock = (overrides: Record<string, unknown> = {}) => ({
     screenCursor: "screen-3",
     map: {
       sessionId: request.sessionId,
-      screen: { ...terminalScreen, sessionId: request.sessionId, screenVersion: 3 },
+      screen: {
+        ...terminalScreen,
+        sessionId: request.sessionId,
+        screenVersion: 3,
+        lifecycle: terminalLifecycle(request.sessionId, { phase: "screen_read" })
+      },
       regions: [],
       memory: terminalMemory
     },
@@ -349,30 +397,50 @@ describe("terminal agent tools", () => {
       until: "output",
       text: "ready",
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-wait" }
-    })).resolves.toMatchObject({ matched: true, reason: "output" });
+    })).resolves.toMatchObject({
+      matched: true,
+      reason: "output",
+      lifecycle: expect.objectContaining({ state: "waiting", phase: "wait_until" })
+    });
     await expect(registered.get("terminal.input.execute")?.({
       action: "run",
       command: "npm test",
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-run" }
-    })).resolves.toMatchObject({ command: "npm test", commandId: expect.any(String) });
+    })).resolves.toMatchObject({
+      command: "npm test",
+      commandId: expect.any(String),
+      lifecycle: expect.objectContaining({ state: "inputSent", phase: "input:runCommand" })
+    });
     await expect(registered.get("terminal.write")?.({
       keys: ["q", "escape"],
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-write-keys" }
     })).resolves.toMatchObject({ wrote: "q, escape" });
     await expect(registered.get("terminal.processes.read")?.({
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-processes" }
-    })).resolves.toMatchObject({ processes: expect.any(Array) });
+    })).resolves.toMatchObject({
+      processes: expect.any(Array),
+      lifecycle: expect.objectContaining({ phase: "processes_read" })
+    });
     await expect(registered.get("terminal.command.status")?.({
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-status" }
-    })).resolves.toMatchObject({ commandId: "command-1" });
+    })).resolves.toMatchObject({
+      commandId: "command-1",
+      lifecycle: expect.objectContaining({ phase: "command_status", commandId: "command-1" })
+    });
     await expect(registered.get("terminal.map.read")?.({
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-map" }
-    })).resolves.toMatchObject({ regions: expect.any(Array) });
+    })).resolves.toMatchObject({
+      regions: expect.any(Array),
+      lifecycle: expect.objectContaining({ phase: "screen_read" })
+    });
     await expect(registered.get("terminal.act.execute")?.({
       operation: "confirm",
       regionId: "region-1",
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-act" }
-    })).resolves.toMatchObject({ actId: "act-1" });
+    })).resolves.toMatchObject({
+      actId: "act-1",
+      lifecycle: expect.objectContaining({ phase: "screen_read" })
+    });
     await expect(registered.get("terminal.resize")?.({
       cols: 100,
       rows: 30,

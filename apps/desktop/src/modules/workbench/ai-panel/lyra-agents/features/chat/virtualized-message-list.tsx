@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, type CSSProperties, type ReactNode } from "react";
 
 import type { ChatMessage } from "../../core/types";
 import {
@@ -25,8 +25,17 @@ export type VirtualizedMessageListProps = {
   readonly contentWidth?: number;
   /** Keep these messages mounted even when outside the current viewport window. */
   readonly pinnedMessageIds?: readonly string[];
+  /** When true, pinned ids outside the viewport are not force-mounted. */
+  readonly ignoreOffScreenPins?: boolean;
   readonly renderMessage: (message: ChatMessage) => ReactNode;
 };
+
+const messageSlotStyle = (
+  heightTable: MessageHeightTable,
+  messageId: string
+): CSSProperties => ({
+  containIntrinsicBlockSize: `auto ${heightTable.heightOf(messageId)}px`
+});
 
 export const VirtualizedMessageList = ({
   messages,
@@ -38,6 +47,7 @@ export const VirtualizedMessageList = ({
   overscan = CHAT_VIRTUAL_OVERSCAN,
   contentWidth = 560,
   pinnedMessageIds,
+  ignoreOffScreenPins = false,
   renderMessage
 }: VirtualizedMessageListProps) => {
   const ids = useMemo(() => messages.map((message) => message.id), [messages]);
@@ -80,7 +90,11 @@ export const VirtualizedMessageList = ({
     let start = Math.max(0, first - overscan);
     let end = Math.min(messages.length - 1, last + overscan);
 
-    if (pinnedMessageIds !== undefined && pinnedMessageIds.length > 0) {
+    if (
+      !ignoreOffScreenPins &&
+      pinnedMessageIds !== undefined &&
+      pinnedMessageIds.length > 0
+    ) {
       for (const pinnedId of pinnedMessageIds) {
         const pinnedIndex = ids.indexOf(pinnedId);
         if (pinnedIndex < 0) continue;
@@ -107,6 +121,7 @@ export const VirtualizedMessageList = ({
     messageGapPx,
     messages.length,
     overscan,
+    ignoreOffScreenPins,
     pinnedMessageIds,
     viewportHeight,
     viewportTop
@@ -132,6 +147,7 @@ export const VirtualizedMessageList = ({
           key={message.id}
           ref={heightTable.measureRef(message.id)}
           className="lyra-agents-chat-message-slot"
+          style={messageSlotStyle(heightTable, message.id)}
           data-chat-message-id={message.id}
           data-chat-message-author={message.author}
         >

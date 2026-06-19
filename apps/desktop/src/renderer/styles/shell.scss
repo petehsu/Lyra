@@ -2405,6 +2405,19 @@ body.lyra-layout-resizing .lyra-panel-content {
   display: block;
 }
 
+.lyra-browser-tab-terminal-icon,
+.lyra-browser-tab-app-identity-icon {
+  width: var(--lyra-unit-14);
+  height: var(--lyra-unit-14);
+}
+
+.lyra-browser-tab-lyra-logo {
+  --lyra-app-logo-size: var(--lyra-unit-14);
+  width: var(--lyra-unit-14);
+  height: var(--lyra-unit-14);
+  color: currentColor;
+}
+
 .lyra-browser-tab-favicon-fallback {
   display: none;
 }
@@ -3034,4 +3047,9 @@ body.lyra-layout-resizing .lyra-browser-tabs-toolbar,
 body.lyra-window-resizing .lyra-browser-tabs-toolbar {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* Isolate AI chat reflow during splitter drags so width changes stay local. */
+body.lyra-layout-resizing .lyra-agents-chat-scroll {
+  contain: layout style;
 }

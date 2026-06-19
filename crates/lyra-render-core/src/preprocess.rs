@@ -136,6 +136,17 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
 
     // Normalize a leading list marker missing its space (`-嵌套` -> `- 嵌套`).
     let line = normalize_leading_list_marker_space(&line);
+    let line = normalize_leading_ordered_list_marker_space(&line);
+    let line = normalize_task_list_marker_space(&line);
+
+    let line = normalize_closing_strong_marker_space(&line);
+
+    if let Some(pieces) = split_run_on_ordered_list_item(&line) {
+        return pieces
+            .into_iter()
+            .flat_map(|piece| split_line_block_markers(&piece))
+            .collect();
+    }
 
     // A leading heading whose text runs straight into body prose
     // (`# 标题这是正文。`) is split at the first sentence-ending punctuation:
@@ -154,6 +165,17 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
     let mut index = 0;
 
     while index < chars.len() {
+        // An HTML <details> opener glued mid-line: break before it.
+        if index > 0
+            && starts_with_ascii_ci(&chars[index..], "<details")
+            && !current.trim().is_empty()
+        {
+            pieces.push(std::mem::take(&mut current));
+            let rest: String = chars[index..].iter().collect();
+            pieces.push(rest);
+            return pieces;
+        }
+
         // A code-fence opener glued mid-line: break before it.
         if index > 0
             && chars[index] == '`'
@@ -174,10 +196,7 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
         // used as text (`issue #1`, `C#`, `F#`). When the run follows an
         // alphanumeric char (e.g. `H3#### 四级`) we additionally require a space
         // after the run, the canonical heading shape, to stay conservative.
-        if chars[index] == '#'
-            && index > 0
-            && chars[index - 1] != '#'
-            && !current.trim().is_empty()
+        if chars[index] == '#' && index > 0 && chars[index - 1] != '#' && !current.trim().is_empty()
         {
             let mut hashes = 0;
             while chars.get(index + hashes) == Some(&'#') {
@@ -292,7 +311,12 @@ fn split_run_on_leading_heading(line: &str) -> Option<(String, String)> {
         }
         let heading_part: String = chars[..=i].iter().collect();
         let body_part: String = chars[i + 1..].iter().collect();
-        let heading_line = format!("{}{} {}", &line[..indent_len], "#".repeat(hashes), heading_part);
+        let heading_line = format!(
+            "{}{} {}",
+            &line[..indent_len],
+            "#".repeat(hashes),
+            heading_part
+        );
         return Some((heading_line, body_part.trim_start().to_string()));
     }
     None
@@ -352,6 +376,153 @@ fn split_fence_marker(line: &str) -> (String, String) {
 /// separately. Leaves real content like `*emphasis*` or `**bold**` untouched
 /// because those start with two markers / have no following space requirement
 /// at line start in the run-on cases we target.
+/// Insert the missing space after a leading ordered-list marker (`1.步骤` -> `1. 步骤`).
+/// Only when the marker is at line start and the character after `.` is neither
+/// whitespace nor a digit (so `1.2` version numbers stay intact).
+fn normalize_leading_ordered_list_marker_space(line: &str) -> String {
+    let indent_len = line.len() - line.trim_start().len();
+    let (indent, rest) = line.split_at(indent_len);
+    let mut digits = 0usize;
+    for ch in rest.chars() {
+        if ch.is_ascii_digit() {
+            digits += 1;
+            continue;
+        }
+        if ch == '.' && digits > 0 {
+            let after_dot: String = rest.chars().skip(digits + 1).collect();
+            match after_dot.chars().next() {
+                Some(c) if !c.is_whitespace() && !c.is_ascii_digit() => {
+                    let num: String = rest.chars().take(digits).collect();
+                    return format!("{indent}{num}. {after_dot}");
+                }
+                _ => {}
+            }
+        }
+        break;
+    }
+    line.to_string()
+}
+
+fn normalize_closing_strong_marker_space(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    let mut delimiter_count = 0usize;
+    while let Some(index) = rest.find("**") {
+        out.push_str(&rest[..index + 2]);
+        rest = &rest[index + 2..];
+        delimiter_count += 1;
+        if delimiter_count % 2 == 0 {
+            if let Some(next) = rest.chars().next() {
+                if next.is_alphanumeric() {
+                    out.push(' ');
+                }
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn split_run_on_ordered_list_item(line: &str) -> Option<Vec<String>> {
+    let mut iter = line.char_indices().peekable();
+    let mut previous: Option<char> = None;
+    while let Some((start, ch)) = iter.next() {
+        if start == 0 || !ch.is_ascii_digit() {
+            previous = Some(ch);
+            continue;
+        }
+        let Some(previous_char) = previous else {
+            previous = Some(ch);
+            continue;
+        };
+        if previous_char.is_whitespace() || previous_char.is_ascii_digit() {
+            previous = Some(ch);
+            continue;
+        }
+
+        while let Some((_, next)) = iter.peek().copied() {
+            if !next.is_ascii_digit() {
+                break;
+            }
+            iter.next();
+        }
+        let Some((dot_index, '.')) = iter.peek().copied() else {
+            previous = Some(ch);
+            continue;
+        };
+        let after_dot_index = dot_index + 1;
+        let mut after_dot = line[after_dot_index..].chars();
+        let Some(first_after_dot) = after_dot.next() else {
+            previous = Some('.');
+            iter.next();
+            continue;
+        };
+        if !first_after_dot.is_whitespace() {
+            previous = Some('.');
+            iter.next();
+            continue;
+        }
+        let after_marker = line[after_dot_index..].trim_start();
+        if after_marker.is_empty() {
+            previous = Some('.');
+            iter.next();
+            continue;
+        }
+        let before = line[..start].trim_end();
+        if before.is_empty() {
+            previous = Some('.');
+            iter.next();
+            continue;
+        }
+        let rest = &line[start..];
+        return Some(vec![before.to_string(), rest.to_string()]);
+    }
+    None
+}
+
+/// Insert the missing space after a GFM task marker (`- [x]已完成` -> `- [x] 已完成`).
+fn normalize_task_list_marker_space(line: &str) -> String {
+    let indent_len = line.len() - line.trim_start().len();
+    let (indent, rest) = line.split_at(indent_len);
+    let bytes = rest.as_bytes();
+    if bytes.len() < 4 {
+        return line.to_string();
+    }
+    let marker = bytes[0];
+    if marker != b'-' && marker != b'*' && marker != b'+' {
+        return line.to_string();
+    }
+    if bytes[1] != b' ' || bytes[2] != b'[' {
+        return line.to_string();
+    }
+    let close = bytes.iter().position(|&b| b == b']').unwrap_or(0);
+    if close <= 3 || close + 1 >= bytes.len() {
+        return line.to_string();
+    }
+    let checked = &rest[3..close];
+    if checked != "x" && checked != "X" && checked != " " {
+        return line.to_string();
+    }
+    let after: String = rest.chars().skip(close + 1).collect();
+    match after.chars().next() {
+        Some(c) if !c.is_whitespace() => {
+            format!("{indent}{} [{checked}] {after}", marker as char)
+        }
+        _ => line.to_string(),
+    }
+}
+
+fn starts_with_ascii_ci(chars: &[char], needle: &str) -> bool {
+    let needle_chars: Vec<char> = needle.chars().collect();
+    if chars.len() < needle_chars.len() {
+        return false;
+    }
+    chars[..needle_chars.len()]
+        .iter()
+        .zip(needle_chars.iter())
+        .all(|(left, right)| left.to_ascii_lowercase() == right.to_ascii_lowercase())
+}
+
 fn normalize_leading_list_marker_space(line: &str) -> String {
     let indent_len = line.len() - line.trim_start().len();
     let (indent, rest) = line.split_at(indent_len);
@@ -424,10 +595,7 @@ fn split_run_on_thematic_break(line: &str) -> Option<(String, String, String)> {
 /// same marker char (`-`, `*`, `_`), optionally separated by spaces.
 fn is_standalone_thematic_break(trimmed: &str) -> bool {
     for marker in ['-', '*', '_'] {
-        let only_marker = !trimmed.is_empty()
-            && trimmed
-                .chars()
-                .all(|c| c == marker || c == ' ');
+        let only_marker = !trimmed.is_empty() && trimmed.chars().all(|c| c == marker || c == ' ');
         let count = trimmed.chars().filter(|&c| c == marker).count();
         if only_marker && count >= 3 {
             return true;
@@ -499,15 +667,24 @@ mod tests {
     fn inserts_missing_space_after_leading_heading_run() {
         assert_eq!(normalize_leading_heading_space("##列表"), "## 列表");
         assert_eq!(normalize_leading_heading_space("# 标题"), "# 标题");
-        assert_eq!(normalize_leading_heading_space("###链接与图片"), "### 链接与图片");
+        assert_eq!(
+            normalize_leading_heading_space("###链接与图片"),
+            "### 链接与图片"
+        );
     }
 
     #[test]
     fn leaves_non_heading_hash_lines_untouched() {
         // Seven hashes is not a valid ATX heading.
-        assert_eq!(normalize_leading_heading_space("####### nope"), "####### nope");
+        assert_eq!(
+            normalize_leading_heading_space("####### nope"),
+            "####### nope"
+        );
         // Mid-line hashes (e.g. C#) are not leading runs.
-        assert_eq!(normalize_leading_heading_space("语言 C# 很流行"), "语言 C# 很流行");
+        assert_eq!(
+            normalize_leading_heading_space("语言 C# 很流行"),
+            "语言 C# 很流行"
+        );
     }
 
     #[test]
@@ -632,10 +809,7 @@ mod tests {
     fn splits_thematic_break_glued_to_trailing_text() {
         // A blank line is inserted before the rule so the preceding text is not
         // reinterpreted as a setext heading.
-        assert_eq!(
-            separate_run_on_block_markers("正文---"),
-            "正文\n\n---"
-        );
+        assert_eq!(separate_run_on_block_markers("正文---"), "正文\n\n---");
     }
 
     #[test]
@@ -658,8 +832,14 @@ mod tests {
 
     #[test]
     fn inserts_space_after_leading_dash_bullet() {
-        assert_eq!(normalize_leading_list_marker_space("-嵌套子项 A"), "- 嵌套子项 A");
-        assert_eq!(normalize_leading_list_marker_space("- 已有空格"), "- 已有空格");
+        assert_eq!(
+            normalize_leading_list_marker_space("-嵌套子项 A"),
+            "- 嵌套子项 A"
+        );
+        assert_eq!(
+            normalize_leading_list_marker_space("- 已有空格"),
+            "- 已有空格"
+        );
     }
 
     #[test]
@@ -699,5 +879,82 @@ mod tests {
         // must remain a standalone line (not be re-split).
         let input = "标题\n---";
         assert_eq!(separate_run_on_block_markers(input), input);
+    }
+
+    #[test]
+    fn inserts_space_after_leading_ordered_list_marker() {
+        assert_eq!(
+            normalize_leading_ordered_list_marker_space("1.步骤一：初始化"),
+            "1. 步骤一：初始化"
+        );
+        assert_eq!(
+            normalize_leading_ordered_list_marker_space("1.2 release notes"),
+            "1.2 release notes"
+        );
+    }
+
+    #[test]
+    fn repairs_strong_text_glued_to_body_text() {
+        assert_eq!(
+            normalize_closing_strong_marker_space("2. **需要哪些页面/模块？**比如首页"),
+            "2. **需要哪些页面/模块？** 比如首页"
+        );
+        assert_eq!(
+            normalize_closing_strong_marker_space("1. **问题？** answer"),
+            "1. **问题？** answer"
+        );
+    }
+
+    #[test]
+    fn splits_ordered_list_item_glued_to_next_item() {
+        assert_eq!(
+            split_run_on_ordered_list_item(
+                "2. **页面？** 比如首页、联系方式等3. **技术栈？** React"
+            ),
+            Some(vec![
+                "2. **页面？** 比如首页、联系方式等".to_string(),
+                "3. **技术栈？** React".to_string(),
+            ])
+        );
+        assert_eq!(
+            split_run_on_ordered_list_item("2. Version 3. **notes**"),
+            None
+        );
+    }
+
+    #[test]
+    fn repairs_common_ai_ordered_list_glitches() {
+        assert_eq!(
+            fix_common_markdown_issues(
+                "2. **需要哪些页面/模块？**比如首页、关于我们、产品介绍、联系方式等3. **技术栈偏好？** 纯静态"
+            ),
+            "2. **需要哪些页面/模块？** 比如首页、关于我们、产品介绍、联系方式等\n3. **技术栈偏好？** 纯静态"
+        );
+    }
+
+    #[test]
+    fn inserts_space_after_task_list_marker() {
+        assert_eq!(
+            normalize_task_list_marker_space("- [x]已完成"),
+            "- [x] 已完成"
+        );
+        assert_eq!(normalize_task_list_marker_space("- [ ] 待办"), "- [ ] 待办");
+    }
+
+    #[test]
+    fn splits_details_tag_glued_to_heading() {
+        let input = "## 12.折叠内容<details>";
+        let output = separate_run_on_block_markers(input);
+        assert_eq!(output, "## 12.折叠内容\n<details>");
+    }
+
+    #[test]
+    fn streaming_mode_skips_bold_and_fence_auto_close() {
+        let input = "Hello **world\n```python\nx = 1";
+        assert_eq!(fix_markdown_issues(input, true), input.replace('｜', "|"));
+        assert_ne!(
+            fix_markdown_issues(input, false),
+            fix_markdown_issues(input, true)
+        );
     }
 }

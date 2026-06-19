@@ -10,6 +10,7 @@ import {
   classifyActionTarget
 } from "./ActionTargets";
 import { renderHighlightedCode } from "./render-highlighted-code";
+import { SvgContent } from "./SvgContent";
 
 const renderInlineNodes = (nodes: readonly InlineRenderNode[]): ReactNode =>
   nodes.map((node, index) => renderInlineNode(node, index));
@@ -70,10 +71,11 @@ const renderInlineNode = (node: InlineRenderNode, index: number): ReactNode => {
     case "mathInline":
       if (node.svg !== undefined) {
         return (
-          <span
+          <SvgContent
             key={index}
+            as="span"
+            svg={node.svg}
             className="lyra-agents-math-inline"
-            dangerouslySetInnerHTML={{ __html: node.svg }}
           />
         );
       }
@@ -173,10 +175,10 @@ export const renderDocumentBlock = (
     case "mermaid":
       if (block.svg !== undefined) {
         return (
-          <div
+          <SvgContent
             key={index}
+            svg={block.svg}
             className="lyra-agents-mermaid-container"
-            dangerouslySetInnerHTML={{ __html: block.svg }}
           />
         );
       }
@@ -188,10 +190,10 @@ export const renderDocumentBlock = (
     case "mathBlock":
       if (block.svg !== undefined) {
         return (
-          <div
+          <SvgContent
             key={index}
+            svg={block.svg}
             className="lyra-agents-math-block"
-            dangerouslySetInnerHTML={{ __html: block.svg }}
           />
         );
       }
@@ -216,6 +218,19 @@ export const renderDocumentBlock = (
             </tbody>
           </table>
         </div>
+      );
+    case "details":
+      return (
+        <details key={index} className="lyra-agents-md-details">
+          <summary className="lyra-agents-md-details-summary">
+            {renderInlineNodes(block.summary)}
+          </summary>
+          <div className="lyra-agents-md-details-body">
+            {block.children.map((child, childIndex) =>
+              renderDocumentBlock(child, childIndex)
+            )}
+          </div>
+        </details>
       );
     case "thematicBreak":
       return <hr key={index} />;

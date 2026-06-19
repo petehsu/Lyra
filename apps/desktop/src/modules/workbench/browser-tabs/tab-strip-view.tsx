@@ -16,8 +16,10 @@ import {
 } from "react";
 
 import { AppButton, AppIconButton } from "@renderer/ui/components";
+import { LyraLogo } from "@renderer/ui/app";
+import { IdentityIconView } from "../identity";
 import { cx } from "../ui-primitives";
-import { renderWorkspaceAppIcon } from "../workspace-apps";
+import { isAgentProjectTreeAppId, renderWorkspaceAppIcon } from "../workspace-apps";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import { BrowserChromeSurface } from "./browser-chrome-surface";
 import type { BrowserTabStripRenderModel } from "./tab-strip-render-model";
@@ -33,6 +35,8 @@ type BrowserTabStripViewProps = Pick<
   | "canGoBack"
   | "canGoForward"
   | "openNewTabLabel"
+  | "terminalIdentityByTabId"
+  | "workspaceAppIdentityByTabId"
   | "navigationControl"
   | "toolbarContextControl"
   | "onGoBack"
@@ -115,7 +119,15 @@ const handleFaviconError = (event: SyntheticEvent<HTMLImageElement>) => {
   event.currentTarget.dataset.failed = "true";
 };
 
-const BrowserTabIcon = ({ tab }: { readonly tab: WorkspaceTab }) => {
+const BrowserTabIcon = ({
+  tab,
+  terminalIdentityByTabId,
+  workspaceAppIdentityByTabId
+}: {
+  readonly tab: WorkspaceTab;
+  readonly terminalIdentityByTabId?: BrowserTabStripProps["terminalIdentityByTabId"];
+  readonly workspaceAppIdentityByTabId?: BrowserTabStripProps["workspaceAppIdentityByTabId"];
+}) => {
   const faviconUrl = tab.faviconUrl?.trim();
 
   if (tab.pageKind === "settings") {
@@ -131,10 +143,41 @@ const BrowserTabIcon = ({ tab }: { readonly tab: WorkspaceTab }) => {
   }
 
   if (tab.pageKind === "terminal") {
-    return <SquareTerminal size={14} className="lyra-browser-tab-icon-svg" />;
+    const icon = tab.terminalTabId === undefined
+      ? undefined
+      : terminalIdentityByTabId?.[tab.terminalTabId];
+    return (
+      <IdentityIconView
+        className="lyra-browser-tab-terminal-icon"
+        imageClassName="lyra-browser-tab-favicon"
+        iconUrl={icon?.url ?? null}
+        label={icon?.label}
+        fallback={
+          icon?.renderHint === "lyra-logo"
+            ? <LyraLogo className="lyra-browser-tab-lyra-logo" alt="" />
+            : <SquareTerminal size={14} className="lyra-browser-tab-icon-svg" />
+        }
+      />
+    );
   }
 
   if (tab.pageKind === "app" && tab.appId !== undefined && tab.appIconKey !== undefined) {
+    const appIcon = workspaceAppIdentityByTabId?.[tab.id];
+    if (isAgentProjectTreeAppId(tab.appId)) {
+      return (
+        <IdentityIconView
+          className="lyra-browser-tab-app-identity-icon"
+          imageClassName="lyra-browser-tab-favicon"
+          iconUrl={appIcon?.url ?? null}
+          label={appIcon?.label}
+          fallback={
+            appIcon?.renderHint === "lyra-logo"
+              ? <LyraLogo className="lyra-browser-tab-lyra-logo" alt="" />
+              : renderWorkspaceAppIcon(tab.appId, tab.appIconKey)
+          }
+        />
+      );
+    }
     return renderWorkspaceAppIcon(tab.appId, tab.appIconKey);
   }
 
@@ -214,6 +257,8 @@ export const BrowserTabStripView = ({
   canGoBack,
   canGoForward,
   openNewTabLabel,
+  terminalIdentityByTabId,
+  workspaceAppIdentityByTabId,
   navigationControl,
   toolbarContextControl,
   onGoBack,
@@ -313,7 +358,11 @@ export const BrowserTabStripView = ({
                 }}
               >
                 <span className="lyra-browser-tab-icon" aria-hidden="true">
-                  <BrowserTabIcon tab={tabModel.tab} />
+                  <BrowserTabIcon
+                    tab={tabModel.tab}
+                    terminalIdentityByTabId={terminalIdentityByTabId}
+                    workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
+                  />
                 </span>
                 {!tabModel.isCollapsed ? (
                   <span className="lyra-browser-tab-title">{tabModel.tab.title}</span>
@@ -356,7 +405,11 @@ export const BrowserTabStripView = ({
             <BrowserTabShape />
             <span className={renderModel.preview.mainClassName}>
               <span className="lyra-browser-tab-icon" aria-hidden="true">
-                <BrowserTabIcon tab={renderModel.preview.tab} />
+                <BrowserTabIcon
+                  tab={renderModel.preview.tab}
+                  terminalIdentityByTabId={terminalIdentityByTabId}
+                  workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
+                />
               </span>
               <span className="lyra-browser-tab-title">{renderModel.preview.tab.title}</span>
             </span>

@@ -987,7 +987,7 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     /apps\/desktop\/src\/modules\/workbench\/ai-panel\/thread-tabs\.tsx$/.test(normalizedPath)
     && (/\bprojectLogoUrlForRoot\b/.test(text) || /projectLogoUrl=\{(?!null\})/u.test(text))
   ) {
-    violations.push(`${relativePath}:1 AI thread tabs must use neutral project symbols, not colored project logos.`);
+    violations.push(`${relativePath}:1 AI thread tabs must use the controlled identity icon projection, not direct project logo helpers.`);
   }
 
   if (

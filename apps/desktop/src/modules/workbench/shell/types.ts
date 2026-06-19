@@ -34,6 +34,7 @@ export type TerminalDockPaneState = {
   readonly sessionId: string;
   readonly title: string;
   readonly cwd?: string;
+  readonly currentCwd?: string;
   readonly shell?: string;
   readonly env?: readonly TerminalEnvironmentVariable[];
   readonly profileId?: string;
@@ -41,6 +42,9 @@ export type TerminalDockPaneState = {
   readonly followMode?: TerminalFollowMode;
   readonly mode?: "command" | "shell";
   readonly command?: string;
+  readonly sourceAgentSessionId?: string;
+  readonly autoTitle?: string;
+  readonly titleLocked?: boolean;
 };
 
 export type TerminalDockTabState = {
@@ -53,6 +57,8 @@ export type TerminalDockTabState = {
   readonly pinned?: boolean;
   readonly favorite?: boolean;
   readonly profileId?: string;
+  readonly autoTitle?: string;
+  readonly titleLocked?: boolean;
 };
 
 export type TerminalDockState = {

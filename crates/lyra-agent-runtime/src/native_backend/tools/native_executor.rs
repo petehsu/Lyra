@@ -357,11 +357,26 @@ pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
 }
 
 fn cancellation_for_turn(turn_id: &str) -> Arc<AtomicBool> {
-    state()
-        .lock()
-        .ok()
-        .and_then(|runtime| runtime.active_cancellations.get(turn_id).cloned())
+    super::super::session_runtime::cancellation_token(turn_id)
         .unwrap_or_else(|| Arc::new(AtomicBool::new(false)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_for_turn_uses_session_runtime_token() {
+        let turn_id = format!("turn-native-cancel-{}", Uuid::new_v4());
+        let token = Arc::new(AtomicBool::new(false));
+        crate::native_backend::session_runtime::register_turn_cancellation(&turn_id, token.clone());
+
+        let observed = cancellation_for_turn(&turn_id);
+        observed.store(true, Ordering::SeqCst);
+        crate::native_backend::session_runtime::clear_turn_cancellation(&turn_id);
+
+        assert!(token.load(Ordering::SeqCst));
+    }
 }
 
 #[allow(dead_code)]
@@ -425,7 +440,14 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "web_search" => tool_web_search(input),
         "web_research" => tool_web_research(session_id, turn_id, input),
         "web_map" => tool_web_map(input),
-        "web_batch" => tool_web_batch(session_id, turn_id, tool_call_id, input, dispatcher, cancellation),
+        "web_batch" => tool_web_batch(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            dispatcher,
+            cancellation,
+        ),
         "web_fetch" => tool_web_fetch_with_browser_for_session(
             session_id,
             turn_id,

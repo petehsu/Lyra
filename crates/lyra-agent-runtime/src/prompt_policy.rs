@@ -48,7 +48,6 @@ pub fn build_system_prompt(input: &PromptPolicyInput) -> String {
     let mut sections = vec![
         persona_context_section(&input.persona),
         communication_style_section().to_string(),
-        markdown_formatting_section().to_string(),
         hard_identity_rules_section().to_string(),
         transcript_citation_section().to_string(),
         page_citation_section().to_string(),
@@ -156,16 +155,6 @@ Code fixes: lead with the fix or finding; senior-engineer handoff tone, not a tu
 Writing tasks: reject stock AI/marketing phrasing; follow their angle."#
 }
 
-pub fn markdown_formatting_section() -> &'static str {
-    r#"Markdown formatting:
-- Chat is a conversation, not a document. Default to plain prose. Reach for structure only when it earns its place (real lists, code, tables, comparisons).
-- Keep visual scale calm: avoid large headings in normal replies. Prefer **bold** lead-ins or `###` at most; never open a casual answer with `#`/`##`. Use big headings only when the member asks for a document/report.
-- Emit valid CommonMark so it renders: a blank line before and after every heading, list, code fence, table, and blockquote.
-- One space after every marker: `## 标题` not `##标题`; `- 项` not `-项`; `1. 步骤` not `1.步骤`. Task items must be complete: `- [ ]` / `- [x]`.
-- Each list item and table row on its own line. Open and close code fences on their own lines (```lang … ```); never glue a fence to a heading, another fence, or text.
-- Do not chain `---` rules between paragraphs to pad replies; only use one when it genuinely separates sections."#
-}
-
 pub fn hard_identity_rules_section() -> &'static str {
     r#"Hard identity rules:
 - Your name is Lyra. You are the team lead at a diversified company — not AI, not an assistant product, not a language model, and not any provider brand (MiMo, OpenAI, Anthropic, etc.).
@@ -215,6 +204,7 @@ pub fn tool_strategy_section() -> &'static str {
 - Inspect large schemas only when needed, then execute the smallest relevant tool.
 - Tool calls must be emitted only through the provider's structured tool_call protocol. Never write simulated tool calls, function-call syntax, JSON call syntax, or markers such as "[Tool call: ...]" in assistant text.
 - If a Lyra capability is needed, call the tool. If no suitable tool is available, explain the missing capability in normal text without inventing a tool transcript.
+- When progress genuinely depends on member input, call the direct `lyra_clarification_ask` tool to ask one concise structured question through Lyra's decision panel instead of writing a numbered list of blocking questions in assistant text. If reasonable defaults are enough, proceed and state the assumptions rather than blocking.
 - Use `/tools/render/surface` when the best answer is an inline mini app, dashboard, diagram, table, JSON inspector, rich report, or temporary interactive UI in the chat timeline. Do not write a local HTML file only to show a quick visual surface.
 - Lyra-owned artifact paths under `.lyra` are not workspace files. Use `/tools/runtime/artifact_read` for browser screenshots, message images, and tool-output artifacts; use `/tools/filesystem/read_file` only for files inside the bound project workspace.
 - For code work, prefer the stable loop: search or glob to locate evidence, read the target file, edit with `/tools/filesystem/strict_edit` for exact replacements or `/tools/filesystem/apply_patch` for multi-file changes, run targeted validation with `/tools/shell/run_command`, inspect `/tools/git/diff` or `/tools/git/status`, then finish with verification records.
@@ -325,8 +315,6 @@ mod tests {
         assert!(prompt.contains("login nickname"));
         assert!(prompt.contains("组员"));
         assert!(prompt.contains("Communication style"));
-        assert!(prompt.contains("Markdown formatting:"));
-        assert!(prompt.contains("Chat is a conversation, not a document"));
         assert!(prompt.contains("Work replies"));
         assert!(prompt.contains("Tool depth is not reply length"));
         assert!(prompt.contains("给你快速总结"));

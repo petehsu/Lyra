@@ -759,9 +759,21 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             ("web", "research") => {
                 vec!["research web", "deep read search", "联网调研", "搜索并阅读"]
             }
-            ("web", "map") => vec!["map site", "discover urls", "sitemap", "发现链接", "站点地图"],
+            ("web", "map") => vec![
+                "map site",
+                "discover urls",
+                "sitemap",
+                "发现链接",
+                "站点地图",
+            ],
             ("web", "batch") => {
-                vec!["batch fetch", "crawl urls", "bulk fetch", "批量抓取", "批量读取"]
+                vec![
+                    "batch fetch",
+                    "crawl urls",
+                    "bulk fetch",
+                    "批量抓取",
+                    "批量读取",
+                ]
             }
             ("web", "fetch") => vec!["fetch url", "download page", "读取链接", "抓取网页"],
             ("hardware", _) => vec![
@@ -1401,7 +1413,9 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "highlightTargetRefs",
-                    string_array("Optional targetRefs to highlight; defaults to mapped targets when highlightTargets is true."),
+                    string_array(
+                        "Optional targetRefs to highlight; defaults to mapped targets when highlightTargets is true.",
+                    ),
                 ),
                 (
                     "downsampleForVision",
@@ -1444,7 +1458,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "targetMode",
                     json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
                 ),
-                ("workflowId", string("Optional workflow id for record/replay.")),
+                (
+                    "workflowId",
+                    string("Optional workflow id for record/replay."),
+                ),
                 (
                     "cacheMode",
                     json!({ "type": "string", "enum": ["record", "replay"], "description": "Workflow cache mode when workflowId is set." }),
@@ -1816,12 +1833,32 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ("computer", "observe") => object_schema([], &[]),
         ("computer", "focus") => object_schema(
             [
-                ("appRef", string("Opaque app reference from computer.list_apps (e.g. osxapp:<pid>, winapp:<pid>, atspiapp:<index>, lytab:<tabId>).")),
-                ("pid", json!({ "type": "integer", "description": "Process id on macOS/Windows when appRef is unknown." })),
-                ("bundleId", string("Application bundle id (platform-dependent; may be unsupported).")),
-                ("windowTitle", string("Exact window title to raise when appRef is unknown.")),
-                ("windowRef", string("Opaque window reference from computer.list_apps.")),
-                ("lyraTabId", string("Lyra workbench tab id to activate (Level-1 internal surface).")),
+                (
+                    "appRef",
+                    string(
+                        "Opaque app reference from computer.list_apps (e.g. osxapp:<pid>, winapp:<pid>, atspiapp:<index>, lytab:<tabId>).",
+                    ),
+                ),
+                (
+                    "pid",
+                    json!({ "type": "integer", "description": "Process id on macOS/Windows when appRef is unknown." }),
+                ),
+                (
+                    "bundleId",
+                    string("Application bundle id (platform-dependent; may be unsupported)."),
+                ),
+                (
+                    "windowTitle",
+                    string("Exact window title to raise when appRef is unknown."),
+                ),
+                (
+                    "windowRef",
+                    string("Opaque window reference from computer.list_apps."),
+                ),
+                (
+                    "lyraTabId",
+                    string("Lyra workbench tab id to activate (Level-1 internal surface)."),
+                ),
                 (
                     "mode",
                     json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared only: computer.focus refuses foreground steal in background/isolated modes." }),
@@ -1844,8 +1881,14 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("computer", "find") => object_schema(
             [
-                ("role", string("Desktop role to match, e.g. button, textbox, checkbox, menuitem.")),
-                ("nameIncludes", string("Substring the accessible name must contain (case-insensitive).")),
+                (
+                    "role",
+                    string("Desktop role to match, e.g. button, textbox, checkbox, menuitem."),
+                ),
+                (
+                    "nameIncludes",
+                    string("Substring the accessible name must contain (case-insensitive)."),
+                ),
                 (
                     "strategy",
                     json!({ "type": "string", "enum": ["interactive", "document"], "default": "interactive" }),
@@ -1861,13 +1904,20 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 (
                     "osRef",
-                    string("Desktop node reference from computer.map/find (osax:<path>). Not an axRef or targetRef."),
+                    string(
+                        "Desktop node reference from computer.map/find (osax:<path>). Not an axRef or targetRef.",
+                    ),
                 ),
                 (
                     "action",
                     json!({ "type": "string", "enum": ["press", "focus", "setText", "toggle", "select", "scroll"], "default": "press" }),
                 ),
-                ("text", string("Plaintext payload for the setText action; ignored otherwise. Never use this for passwords — pass sensitiveValueRef instead.")),
+                (
+                    "text",
+                    string(
+                        "Plaintext payload for the setText action; ignored otherwise. Never use this for passwords — pass sensitiveValueRef instead.",
+                    ),
+                ),
                 (
                     "sensitiveValueRef",
                     json!({ "type": "object", "description": "A lyra-sensitive-value-ref (from the login manager / sensitive-values store) to autofill into a setText target. The plaintext is resolved host-side and never enters the model; this is the only sanctioned way to fill a secure (password) field." }),
@@ -1883,11 +1933,15 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 (
                     "baselineSnapshotId",
-                    string("snapshotId from a prior computer.map/find. When set, returns the observation diff (added/removed/changed) against a fresh read."),
+                    string(
+                        "snapshotId from a prior computer.map/find. When set, returns the observation diff (added/removed/changed) against a fresh read.",
+                    ),
                 ),
                 (
                     "osRef",
-                    string("Desktop node reference to re-read for single-node verification. Used when baselineSnapshotId is absent."),
+                    string(
+                        "Desktop node reference to re-read for single-node verification. Used when baselineSnapshotId is absent.",
+                    ),
                 ),
                 (
                     "strategy",
@@ -1901,7 +1955,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             &[],
         ),
         ("computer", "explain") => object_schema(
-            [("osRef", string("Optional desktop node reference to check for reachability."))],
+            [(
+                "osRef",
+                string("Optional desktop node reference to check for reachability."),
+            )],
             &[],
         ),
         ("computer", "see") => object_schema(
@@ -2030,7 +2087,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "allowPrivateNetwork",
                     json!({ "type": "boolean", "default": false }),
                 ),
-                ("queryFocus", string("Optional query focus passed to each fetch.")),
+                (
+                    "queryFocus",
+                    string("Optional query focus passed to each fetch."),
+                ),
                 (
                     "preset",
                     json!({ "type": "string", "enum": ["agent", "research", "index", "reader", "raw"], "default": "agent" }),
@@ -2333,7 +2393,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "clarification" => "Structured user clarification through the Lyra decision panel.",
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
-        "browser" => "Operate Lyra browser/Lumen pages. Prefer /tools/browser/interact for short operate-then-extract flows; use map/locate/plan for discovery and batch act/type for forms.",
+        "browser" => {
+            "Operate Lyra browser/Lumen pages. Prefer /tools/browser/interact for short operate-then-extract flows; use map/locate/plan for discovery and batch act/type for forms."
+        }
         "browser_ax" => {
             "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
         }
@@ -2346,7 +2408,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "terminal" => "Control Lyra terminal sessions and terminal panes.",
         "git" => "Inspect and mutate Git repository state for the bound project.",
         "network" => "Inspect native network status.",
-        "web" => "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads.",
+        "web" => {
+            "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads."
+        }
         "render" => "Create inline render surfaces in the chat timeline.",
         "todo" => "Read and update Lyra task todos.",
         "design" => "Use Lyra design reference tools.",

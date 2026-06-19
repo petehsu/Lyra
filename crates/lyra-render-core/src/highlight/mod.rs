@@ -1,7 +1,5 @@
 #[cfg(feature = "highlight")]
 mod engine;
-#[cfg(feature = "highlight")]
-mod names;
 
 use crate::ast::HighlightSpan;
 use crate::error::RenderResult;
@@ -10,7 +8,7 @@ use crate::options::HighlightRequest;
 pub fn highlight_code(language: &str, source: &str) -> Vec<HighlightSpan> {
     #[cfg(feature = "highlight")]
     {
-        if let Ok(spans) = engine::highlight_with_tree_sitter(language, source) {
+        if let Ok(spans) = engine::highlight_with_arborium(language, source) {
             return spans;
         }
     }
@@ -44,7 +42,9 @@ mod tests {
         let scopes: Vec<_> = spans.iter().map(|span| span.scope.as_str()).collect();
         assert!(scopes.iter().any(|scope| scope.contains("function")));
         assert!(scopes.iter().any(|scope| scope.contains("comment")));
-        assert!(scopes.iter().any(|scope| scope.contains("keyword") || scope.contains("type")));
+        assert!(scopes
+            .iter()
+            .any(|scope| scope.contains("keyword") || scope.contains("type")));
     }
 
     #[test]

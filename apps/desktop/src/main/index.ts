@@ -36,6 +36,7 @@ import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
 import { createImageViewerIpcBridge } from "./image-viewer";
+import { createIdentityIpcBridge } from "./identity";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge } from "./lsp";
@@ -117,6 +118,7 @@ let disposeAgentBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
+let disposeIdentityBridge: (() => void) | null = null;
 let disposeLoginManagerBridge: (() => void) | null = null;
 let disposeLocationBridge: (() => void) | null = null;
 let disposeLspBridge: (() => void) | null = null;
@@ -794,6 +796,8 @@ const registerIpcHandlers = async (): Promise<void> => {
   const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
   console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
   disposeImageViewerBridge = imageViewerBridge.dispose;
+  const identityBridge = createIdentityIpcBridge(storageRoots.modules.identity);
+  disposeIdentityBridge = identityBridge.dispose;
   const runtimeClient = createLyraRuntimeClient({
     storageRoot: storageRoots.modules.runtime,
     agentStorageRoot: storageRoots.modules.agent
@@ -1115,6 +1119,10 @@ app.on("before-quit", () => {
   if (disposeImageViewerBridge !== null) {
     disposeImageViewerBridge();
     disposeImageViewerBridge = null;
+  }
+  if (disposeIdentityBridge !== null) {
+    disposeIdentityBridge();
+    disposeIdentityBridge = null;
   }
   if (disposeSensitiveValuesBridge !== null) {
     disposeSensitiveValuesBridge();

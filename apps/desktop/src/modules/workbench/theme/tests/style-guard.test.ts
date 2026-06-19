@@ -151,7 +151,16 @@ describe("workbench UI guard", () => {
     expect(violations.some((violation) => violation.includes("tab shadow"))).toBe(true);
   });
 
-  test("keeps AI thread tabs free of colored project logos", () => {
+  test("allows controlled AI thread identity icons but blocks direct project logo helpers", () => {
+    const allowedSource = `
+      import { IdentityIconView } from "../identity";
+      export const Tab = () => <IdentityIconView iconUrl={icon.url} fallback={fallback} />;
+    `;
+    expect(scanWorkbenchDesignContracts(
+      "apps/desktop/src/modules/workbench/ai-panel/thread-tabs.tsx",
+      allowedSource
+    )).toEqual([]);
+
     const source = `
       import { projectLogoUrlForRoot } from "../project-identity";
       export const Tab = () => <ProjectIdentityIcon projectLogoUrl={projectLogoUrlForRoot(logos, root)} />;
@@ -159,7 +168,7 @@ describe("workbench UI guard", () => {
     expect(scanWorkbenchDesignContracts(
       "apps/desktop/src/modules/workbench/ai-panel/thread-tabs.tsx",
       source
-    )[0]).toContain("AI thread tabs");
+    )[0]).toContain("controlled identity icon");
   });
 
   test("keeps AI Panel free of old demo paths and local style imports", () => {

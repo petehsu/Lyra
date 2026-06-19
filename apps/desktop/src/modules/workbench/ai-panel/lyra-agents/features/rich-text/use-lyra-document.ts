@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { LyraRenderDocument } from "../../../../../../shared/render";
+import {
+  renderDocument,
+  resolveCachedDocument
+} from "../../../../../../shared/render-wasm/render-document";
 
 type LyraDocumentState = {
   readonly document: LyraRenderDocument | null;
@@ -14,14 +18,37 @@ const initialState: LyraDocumentState = {
   loading: false
 };
 
-const RENDER_DEBOUNCE_MS = 120;
+const STREAM_DEBOUNCE_MS = 120;
+
+const resolveInitialState = (
+  content: string,
+  enabled: boolean,
+  streaming: boolean
+): LyraDocumentState => {
+  if (!enabled) {
+    return initialState;
+  }
+  const cached = resolveCachedDocument({ content, streaming });
+  if (cached === null) {
+    return initialState;
+  }
+  return {
+    document: cached,
+    error: null,
+    loading: false
+  };
+};
 
 export const useLyraDocument = (
   content: string,
-  enabled: boolean
+  enabled: boolean,
+  streaming = false
 ): LyraDocumentState => {
-  const [state, setState] = useState<LyraDocumentState>(initialState);
+  const [state, setState] = useState<LyraDocumentState>(() =>
+    resolveInitialState(content, enabled, streaming)
+  );
   const requestIdRef = useRef(0);
+  const lastContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
@@ -29,13 +56,22 @@ export const useLyraDocument = (
       return;
     }
 
-    const renderApi = window.lyraDesktop?.render;
-    if (renderApi === undefined) {
+    const cached = resolveCachedDocument({ content, streaming });
+    if (cached !== null) {
+      lastContentRef.current = content;
       setState({
-        document: null,
-        error: "render bridge unavailable",
+        document: cached,
+        error: null,
         loading: false
       });
+      return;
+    }
+
+    if (
+      !streaming &&
+      lastContentRef.current !== null &&
+      content === lastContentRef.current
+    ) {
       return;
     }
 
@@ -48,19 +84,14 @@ export const useLyraDocument = (
       loading: previous.document === null
     }));
 
+    const debounceMs = streaming ? STREAM_DEBOUNCE_MS : 0;
     const timer = window.setTimeout(() => {
-      void renderApi
-        .renderDocument({
-          content,
-          mode: "document",
-          enableMath: true,
-          enableMermaid: true,
-          highlightCode: true
-        })
+      void renderDocument({ content, streaming })
         .then((document) => {
           if (requestIdRef.current !== requestId) {
             return;
           }
+          lastContentRef.current = content;
           setState({
             document,
             error: null,
@@ -81,12 +112,12 @@ export const useLyraDocument = (
             loading: false
           }));
         });
-    }, RENDER_DEBOUNCE_MS);
+    }, debounceMs);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [content, enabled]);
+  }, [content, enabled, streaming]);
 
   return state;
 };

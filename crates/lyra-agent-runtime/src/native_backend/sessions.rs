@@ -4,16 +4,22 @@ pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
     let title = string_opt(&payload, "title");
     let working_dir = string_opt(&payload, "workingDir");
     let session = new_session(title, working_dir, "normal");
-    let snapshot = session.snapshot.clone();
-    let callback = {
+    let session_id = session.id.clone();
+    let (root, session, callback) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         state.active_session_id = Some(session.id.clone());
         state.sessions.insert(session.id.clone(), session);
         state.save_state()?;
-        state.event_callback.clone()
+        let session =
+            state.sessions.get(&session_id).cloned().ok_or_else(|| {
+                AgentRuntimeError::Core(format!("session not found: {session_id}"))
+            })?;
+        (state.root.clone(), session, state.event_callback.clone())
     };
+    let mut snapshot = session.snapshot.clone();
+    snapshot["ledger"] = record_session_created(&root, &session);
     emit_with_callback(
         &callback,
         json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
@@ -165,33 +171,41 @@ pub(crate) fn current_working_dir() -> String {
 }
 
 pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let root = state.root.clone();
-    let active_before = state.active_session_id.clone();
-    let id = state.resolve_session_id(string_opt(&payload, "sessionId"))?;
-    let session = state
-        .sessions
-        .get_mut(&id)
-        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
-    let reconciled = reconcile_orphan_running_tools(session);
-    if reconciled {
-        touch_session(session);
-    }
-    let snapshot = session.snapshot.clone();
-    let session_dirty = session.dirty;
-    // A pure read changes nothing on disk, so skip the state-file write this path
-    // used to perform on every UI poll. Persist only when there is something to
-    // persist: this session is dirty (reconciliation, or unsaved prior writes), or
-    // resolve_session_id switched the active session. save_state already skips
-    // unchanged session files; this additionally skips the redundant state.json
-    // write on idle reads while preserving every write the old code would make for
-    // this session.
-    if session_dirty || state.active_session_id != active_before {
-        state.save_state()?;
-    }
-    drop(state);
+    let requested_session_id = string_opt(&payload, "sessionId");
+    let runtime_root = runtime_root();
+    let (root, id, snapshot) = match state().try_lock() {
+        Ok(mut state) => {
+            let root = state.root.clone();
+            let active_before = state.active_session_id.clone();
+            let id = state.resolve_session_id(requested_session_id)?;
+            let reconciled = reconcile_session_runtime_state(&mut state, &id, "session_read");
+            let session = state
+                .sessions
+                .get(&id)
+                .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+            let snapshot = session.snapshot.clone();
+            let session_dirty = session.dirty || reconciled;
+            // A pure read changes nothing on disk, so skip the state-file write this path
+            // used to perform on every UI poll. Persist only when there is something to
+            // persist: this session is dirty (reconciliation, or unsaved prior writes), or
+            // resolve_session_id switched the active session. save_state already skips
+            // unchanged session files; this additionally skips the redundant state.json
+            // write on idle reads while preserving every write the old code would make for
+            // this session.
+            if session_dirty || state.active_session_id != active_before {
+                state.save_state()?;
+            }
+            (root, id, snapshot)
+        }
+        Err(std::sync::TryLockError::WouldBlock) => {
+            read_session_snapshot_from_disk(&runtime_root, requested_session_id)?
+        }
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            return Err(AgentRuntimeError::Core(
+                "agent runtime state lock failed".to_string(),
+            ));
+        }
+    };
     let mut snapshot = snapshot;
     snapshot["memoryCandidates"] = json!(
         list_memory_candidates(&root, Some("pending"), 20)?
@@ -206,7 +220,55 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
             .map(proactive_event_json)
             .collect::<Vec<_>>()
     );
+    snapshot["ledger"] = session_ledger_summary(&root, &id);
     Ok(snapshot)
+}
+
+fn read_session_snapshot_from_disk(
+    root: &Path,
+    requested_session_id: Option<String>,
+) -> AgentRuntimeResult<(PathBuf, String, Value)> {
+    let id = resolve_session_id_from_disk(root, requested_session_id)?;
+    let session = load_session(root, &id)?
+        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
+    Ok((root.to_path_buf(), id, session.snapshot))
+}
+
+fn resolve_session_id_from_disk(
+    root: &Path,
+    requested_session_id: Option<String>,
+) -> AgentRuntimeResult<String> {
+    match requested_session_id.as_deref() {
+        Some("active") | None => read_json::<NativeStateFile>(&root.join("state.json"))
+            .and_then(|state| state.active_session_id)
+            .or_else(|| latest_session_id_from_disk(root).ok().flatten())
+            .ok_or_else(|| {
+                AgentRuntimeError::Core(
+                    "session unavailable while agent runtime state is busy".to_string(),
+                )
+            }),
+        Some(id) => Ok(id.to_string()),
+    }
+}
+
+fn latest_session_id_from_disk(root: &Path) -> AgentRuntimeResult<Option<String>> {
+    let mut sessions = Vec::new();
+    for session_id in list_session_ids(root)? {
+        if let Some(session) = load_session(root, &session_id)? {
+            let updated = session
+                .snapshot
+                .get("updatedAt")
+                .and_then(Value::as_str)
+                .unwrap_or(&session.created_at)
+                .to_string();
+            sessions.push((updated, session_id));
+        }
+    }
+    sessions.sort_by(|left, right| right.0.cmp(&left.0));
+    Ok(sessions
+        .into_iter()
+        .next()
+        .map(|(_, session_id)| session_id))
 }
 
 pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
@@ -215,15 +277,32 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
         .and_then(Value::as_u64)
         .unwrap_or(100)
         .min(500) as usize;
-    let state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let mut sessions = state
-        .sessions
-        .values()
-        .filter(|session| !is_deleted(&session.snapshot))
-        .map(session_summary)
-        .collect::<Vec<_>>();
+    let root = runtime_root();
+    let mut sessions = match state().try_lock() {
+        Ok(mut state) => {
+            let session_ids = state.sessions.keys().cloned().collect::<Vec<_>>();
+            let mut reconciled = false;
+            for session_id in session_ids {
+                reconciled |=
+                    reconcile_session_runtime_state(&mut state, &session_id, "session_list");
+            }
+            if reconciled {
+                state.save_state()?;
+            }
+            state
+                .sessions
+                .values()
+                .filter(|session| !is_deleted(&session.snapshot))
+                .map(session_summary)
+                .collect::<Vec<_>>()
+        }
+        Err(std::sync::TryLockError::WouldBlock) => list_session_summaries_from_disk(&root),
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            return Err(AgentRuntimeError::Core(
+                "agent runtime state lock failed".to_string(),
+            ));
+        }
+    };
     sessions.sort_by(|left, right| {
         right
             .get("updatedAt")
@@ -232,9 +311,58 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
     });
     sessions.truncate(limit);
     Ok(json!({
-        "sessionsDir": state.root.join("sessions").display().to_string(),
+        "sessionsDir": root.join("sessions").display().to_string(),
         "sessions": sessions,
     }))
+}
+
+fn list_session_summaries_from_disk(root: &Path) -> Vec<Value> {
+    list_session_ids(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|session_id| load_session(root, &session_id).ok().flatten())
+        .filter(|session| !is_deleted(&session.snapshot))
+        .map(|session| session_summary(&session))
+        .collect()
+}
+
+fn reconcile_session_runtime_state(
+    state: &mut NativeRuntimeState,
+    session_id: &str,
+    reason: &str,
+) -> bool {
+    let active_turn_id = state
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.snapshot.get("activeTurnId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let has_live_cancellation_token = active_turn_id.as_deref().is_some_and(|turn_id| {
+        state.active_cancellations.contains_key(turn_id)
+            || super::session_runtime::cancellation_token(turn_id).is_some()
+    });
+    let mut clear_turn_id = None;
+    let changed = if let Some(session) = state.sessions.get_mut(session_id) {
+        let reconciled_turn =
+            reconcile_orphan_running_turn(session, has_live_cancellation_token, reason);
+        if reconciled_turn {
+            clear_turn_id = active_turn_id.clone();
+        }
+        let reconciled_tools = reconcile_orphan_running_tools(session);
+        let changed = reconciled_turn || reconciled_tools;
+        if changed {
+            touch_session(session);
+        }
+        changed
+    } else {
+        false
+    };
+    if let Some(turn_id) = clear_turn_id {
+        state.active_cancellations.remove(&turn_id);
+        state.cancelled_turns.remove(&turn_id);
+        super::session_runtime::clear_active_turn(session_id, &turn_id);
+    }
+    changed
 }
 
 pub(crate) fn set_saved(payload: Value, saved: bool) -> AgentRuntimeResult<Value> {
@@ -285,7 +413,7 @@ pub(crate) fn delete_session(payload: Value) -> AgentRuntimeResult<Value> {
     if state.active_session_id.as_deref() == Some(&id) {
         state.active_session_id = None;
     }
-    let _ = fs::remove_file(state.session_path(&id));
+    let _ = delete_session_store(&state.root, &id);
     state.save_state()?;
     Ok(json!({ "sessionId": id, "deleted": true }))
 }
@@ -335,5 +463,3 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
     state.save_state()?;
     Ok(snapshot)
 }
-
-

@@ -1,11 +1,11 @@
 use super::*;
 
-pub(super) fn open_memory_connection(root: &Path) -> AgentRuntimeResult<Connection> {
+pub(crate) fn open_memory_connection(root: &Path) -> AgentRuntimeResult<Connection> {
     fs::create_dir_all(root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     Connection::open(memory_store_path(root)).map_err(sql_error)
 }
 
-pub(super) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {
+pub(crate) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {
     conn.execute_batch(
         r#"
         PRAGMA foreign_keys = ON;
@@ -173,12 +173,113 @@ pub(super) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {
           dismissed_at TEXT,
           opened_session_id TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS trigger_marks (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          processed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS memory_jobs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          job_type TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          result_json TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trigger_marks_session_turn
+          ON trigger_marks(session_id, turn_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_created
+          ON memory_jobs(status, created_at);
+
+        CREATE TABLE IF NOT EXISTS token_checkpoints (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          turn_id TEXT NOT NULL,
+          last_message_id TEXT,
+          token_total INTEGER NOT NULL,
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_token_checkpoints_session_created
+          ON token_checkpoints(session_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS layer_projection_state (
+          memory_id TEXT PRIMARY KEY,
+          revision INTEGER NOT NULL,
+          exported_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trigger_marks_unprocessed
+          ON trigger_marks(session_id, processed_at, created_at);
         "#,
     )
     .map_err(sql_error)?;
+    apply_memory_schema_migrations(conn)?;
     conn.execute(
         "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?1, ?2)",
         params![MEMORY_SCHEMA_VERSION, now()],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+fn apply_memory_schema_migrations(conn: &Connection) -> AgentRuntimeResult<()> {
+    ensure_column(conn, "memories", "layer", "TEXT NOT NULL DEFAULT 'shared'")?;
+    ensure_column(
+        conn,
+        "memories",
+        "value_class",
+        "TEXT NOT NULL DEFAULT 'semantic'",
+    )?;
+    ensure_column(conn, "memories", "abstract_text", "TEXT")?;
+    ensure_column(conn, "memory_candidates", "layer", "TEXT")?;
+    ensure_column(conn, "memory_candidates", "value_class", "TEXT")?;
+    ensure_column(conn, "memory_candidates", "trigger_event", "TEXT")?;
+    ensure_column(conn, "memory_candidates", "evidence_json", "TEXT")?;
+    ensure_column(conn, "memories", "source_device", "TEXT")?;
+    ensure_column(conn, "memories", "revision", "INTEGER NOT NULL DEFAULT 1")?;
+    ensure_column(conn, "memories", "sync_origin", "TEXT")?;
+    ensure_column(conn, "memory_candidates", "stability_review_at", "TEXT")?;
+    ensure_column(
+        conn,
+        "memory_candidates",
+        "stability_window_hours",
+        "INTEGER",
+    )?;
+    Ok(())
+}
+
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> AgentRuntimeResult<()> {
+    let mut statement = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(sql_error)?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?;
+    if columns.iter().any(|name| name == column) {
+        return Ok(());
+    }
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
     )
     .map_err(sql_error)?;
     Ok(())
@@ -236,6 +337,7 @@ pub(super) fn rank_memory_records(
         } else {
             0.0
         };
+        let layer_boost = super::super::memory_layer::layer_rank_boost(&record.layer);
         let mut matched_by = Vec::new();
         if fts_score > 0.0 {
             matched_by.push("fts".to_string());
@@ -262,7 +364,7 @@ pub(super) fn rank_memory_records(
             matched_by,
             ..MemoryScoreBreakdown::default()
         };
-        breakdown.final_score = final_memory_score(&breakdown);
+        breakdown.final_score = final_memory_score(&breakdown) + layer_boost;
         ranked.push(RankedMemoryRecord {
             record,
             score: breakdown.final_score,
@@ -350,6 +452,16 @@ pub(super) fn memory_passes_filters(record: &LongTermMemoryRecord, query: &Memor
     }
     if let Some(category) = query.category.as_deref()
         && record.category != category
+    {
+        return false;
+    }
+    if let Some(layer) = query.layer.as_deref()
+        && record.layer != layer
+    {
+        return false;
+    }
+    if let Some(value_class) = query.value_class.as_deref()
+        && record.value_class != value_class
     {
         return false;
     }
@@ -541,10 +653,11 @@ pub(super) fn insert_memory_record(
     let changed = conn
         .execute(
             "INSERT OR IGNORE INTO memories (
-                id, scope, category, fact, content_json, confidence, source_type, source_ref,
-                status, priority, created_at, updated_at, last_accessed_at, access_count,
-                expires_at, supersedes, superseded_by
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                id, scope, category, fact, content_json, layer, value_class, abstract_text,
+                confidence, source_type, source_ref, status, priority, created_at, updated_at,
+                last_accessed_at, access_count, expires_at, supersedes, superseded_by,
+                source_device, revision, sync_origin
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
             params![
                 record.id,
                 record.scope,
@@ -552,6 +665,9 @@ pub(super) fn insert_memory_record(
                 record.fact,
                 serde_json::to_string(&record.content)
                     .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
+                record.layer,
+                record.value_class,
+                record.abstract_text,
                 record.confidence,
                 record.source_type,
                 record.source_ref,
@@ -564,6 +680,9 @@ pub(super) fn insert_memory_record(
                 record.expires_at,
                 record.supersedes,
                 record.superseded_by,
+                record.source_device,
+                record.revision as i64,
+                record.sync_origin,
             ],
         )
         .map_err(sql_error)?;
@@ -594,17 +713,23 @@ pub(super) fn replace_memory_record(
             category = ?3,
             fact = ?4,
             content_json = ?5,
-            confidence = ?6,
-            source_type = ?7,
-            source_ref = ?8,
-            status = ?9,
-            priority = ?10,
-            updated_at = ?11,
-            last_accessed_at = ?12,
-            access_count = ?13,
-            expires_at = ?14,
-            supersedes = ?15,
-            superseded_by = ?16
+            layer = ?6,
+            value_class = ?7,
+            abstract_text = ?8,
+            confidence = ?9,
+            source_type = ?10,
+            source_ref = ?11,
+            status = ?12,
+            priority = ?13,
+            updated_at = ?14,
+            last_accessed_at = ?15,
+            access_count = ?16,
+            expires_at = ?17,
+            supersedes = ?18,
+            superseded_by = ?19,
+            source_device = ?20,
+            revision = ?21,
+            sync_origin = ?22
          WHERE id = ?1",
         params![
             record.id,
@@ -613,6 +738,9 @@ pub(super) fn replace_memory_record(
             record.fact,
             serde_json::to_string(&record.content)
                 .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
+            record.layer,
+            record.value_class,
+            record.abstract_text,
             record.confidence,
             record.source_type,
             record.source_ref,
@@ -624,6 +752,9 @@ pub(super) fn replace_memory_record(
             record.expires_at,
             record.supersedes,
             record.superseded_by,
+            record.source_device,
+            record.revision as i64,
+            record.sync_origin,
         ],
     )
     .map_err(sql_error)?;
@@ -655,9 +786,10 @@ pub(super) fn load_memory_record(
 ) -> AgentRuntimeResult<Option<LongTermMemoryRecord>> {
     let row = conn
         .query_row(
-            "SELECT id, scope, category, fact, content_json, confidence, source_type, source_ref,
-                    status, priority, created_at, updated_at, last_accessed_at, access_count,
-                    expires_at, supersedes, superseded_by
+            "SELECT id, scope, category, fact, content_json, layer, value_class, abstract_text,
+                    confidence, source_type, source_ref, status, priority, created_at, updated_at,
+                    last_accessed_at, access_count, expires_at, supersedes, superseded_by,
+                    source_device, revision, sync_origin
              FROM memories WHERE id = ?1",
             params![id],
             |row| {
@@ -668,18 +800,24 @@ pub(super) fn load_memory_record(
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     content_json,
-                    row.get::<_, f64>(5)?,
+                    row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
                     row.get::<_, Option<String>>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, i64>(9)?,
-                    row.get::<_, String>(10)?,
+                    row.get::<_, f64>(8)?,
+                    row.get::<_, String>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                     row.get::<_, String>(11)?,
-                    row.get::<_, Option<String>>(12)?,
-                    row.get::<_, u64>(13)?,
-                    row.get::<_, Option<String>>(14)?,
+                    row.get::<_, i64>(12)?,
+                    row.get::<_, String>(13)?,
+                    row.get::<_, String>(14)?,
                     row.get::<_, Option<String>>(15)?,
-                    row.get::<_, Option<String>>(16)?,
+                    row.get::<_, u64>(16)?,
+                    row.get::<_, Option<String>>(17)?,
+                    row.get::<_, Option<String>>(18)?,
+                    row.get::<_, Option<String>>(19)?,
+                    row.get::<_, Option<String>>(20)?,
+                    row.get::<_, i64>(21)?,
+                    row.get::<_, Option<String>>(22)?,
                 ))
             },
         )
@@ -691,6 +829,9 @@ pub(super) fn load_memory_record(
         category,
         fact,
         content_json,
+        layer,
+        value_class,
+        abstract_text,
         confidence,
         source_type,
         source_ref,
@@ -703,6 +844,9 @@ pub(super) fn load_memory_record(
         expires_at,
         supersedes,
         superseded_by,
+        source_device,
+        revision,
+        sync_origin,
     )) = row
     else {
         return Ok(None);
@@ -710,12 +854,15 @@ pub(super) fn load_memory_record(
     let content = serde_json::from_str(&content_json).unwrap_or(Value::Null);
     let tags = load_memory_tags(conn, &id)?;
     let related_to = load_memory_relations(conn, &id)?;
-    Ok(Some(LongTermMemoryRecord {
+    let mut record = LongTermMemoryRecord {
         id,
         scope,
         category,
         fact,
         content,
+        layer,
+        value_class,
+        abstract_text,
         confidence,
         source_type,
         source_ref,
@@ -730,7 +877,13 @@ pub(super) fn load_memory_record(
         expires_at,
         supersedes,
         superseded_by,
-    }))
+        source_device,
+        revision: revision.max(1) as u64,
+        sync_origin,
+    };
+    super::super::memory_layer::apply_layer_fields_to_record(&mut record);
+    super::super::memory_derived_fields::apply_derived_fields_to_record(&mut record);
+    Ok(Some(record))
 }
 
 pub(super) fn insert_memory_candidate(
@@ -739,10 +892,11 @@ pub(super) fn insert_memory_candidate(
 ) -> AgentRuntimeResult<()> {
     conn.execute(
         "INSERT INTO memory_candidates (
-            id, fact, content_json, category, scope, confidence, source_type, source_ref,
-            proposed_action, conflict_with, target_id, relation_type, status, created_at,
-            reviewed_at, expires_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            id, fact, content_json, category, scope, layer, value_class, trigger_event,
+            evidence_json, confidence, source_type, source_ref, proposed_action, conflict_with,
+            target_id, relation_type, status, created_at, reviewed_at, expires_at,
+            stability_review_at, stability_window_hours
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         params![
             candidate.id,
             candidate.fact,
@@ -750,6 +904,17 @@ pub(super) fn insert_memory_candidate(
                 .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
             candidate.category,
             candidate.scope,
+            candidate.layer,
+            candidate.value_class,
+            candidate.trigger_event,
+            candidate
+                .evidence_json
+                .as_ref()
+                .map(|value| {
+                    serde_json::to_string(value)
+                        .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
+                })
+                .transpose()?,
             candidate.confidence,
             candidate.source_type,
             candidate.source_ref,
@@ -761,6 +926,8 @@ pub(super) fn insert_memory_candidate(
             candidate.created_at,
             candidate.reviewed_at,
             candidate.expires_at,
+            candidate.stability_review_at,
+            candidate.stability_window_hours,
         ],
     )
     .map_err(sql_error)?;
@@ -772,35 +939,60 @@ pub(super) fn load_memory_candidate(
     id: &str,
 ) -> AgentRuntimeResult<Option<MemoryCandidate>> {
     conn.query_row(
-        "SELECT id, fact, content_json, category, scope, confidence, source_type, source_ref,
-                proposed_action, conflict_with, target_id, relation_type, status, created_at,
-                reviewed_at, expires_at
+        "SELECT id, fact, content_json, category, scope, layer, value_class, trigger_event,
+                evidence_json, confidence, source_type, source_ref, proposed_action, conflict_with,
+                target_id, relation_type, status, created_at, reviewed_at, expires_at,
+                stability_review_at, stability_window_hours
          FROM memory_candidates WHERE id = ?1",
         params![id],
         |row| {
             let content_json: String = row.get(2)?;
+            let evidence_json: Option<String> = row.get(8)?;
             Ok(MemoryCandidate {
                 id: row.get(0)?,
                 fact: row.get(1)?,
                 content: serde_json::from_str(&content_json).unwrap_or(Value::Null),
                 category: row.get(3)?,
                 scope: row.get(4)?,
-                confidence: row.get(5)?,
-                source_type: row.get(6)?,
-                source_ref: row.get(7)?,
-                proposed_action: row.get(8)?,
-                conflict_with: row.get(9)?,
-                target_id: row.get(10)?,
-                relation_type: row.get(11)?,
-                status: row.get(12)?,
-                created_at: row.get(13)?,
-                reviewed_at: row.get(14)?,
-                expires_at: row.get(15)?,
+                layer: row.get(5)?,
+                value_class: row.get(6)?,
+                trigger_event: row.get(7)?,
+                evidence_json: evidence_json
+                    .as_deref()
+                    .and_then(|value| serde_json::from_str(value).ok()),
+                confidence: row.get(9)?,
+                source_type: row.get(10)?,
+                source_ref: row.get(11)?,
+                proposed_action: row.get(12)?,
+                conflict_with: row.get(13)?,
+                target_id: row.get(14)?,
+                relation_type: row.get(15)?,
+                status: row.get(16)?,
+                created_at: row.get(17)?,
+                reviewed_at: row.get(18)?,
+                expires_at: row.get(19)?,
+                stability_review_at: row.get(20)?,
+                stability_window_hours: row.get(21)?,
             })
         },
     )
     .optional()
     .map_err(sql_error)
+}
+
+pub(super) fn promote_stability_pending_candidates(conn: &Connection) -> AgentRuntimeResult<usize> {
+    let timestamp = now();
+    let changed = conn
+        .execute(
+            "UPDATE memory_candidates
+             SET status = 'pending', reviewed_at = ?1
+             WHERE status = 'stability_pending'
+               AND stability_review_at IS NOT NULL
+               AND stability_review_at <= ?1",
+            params![timestamp],
+        )
+        .map_err(sql_error)?;
+    Ok(changed)
 }
 
 pub(super) fn mark_memory_candidate_status(
@@ -838,12 +1030,40 @@ pub(super) fn apply_memory_candidate_action(
             let record = create_long_term_memory(root, candidate_to_memory_mutation(candidate))?;
             Ok(json!({ "action": "create", "record": memory_record_json(&record) }))
         }
-        "update" => {
+        "update" | "replace" => {
             let target_id = candidate_target_id(candidate)?;
             let mut mutation = candidate_to_memory_mutation(candidate);
-            mutation.id = Some(target_id);
+            mutation.id = Some(target_id.clone());
             let record = update_long_term_memory(root, mutation)?;
-            Ok(json!({ "action": "update", "record": memory_record_json(&record) }))
+            reconcile_candidate_action_relations(root, candidate, Some(&record.id))?;
+            Ok(json!({ "action": "replace", "record": memory_record_json(&record) }))
+        }
+        "merge" => {
+            let target_id = candidate_target_id(candidate)?;
+            let existing = load_memory_record(&open_memory_connection(root)?, &target_id)?
+                .ok_or_else(|| AgentRuntimeError::Core(format!("memory not found: {target_id}")))?;
+            let merged_content = merge_memory_content(&existing.content, &candidate.content);
+            let record = update_long_term_memory(
+                root,
+                MemoryMutation {
+                    id: Some(target_id),
+                    fact: Some(candidate.fact.clone()),
+                    content: Some(merged_content),
+                    confidence: Some(candidate.confidence),
+                    source_type: Some(candidate.source_type.clone()),
+                    source_ref: candidate.source_ref.clone(),
+                    ..MemoryMutation::default()
+                },
+            )?;
+            reconcile_candidate_action_relations(root, candidate, Some(&record.id))?;
+            Ok(json!({ "action": "merge", "record": memory_record_json(&record) }))
+        }
+        "deprecate" | "forget" => {
+            let target_id = candidate_target_id(candidate)?;
+            let result =
+                forget_long_term_memory(root, &target_id, "archive", Some("memory candidate"))?;
+            reconcile_candidate_action_relations(root, candidate, None)?;
+            Ok(json!({ "action": "deprecate", "result": result }))
         }
         "supersede" => {
             let target_id = candidate_target_id(candidate)?;
@@ -871,12 +1091,6 @@ pub(super) fn apply_memory_candidate_action(
                 "record": memory_record_json(&record),
                 "superseded": memory_summary_json(&old)
             }))
-        }
-        "forget" => {
-            let target_id = candidate_target_id(candidate)?;
-            let result =
-                forget_long_term_memory(root, &target_id, "archive", Some("memory candidate"))?;
-            Ok(json!({ "action": "forget", "result": result }))
         }
         "link" => {
             let target_id = candidate_target_id(candidate)?;
@@ -911,12 +1125,165 @@ pub(super) fn candidate_target_id(candidate: &MemoryCandidate) -> AgentRuntimeRe
         .ok_or_else(|| AgentRuntimeError::Core("memory candidate target is required".to_string()))
 }
 
+fn reconcile_candidate_action_relations(
+    root: &Path,
+    candidate: &MemoryCandidate,
+    result_record_id: Option<&str>,
+) -> AgentRuntimeResult<()> {
+    let target_id = candidate
+        .target_id
+        .as_deref()
+        .or(candidate.conflict_with.as_deref());
+    let Some(target_id) = target_id else {
+        return Ok(());
+    };
+    match candidate.proposed_action.as_str() {
+        "merge" | "replace" | "update" => {
+            if let Some(conflict_id) = candidate
+                .conflict_with
+                .as_deref()
+                .filter(|id| *id != target_id)
+            {
+                let source = result_record_id.unwrap_or(target_id);
+                link_long_term_memory(
+                    root,
+                    source,
+                    conflict_id,
+                    "contradicts",
+                    candidate.confidence,
+                )?;
+            }
+            if candidate.proposed_action == "replace"
+                && let Some(new_id) = result_record_id.filter(|id| *id != target_id)
+            {
+                link_long_term_memory(root, new_id, target_id, "supersedes", candidate.confidence)?;
+            }
+        }
+        "deprecate" | "forget" => {
+            if let Some(conflict_id) = candidate.conflict_with.as_deref() {
+                let relation = candidate.relation_type.as_deref().unwrap_or("contradicts");
+                link_long_term_memory(
+                    root,
+                    conflict_id,
+                    target_id,
+                    relation,
+                    candidate.confidence,
+                )?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(super) fn mark_trigger_marks_processed(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: &str,
+    event_type: &str,
+) -> AgentRuntimeResult<()> {
+    let timestamp = now();
+    conn.execute(
+        "UPDATE trigger_marks
+         SET processed_at = ?4
+         WHERE session_id = ?1 AND turn_id = ?2 AND event_type = ?3 AND processed_at IS NULL",
+        params![session_id, turn_id, event_type, timestamp],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(super) fn count_pending_memory_jobs(conn: &Connection) -> AgentRuntimeResult<usize> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM memory_jobs WHERE status = 'pending'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    Ok(count.max(0) as usize)
+}
+
+pub(super) fn load_unprocessed_trigger_payloads(
+    conn: &Connection,
+    session_id: &str,
+    since_created_at: Option<&str>,
+) -> AgentRuntimeResult<Vec<Value>> {
+    let rows = if let Some(since) = since_created_at {
+        let mut statement = conn
+            .prepare(
+                "SELECT payload_json FROM trigger_marks
+                 WHERE session_id = ?1 AND processed_at IS NULL AND created_at > ?2
+                 ORDER BY created_at ASC",
+            )
+            .map_err(sql_error)?;
+        statement
+            .query_map(params![session_id, since], |row| row.get::<_, String>(0))
+            .map_err(sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql_error)?
+    } else {
+        let mut statement = conn
+            .prepare(
+                "SELECT payload_json FROM trigger_marks
+                 WHERE session_id = ?1 AND processed_at IS NULL
+                 ORDER BY created_at ASC",
+            )
+            .map_err(sql_error)?;
+        statement
+            .query_map(params![session_id], |row| row.get::<_, String>(0))
+            .map_err(sql_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql_error)?
+    };
+    rows.into_iter()
+        .map(|payload_json| {
+            serde_json::from_str(&payload_json)
+                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))
+        })
+        .collect()
+}
+
+pub(super) fn latest_processed_trigger_created_at(
+    conn: &Connection,
+    session_id: &str,
+) -> AgentRuntimeResult<Option<String>> {
+    conn.query_row(
+        "SELECT created_at FROM trigger_marks
+         WHERE session_id = ?1 AND processed_at IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1",
+        params![session_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(sql_error)
+}
+
+fn merge_memory_content(existing: &Value, incoming: &Value) -> Value {
+    let mut merged = existing.clone();
+    let Some(incoming_map) = incoming.as_object() else {
+        return incoming.clone();
+    };
+    let Some(existing_map) = merged.as_object_mut() else {
+        return incoming.clone();
+    };
+    for (key, value) in incoming_map {
+        existing_map.insert(key.clone(), value.clone());
+    }
+    merged
+}
+
 pub(super) fn candidate_to_memory_mutation(candidate: &MemoryCandidate) -> MemoryMutation {
     MemoryMutation {
         scope: Some(candidate.scope.clone()),
         category: Some(candidate.category.clone()),
         fact: Some(candidate.fact.clone()),
         content: Some(candidate.content.clone()),
+        layer: candidate.layer.clone(),
+        value_class: candidate.value_class.clone(),
+        abstract_text: Some(super::super::memory_layer::memory_abstract_text(
+            &candidate.fact,
+        )),
         confidence: Some(candidate.confidence),
         source_type: Some(candidate.source_type.clone()),
         source_ref: candidate.source_ref.clone(),
@@ -933,6 +1300,10 @@ pub(crate) fn memory_candidate_json(candidate: &MemoryCandidate) -> Value {
         "content": candidate.content,
         "category": candidate.category,
         "scope": candidate.scope,
+        "layer": candidate.layer,
+        "valueClass": candidate.value_class,
+        "triggerEvent": candidate.trigger_event,
+        "evidence": candidate.evidence_json,
         "confidence": candidate.confidence,
         "sourceType": candidate.source_type,
         "sourceRef": candidate.source_ref,
@@ -944,6 +1315,8 @@ pub(crate) fn memory_candidate_json(candidate: &MemoryCandidate) -> Value {
         "createdAt": candidate.created_at,
         "reviewedAt": candidate.reviewed_at,
         "expiresAt": candidate.expires_at,
+        "stabilityReviewAt": candidate.stability_review_at,
+        "stabilityWindowHours": candidate.stability_window_hours,
     })
 }
 
@@ -1437,4 +1810,131 @@ fn recall_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SystemRecal
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
     })
+}
+
+pub(super) fn insert_trigger_mark(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: &str,
+    event_type: &str,
+    payload: &Value,
+) -> AgentRuntimeResult<()> {
+    let timestamp = now();
+    conn.execute(
+        "INSERT INTO trigger_marks (
+            id, session_id, turn_id, event_type, payload_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            format!("trigger-{}", Uuid::new_v4()),
+            session_id,
+            turn_id,
+            event_type,
+            serde_json::to_string(payload)
+                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
+            timestamp,
+        ],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(super) fn enqueue_memory_job_record(
+    conn: &Connection,
+    session_id: &str,
+    turn_id: &str,
+    job_type: &str,
+    payload: &Value,
+) -> AgentRuntimeResult<String> {
+    let id = format!("memory-job-{}", Uuid::new_v4());
+    let timestamp = now();
+    conn.execute(
+        "INSERT INTO memory_jobs (
+            id, session_id, turn_id, job_type, payload_json, status, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6)",
+        params![
+            id,
+            session_id,
+            turn_id,
+            job_type,
+            serde_json::to_string(payload)
+                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
+            timestamp,
+        ],
+    )
+    .map_err(sql_error)?;
+    Ok(id)
+}
+
+pub(super) fn claim_next_memory_job(
+    conn: &Connection,
+) -> AgentRuntimeResult<Option<MemoryJobRecord>> {
+    let order = super::super::memory_job_budget::job_type_order_clause();
+    let row = conn
+        .query_row(
+            &format!(
+                "SELECT id, session_id, turn_id, job_type, payload_json, status, created_at
+             FROM memory_jobs
+             WHERE status = 'pending'
+             ORDER BY {order}
+             LIMIT 1"
+            ),
+            [],
+            |row| {
+                let payload_json: String = row.get(4)?;
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    payload_json,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(sql_error)?;
+    let Some((id, session_id, turn_id, job_type, payload_json, status, created_at)) = row else {
+        return Ok(None);
+    };
+    let started_at = now();
+    conn.execute(
+        "UPDATE memory_jobs SET status = 'running', started_at = ?2 WHERE id = ?1 AND status = 'pending'",
+        params![id, started_at],
+    )
+    .map_err(sql_error)?;
+    if conn.changes() == 0 {
+        return Ok(None);
+    }
+    Ok(Some(MemoryJobRecord {
+        id,
+        session_id,
+        turn_id,
+        job_type,
+        payload: serde_json::from_str(&payload_json).unwrap_or(Value::Null),
+        status,
+        created_at,
+    }))
+}
+
+pub(super) fn finish_memory_job_record(
+    conn: &Connection,
+    id: &str,
+    status: &str,
+    result: Value,
+) -> AgentRuntimeResult<()> {
+    conn.execute(
+        "UPDATE memory_jobs
+         SET status = ?2, completed_at = ?3, result_json = ?4
+         WHERE id = ?1",
+        params![
+            id,
+            status,
+            now(),
+            serde_json::to_string(&result)
+                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?,
+        ],
+    )
+    .map_err(sql_error)?;
+    Ok(())
 }

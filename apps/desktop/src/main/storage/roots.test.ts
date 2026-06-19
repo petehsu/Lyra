@@ -54,6 +54,7 @@ describe("Lyra storage roots", () => {
         search: "/Users/tester/.lyra/modules/search",
         imageViewer: "/Users/tester/.lyra/modules/image-viewer",
         downloadManager: "/Users/tester/.lyra/modules/download-manager",
+        identity: "/Users/tester/.lyra/modules/identity",
         loginManager: "/Users/tester/.lyra/modules/login-manager"
       }
     };

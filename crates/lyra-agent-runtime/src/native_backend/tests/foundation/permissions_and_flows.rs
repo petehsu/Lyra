@@ -669,15 +669,15 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
             &first_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-clarify",
-                "/tools/clarification/ask",
-                json!({
+            ModelToolCall {
+                id: "tool-clarify".to_string(),
+                name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+                arguments: json!({
                     "question": "Which target?",
                     "options": ["A", "B"],
                     "allowCustomAnswer": true
                 }),
-            ),
+            },
         )
     });
     let clarification_id = wait_for_pending_clarification(&session_id);
@@ -1078,5 +1078,3 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
         Some("live")
     );
 }
-
-

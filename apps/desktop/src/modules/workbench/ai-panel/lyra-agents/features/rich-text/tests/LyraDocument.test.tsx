@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import type { SessionMeta } from "../../../core/types";
 import type { LyraRenderDocument } from "../../../../../../../shared/render";
@@ -62,59 +62,45 @@ describe("LyraDocument", () => {
     );
   });
 
-  it("falls back to plain text when render bridge is unavailable", async () => {
-    const original = window.lyraDesktop;
-    Object.defineProperty(window, "lyraDesktop", {
-      configurable: true,
-      value: {}
-    });
-
+  it("falls back to plain text when no render snapshot is provided", () => {
     renderWithData(<LyraDocument content="fallback body" />);
-
-    await waitFor(() => {
-      expect(screen.getByText("fallback body")).toBeTruthy();
-    });
-
-    Object.defineProperty(window, "lyraDesktop", {
-      configurable: true,
-      value: original
-    });
+    expect(screen.getByText("fallback body")).toBeTruthy();
   });
 
-  it("renders rust document blocks from the native render bridge", async () => {
-    const renderDocument = vi.fn(async () => sampleDocument);
-    const original = window.lyraDesktop;
-    Object.defineProperty(window, "lyraDesktop", {
-      configurable: true,
-      value: {
-        render: {
-          renderDocument,
-          highlightSpans: vi.fn(),
-          invalidateCache: vi.fn()
-        }
-      }
-    });
+  it("renders collapsible details blocks", () => {
+    renderWithData(
+      <LyraDocument
+        content=""
+        document={{
+          blocks: [
+            {
+              kind: "details",
+              summary: [{ kind: "text", value: "点击展开" }],
+              children: [
+                {
+                  kind: "paragraph",
+                  children: [{ kind: "text", value: "折叠正文" }]
+                }
+              ]
+            }
+          ]
+        }}
+      />
+    );
 
-    renderWithData(<LyraDocument content="# Hello **world**" />);
+    expect(screen.getByText("点击展开")).toBeTruthy();
+    expect(screen.getByText("折叠正文")).toBeTruthy();
+    expect(document.querySelector(".lyra-agents-md-details")).not.toBeNull();
+  });
 
-    await waitFor(() => {
-      expect(renderDocument).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: "# Hello **world**",
-          enableMath: true,
-          enableMermaid: true,
-          highlightCode: true
-        })
-      );
-      expect(screen.getByText("Hello")).toBeTruthy();
-      expect(screen.getByText("world")).toBeTruthy();
-      expect(screen.getByText(/let/)).toBeTruthy();
-      expect(screen.getByText(/x = 1;/)).toBeTruthy();
-    });
+  it("renders rust document blocks from agent snapshot", () => {
+    renderWithData(
+      <LyraDocument content="# Hello **world**" document={sampleDocument} />
+    );
 
-    Object.defineProperty(window, "lyraDesktop", {
-      configurable: true,
-      value: original
-    });
+    expect(screen.getByText("Hello")).toBeTruthy();
+    expect(screen.getByText("world")).toBeTruthy();
+    expect(screen.getByText(/let/)).toBeTruthy();
+    expect(screen.getByText(/x = 1;/)).toBeTruthy();
   });
 });

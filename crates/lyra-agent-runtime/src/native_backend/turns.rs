@@ -7,7 +7,8 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let inline_images = parse_inline_images(&payload);
     let uses_inline_image_markers = text_has_inline_image_markers(&text);
     if uses_inline_image_markers {
-        validate_inline_image_turn_commit(&text, &inline_images).map_err(AgentRuntimeError::Core)?;
+        validate_inline_image_turn_commit(&text, &inline_images)
+            .map_err(AgentRuntimeError::Core)?;
     }
     let legacy_images = if uses_inline_image_markers {
         Vec::new()
@@ -52,10 +53,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
                     .map(str::to_string)
             });
         if let Some(previous_turn_id) = interrupted_turn_id.as_ref() {
-            state.cancelled_turns.insert(previous_turn_id.clone());
-            if let Some(token) = state.active_cancellations.get(previous_turn_id) {
-                token.store(true, Ordering::SeqCst);
-            }
+            super::session_runtime::request_turn_cancellation(previous_turn_id);
         }
         let session = state
             .sessions
@@ -145,6 +143,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         state
             .active_cancellations
             .insert(turn_id.clone(), cancellation.clone());
+        super::session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
         let callback = state.event_callback.clone();
         state.save_state()?;
         (
@@ -184,9 +183,8 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
 }
 
 pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
-    let model_result = build_model_request(&session_id).and_then(|request| {
-        run_model_loop(&session_id, &turn_id, request, &cancellation)
-    });
+    let model_result = build_model_request(&session_id)
+        .and_then(|request| run_model_loop(&session_id, &turn_id, request, &cancellation));
     thread::sleep(Duration::from_millis(25));
 
     if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(&session_id, &turn_id) {
@@ -229,18 +227,17 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
 
 pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {
     let (
+        root,
         provider,
         model,
         session_messages,
         session_tools,
         host_dispatcher,
-        memory_records,
-        memory_injection_explanation,
-        system_recall_records,
         active_skills,
         working_dir,
         session_kind,
         active_turn_id,
+        pinned_context_prompt,
     ) = {
         let state = state()
             .lock()
@@ -297,55 +294,82 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .and_then(|session| session.snapshot.get("activeTurnId"))
             .and_then(Value::as_str)
             .map(str::to_string);
-        let selected_ranked_memory = select_ranked_long_term_memory_for_injection(
-            &state.root,
-            &latest_user_text(&session_messages),
-            working_dir.as_deref(),
-            SHARED_MEMORY_INJECTION_LIMIT,
-        )?;
-        let memory_query = [
-            Some(latest_user_text(&session_messages)),
-            working_dir.clone(),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-        let memory_injection_explanation = record_memory_injection(
-            &state.root,
-            session_id,
-            active_turn_id.as_deref(),
-            (!memory_query.trim().is_empty()).then_some(memory_query.as_str()),
-            &selected_ranked_memory,
-        )
-        .unwrap_or_else(|_| json!({ "selected": [] }));
-        let selected_memory = selected_ranked_memory
-            .iter()
-            .map(|ranked| ranked.record.clone())
-            .collect::<Vec<_>>();
-        let system_recall_records = select_system_recall_for_injection(
-            &state.root,
-            &latest_user_text(&session_messages),
-            working_dir.as_deref(),
-            &session_messages,
-        )
-        .unwrap_or_default();
+        let pinned_context_prompt = state
+            .sessions
+            .get(session_id)
+            .map(|session| {
+                let clarification = active_clarification_projection(&state, session_id);
+                let items = pinned_context::collect_pinned_items(session, clarification.as_ref());
+                pinned_context::pinned_context_prompt(&items)
+            })
+            .unwrap_or_default();
         (
+            state.root.clone(),
             provider,
             model,
             session_messages,
             session_tools,
             state.host_dispatcher.clone(),
-            selected_memory,
-            memory_injection_explanation,
-            system_recall_records,
             state.active_skills.clone(),
             working_dir,
             session_kind,
             active_turn_id,
+            pinned_context_prompt,
         )
     };
+    let latest_user = latest_user_text(&session_messages);
+    let selected_ranked_memory = select_ranked_long_term_memory_for_injection(
+        &root,
+        &latest_user,
+        working_dir.as_deref(),
+        SHARED_MEMORY_INJECTION_LIMIT,
+    )?;
+    let memory_query = [Some(latest_user.clone()), working_dir.clone()]
+        .into_iter()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let memory_injection_explanation = record_memory_injection(
+        &root,
+        session_id,
+        active_turn_id.as_deref(),
+        (!memory_query.trim().is_empty()).then_some(memory_query.as_str()),
+        &selected_ranked_memory,
+    )
+    .unwrap_or_else(|_| json!({ "selected": [] }));
+    let memory_records = selected_ranked_memory.clone();
+    let system_recall_records = select_system_recall_for_injection(
+        &root,
+        Some(session_id),
+        &latest_user,
+        working_dir.as_deref(),
+        &session_messages,
+    )
+    .unwrap_or_default();
+    let mut session_messages = session_messages;
+    let mut provider_context_trimmed = false;
+    {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        if let Some(session) = state.sessions.get(session_id) {
+            let active_clarification = active_clarification_projection(&state, session_id);
+            let trim_config = TrimControllerConfig::default();
+            if let Some(plan) = context_window::build_context_window_plan(
+                session,
+                &trim_config,
+                active_clarification.as_ref(),
+            ) {
+                let (filtered, dropped) =
+                    context_window::filter_messages_by_window_plan(&session_messages, &plan);
+                if dropped > 0 {
+                    session_messages = filtered;
+                    provider_context_trimmed = true;
+                }
+            }
+        }
+    }
     let capabilities = model_capabilities(&provider, &model);
     let route = providers::registry::require_route(&provider.route_id)?;
     let openai_responses_replay =
@@ -358,8 +382,15 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     } else {
         Vec::new()
     };
-    let mut runtime_context =
-        build_runtime_context(host_dispatcher.as_ref(), &memory_records, &capabilities);
+    let memory_record_summaries = memory_records
+        .iter()
+        .map(|ranked| ranked.record.clone())
+        .collect::<Vec<_>>();
+    let mut runtime_context = build_runtime_context(
+        host_dispatcher.as_ref(),
+        &memory_record_summaries,
+        &capabilities,
+    );
     let tool_scene = infer_tool_filesystem_scene(
         session_kind.as_deref(),
         working_dir.as_deref(),
@@ -388,7 +419,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         },
         "longTermMemory": {
             "selectedCount": memory_records.len(),
-            "records": memory_records.iter().map(memory_summary_json).collect::<Vec<_>>(),
+            "records": memory_record_summaries
+                .iter()
+                .map(memory_summary_json)
+                .collect::<Vec<_>>(),
             "injection": memory_injection_explanation,
         },
         "systemRecall": system_recall_json(&system_recall_records)
@@ -416,7 +450,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &persona_context,
         &active_skill_prompt(&active_skills),
         design_research_required,
-        &combined_memory_prompt(&memory_records, &system_recall_records),
+        &combined_memory_prompt(
+            &memory_records,
+            &system_recall_records,
+            &pinned_context_prompt,
+        ),
     );
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);
     let context = ContextBuilder::default().build_provider_context(
@@ -461,7 +499,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         input_downgrades: context.input_downgrades,
         evidence_refs: context.evidence_refs,
         token_estimate: context.token_estimate,
-        context_trimmed: context.trimmed,
+        context_trimmed: provider_context_trimmed || context.trimmed,
     })
 }
 
@@ -543,10 +581,12 @@ pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
 }
 
 pub(crate) fn combined_memory_prompt(
-    memory_records: &[LongTermMemoryRecord],
+    memory_records: &[RankedMemoryRecord],
     system_recall_records: &[RankedSystemRecallItem],
+    pinned_context_prompt: &str,
 ) -> String {
     [
+        pinned_context_prompt.to_string(),
         shared_memory_prompt(memory_records),
         system_recall_prompt(system_recall_records),
     ]
@@ -567,26 +607,28 @@ fn active_ui_turn_key(session_id: &str, turn_id: &str) -> String {
 }
 
 pub(crate) fn set_active_ui_message_id(session_id: &str, turn_id: &str, message_id: &str) {
+    super::session_runtime::set_active_ui_message_id(session_id, turn_id, message_id);
     if let Ok(mut state) = state().lock() {
-        state
-            .active_ui_message_by_turn
-            .insert(active_ui_turn_key(session_id, turn_id), message_id.to_string());
+        state.active_ui_message_by_turn.insert(
+            active_ui_turn_key(session_id, turn_id),
+            message_id.to_string(),
+        );
     }
 }
 
 pub(crate) fn active_ui_message_id(session_id: &str, turn_id: &str) -> Option<String> {
-    state()
-        .lock()
-        .ok()
-        .and_then(|state| {
+    super::session_runtime::active_ui_message_id(session_id, turn_id).or_else(|| {
+        state().lock().ok().and_then(|state| {
             state
                 .active_ui_message_by_turn
                 .get(&active_ui_turn_key(session_id, turn_id))
                 .cloned()
         })
+    })
 }
 
 pub(crate) fn clear_active_ui_message_id(session_id: &str, turn_id: &str) {
+    super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
     if let Ok(mut state) = state().lock() {
         state
             .active_ui_message_by_turn
@@ -783,8 +825,10 @@ pub(crate) fn append_assistant_delta(
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
             append_text_to_message(message, delta);
+            let (render_document, render_revision) =
+                super::message_render::enrich_assistant_message_render(message, true);
             touch_session(session);
-            callback
+            (callback, render_document, render_revision)
         }
         Err(_) => {
             return Err(AgentRuntimeError::Core(
@@ -792,6 +836,7 @@ pub(crate) fn append_assistant_delta(
             ));
         }
     };
+    let (callback, render_document, render_revision) = callback;
     emit_with_callback(
         &callback,
         json!({
@@ -800,6 +845,8 @@ pub(crate) fn append_assistant_delta(
             "messageId": message_id,
             "blockId": "text-0",
             "delta": delta,
+            "renderDocument": render_document,
+            "renderRevision": render_revision,
         }),
     );
     Ok(())
@@ -832,6 +879,7 @@ fn attach_metadata_to_assistant_message(
         }
     }
     message["metadata"] = Value::Object(merged);
+    super::message_render::enrich_assistant_message_render(message, false);
     Some(message.clone())
 }
 
@@ -850,7 +898,8 @@ pub(crate) fn remove_assistant_message(session_id: &str, message_id: &str) -> bo
                 return false;
             };
             let original_len = messages.len();
-            messages.retain(|message| message.get("id").and_then(Value::as_str) != Some(message_id));
+            messages
+                .retain(|message| message.get("id").and_then(Value::as_str) != Some(message_id));
             let removed = messages.len() < original_len;
             if removed {
                 touch_session(session);
@@ -985,7 +1034,12 @@ pub(crate) fn finish_turn_with_metadata(
     failure: Option<String>,
     metadata: Option<Value>,
 ) {
-    let mut extraction_job: Option<(PathBuf, String, String, String, Option<String>)> = None;
+    let failure_for_ledger = failure.clone();
+    let mut extraction_job: Option<(PathBuf, String, String, String, Option<String>, Vec<Value>)> =
+        None;
+    let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
+    let mut trim_job: Option<(PathBuf, String)> = None;
+    let mut ledger_turn: Option<(PathBuf, NativeSession, String, String, Option<String>)> = None;
     let (callback, events) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
@@ -993,6 +1047,7 @@ pub(crate) fn finish_turn_with_metadata(
             let root = state.root.clone();
             state.active_cancellations.remove(turn_id);
             state.cancelled_turns.remove(turn_id);
+            super::session_runtime::clear_active_turn(session_id, turn_id);
             let streamed_message_id = state
                 .active_ui_message_by_turn
                 .get(&active_ui_turn_key(session_id, turn_id))
@@ -1000,6 +1055,9 @@ pub(crate) fn finish_turn_with_metadata(
             state
                 .active_ui_message_by_turn
                 .remove(&active_ui_turn_key(session_id, turn_id));
+            let streamed_message_id = streamed_message_id
+                .or_else(|| super::session_runtime::active_ui_message_id(session_id, turn_id));
+            super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
                     let latest_user = latest_user_text(
@@ -1042,7 +1100,7 @@ pub(crate) fn finish_turn_with_metadata(
                     let _ = prune_empty_assistant_messages(&mut session.snapshot);
                     let retention_metrics = prune_transient_tool_outputs(session);
                     touch_session(session);
-                    let _ = index_session_messages_for_recall(&root, session);
+                    recall_index_job = Some((root.clone(), session.clone()));
                     events.push(json!({
                         "kind": "sessionSnapshot",
                         "snapshot": session.snapshot
@@ -1063,14 +1121,29 @@ pub(crate) fn finish_turn_with_metadata(
                         }));
                     }
                     if status == "finished" {
+                        let session_messages = session
+                            .snapshot
+                            .get("messages")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default();
                         extraction_job = Some((
-                            root,
+                            root.clone(),
                             session_id.to_string(),
                             turn_id.to_string(),
                             latest_user,
                             assistant_for_extraction,
+                            session_messages,
                         ));
+                        trim_job = Some((root.clone(), session_id.to_string()));
                     }
+                    ledger_turn = Some((
+                        root.clone(),
+                        session.clone(),
+                        turn_id.to_string(),
+                        status.to_string(),
+                        failure_for_ledger.clone(),
+                    ));
                     events.push(json!({
                         "kind": "turnFinished",
                         "sessionId": session_id,
@@ -1112,8 +1185,26 @@ pub(crate) fn finish_turn_with_metadata(
     for event in events {
         emit_with_callback(&callback, event);
     }
-    if let Some((root, session_id, turn_id, user_text, assistant_text)) = extraction_job {
-        spawn_post_turn_memory_extraction(root, session_id, turn_id, user_text, assistant_text);
+    if let Some((root, session)) = recall_index_job {
+        let _ = index_session_messages_for_recall(&root, &session);
+    }
+    if let Some((root, session, turn_id, status, failure)) = ledger_turn {
+        let _ = record_turn_finished(&root, &session, &turn_id, &status, failure.as_deref());
+    }
+    if let Some((root, session_id, turn_id, user_text, assistant_text, session_messages)) =
+        extraction_job
+    {
+        spawn_post_turn_memory_extraction(
+            root.clone(),
+            session_id.clone(),
+            turn_id.clone(),
+            user_text,
+            assistant_text,
+        );
+        maybe_emit_token_checkpoint_trigger(&root, &session_id, &turn_id, &session_messages);
+    }
+    if let Some((root, session_id)) = trim_job {
+        spawn_post_turn_session_trim(root, session_id);
     }
 }
 
@@ -1125,6 +1216,95 @@ pub(crate) fn update_runtime_turn(session: &mut NativeSession, turn_id: &str, st
         _ => "completed",
     };
     update_runtime_turn_state(session, turn_id, state_name, None);
+}
+
+pub(crate) const STALE_WAITING_FOR_TOOL_WITHOUT_RUNNING_TOOL_MS: i64 = 60_000;
+
+pub(crate) fn reconcile_orphan_running_turn(
+    session: &mut NativeSession,
+    has_live_cancellation_token: bool,
+    reason: &str,
+) -> bool {
+    let turn_status = session
+        .snapshot
+        .get("turnStatus")
+        .and_then(Value::as_str)
+        .unwrap_or("idle");
+    let active_turn_id = session
+        .snapshot
+        .get("activeTurnId")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    if turn_status != "running" {
+        return false;
+    }
+    let stale_waiting_for_tool = active_turn_id
+        .as_deref()
+        .is_some_and(|turn_id| stale_waiting_for_tool_without_running_tool(session, turn_id));
+    if has_live_cancellation_token && active_turn_id.is_some() && !stale_waiting_for_tool {
+        return false;
+    }
+    let turn_id = active_turn_id.unwrap_or_else(|| format!("orphan-turn-{}", Uuid::new_v4()));
+    session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
+    session.snapshot["activeTurnId"] = Value::Null;
+    session.snapshot["follow"] = json!({ "running": false, "activity": Value::Null });
+    let recovery_message = if stale_waiting_for_tool {
+        "Lyra marked this turn as interrupted because it was still waiting for a tool even though no tool was running."
+    } else {
+        "Lyra marked this turn as cancelled because no live runtime worker was attached to it."
+    };
+    finish_running_tools_for_turn(
+        session,
+        &turn_id,
+        "cancelled",
+        json!({ "content": recovery_message }),
+    );
+    let failure_kind = if stale_waiting_for_tool {
+        "stale_waiting_for_tool_without_running_tools"
+    } else {
+        reason
+    };
+    update_runtime_turn_state(session, &turn_id, "interrupted", Some(failure_kind));
+    touch_session(session);
+    true
+}
+
+fn stale_waiting_for_tool_without_running_tool(session: &NativeSession, turn_id: &str) -> bool {
+    let Some(turn) = session
+        .runtime_turns
+        .iter()
+        .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id))
+    else {
+        return false;
+    };
+    if turn.get("state").and_then(Value::as_str) != Some("waiting_for_tool") {
+        return false;
+    }
+    if running_tool_for_turn(session, turn_id) {
+        return false;
+    }
+    let updated_at_ms = turn
+        .get("updatedAtMs")
+        .and_then(Value::as_i64)
+        .unwrap_or_else(|| Utc::now().timestamp_millis());
+    Utc::now().timestamp_millis().saturating_sub(updated_at_ms)
+        >= STALE_WAITING_FOR_TOOL_WITHOUT_RUNNING_TOOL_MS
+}
+
+fn running_tool_for_turn(session: &NativeSession, turn_id: &str) -> bool {
+    session
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|tool| {
+            if tool.get("status").and_then(Value::as_str) != Some("running") {
+                return false;
+            }
+            let tool_turn_id = super::activity::tool_runtime_turn_id(tool);
+            tool_turn_id.is_none_or(|value| value == turn_id)
+        })
 }
 
 pub(crate) fn update_runtime_turn_state(
@@ -1167,6 +1347,9 @@ pub(crate) fn set_runtime_turn_state(
 }
 
 pub(crate) fn turn_was_cancelled(session_id: &str, turn_id: &str) -> bool {
+    if super::session_runtime::turn_cancellation_requested(turn_id) {
+        return true;
+    }
     state()
         .lock()
         .map(|state| {
@@ -1188,10 +1371,26 @@ pub(crate) fn turn_was_cancelled(session_id: &str, turn_id: &str) -> bool {
 
 pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let id = required_session_id(&payload)?;
-    let (turn_id, callback, events) = {
-        let mut state = state()
-            .lock()
-            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    if let Some(turn_id) = super::session_runtime::active_turn_id(&id) {
+        super::session_runtime::request_turn_cancellation(&turn_id);
+    }
+    let (turn_id, callback, events, ledger_turn) = {
+        let mut state = match state().try_lock() {
+            Ok(state) => state,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Ok(json!({
+                    "sessionId": id,
+                    "status": "cancelling",
+                    "deferred": true,
+                }));
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err(AgentRuntimeError::Core(
+                    "agent runtime state lock failed".to_string(),
+                ));
+            }
+        };
+        let root = state.root.clone();
         let turn_id = state
             .sessions
             .get(&id)
@@ -1207,6 +1406,7 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
         if let Some(token) = state.active_cancellations.get(&turn_id) {
             token.store(true, Ordering::SeqCst);
         }
+        super::session_runtime::request_turn_cancellation(&turn_id);
         let session = state
             .sessions
             .get_mut(&id)
@@ -1223,6 +1423,7 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
         update_runtime_turn(session, &turn_id, "cancelled");
         touch_session(session);
         let snapshot = session.snapshot.clone();
+        let ledger_session = session.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;
         let events = vec![
@@ -1235,15 +1436,28 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
                 "reason": "user_cancelled",
             }),
         ];
-        (turn_id, callback, events)
+        (
+            turn_id,
+            callback,
+            events,
+            (root, ledger_session, "cancelled".to_string()),
+        )
     };
     for event in events {
         emit_with_callback(&callback, event);
     }
+    let (root, session, status) = ledger_turn;
+    let _ = record_turn_finished(
+        &root,
+        &session,
+        &turn_id,
+        &status,
+        Some("turn cancelled by user"),
+    );
     Ok(json!({
         "sessionId": id,
         "turnId": turn_id,
-        "status": "cancelled"
+        "status": "cancelling"
     }))
 }
 

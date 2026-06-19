@@ -6,14 +6,27 @@
 // permission), and lyra-agents-composer. Drives the scroll-linked decision panel
 // progress value.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent
+} from "react";
 import { ArrowDown, CornerUpLeft, Copy, Link2, MapPin, Undo2 } from "lucide-react";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
+import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import type { ChatMessage } from "../../core/types";
 import { APP_CONFIG } from "../../core/config";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
-import { getIsLayoutResizing } from "../../../../shell/use-panel-layout";
+import {
+  getIsLayoutResizing,
+  subscribeLayoutResizeEnd,
+  subscribeLayoutResizeStart
+} from "../../../../shell/use-panel-layout";
 import { createChatLoadGovernor } from "./chat-load-governor";
 import {
   isEmptyPendingAgentMessage,
@@ -28,8 +41,10 @@ import { AppButton } from "@renderer/ui/components";
 import {
   CHAT_INNER_PADDING_TOP_PX,
   CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-  CHAT_MESSAGE_GAP_PX
+  CHAT_MESSAGE_GAP_PX,
+  CHAT_VIRTUAL_OVERSCAN
 } from "./chat-layout-constants";
+import { visibleIndexRange } from "./message-height-table";
 import { nextStickyMessageId } from "./sticky-message";
 import { useMessageHeightTable } from "./use-message-height-table";
 import { VirtualizedMessageList } from "./virtualized-message-list";
@@ -44,6 +59,7 @@ interface ChatViewProps {
   /** When true, render the decision panel even if there are no questions. */
   showDecisions: boolean;
   showPermission: boolean;
+  desktopApi?: LyraDesktopApi | null;
 }
 
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
@@ -65,7 +81,7 @@ const textPreviewForMessage = (message: ChatMessage): string => {
   return message.blocks.find((block) => block.type === "tools")?.group.label ?? "";
 };
 
-export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
+export function ChatView({ showDecisions, showPermission, desktopApi = null }: ChatViewProps) {
   const {
     messages,
     messageWindow,
@@ -116,6 +132,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const innerRef = useRef<HTMLDivElement>(null);
   const orderedIdsRef = useRef<readonly string[]>([]);
   const listContentStartRef = useRef(0);
+  const measurableDuringResizeRef = useRef<ReadonlySet<string> | null>(null);
 
   const messageIds = useMemo(() => messages.map((message) => message.id), [messages]);
   orderedIdsRef.current = messageIds;
@@ -124,7 +141,8 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     scrollRef,
     CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
     orderedIdsRef,
-    CHAT_MESSAGE_GAP_PX
+    CHAT_MESSAGE_GAP_PX,
+    measurableDuringResizeRef
   );
 
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -132,6 +150,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
   const [viewportTop, setViewportTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [isLayoutResizing, setIsLayoutResizing] = useState(false);
 
   const hasPendingClarification = showDecisions && decisions.length > 0;
   const activityIndicatorMessageId = resolveAgentActivityHostMessageId(messages, isTurnRunning);
@@ -177,10 +196,55 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
   const citationScrollCancelRef = useRef<(() => void) | null>(null);
   const scrollAnchorDistanceRef = useRef(0);
-  const pinnedCitationMessageIds = useMemo(
-    () => (citationScrollTarget === null ? undefined : [citationScrollTarget.messageId]),
-    [citationScrollTarget?.messageId]
-  );
+
+  const pinnedMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (citationScrollTarget !== null) {
+      ids.add(citationScrollTarget.messageId);
+    }
+    if (activityIndicatorHostMessageId !== null) {
+      ids.add(activityIndicatorHostMessageId);
+    }
+    return ids.size > 0 ? [...ids] : undefined;
+  }, [activityIndicatorHostMessageId, citationScrollTarget?.messageId]);
+
+  const visibleMessageIdsDuringResize = useMemo((): ReadonlySet<string> => {
+    if (messageIds.length === 0) {
+      return new Set<string>();
+    }
+    const viewportBottom = viewportHeight <= 0
+      ? Number.POSITIVE_INFINITY
+      : viewportTop + viewportHeight;
+    const [firstIndex, lastIndex] = visibleIndexRange(
+      heightTable.store,
+      messageIds,
+      viewportTop,
+      viewportBottom,
+      CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
+      CHAT_MESSAGE_GAP_PX
+    );
+    const ids = new Set(messageIds.slice(firstIndex, lastIndex + 1));
+    if (pinnedMessageIds !== undefined) {
+      for (const pinnedId of pinnedMessageIds) {
+        if (ids.has(pinnedId)) continue;
+        const pinnedIndex = messageIds.indexOf(pinnedId);
+        if (pinnedIndex < firstIndex || pinnedIndex > lastIndex) continue;
+        ids.add(pinnedId);
+      }
+    }
+    return ids;
+  }, [
+    heightTable.store,
+    heightTable.version,
+    messageIds,
+    pinnedMessageIds,
+    viewportHeight,
+    viewportTop
+  ]);
+
+  measurableDuringResizeRef.current = isLayoutResizing
+    ? visibleMessageIdsDuringResize
+    : null;
 
   const resolveContentWidthPx = useCallback((): number => {
     const innerWidth = innerRef.current?.clientWidth ?? 0;
@@ -298,6 +362,7 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
   }, [session.id]);
 
   useEffect(() => {
+    const scrollEl = scrollRef.current;
     if (viewportHeight <= 0 || messageWindow.totalCount <= 0) {
       return;
     }
@@ -553,6 +618,32 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
     });
   }, [addCitationToComposer, contextMenu, previewRollback, rollbackMessage]);
 
+  useEffect(() => {
+    const unsubscribeStart = subscribeLayoutResizeStart(() => {
+      setIsLayoutResizing(true);
+    });
+    const unsubscribeEnd = subscribeLayoutResizeEnd(() => {
+      setIsLayoutResizing(false);
+    });
+    return () => {
+      unsubscribeStart();
+      unsubscribeEnd();
+    };
+  }, []);
+
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (scrollEl === null || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      setViewportHeight(scrollEl.clientHeight);
+    });
+    observer.observe(scrollEl);
+    setViewportHeight(scrollEl.clientHeight);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <>
       <ContextMenuHost
@@ -589,14 +680,18 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
             heightTable={heightTable}
             viewportTop={viewportTop}
             viewportHeight={viewportHeight}
-            {...(pinnedCitationMessageIds === undefined
+            contentWidth={resolveContentWidthPx()}
+            overscan={isLayoutResizing ? 0 : CHAT_VIRTUAL_OVERSCAN}
+            ignoreOffScreenPins={isLayoutResizing}
+            {...(pinnedMessageIds === undefined
               ? {}
-              : { pinnedMessageIds: pinnedCitationMessageIds })}
+              : { pinnedMessageIds })}
             renderMessage={(message) => (
               <Message
                 message={message}
                 showActivityIndicator={
-                  activityIndicatorHostMessageId === null || message.id === activityIndicatorHostMessageId
+                  activityIndicatorHostMessageId === null ||
+                  message.id === activityIndicatorHostMessageId
                 }
                 activityIndicatorMessage={
                   message.id === activityIndicatorHostMessageId ? activityIndicatorMessage : null
@@ -688,7 +783,9 @@ export function ChatView({ showDecisions, showPermission }: ChatViewProps) {
 
         <div className="lyra-agents-project-dir-chip-row lyra-agents-project-meta-row">
           <ProjectDirChip
+            desktopApi={desktopApi}
             projectName={session.project.trim().length > 0 ? session.project.trim() : null}
+            workingDir={session.workingDir}
             isHome={session.workingDirIsHome}
             canOpenProjectTree={session.projectBound && !session.workingDirIsHome}
             onChooseProject={bindProject}

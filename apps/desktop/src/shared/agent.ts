@@ -8,16 +8,22 @@ export type AgentMessage = {
   readonly role: AgentRole;
   readonly text: string;
   readonly blocks?: readonly AgentMessageBlock[];
+  readonly renderDocument?: AgentRenderDocument;
+  readonly renderRevision?: number;
   readonly createdAt: string;
   readonly metadata?: unknown;
   readonly rollback?: AgentMessageRollback | null;
 };
+
+export type AgentRenderDocument = import("./render").LyraRenderDocument;
 
 export type AgentMessageBlock =
   | {
       readonly type: "text";
       readonly id: string;
       readonly text: string;
+      readonly renderDocument?: AgentRenderDocument;
+      readonly renderRevision?: number;
     }
   | {
       readonly type: "image";
@@ -111,6 +117,23 @@ export type AgentBrowserFollowModeUpdateRequest = {
   readonly enabled: boolean;
 };
 
+export type AgentSessionLedgerCommitSummary = {
+  readonly hash?: string | null;
+  readonly shortHash?: string | null;
+  readonly subject?: string | null;
+  readonly committedAt?: string | null;
+};
+
+export type AgentSessionLedgerSummary = {
+  readonly enabled: boolean;
+  readonly path?: string | null;
+  readonly head?: string | null;
+  readonly commitCount?: number | null;
+  readonly lastEventAt?: string | null;
+  readonly recentCommits?: readonly AgentSessionLedgerCommitSummary[];
+  readonly diagnostics?: readonly unknown[];
+};
+
 export type AgentSessionSnapshot = {
   readonly id: string;
   readonly title: string;
@@ -126,6 +149,7 @@ export type AgentSessionSnapshot = {
   readonly follow: AgentFollowState;
   readonly updatedAt: string;
   readonly memory?: AgentMemorySnapshot | null;
+  readonly ledger?: AgentSessionLedgerSummary | null;
 };
 
 export type AgentMemoryVisibility =
@@ -164,6 +188,7 @@ export type AgentRuntimeTurnState =
   | "completed"
   | "failed_recoverable"
   | "failed_terminal"
+  | "cancelled"
   | "cancelled_by_user";
 
 /** Desktop follow.activity value while the agent session bridge is connecting. */
@@ -291,12 +316,6 @@ export type AgentMemoryAuditResponse = {
   readonly sessionId: string;
   readonly events: readonly unknown[];
   readonly runtimeTurns: readonly AgentRuntimeTurn[];
-};
-
-export type AgentMemoryTrimRunRequest = {
-  readonly sessionId?: string | null;
-  readonly tokenBudget?: number | null;
-  readonly charBudget?: number | null;
 };
 
 export type AgentMemorySharedSearchRequest = {
@@ -723,6 +742,8 @@ export type AgentRuntimeEvent =
       readonly blockId?: string | null;
       readonly replace?: boolean;
       readonly delta: string;
+      readonly renderDocument?: AgentRenderDocument;
+      readonly renderRevision?: number;
     }
   | {
       readonly kind: "toolStarted" | "toolFinished";
@@ -1130,7 +1151,6 @@ export type AgentApi = {
   readonly retryTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly readMemorySnapshot: (request?: AgentSessionReadRequest) => Promise<AgentMemorySnapshot>;
   readonly readMemoryAudit: (request?: AgentSessionReadRequest) => Promise<AgentMemoryAuditResponse>;
-  readonly runMemoryTrim: (request?: AgentMemoryTrimRunRequest) => Promise<unknown>;
   readonly runMemoryRecovery: (request?: AgentSessionReadRequest) => Promise<unknown>;
   readonly searchSharedMemory: (
     request?: AgentMemorySharedSearchRequest

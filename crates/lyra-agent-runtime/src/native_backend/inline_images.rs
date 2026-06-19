@@ -1,6 +1,6 @@
 use super::*;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use crate::native_backend::tools::resolve_lyra_artifact_path;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 const MAX_INLINE_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -33,7 +33,10 @@ pub(crate) fn inline_image_is_committable(image: &Value) -> bool {
         .get("source")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let data = image.get("data").and_then(Value::as_str).unwrap_or_default();
+    let data = image
+        .get("data")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     !data.trim().is_empty()
         || is_openable_local_image_source(source)
         || source.starts_with("http://")
@@ -239,12 +242,9 @@ pub(crate) fn expand_inline_image_markers_in_content(
     }
 
     match content {
-        Value::String(text) => expand_inline_image_markers_in_text(
-            &text,
-            &image_by_id,
-            options,
-            output,
-        ),
+        Value::String(text) => {
+            expand_inline_image_markers_in_text(&text, &image_by_id, options, output)
+        }
         Value::Array(ref parts) => {
             let mut expanded = Vec::new();
             for part in parts {
@@ -375,7 +375,9 @@ fn push_image_part(
         parts,
         format!(
             "[Image omitted: {}]",
-            downgrade["reason"].as_str().unwrap_or("image input unsupported")
+            downgrade["reason"]
+                .as_str()
+                .unwrap_or("image input unsupported")
         ),
     );
 }
@@ -386,7 +388,10 @@ pub(crate) fn provider_image_url_from_value(image: &Value) -> Option<String> {
         .or_else(|| image.get("media_type"))
         .and_then(Value::as_str)
         .unwrap_or("image/png");
-    let data = image.get("data").and_then(Value::as_str).unwrap_or_default();
+    let data = image
+        .get("data")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if data.starts_with("data:image/")
         || data.starts_with("http://")
         || data.starts_with("https://")
@@ -396,7 +401,10 @@ pub(crate) fn provider_image_url_from_value(image: &Value) -> Option<String> {
     if !data.trim().is_empty() {
         return Some(format!("data:{media_type};base64,{data}"));
     }
-    let source = image.get("source").and_then(Value::as_str).unwrap_or_default();
+    let source = image
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if source.starts_with("http://") || source.starts_with("https://") {
         return Some(source.to_string());
     }
@@ -423,7 +431,10 @@ fn normalize_inline_image(raw: Value) -> Option<Value> {
         .or_else(|| raw.get("media_type"))
         .and_then(Value::as_str)?;
     let data = raw.get("data").and_then(Value::as_str).unwrap_or_default();
-    let source = raw.get("source").and_then(Value::as_str).unwrap_or_default();
+    let source = raw
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let has_data = !data.trim().is_empty();
     let has_openable_source = is_openable_local_image_source(source)
         || resolve_lyra_artifact_path(source).ok().flatten().is_some();
@@ -483,7 +494,14 @@ fn is_openable_local_image_source(source: &str) -> bool {
         || trimmed.starts_with("../")
         || trimmed.starts_with("file://")
         || [
-            "apps/", "crates/", "web/", "scripts/", "packages/", "vendor/", "docs/", "target/",
+            "apps/",
+            "crates/",
+            "web/",
+            "scripts/",
+            "packages/",
+            "vendor/",
+            "docs/",
+            "target/",
             "参考/",
         ]
         .iter()
@@ -536,8 +554,8 @@ fn read_image_data_url_from_path(path: &Path, media_type: &str) -> Option<String
         return None;
     }
     let bytes = fs::read(path).ok()?;
-    let (encoded_bytes, encoded_type) =
-        encode_image_bytes_for_vision(&bytes, media_type).unwrap_or_else(|| (bytes, media_type.to_string()));
+    let (encoded_bytes, encoded_type) = encode_image_bytes_for_vision(&bytes, media_type)
+        .unwrap_or_else(|| (bytes, media_type.to_string()));
     Some(format!(
         "data:{};base64,{}",
         encoded_type,
@@ -712,16 +730,14 @@ fn format_inline_image_trait_attributes(image: &Value) -> String {
     if let Some(has_alpha) = image.get("hasAlpha").and_then(Value::as_bool) {
         attrs.push(format!("hasAlpha=\"{has_alpha}\""));
     }
-    if let Some(transparent_background) = image
-        .get("transparentBackground")
-        .and_then(Value::as_bool)
+    if let Some(transparent_background) =
+        image.get("transparentBackground").and_then(Value::as_bool)
     {
-        attrs.push(format!("transparentBackground=\"{transparent_background}\""));
+        attrs.push(format!(
+            "transparentBackground=\"{transparent_background}\""
+        ));
     }
-    if let Some(percent) = image
-        .get("transparentPixelPercent")
-        .and_then(Value::as_f64)
-    {
+    if let Some(percent) = image.get("transparentPixelPercent").and_then(Value::as_f64) {
         attrs.push(format!("transparentPixelPercent=\"{percent}\""));
     }
     if let Some(vision_composited) = image.get("visionComposited").and_then(Value::as_bool) {
@@ -800,11 +816,8 @@ mod tests {
 
     #[test]
     fn validate_inline_image_turn_commit_rejects_markers_without_metadata() {
-        let err = validate_inline_image_turn_commit(
-            "Look at ⟦image:img-1⟧ please",
-            &[],
-        )
-        .expect_err("missing metadata");
+        let err = validate_inline_image_turn_commit("Look at ⟦image:img-1⟧ please", &[])
+            .expect_err("missing metadata");
         assert!(err.contains("no image attachments"));
     }
 
@@ -920,13 +933,8 @@ mod tests {
             json!({ "role": "assistant", "text": "I see a photo." }),
             json!({ "role": "user", "text": "这张图片是什么" }),
         ];
-        let (inherited, did_inherit) = effective_inline_images_for_user_turn(
-            "user",
-            &[],
-            "这张图片是什么",
-            &messages,
-            2,
-        );
+        let (inherited, did_inherit) =
+            effective_inline_images_for_user_turn("user", &[], "这张图片是什么", &messages, 2);
         assert!(did_inherit);
         assert_eq!(inherited.len(), 1);
         assert_eq!(inherited[0]["id"], "dropped-image-abc");
@@ -970,8 +978,14 @@ mod tests {
         );
         let parts = expanded.as_array().expect("parts");
         assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0].pointer("/text").and_then(Value::as_str), Some("Look at "));
+        assert_eq!(
+            parts[0].pointer("/text").and_then(Value::as_str),
+            Some("Look at ")
+        );
         assert!(parts[1].pointer("/image_url/url").is_some());
-        assert_eq!(parts[2].pointer("/text").and_then(Value::as_str), Some(" please"));
+        assert_eq!(
+            parts[2].pointer("/text").and_then(Value::as_str),
+            Some(" please")
+        );
     }
 }

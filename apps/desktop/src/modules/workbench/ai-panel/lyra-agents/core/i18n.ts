@@ -148,6 +148,7 @@ const ZH_MESSAGES = {
   "tool.agentActivity": "Agent 活动",
   "tool.events": "{count} 个工具事件",
   "tool.running": "运行中...",
+  "tool.streamingDiff": "正在生成变更...",
 } as const;
 
 export type AgentChatI18nKey = keyof typeof ZH_MESSAGES;
@@ -297,6 +298,7 @@ const EN_MESSAGES: Messages = {
   "tool.agentActivity": "Agent activity",
   "tool.events": "{count} tool events",
   "tool.running": "Running...",
+  "tool.streamingDiff": "Streaming changes...",
 };
 
 const DICTIONARIES: Record<Locale, Messages> = {

@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  applyTerminalCwdChangedState,
   closeTerminalPaneState,
   createDefaultTerminalDockState,
   moveTerminalTabToDockState,
   moveTerminalTabToWorkspaceState,
   openTerminalTabWithProfileState,
+  openTerminalTabWithPlacementState,
   openTerminalTabState,
   renameTerminalTabState,
   reorderDockTerminalTabState,
@@ -83,7 +85,8 @@ describe("terminal dock service", () => {
       }
     ]);
 
-    expect(next.panes[pane.id]?.title).toBe("Restored Shell");
+    expect(next.panes[pane.id]?.title).toBe("tmp");
+    expect(next.panes[pane.id]?.autoTitle).toBe("tmp");
     expect(next.panes[pane.id]?.cwd).toBe("/tmp");
   });
 
@@ -152,7 +155,57 @@ describe("terminal dock service", () => {
     const next = renameTerminalTabState(state, tab.id, "Build Shell");
 
     expect(next.tabs[0]?.title).toBe("Build Shell");
+    expect(next.tabs[0]?.titleLocked).toBe(true);
     expect(next.panes[tab.activePaneId]?.title).toBe("Build Shell");
+    expect(next.panes[tab.activePaneId]?.titleLocked).toBe(true);
+  });
+
+  test("updates current cwd and auto title from cwdChanged events", () => {
+    const result = openTerminalTabWithPlacementState(createDefaultTerminalDockState(), {
+      mode: "shell",
+      cwd: "/Users/petehsu/Documents/Lyra"
+    });
+    const pane = result.pane;
+
+    const next = applyTerminalCwdChangedState(result.state, {
+      kind: "cwdChanged",
+      sessionId: pane.sessionId,
+      cwd: "/Users/petehsu/Documents/Lyra/apps/desktop",
+      currentCwd: "/Users/petehsu/Documents/Lyra/apps/desktop"
+    });
+
+    expect(next.panes[pane.id]?.currentCwd).toBe("/Users/petehsu/Documents/Lyra/apps/desktop");
+    expect(next.panes[pane.id]?.autoTitle).toBe("desktop");
+    expect(next.tabs.find((tab) => tab.id === result.tab.id)?.title).toBe("desktop");
+  });
+
+  test("does not overwrite a manually locked title on cwd changes", () => {
+    const result = openTerminalTabWithPlacementState(createDefaultTerminalDockState(), {
+      mode: "shell",
+      cwd: "/Users/petehsu/Documents/Lyra"
+    });
+    const renamed = renameTerminalTabState(result.state, result.tab.id, "Pinned Name");
+
+    const next = applyTerminalCwdChangedState(renamed, {
+      kind: "cwdChanged",
+      sessionId: result.pane.sessionId,
+      cwd: "/tmp/project",
+      currentCwd: "/tmp/project"
+    });
+
+    expect(next.tabs.find((tab) => tab.id === result.tab.id)?.title).toBe("Pinned Name");
+    expect(next.panes[result.pane.id]?.title).toBe("Pinned Name");
+    expect(next.panes[result.pane.id]?.autoTitle).toBe("project");
+  });
+
+  test("stores source agent session metadata for UI terminal panes", () => {
+    const result = openTerminalTabWithPlacementState(createDefaultTerminalDockState(), {
+      sourceAgentSessionId: "agent-session-1",
+      cwd: "/Users/petehsu/Documents/Lyra"
+    });
+
+    expect(result.pane.sourceAgentSessionId).toBe("agent-session-1");
+    expect(result.state.panes[result.pane.id]?.sourceAgentSessionId).toBe("agent-session-1");
   });
 
   test("stores pane follow mode", () => {

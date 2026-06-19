@@ -67,7 +67,6 @@ impl TurnRunner {
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend.call("agent.turn.cancel", payload)
     }
-
 }
 
 #[derive(Clone, Debug, Default)]

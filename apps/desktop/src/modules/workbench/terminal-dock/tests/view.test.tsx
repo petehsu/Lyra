@@ -118,7 +118,8 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     focusPane: vi.fn(),
     setPaneFollowMode: vi.fn(),
     closePane: vi.fn(),
-    syncRestoredSessions: vi.fn()
+    syncRestoredSessions: vi.fn(),
+    applyCwdChanged: vi.fn()
   },
   onRequestCloseTab: vi.fn(),
   onRequestTabContextMenu: vi.fn(),

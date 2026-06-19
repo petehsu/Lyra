@@ -30,5 +30,3 @@ pub(crate) fn poke_session(payload: Value) -> AgentRuntimeResult<Value> {
         "incompleteTodoCount": incomplete
     }))
 }
-
-

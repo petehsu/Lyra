@@ -145,7 +145,6 @@ json_facade!(cancel_turn_json, "agent.turn.cancel");
 
 json_facade!(agent_memory_snapshot_json, "agent.memory.snapshot");
 json_facade!(agent_memory_audit_json, "agent.memory.audit");
-json_facade!(agent_memory_trim_run_json, "agent.memory.trim.run");
 json_facade!(agent_memory_recover_run_json, "agent.memory.recover.run");
 json_facade!(
     agent_memory_shared_search_json,
@@ -194,5 +193,3 @@ json_facade!(
 );
 json_facade!(switch_agent_account_json, "agent.accounts.switch");
 json_facade!(remove_agent_account_json, "agent.accounts.remove");
-
-

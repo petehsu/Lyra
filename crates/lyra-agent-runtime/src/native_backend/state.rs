@@ -1,7 +1,7 @@
 use super::*;
 
 pub(crate) static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
-pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 3;
+pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 4;
 
 pub(crate) fn state() -> &'static Mutex<NativeRuntimeState> {
     STATE.get_or_init(|| Mutex::new(NativeRuntimeState::load()))
@@ -18,13 +18,7 @@ impl NativeRuntimeState {
         let _ = prune_low_value_tool_artifacts(&root);
 
         let state_file = read_json::<NativeStateFile>(&root.join("state.json"));
-        let legacy_shared_memory = state_file
-            .as_ref()
-            .map(|state| state.legacy_shared_memory.clone())
-            .unwrap_or_default();
         let _ = ensure_memory_store(&root);
-        let migrated_legacy_memory = !legacy_shared_memory.is_empty()
-            && migrate_legacy_shared_memory(&root, &legacy_shared_memory).is_ok();
         let mut config = state_file
             .as_ref()
             .map(|state| state.config.clone())
@@ -53,13 +47,23 @@ impl NativeRuntimeState {
             };
 
         let mut sessions = HashMap::new();
-        if !reset_tool_sessions && let Ok(entries) = fs::read_dir(&sessions_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                    continue;
-                }
-                if let Some(session) = read_json::<NativeSession>(&path) {
+        let mut render_enriched_sessions = false;
+        if !reset_tool_sessions {
+            for session_id in list_session_ids(&root).unwrap_or_default() {
+                if let Ok(Some(mut session)) = load_session(&root, &session_id) {
+                    if super::message_render::enrich_session_messages_render(&mut session.snapshot)
+                    {
+                        session.dirty = true;
+                        render_enriched_sessions = true;
+                    }
+                    if resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty {
+                        let _ = save_session(&root, &session);
+                        session.dirty = false;
+                    }
+                    if reconcile_orphan_running_turn(&mut session, false, "runtime_startup") {
+                        let _ = save_session(&root, &session);
+                        session.dirty = false;
+                    }
                     sessions.insert(session.id.clone(), session);
                 }
             }
@@ -116,7 +120,7 @@ impl NativeRuntimeState {
             host_dispatcher: None,
         };
         let pruned_pending = loaded.prune_non_live_pending();
-        if migrated_legacy_memory || pruned_pending || reset_tool_sessions {
+        if pruned_pending || reset_tool_sessions || render_enriched_sessions {
             let _ = loaded.save_state();
         }
         loaded
@@ -144,28 +148,20 @@ impl NativeRuntimeState {
             tool_usage_cache: self.tool_usage_cache.clone(),
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
-            legacy_shared_memory: Vec::new(),
             active_skills: self.active_skills.clone(),
-            legacy_overnight_runs: HashMap::new(),
             pending_permissions,
             pending_clarifications,
-            legacy_goals: HashMap::new(),
-            legacy_focused_goal_id: None,
         };
         write_json(&self.root.join("state.json"), &state)?;
-        let sessions_root = self.root.join("sessions");
         let session_ids = self
             .sessions
             .values()
-            .filter(|session| {
-                session.dirty || !sessions_root.join(format!("{}.json", session.id)).exists()
-            })
+            .filter(|session| session.dirty || !session_db_path(&self.root, &session.id).exists())
             .map(|session| session.id.clone())
             .collect::<Vec<_>>();
         for session_id in session_ids {
-            let path = sessions_root.join(format!("{session_id}.json"));
             if let Some(session) = self.sessions.get_mut(&session_id) {
-                write_json(&path, session)?;
+                save_session(&self.root, session)?;
                 session.dirty = false;
             }
         }
@@ -181,12 +177,6 @@ impl NativeRuntimeState {
             .retain(|_, request| is_live_pending_clarification(&self.sessions, request));
         before_permissions != self.pending_permissions.len()
             || before_clarifications != self.pending_clarifications.len()
-    }
-
-    pub(crate) fn session_path(&self, session_id: &str) -> PathBuf {
-        self.root
-            .join("sessions")
-            .join(format!("{session_id}.json"))
     }
 
     pub(crate) fn resolve_session_id(
@@ -228,17 +218,22 @@ fn clear_session_files(sessions_dir: &Path, from_schema_version: u32) -> Vec<Val
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|value| value.to_str()) == Some("json") {
-            if let Err(error) = fs::remove_file(&path) {
-                diagnostics.push(json!({
-                    "code": "tool_runtime_session_delete_failed",
-                    "message": "Failed to delete an incompatible Agent session during Tool-FS schema migration.",
-                    "path": path.display().to_string(),
-                    "fromSchemaVersion": from_schema_version,
-                    "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
-                    "error": error.to_string(),
-                }));
-            }
+        let result = if path.is_dir() {
+            fs::remove_dir_all(&path)
+        } else if path.extension().and_then(|value| value.to_str()) == Some("json") {
+            fs::remove_file(&path)
+        } else {
+            continue;
+        };
+        if let Err(error) = result {
+            diagnostics.push(json!({
+                "code": "tool_runtime_session_delete_failed",
+                "message": "Failed to delete an incompatible Agent session during runtime schema migration.",
+                "path": path.display().to_string(),
+                "fromSchemaVersion": from_schema_version,
+                "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
+                "error": error.to_string(),
+            }));
         }
     }
     diagnostics

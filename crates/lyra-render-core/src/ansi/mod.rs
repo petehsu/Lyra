@@ -1,7 +1,6 @@
 use crate::ast::{InlineNode, LyraRenderDocument, RenderBlock};
 use crate::options::RenderDocumentOptions;
 use crate::pipeline::render_document;
-use crate::preprocess::fix_common_markdown_issues;
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -87,7 +86,9 @@ impl AnsiRenderer {
                 self.list_depth = self.list_depth.saturating_sub(1);
                 self.ensure_blank_line();
             }
-            RenderBlock::CodeBlock { language, source, .. } => {
+            RenderBlock::CodeBlock {
+                language, source, ..
+            } => {
                 self.render_code_block(language.as_deref(), source);
             }
             RenderBlock::Mermaid { source, error, .. } => {
@@ -123,6 +124,18 @@ impl AnsiRenderer {
                     self.render_table_row(row);
                 }
                 self.ensure_blank_line();
+            }
+            RenderBlock::Details { summary, children } => {
+                self.ensure_blank_line();
+                self.output.push_str(DIM);
+                self.output.push('▸');
+                self.output.push(' ');
+                self.output.push_str(RESET);
+                self.render_inline_nodes(summary);
+                self.ensure_blank_line();
+                for child in children {
+                    self.render_block(child);
+                }
             }
             RenderBlock::ThematicBreak => {
                 self.ensure_blank_line();
@@ -248,8 +261,7 @@ impl AnsiRenderer {
 }
 
 pub fn render_agent_markdown(content: &str) -> String {
-    let cleaned = fix_common_markdown_issues(content);
-    render_markdown_ansi(&cleaned, &RenderDocumentOptions::default())
+    render_markdown_ansi(content, &RenderDocumentOptions::default())
 }
 
 #[cfg(test)]

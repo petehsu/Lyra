@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import type { BrowserTabStripProps } from "../browser-tabs/tab-strip";
+import type { ResolvedIdentityIcon } from "../identity";
 import type { WorkbenchSplitTriggerMode } from "../preferences";
 import type { WorkspaceTabsInteractionPolicy } from "../interaction-policy";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs";
@@ -22,6 +23,8 @@ export type WorkbenchWorkspaceTabsLabels = {
 
 type UseWorkbenchWorkspaceTabsPropsArgs = {
   readonly tabsModel: WorkspaceTabsModel;
+  readonly terminalIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
+  readonly workspaceAppIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
   readonly activeTabPageKind: WorkspaceTab["pageKind"];
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
@@ -38,6 +41,8 @@ type UseWorkbenchWorkspaceTabsPropsArgs = {
 
 export const useWorkbenchWorkspaceTabsProps = ({
   tabsModel,
+  terminalIdentityByTabId,
+  workspaceAppIdentityByTabId,
   activeTabPageKind,
   canGoBack,
   canGoForward,
@@ -78,6 +83,8 @@ export const useWorkbenchWorkspaceTabsProps = ({
   return useMemo(
     () => ({
       tabs: tabsModel.tabs,
+      ...(terminalIdentityByTabId === undefined ? {} : { terminalIdentityByTabId }),
+      ...(workspaceAppIdentityByTabId === undefined ? {} : { workspaceAppIdentityByTabId }),
       splitGroupTabIds: tabsModel.splitGroupTabIds,
       activeTabId: tabsModel.activeTabId,
       goBackLabel: labels.goBackLabel,
@@ -117,7 +124,9 @@ export const useWorkbenchWorkspaceTabsProps = ({
       splitTriggerMode,
       stackedMode,
       tabsModel,
+      terminalIdentityByTabId,
       terminalWorkspaceActions.onBrowserTabClose,
+      workspaceAppIdentityByTabId,
       workbenchActions.openNewTab
     ]
   );

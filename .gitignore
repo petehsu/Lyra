@@ -13,6 +13,7 @@ __pycache__/
 
 # Rust
 /target/
+/third-party/wasi-sdk/
 
 # IDE
 .vscode/

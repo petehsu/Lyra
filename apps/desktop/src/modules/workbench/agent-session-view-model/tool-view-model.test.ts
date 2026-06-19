@@ -203,4 +203,37 @@ describe("agent tool family projection", () => {
       }]
     });
   });
+
+  test("projects filesystem write output into edit diff details", () => {
+    const call = toToolCall(tool({
+      toolPath: "/tools/filesystem/write_file",
+      domain: "filesystem",
+      operation: "write",
+      rendererHint: "edit",
+      status: "running",
+      output: {
+        raw: {
+          changedFiles: [{ path: "src/main.ts" }],
+          diff: [
+            "--- src/main.ts",
+            "+++ src/main.ts",
+            "@@ -1 +1,2 @@",
+            "-old",
+            "+new",
+            "+line"
+          ].join("\n")
+        }
+      }
+    }));
+
+    expect(call.kind).toBe("edit");
+    expect(call.details).toMatchObject({
+      type: "edit",
+      file: "src/main.ts",
+      additions: 2,
+      deletions: 1
+    });
+    if (call.details?.type !== "edit") return;
+    expect(call.details.hunks[0]?.lines.some((line) => line.kind === "add")).toBe(true);
+  });
 });

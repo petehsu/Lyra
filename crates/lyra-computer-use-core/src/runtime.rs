@@ -12,9 +12,7 @@ use crate::model::{
     BackendError, ComputerAction, ComputerFocusRequest, ComputerNode, ListAppsRequest, MapRequest,
     MapStrategy, Platform, SessionMode,
 };
-use crate::snapshot_store::{
-    get_snapshot, observation_diff, remember_snapshot,
-};
+use crate::snapshot_store::{get_snapshot, observation_diff, remember_snapshot};
 
 /// Selects the backend for the current OS. Returns `None` on platforms without
 /// an implementation; callers render an `unsupported` status in that case.
@@ -584,10 +582,7 @@ pub fn observe_json(_payload: &str) -> String {
             let mut value = serde_json::to_value(&observation).unwrap_or_else(|_| json!({}));
             if let Value::Object(ref mut map) = value {
                 map.insert("ok".to_string(), json!(true));
-                map.insert(
-                    "platform".to_string(),
-                    json!(Platform::current().as_str()),
-                );
+                map.insert("platform".to_string(), json!(Platform::current().as_str()));
                 map.insert(
                     "status".to_string(),
                     json!({
@@ -726,9 +721,7 @@ mod tests {
         // A focus/raise would steal the foreground, which background modes
         // forbid (§14.2). This gate runs before any backend call, so it is
         // testable on every platform.
-        let out = act_json(
-            r#"{"osRef":"osax:0/1","action":"focus","mode":"background-semantic"}"#,
-        );
+        let out = act_json(r#"{"osRef":"osax:0/1","action":"focus","mode":"background-semantic"}"#);
         let value: Value = serde_json::from_str(&out).expect("valid json");
         assert_eq!(value["ok"], json!(false));
         assert_eq!(value["error"]["kind"], json!("foregroundStealBlocked"));

@@ -170,6 +170,20 @@ fn map_stream_event(
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
                 draft.arguments.push_str(delta);
             }
+            let tool_call_id = draft
+                .call_id
+                .as_deref()
+                .or(draft.id.as_deref())
+                .unwrap_or_default();
+            if let Some(tool_name) = draft.name.as_deref() {
+                crate::native_backend::tools::maybe_emit_streaming_diff_preview(
+                    session_id,
+                    turn_id,
+                    tool_call_id,
+                    tool_name,
+                    &draft.arguments,
+                );
+            }
         }
         Some("response.output_item.done") => {
             if let Some(item) = event.get("item").cloned() {

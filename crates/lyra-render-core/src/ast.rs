@@ -46,6 +46,10 @@ pub enum RenderBlock {
         headers: Vec<Vec<InlineNode>>,
         rows: Vec<Vec<Vec<InlineNode>>>,
     },
+    Details {
+        summary: Vec<InlineNode>,
+        children: Vec<RenderBlock>,
+    },
     ThematicBreak,
 }
 

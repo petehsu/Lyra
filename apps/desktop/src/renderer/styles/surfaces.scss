@@ -5773,6 +5773,17 @@
   color: var(--lyra-text-primary);
 }
 
+.lyra-terminal-tab-icon-image {
+  border-radius: var(--lyra-unit-3);
+}
+
+.lyra-terminal-tab-lyra-logo {
+  --lyra-app-logo-size: var(--lyra-icon-size-14);
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  color: currentColor;
+}
+
 .lyra-terminal-toolbar-actions {
   position: relative;
   display: grid;

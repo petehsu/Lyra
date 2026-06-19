@@ -97,9 +97,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             host("workbench.activateTab", "workbench", "activate_tab")
         }
         "/tools/workbench/close_tab" => host("workbench.closeTab", "workbench", "close_tab"),
-        "/tools/workbench/reorder_tab" => {
-            host("workbench.reorderTab", "workbench", "reorder_tab")
-        }
+        "/tools/workbench/reorder_tab" => host("workbench.reorderTab", "workbench", "reorder_tab"),
         "/tools/workbench/split_tabs" => host("workbench.splitTabs", "workbench", "split_tabs"),
         "/tools/workbench/detach_split" => {
             host("workbench.detachSplit", "workbench", "detach_split")
@@ -366,7 +364,7 @@ pub(super) fn validate_runtime_turn_for_operation(
             "Retry inside a valid Agent runtime turn.",
         ));
     }
-    if state.cancelled_turns.contains(turn_id) {
+    if super::super::super::session_runtime::turn_cancellation_requested(turn_id) {
         return Err(NativeToolFailure::new(
             "operation_cancelled",
             "Tool-FS operation was cancelled before execution.",

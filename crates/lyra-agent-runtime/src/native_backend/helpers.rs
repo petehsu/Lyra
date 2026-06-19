@@ -45,6 +45,7 @@ pub(crate) fn set_bool(value: &mut Value, key: &str, next: bool) {
 }
 
 pub(crate) fn touch_snapshot(snapshot: &mut Value) {
+    super::pinned_context::stamp_snapshot_timestamps(snapshot);
     set_string(snapshot, "updatedAt", now());
     let memory = snapshot
         .get("memory")

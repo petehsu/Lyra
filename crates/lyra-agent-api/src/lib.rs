@@ -575,6 +575,10 @@ pub enum AgentRuntimeEvent {
         #[serde(default, skip_serializing_if = "is_false")]
         replace: bool,
         delta: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render_document: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render_revision: Option<u64>,
     },
     MessageCommitted {
         session_id: AgentSessionId,

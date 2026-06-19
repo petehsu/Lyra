@@ -18,7 +18,13 @@ fn normalize_search_query(value: &str) -> String {
     let mut tokens = value
         .to_lowercase()
         .chars()
-        .map(|ch| if ch.is_alphanumeric() || ch.is_whitespace() { ch } else { ' ' })
+        .map(|ch| {
+            if ch.is_alphanumeric() || ch.is_whitespace() {
+                ch
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .map(str::to_string)
@@ -262,7 +268,10 @@ mod tests {
         let mut nudge = None;
         for pair in 0..2 {
             let _ = pair;
-            nudge = detector.observe_browser_tools(&[call_a.clone(), call_b.clone()], &[output.clone(), output.clone()]);
+            nudge = detector.observe_browser_tools(
+                &[call_a.clone(), call_b.clone()],
+                &[output.clone(), output.clone()],
+            );
         }
         assert!(nudge.is_some_and(|text| text.contains("oscillation")));
     }

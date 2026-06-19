@@ -13,14 +13,17 @@ import {
   applyPanelLayoutCssVars,
   buildPanelLayoutCssVars
 } from "./panel-layout-shell-vars";
-import { notifyLayoutResizeEnd } from "./layout-resize-end";
+import { notifyLayoutResizeEnd, notifyLayoutResizeStart } from "./layout-resize-end";
 import {
   resolveCoupledPanelSizes,
   type PanelSizeState,
   resolvePanelSizeBounds
 } from "./service";
 
-export { subscribeLayoutResizeEnd } from "./layout-resize-end";
+export {
+  subscribeLayoutResizeEnd,
+  subscribeLayoutResizeStart
+} from "./layout-resize-end";
 
 export type AiPanelSide = "left" | "right";
 export type TerminalPanelSide = "top" | "bottom";
@@ -174,6 +177,7 @@ export const usePanelLayoutModel = (
     document.body.style.userSelect = "none";
     document.body.classList.add("lyra-layout-resizing");
     layoutResizingActive = true;
+    notifyLayoutResizeStart();
 
     const pointerShieldTargets = Array.from(
       document.querySelectorAll("iframe, webview")

@@ -1227,9 +1227,9 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
     });
-    expect(screen.getByText("2 elements").closest(".lyra-agents-tool-call-body")).not.toBeNull();
-    expect(screen.getByText("example.com").closest(".lyra-agents-tool-call-body")).not.toBeNull();
-    expect(screen.getByText(/1 button Search/u).closest(".lyra-agents-tool-call-body")).not.toBeNull();
+    expect(screen.queryByText("2 elements")).not.toBeInTheDocument();
+    expect(screen.queryByText("example.com")).not.toBeInTheDocument();
+    expect(screen.getByText(/\[1\] button: "Search"/u).closest(".lyra-agents-tool-call-body")).not.toBeNull();
   });
 
   test("keeps Lyra Lumen typed text out of tool evidence", async () => {
@@ -1278,8 +1278,9 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(call.querySelector(".lyra-agents-collapse")).toHaveAttribute("data-open", "true");
     });
-    expect(screen.getByText("12 chars").closest(".lyra-agents-tool-call-body")).not.toBeNull();
-    expect(screen.getByText("element 9").closest(".lyra-agents-tool-call-body")).not.toBeNull();
+    expect(screen.queryByText("12 chars")).not.toBeInTheDocument();
+    expect(screen.queryByText("element 9")).not.toBeInTheDocument();
+    expect(screen.getByText(/Typed into element 9/u).closest(".lyra-agents-tool-call-body")).not.toBeNull();
     expect(screen.queryByText("secret-value")).not.toBeInTheDocument();
   });
 

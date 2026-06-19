@@ -132,7 +132,9 @@ pub(crate) fn messages_contain_provider_images(messages: &[Value]) -> bool {
     messages.iter().any(message_contains_provider_image)
 }
 
-pub(crate) fn strip_images_from_provider_messages(messages: Vec<Value>) -> (Vec<Value>, Vec<Value>) {
+pub(crate) fn strip_images_from_provider_messages(
+    messages: Vec<Value>,
+) -> (Vec<Value>, Vec<Value>) {
     let mut downgrades = Vec::new();
     let stripped = messages
         .into_iter()
@@ -182,10 +184,7 @@ fn message_contains_provider_image(message: &Value) -> bool {
 }
 
 fn strip_images_from_provider_message(mut message: Value, downgrades: &mut Vec<Value>) -> Value {
-    let message_id = message
-        .get("id")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let message_id = message.get("id").cloned().unwrap_or(Value::Null);
     let Some(content) = message.get_mut("content") else {
         return message;
     };
@@ -260,9 +259,11 @@ mod tests {
         let parts = messages[0]["content"].as_array().unwrap();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1]["type"], "text");
-        assert!(parts[1]["text"]
-            .as_str()
-            .unwrap()
-            .contains("provider_rejected_image_input"));
+        assert!(
+            parts[1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("provider_rejected_image_input")
+        );
     }
 }

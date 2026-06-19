@@ -24,8 +24,48 @@ import {
 } from "./drag-transfer";
 import { TerminalPaneSurface } from "./pane-surface";
 import type { TerminalDockProps } from "./types";
+import { IdentityIconView, type ResolvedIdentityIcon } from "../identity";
+import { LyraLogo } from "@renderer/ui/app";
 import { AppButton, AppIconButton } from "@renderer/ui/components";
 import { cn } from "@renderer/ui/utils";
+
+const terminalTabDisplayTitles = (
+  tabs: TerminalDockProps["model"]["dockTabs"]
+): Readonly<Record<string, string>> => {
+  const totals = new Map<string, number>();
+  for (const tab of tabs) {
+    totals.set(tab.title, (totals.get(tab.title) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  const titles: Record<string, string> = {};
+  for (const tab of tabs) {
+    const nextSeen = (seen.get(tab.title) ?? 0) + 1;
+    seen.set(tab.title, nextSeen);
+    titles[tab.id] =
+      (totals.get(tab.title) ?? 0) > 1 && nextSeen > 1
+        ? `${tab.title} ${nextSeen}`
+        : tab.title;
+  }
+  return titles;
+};
+
+const TerminalTabIcon = ({
+  icon
+}: {
+  readonly icon?: ResolvedIdentityIcon | undefined;
+}) => (
+  <IdentityIconView
+    className="lyra-terminal-tab-icon"
+    imageClassName="lyra-terminal-tab-icon-image"
+    iconUrl={icon?.url ?? null}
+    label={icon?.label}
+    fallback={
+      icon?.renderHint === "lyra-logo"
+        ? <LyraLogo className="lyra-terminal-tab-lyra-logo" alt="" />
+        : <SquareTerminal size={13} />
+    }
+  />
+);
 
 export const TerminalDock = ({
   desktopApi,
@@ -33,6 +73,7 @@ export const TerminalDock = ({
   themeSignature,
   uiThemeId,
   model,
+  terminalIdentityByTabId = {},
   terminalPanelSide,
   onRequestCloseTab,
   onRequestTabContextMenu,
@@ -40,6 +81,7 @@ export const TerminalDock = ({
   onDropWorkspaceTerminalTab
 }: TerminalDockProps) => {
   const activeDockTab = model.activeDockTab;
+  const displayTitleByTabId = terminalTabDisplayTitles(model.dockTabs);
   const [isWorkspaceDropActive, setIsWorkspaceDropActive] = useState(false);
   const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
 
@@ -239,7 +281,7 @@ export const TerminalDock = ({
                 size="sm"
                 data-lyra-allow-web-drag="true"
                 draggable
-                aria-label={tab.title}
+                aria-label={displayTitleByTabId[tab.id] ?? tab.title}
                 onDragStart={(event: ReactDragEvent<HTMLButtonElement>) => {
                   onDockTabDragStart(event, tab.id);
                 }}
@@ -257,10 +299,8 @@ export const TerminalDock = ({
                   }
                 }}
               >
-                <span className="lyra-terminal-tab-icon" aria-hidden="true">
-                  <SquareTerminal size={13} />
-                </span>
-                <span className="lyra-terminal-tab-title">{tab.title}</span>
+                <TerminalTabIcon icon={terminalIdentityByTabId[tab.id]} />
+                <span className="lyra-terminal-tab-title">{displayTitleByTabId[tab.id] ?? tab.title}</span>
                 {tab.pinned ? (
                   <span className="lyra-terminal-tab-badge" title={labels.unpinTab} aria-hidden="true">
                     <Pin size={10} />

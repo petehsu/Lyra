@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { WorkbenchSplitTriggerMode } from "../preferences";
 import type { WorkspaceTabsInteractionPolicy } from "../interaction-policy";
+import type { ResolvedIdentityIcon } from "../identity";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 
 export type BrowserTabDropRequest = {
@@ -14,6 +15,8 @@ export type BrowserTabStripProps = {
   readonly splitGroupTabIds?: readonly string[];
   readonly activeTabId: string;
   readonly agentActiveTabId?: string | null;
+  readonly terminalIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
+  readonly workspaceAppIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
   readonly goBackLabel: string;
   readonly goForwardLabel: string;
   readonly toggleTabStackLabel: string;

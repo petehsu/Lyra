@@ -1,8 +1,10 @@
 import type {
   LyraDesktopApi,
   TerminalCreateRequest,
+  TerminalCwdChangedEvent,
   TerminalSessionSnapshot
 } from "../../../shared/desktop-bridge";
+import type { ResolvedIdentityIcon } from "../identity";
 import type {
   TerminalDockPaneState as TerminalDockPane,
   TerminalDockState,
@@ -63,6 +65,7 @@ export type TerminalDockModel = {
     readonly startupCommand?: string;
     readonly mode?: "command" | "shell";
     readonly command?: string;
+    readonly sourceAgentSessionId?: string;
   }) => {
     readonly tab: TerminalDockTab;
     readonly pane: TerminalDockPane;
@@ -92,6 +95,7 @@ export type TerminalDockModel = {
       readonly startupCommand?: string;
       readonly mode?: "command" | "shell";
       readonly command?: string;
+      readonly sourceAgentSessionId?: string;
     }
   ) => {
     readonly tab: TerminalDockTab;
@@ -101,6 +105,7 @@ export type TerminalDockModel = {
   readonly setPaneFollowMode: (tabId: string, paneId: string, followMode: TerminalFollowMode) => void;
   readonly closePane: (tabId: string, paneId: string) => void;
   readonly syncRestoredSessions: (snapshots: readonly TerminalSessionSnapshot[]) => void;
+  readonly applyCwdChanged: (event: TerminalCwdChangedEvent) => void;
 };
 
 export type TerminalTabContextMenuRequest = {
@@ -115,6 +120,7 @@ export type TerminalDockProps = {
   readonly themeSignature: string;
   readonly uiThemeId: string;
   readonly model: TerminalDockModel;
+  readonly terminalIdentityByTabId?: Readonly<Record<string, ResolvedIdentityIcon>>;
   readonly terminalPanelSide: "top" | "bottom";
   readonly onRequestCloseTab: (tabId: string) => void;
   readonly onRequestTabContextMenu: (request: TerminalTabContextMenuRequest) => void;

@@ -576,6 +576,17 @@ pub(crate) fn tool_file_write(
             )
         })?;
     }
+    let preview_diff = diff_text(&workspace_path.relative, &old, &content);
+    emit_running_mutation_diff(
+        session_id,
+        turn_id,
+        tool_call_id,
+        "file",
+        "write",
+        input,
+        &workspace_path.relative,
+        &preview_diff,
+    );
     fs::write(&workspace_path.absolute, &content).map_err(|error| {
         NativeToolFailure::new(
             "write_failed",
@@ -691,6 +702,17 @@ pub(crate) fn tool_file_strict_edit(
         )
     })?;
     let updated = apply_exact_replacement(&old, &old_string, &new_string, replace_all)?;
+    let preview_diff = diff_text(&workspace_path.relative, &old, &updated);
+    emit_running_mutation_diff(
+        session_id,
+        turn_id,
+        tool_call_id,
+        "file",
+        "strict_edit",
+        input,
+        &workspace_path.relative,
+        &preview_diff,
+    );
     fs::write(&workspace_path.absolute, &updated).map_err(|error| {
         NativeToolFailure::new(
             "write_failed",
@@ -698,7 +720,7 @@ pub(crate) fn tool_file_strict_edit(
             "Retry with a writable workspace file.",
         )
     })?;
-    let diff = diff_text(&workspace_path.relative, &old, &updated);
+    let diff = preview_diff;
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
     let before_ref = write_file_snapshot_artifact(
         session_id,
@@ -942,6 +964,21 @@ pub(crate) fn tool_file_multiedit(
     }
     let mut diffs = Vec::new();
     let mut changed_files = Vec::new();
+    for (relative, old, updated) in staged.values() {
+        diffs.push(diff_text(relative, old, updated));
+    }
+    if let Some((relative, _, _)) = staged.values().next() {
+        emit_running_mutation_diff(
+            session_id,
+            turn_id,
+            tool_call_id,
+            "file",
+            "multiedit",
+            input,
+            relative,
+            &diffs.join("\n"),
+        );
+    }
     for (path, (relative, old, updated)) in staged {
         fs::write(&path, &updated).map_err(|error| {
             NativeToolFailure::new(
@@ -1476,6 +1513,50 @@ pub(crate) fn tool_apply_patch(
     let mut changed_files = Vec::new();
     let mut diffs = Vec::new();
     let mut applied = Vec::new();
+    let mut preview_diffs = Vec::new();
+    let mut preview_path = None::<String>;
+    for operation in &staged {
+        match operation {
+            StagedPatchOperation::Write {
+                relative,
+                before,
+                after,
+                ..
+            } => {
+                preview_diffs.push(diff_text(relative, before.as_deref().unwrap_or(""), after));
+                if preview_path.is_none() {
+                    preview_path = Some(relative.clone());
+                }
+            }
+            StagedPatchOperation::Delete {
+                relative, before, ..
+            } => {
+                preview_diffs.push(diff_text(relative, before, ""));
+                if preview_path.is_none() {
+                    preview_path = Some(relative.clone());
+                }
+            }
+            StagedPatchOperation::Move { from_relative, .. } => {
+                if preview_path.is_none() {
+                    preview_path = Some(from_relative.clone());
+                }
+            }
+        }
+    }
+    if let Some(relative) = preview_path.as_deref()
+        && !preview_diffs.is_empty()
+    {
+        emit_running_mutation_diff(
+            session_id,
+            turn_id,
+            tool_call_id,
+            "file",
+            "apply_patch",
+            input,
+            relative,
+            &preview_diffs.join("\n"),
+        );
+    }
     for operation in &staged {
         if let Err(error) = apply_staged_patch_operation(operation) {
             rollback_staged_patch_operations(&applied);

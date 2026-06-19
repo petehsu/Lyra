@@ -93,7 +93,7 @@ import type {
   WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserTopologySnapshot,
   WorkbenchBrowserWebThemeSnapshot,
-  type PageDragCitationPayload
+  PageDragCitationPayload
 } from "./workbench-browser";
 import type {
   WorkbenchObservationQueryRequest,
@@ -151,7 +151,6 @@ export type {
   AgentMemorySharedSearchRequest,
   AgentMemorySharedUpdateRequest,
   AgentMemorySnapshot,
-  AgentMemoryTrimRunRequest,
   AgentMessage,
   AgentMessageResolveRequest,
   AgentMessageResolveResponse,
@@ -445,6 +444,8 @@ export const LYRA_CHANNELS = {
   readAppMeta: "lyra:shell/app/meta",
   readAppMetaSync: "lyra:shell/app/meta-sync",
   openExternal: "lyra:shell/open-external",
+  identityReadUserIcon: "lyra:identity/read-user-icon",
+  identityResolveProject: "lyra:identity/resolve-project",
   systemNotificationsReadStatus: "lyra:system-notifications/read-status",
   systemNotificationsShow: "lyra:system-notifications/show",
   systemNotificationsOpenSettings: "lyra:system-notifications/open-settings",
@@ -520,6 +521,7 @@ export const LYRA_CHANNELS = {
   workbenchBrowserClearSiteData: "lyra:workbench-browser/clear-site-data",
   workbenchBrowserSearchInPage: "lyra:workbench-browser/search-in-page",
   workbenchBrowserSetChromePopover: "lyra:workbench-browser/set-chrome-popover",
+
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserSetModalOcclusion: "lyra:workbench-browser/set-modal-occlusion",
   workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
@@ -602,7 +604,6 @@ export const LYRA_CHANNELS = {
   agentTurnRetry: "lyra:agent/turn/retry",
   agentMemorySnapshot: "lyra:agent/memory/snapshot",
   agentMemoryAudit: "lyra:agent/memory/audit",
-  agentMemoryTrimRun: "lyra:agent/memory/trim/run",
   agentMemoryRecoverRun: "lyra:agent/memory/recover/run",
   agentMemorySharedSearch: "lyra:agent/memory/shared/search",
   agentMemorySharedUpdate: "lyra:agent/memory/shared/update",
@@ -1140,6 +1141,32 @@ export type TerminalSessionId = string;
 export type TerminalCommandSource = "user" | "agent" | "system";
 export type TerminalSessionMode = "command" | "shell";
 
+export type TerminalLifecycleProjection = {
+  readonly sessionId: TerminalSessionId;
+  readonly state:
+    | "running"
+    | "waiting"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "inputSent"
+    | "runtimeUnavailable"
+    | "unknown"
+    | string;
+  readonly phase: string;
+  readonly reason?: string | null;
+  readonly terminalRunning: boolean;
+  readonly commandId?: string | null;
+  readonly commandStatus?: string | null;
+  readonly exitCode?: number | null;
+  readonly signal?: string | null;
+  readonly source?: TerminalCommandSource | string | null;
+  readonly mode?: TerminalSessionMode | string | null;
+  readonly currentCwd?: string | null;
+  readonly waiting: boolean;
+  readonly background: boolean;
+};
+
 export type TerminalMemoryActor = {
   readonly kind:
     | "human_user"
@@ -1499,6 +1526,7 @@ export type TerminalWaitUntilResponse = {
   readonly commandId?: string | null;
   readonly output?: string;
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalSemanticInputAction =
@@ -1540,6 +1568,7 @@ export type TerminalInputExecuteResponse = {
   readonly permissionId?: string | null;
   readonly events: readonly TerminalContractEventRef[];
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalPermissionEvaluateRequest = {
@@ -1621,6 +1650,7 @@ export type TerminalProcessesReadResponse = {
   readonly limited?: boolean;
   readonly processes: readonly TerminalProcessSnapshot[];
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalProcessSignalRequest = {
@@ -1681,6 +1711,7 @@ export type TerminalCommandStatusResponse = {
   readonly commandId?: string | null;
   readonly command?: TerminalCommandSnapshot | null;
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalCommandWaitRequest = {
@@ -1700,6 +1731,7 @@ export type TerminalCommandWaitResponse = {
   readonly exitCode?: number | null;
   readonly signal?: string | null;
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalCommandOutputReadRequest = {
@@ -1849,6 +1881,7 @@ export type TerminalCreateRequest = {
   readonly sessionId?: TerminalSessionId;
   readonly title?: string;
   readonly cwd?: string;
+  readonly sourceAgentSessionId?: string;
   readonly shell?: string;
   readonly env?: readonly TerminalShellLaunchEnvPair[];
   readonly mode?: TerminalSessionMode;
@@ -1885,6 +1918,7 @@ export type TerminalSessionSnapshot = {
   readonly sessionId: TerminalSessionId;
   readonly title: string;
   readonly cwd?: string;
+  readonly currentCwd?: string;
   readonly shell: string;
   readonly cols: number;
   readonly rows: number;
@@ -1927,6 +1961,7 @@ export type TerminalReadResponse = {
   readonly mode: TerminalSessionMode;
   readonly memory?: TerminalMemoryMetadata;
   readonly reason?: "output" | "exit" | "timeout";
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalScreenCursorPosition = {
@@ -2030,6 +2065,7 @@ export type TerminalScreenReadResponse = {
   readonly exitCode: number | null;
   readonly truncated: boolean;
   readonly memory?: TerminalMemoryMetadata;
+  readonly lifecycle?: TerminalLifecycleProjection;
 };
 
 export type TerminalResizeRequest = {
@@ -2102,6 +2138,15 @@ export type TerminalErrorEvent = {
   readonly error: string;
 };
 
+export type TerminalCwdChangedEvent = {
+  readonly kind: "cwdChanged";
+  readonly sessionId: TerminalSessionId;
+  readonly cwd: string;
+  readonly currentCwd: string;
+  readonly source?: TerminalCommandSource | string | null;
+  readonly mode?: TerminalSessionMode | string | null;
+};
+
 export type TerminalCommandCompletedRuntimeEvent = {
   readonly kind: "commandCompleted";
   readonly sessionId: TerminalSessionId;
@@ -2134,6 +2179,7 @@ export type TerminalEvent =
   | TerminalDataEvent
   | TerminalExitEvent
   | TerminalErrorEvent
+  | TerminalCwdChangedEvent
   | TerminalCommandCompletedRuntimeEvent;
 
 export type LspLanguageId = "typescript" | "javascript" | "rust" | "python";
@@ -2315,9 +2361,7 @@ export type WorkbenchBrowserApi = {
   readonly syncTopology: (
     snapshot: WorkbenchBrowserTopologySnapshot
   ) => Promise<void>;
-  readonly syncLayout: (
-    snapshot: WorkbenchBrowserLayoutSnapshot
-  ) => Promise<void>;
+  readonly syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot) => void;
   readonly navigate: (
     request: WorkbenchBrowserNavigateRequest
   ) => Promise<WorkbenchBrowserNavigateResult>;
@@ -2437,6 +2481,7 @@ export type TerminalApi = {
   readonly onData: (listener: (event: TerminalDataEvent) => void) => () => void;
   readonly onExit: (listener: (event: TerminalExitEvent) => void) => () => void;
   readonly onError: (listener: (event: TerminalErrorEvent) => void) => () => void;
+  readonly onCwdChanged?: (listener: (event: TerminalCwdChangedEvent) => void) => () => void;
 };
 
 export type LspApi = {
@@ -2472,6 +2517,31 @@ export type WorkbenchStateApi = {
   readonly write: (key: WorkbenchStateKey, json: string) => Promise<void>;
   readonly remove: (key: WorkbenchStateKey) => Promise<void>;
   readonly onDidChange: (listener: (event: WorkbenchStateChangeEvent) => void) => () => void;
+};
+
+export type IdentityIconSnapshot = {
+  readonly url: string;
+  readonly source: "user" | "project";
+  readonly label?: string;
+  readonly path?: string;
+  readonly updatedAt?: string;
+};
+
+export type ProjectIdentityResolveRequest = {
+  readonly path: string;
+};
+
+export type ProjectIdentitySnapshot = {
+  readonly rootPath: string;
+  readonly name: string;
+  readonly logo?: IdentityIconSnapshot | null;
+};
+
+export type IdentityApi = {
+  readonly readUserIcon: () => Promise<IdentityIconSnapshot | null>;
+  readonly resolveProjectIdentity: (
+    request: ProjectIdentityResolveRequest
+  ) => Promise<ProjectIdentitySnapshot | null>;
 };
 
 export type LocationCandidateSource = "browser" | "os" | "ip";
@@ -2607,6 +2677,7 @@ export type LyraDesktopApi = {
   readonly shellEvents: ShellEventsApi;
   readonly screenshotPreview: ScreenshotPreviewApi;
   readonly openExternal: (url: string) => Promise<boolean>;
+  readonly identity?: IdentityApi;
   readonly systemNotifications?: SystemNotificationsApi;
   readonly linuxCompat: LinuxCompatApi;
   readonly search: SearchApi;

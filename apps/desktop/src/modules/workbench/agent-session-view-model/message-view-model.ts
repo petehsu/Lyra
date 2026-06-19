@@ -206,11 +206,18 @@ const chatBlocksForAgentMessage = (
         ? [emptyPendingTextBlock(message)]
         : [];
     }
+    const textBlock = message.blocks?.find((block) => block.type === "text");
     return [
       {
         type: "text",
         id: `${message.id}-text`,
-        body
+        body,
+        ...(textBlock?.type === "text" && textBlock.renderDocument !== undefined
+          ? { renderDocument: textBlock.renderDocument }
+          : {}),
+        ...(textBlock?.type === "text" && textBlock.renderRevision !== undefined
+          ? { renderRevision: textBlock.renderRevision }
+          : {})
       }
     ];
   }
@@ -248,7 +255,9 @@ const chatBlocksForAgentMessage = (
         chatBlocks.push({
           type: "text",
           id: `${message.id}-${block.id}`,
-          body: cleaned
+          body: cleaned,
+          ...(block.renderDocument === undefined ? {} : { renderDocument: block.renderDocument }),
+          ...(block.renderRevision === undefined ? {} : { renderRevision: block.renderRevision })
         });
       }
       continue;
@@ -294,11 +303,22 @@ const chatBlocksForAgentMessage = (
       ? [emptyPendingTextBlock(message)]
       : [];
   }
+  const textBlock = message.blocks?.find((block) => block.type === "text");
   return [
     {
       type: "text",
       id: `${message.id}-text`,
-      body
+      body,
+      ...(textBlock?.type === "text" && textBlock.renderDocument !== undefined
+        ? { renderDocument: textBlock.renderDocument }
+        : message.renderDocument === undefined
+          ? {}
+          : { renderDocument: message.renderDocument }),
+      ...(textBlock?.type === "text" && textBlock.renderRevision !== undefined
+        ? { renderRevision: textBlock.renderRevision }
+        : message.renderRevision === undefined
+          ? {}
+          : { renderRevision: message.renderRevision })
     }
   ];
 };

@@ -206,10 +206,19 @@ pub(crate) fn update_provider_options(payload: Value) -> AgentRuntimeResult<Valu
 }
 
 pub(crate) fn list_models(payload: Value) -> AgentRuntimeResult<Value> {
-    let state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    model_catalog_for_config(&state.config, payload)
+    match state().try_lock() {
+        Ok(state) => model_catalog_for_config(&state.config, payload),
+        Err(std::sync::TryLockError::WouldBlock) => {
+            let mut config = read_json::<NativeStateFile>(&runtime_root().join("state.json"))
+                .map(|state| state.config)
+                .unwrap_or_default();
+            install_default_providers(&mut config);
+            model_catalog_for_config(&config, payload)
+        }
+        Err(std::sync::TryLockError::Poisoned(_)) => Err(AgentRuntimeError::Core(
+            "agent runtime state lock failed".to_string(),
+        )),
+    }
 }
 
 pub(crate) fn model_catalog_for_config(

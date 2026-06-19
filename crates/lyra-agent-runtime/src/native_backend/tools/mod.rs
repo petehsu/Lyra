@@ -23,6 +23,7 @@ mod search;
 mod shell;
 mod skill_adapter;
 mod software_adapter;
+mod streaming_diff_preview;
 mod terminal;
 mod timeouts;
 mod todo;
@@ -34,9 +35,9 @@ mod workbench_adapter;
 
 pub(crate) use self::{
     artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*, browser_interact::*,
-    clarification_adapter::*, design_adapter::*,
-    dispatcher::*, file::*, git_adapter::*, hardware::*, host_executor::*, mcp_adapter::*,
-    memory_adapter::*, native_executor::*, native_helpers::*, page_snapshot::*, permission_policy::*, render::*,
-    search::*, shell::*, skill_adapter::*, software_adapter::*, terminal::*, timeouts::*, todo::*,
-    user_action::*, web::*, web_jobs::*, workbench_adapter::*,
+    clarification_adapter::*, design_adapter::*, dispatcher::*, file::*, git_adapter::*,
+    hardware::*, host_executor::*, mcp_adapter::*, memory_adapter::*, native_executor::*,
+    native_helpers::*, page_snapshot::*, permission_policy::*, render::*, search::*, shell::*,
+    skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*, timeouts::*,
+    todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
 };

@@ -101,6 +101,7 @@ export const createWorkbenchBrowserViewManager = ({
   let agentShadowController: ReturnType<typeof createAgentShadowController>;
   let agentController: ReturnType<typeof createWorkbenchBrowserAgentController>;
   let chromePopoverRuntime: ReturnType<typeof createChromePopoverRuntime>;
+
   let elementPickerController: WorkbenchBrowserElementPickerController;
   let layoutController: ReturnType<typeof createLayoutController>;
   let snapshotProvider: ReturnType<typeof createSnapshotProvider>;
@@ -278,6 +279,9 @@ export const createWorkbenchBrowserViewManager = ({
     scheduleTombstone,
     tombstones
   } = restoreTombstoneController;
+  const overlayReattachHooks = {
+    reattachChromePopover: (): void => {}
+  };
   layoutController = createLayoutController({
     getWindow,
     entries,
@@ -288,7 +292,7 @@ export const createWorkbenchBrowserViewManager = ({
     scheduleTombstone,
     bumpLiveViewBoundsEpoch: (tabId) => bumpLiveViewBoundsEpoch(tabId),
     reattachVisiblePopover: () => {
-      chromePopoverRuntime.reattachVisiblePopover();
+      overlayReattachHooks.reattachChromePopover();
     }
   });
   const {
@@ -340,7 +344,6 @@ export const createWorkbenchBrowserViewManager = ({
   const setChromePopover = async (request: WorkbenchBrowserChromePopoverRequest): Promise<void> => {
     await chromePopoverRuntime.setChromePopover(request);
   };
-
   const bumpLiveViewBoundsEpoch = (tabId: string): number => {
     return snapshotProvider.bumpLiveViewBoundsEpoch(tabId);
   };
@@ -421,6 +424,9 @@ export const createWorkbenchBrowserViewManager = ({
     openDebuggerSessionForTarget,
     liveAgentTarget
   });
+  overlayReattachHooks.reattachChromePopover = () => {
+    chromePopoverRuntime.reattachVisiblePopover();
+  };
 
   agentController = createWorkbenchBrowserAgentController({
     entries,

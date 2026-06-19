@@ -11,6 +11,7 @@ base64.workspace = true
 chrono = { workspace = true, features = ["clock", "serde"] }
 dirs.workspace = true
 lyra-agent-api.workspace = true
+lyra-render-core = { workspace = true }
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
 lyra-agent-reader.workspace = true
@@ -22,6 +23,7 @@ diffy.workspace = true
 glob.workspace = true
 hmac.workspace = true
 image = { workspace = true, features = ["png", "jpeg", "webp"] }
+libc.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
 regex.workspace = true
 rusqlite.workspace = true

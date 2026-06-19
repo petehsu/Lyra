@@ -16,6 +16,8 @@ export const BrowserTabStrip = ({
   splitGroupTabIds = [],
   activeTabId,
   agentActiveTabId = null,
+  terminalIdentityByTabId = {},
+  workspaceAppIdentityByTabId = {},
   goBackLabel,
   goForwardLabel,
   toggleTabStackLabel,
@@ -117,6 +119,8 @@ export const BrowserTabStrip = ({
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       openNewTabLabel={openNewTabLabel}
+      terminalIdentityByTabId={terminalIdentityByTabId}
+      workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
       navigationControl={navigationControl}
       toolbarContextControl={toolbarContextControl}
       onGoBack={onGoBack}

@@ -55,6 +55,7 @@ fn expected_provider_tool_names() -> Vec<String> {
         "tool_fs_read_doc".to_string(),
         "tool_fs_inspect".to_string(),
         "tool_fs_run".to_string(),
+        LYRA_CLARIFICATION_ASK_TOOL.to_string(),
         LYRA_SESSION_READ_MESSAGE_TOOL.to_string(),
     ]
 }
@@ -288,5 +289,12 @@ fn build_simple_pdf(text: &str) -> Vec<u8> {
 mod foundation;
 mod hardware_tools;
 mod memory;
+mod phase2_memory;
+mod phase3_memory;
+mod phase4_memory;
+mod phase5_memory;
+mod phase6_memory;
+mod phase7_memory;
 mod provider_loop;
 mod terminal_tools;
+mod trim;

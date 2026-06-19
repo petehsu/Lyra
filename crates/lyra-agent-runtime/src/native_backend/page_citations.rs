@@ -94,14 +94,8 @@ fn normalize_page_citation(raw: Value) -> Option<Value> {
 fn truncate_page_quoted_text(text: &str) -> (String, bool, String) {
     let chars: Vec<char> = text.chars().collect();
     let truncated = chars.len() > PAGE_CITATION_QUOTED_CHARS;
-    let quoted: String = chars
-        .iter()
-        .take(PAGE_CITATION_QUOTED_CHARS)
-        .collect();
-    let preview: String = chars
-        .iter()
-        .take(PAGE_CITATION_PREVIEW_CHARS)
-        .collect();
+    let quoted: String = chars.iter().take(PAGE_CITATION_QUOTED_CHARS).collect();
+    let preview: String = chars.iter().take(PAGE_CITATION_PREVIEW_CHARS).collect();
     let preview = if chars.len() > PAGE_CITATION_PREVIEW_CHARS {
         format!("{preview}…")
     } else {

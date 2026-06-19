@@ -9,7 +9,8 @@ use once_cell::sync::Lazy;
 use portable_pty::{MasterPty, PtySize};
 
 use crate::attachments;
-use crate::events::emit_command_completion;
+use crate::events::{emit_command_completion, emit_cwd_changed};
+use crate::lifecycle::terminal_lifecycle;
 use crate::live_output::{
     append_output, live_output_projection, mark_session_exit, new_running_state,
     SessionOutputState, SessionStateHandle,
@@ -37,6 +38,7 @@ pub(crate) struct SessionRuntime {
     pub(crate) session_id: String,
     pub(crate) title: String,
     pub(crate) cwd: Option<String>,
+    pub(crate) current_cwd: Arc<Mutex<Option<String>>>,
     pub(crate) shell: String,
     pub(crate) cols: u16,
     pub(crate) rows: u16,
@@ -58,6 +60,7 @@ pub(crate) struct ObservedSessionRuntime {
     pub(crate) session_id: String,
     pub(crate) title: String,
     pub(crate) cwd: Option<String>,
+    pub(crate) current_cwd: Arc<Mutex<Option<String>>>,
     pub(crate) shell: String,
     pub(crate) created_at: String,
     pub(crate) source: String,
@@ -143,10 +146,16 @@ pub(crate) fn output_state(
 
 fn snapshot_from_runtime(runtime: &SessionRuntime) -> Result<TerminalSessionSnapshot> {
     let state = output_state(runtime)?;
+    let current_cwd = runtime
+        .current_cwd
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
     Ok(TerminalSessionSnapshot {
         session_id: runtime.session_id.clone(),
         title: runtime.title.clone(),
         cwd: runtime.cwd.clone(),
+        current_cwd,
         shell: runtime.shell.clone(),
         cols: runtime.cols,
         rows: runtime.rows,
@@ -158,6 +167,45 @@ fn snapshot_from_runtime(runtime: &SessionRuntime) -> Result<TerminalSessionSnap
         running: state.running,
         exit_code: state.exit_code,
     })
+}
+
+fn current_cwd_from_runtime(runtime: &SessionRuntime) -> Option<String> {
+    runtime
+        .current_cwd
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
+fn current_cwd_from_observed_runtime(runtime: &ObservedSessionRuntime) -> Option<String> {
+    runtime
+        .current_cwd
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
+fn terminal_lifecycle_with_cwd(
+    session_id: &str,
+    phase: &str,
+    running: bool,
+    exit_code: Option<i32>,
+    reason: Option<&str>,
+    source: Option<&str>,
+    mode: Option<&str>,
+    current_cwd: Option<String>,
+) -> TerminalLifecycleProjection {
+    let mut lifecycle = terminal_lifecycle(
+        session_id,
+        phase,
+        running,
+        exit_code,
+        reason,
+        source,
+        mode,
+    );
+    lifecycle.current_cwd = current_cwd;
+    lifecycle
 }
 
 fn snapshot_from_observed_runtime(
@@ -172,10 +220,16 @@ fn snapshot_from_observed_runtime(
     let state = lock
         .lock()
         .map_err(|_| to_error("failed to lock observed terminal state"))?;
+    let current_cwd = runtime
+        .current_cwd
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
     Ok(TerminalSessionSnapshot {
         session_id: runtime.session_id.clone(),
         title: runtime.title.clone(),
         cwd: runtime.cwd.clone(),
+        current_cwd,
         shell: runtime.shell.clone(),
         cols,
         rows,
@@ -294,6 +348,7 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
         session_id: session_id.clone(),
         title: title.clone(),
         cwd: cwd.clone(),
+        current_cwd: Arc::new(Mutex::new(cwd.clone())),
         shell: shell.clone(),
         cols,
         rows,
@@ -405,6 +460,7 @@ pub(crate) fn create_observer_session(
         session_id: session_id.clone(),
         title: title.clone(),
         cwd: request.cwd.clone(),
+        current_cwd: Arc::new(Mutex::new(request.cwd.clone())),
         shell: shell.clone(),
         created_at: now_iso_like(),
         source: source.clone(),
@@ -515,6 +571,17 @@ pub(crate) fn record_observer_output(request: TerminalObserverOutputRequest) -> 
         .lock()
         .map(|mut parser| parser.feed(chunk))
         .unwrap_or_default();
+    for event in shell_events
+        .iter()
+        .filter(|event| event.kind == ShellIntegrationEventKind::CwdChanged)
+    {
+        if let Some(cwd) = event.cwd.as_ref() {
+            if let Ok(mut current_cwd) = runtime.current_cwd.lock() {
+                *current_cwd = Some(cwd.clone());
+            }
+            emit_cwd_changed(&runtime.session_id, &runtime.source, &runtime.mode, cwd);
+        }
+    }
     for event in shell_events
         .iter()
         .filter(|event| event.kind != ShellIntegrationEventKind::CommandEnd)
@@ -773,6 +840,7 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
                 projection.truncated,
             )
             .ok();
+            let current_cwd = current_cwd_from_observed_runtime(&runtime);
             return Ok(TerminalReadResponse {
                 session_id: runtime.session_id.clone(),
                 cursor: projection.cursor.to_string(),
@@ -784,6 +852,16 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
                 mode: runtime.mode.clone(),
                 memory,
                 reason: Some(reason.to_string()),
+                lifecycle: Some(terminal_lifecycle_with_cwd(
+                    &runtime.session_id,
+                    "terminal_read",
+                    running,
+                    exit_code,
+                    Some(reason),
+                    Some(runtime.source.as_str()),
+                    Some(runtime.mode.as_str()),
+                    current_cwd,
+                )),
             });
         }
         let storage_root = request
@@ -836,16 +914,25 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
             "timeout"
         };
         return Ok(TerminalReadResponse {
-            session_id: request.session_id,
+            session_id: request.session_id.clone(),
             cursor: projection.cursor.to_string(),
             output: projection.output,
             running: false,
             exit_code,
             truncated: projection.truncated,
-            source,
-            mode,
+            source: source.clone(),
+            mode: mode.clone(),
             memory,
             reason: Some(reason.to_string()),
+            lifecycle: Some(terminal_lifecycle(
+                &request.session_id,
+                "terminal_read",
+                false,
+                exit_code,
+                Some(reason),
+                Some(source.as_str()),
+                Some(mode.as_str()),
+            )),
         });
     };
     let wait_ms = request.wait_ms.unwrap_or(DEFAULT_READ_WAIT_MS as u32) as u64;
@@ -905,6 +992,7 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
         .or(runtime.storage_root.as_deref())
         .and_then(|root| memory::metadata_for_session(root, &runtime.session_id, truncated).ok());
 
+    let current_cwd = current_cwd_from_runtime(&runtime);
     Ok(TerminalReadResponse {
         session_id: runtime.session_id.clone(),
         cursor: cursor.to_string(),
@@ -916,6 +1004,16 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
         mode: runtime.mode.clone(),
         memory,
         reason: Some(reason.to_string()),
+        lifecycle: Some(terminal_lifecycle_with_cwd(
+            &runtime.session_id,
+            "terminal_read",
+            running,
+            exit_code,
+            Some(reason),
+            Some(runtime.source.as_str()),
+            Some(runtime.mode.as_str()),
+            current_cwd,
+        )),
     })
 }
 

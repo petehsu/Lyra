@@ -47,39 +47,64 @@ mod activity;
 mod browser_loop_detector;
 mod clarifications;
 mod context;
+pub(crate) mod context_window;
+pub(crate) mod cut_store;
+pub mod file_citations;
 mod helpers;
+pub mod inline_images;
 mod memory;
+mod memory_audit_export;
 mod memory_autonomy;
+mod memory_derived_fields;
+mod memory_embedding_config;
+mod memory_event_trigger;
+mod memory_job_budget;
+mod memory_layer;
+mod memory_layer_projection;
+mod memory_retrieval_policy;
+mod memory_stability_policy;
 mod memory_store;
+mod memory_sync;
+mod memory_token_checkpoint;
+mod message_render;
 mod network;
+pub mod page_citations;
 mod permission_policy;
 mod permissions;
+mod pinned_context;
 mod projections;
+mod prompt_cache;
 mod provider;
 mod provider_config;
 mod providers;
 mod rollback;
+mod secret_guard;
+pub(crate) mod session_ledger;
+mod session_runtime;
+mod session_store;
+pub(crate) mod session_trim;
 mod sessions;
 mod state;
-mod tools;
-pub mod page_citations;
-pub mod file_citations;
-pub mod inline_images;
+mod streaming_preview_state;
+pub(crate) mod token_estimate;
 pub(crate) mod tool_protocol;
+mod tools;
 mod transcript_citations;
 mod turns;
 mod types;
-
 
 #[cfg(test)]
 mod tests;
 
 use self::{
-    actions::*, activity::*, clarifications::*, context::*, helpers::*, memory::*,
-    memory_autonomy::*, memory_store::*, network::*, permission_policy::*, permissions::*,
-    projections::*, provider::*, provider_config::*, rollback::*, sessions::*, state::*, tools::*,
-    file_citations::*, inline_images::*, page_citations::*, tool_protocol::*, transcript_citations::*,
-    turns::*, types::*,
+    actions::*, activity::*, clarifications::*, context::*, file_citations::*, helpers::*,
+    inline_images::*, memory::*, memory_audit_export::*, memory_autonomy::*,
+    memory_derived_fields::*, memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
+    memory_retrieval_policy::*, memory_store::*, memory_sync::*, memory_token_checkpoint::*,
+    network::*, page_citations::*, permission_policy::*, permissions::*, projections::*,
+    prompt_cache::*, provider::*, provider_config::*, rollback::*, session_ledger::*,
+    session_store::*, session_trim::*, sessions::*, state::*, token_estimate::*, tool_protocol::*,
+    tools::*, transcript_citations::*, turns::*, types::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
@@ -104,7 +129,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
 
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),
-            "agent.memory.trim.run" => trim_memory(payload),
             "agent.memory.recover.run" => recover_memory(payload),
             "agent.memory.longterm.create" => long_term_memory_create(payload),
             "agent.memory.longterm.search" => long_term_memory_search(payload),
@@ -120,6 +144,14 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.memory.candidates.apply" => memory_apply_candidate(payload),
             "agent.memory.candidates.reject" => memory_reject_candidate(payload),
             "agent.memory.explainInjection" => memory_explain_injection(payload),
+            "agent.memory.exportAudit" => memory_export_audit(payload),
+            "agent.memory.exportLayerProjections" => memory_export_layer_projections(payload),
+            "agent.memory.frozen.search" => frozen_memory_search(payload),
+            "agent.memory.frozen.create" => frozen_memory_create(payload),
+            "agent.memory.frozen.update" => frozen_memory_update(payload),
+            "agent.memory.frozen.forget" => frozen_memory_forget(payload),
+            "agent.memory.layers.describe" => memory_layers_describe(payload),
+            "agent.memory.sync.reconcile" => memory_sync_reconcile(payload),
             "agent.memory.shared.search" => shared_memory_search(payload),
             "agent.memory.shared.update" => shared_memory_update(payload),
             "agent.proactive.list" => proactive_list(payload),

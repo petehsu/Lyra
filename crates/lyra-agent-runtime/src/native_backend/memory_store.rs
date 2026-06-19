@@ -2,17 +2,18 @@ use super::*;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     hash::{Hash, Hasher},
 };
 
-const MEMORY_SCHEMA_VERSION: i64 = 3;
+const MEMORY_SCHEMA_VERSION: i64 = 5;
 const DEFAULT_MEMORY_LIMIT: usize = 24;
 const MAX_MEMORY_LIMIT: usize = 500;
 const EMBEDDING_PROVIDER: &str = "lyra-local";
 const EMBEDDING_MODEL: &str = "lyra-hash-embedding-v1";
 const EMBEDDING_DIMENSION: usize = 64;
 const CLEANUP_DEFAULT_LIMIT: usize = 50;
-const SYSTEM_RECALL_LIMIT: usize = 5;
+pub(crate) const SYSTEM_RECALL_LIMIT: usize = 5;
 const SYSTEM_RECALL_CANDIDATE_LIMIT: usize = 80;
 const SYSTEM_RECALL_TOTAL_CHAR_BUDGET: usize = 4_000;
 const SYSTEM_RECALL_ITEM_CHAR_BUDGET: usize = 720;
@@ -23,7 +24,9 @@ mod embedding_tail;
 mod internal;
 use embedding_tail::*;
 use internal::*;
-pub(crate) use internal::{memory_candidate_json, proactive_event_json};
+pub(crate) use internal::{
+    init_memory_schema, memory_candidate_json, open_memory_connection, proactive_event_json,
+};
 
 trait EmbeddingProvider {
     fn provider(&self) -> &'static str;
@@ -61,54 +64,63 @@ pub(crate) fn ensure_memory_store(root: &Path) -> AgentRuntimeResult<()> {
     init_memory_schema(&conn)
 }
 
-pub(crate) fn migrate_legacy_shared_memory(
+pub(crate) fn record_memory_trigger(
     root: &Path,
-    records: &[SharedMemoryRecord],
-) -> AgentRuntimeResult<Value> {
+    event: &super::memory_event_trigger::MemoryTriggerEvent,
+) -> AgentRuntimeResult<()> {
     let conn = open_memory_connection(root)?;
     init_memory_schema(&conn)?;
-    let batch_id = format!("legacy-shared-memory-{}", Uuid::new_v4());
-    let mut inserted = 0_usize;
-    for record in records {
-        let converted = legacy_shared_record_to_long_term(record);
-        if insert_memory_record(&conn, &converted)? {
-            inserted += 1;
-            write_memory_event(
-                &conn,
-                Some(&converted.id),
-                "migrated",
-                json!({
-                    "batchId": batch_id,
-                    "from": "state.sharedMemory",
-                    "recordId": converted.id,
-                }),
-            )?;
-        }
-    }
-    if !records.is_empty() {
-        write_memory_event(
-            &conn,
-            None,
-            "migration_batch",
-            json!({
-                "batchId": batch_id,
-                "from": "state.sharedMemory",
-                "inputCount": records.len(),
-                "inserted": inserted,
-            }),
-        )?;
-    }
-    Ok(json!({
-        "batchId": batch_id,
-        "inputCount": records.len(),
-        "inserted": inserted,
-    }))
+    insert_trigger_mark(
+        &conn,
+        &event.session_id,
+        &event.turn_id,
+        &event.event_type,
+        &event.payload,
+    )
+}
+
+pub(crate) fn enqueue_memory_job(
+    root: &Path,
+    event: &super::memory_event_trigger::MemoryTriggerEvent,
+) -> AgentRuntimeResult<String> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    enqueue_memory_job_record(
+        &conn,
+        &event.session_id,
+        &event.turn_id,
+        &event.event_type,
+        &event.payload,
+    )
+}
+
+pub(crate) fn claim_next_memory_job(root: &Path) -> AgentRuntimeResult<Option<MemoryJobRecord>> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    internal::claim_next_memory_job(&conn)
+}
+
+pub(crate) fn finish_memory_job(
+    root: &Path,
+    id: &str,
+    status: &str,
+    result: Value,
+) -> AgentRuntimeResult<()> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    finish_memory_job_record(&conn, id, status, result)
 }
 
 pub(crate) fn create_long_term_memory(
     root: &Path,
     mutation: MemoryMutation,
 ) -> AgentRuntimeResult<LongTermMemoryRecord> {
+    if let Some(fact) = mutation.fact.as_deref() {
+        super::secret_guard::validate_memory_fact(fact)?;
+    }
+    if let Some(content) = mutation.content.as_ref() {
+        super::secret_guard::validate_memory_content_value(content)?;
+    }
     let conn = open_memory_connection(root)?;
     init_memory_schema(&conn)?;
     let record = mutation_to_new_memory(mutation);
@@ -177,6 +189,16 @@ pub(crate) fn update_long_term_memory(
     root: &Path,
     mutation: MemoryMutation,
 ) -> AgentRuntimeResult<LongTermMemoryRecord> {
+    if let Some(fact) = mutation
+        .fact
+        .as_deref()
+        .filter(|value| *value != "__unchanged__")
+    {
+        super::secret_guard::validate_memory_fact(fact)?;
+    }
+    if let Some(content) = mutation.content.as_ref() {
+        super::secret_guard::validate_memory_content_value(content)?;
+    }
     let id = mutation
         .id
         .as_deref()
@@ -187,8 +209,19 @@ pub(crate) fn update_long_term_memory(
     init_memory_schema(&conn)?;
     let mut record = load_memory_record(&conn, &id)?
         .ok_or_else(|| AgentRuntimeError::Core(format!("memory not found: {id}")))?;
+    super::memory_sync::validate_revision_cas(&record, mutation.revision)?;
     apply_memory_mutation(&mut record, mutation);
     record.updated_at = now();
+    record.revision = super::memory_sync::bump_revision(record.revision);
+    record.source_device = record
+        .source_device
+        .clone()
+        .or_else(|| Some(super::memory_sync::memory_source_device()));
+    record.sync_origin = record
+        .sync_origin
+        .clone()
+        .or_else(|| Some(super::memory_sync::SYNC_ORIGIN_LOCAL.to_string()));
+    super::memory_derived_fields::apply_derived_fields_to_record(&mut record);
     replace_memory_record(&conn, &record)?;
     write_memory_event(
         &conn,
@@ -364,7 +397,9 @@ pub(crate) fn long_term_memory_audit(root: &Path) -> AgentRuntimeResult<Value> {
             "embeddings": {
                 "available": embedding_provider().is_some(),
                 "provider": embedding_provider().map(|provider| provider.provider()).unwrap_or("disabled"),
-                "model": embedding_provider().map(|provider| provider.model()).unwrap_or("none"),
+                "model": embedding_provider()
+                    .map(|provider| provider.model().to_string())
+                    .unwrap_or_else(|| "none".to_string()),
                 "dimension": embedding_provider().map(|provider| provider.dimension()).unwrap_or(0),
                 "indexedRecords": embedding_count,
             },
@@ -439,11 +474,7 @@ pub(crate) fn index_session_messages_for_recall(
     let conn = open_memory_connection(root)?;
     init_memory_schema(&conn)?;
     let session_id = session.id.clone();
-    let session_path = root
-        .join("sessions")
-        .join(format!("{session_id}.json"))
-        .display()
-        .to_string();
+    let session_path = session_db_path(root, &session_id).display().to_string();
     let messages = session
         .snapshot
         .get("messages")
@@ -636,6 +667,7 @@ pub(crate) fn rebuild_system_recall_index(
 
 pub(crate) fn select_system_recall_for_injection(
     root: &Path,
+    session_id: Option<&str>,
     latest_user_text: &str,
     working_dir: Option<&str>,
     current_messages: &[Value],
@@ -688,6 +720,7 @@ pub(crate) fn select_system_recall_for_injection(
         let metadata_boost = match item.source_kind.as_str() {
             "long_term_memory" => 0.18,
             "session_message" => 0.08,
+            "cut_archive" => 0.12,
             _ => 0.0,
         };
         let score = (fts_score * 0.45 + vector_score * 0.37 + metadata_boost).min(1.0);
@@ -716,7 +749,154 @@ pub(crate) fn select_system_recall_for_injection(
             })
             .then_with(|| right.item.updated_at.cmp(&left.item.updated_at))
     });
-    Ok(dedupe_and_budget_recall(ranked))
+    let ranked = dedupe_and_budget_recall(ranked);
+    if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+        let project_ids = project_scope_memory_ids(root)?;
+        let (expanded, _plan) = expand_system_recall_injection(ranked, session_id, &project_ids);
+        return Ok(expanded);
+    }
+    Ok(ranked)
+}
+
+pub(crate) fn index_cut_pack_for_recall(
+    root: &Path,
+    session_id: &str,
+    pack: &crate::native_backend::cut_store::CutPackRef,
+) -> AgentRuntimeResult<Value> {
+    let pack_path = crate::native_backend::cut_store::cuts_dir(root, session_id).join(&pack.path);
+    let conn = crate::native_backend::cut_store::open_cut_pack(&pack_path)?;
+    let mut statement = conn
+        .prepare("SELECT msg_id, ordinal, role, content_raw FROM cut_payload ORDER BY ordinal ASC")
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(sql_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_error)?;
+
+    let recall_conn = open_memory_connection(root)?;
+    init_memory_schema(&recall_conn)?;
+    let source_path = pack_path.display().to_string();
+    let mut indexed = 0_usize;
+    for (msg_id, ordinal, role, content_raw) in rows {
+        let message: Value = serde_json::from_str(&content_raw).unwrap_or(Value::Null);
+        let text = message
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if text.chars().count() < 4 {
+            continue;
+        }
+        let created_at = message
+            .get("createdAt")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(now);
+        let turn_id = message
+            .get("turnId")
+            .or_else(|| message.pointer("/metadata/turnId"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let item = SystemRecallItem {
+            id: format!("recall-cut-{session_id}-{}-{msg_id}", pack.pack_id),
+            source_kind: "cut_archive".to_string(),
+            source_id: format!("{}:{msg_id}", pack.pack_id),
+            session_id: Some(session_id.to_string()),
+            turn_id,
+            role: Some(role),
+            text: text.clone(),
+            summary: Some(format!(
+                "cut:{} ord={} msgs={}",
+                pack.pack_id, ordinal, pack.msg_count
+            )),
+            content_hash: stable_hash(&normalized_recall_text(&text)),
+            source_path: Some(source_path.clone()),
+            created_at: created_at.clone(),
+            updated_at: created_at,
+        };
+        upsert_recall_item(&recall_conn, &item)?;
+        indexed += 1;
+    }
+    Ok(json!({
+        "sessionId": session_id,
+        "packId": pack.pack_id,
+        "indexed": indexed,
+    }))
+}
+
+pub(crate) const MEMORY_DB_SIZE_TRIGGER_BYTES: u64 = 32 * 1024 * 1024;
+
+pub(crate) fn maybe_govern_memory_volume(root: &Path) -> AgentRuntimeResult<Option<Value>> {
+    let path = memory_store_path(root);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let size = fs::metadata(&path)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+        .len();
+    if size < MEMORY_DB_SIZE_TRIGGER_BYTES {
+        return Ok(None);
+    }
+    let candidates = cleanup_long_term_memory_candidates(root, 24)?;
+    let mut archived = 0_usize;
+    let mut compressed = 0_usize;
+    for candidate in candidates.iter().take(12) {
+        let Some(id) = candidate.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let reasons = candidate
+            .get("reasons")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if reasons
+            .iter()
+            .any(|reason| reason == "stale" || reason == "low_confidence")
+        {
+            if forget_long_term_memory(root, id, "archive", Some("volume_governance")).is_ok() {
+                archived += 1;
+            }
+        }
+    }
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    for record in load_all_memory_records(&conn)?
+        .into_iter()
+        .filter(|record| {
+            record.status == "active"
+                && record.access_count == 0
+                && record.confidence < 0.55
+                && record.value_class != super::memory_layer::VALUE_EXECUTION_EVIDENCE
+        })
+        .take(8)
+    {
+        let abstract_text = super::memory_layer::memory_abstract_text(&record.fact);
+        let mut updated = record.clone();
+        updated.fact = abstract_text.clone();
+        updated.abstract_text = Some(abstract_text);
+        updated.content = json!({
+            "compressed": true,
+            "abstract": updated.fact,
+            "previousCategory": updated.category,
+        });
+        updated.updated_at = now();
+        replace_memory_record(&conn, &updated)?;
+        compressed += 1;
+    }
+    Ok(Some(json!({
+        "bytesBefore": size,
+        "archived": archived,
+        "compressed": compressed,
+    })))
 }
 
 pub(crate) fn system_recall_prompt(records: &[RankedSystemRecallItem]) -> String {
@@ -809,7 +989,9 @@ fn current_context_contains_recall(
         .any(|(_, current_terms)| jaccard_overlap(&terms, current_terms) >= 0.82)
 }
 
-fn dedupe_and_budget_recall(ranked: Vec<RankedSystemRecallItem>) -> Vec<RankedSystemRecallItem> {
+pub(crate) fn dedupe_and_budget_recall(
+    ranked: Vec<RankedSystemRecallItem>,
+) -> Vec<RankedSystemRecallItem> {
     let mut selected = Vec::new();
     let mut seen_content = HashSet::new();
     let mut seen_sources = HashSet::new();
@@ -836,11 +1018,12 @@ fn dedupe_and_budget_recall(ranked: Vec<RankedSystemRecallItem>) -> Vec<RankedSy
     selected
 }
 
-fn recall_source_priority(item: &SystemRecallItem) -> usize {
+pub(crate) fn recall_source_priority(item: &SystemRecallItem) -> usize {
     match item.source_kind.as_str() {
         "long_term_memory" => 0,
         "session_message" => 1,
-        _ => 2,
+        "cut_archive" => 2,
+        _ => 3,
     }
 }
 
@@ -900,6 +1083,8 @@ pub(crate) fn create_memory_candidate(
     root: &Path,
     mutation: MemoryCandidateMutation,
 ) -> AgentRuntimeResult<MemoryCandidate> {
+    super::secret_guard::validate_memory_fact(&mutation.fact)?;
+    super::secret_guard::validate_memory_content_value(&mutation.content)?;
     let conn = open_memory_connection(root)?;
     init_memory_schema(&conn)?;
     let candidate = mutation_to_memory_candidate(mutation);
@@ -963,7 +1148,7 @@ pub(crate) fn apply_memory_candidate(root: &Path, id: &str) -> AgentRuntimeResul
         .ok_or_else(|| AgentRuntimeError::Core(format!("memory candidate not found: {id}")))?;
     if !matches!(
         candidate.status.as_str(),
-        "pending" | "needs_user_confirmation" | "approved"
+        "pending" | "stability_pending" | "needs_user_confirmation" | "approved"
     ) {
         return Err(AgentRuntimeError::Core(format!(
             "memory candidate is not applicable: {}",
@@ -982,6 +1167,21 @@ pub(crate) fn apply_memory_candidate(root: &Path, id: &str) -> AgentRuntimeResul
             "result": result,
         }),
     )?;
+    if let Some(session_id) = session_id_from_memory_source_ref(candidate.source_ref.as_deref()) {
+        let _ = record_memory_candidate_event(
+            root,
+            &session_id,
+            None,
+            "memory_candidate_applied",
+            &candidate,
+            json!({
+                "action": candidate.proposed_action,
+                "resultAction": result.get("action").cloned().unwrap_or(Value::Null),
+                "recordId": result.pointer("/record/id").cloned().unwrap_or(Value::Null),
+                "targetId": candidate.target_id,
+            }),
+        );
+    }
     Ok(json!({ "candidate": memory_candidate_json(&candidate), "result": result }))
 }
 
@@ -1001,6 +1201,18 @@ pub(crate) fn reject_memory_candidate(
         "candidate_rejected",
         json!({ "candidateId": id, "reason": reason }),
     )?;
+    if let Some(session_id) = session_id_from_memory_source_ref(candidate.source_ref.as_deref()) {
+        let _ = record_memory_candidate_event(
+            root,
+            &session_id,
+            None,
+            "memory_candidate_rejected",
+            &candidate,
+            json!({
+                "reason": reason,
+            }),
+        );
+    }
     Ok(json!({ "candidateId": id, "status": "rejected", "reason": reason }))
 }
 
@@ -1044,9 +1256,44 @@ pub(crate) fn record_memory_injection(
         ],
     )
     .map_err(sql_error)?;
+    let _ = super::prompt_cache::cache_memory_injection_prompt(
+        root, session_id, turn_id, query, records,
+    );
     Ok(
         json!({ "sessionId": session_id, "turnId": turn_id, "selected": selected, "createdAt": timestamp }),
     )
+}
+
+pub(crate) fn latest_injection_snapshot(root: &Path) -> AgentRuntimeResult<Value> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    let row = conn
+        .query_row(
+            "SELECT selected_json, query, session_id, turn_id, created_at
+             FROM memory_injection_events ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(sql_error)?;
+    let Some((selected_json, query, session_id, turn_id, created_at)) = row else {
+        return Ok(json!({ "selected": [] }));
+    };
+    Ok(json!({
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "query": query,
+        "selected": serde_json::from_str::<Value>(&selected_json).unwrap_or(Value::Array(vec![])),
+        "createdAt": created_at,
+    }))
 }
 
 pub(crate) fn explain_memory_injection(
@@ -1266,6 +1513,9 @@ pub(crate) fn memory_record_json(record: &LongTermMemoryRecord) -> Value {
         "category": record.category,
         "fact": record.fact,
         "content": record.content,
+        "layer": record.layer,
+        "valueClass": record.value_class,
+        "abstractText": record.abstract_text,
         "confidence": record.confidence,
         "sourceType": record.source_type,
         "sourceRef": record.source_ref,
@@ -1280,5 +1530,199 @@ pub(crate) fn memory_record_json(record: &LongTermMemoryRecord) -> Value {
         "expiresAt": record.expires_at,
         "supersedes": record.supersedes,
         "supersededBy": record.superseded_by,
+        "sourceDevice": record.source_device,
+        "revision": record.revision,
+        "syncOrigin": record.sync_origin,
     })
+}
+
+pub(crate) fn record_session_token_checkpoint(
+    root: &Path,
+    session_id: &str,
+    turn_id: &str,
+    last_message_id: Option<String>,
+    token_total: usize,
+) -> AgentRuntimeResult<()> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    conn.execute(
+        "INSERT INTO token_checkpoints (
+            id, session_id, turn_id, last_message_id, token_total, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            format!("token-checkpoint-{}", Uuid::new_v4()),
+            session_id,
+            turn_id,
+            last_message_id,
+            token_total as i64,
+            now(),
+        ],
+    )
+    .map_err(sql_error)?;
+    Ok(())
+}
+
+pub(crate) fn load_latest_session_token_checkpoint(
+    root: &Path,
+    session_id: &str,
+) -> AgentRuntimeResult<Option<(Option<String>, usize)>> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    conn.query_row(
+        "SELECT last_message_id, token_total
+         FROM token_checkpoints
+         WHERE session_id = ?1
+         ORDER BY created_at DESC
+         LIMIT 1",
+        params![session_id],
+        |row| Ok((row.get(0)?, row.get::<_, i64>(1)? as usize)),
+    )
+    .optional()
+    .map_err(sql_error)
+}
+
+pub(crate) fn promote_stability_pending_memory_candidates(
+    root: &Path,
+) -> AgentRuntimeResult<usize> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    promote_stability_pending_candidates(&conn)
+}
+
+pub(crate) fn active_embedding_descriptor() -> embedding_tail::ActiveEmbeddingDescriptor {
+    embedding_tail::active_embedding_descriptor()
+}
+
+pub(crate) fn count_cut_archive_recall_items(
+    root: &Path,
+    session_id: Option<&str>,
+) -> AgentRuntimeResult<usize> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    let count: i64 = if let Some(session_id) = session_id {
+        conn.query_row(
+            "SELECT COUNT(*) FROM recall_items WHERE source_kind = 'cut_archive' AND session_id = ?1",
+            params![session_id],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?
+    } else {
+        conn.query_row(
+            "SELECT COUNT(*) FROM recall_items WHERE source_kind = 'cut_archive'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?
+    };
+    Ok(count.max(0) as usize)
+}
+
+pub(crate) fn count_pending_memory_jobs(root: &Path) -> AgentRuntimeResult<usize> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    internal::count_pending_memory_jobs(&conn)
+}
+
+pub(crate) fn load_unprocessed_trigger_payloads_for_session(
+    root: &Path,
+    session_id: &str,
+) -> AgentRuntimeResult<Vec<Value>> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    let since = internal::latest_processed_trigger_created_at(&conn, session_id)?;
+    internal::load_unprocessed_trigger_payloads(&conn, session_id, since.as_deref())
+}
+
+pub(crate) fn mark_memory_job_triggers_processed(
+    root: &Path,
+    job: &MemoryJobRecord,
+) -> AgentRuntimeResult<()> {
+    let conn = open_memory_connection(root)?;
+    init_memory_schema(&conn)?;
+    internal::mark_trigger_marks_processed(&conn, &job.session_id, &job.turn_id, &job.job_type)
+}
+
+pub(crate) fn reconcile_sync_records(
+    root: &Path,
+    remote_records: &[Value],
+) -> AgentRuntimeResult<Value> {
+    let mut merged = Vec::new();
+    let mut conflicts = Vec::new();
+    for remote in remote_records {
+        let remote_id = remote
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AgentRuntimeError::Core("remote memory id is required".to_string()))?;
+        let conn = open_memory_connection(root)?;
+        init_memory_schema(&conn)?;
+        let Some(local) = internal::load_memory_record(&conn, remote_id)? else {
+            let record = create_long_term_memory(
+                root,
+                MemoryMutation {
+                    id: Some(remote_id.to_string()),
+                    fact: remote
+                        .get("fact")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    content: remote.get("content").cloned(),
+                    category: remote
+                        .get("category")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    scope: remote
+                        .get("scope")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    layer: remote
+                        .get("layer")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    value_class: remote
+                        .get("valueClass")
+                        .or_else(|| remote.get("value_class"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    confidence: remote.get("confidence").and_then(Value::as_f64),
+                    source_type: remote
+                        .get("sourceType")
+                        .or_else(|| remote.get("source_type"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    source_ref: remote
+                        .get("sourceRef")
+                        .or_else(|| remote.get("source_ref"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    revision: remote.get("revision").and_then(Value::as_u64),
+                    source_device: remote
+                        .get("sourceDevice")
+                        .or_else(|| remote.get("source_device"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    sync_origin: Some(super::memory_sync::SYNC_ORIGIN_REMOTE.to_string()),
+                    status: Some("active".to_string()),
+                    ..MemoryMutation::default()
+                },
+            )?;
+            merged.push(memory_record_json(&record));
+            continue;
+        };
+        match super::memory_sync::merge_remote_memory_mutation(&local, remote) {
+            Ok(mutation) => {
+                let record = update_long_term_memory(root, mutation)?;
+                merged.push(memory_record_json(&record));
+            }
+            Err(error) => {
+                conflicts.push(json!({
+                    "id": remote_id,
+                    "error": error.to_string(),
+                    "localRevision": local.revision,
+                    "remoteRevision": remote.get("revision"),
+                }));
+            }
+        }
+    }
+    Ok(super::memory_sync::sync_reconcile_payload_json(
+        &merged, &conflicts,
+    ))
 }

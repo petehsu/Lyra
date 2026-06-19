@@ -1,8 +1,8 @@
 pub(crate) mod capabilities;
-pub(crate) mod mimo_faults;
-pub(crate) mod model_capabilities;
 pub(crate) mod catalog;
 pub(crate) mod errors;
+pub(crate) mod mimo_faults;
+pub(crate) mod model_capabilities;
 pub(crate) mod protocol;
 pub(crate) mod registry;
 pub(crate) mod routes;

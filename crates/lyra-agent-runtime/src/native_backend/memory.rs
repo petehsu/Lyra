@@ -87,6 +87,10 @@ pub(crate) fn memory_audit(payload: Value) -> AgentRuntimeResult<Value> {
         .map(|id| explain_memory_injection(&root, id, None))
         .transpose()?
         .unwrap_or_else(|| json!({ "selected": [] }));
+    let session_ledger = session_id
+        .as_deref()
+        .map(|id| session_ledger_summary(&root, id))
+        .unwrap_or(Value::Null);
     let health = if !conflicting_records.is_empty() {
         "needs_review"
     } else if !cleanup_candidates.is_empty() || !pending_candidates.is_empty() {
@@ -107,70 +111,7 @@ pub(crate) fn memory_audit(payload: Value) -> AgentRuntimeResult<Value> {
         "cleanupCandidates": cleanup_candidates,
         "memoryCandidates": pending_candidates,
         "currentInjection": current_injection,
-    }))
-}
-
-pub(crate) fn trim_memory(payload: Value) -> AgentRuntimeResult<Value> {
-    let force = payload
-        .get("force")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let max_tail_messages = payload
-        .get("maxTailMessages")
-        .or_else(|| payload.get("max_tail_messages"))
-        .and_then(Value::as_u64)
-        .unwrap_or(24) as usize;
-    let (session_id, callback, projection, snapshot, metrics, trimmed, reason) = {
-        let mut state = state()
-            .lock()
-            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let session_id = state.resolve_session_id(string_opt(&payload, "sessionId"))?;
-        let long_term_memory = list_long_term_memory(
-            &state.root,
-            MemoryQuery {
-                limit: 24,
-                ..MemoryQuery::default()
-            },
-        )?;
-        let active_clarification = active_clarification_projection(&state, &session_id);
-        let session = state
-            .sessions
-            .get_mut(&session_id)
-            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
-        let message_count = snapshot_array(&session.snapshot, "messages").len();
-        let trimmed = force || message_count > max_tail_messages;
-        let reason = if trimmed { "trimmed" } else { "noTrimNeeded" }.to_string();
-        let projection =
-            memory_projection_for_session(session, &long_term_memory, active_clarification);
-        session.snapshot["memory"] = projection.clone();
-        touch_session(session);
-        let metrics = memory_projection_metrics(session, &projection);
-        let snapshot = session.snapshot.clone();
-        let callback = state.event_callback.clone();
-        state.save_state()?;
-        (
-            session_id, callback, projection, snapshot, metrics, trimmed, reason,
-        )
-    };
-    emit_with_callback(
-        &callback,
-        json!({ "kind": "memoryUpdated", "sessionId": session_id, "snapshot": projection }),
-    );
-    if trimmed {
-        emit_with_callback(
-            &callback,
-            json!({ "kind": "contextTrimmed", "sessionId": session_id, "detail": { "reason": "memory_trim", "metrics": metrics.clone() } }),
-        );
-    }
-    emit_with_callback(
-        &callback,
-        json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
-    );
-    Ok(json!({
-        "sessionId": session_id,
-        "trimmed": trimmed,
-        "reason": reason,
-        "metrics": metrics,
+        "sessionLedger": session_ledger,
     }))
 }
 
@@ -180,9 +121,18 @@ pub(crate) fn recover_memory(payload: Value) -> AgentRuntimeResult<Value> {
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let session_id = state.resolve_session_id(string_opt(&payload, "sessionId"))?;
-        let long_term_memory = list_long_term_memory(
+        let shared_memory = list_long_term_memory(
             &state.root,
             MemoryQuery {
+                layer: Some(LAYER_SHARED.to_string()),
+                limit: 24,
+                ..MemoryQuery::default()
+            },
+        )?;
+        let frozen_memory = list_long_term_memory(
+            &state.root,
+            MemoryQuery {
+                layer: Some(LAYER_FROZEN.to_string()),
                 limit: 24,
                 ..MemoryQuery::default()
             },
@@ -219,8 +169,12 @@ pub(crate) fn recover_memory(payload: Value) -> AgentRuntimeResult<Value> {
                 Some("recover_after_reload"),
             );
         }
-        let mut projection =
-            memory_projection_for_session(session, &long_term_memory, active_clarification);
+        let mut projection = memory_projection_for_session(
+            session,
+            &shared_memory,
+            &frozen_memory,
+            active_clarification,
+        );
         projection["recoveryState"] = json!({
             "activeTurnId": active_turn_id,
             "reason": reason,
@@ -284,9 +238,35 @@ pub(crate) fn active_clarification_projection(
         })
 }
 
+fn memory_fact_projection_json(record: &LongTermMemoryRecord) -> Value {
+    json!({
+        "id": record.id,
+        "scope": record.scope,
+        "category": record.category,
+        "fact": record.fact,
+        "content": record.content,
+        "layer": record.layer,
+        "valueClass": record.value_class,
+        "abstractText": record.abstract_text,
+        "confidence": record.confidence,
+        "sourceType": record.source_type,
+        "status": record.status,
+        "updatedAt": record.updated_at,
+        "priority": record.priority,
+        "lastAccessedAt": record.last_accessed_at,
+        "accessCount": record.access_count,
+        "tags": record.tags,
+        "relatedTo": record.related_to,
+        "revision": record.revision,
+        "sourceDevice": record.source_device,
+        "syncOrigin": record.sync_origin,
+    })
+}
+
 pub(crate) fn memory_projection_for_session(
     session: &NativeSession,
-    long_term_memory: &[LongTermMemoryRecord],
+    shared_memory: &[LongTermMemoryRecord],
+    frozen_memory: &[LongTermMemoryRecord],
     active_clarification: Option<Value>,
 ) -> Value {
     let messages = snapshot_array(&session.snapshot, "messages");
@@ -327,42 +307,38 @@ pub(crate) fn memory_projection_for_session(
         .into_iter()
         .rev()
         .collect::<Vec<_>>();
-    let long_term_facts = long_term_memory
+    let shared_facts = shared_memory
         .iter()
         .take(24)
-        .map(|record| {
-            json!({
-                "id": record.id,
-                "scope": record.scope,
-                "category": record.category,
-                "fact": record.fact,
-                "content": record.content,
-                "confidence": record.confidence,
-                "sourceType": record.source_type,
-                "status": record.status,
-                "updatedAt": record.updated_at,
-                "priority": record.priority,
-                "lastAccessedAt": record.last_accessed_at,
-                "accessCount": record.access_count,
-                "tags": record.tags,
-                "relatedTo": record.related_to,
-            })
-        })
+        .map(memory_fact_projection_json)
         .collect::<Vec<_>>();
+    let frozen_facts = frozen_memory
+        .iter()
+        .take(24)
+        .map(memory_fact_projection_json)
+        .collect::<Vec<_>>();
+    let long_term_facts = shared_facts
+        .iter()
+        .chain(frozen_facts.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    let injection_plan = json!({
+        "sharedQuota": 5,
+        "frozenQuota": 3,
+        "preferLayers": [LAYER_FROZEN, LAYER_SHARED],
+    });
     let active_turn_id = session
         .snapshot
         .get("activeTurnId")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let pinned_items =
+        super::pinned_context::collect_pinned_items(session, active_clarification.as_ref());
     json!({
-        "pinnedContext": {
-            "items": [
-                {
-                    "kind": "session",
-                    "title": session.snapshot.get("title").cloned().unwrap_or_else(|| Value::String(DEFAULT_SESSION_TITLE.to_string())),
-                    "workingDir": session.snapshot.get("workingDir").cloned().unwrap_or(Value::Null),
-                }
-            ]
+        "pinnedContext": super::pinned_context::pinned_context_json(&pinned_items),
+        "contextWindow": {
+            "segments": ["head", "pinned", "middle", "tail"],
+            "pinnedCount": pinned_items.len(),
         },
         "activeTodos": latest_todos.clone(),
         "sessionFacts": {
@@ -391,8 +367,21 @@ pub(crate) fn memory_projection_for_session(
                 "reason": if active_turn_id.is_some() { "active_turn" } else { "idle" },
             },
         },
-        "longTermMemory": { "facts": long_term_facts.clone() },
-        "sharedFacts": { "facts": long_term_facts },
+        "layerModel": {
+            "layers": MEMORY_LAYERS,
+            "primaryFacts": {
+                "shared": { "facts": shared_facts.clone() },
+                "frozen": { "facts": frozen_facts.clone() },
+            },
+            "injectionPlan": injection_plan,
+        },
+        "sharedFacts": { "facts": shared_facts },
+        "frozenFacts": { "facts": frozen_facts },
+        "longTermMemory": {
+            "facts": long_term_facts,
+            "deprecated": true,
+            "useInstead": ["sharedFacts", "frozenFacts"],
+        },
         "recoveryState": {
             "activeTurnId": active_turn_id,
             "reason": if active_turn_id.is_some() { "active_turn" } else { "idle" },
@@ -663,14 +652,30 @@ pub(crate) fn memory_snapshot_for_session(session: &NativeSession, config: &Nati
     })
 }
 
+fn with_longterm_deprecation(mut value: Value) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "_deprecated".to_string(),
+            json!({
+                "api": "agent.memory.longterm.*",
+                "useInstead": {
+                    "shared": "agent.memory.shared.*",
+                    "frozen": "agent.memory.frozen.*",
+                },
+            }),
+        );
+    }
+    value
+}
+
 pub(crate) fn long_term_memory_create(payload: Value) -> AgentRuntimeResult<Value> {
     let root = runtime_root_for_memory()?;
     let mutation = memory_create_mutation(&payload)?;
     let record = create_long_term_memory(&root, mutation)?;
-    Ok(json!({
+    Ok(with_longterm_deprecation(json!({
         "record": memory_record_json(&record),
         "records": list_memory_summaries(&root, MemoryQuery { limit: 24, ..MemoryQuery::default() })?,
-    }))
+    })))
 }
 
 pub(crate) fn long_term_memory_search(payload: Value) -> AgentRuntimeResult<Value> {
@@ -686,7 +691,8 @@ pub(crate) fn long_term_memory_search(payload: Value) -> AgentRuntimeResult<Valu
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|text| {
-            match select_system_recall_for_injection(&root, text, working_dir.as_deref(), &[]) {
+            match select_system_recall_for_injection(&root, None, text, working_dir.as_deref(), &[])
+            {
                 Ok(mut recall) => {
                     recall.retain(|record| record.item.source_kind == "session_message");
                     system_recall_json(&recall)
@@ -704,16 +710,18 @@ pub(crate) fn long_term_memory_search(payload: Value) -> AgentRuntimeResult<Valu
                 "records": [],
             })
         });
-    Ok(json!({
+    Ok(with_longterm_deprecation(json!({
         "records": records.iter().map(|record| ranked_memory_json(record, explain)).collect::<Vec<_>>(),
         "sessionRecall": session_recall,
-    }))
+    })))
 }
 
 pub(crate) fn long_term_memory_update(payload: Value) -> AgentRuntimeResult<Value> {
     let root = runtime_root_for_memory()?;
     let record = update_long_term_memory(&root, memory_update_mutation(&payload)?)?;
-    Ok(json!({ "record": memory_record_json(&record) }))
+    Ok(with_longterm_deprecation(
+        json!({ "record": memory_record_json(&record) }),
+    ))
 }
 
 pub(crate) fn long_term_memory_forget(payload: Value) -> AgentRuntimeResult<Value> {
@@ -792,6 +800,38 @@ pub(crate) fn long_term_memory_cleanup_candidates(payload: Value) -> AgentRuntim
 }
 
 pub(crate) fn shared_memory_search(payload: Value) -> AgentRuntimeResult<Value> {
+    let mut payload = payload;
+    if payload.get("layer").is_none() {
+        match payload {
+            Value::Object(mut object) => {
+                object.insert("layer".to_string(), Value::String(LAYER_SHARED.to_string()));
+                payload = Value::Object(object);
+            }
+            _ => {
+                payload = json!({
+                    "layer": LAYER_SHARED,
+                    "query": payload,
+                });
+            }
+        }
+    }
+    long_term_memory_search(payload)
+}
+
+pub(crate) fn frozen_memory_search(payload: Value) -> AgentRuntimeResult<Value> {
+    let mut payload = payload;
+    match payload {
+        Value::Object(mut object) => {
+            object.insert("layer".to_string(), Value::String(LAYER_FROZEN.to_string()));
+            payload = Value::Object(object);
+        }
+        _ => {
+            payload = json!({
+                "layer": LAYER_FROZEN,
+                "query": payload,
+            });
+        }
+    }
     long_term_memory_search(payload)
 }
 
@@ -809,6 +849,9 @@ pub(crate) fn shared_memory_update(payload: Value) -> AgentRuntimeResult<Value> 
         }
     }
     mapped.insert("content".to_string(), content);
+    if !mapped.contains_key("layer") {
+        mapped.insert("layer".to_string(), Value::String(LAYER_SHARED.to_string()));
+    }
     if !mapped.contains_key("sourceType") {
         let source_type = mapped
             .get("source")
@@ -901,50 +944,18 @@ pub(crate) fn select_ranked_long_term_memory_for_injection(
     working_dir: Option<&str>,
     limit: usize,
 ) -> AgentRuntimeResult<Vec<RankedMemoryRecord>> {
-    let query = [Some(latest_user_text), working_dir]
-        .into_iter()
-        .flatten()
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-    Ok(search_ranked_long_term_memory(
-        root,
-        MemoryQuery {
-            query: (!query.trim().is_empty()).then_some(query),
-            include_archived: false,
-            include_related: true,
-            explain: false,
-            touch_access: true,
-            access_type: "context_injection".to_string(),
-            limit,
-            ..MemoryQuery::default()
-        },
-    )?
-    .into_iter()
-    .filter(|ranked| ranked.breakdown.contradiction_penalty <= f64::EPSILON)
-    .collect())
+    Ok(expand_long_term_memory_injection(root, latest_user_text, working_dir, limit)?.0)
 }
 
-pub(crate) fn shared_memory_prompt(records: &[LongTermMemoryRecord]) -> String {
+pub(crate) fn shared_memory_prompt(records: &[RankedMemoryRecord]) -> String {
     if records.is_empty() {
         return String::new();
     }
     let mut lines = vec![
-        "Injected Lyra shared memory rotation slice. Treat these as durable but corrigible facts; prefer newer user instructions when they conflict.".to_string(),
+        "Injected Lyra shared memory rotation slice (L0/L1/L2). Frozen facts are protected; shared facts are corrigible. Prefer newer user instructions when they conflict.".to_string(),
     ];
-    for (index, record) in records.iter().enumerate() {
-        lines.push(format!(
-            "{}. id={} scope={} category={} priority={} confidence={} source_type={} fact={} content={}",
-            index + 1,
-            record.id,
-            record.scope,
-            record.category,
-            record.priority,
-            record.confidence,
-            record.source_type,
-            record.fact,
-            serde_json::to_string(&record.content).unwrap_or_else(|_| "null".to_string())
-        ));
+    for (index, ranked) in records.iter().enumerate() {
+        lines.push(format_ranked_memory_injection_line(index, ranked));
     }
     lines.join("\n")
 }
@@ -985,6 +996,9 @@ fn list_memory_summaries(root: &Path, query: MemoryQuery) -> AgentRuntimeResult<
 }
 
 fn memory_create_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation> {
+    if let Some(content) = payload.get("content") {
+        super::secret_guard::validate_memory_content_value(content)?;
+    }
     let fact = string_opt(payload, "fact")
         .or_else(|| {
             payload
@@ -995,6 +1009,7 @@ fn memory_create_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation>
         })
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AgentRuntimeError::Core("memory fact is required".to_string()))?;
+    super::secret_guard::validate_memory_fact(&fact)?;
     Ok(MemoryMutation {
         id: string_opt(payload, "id"),
         scope: string_opt(payload, "scope"),
@@ -1007,6 +1022,11 @@ fn memory_create_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation>
         }),
         fact: Some(fact),
         content: payload.get("content").cloned(),
+        layer: string_opt(payload, "layer"),
+        value_class: string_opt(payload, "valueClass")
+            .or_else(|| string_opt(payload, "value_class")),
+        abstract_text: string_opt(payload, "abstractText")
+            .or_else(|| string_opt(payload, "abstract_text")),
         confidence: payload.get("confidence").and_then(Value::as_f64),
         source_type: string_opt(payload, "sourceType")
             .or_else(|| string_opt(payload, "source_type")),
@@ -1019,6 +1039,7 @@ fn memory_create_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation>
         supersedes: string_opt(payload, "supersedes"),
         superseded_by: string_opt(payload, "supersededBy")
             .or_else(|| string_opt(payload, "superseded_by")),
+        ..MemoryMutation::default()
     })
 }
 
@@ -1034,6 +1055,11 @@ fn memory_update_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation>
     mutation.scope = string_opt(payload, "scope");
     mutation.category = string_opt(payload, "category");
     mutation.content = payload.get("content").cloned();
+    mutation.layer = string_opt(payload, "layer");
+    mutation.value_class =
+        string_opt(payload, "valueClass").or_else(|| string_opt(payload, "value_class"));
+    mutation.abstract_text =
+        string_opt(payload, "abstractText").or_else(|| string_opt(payload, "abstract_text"));
     mutation.confidence = payload.get("confidence").and_then(Value::as_f64);
     mutation.source_type =
         string_opt(payload, "sourceType").or_else(|| string_opt(payload, "source_type"));
@@ -1048,7 +1074,101 @@ fn memory_update_mutation(payload: &Value) -> AgentRuntimeResult<MemoryMutation>
     mutation.supersedes = string_opt(payload, "supersedes");
     mutation.superseded_by =
         string_opt(payload, "supersededBy").or_else(|| string_opt(payload, "superseded_by"));
+    mutation.revision = payload
+        .get("expectedRevision")
+        .or_else(|| payload.get("expected_revision"))
+        .and_then(Value::as_u64);
     Ok(mutation)
+}
+
+pub(crate) fn memory_layers_describe(payload: Value) -> AgentRuntimeResult<Value> {
+    let root = runtime_root_for_memory()?;
+    let session_id = string_opt(&payload, "sessionId");
+    let mut live_message_count = 0_usize;
+    if let Some(session_id) = session_id.as_deref() {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        if let Some(session) = state.sessions.get(session_id) {
+            live_message_count = snapshot_array(&session.snapshot, "messages").len();
+        }
+    }
+    let shared_count = list_long_term_memory(
+        &root,
+        MemoryQuery {
+            layer: Some(LAYER_SHARED.to_string()),
+            status: Some("active".to_string()),
+            limit: 500,
+            ..MemoryQuery::default()
+        },
+    )?
+    .len();
+    let frozen_count = list_long_term_memory(
+        &root,
+        MemoryQuery {
+            layer: Some(LAYER_FROZEN.to_string()),
+            status: Some("active".to_string()),
+            limit: 500,
+            ..MemoryQuery::default()
+        },
+    )?
+    .len();
+    let cut_count = count_cut_archive_recall_items(&root, session_id.as_deref())?;
+    Ok(json!({
+        "layers": [
+            {
+                "layer": LAYER_LIVE,
+                "storage": "session snapshot",
+                "messageCount": live_message_count,
+                "api": ["agent.session.*", "agent.memory.snapshot"],
+            },
+            {
+                "layer": LAYER_CUT,
+                "storage": "sessions/<id>/cuts + recall_items",
+                "archiveCount": cut_count,
+                "api": ["agent.memory.recall", "session trim"],
+            },
+            {
+                "layer": LAYER_SHARED,
+                "storage": "memory.sqlite",
+                "activeCount": shared_count,
+                "api": ["agent.memory.shared.search", "agent.memory.shared.update"],
+            },
+            {
+                "layer": LAYER_FROZEN,
+                "storage": "memory.sqlite",
+                "activeCount": frozen_count,
+                "api": ["agent.memory.frozen.search", "agent.memory.frozen.create", "agent.memory.frozen.update", "agent.memory.frozen.forget"],
+            },
+        ],
+        "physicalStore": "single memory.sqlite with logical layer field",
+    }))
+}
+
+pub(crate) fn frozen_memory_create(payload: Value) -> AgentRuntimeResult<Value> {
+    let mut mapped = payload.as_object().cloned().unwrap_or_default();
+    mapped.insert("layer".to_string(), Value::String(LAYER_FROZEN.to_string()));
+    long_term_memory_create(Value::Object(mapped))
+}
+
+pub(crate) fn frozen_memory_update(payload: Value) -> AgentRuntimeResult<Value> {
+    let mut mapped = payload.as_object().cloned().unwrap_or_default();
+    mapped.insert("layer".to_string(), Value::String(LAYER_FROZEN.to_string()));
+    long_term_memory_update(Value::Object(mapped))
+}
+
+pub(crate) fn frozen_memory_forget(payload: Value) -> AgentRuntimeResult<Value> {
+    long_term_memory_forget(payload)
+}
+
+pub(crate) fn memory_sync_reconcile(payload: Value) -> AgentRuntimeResult<Value> {
+    let root = runtime_root_for_memory()?;
+    let records = payload
+        .get("records")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    reconcile_sync_records(&root, &records)
 }
 
 fn memory_query_from_payload(payload: &Value, touch_access: bool) -> MemoryQuery {
@@ -1056,6 +1176,9 @@ fn memory_query_from_payload(payload: &Value, touch_access: bool) -> MemoryQuery
         query: string_opt(payload, "query"),
         scope: string_opt(payload, "scope"),
         category: string_opt(payload, "category"),
+        layer: string_opt(payload, "layer"),
+        value_class: string_opt(payload, "valueClass")
+            .or_else(|| string_opt(payload, "value_class")),
         status: string_opt(payload, "status"),
         include_archived: payload
             .get("includeArchived")

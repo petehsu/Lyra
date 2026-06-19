@@ -14,6 +14,26 @@ use crate::screen::{
 use crate::tui_act::TuiActPlan;
 
 #[cfg_attr(feature = "node-api", napi(object))]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalLifecycleProjection {
+    pub session_id: String,
+    pub state: String,
+    pub phase: String,
+    pub reason: Option<String>,
+    pub terminal_running: bool,
+    pub command_id: Option<String>,
+    pub command_status: Option<String>,
+    pub exit_code: Option<i32>,
+    pub signal: Option<String>,
+    pub source: Option<String>,
+    pub mode: Option<String>,
+    pub current_cwd: Option<String>,
+    pub waiting: bool,
+    pub background: bool,
+}
+
+#[cfg_attr(feature = "node-api", napi(object))]
 pub struct TerminalCreateRequest {
     pub session_id: Option<String>,
     pub title: Option<String>,
@@ -92,6 +112,7 @@ pub struct TerminalReadResponse {
     pub mode: String,
     pub memory: Option<String>,
     pub reason: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -342,6 +363,7 @@ pub struct TerminalScreenReadResponse {
     pub exit_code: Option<i32>,
     pub truncated: bool,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -427,6 +449,7 @@ pub struct TerminalWaitUntilResponse {
     pub command_id: Option<String>,
     pub output: Option<String>,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -468,6 +491,7 @@ pub struct TerminalInputExecuteResponse {
     pub permission_id: Option<String>,
     pub events: Vec<TerminalContractEventRef>,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -562,6 +586,7 @@ pub struct TerminalProcessesReadResponse {
     pub limited: Option<bool>,
     pub processes: Vec<TerminalProcessSnapshot>,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -643,6 +668,7 @@ pub struct TerminalCommandStatusResponse {
     pub command_id: Option<String>,
     pub command: Option<TerminalCommandSnapshot>,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -667,6 +693,7 @@ pub struct TerminalCommandWaitResponse {
     pub exit_code: Option<i32>,
     pub signal: Option<String>,
     pub memory: Option<String>,
+    pub lifecycle: Option<TerminalLifecycleProjection>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
@@ -709,6 +736,7 @@ pub struct TerminalSessionSnapshot {
     pub session_id: String,
     pub title: String,
     pub cwd: Option<String>,
+    pub current_cwd: Option<String>,
     pub shell: String,
     pub cols: u16,
     pub rows: u16,

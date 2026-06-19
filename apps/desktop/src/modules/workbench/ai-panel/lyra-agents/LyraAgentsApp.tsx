@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { APP_CONFIG } from "./core/config";
 import { setLocale, type Locale } from "./core/i18n";
+import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { assertUsingRealData } from "./styles/guards";
 import {
   DataContextProvider,
@@ -19,6 +20,7 @@ export interface LyraAgentsShellProps {
   locale?: Locale;
   showHeader?: boolean;
   headerSlot?: ReactNode;
+  desktopApi?: LyraDesktopApi | null;
 }
 
 export function LyraAgentsShell({
@@ -26,6 +28,7 @@ export function LyraAgentsShell({
   locale,
   showHeader = true,
   headerSlot,
+  desktopApi = null,
 }: LyraAgentsShellProps) {
   if (locale !== undefined) {
     setLocale(locale);
@@ -44,7 +47,11 @@ export function LyraAgentsShell({
     <AiPanelDragAttachSurface>
       {headerSlot ?? (showHeader ? <Header /> : null)}
       <PillsRail />
-      <ChatView showDecisions={showDecisions} showPermission={showPermission} />
+      <ChatView
+        showDecisions={showDecisions}
+        showPermission={showPermission}
+        desktopApi={desktopApi}
+      />
       {showDebugPanel && (
         <DebugPanel
           decisionsVisible={showDecisions}
@@ -63,6 +70,7 @@ export interface LyraAgentsAppProps {
   locale?: Locale;
   showHeader?: boolean;
   headerSlot?: ReactNode;
+  desktopApi?: LyraDesktopApi | null;
 }
 
 export function LyraAgentsApp({
@@ -71,6 +79,7 @@ export function LyraAgentsApp({
   locale,
   showHeader = true,
   headerSlot,
+  desktopApi = null,
 }: LyraAgentsAppProps) {
   return (
     <DataContextProvider value={data}>
@@ -78,6 +87,7 @@ export function LyraAgentsApp({
         showDebugPanel={showDebugPanel}
         showHeader={showHeader}
         headerSlot={headerSlot}
+        desktopApi={desktopApi}
         {...(locale === undefined ? {} : { locale })}
       />
     </DataContextProvider>

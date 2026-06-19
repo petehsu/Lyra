@@ -7,6 +7,7 @@ pub mod attachments;
 pub mod command_tracker;
 mod events;
 pub mod input_controller;
+mod lifecycle;
 mod live_output;
 mod memory;
 mod memory_api;

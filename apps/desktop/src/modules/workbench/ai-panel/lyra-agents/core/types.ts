@@ -8,6 +8,7 @@
 // external data providers.
 
 import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../shared/agent";
+import type { LyraRenderDocument } from "../../../../../shared/render";
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 
@@ -341,7 +342,13 @@ export interface ToolGroup {
 }
 
 export type MessageBlock =
-  | { type: "text"; id: string; body: string }
+  | {
+      type: "text";
+      id: string;
+      body: string;
+      renderDocument?: LyraRenderDocument;
+      renderRevision?: number;
+    }
   | { type: "image"; id: string; image: AgentImageAttachment }
   | { type: "tools"; id: string; group: ToolGroup };
 

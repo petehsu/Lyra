@@ -223,7 +223,8 @@ fn web_batch_cancel(job_id: &str) -> NativeToolResult {
     let Some(job) = web_batch_jobs()
         .lock()
         .ok()
-        .and_then(|jobs| jobs.get(job_id).cloned()) else {
+        .and_then(|jobs| jobs.get(job_id).cloned())
+    else {
         return Err(NativeToolFailure::new(
             "job_not_found",
             format!("no web batch job found for jobId={job_id}"),
@@ -552,7 +553,10 @@ fn web_map_content(seed_url: &str, discovered: &[Value]) -> String {
         ));
     }
     if discovered.len() > 20 {
-        out.push_str(&format!("\n... and {} more in raw.urls\n", discovered.len() - 20));
+        out.push_str(&format!(
+            "\n... and {} more in raw.urls\n",
+            discovered.len() - 20
+        ));
     }
     out
 }
@@ -591,7 +595,9 @@ fn push_discovered_url(
 
 fn normalize_map_url(url: &str) -> String {
     let trimmed = url.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("mailto:")
+    if trimmed.is_empty()
+        || trimmed.starts_with('#')
+        || trimmed.starts_with("mailto:")
         || trimmed.starts_with("javascript:")
     {
         return String::new();
@@ -612,10 +618,7 @@ fn sitemap_candidates(parsed: &Url) -> Vec<String> {
         if base.len() > 1 {
             let joined = base[..base.len().saturating_sub(1)].join("/");
             if !joined.is_empty() {
-                candidates.push(format!(
-                    "{}://{host}/{joined}/sitemap.xml",
-                    parsed.scheme()
-                ));
+                candidates.push(format!("{}://{host}/{joined}/sitemap.xml", parsed.scheme()));
             }
         }
     }

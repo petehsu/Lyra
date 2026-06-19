@@ -78,9 +78,8 @@ pub(crate) fn resolve_transcript_message(
 
 pub(crate) fn resolve_message_from_payload(payload: &Value) -> AgentRuntimeResult<Value> {
     let session_id = required_session_id(payload)?;
-    let message_id = string_opt(payload, "messageId").ok_or_else(|| {
-        AgentRuntimeError::Core("messageId is required".to_string())
-    })?;
+    let message_id = string_opt(payload, "messageId")
+        .ok_or_else(|| AgentRuntimeError::Core("messageId is required".to_string()))?;
     Ok(resolve_transcript_message(
         &session_id,
         &message_id,
@@ -270,7 +269,10 @@ fn truncate_quoted_text(text: &str) -> (String, bool, String) {
 fn format_transcript_cite_xml(citation: &Value) -> Option<String> {
     let id = citation.get("id").and_then(Value::as_str)?;
     let message_id = citation.get("messageId").and_then(Value::as_str)?;
-    let role = citation.get("role").and_then(Value::as_str).unwrap_or("assistant");
+    let role = citation
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or("assistant");
     let truncated = citation
         .get("truncated")
         .and_then(Value::as_bool)
@@ -346,7 +348,10 @@ fn text_for_block(message: &Value, block_id: &str) -> Option<String> {
                 if block.get("id").and_then(Value::as_str) == Some(block_id)
                     && block.get("type").and_then(Value::as_str) == Some("text")
                 {
-                    block.get("text").and_then(Value::as_str).map(str::to_string)
+                    block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
                 } else {
                     None
                 }

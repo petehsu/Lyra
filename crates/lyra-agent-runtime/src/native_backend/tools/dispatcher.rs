@@ -61,6 +61,15 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    if call.name == LYRA_CLARIFICATION_ASK_TOOL {
+        return execute_clarification_tool_adapter(
+            session_id,
+            turn_id,
+            &call.id,
+            call.arguments,
+            &started_at,
+        );
+    }
     if tool_fs::is_tool_fs_model_tool(&call.name) {
         return tool_fs::execute_tool_fs_model_tool(
             session_id,

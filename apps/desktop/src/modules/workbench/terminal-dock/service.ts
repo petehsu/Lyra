@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type {
   TerminalCreateRequest,
+  TerminalCwdChangedEvent,
   TerminalSessionSnapshot
 } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
@@ -42,6 +43,7 @@ type CreateTerminalTabOptions = {
   readonly followMode?: TerminalFollowMode;
   readonly mode?: "command" | "shell";
   readonly command?: string;
+  readonly sourceAgentSessionId?: string;
 };
 
 const normalizeTitle = (value: string | undefined, fallback: string): string => {
@@ -57,6 +59,72 @@ const normalizeOptionalString = (value: string | undefined): string | undefined 
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const basenameFromPath = (value: string | undefined): string | undefined => {
+  const trimmed = normalizeOptionalString(value);
+  if (trimmed === undefined) {
+    return undefined;
+  }
+  const normalized = trimmed.replaceAll("\\", "/").replace(/\/+$/u, "");
+  const parts = normalized.split("/");
+  const base = parts[parts.length - 1]?.trim();
+  return base === undefined || base.length === 0 ? trimmed : base;
+};
+
+const shortCommandTitle = (command: string | undefined): string | undefined => {
+  const trimmed = normalizeOptionalString(command);
+  if (trimmed === undefined) {
+    return undefined;
+  }
+  let end = trimmed.length;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (char === " " || char === "\t" || char === "\n" || char === "\r") {
+      end = index;
+      break;
+    }
+  }
+  const firstToken = trimmed.slice(0, end);
+  return basenameFromPath(firstToken) ?? trimmed.slice(0, 48);
+};
+
+const deriveTerminalAutoTitle = (
+  options: {
+    readonly cwd?: string;
+    readonly currentCwd?: string;
+    readonly shell?: string;
+    readonly mode?: "command" | "shell";
+    readonly command?: string;
+    readonly startupCommand?: string;
+  },
+  fallback: string
+): string => {
+  if (options.mode === "command" || normalizeOptionalString(options.command) !== undefined) {
+    const commandTitle =
+      shortCommandTitle(options.command)
+      ?? shortCommandTitle(options.startupCommand);
+    const cwdTitle = basenameFromPath(options.currentCwd) ?? basenameFromPath(options.cwd);
+    if (commandTitle !== undefined && cwdTitle !== undefined) {
+      return `${cwdTitle}: ${commandTitle}`;
+    }
+    return commandTitle ?? cwdTitle ?? fallback;
+  }
+  return (
+    basenameFromPath(options.currentCwd)
+    ?? basenameFromPath(options.cwd)
+    ?? basenameFromPath(options.shell)
+    ?? fallback
+  );
+};
+
+const retitlePane = (pane: TerminalDockPane): TerminalDockPane => {
+  const autoTitle = deriveTerminalAutoTitle(pane, pane.autoTitle ?? pane.title);
+  return {
+    ...pane,
+    autoTitle,
+    title: pane.titleLocked === true ? pane.title : autoTitle
+  };
 };
 
 const normalizeFollowMode = (value: unknown): TerminalFollowMode | undefined => {
@@ -91,25 +159,40 @@ const normalizeEnv = (
 
 const createPane = (index: number, options?: CreateTerminalTabOptions): TerminalDockPane => {
   const paneId = createId("pane");
-  const title = normalizeTitle(options?.title, `Terminal ${index}`);
+  const cwd = normalizeOptionalString(options?.cwd);
+  const shell = normalizeOptionalString(options?.shell);
+  const command = normalizeOptionalString(options?.command);
+  const startupCommand = normalizeOptionalString(options?.startupCommand);
+  const sourceAgentSessionId = normalizeOptionalString(options?.sourceAgentSessionId);
+  const autoTitle = normalizeTitle(
+    options?.title,
+    deriveTerminalAutoTitle({
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(cwd === undefined ? {} : { currentCwd: cwd }),
+      ...(shell === undefined ? {} : { shell }),
+      ...(options?.mode === "command" || options?.mode === "shell" ? { mode: options.mode } : {}),
+      ...(command === undefined ? {} : { command }),
+      ...(startupCommand === undefined ? {} : { startupCommand })
+    }, `Terminal ${index}`)
+  );
   return {
     id: paneId,
     sessionId: `session-${paneId}`,
-    title,
-    ...(normalizeOptionalString(options?.cwd) === undefined ? {} : { cwd: normalizeOptionalString(options?.cwd)! }),
-    ...(normalizeOptionalString(options?.shell) === undefined ? {} : { shell: normalizeOptionalString(options?.shell)! }),
+    title: autoTitle,
+    autoTitle,
+    ...(cwd === undefined ? {} : { cwd, currentCwd: cwd }),
+    ...(shell === undefined ? {} : { shell }),
     ...(options?.env === undefined || options.env.length === 0 ? {} : { env: options.env }),
     ...(normalizeOptionalString(options?.profileId) === undefined
       ? {}
       : { profileId: normalizeOptionalString(options?.profileId)! }),
-    ...(normalizeOptionalString(options?.startupCommand) === undefined
-      ? {}
-      : { startupCommand: normalizeOptionalString(options?.startupCommand)! }),
+    ...(startupCommand === undefined ? {} : { startupCommand }),
     ...(normalizeFollowMode(options?.followMode) === undefined
       ? {}
       : { followMode: normalizeFollowMode(options?.followMode)! }),
     ...(options?.mode === "command" || options?.mode === "shell" ? { mode: options.mode } : {}),
-    ...(normalizeOptionalString(options?.command) === undefined ? {} : { command: normalizeOptionalString(options?.command)! })
+    ...(command === undefined ? {} : { command }),
+    ...(sourceAgentSessionId === undefined ? {} : { sourceAgentSessionId })
   };
 };
 
@@ -121,11 +204,12 @@ const createTab = (
   readonly pane: TerminalDockPane;
 } => {
   const pane = createPane(index, options);
-  const title = normalizeTitle(options?.title, pane.title);
+  const title = normalizeTitle(options?.title, pane.autoTitle ?? pane.title);
   return {
     tab: {
       id: createId("tab"),
       title,
+      autoTitle: pane.autoTitle ?? title,
       orientation: "horizontal",
       paneIds: [pane.id],
       activePaneId: pane.id,
@@ -199,6 +283,10 @@ const sanitizePane = (value: unknown): TerminalDockPane | null => {
     return null;
   }
   const cwd = typeof raw.cwd === "string" && raw.cwd.trim().length > 0 ? raw.cwd.trim() : undefined;
+  const currentCwd =
+    typeof raw.currentCwd === "string" && raw.currentCwd.trim().length > 0
+      ? raw.currentCwd.trim()
+      : undefined;
   const shell = typeof raw.shell === "string" && raw.shell.trim().length > 0 ? raw.shell.trim() : undefined;
   const env = normalizeEnv(raw.env);
   const profileId = typeof raw.profileId === "string" && raw.profileId.trim().length > 0
@@ -209,11 +297,20 @@ const sanitizePane = (value: unknown): TerminalDockPane | null => {
       ? raw.startupCommand.trim()
       : undefined;
   const followMode = normalizeFollowMode(raw.followMode);
+  const sourceAgentSessionId =
+    typeof raw.sourceAgentSessionId === "string" && raw.sourceAgentSessionId.trim().length > 0
+      ? raw.sourceAgentSessionId.trim()
+      : undefined;
+  const autoTitle =
+    typeof raw.autoTitle === "string" && raw.autoTitle.trim().length > 0
+      ? raw.autoTitle.trim()
+      : undefined;
   return {
     id,
     sessionId,
     title,
     ...(cwd !== undefined ? { cwd } : {}),
+    ...(currentCwd !== undefined ? { currentCwd } : {}),
     ...(shell !== undefined ? { shell } : {}),
     ...(env !== undefined ? { env } : {}),
     ...(profileId !== undefined ? { profileId } : {}),
@@ -222,7 +319,10 @@ const sanitizePane = (value: unknown): TerminalDockPane | null => {
     ...(raw.mode === "command" || raw.mode === "shell" ? { mode: raw.mode } : {}),
     ...(typeof raw.command === "string" && raw.command.trim().length > 0
       ? { command: raw.command.trim() }
-      : {})
+      : {}),
+    ...(sourceAgentSessionId !== undefined ? { sourceAgentSessionId } : {}),
+    ...(autoTitle !== undefined ? { autoTitle } : {}),
+    ...(typeof raw.titleLocked === "boolean" ? { titleLocked: raw.titleLocked } : {})
   };
 };
 
@@ -260,7 +360,11 @@ const sanitizeTab = (value: unknown): TerminalDockTab | null => {
     ...(typeof raw.favorite === "boolean" ? { favorite: raw.favorite } : {}),
     ...(typeof raw.profileId === "string" && raw.profileId.trim().length > 0
       ? { profileId: raw.profileId.trim() }
-      : {})
+      : {}),
+    ...(typeof raw.autoTitle === "string" && raw.autoTitle.trim().length > 0
+      ? { autoTitle: raw.autoTitle.trim() }
+      : {}),
+    ...(typeof raw.titleLocked === "boolean" ? { titleLocked: raw.titleLocked } : {})
   };
 };
 
@@ -411,7 +515,8 @@ export const renameTerminalTabState = (
   return {
     ...withTabUpdate(state, tabId, (item) => ({
       ...item,
-      title: normalizedTitle
+      title: normalizedTitle,
+      titleLocked: true
     })),
     panes: activePane === undefined
       ? state.panes
@@ -419,7 +524,8 @@ export const renameTerminalTabState = (
           ...state.panes,
           [activePane.id]: {
             ...activePane,
-            title: normalizedTitle
+            title: normalizedTitle,
+            titleLocked: true
           }
         }
   };
@@ -576,7 +682,9 @@ export const splitTerminalTabWithOptionsState = (
     options ?? (activePane === undefined
       ? undefined
       : {
-          ...(activePane.cwd === undefined ? {} : { cwd: activePane.cwd }),
+          ...(activePane.currentCwd !== undefined || activePane.cwd !== undefined
+            ? { cwd: activePane.currentCwd ?? activePane.cwd }
+            : {}),
           ...(activePane.shell === undefined ? {} : { shell: activePane.shell }),
           ...(activePane.env === undefined ? {} : { env: activePane.env }),
           ...(activePane.profileId === undefined && tab.profileId === undefined
@@ -585,7 +693,10 @@ export const splitTerminalTabWithOptionsState = (
           ...(activePane.startupCommand === undefined ? {} : { startupCommand: activePane.startupCommand }),
           ...(activePane.followMode === undefined ? {} : { followMode: activePane.followMode }),
           ...(activePane.mode === undefined ? {} : { mode: activePane.mode }),
-          ...(activePane.command === undefined ? {} : { command: activePane.command })
+          ...(activePane.command === undefined ? {} : { command: activePane.command }),
+          ...(activePane.sourceAgentSessionId === undefined
+            ? {}
+            : { sourceAgentSessionId: activePane.sourceAgentSessionId })
         });
   const pane = createPane(
     Object.keys(state.panes).length + 1,
@@ -643,10 +754,17 @@ export const focusTerminalPaneForTabState = (
     return state;
   }
 
+  const pane = state.panes[paneId];
   return {
     ...withTabUpdate(state, tabId, (item) => ({
       ...item,
-      activePaneId: paneId
+      activePaneId: paneId,
+      ...(item.titleLocked === true || pane === undefined
+        ? {}
+        : {
+            title: pane.title,
+            ...(pane.autoTitle === undefined ? {} : { autoTitle: pane.autoTitle })
+          })
     })),
     activeTabId: tabId
   };
@@ -742,19 +860,80 @@ export const syncTerminalSnapshotsState = (
       continue;
     }
 
-    nextPanes[pane.id] = {
+    const cwd = snapshot.cwd ?? pane.cwd;
+    const currentCwd = snapshot.currentCwd ?? pane.currentCwd ?? snapshot.cwd ?? pane.cwd;
+    nextPanes[pane.id] = retitlePane({
       ...pane,
-      title: snapshot.title,
-      ...(snapshot.cwd !== undefined ? { cwd: snapshot.cwd } : {}),
+      ...(pane.titleLocked === true ? {} : { title: snapshot.title }),
+      ...(cwd !== undefined ? { cwd } : {}),
+      ...(currentCwd !== undefined ? { currentCwd } : {}),
       ...(snapshot.shell !== undefined ? { shell: snapshot.shell } : {}),
       ...(snapshot.mode !== undefined ? { mode: snapshot.mode } : {}),
       ...(snapshot.command !== undefined ? { command: snapshot.command } : {})
-    };
+    });
   }
 
   return {
     ...state,
-    panes: nextPanes
+    panes: nextPanes,
+    tabs: state.tabs.map((tab) => {
+      const pane = nextPanes[tab.activePaneId];
+      if (pane === undefined || tab.titleLocked === true) {
+        return tab;
+      }
+      return {
+        ...tab,
+        title: pane.title,
+        ...(pane.autoTitle === undefined ? {} : { autoTitle: pane.autoTitle })
+      };
+    })
+  };
+};
+
+export const applyTerminalCwdChangedState = (
+  state: TerminalDockState,
+  event: TerminalCwdChangedEvent
+): TerminalDockState => {
+  const currentCwd = normalizeOptionalString(event.currentCwd) ?? normalizeOptionalString(event.cwd);
+  if (currentCwd === undefined) {
+    return state;
+  }
+
+  let changedPaneId: string | null = null;
+  const nextPanes: Record<string, TerminalDockPane> = {};
+  for (const [paneId, pane] of Object.entries(state.panes)) {
+    if (pane.sessionId !== event.sessionId) {
+      nextPanes[paneId] = pane;
+      continue;
+    }
+    changedPaneId = paneId;
+    nextPanes[paneId] = retitlePane({
+      ...pane,
+      currentCwd
+    });
+  }
+
+  if (changedPaneId === null) {
+    return state;
+  }
+
+  return {
+    ...state,
+    panes: nextPanes,
+    tabs: state.tabs.map((tab) => {
+      if (tab.activePaneId !== changedPaneId || tab.titleLocked === true) {
+        return tab;
+      }
+      const pane = nextPanes[changedPaneId];
+      if (pane === undefined) {
+        return tab;
+      }
+      return {
+        ...tab,
+        title: pane.title,
+        ...(pane.autoTitle === undefined ? {} : { autoTitle: pane.autoTitle })
+      };
+    })
   };
 };
 
@@ -765,10 +944,11 @@ const toRestoreRequest = (state: TerminalDockState): { readonly sessions: readon
     .map((pane) => ({
     sessionId: pane.sessionId,
     title: pane.title,
-    ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
+    ...(pane.currentCwd !== undefined || pane.cwd !== undefined ? { cwd: pane.currentCwd ?? pane.cwd } : {}),
     ...(pane.shell !== undefined ? { shell: pane.shell } : {}),
     ...(pane.mode !== undefined ? { mode: pane.mode } : {}),
     ...(pane.command !== undefined ? { command: pane.command } : {}),
+    ...(pane.sourceAgentSessionId !== undefined ? { sourceAgentSessionId: pane.sourceAgentSessionId } : {}),
     cols: RESTORE_COLS,
     rows: RESTORE_ROWS,
     source: "user" as const
@@ -902,6 +1082,9 @@ export const useTerminalDockModel = (): TerminalDockModel => {
     },
     syncRestoredSessions: (snapshots: readonly TerminalSessionSnapshot[]) => {
       commit((current) => syncTerminalSnapshotsState(current, snapshots));
+    },
+    applyCwdChanged: (event: TerminalCwdChangedEvent) => {
+      commit((current) => applyTerminalCwdChangedState(current, event));
     }
   };
 };

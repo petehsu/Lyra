@@ -1,5 +1,13 @@
 use super::*;
 
+use std::sync::mpsc;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+const OUTPUT_KILL_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+
 pub(crate) fn execute_shell_tool_adapter(
     session_id: &str,
     turn_id: &str,
@@ -31,7 +39,7 @@ pub(crate) fn tool_shell_run(
     input: &Value,
 ) -> NativeToolResult {
     let command = required_value_string(input, "command")?;
-    if value_bool(input, "runInBackground", false) {
+    if value_bool(input, "runInBackground", false) || value_bool(input, "background", false) {
         return Err(NativeToolFailure::new(
             "background_not_supported",
             "run_command does not launch background tasks in this version",
@@ -82,6 +90,7 @@ pub(crate) fn tool_shell_run(
         1_000_000,
     );
     let mut command_builder = shell_command_builder(&command);
+    configure_shell_child(&mut command_builder);
     command_builder
         .current_dir(&cwd.absolute)
         .stdin(Stdio::null())
@@ -95,16 +104,19 @@ pub(crate) fn tool_shell_run(
             "Retry with an installed executable and valid arguments.",
         )
     })?;
+    let child_process_id = child.id();
     let stdout = child
         .stdout
         .take()
-        .map(|reader| thread::spawn(move || read_limited_stream(reader, max_output)));
+        .map(|reader| spawn_limited_stream_reader(reader, max_output));
     let stderr = child
         .stderr
         .take()
-        .map(|reader| thread::spawn(move || read_limited_stream(reader, max_output)));
+        .map(|reader| spawn_limited_stream_reader(reader, max_output));
     let started = Instant::now();
     let mut timed_out = false;
+    let mut process_group_terminated = false;
+    let mut process_group_signal: Option<&'static str> = None;
     let status = loop {
         if let Some(status) = child.try_wait().map_err(|error| {
             NativeToolFailure::new(
@@ -117,7 +129,12 @@ pub(crate) fn tool_shell_run(
         }
         if started.elapsed() >= Duration::from_millis(timeout_ms) {
             timed_out = true;
-            let _ = child.kill();
+            if terminate_shell_process_group(child_process_id, true) {
+                process_group_terminated = true;
+                process_group_signal = Some("kill");
+            } else {
+                let _ = child.kill();
+            }
             break child.wait().map_err(|error| {
                 NativeToolFailure::new(
                     "command_failed",
@@ -128,58 +145,80 @@ pub(crate) fn tool_shell_run(
         }
         thread::sleep(Duration::from_millis(20));
     };
-    let stdout = stdout
-        .and_then(|handle| handle.join().ok())
-        .unwrap_or_else(|| LimitedOutput::default());
-    let stderr = stderr
-        .and_then(|handle| handle.join().ok())
-        .unwrap_or_else(|| LimitedOutput::default());
+    if !timed_out && terminate_shell_process_group(child_process_id, false) {
+        process_group_terminated = true;
+        process_group_signal = Some("term");
+    }
+    let mut stdout = collect_stream_output(stdout.as_ref(), OUTPUT_DRAIN_TIMEOUT);
+    let mut stderr = collect_stream_output(stderr.as_ref(), OUTPUT_DRAIN_TIMEOUT);
+    if stdout.timed_out || stderr.timed_out {
+        if terminate_shell_process_group(child_process_id, true) {
+            process_group_terminated = true;
+            process_group_signal = Some("kill");
+        }
+        if stdout.timed_out {
+            stdout = collect_stream_output(stdout.receiver, OUTPUT_KILL_DRAIN_TIMEOUT);
+        }
+        if stderr.timed_out {
+            stderr = collect_stream_output(stderr.receiver, OUTPUT_KILL_DRAIN_TIMEOUT);
+        }
+    }
+    let output_collection_timed_out = stdout.timed_out || stderr.timed_out;
     let exit_code = status.code();
     let content = format!(
-        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
+        "command: {}\ndescription: {}\ncwd: {}\nkind: {}\nexitCode: {:?}\ntimedOut: {}\nprocessGroupTerminated: {}\noutputCollectionTimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
         command,
         value_string(input, "description").unwrap_or_default(),
         cwd.display,
         command_kind,
         exit_code,
         timed_out,
-        stdout.text,
-        stderr.text
+        process_group_terminated,
+        output_collection_timed_out,
+        stdout.output.text,
+        stderr.output.text
     );
-    let stdout_ref = (!stdout.text.is_empty() || stdout.truncated).then(|| {
+    let stdout_ref = (!stdout.output.text.is_empty() || stdout.output.truncated).then(|| {
         write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stdout"),
             ToolArtifactKind::Stdout,
-            &stdout.text,
+            &stdout.output.text,
         )
     });
-    let stderr_ref = (!stderr.text.is_empty() || stderr.truncated).then(|| {
+    let stderr_ref = (!stderr.output.text.is_empty() || stderr.output.truncated).then(|| {
         write_tool_artifact_with_kind(
             session_id,
             turn_id,
             &format!("{tool_call_id}-stderr"),
             ToolArtifactKind::Stderr,
-            &stderr.text,
+            &stderr.output.text,
         )
     });
+    let success =
+        status.success() && !timed_out && !process_group_terminated && !output_collection_timed_out;
     Ok(NativeToolSuccess {
         content,
         raw: json!({
             "command": command,
             "cwd": cwd.display,
             "exitCode": exit_code,
-            "success": status.success() && !timed_out,
+            "success": success,
             "timedOut": timed_out,
             "commandKind": command_kind,
             "description": value_string(input, "description"),
-            "stdout": stdout.text,
-            "stderr": stderr.text,
-            "stdoutTruncated": stdout.truncated,
-            "stderrTruncated": stderr.truncated,
-            "stdoutBytes": stdout.total_bytes,
-            "stderrBytes": stderr.total_bytes,
+            "stdout": stdout.output.text,
+            "stderr": stderr.output.text,
+            "stdoutTruncated": stdout.output.truncated,
+            "stderrTruncated": stderr.output.truncated,
+            "stdoutBytes": stdout.output.total_bytes,
+            "stderrBytes": stderr.output.total_bytes,
+            "stdoutCollectionTimedOut": stdout.timed_out,
+            "stderrCollectionTimedOut": stderr.timed_out,
+            "outputCollectionTimedOut": output_collection_timed_out,
+            "processGroupTerminated": process_group_terminated,
+            "processGroupSignal": process_group_signal,
             "stdoutRef": stdout_ref.flatten(),
             "stderrRef": stderr_ref.flatten(),
         }),
@@ -188,7 +227,12 @@ pub(crate) fn tool_shell_run(
                 "Use a narrower command, increase timeoutMs, or start a terminal session for long-running work."
                     .to_string(),
             )
-        } else if status.success() {
+        } else if process_group_terminated || output_collection_timed_out {
+            Some(
+                "Use a terminal session for commands that keep background processes or open output streams."
+                    .to_string(),
+            )
+        } else if success {
             None
         } else {
             Some("Inspect stderr/stdout and retry after fixing the command failure.".to_string())
@@ -305,6 +349,76 @@ fn shell_command_builder(command: &str) -> Command {
         let mut builder = Command::new("sh");
         builder.args(["-lc", command]);
         builder
+    }
+}
+
+fn configure_shell_child(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+}
+
+fn terminate_shell_process_group(process_id: u32, force: bool) -> bool {
+    #[cfg(unix)]
+    {
+        let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+        let process_group = -(process_id as i32);
+        // The shell is launched into its own process group. Sending to the group
+        // clears descendants that keep stdout/stderr pipes open after the shell exits.
+        unsafe { libc::kill(process_group, signal) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (process_id, force);
+        false
+    }
+}
+
+struct CollectedStreamOutput<'a> {
+    output: LimitedOutput,
+    timed_out: bool,
+    receiver: Option<&'a mpsc::Receiver<LimitedOutput>>,
+}
+
+fn spawn_limited_stream_reader<R: Read + Send + 'static>(
+    reader: R,
+    limit: usize,
+) -> mpsc::Receiver<LimitedOutput> {
+    let (sender, receiver) = mpsc::channel();
+    let _ = thread::spawn(move || {
+        let _ = sender.send(read_limited_stream(reader, limit));
+    });
+    receiver
+}
+
+fn collect_stream_output<'a>(
+    receiver: Option<&'a mpsc::Receiver<LimitedOutput>>,
+    timeout: Duration,
+) -> CollectedStreamOutput<'a> {
+    let Some(receiver) = receiver else {
+        return CollectedStreamOutput {
+            output: LimitedOutput::default(),
+            timed_out: false,
+            receiver: None,
+        };
+    };
+    match receiver.recv_timeout(timeout) {
+        Ok(output) => CollectedStreamOutput {
+            output,
+            timed_out: false,
+            receiver: Some(receiver),
+        },
+        Err(mpsc::RecvTimeoutError::Timeout) => CollectedStreamOutput {
+            output: LimitedOutput::default(),
+            timed_out: true,
+            receiver: Some(receiver),
+        },
+        Err(mpsc::RecvTimeoutError::Disconnected) => CollectedStreamOutput {
+            output: LimitedOutput::default(),
+            timed_out: false,
+            receiver: Some(receiver),
+        },
     }
 }
 

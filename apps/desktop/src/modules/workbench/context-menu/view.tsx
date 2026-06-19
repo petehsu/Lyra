@@ -2,34 +2,18 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AppButton } from "@renderer/ui/components";
+import {
+  clampContextMenuPosition,
+  readBrowserPageHostRects,
+  readContextMenuPaneBoundary,
+  type AnchorPosition
+} from "./context-menu-position";
 import type { ContextMenuState } from "./types";
 
 type ContextMenuHostProps = {
   readonly state: ContextMenuState;
   readonly onClose: () => void;
   readonly onSelectItem: (itemId: string) => void;
-};
-
-type AnchorPosition = {
-  readonly left: number;
-  readonly top: number;
-};
-
-const VIEWPORT_PADDING = 6;
-
-const clampPosition = (
-  anchorX: number,
-  anchorY: number,
-  width: number,
-  height: number
-): AnchorPosition => {
-  const maxLeft = Math.max(VIEWPORT_PADDING, window.innerWidth - width - VIEWPORT_PADDING);
-  const maxTop = Math.max(VIEWPORT_PADDING, window.innerHeight - height - VIEWPORT_PADDING);
-
-  return {
-    left: Math.min(Math.max(VIEWPORT_PADDING, anchorX), maxLeft),
-    top: Math.min(Math.max(VIEWPORT_PADDING, anchorY), maxTop)
-  };
 };
 
 export const ContextMenuHost = ({
@@ -42,6 +26,25 @@ export const ContextMenuHost = ({
     left: state.anchorX,
     top: state.anchorY
   });
+
+  const updatePosition = (): void => {
+    const menu = menuRef.current;
+    if (menu === null) {
+      return;
+    }
+    const rect = menu.getBoundingClientRect();
+    const paneBoundary = readContextMenuPaneBoundary(state.anchorX, state.anchorY);
+    setPosition(
+      clampContextMenuPosition({
+        anchorX: state.anchorX,
+        anchorY: state.anchorY,
+        menuWidth: rect.width,
+        menuHeight: rect.height,
+        paneBoundary,
+        browserHostRects: readBrowserPageHostRects()
+      })
+    );
+  };
 
   useEffect(() => {
     if (state.isOpen === false) {
@@ -64,14 +67,11 @@ export const ContextMenuHost = ({
     if (state.isOpen === false) {
       return;
     }
-
-    const menu = menuRef.current;
-    if (menu === null) {
-      return;
-    }
-
-    const rect = menu.getBoundingClientRect();
-    setPosition(clampPosition(state.anchorX, state.anchorY, rect.width, rect.height));
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
   }, [state.anchorX, state.anchorY, state.isOpen, state.items]);
 
   useEffect(() => {
@@ -80,12 +80,7 @@ export const ContextMenuHost = ({
     }
 
     const onResize = (): void => {
-      const menu = menuRef.current;
-      if (menu === null) {
-        return;
-      }
-      const rect = menu.getBoundingClientRect();
-      setPosition(clampPosition(state.anchorX, state.anchorY, rect.width, rect.height));
+      updatePosition();
     };
 
     window.addEventListener("resize", onResize);

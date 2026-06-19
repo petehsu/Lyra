@@ -143,14 +143,15 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
         .as_ref()
         .and_then(RuntimeBrowserSnapshotProvider::last_raw)
         .unwrap_or(Value::Null);
-    let engine_used = reader
-        .engine_used
-        .as_deref()
-        .unwrap_or(if reader.extraction.method == "browser" {
-            "browser"
-        } else {
-            "http"
-        });
+    let engine_used =
+        reader
+            .engine_used
+            .as_deref()
+            .unwrap_or(if reader.extraction.method == "browser" {
+                "browser"
+            } else {
+                "http"
+            });
     let output_layers = web_fetch_output_layers(&reader);
     let token_budget = web_fetch_token_budget(&reader, max_chars, &request.options);
     let artifact_ref = if reader.truncated {
@@ -190,9 +191,11 @@ pub(crate) fn tool_web_fetch_with_browser_for_session(
         }),
         Some("web_fetch"),
     );
-    let page_snapshot_diff = baseline_snapshot_id
-        .as_deref()
-        .and_then(|baseline| page_snapshot.as_ref().and_then(|current| diff_page_snapshots(baseline, current)));
+    let page_snapshot_diff = baseline_snapshot_id.as_deref().and_then(|baseline| {
+        page_snapshot
+            .as_ref()
+            .and_then(|current| diff_page_snapshots(baseline, current))
+    });
     let screenshot_artifact_ref = browser_raw
         .get("screenshotArtifactRef")
         .cloned()
@@ -1237,13 +1240,14 @@ pub(crate) fn reader_error_to_native_failure(
             message,
             final_url,
             status,
-        } => NativeToolFailure::new("network_failed", message.clone(), recommendation)
-            .with_detail(json!({
-            "url": url,
-            "finalUrl": final_url,
-            "status": status,
-            "engineAttempts": engine_attempts,
-        })),
+        } => NativeToolFailure::new("network_failed", message.clone(), recommendation).with_detail(
+            json!({
+                "url": url,
+                "finalUrl": final_url,
+                "status": status,
+                "engineAttempts": engine_attempts,
+            }),
+        ),
         lyra_agent_reader::ReaderError::Budget(message) => {
             NativeToolFailure::new("budget_exceeded", message.clone(), recommendation)
                 .with_detail(json!({ "url": url, "engineAttempts": engine_attempts }))
@@ -1275,10 +1279,11 @@ fn engines_exhausted_summary(error: &lyra_agent_reader::ReaderError) -> String {
                 .status
                 .map(|value| format!(" status={value}"))
                 .unwrap_or_default();
-            let reason = attempt
-                .reason
-                .as_deref()
-                .unwrap_or(if attempt.success { "ok" } else { "failed" });
+            let reason =
+                attempt
+                    .reason
+                    .as_deref()
+                    .unwrap_or(if attempt.success { "ok" } else { "failed" });
             format!(
                 "{}:{}{} ({})",
                 attempt.engine,

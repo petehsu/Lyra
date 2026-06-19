@@ -452,7 +452,11 @@ const AgentMessage = memo(function AgentMessage({
                   className="lyra-agents-message-text-block"
                   data-message-block-id={b.id}
                 >
-                  <StreamingText content={b.body} streaming={shouldStream} />
+                  <StreamingText
+                    content={b.body}
+                    document={b.renderDocument}
+                    streaming={shouldStream}
+                  />
                 </div>
               );
             }

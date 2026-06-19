@@ -398,9 +398,9 @@ pub(crate) fn run_model_loop(
                 if providers::routes::mimo::is_mimo_route(&request.provider.route_id)
                     && transient_provider_retries
                         < providers::mimo_faults::MIMO_TRANSIENT_RETRY_LIMIT
-                    && providers::mimo_faults::parse_mimo_fault_from_error(&error)
-                        .is_some_and(|fault| providers::mimo_faults::is_mimo_backoff_fault(&fault))
-            =>
+                    && providers::mimo_faults::parse_mimo_fault_from_error(&error).is_some_and(
+                        |fault| providers::mimo_faults::is_mimo_backoff_fault(&fault),
+                    ) =>
             {
                 transient_provider_retries += 1;
                 emit_provider_retry(
@@ -415,10 +415,9 @@ pub(crate) fn run_model_loop(
             }
             Err(error)
                 if providers::routes::mimo::is_mimo_route(&request.provider.route_id)
-                    && providers::mimo_faults::parse_mimo_fault_from_error(&error)
-                        .is_some_and(|fault| {
-                            providers::mimo_faults::should_notify_for_mimo_fault(&fault, true)
-                        }) =>
+                    && providers::mimo_faults::parse_mimo_fault_from_error(&error).is_some_and(
+                        |fault| providers::mimo_faults::should_notify_for_mimo_fault(&fault, true),
+                    ) =>
             {
                 let fault =
                     providers::mimo_faults::parse_mimo_fault_from_error(&error).expect("fault");
@@ -446,15 +445,11 @@ pub(crate) fn run_model_loop(
             Err(error) => return Err(error),
         };
         if reply.tool_calls.is_empty() {
-            if should_retry_missing_tool_call(
-                reply.content.as_deref(),
-                &request.tools,
-                true,
-            ) && missing_tool_retries < max_missing_tool_retry()
+            if should_retry_missing_tool_call(reply.content.as_deref(), &request.tools, true)
+                && missing_tool_retries < max_missing_tool_retry()
             {
                 missing_tool_retries += 1;
-                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
-                {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
                     let _ = remove_assistant_message(session_id, message_id);
                 } else {
                     clear_failed_assistant_draft(session_id, turn_id);
@@ -477,8 +472,7 @@ pub(crate) fn run_model_loop(
                 .as_ref()
                 .is_none_or(|text| text.trim().is_empty())
             {
-                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
-                {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
                     let _ = remove_assistant_message(session_id, message_id);
                 } else {
                     clear_failed_assistant_draft(session_id, turn_id);
@@ -619,6 +613,18 @@ pub(crate) fn run_model_loop(
                 messages.push(user_message.clone());
                 provider_transcript.push(user_message);
             }
+        }
+        if !tool_calls.is_empty() {
+            emit_turn_state(
+                session_id,
+                turn_id,
+                if request.capabilities.supports_streaming {
+                    "streaming_model"
+                } else {
+                    "calling_model"
+                },
+                "tool_results_ready",
+            );
         }
 
         if let Some(nudge) = progress_guard
@@ -973,10 +979,7 @@ fn call_model_once_inner(
     normalize_model_reply_protocol(&mut reply, tools)?;
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
-            session_id,
-            turn_id,
-            &mut reply,
-            &None,
+            session_id, turn_id, &mut reply, &None,
         );
     }
     Ok(reply)
@@ -1599,6 +1602,11 @@ pub(crate) fn map_provider_stream_chunk(
                 accumulator.arguments.push_str(arguments);
             }
         }
+        crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
+            session_id,
+            turn_id,
+            &state.tool_calls,
+        );
     }
     Ok(())
 }
@@ -1614,9 +1622,7 @@ pub(crate) fn normalize_model_reply_protocol(
         }
     }
     let Some(content) = reply.content.take() else {
-        if reply.tool_calls.is_empty()
-            && should_retry_missing_tool_call(None, tools, true)
-        {
+        if reply.tool_calls.is_empty() && should_retry_missing_tool_call(None, tools, true) {
             return Err(AgentRuntimeError::Core(
                 "assistant promised tool use without structured tool_call".to_string(),
             ));

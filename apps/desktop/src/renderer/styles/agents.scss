@@ -507,6 +507,28 @@
   color: var(--lyra-text-muted);
 }
 
+.lyra-identity-icon {
+  position: relative;
+  overflow: hidden;
+}
+
+.lyra-identity-icon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: var(--lyra-unit-3);
+}
+
+.lyra-identity-icon-fallback {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
 .lyra-agents-session-tab-logo {
   --lyra-app-logo-size: var(--lyra-icon-size-14);
   width: var(--lyra-icon-size-14);
@@ -1037,6 +1059,10 @@
 
 .lyra-agents-chat-message-slot {
   min-width: 0;
+  /* Skip layout/paint for off-screen messages; pair with contain-intrinsic-size
+     (set per-slot from measured height in ChatView) to keep scroll stable. */
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 80px;
 }
 
 /* -------- Messages -------- */
@@ -1478,19 +1504,27 @@
   white-space: normal;
 }
 
-.lyra-agents-streaming-cursor {
-  display: inline-block;
-  width: var(--lyra-unit-2);
-  height: 1em;
-  background: var(--lyra-text-primary);
-  margin-left: var(--lyra-unit-1);
-  vertical-align: text-bottom;
-  animation: cursor-blink 800ms steps(2) infinite;
+.lyra-agents-md-details {
+  margin: var(--lyra-unit-3) 0;
+  border: 1px solid var(--lyra-border-subtle);
+  border-radius: var(--lyra-radius-md);
+  background: var(--lyra-surface-subtle);
+  overflow: hidden;
 }
 
-@keyframes cursor-blink {
-  0% { opacity: 1; }
-  50% { opacity: 0; }
+.lyra-agents-md-details-summary {
+  cursor: pointer;
+  padding: var(--lyra-unit-3) var(--lyra-unit-4);
+  font-weight: 600;
+  list-style: none;
+}
+
+.lyra-agents-md-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.lyra-agents-md-details-body {
+  padding: 0 var(--lyra-unit-4) var(--lyra-unit-4);
 }
 
 .lyra-agents-message-content-user {
@@ -2752,6 +2786,12 @@
   gap: var(--lyra-unit-6);
 }
 
+.lyra-agents-edit-card-waiting {
+  padding: var(--lyra-unit-8) var(--lyra-unit-12);
+  font-size: var(--lyra-unit-12);
+  color: var(--lyra-text-secondary);
+}
+
 .lyra-agents-diff-add {
   color: var(--lyra-status-success);
 }
@@ -3922,8 +3962,8 @@
 .lyra-agents-decision-body-content {
   display: flex;
   flex-direction: column;
-  gap: var(--lyra-unit-10);
-  padding: 0 0 var(--lyra-unit-12);
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-2) 0 var(--lyra-unit-12);
   transform: translateY(calc((1 - var(--panel-progress, 1)) * calc(var(--lyra-unit-10) * -1)));
   transition: transform 120ms linear;
 }
@@ -3931,23 +3971,24 @@
 .lyra-agents-decision-options {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--lyra-unit-6);
+  gap: var(--lyra-unit-5);
 }
 
 .lyra-agents-decision-option {
-  padding: var(--lyra-unit-5) var(--lyra-unit-12);
+  min-height: var(--lyra-unit-30);
+  padding: var(--lyra-unit-4) var(--lyra-unit-10);
   font: inherit;
-  font-size: calc(var(--lyra-unit-12) + var(--lyra-unit-0-5));
+  font-size: var(--lyra-unit-12);
   color: var(--lyra-text-secondary);
-  background: var(--lyra-app-row-hover-bg);
-  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 46%, transparent);
-  border-radius: var(--lyra-unit-8);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 58%, transparent);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 34%, transparent);
+  border-radius: var(--lyra-unit-7);
   cursor: pointer;
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--lyra-unit-2);
-  min-width: min(var(--lyra-unit-150), 100%);
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-6);
+  min-width: 0;
   max-width: 100%;
   text-align: left;
   transition:
@@ -3957,32 +3998,60 @@
 }
 
 .lyra-agents-decision-option-label {
+  min-width: 0;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
 .lyra-agents-decision-option-description {
+  display: none;
+}
+
+.lyra-agents-decision-option-info {
+  width: var(--lyra-unit-16);
+  height: var(--lyra-unit-16);
+  min-width: var(--lyra-unit-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   color: var(--lyra-text-muted);
-  font-size: var(--lyra-unit-11-5);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
+  opacity: 0;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.lyra-agents-decision-option:hover .lyra-agents-decision-option-info,
+.lyra-agents-decision-option:focus-visible .lyra-agents-decision-option-info,
+.lyra-agents-decision-option.active .lyra-agents-decision-option-info,
+.lyra-agents-decision-option-info:hover {
+  background: color-mix(in srgb, var(--lyra-app-border) 18%, transparent);
+  color: var(--lyra-text-secondary);
+  opacity: 1;
+}
+
+.lyra-agents-decision-option-tooltip {
+  max-width: min(var(--lyra-unit-260), calc(100vw - var(--lyra-unit-32)));
+  color: var(--lyra-text-secondary);
 }
 
 .lyra-agents-decision-option:hover {
-  background: var(--lyra-app-row-hover-bg);
-  border-color: color-mix(in srgb, var(--lyra-app-border) 64%, transparent);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 82%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-app-border) 52%, transparent);
   color: var(--lyra-text-primary);
 }
 
 .lyra-agents-decision-option.active {
-  background: var(--lyra-app-row-active-bg);
-  border-color: color-mix(in srgb, var(--lyra-app-focus) 58%, transparent);
+  background: color-mix(in srgb, var(--lyra-app-row-active-bg) 76%, transparent);
+  border-color: color-mix(in srgb, var(--lyra-app-focus) 46%, transparent);
   color: var(--lyra-text-primary);
 }
 
 .lyra-agents-decision-option-custom {
   border-style: dashed;
   align-items: center;
-  min-width: auto;
 }
 
 .lyra-agents-decision-custom-input {
@@ -6650,6 +6719,27 @@
   font-family: var(--lyra-font-ui);
   font-size: var(--lyra-text-size-12);
   line-height: 1;
+}
+
+.lyra-agents-project-dir-chip-icon {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  flex: 0 0 var(--lyra-icon-size-14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.lyra-agents-project-dir-chip-image {
+  border-radius: var(--lyra-unit-3);
+}
+
+.lyra-agents-project-dir-chip-lyra-logo {
+  --lyra-app-logo-size: var(--lyra-icon-size-14);
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  color: currentColor;
 }
 
 .lyra-agents-project-dir-chip svg,

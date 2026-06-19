@@ -153,11 +153,11 @@ pub trait SlavePty {
 }
 
 /// Represents the exit status of a child process.
-/// This is rather anemic in the current version of this crate,
-/// holding only an indicator of success or failure.
 #[derive(Debug, Clone)]
 pub struct ExitStatus {
     successful: bool,
+    code: Option<i32>,
+    signal: Option<i32>,
 }
 
 impl ExitStatus {
@@ -165,19 +165,67 @@ impl ExitStatus {
     pub fn with_exit_code(code: u32) -> Self {
         Self {
             successful: code == 0,
+            code: if code <= i32::MAX as u32 {
+                Some(code as i32)
+            } else {
+                None
+            },
+            signal: None,
         }
     }
 
     pub fn success(&self) -> bool {
         self.successful
     }
+
+    pub fn code(&self) -> Option<i32> {
+        self.code
+    }
+
+    pub fn signal(&self) -> Option<i32> {
+        self.signal
+    }
 }
 
 impl From<std::process::ExitStatus> for ExitStatus {
     fn from(status: std::process::ExitStatus) -> ExitStatus {
+        #[cfg(unix)]
+        let signal = {
+            use std::os::unix::process::ExitStatusExt;
+            status.signal()
+        };
+        #[cfg(not(unix))]
+        let signal = None;
+
         ExitStatus {
             successful: status.success(),
+            code: status.code(),
+            signal,
         }
+    }
+}
+
+#[cfg(test)]
+mod exit_status_tests {
+    use super::*;
+
+    #[test]
+    fn with_exit_code_preserves_code() {
+        let status = ExitStatus::with_exit_code(42);
+        assert!(!status.success());
+        assert_eq!(status.code(), Some(42));
+        assert_eq!(status.signal(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn std_exit_status_preserves_signal() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let status: ExitStatus = std::process::ExitStatus::from_raw(9).into();
+        assert!(!status.success());
+        assert_eq!(status.code(), None);
+        assert_eq!(status.signal(), Some(9));
     }
 }
 

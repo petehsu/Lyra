@@ -1,23 +1,5 @@
 use super::*;
 
-pub(crate) fn spawn_post_turn_memory_extraction(
-    root: PathBuf,
-    session_id: String,
-    turn_id: String,
-    user_text: String,
-    assistant_text: Option<String>,
-) {
-    thread::spawn(move || {
-        let _ = run_post_turn_memory_extraction(
-            &root,
-            &session_id,
-            &turn_id,
-            &user_text,
-            assistant_text.as_deref(),
-        );
-    });
-}
-
 pub(crate) fn run_post_turn_memory_extraction(
     root: &Path,
     session_id: &str,
@@ -76,9 +58,35 @@ Return only a JSON object:
   ]
 }
 
-Use requiresConfirmation=true for personal contact details, addresses, account identifiers, inferred facts, and anything the user did not explicitly ask Lyra to remember. Use sourceType=user_declaration only when the user clearly stated the fact. Keep at most 6 candidates."#;
+Use requiresConfirmation=true for personal contact details, addresses, account identifiers, inferred facts, and anything the user did not explicitly ask Lyra to remember. Use sourceType=user_declaration only when the user clearly stated the fact. Keep at most 6 candidates.
 
-fn run_memory_agent_extraction(
+For tool/file/decision events, prefer durable project facts and execution evidence. Mark execution evidence with valueClass=execution_evidence only when the event payload contains concrete verifiable output."#;
+
+const MEMORY_AGENT_EVENT_PROMPT: &str = r#"You are Lyra's background memory maintenance agent.
+
+Inspect the verified runtime event and return compact JSON describing durable memory candidates only when the event contains reusable facts. Ignore transient command output, secrets, and one-off task chatter.
+
+Return only:
+{
+  "candidates": [
+    {
+      "fact": "short durable fact",
+      "category": "user_profile|preference|project|instruction|goal|other",
+      "scope": "global|project",
+      "confidence": 0.0,
+      "sensitivity": "low|personal|sensitive",
+      "valueClass": "semantic|context|execution_evidence",
+      "sourceType": "memory_agent_inference",
+      "requiresConfirmation": true,
+      "content": {"kind":"brief_type","text":"fact or structured value"},
+      "expiresAt": null
+    }
+  ]
+}
+
+Keep at most 3 candidates per event."#;
+
+pub(crate) fn run_memory_agent_extraction(
     session_id: &str,
     turn_id: &str,
     user_text: &str,
@@ -108,7 +116,37 @@ fn run_memory_agent_extraction(
         .content
         .as_deref()
         .ok_or_else(|| AgentRuntimeError::Core("memory agent returned no content".to_string()))?;
-    parse_memory_agent_candidates(session_id, turn_id, content)
+    parse_memory_agent_candidates(session_id, turn_id, None, content)
+}
+
+pub(crate) fn run_memory_agent_extraction_for_event(
+    session_id: &str,
+    turn_id: &str,
+    event_type: &str,
+    payload: &Value,
+) -> AgentRuntimeResult<Vec<MemoryCandidateMutation>> {
+    let (provider, model) = memory_agent_provider_and_model()?;
+    let messages = vec![
+        json!({
+            "role": "system",
+            "content": MEMORY_AGENT_EVENT_PROMPT,
+        }),
+        json!({
+            "role": "user",
+            "content": json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "eventType": event_type,
+                "payload": payload,
+            }).to_string(),
+        }),
+    ];
+    let reply = call_model_once_non_streaming(&provider, &model, &messages, &[])?;
+    let content = reply
+        .content
+        .as_deref()
+        .ok_or_else(|| AgentRuntimeError::Core("memory agent returned no content".to_string()))?;
+    parse_memory_agent_candidates(session_id, turn_id, Some(event_type), content)
 }
 
 fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfile, String)> {
@@ -146,6 +184,7 @@ fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfil
 fn parse_memory_agent_candidates(
     session_id: &str,
     turn_id: &str,
+    event_type: Option<&str>,
     content: &str,
 ) -> AgentRuntimeResult<Vec<MemoryCandidateMutation>> {
     let value = parse_memory_agent_json(content)?;
@@ -158,8 +197,10 @@ fn parse_memory_agent_candidates(
     let source_ref = Some(format!("{session_id}:{turn_id}:memory_agent"));
     Ok(candidates
         .iter()
-        .take(6)
-        .filter_map(|candidate| memory_candidate_from_agent_json(candidate, source_ref.clone()))
+        .take(if event_type.is_some() { 3 } else { 6 })
+        .filter_map(|candidate| {
+            memory_candidate_from_agent_json(candidate, source_ref.clone(), event_type)
+        })
         .collect())
 }
 
@@ -186,6 +227,7 @@ fn parse_memory_agent_json(content: &str) -> AgentRuntimeResult<Value> {
 fn memory_candidate_from_agent_json(
     candidate: &Value,
     source_ref: Option<String>,
+    event_type: Option<&str>,
 ) -> Option<MemoryCandidateMutation> {
     let fact = string_field(candidate, "fact")?;
     if fact.chars().count() < 4 {
@@ -225,9 +267,21 @@ fn memory_candidate_from_agent_json(
             Value::Bool(requires_confirmation),
         );
     }
+    let value_class = candidate
+        .get("valueClass")
+        .or_else(|| candidate.get("value_class"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| resolve_value_class(event_type));
     let status = requires_confirmation.then(|| "pending".to_string());
-    Some(MemoryCandidateMutation {
-        fact,
+    let evidence_json = event_type.map(|event| {
+        json!({
+            "eventType": event,
+            "source": "memory_agent",
+        })
+    });
+    let mut mutation = MemoryCandidateMutation {
+        fact: fact.clone(),
         content,
         category,
         scope,
@@ -236,12 +290,17 @@ fn memory_candidate_from_agent_json(
         source_ref,
         proposed_action: "create".to_string(),
         status,
+        value_class: Some(value_class),
+        trigger_event: event_type.map(str::to_string),
+        evidence_json,
         expires_at: candidate
             .get("expiresAt")
             .and_then(Value::as_str)
             .map(str::to_string),
         ..MemoryCandidateMutation::default()
-    })
+    };
+    apply_layer_fields_to_candidate(&mut mutation);
+    Some(mutation)
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {
@@ -298,6 +357,21 @@ pub(crate) fn memory_reject_candidate(payload: Value) -> AgentRuntimeResult<Valu
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AgentRuntimeError::Core("memory candidate id is required".to_string()))?;
     reject_memory_candidate(&root, &id, string_opt(&payload, "reason").as_deref())
+}
+
+pub(crate) fn memory_export_audit(_payload: Value) -> AgentRuntimeResult<Value> {
+    let root = runtime_root_for_memory()?;
+    export_memory_audit_snapshot(&root)
+}
+
+pub(crate) fn memory_export_layer_projections(_payload: Value) -> AgentRuntimeResult<Value> {
+    let root = runtime_root_for_memory()?;
+    let layers = export_layer_memory_projections(&root, false)?;
+    let prompt_cache = export_dynamic_prompt_cache_markdown(&root)?;
+    Ok(json!({
+        "layerProjections": layers,
+        "promptCache": prompt_cache,
+    }))
 }
 
 pub(crate) fn memory_explain_injection(payload: Value) -> AgentRuntimeResult<Value> {
@@ -430,6 +504,19 @@ pub(crate) fn process_extracted_candidate(
     turn_id: &str,
     mut mutation: MemoryCandidateMutation,
 ) -> AgentRuntimeResult<Value> {
+    super::secret_guard::validate_memory_fact(&mutation.fact)?;
+    super::secret_guard::validate_memory_content_value(&mutation.content)?;
+    apply_layer_fields_to_candidate(&mut mutation);
+    let value_class = mutation.value_class.as_deref().unwrap_or(VALUE_SEMANTIC);
+    let has_evidence = mutation.evidence_json.is_some() || mutation.trigger_event.is_some();
+    if !promotion_gate_passes(value_class, mutation.confidence, has_evidence) {
+        return Ok(json!({
+            "skipped": true,
+            "reason": "promotion_gate",
+            "valueClass": value_class,
+            "confidence": mutation.confidence,
+        }));
+    }
     let related = search_ranked_long_term_memory(
         root,
         MemoryQuery {
@@ -447,15 +534,52 @@ pub(crate) fn process_extracted_candidate(
         .map(|entry| entry.record.clone());
 
     if let Some(conflict) = conflict {
+        if frozen_auto_overwrite_blocked(&conflict, &mutation) {
+            mutation.conflict_with = Some(conflict.id.clone());
+            mutation.target_id = Some(conflict.id.clone());
+            mutation.proposed_action = "supersede".to_string();
+            mutation.status = Some("needs_user_confirmation".to_string());
+            let candidate = create_memory_candidate(root, mutation)?;
+            record_extracted_memory_candidate_event(
+                root,
+                session_id,
+                turn_id,
+                "memory_candidate_created",
+                &candidate,
+                json!({
+                    "needsUserConfirmation": true,
+                    "frozenProtected": true,
+                    "conflictWith": conflict.id,
+                }),
+            );
+            return Ok(json!({
+                "candidate": memory_candidate_json(&candidate),
+                "needsUserConfirmation": true,
+                "frozenProtected": true,
+                "conflictWith": memory_summary_json(&conflict),
+            }));
+        }
         mutation.conflict_with = Some(conflict.id.clone());
         mutation.target_id = Some(conflict.id.clone());
         mutation.proposed_action = "supersede".to_string();
         if mutation.source_type == "user_declaration"
             && mutation.confidence >= 0.95
             && conflict.confidence < 0.95
+            && conflict.layer != LAYER_FROZEN
         {
             mutation.status = Some("auto_applied".to_string());
             let candidate = create_memory_candidate(root, mutation.clone())?;
+            record_extracted_memory_candidate_event(
+                root,
+                session_id,
+                turn_id,
+                "memory_candidate_created",
+                &candidate,
+                json!({
+                    "autoApplied": true,
+                    "conflictWith": conflict.id,
+                }),
+            );
             let record = create_long_term_memory(
                 root,
                 MemoryMutation {
@@ -481,6 +605,18 @@ pub(crate) fn process_extracted_candidate(
                 },
             )?;
             link_long_term_memory(root, &record.id, &old.id, "supersedes", 1.0)?;
+            record_extracted_memory_candidate_event(
+                root,
+                session_id,
+                turn_id,
+                "memory_candidate_applied",
+                &candidate,
+                json!({
+                    "recordId": record.id,
+                    "supersededId": old.id,
+                    "action": "supersede",
+                }),
+            );
             return Ok(json!({
                 "candidate": memory_candidate_json(&candidate),
                 "autoApplied": true,
@@ -491,6 +627,17 @@ pub(crate) fn process_extracted_candidate(
 
         mutation.status = Some("needs_user_confirmation".to_string());
         let candidate = create_memory_candidate(root, mutation)?;
+        record_extracted_memory_candidate_event(
+            root,
+            session_id,
+            turn_id,
+            "memory_candidate_created",
+            &candidate,
+            json!({
+                "needsUserConfirmation": true,
+                "conflictWith": conflict.id,
+            }),
+        );
         let _ = link_long_term_memory(root, &conflict.id, &conflict.id, "contradicts", 0.5).ok();
         create_memory_conflict_clarification(session_id, turn_id, &candidate, &conflict);
         if proactive_enabled_for("memory_conflict") {
@@ -514,6 +661,14 @@ pub(crate) fn process_extracted_candidate(
     if mutation.source_type == "user_declaration" && mutation.confidence >= 0.95 {
         mutation.status = Some("auto_applied".to_string());
         let candidate = create_memory_candidate(root, mutation.clone())?;
+        record_extracted_memory_candidate_event(
+            root,
+            session_id,
+            turn_id,
+            "memory_candidate_created",
+            &candidate,
+            json!({ "autoApplied": true }),
+        );
         let record = create_long_term_memory(
             root,
             MemoryMutation {
@@ -528,6 +683,17 @@ pub(crate) fn process_extracted_candidate(
                 ..MemoryMutation::default()
             },
         )?;
+        record_extracted_memory_candidate_event(
+            root,
+            session_id,
+            turn_id,
+            "memory_candidate_applied",
+            &candidate,
+            json!({
+                "recordId": record.id,
+                "action": "create",
+            }),
+        );
         return Ok(json!({
             "candidate": memory_candidate_json(&candidate),
             "autoApplied": true,
@@ -536,7 +702,33 @@ pub(crate) fn process_extracted_candidate(
     }
 
     let candidate = create_memory_candidate(root, mutation)?;
+    record_extracted_memory_candidate_event(
+        root,
+        session_id,
+        turn_id,
+        "memory_candidate_created",
+        &candidate,
+        json!({ "autoApplied": false }),
+    );
     Ok(json!({ "candidate": memory_candidate_json(&candidate), "autoApplied": false }))
+}
+
+fn record_extracted_memory_candidate_event(
+    root: &Path,
+    session_id: &str,
+    turn_id: &str,
+    event_type: &str,
+    candidate: &MemoryCandidate,
+    detail: Value,
+) {
+    let _ = record_memory_candidate_event(
+        root,
+        session_id,
+        Some(turn_id),
+        event_type,
+        candidate,
+        detail,
+    );
 }
 
 fn create_memory_conflict_clarification(
@@ -644,6 +836,5 @@ fn ensure_state_proactive_triggers(
     root: &Path,
     disabled: &HashSet<String>,
 ) -> AgentRuntimeResult<()> {
-
     Ok(())
 }

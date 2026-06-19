@@ -14,6 +14,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
+import { subscribeLayoutResizeEnd } from "../../../../shell/layout-resize-end";
+import { getIsLayoutResizing } from "../../../../shell/use-panel-layout";
 import {
   createMessageHeightStore,
   offsetOfIndex,
@@ -44,7 +46,9 @@ export const useMessageHeightTable = (
   scrollRef: RefObject<HTMLElement | null>,
   fallbackHeight: number,
   orderedIdsRef: RefObject<readonly string[]>,
-  gapBetweenItems = 0
+  gapBetweenItems = 0,
+  /** During panel drag, only these message ids may update measured heights. */
+  measurableDuringResizeRef?: RefObject<ReadonlySet<string> | null>
 ): MessageHeightTable => {
   const storeRef = useRef<MessageHeightStore>();
   if (storeRef.current === undefined) {
@@ -54,6 +58,7 @@ export const useMessageHeightTable = (
 
   const [version, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+  const deferredBumpRef = useRef(false);
 
   // id <-> element bookkeeping for the shared ResizeObserver.
   const elementToId = useRef(new WeakMap<Element, string>());
@@ -68,12 +73,25 @@ export const useMessageHeightTable = (
       const scrollTop = scrollEl?.scrollTop ?? 0;
       const ids = orderedIdsRef.current ?? [];
 
+      const resizing = getIsLayoutResizing();
+      const measurableDuringResize = measurableDuringResizeRef?.current ?? null;
+
       for (const entry of entries) {
         const id = elementToId.current.get(entry.target);
         if (id === undefined) continue;
-        const height = Math.round(
-          (entry.target as HTMLElement).getBoundingClientRect().height
-        );
+        if (
+          resizing &&
+          measurableDuringResize !== null &&
+          !measurableDuringResize.has(id)
+        ) {
+          continue;
+        }
+        const contentHeight = entry.contentRect?.height ?? 0;
+        const measuredHeight =
+          contentHeight > 0
+            ? contentHeight
+            : (entry.target as HTMLElement).getBoundingClientRect().height;
+        const height = Math.round(measuredHeight);
         const prev = store.heightOf(id, fallbackHeight);
         if (!store.setMeasured(id, height)) continue;
         changed = true;
@@ -96,9 +114,23 @@ export const useMessageHeightTable = (
       if (scrollCompensation !== 0 && scrollEl !== null) {
         scrollEl.scrollTop = scrollTop + scrollCompensation;
       }
-      if (changed) bump();
+      if (!changed) return;
+      if (resizing && measurableDuringResize === null) {
+        deferredBumpRef.current = true;
+        return;
+      }
+      bump();
     });
   }
+
+  useEffect(() => {
+    const unsubscribe = subscribeLayoutResizeEnd(() => {
+      if (!deferredBumpRef.current) return;
+      deferredBumpRef.current = false;
+      bump();
+    });
+    return unsubscribe;
+  }, [bump]);
 
   useEffect(() => {
     return () => {

@@ -86,6 +86,11 @@ export type RenderBlock =
       readonly headers: readonly InlineRenderNode[][];
       readonly rows: readonly InlineRenderNode[][][];
     }
+  | {
+      readonly kind: "details";
+      readonly summary: readonly InlineRenderNode[];
+      readonly children: readonly RenderBlock[];
+    }
   | { readonly kind: "thematicBreak" };
 
 export type LyraRenderDocument = {

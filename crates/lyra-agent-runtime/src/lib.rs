@@ -223,7 +223,6 @@ impl AgentRuntimeServices {
             "agent.turn.cancel" => self.turn_runner.cancel_from_payload(payload),
             "agent.memory.snapshot" => self.memory.snapshot_from_payload(payload),
             "agent.memory.audit" => self.memory.audit(payload),
-            "agent.memory.trim.run" => self.memory.trim(payload),
             "agent.memory.recover.run" => self.memory.recover(payload),
             "agent.memory.longterm.create"
             | "agent.memory.longterm.search"
@@ -239,6 +238,14 @@ impl AgentRuntimeServices {
             | "agent.memory.explainInjection" => self.backend.call(method, payload),
             "agent.memory.shared.search" => self.memory.search_shared_from_payload(payload),
             "agent.memory.shared.update" => self.memory.write_shared_from_payload(payload),
+            "agent.memory.frozen.search" => self.memory.search_frozen(payload),
+            "agent.memory.frozen.create" => self.memory.create_frozen(payload),
+            "agent.memory.frozen.update" => self.memory.update_frozen(payload),
+            "agent.memory.frozen.forget" => self.memory.forget_frozen(payload),
+            "agent.memory.layers.describe" => self.memory.describe_layers(payload),
+            "agent.memory.sync.reconcile" => self.memory.reconcile_sync(payload),
+            "agent.memory.exportAudit" => self.memory.export_audit(payload),
+            "agent.memory.exportLayerProjections" => self.memory.export_layer_projections(payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
             "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),

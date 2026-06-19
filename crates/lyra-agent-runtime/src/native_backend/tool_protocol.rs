@@ -70,8 +70,7 @@ pub(crate) fn contains_leaked_internal_protocol_markers(text: &str) -> bool {
 
 pub(crate) fn is_textual_protocol_leak_error(error: &AgentRuntimeError) -> bool {
     let message = error.to_string();
-    message.contains("textual tool protocol leak")
-        || message.contains("textual tool-call syntax")
+    message.contains("textual tool protocol leak") || message.contains("textual tool-call syntax")
 }
 
 pub(crate) fn is_missing_tool_call_reply_error(error: &AgentRuntimeError) -> bool {
@@ -167,7 +166,9 @@ pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> 
         return content;
     }
     let trimmed = content.chars().take(max_chars).collect::<String>();
-    format!("{trimmed}\n\n{TOOL_OUTPUT_TRUNCATED_MARKER}; full output retained in session evidence.]")
+    format!(
+        "{trimmed}\n\n{TOOL_OUTPUT_TRUNCATED_MARKER}; full output retained in session evidence.]"
+    )
 }
 
 pub(crate) fn tool_outputs_by_id_from_session_tools(tools: &[Value]) -> HashMap<String, String> {
@@ -176,7 +177,10 @@ pub(crate) fn tool_outputs_by_id_from_session_tools(tools: &[Value]) -> HashMap<
         let Some(tool_id) = tool.get("id").and_then(Value::as_str) else {
             continue;
         };
-        let status = tool.get("status").and_then(Value::as_str).unwrap_or_default();
+        let status = tool
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let summary = if status == "completed" {
             tool.get("output")
                 .map(|output| tool_activity_output_summary(output, 4_000))
@@ -223,7 +227,11 @@ fn collapse_visible_whitespace(text: &str) -> String {
         .join("\n")
 }
 
-pub(crate) fn find_ascii_case_insensitive(haystack: &str, needle: &str, from: usize) -> Option<usize> {
+pub(crate) fn find_ascii_case_insensitive(
+    haystack: &str,
+    needle: &str,
+    from: usize,
+) -> Option<usize> {
     if from >= haystack.len() {
         return None;
     }

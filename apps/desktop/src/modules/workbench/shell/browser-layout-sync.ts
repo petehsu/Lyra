@@ -53,8 +53,7 @@ const toSnapshot = (
 
 const DEFAULT_ANIMATED_LAYOUT_SYNC_INTERVAL_MS = 16;
 const ANIMATED_LAYOUT_FINAL_SYNC_DELAY_MS = 32;
-/** Cap embedded browser IPC during panel-splitter drags (AI ↔ workspace). */
-const PANEL_DRAG_BROWSER_SYNC_MIN_INTERVAL_MS = 48;
+/** Panel-splitter drags rely on RAF coalescing only (no extra throttle). */
 
 export const useWorkbenchBrowserLayoutSync = ({
   desktopApi,
@@ -78,9 +77,6 @@ export const useWorkbenchBrowserLayoutSync = ({
   const throttledSyncTimerRef = useRef<number | null>(null);
   const lastSyncAtRef = useRef(0);
   const lastSnapshotKeyRef = useRef<string | null>(null);
-  const panelDragSyncTimerRef = useRef<number | null>(null);
-  const panelDragSyncPendingRef = useRef(false);
-
   const scheduleSync = useCallback((options?: BrowserLayoutSyncOptions) => {
     const followUpFrames = Math.max(0, Math.round(options?.followUpFrames ?? 0));
     const force = options?.force === true;
@@ -191,38 +187,14 @@ export const useWorkbenchBrowserLayoutSync = ({
     scheduleFrame(force, followUpFrames);
   }, [desktopApi]);
 
-  const scheduleSyncDuringPanelDrag = useCallback((): void => {
-    panelDragSyncPendingRef.current = true;
-    if (panelDragSyncTimerRef.current !== null) {
-      return;
-    }
-    const elapsed = window.performance.now() - lastSyncAtRef.current;
-    const delay = Math.max(0, PANEL_DRAG_BROWSER_SYNC_MIN_INTERVAL_MS - elapsed);
-    panelDragSyncTimerRef.current = window.setTimeout(() => {
-      panelDragSyncTimerRef.current = null;
-      if (!panelDragSyncPendingRef.current) {
-        return;
-      }
-      panelDragSyncPendingRef.current = false;
-      scheduleSync();
-    }, delay);
-  }, [scheduleSync]);
-
   const requestLayoutSync = useCallback((): void => {
-    if (getIsLayoutResizing()) {
-      scheduleSyncDuringPanelDrag();
-      return;
-    }
-    scheduleSync();
-  }, [scheduleSync, scheduleSyncDuringPanelDrag]);
+    // During splitter drags, coalesce to one sync per animation frame so the
+    // embedded BrowserView tracks the sash without the old ~48ms throttle lag.
+    scheduleSync(getIsLayoutResizing() ? { force: true } : undefined);
+  }, [scheduleSync]);
 
   useEffect(() => {
     const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
-      if (panelDragSyncTimerRef.current !== null) {
-        window.clearTimeout(panelDragSyncTimerRef.current);
-        panelDragSyncTimerRef.current = null;
-      }
-      panelDragSyncPendingRef.current = false;
       scheduleSync({
         force: true,
         followUpFrames: 2
@@ -248,11 +220,6 @@ export const useWorkbenchBrowserLayoutSync = ({
 
   useEffect(
     () => () => {
-      if (panelDragSyncTimerRef.current !== null) {
-        window.clearTimeout(panelDragSyncTimerRef.current);
-        panelDragSyncTimerRef.current = null;
-      }
-      panelDragSyncPendingRef.current = false;
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;

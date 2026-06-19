@@ -15,6 +15,9 @@ pub use ast::{HighlightSpan, InlineNode, LyraRenderDocument, RenderBlock};
 pub use cache::invalidate_cache;
 pub use error::{RenderError, RenderResult};
 pub use highlight::{highlight_code, highlight_request};
-pub use options::{HighlightRequest, RenderDocumentOptions, RenderTheme};
+pub use options::{
+    apply_render_document_overrides, parse_render_document_mode, HighlightRequest,
+    RenderDocumentMode, RenderDocumentOptions, RenderTheme,
+};
 pub use pipeline::render_document;
 pub use preprocess::fix_common_markdown_issues;

@@ -1,8 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { ChevronLeft, ChevronRight, ArrowUp, HelpCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowUp, HelpCircle, Info } from "lucide-react";
 import { t } from "../../core/i18n";
 import type { DecisionQuestion } from "../../core/types";
-import { AppButton, AppInput } from "@renderer/ui/components";
+import { AppButton, AppInput, AppTooltip } from "@renderer/ui/components";
 
 export type { DecisionQuestion } from "../../core/types";
 
@@ -141,7 +141,21 @@ export function DecisionPanel({
               >
                 <span className="lyra-agents-decision-option-label">{opt.label}</span>
                 {opt.description ? (
-                  <span className="lyra-agents-decision-option-description">{opt.description}</span>
+                  <AppTooltip
+                    content={opt.description}
+                    contentClassName="lyra-agents-decision-option-tooltip"
+                    delayDuration={160}
+                    side="top"
+                    sideOffset={8}
+                  >
+                    <span
+                      className="lyra-agents-decision-option-info"
+                      aria-label={opt.description}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Info size={12} strokeWidth={2} aria-hidden="true" />
+                    </span>
+                  </AppTooltip>
                 ) : null}
               </AppButton>
             ))}

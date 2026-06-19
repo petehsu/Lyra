@@ -28,7 +28,19 @@ pub(super) fn try_upsert_memory_embedding(
     if existing_hash.as_deref() == Some(content_hash.as_str()) {
         return Ok(Some(()));
     }
-    let vector = provider.embed(&text)?;
+    let descriptor = active_embedding_descriptor();
+    let (vector, used_fallback) = match provider.embed(&text) {
+        Ok(vector) => (vector, false),
+        Err(error) if descriptor.remote_available => {
+            let fallback = LocalHashEmbeddingProvider.embed(&text)?;
+            record_embedding_quality_best_effort(&descriptor, true);
+            (fallback, true)
+        }
+        Err(error) => return Err(error),
+    };
+    if !used_fallback {
+        record_embedding_quality_best_effort(&descriptor, false);
+    }
     let timestamp = now();
     conn.execute(
         "INSERT INTO memory_embeddings
@@ -45,7 +57,7 @@ pub(super) fn try_upsert_memory_embedding(
             record.id,
             provider.provider(),
             provider.model(),
-            provider.dimension() as i64,
+            vector.len() as i64,
             vector_to_blob(&vector),
             content_hash,
             timestamp,
@@ -87,8 +99,57 @@ pub(super) fn load_memory_embedding(
     .map_err(sql_error)
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ActiveEmbeddingDescriptor {
+    pub(crate) provider: String,
+    pub(crate) model: String,
+    pub(crate) dimension: usize,
+    pub(crate) remote_available: bool,
+}
+
+fn record_embedding_quality_best_effort(
+    descriptor: &ActiveEmbeddingDescriptor,
+    used_fallback: bool,
+) {
+    if let Ok(root) = super::runtime_root_for_memory()
+        && let Ok(conn) = super::open_memory_connection(&root)
+        && super::init_memory_schema(&conn).is_ok()
+    {
+        let _ = super::super::memory_embedding_config::record_embedding_quality_event(
+            &conn,
+            &descriptor.provider,
+            &descriptor.model,
+            used_fallback,
+        );
+    }
+}
+
+pub(crate) fn active_embedding_descriptor() -> ActiveEmbeddingDescriptor {
+    match embedding_provider() {
+        Some(ActiveEmbeddingProvider::Remote(provider)) => ActiveEmbeddingDescriptor {
+            provider: provider.provider().to_string(),
+            model: provider.model().to_string(),
+            dimension: provider.dimension(),
+            remote_available: true,
+        },
+        Some(ActiveEmbeddingProvider::Local(provider)) => ActiveEmbeddingDescriptor {
+            provider: provider.provider().to_string(),
+            model: provider.model().to_string(),
+            dimension: provider.dimension(),
+            remote_available: false,
+        },
+        None => ActiveEmbeddingDescriptor {
+            provider: "disabled".to_string(),
+            model: "none".to_string(),
+            dimension: 0,
+            remote_available: false,
+        },
+    }
+}
+
 pub(super) fn query_embedding(query: &str) -> Option<Vec<f32>> {
     let provider = embedding_provider()?;
+    let descriptor = active_embedding_descriptor();
     let key = format!(
         "{}:{}:{}",
         provider.provider(),
@@ -101,7 +162,11 @@ pub(super) fn query_embedding(query: &str) -> Option<Vec<f32>> {
     {
         return Some(vector.clone());
     }
-    let vector = provider.embed(query).ok()?;
+    let (vector, used_fallback) = match provider.embed(query) {
+        Ok(vector) => (vector, false),
+        Err(_) => (LocalHashEmbeddingProvider.embed(query).ok()?, true),
+    };
+    record_embedding_quality_best_effort(&descriptor, used_fallback);
     if let Ok(mut cache) = cache.lock() {
         if cache.len() >= 64
             && let Some(first_key) = cache.keys().next().cloned()
@@ -113,10 +178,141 @@ pub(super) fn query_embedding(query: &str) -> Option<Vec<f32>> {
     Some(vector)
 }
 
-pub(super) fn embedding_provider() -> Option<LocalHashEmbeddingProvider> {
-    env::var_os("LYRA_MEMORY_DISABLE_EMBEDDINGS")
-        .is_none()
-        .then_some(LocalHashEmbeddingProvider)
+pub(super) enum ActiveEmbeddingProvider {
+    Remote(RemoteEmbeddingProvider),
+    Local(LocalHashEmbeddingProvider),
+}
+
+impl ActiveEmbeddingProvider {
+    pub(super) fn embed(&self, text: &str) -> AgentRuntimeResult<Vec<f32>> {
+        match self {
+            Self::Remote(provider) => provider.embed(text),
+            Self::Local(provider) => provider.embed(text),
+        }
+    }
+
+    pub(super) fn provider(&self) -> &'static str {
+        match self {
+            Self::Remote(provider) => provider.provider(),
+            Self::Local(provider) => provider.provider(),
+        }
+    }
+
+    pub(super) fn model(&self) -> &str {
+        match self {
+            Self::Remote(provider) => provider.model(),
+            Self::Local(provider) => provider.model(),
+        }
+    }
+
+    pub(super) fn dimension(&self) -> usize {
+        match self {
+            Self::Remote(provider) => provider.dimension(),
+            Self::Local(provider) => provider.dimension(),
+        }
+    }
+}
+
+struct RemoteEmbeddingProvider {
+    profile: NativeProviderProfile,
+    model: String,
+    dimension: usize,
+}
+
+impl RemoteEmbeddingProvider {
+    fn try_from_runtime() -> Option<Self> {
+        let state = state().lock().ok()?;
+        let provider_id = state
+            .config
+            .default_provider
+            .as_ref()
+            .or(state.config.memory_agent_provider.as_ref())?;
+        let profile = state.config.providers.get(provider_id)?.clone();
+        let model = profile.embedding_model.clone()?;
+        if model == EMBEDDING_MODEL || model.contains("hash-embedding") {
+            return None;
+        }
+        let base_url = profile.base_url.as_deref()?.trim_end_matches('/');
+        if base_url.is_empty() {
+            return None;
+        }
+        Some(Self {
+            profile,
+            model,
+            dimension: 1536,
+        })
+    }
+
+    fn provider(&self) -> &'static str {
+        "openai-compatible"
+    }
+
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    fn embed(&self, text: &str) -> AgentRuntimeResult<Vec<f32>> {
+        let base_url = self
+            .profile
+            .base_url
+            .as_deref()
+            .ok_or_else(|| AgentRuntimeError::Core("embedding base url missing".to_string()))?
+            .trim_end_matches('/');
+        let client = super::super::network::http_client_builder(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let mut request = client.post(format!("{base_url}/embeddings")).json(&json!({
+            "model": self.model,
+            "input": text,
+        }));
+        request =
+            super::super::providers::transport::auth::apply_model_auth(request, &self.profile)?;
+        let response = request
+            .send()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        if !response.status().is_success() {
+            let body = response.text().unwrap_or_default();
+            return Err(AgentRuntimeError::Core(format!(
+                "embedding request failed: {}",
+                body.chars().take(240).collect::<String>()
+            )));
+        }
+        let payload: Value = response
+            .json()
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let vector = payload
+            .get("data")
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("embedding"))
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_f64)
+                    .map(|value| value as f32)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|vector| !vector.is_empty())
+            .ok_or_else(|| {
+                AgentRuntimeError::Core("embedding response missing vector".to_string())
+            })?;
+        Ok(vector)
+    }
+}
+
+pub(super) fn embedding_provider() -> Option<ActiveEmbeddingProvider> {
+    if env::var_os("LYRA_MEMORY_DISABLE_EMBEDDINGS").is_some() {
+        return None;
+    }
+    if let Some(provider) = RemoteEmbeddingProvider::try_from_runtime() {
+        return Some(ActiveEmbeddingProvider::Remote(provider));
+    }
+    Some(ActiveEmbeddingProvider::Local(LocalHashEmbeddingProvider))
 }
 
 pub(super) fn memory_embedding_text(record: &LongTermMemoryRecord) -> String {
@@ -474,60 +670,6 @@ pub(super) fn write_memory_event(
     Ok(())
 }
 
-pub(super) fn legacy_shared_record_to_long_term(
-    record: &SharedMemoryRecord,
-) -> LongTermMemoryRecord {
-    let category = record
-        .category
-        .clone()
-        .or_else(|| {
-            record
-                .content
-                .get("category")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "other".to_string());
-    let fact = record
-        .content
-        .get("fact")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            record
-                .content
-                .get("title")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| serde_json::to_string(&record.content).unwrap_or_default());
-    LongTermMemoryRecord {
-        id: if record.id.trim().is_empty() {
-            format!("memory-{}", Uuid::new_v4())
-        } else {
-            record.id.clone()
-        },
-        scope: normalize_scope(&record.scope),
-        category: normalize_category(&category),
-        fact,
-        content: record.content.clone(),
-        confidence: record.confidence.unwrap_or(0.8).clamp(0.0, 1.0),
-        source_type: legacy_source_to_source_type(record.source.as_deref()),
-        source_ref: record.source.clone(),
-        status: normalize_status(&record.status),
-        priority: record.priority,
-        created_at: record.created_at.clone(),
-        updated_at: record.updated_at.clone(),
-        last_accessed_at: record.last_injected_at.clone(),
-        access_count: record.injection_count,
-        tags: Vec::new(),
-        related_to: Vec::new(),
-        expires_at: None,
-        supersedes: None,
-        superseded_by: None,
-    }
-}
-
 pub(super) fn mutation_to_new_memory(mutation: MemoryMutation) -> LongTermMemoryRecord {
     let timestamp = now();
     let scope = mutation
@@ -579,12 +721,30 @@ pub(super) fn mutation_to_new_memory(mutation: MemoryMutation) -> LongTermMemory
             relation.source_id = id.clone();
         }
     }
-    LongTermMemoryRecord {
+    let requires_confirmation = content
+        .get("requiresConfirmation")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let layer = mutation.layer.clone().unwrap_or_else(|| {
+        super::super::memory_layer::resolve_memory_layer(&category, &content, requires_confirmation)
+    });
+    let value_class = mutation
+        .value_class
+        .clone()
+        .unwrap_or_else(|| super::super::memory_layer::VALUE_SEMANTIC.to_string());
+    let abstract_text = mutation
+        .abstract_text
+        .clone()
+        .or_else(|| Some(super::super::memory_layer::memory_abstract_text(&fact)));
+    let mut record = LongTermMemoryRecord {
         id,
         scope: scope.clone(),
         category: category.clone(),
         fact,
         content,
+        layer,
+        value_class,
+        abstract_text,
         confidence,
         source_type: source_type.clone(),
         source_ref: mutation.source_ref,
@@ -605,7 +765,19 @@ pub(super) fn mutation_to_new_memory(mutation: MemoryMutation) -> LongTermMemory
         expires_at: mutation.expires_at,
         supersedes: mutation.supersedes,
         superseded_by: mutation.superseded_by,
-    }
+        source_device: mutation
+            .source_device
+            .clone()
+            .or_else(|| Some(super::super::memory_sync::memory_source_device())),
+        revision: mutation.revision.unwrap_or(1),
+        sync_origin: mutation
+            .sync_origin
+            .clone()
+            .or_else(|| Some(super::super::memory_sync::SYNC_ORIGIN_LOCAL.to_string())),
+    };
+    super::super::memory_layer::apply_layer_fields_to_record(&mut record);
+    super::super::memory_derived_fields::apply_derived_fields_to_record(&mut record);
+    record
 }
 
 pub(super) fn mutation_to_memory_candidate(mutation: MemoryCandidateMutation) -> MemoryCandidate {
@@ -621,6 +793,18 @@ pub(super) fn mutation_to_memory_candidate(mutation: MemoryCandidateMutation) ->
     } else {
         mutation.expires_at.clone()
     };
+    let status = mutation
+        .status
+        .as_deref()
+        .map(normalize_candidate_status)
+        .unwrap_or_else(|| default_candidate_status(&mutation));
+    let stability_review_at = mutation
+        .stability_review_at
+        .clone()
+        .or_else(|| stability_review_at_for_mutation(&mutation));
+    let stability_window_hours = mutation
+        .stability_window_hours
+        .or_else(|| stability_window_hours_for_mutation(&mutation));
     MemoryCandidate {
         id: format!("memory-candidate-{}", Uuid::new_v4()),
         fact: fact.clone(),
@@ -631,6 +815,10 @@ pub(super) fn mutation_to_memory_candidate(mutation: MemoryCandidateMutation) ->
         },
         category: normalize_category(&mutation.category),
         scope: normalize_scope(&mutation.scope),
+        layer: mutation.layer,
+        value_class: mutation.value_class,
+        trigger_event: mutation.trigger_event,
+        evidence_json: mutation.evidence_json,
         confidence: mutation.confidence.clamp(0.0, 1.0),
         source_type: normalize_source_type(&mutation.source_type),
         source_ref: mutation.source_ref,
@@ -640,15 +828,29 @@ pub(super) fn mutation_to_memory_candidate(mutation: MemoryCandidateMutation) ->
         relation_type: mutation
             .relation_type
             .map(|value| normalize_relation(&value)),
-        status: mutation
-            .status
-            .as_deref()
-            .map(normalize_candidate_status)
-            .unwrap_or_else(|| "pending".to_string()),
+        status,
         created_at: timestamp,
         reviewed_at: None,
         expires_at: default_expires_at,
+        stability_review_at,
+        stability_window_hours,
     }
+}
+
+fn default_candidate_status(mutation: &MemoryCandidateMutation) -> String {
+    if super::super::memory_stability_policy::should_delay_promotion(mutation) {
+        "stability_pending".to_string()
+    } else {
+        "pending".to_string()
+    }
+}
+
+fn stability_window_hours_for_mutation(mutation: &MemoryCandidateMutation) -> Option<i64> {
+    super::super::memory_stability_policy::stability_window_hours_for_mutation(mutation)
+}
+
+fn stability_review_at_for_mutation(mutation: &MemoryCandidateMutation) -> Option<String> {
+    super::super::memory_stability_policy::stability_review_at_for_mutation(mutation)
 }
 
 pub(super) fn apply_memory_mutation(record: &mut LongTermMemoryRecord, mutation: MemoryMutation) {
@@ -663,6 +865,15 @@ pub(super) fn apply_memory_mutation(record: &mut LongTermMemoryRecord, mutation:
     }
     if let Some(content) = mutation.content {
         record.content = content;
+    }
+    if let Some(layer) = mutation.layer {
+        record.layer = layer;
+    }
+    if let Some(value_class) = mutation.value_class {
+        record.value_class = value_class;
+    }
+    if mutation.abstract_text.is_some() {
+        record.abstract_text = mutation.abstract_text;
     }
     if let Some(confidence) = mutation.confidence {
         record.confidence = confidence.clamp(0.0, 1.0);
@@ -704,6 +915,26 @@ pub(super) fn apply_memory_mutation(record: &mut LongTermMemoryRecord, mutation:
     if mutation.superseded_by.is_some() {
         record.superseded_by = mutation.superseded_by;
     }
+    if mutation.source_device.is_some() {
+        record.source_device = mutation.source_device;
+    }
+    if let Some(revision) = mutation.revision {
+        record.revision = revision;
+    } else {
+        record.revision = super::super::memory_sync::bump_revision(record.revision);
+    }
+    if mutation.sync_origin.is_some() {
+        record.sync_origin = mutation.sync_origin;
+    }
+    record.source_device = record
+        .source_device
+        .clone()
+        .or_else(|| Some(super::super::memory_sync::memory_source_device()));
+    record.sync_origin = record
+        .sync_origin
+        .clone()
+        .or_else(|| Some(super::super::memory_sync::SYNC_ORIGIN_LOCAL.to_string()));
+    super::super::memory_derived_fields::apply_derived_fields_to_record(record);
 }
 
 pub(super) fn count_memory_status(conn: &Connection, status: &str) -> AgentRuntimeResult<i64> {
@@ -746,17 +977,6 @@ pub(super) fn normalize_source_type(value: &str) -> String {
     }
 }
 
-pub(super) fn legacy_source_to_source_type(value: Option<&str>) -> String {
-    match value {
-        Some("goal_state") => "goal_sync".to_string(),
-        Some("user_declaration") => "user_declaration".to_string(),
-        Some("project_fact") => "project_fact".to_string(),
-        Some("tool_observation") => "tool_observation".to_string(),
-        Some("imported") => "imported".to_string(),
-        _ => "agent_inference".to_string(),
-    }
-}
-
 pub(super) fn normalize_status(value: &str) -> String {
     match value.trim() {
         "active" | "archived" | "superseded" | "forgotten" => value.trim().to_string(),
@@ -767,6 +987,7 @@ pub(super) fn normalize_status(value: &str) -> String {
 pub(super) fn normalize_candidate_status(value: &str) -> String {
     match value.trim() {
         "pending"
+        | "stability_pending"
         | "auto_applied"
         | "needs_user_confirmation"
         | "approved"
@@ -778,7 +999,8 @@ pub(super) fn normalize_candidate_status(value: &str) -> String {
 
 pub(super) fn normalize_candidate_action(value: &str) -> String {
     match value.trim() {
-        "create" | "update" | "supersede" | "forget" | "link" => value.trim().to_string(),
+        "create" | "update" | "replace" | "merge" | "deprecate" | "supersede" | "forget"
+        | "link" => value.trim().to_string(),
         _ => "create".to_string(),
     }
 }

@@ -17,7 +17,6 @@ import {
   type AgentMemorySharedSearchRequest,
   type AgentMemorySharedUpdateRequest,
   type AgentMemorySnapshot,
-  type AgentMemoryTrimRunRequest,
   type AgentPermissionPolicySetModeRequest,
   type AgentPermissionPolicySnapshot,
   type AgentPermissionRespondRequest,
@@ -119,6 +118,7 @@ import {
   type TerminalCommandsReadRequest,
   type TerminalCommandsReadResponse,
   type TerminalCreateRequest,
+  type TerminalCwdChangedEvent,
   type TerminalDataEvent,
   type TerminalErrorEvent,
   type TerminalEventsReadRequest,
@@ -184,6 +184,7 @@ import {
   type ImageViewerOpenResult,
   type ImageViewerReadTileRequest,
   type ImageViewerTileResponse,
+  type IdentityIconSnapshot,
   type LoginManagerClearSiteRequest,
   type LoginManagerClearSiteResponse,
   type LoginManagerDeleteCredentialRequest,
@@ -237,6 +238,8 @@ import {
   type WorkbenchStateChangeEvent,
   type WorkbenchStateKey,
   type WorkbenchStateSnapshot,
+  type ProjectIdentityResolveRequest,
+  type ProjectIdentitySnapshot,
   type LyraDesktopApi,
   type WindowStatePayload
 } from "../shared/desktop-bridge";
@@ -370,6 +373,7 @@ const requestBrowserNotificationPermission = async (): Promise<SystemNotificatio
 const terminalDataListeners = new Set<(event: TerminalDataEvent) => void>();
 const terminalExitListeners = new Set<(event: TerminalExitEvent) => void>();
 const terminalErrorListeners = new Set<(event: TerminalErrorEvent) => void>();
+const terminalCwdChangedListeners = new Set<(event: TerminalCwdChangedEvent) => void>();
 let terminalEventBridgeReady = false;
 let terminalDataPortRequested = false;
 let terminalDataPort: MessagePort | null = null;
@@ -457,6 +461,13 @@ const ensureTerminalEventBridge = (): void => {
 
       if (payload.kind === "error") {
         for (const listener of terminalErrorListeners) {
+          listener(payload);
+        }
+        return;
+      }
+
+      if (payload.kind === "cwdChanged") {
+        for (const listener of terminalCwdChangedListeners) {
           listener(payload);
         }
       }
@@ -844,6 +855,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.renderInvalidateCache) as Promise<void>
   },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
+  identity: {
+    readUserIcon: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.identityReadUserIcon) as Promise<IdentityIconSnapshot | null>,
+    resolveProjectIdentity: (request: ProjectIdentityResolveRequest) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.identityResolveProject, request) as Promise<ProjectIdentitySnapshot | null>
+  },
   systemNotifications: {
     readStatus: () =>
       (ipcRenderer.invoke(
@@ -1076,8 +1093,9 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   workbenchBrowser: {
     syncTopology: (snapshot: WorkbenchBrowserTopologySnapshot) =>
       ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserSyncTopology, snapshot) as Promise<void>,
-    syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserSyncLayout, snapshot) as Promise<void>,
+    syncLayout: (snapshot: WorkbenchBrowserLayoutSnapshot): void => {
+      ipcRenderer.send(LYRA_CHANNELS.workbenchBrowserSyncLayout, snapshot);
+    },
     navigate: (request: WorkbenchBrowserNavigateRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.workbenchBrowserNavigate, request) as Promise<WorkbenchBrowserNavigateResult>,
     goBack: (request: { readonly tabId: string }) =>
@@ -1354,6 +1372,13 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       return () => {
         terminalErrorListeners.delete(listener);
       };
+    },
+    onCwdChanged: (listener: (event: TerminalCwdChangedEvent) => void) => {
+      ensureTerminalEventBridge();
+      terminalCwdChangedListeners.add(listener);
+      return () => {
+        terminalCwdChangedListeners.delete(listener);
+      };
     }
   },
   agent: {
@@ -1437,11 +1462,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentMemoryAudit,
         request ?? {}
       ) as Promise<AgentMemoryAuditResponse>,
-    runMemoryTrim: (request?: AgentMemoryTrimRunRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentMemoryTrimRun,
-        request ?? {}
-      ) as Promise<unknown>,
     runMemoryRecovery: (request?: AgentSessionReadRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentMemoryRecoverRun,

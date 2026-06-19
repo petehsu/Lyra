@@ -314,8 +314,7 @@ async fn list_application_entries(
         let mut windows = Vec::new();
         let window_count = proxy.child_count().await.unwrap_or(0);
         for window_index in 0..window_count {
-            if let Ok(window_proxy) =
-                child_at(connection.connection(), &proxy, window_index).await
+            if let Ok(window_proxy) = child_at(connection.connection(), &proxy, window_index).await
             {
                 let role = normalize_role(window_proxy.get_role().await.unwrap_or(Role::Unknown));
                 if role != "window" {
@@ -388,7 +387,13 @@ async fn find_focused_control(
 /// index whose name looks like an activation verb (click/press/activate),
 /// falling back to index 0 (the default/primary action).
 async fn do_activation(proxy: &AccessibleProxy<'_>) -> Result<(), BackendError> {
-    let action = proxy.proxies().await.map_err(map_err)?.action().await.map_err(map_err)?;
+    let action = proxy
+        .proxies()
+        .await
+        .map_err(map_err)?
+        .action()
+        .await
+        .map_err(map_err)?;
     let index = action
         .get_actions()
         .await
@@ -590,10 +595,11 @@ impl ComputerBackend for LinuxBackend {
                         .enumerate()
                         .find(|(_, window)| window.title == title)
                         .and_then(|(window_index, window)| {
-                            window.window_ref.as_deref().and_then(parse_window_ref).or(Some((
-                                parse_app_ref(&app.app_ref)?,
-                                window_index,
-                            )))
+                            window
+                                .window_ref
+                                .as_deref()
+                                .and_then(parse_window_ref)
+                                .or(Some((parse_app_ref(&app.app_ref)?, window_index)))
                         })
                     {
                         let window = window_at(&connection, app_index, window_index).await?;

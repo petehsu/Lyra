@@ -39,11 +39,7 @@ pub(crate) struct MimoProviderFault {
     pub(crate) user_message: String,
 }
 
-pub(crate) fn provider_http_error(
-    route_id: &str,
-    status: u16,
-    body: &Value,
-) -> AgentRuntimeError {
+pub(crate) fn provider_http_error(route_id: &str, status: u16, body: &Value) -> AgentRuntimeError {
     if mimo::is_mimo_route(route_id) {
         let fault = parse_provider_http_failure(status, body);
         return AgentRuntimeError::Core(format_mimo_fault_message(&fault));
@@ -296,7 +292,9 @@ fn is_multimodal_format_message(message: &str) -> bool {
 }
 
 fn is_image_input_message(message: &str) -> bool {
-    model_capabilities::is_image_input_unsupported_error(&AgentRuntimeError::Core(message.to_string()))
+    model_capabilities::is_image_input_unsupported_error(&AgentRuntimeError::Core(
+        message.to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -334,12 +332,11 @@ mod tests {
 
     #[test]
     fn parses_prefixed_fault_message() {
-        let error = AgentRuntimeError::Core(format_mimo_fault_message(
-            &parse_provider_http_failure(
+        let error =
+            AgentRuntimeError::Core(format_mimo_fault_message(&parse_provider_http_failure(
                 402,
                 &json!({ "error": { "code": "402", "message": "insufficient balance" } }),
-            ),
-        ));
+            )));
         let fault = parse_mimo_fault_from_error(&error).expect("fault");
         assert_eq!(fault.http_status, 402);
         assert_eq!(fault.code, "insufficient_balance");

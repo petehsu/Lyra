@@ -181,6 +181,17 @@ fn map_stream_event(
                     if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
                         draft.input_json.push_str(partial);
                     }
+                    if let (Some(tool_call_id), Some(tool_name)) =
+                        (draft.id.as_deref(), draft.name.as_deref())
+                    {
+                        crate::native_backend::tools::maybe_emit_streaming_diff_preview(
+                            session_id,
+                            turn_id,
+                            tool_call_id,
+                            tool_name,
+                            &draft.input_json,
+                        );
+                    }
                 }
                 _ => {}
             }

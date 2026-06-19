@@ -1,6 +1,7 @@
 import type {
   AgentMessage,
   AgentMessageBlock,
+  AgentRenderDocument,
   AgentRuntimeEvent,
   AgentSessionSnapshot,
   AgentToolActivity
@@ -63,6 +64,28 @@ const upsertTool = (
   ...tools.filter((existing) => existing.id !== tool.id),
   tool
 ];
+
+const applyRenderToTextBlocks = (
+  blocks: readonly AgentMessageBlock[],
+  blockId: string | null | undefined,
+  renderDocument: AgentRenderDocument | undefined,
+  renderRevision: number | undefined
+): readonly AgentMessageBlock[] => {
+  if (renderDocument === undefined) {
+    return blocks;
+  }
+  const targetBlockId = blockId ?? "text-0";
+  return blocks.map((block) => {
+    if (block.type !== "text" || block.id !== targetBlockId) {
+      return block;
+    }
+    return {
+      ...block,
+      renderDocument,
+      ...(renderRevision === undefined ? {} : { renderRevision })
+    };
+  });
+};
 
 const appendTextDeltaToBlocks = (
   blocks: readonly AgentMessageBlock[] | undefined,
@@ -170,21 +193,34 @@ export const applyAgentRuntimeEventToSnapshot = (
   if (event.kind === "messageDelta") {
     return {
       ...session,
-      messages: session.messages.map((message) =>
-        message.id === event.messageId
-          ? {
-              ...message,
-              text: event.replace === true ? event.delta : `${message.text}${event.delta}`,
-              blocks: appendTextDeltaToBlocks(
-                message.blocks,
-                event.blockId,
-                event.delta,
-                event.replace,
-                message.text
-              )
-            }
-          : message
-      ),
+      messages: session.messages.map((message) => {
+        if (message.id !== event.messageId) {
+          return message;
+        }
+        const blocks = applyRenderToTextBlocks(
+          appendTextDeltaToBlocks(
+            message.blocks,
+            event.blockId,
+            event.delta,
+            event.replace,
+            message.text
+          ),
+          event.blockId,
+          event.renderDocument,
+          event.renderRevision
+        );
+        return {
+          ...message,
+          text: event.replace === true ? event.delta : `${message.text}${event.delta}`,
+          blocks,
+          ...(event.renderDocument === undefined
+            ? {}
+            : { renderDocument: event.renderDocument }),
+          ...(event.renderRevision === undefined
+            ? {}
+            : { renderRevision: event.renderRevision })
+        };
+      }),
       updatedAt: new Date().toISOString()
     };
   }
@@ -224,20 +260,26 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "turnStarted" || event.kind === "turnStateChanged") {
+    const terminalTurnStates = [
+      "completed",
+      "failed_terminal",
+      "cancelled_by_user",
+      "cancelled",
+      "interrupted"
+    ];
+    const cancelledTurnStates = ["cancelled_by_user", "cancelled", "interrupted"];
     return {
       ...session,
       turnStatus: ["completed"].includes(event.state)
         ? "finished"
         : ["failed_recoverable", "failed_terminal"].includes(event.state)
           ? "failed"
-          : ["cancelled_by_user", "interrupted"].includes(event.state)
+          : cancelledTurnStates.includes(event.state)
             ? "cancelled"
             : "running",
-      activeTurnId: ["completed", "failed_terminal", "cancelled_by_user"].includes(event.state)
-        ? null
-        : event.turnId,
+      activeTurnId: terminalTurnStates.includes(event.state) ? null : event.turnId,
       follow: {
-        running: !["completed", "failed_terminal", "cancelled_by_user"].includes(event.state),
+        running: !terminalTurnStates.includes(event.state),
         activity: event.state
       },
       updatedAt: new Date().toISOString()

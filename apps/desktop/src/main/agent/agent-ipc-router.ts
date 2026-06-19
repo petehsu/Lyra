@@ -14,7 +14,6 @@ import type {
   AgentMemorySharedSearchRequest,
   AgentMemorySharedUpdateRequest,
   AgentMemorySnapshot,
-  AgentMemoryTrimRunRequest,
   AgentPermissionPolicySetModeRequest,
   AgentPermissionPolicySnapshot,
   AgentPermissionRespondRequest,
@@ -251,14 +250,6 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentMemoryAuditResponse>(
           "agent.memory.audit",
           (payload as AgentSessionReadRequest | undefined) ?? {}
-        )
-    ],
-    [
-      LYRA_CHANNELS.agentMemoryTrimRun,
-      (_event, payload) =>
-        requestRuntime<unknown>(
-          "agent.memory.trim.run",
-          (payload as AgentMemoryTrimRunRequest | undefined) ?? {}
         )
     ],
     [

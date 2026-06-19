@@ -384,7 +384,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {
     manager.syncTopology(snapshot as WorkbenchBrowserTopologySnapshot);
   });
-  ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncLayout, (_event, snapshot: unknown) => {
+  ipcMain.on(LYRA_CHANNELS.workbenchBrowserSyncLayout, (_event, snapshot: unknown) => {
     manager.syncLayout(snapshot as WorkbenchBrowserLayoutSnapshot);
   });
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserNavigate, async (_event, request: unknown) => {
@@ -552,7 +552,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSyncTopology);
-      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSyncLayout);
+      ipcMain.removeAllListeners(LYRA_CHANNELS.workbenchBrowserSyncLayout);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserNavigate);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserGoBack);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserGoForward);

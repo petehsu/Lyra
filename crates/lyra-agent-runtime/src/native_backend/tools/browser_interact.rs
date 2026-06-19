@@ -66,7 +66,9 @@ pub(crate) fn execute_browser_interact_tool_adapter(
         tool_call_id,
         &input,
     ) {
-        Ok(output) => finish_browser_interact(session_id, turn_id, tool_call_id, input, started_at, output),
+        Ok(output) => {
+            finish_browser_interact(session_id, turn_id, tool_call_id, input, started_at, output)
+        }
         Err(failure) => finish_browser_interact(
             session_id,
             turn_id,
@@ -76,10 +78,9 @@ pub(crate) fn execute_browser_interact_tool_adapter(
             tool_failure_output(
                 &failure.code,
                 &failure.message,
-                failure
-                    .recommended_next_action
-                    .as_deref()
-                    .unwrap_or("Retry with fewer actions or split navigate/wait/read into separate tools."),
+                failure.recommended_next_action.as_deref().unwrap_or(
+                    "Retry with fewer actions or split navigate/wait/read into separate tools.",
+                ),
                 failure.detail,
             ),
         ),
@@ -240,9 +241,11 @@ fn run_browser_interact(
         .cloned()
         .unwrap_or(Value::Null);
     let snapshot = capture_page_snapshot(session_id, &primary_extract, Some("interact"));
-    let snapshot_diff = baseline_snapshot_id
-        .as_deref()
-        .and_then(|baseline| snapshot.as_ref().and_then(|current| diff_page_snapshots(baseline, current)));
+    let snapshot_diff = baseline_snapshot_id.as_deref().and_then(|baseline| {
+        snapshot
+            .as_ref()
+            .and_then(|current| diff_page_snapshots(baseline, current))
+    });
 
     let content = interact_content(&action_trace, snapshot.as_ref(), snapshot_diff.as_ref());
     Ok(json!({
@@ -320,7 +323,10 @@ fn execute_interact_action(
                 .or_insert_with(|| Value::String("click".to_string()));
         }
         "hover" => {
-            payload.insert("interaction".to_string(), Value::String("hover".to_string()));
+            payload.insert(
+                "interaction".to_string(),
+                Value::String("hover".to_string()),
+            );
         }
         "type" if !payload.contains_key("text") => {
             if let Some(value) = action.get("value").cloned() {
@@ -343,7 +349,8 @@ fn execute_interact_action(
         "lyra_lumen",
         host_action,
     );
-    let (payload_value, timeout_ms) = apply_tool_timeout_policy(payload_value, "lyra_lumen", host_action);
+    let (payload_value, timeout_ms) =
+        apply_tool_timeout_policy(payload_value, "lyra_lumen", host_action);
     let _guard = BrowserConcurrencyGuard::try_acquire().map_err(|message| InteractFailure {
         code: "browser_concurrency_limited".to_string(),
         message,
@@ -375,8 +382,9 @@ fn execute_interact_action(
         Err(error) => {
             step["ok"] = Value::Bool(false);
             step["error"] = Value::String(error);
-            step["recommendedNextAction"] =
-                Value::String("Change strategy with wait, locate, explain_target, or browser_ax.".to_string());
+            step["recommendedNextAction"] = Value::String(
+                "Change strategy with wait, locate, explain_target, or browser_ax.".to_string(),
+            );
         }
     }
     Ok(step)
@@ -416,7 +424,10 @@ fn interact_content(
     snapshot: Option<&PageSnapshot>,
     diff: Option<&PageSnapshotDiff>,
 ) -> String {
-    let mut out = format!("Browser interact completed {} action(s).", action_trace.len());
+    let mut out = format!(
+        "Browser interact completed {} action(s).",
+        action_trace.len()
+    );
     if let Some(snapshot) = snapshot {
         out.push_str(&format!("\nSnapshot: {} ({})", snapshot.url, snapshot.id));
     }

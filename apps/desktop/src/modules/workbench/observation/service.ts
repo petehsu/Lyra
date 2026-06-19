@@ -209,7 +209,11 @@ const terminalDescriptorForPane = (
       terminalTab.id === dependencies.terminalModel.state.activeTabId
       && terminalTab.activePaneId === pane.id,
     ...(pane.cwd === undefined ? {} : { cwd: pane.cwd }),
+    ...(pane.currentCwd === undefined ? {} : { currentCwd: pane.currentCwd }),
     ...(pane.shell === undefined ? {} : { shell: pane.shell }),
+    ...(pane.sourceAgentSessionId === undefined
+      ? {}
+      : { sourceAgentSessionId: pane.sourceAgentSessionId }),
     ...(workspaceTab === undefined ? {} : { workspaceTabId: workspaceTab.id })
   };
 };
@@ -296,6 +300,9 @@ const openTerminalPane = (
           : {}),
         ...(typeof request.cwd === "string" && request.cwd.trim().length > 0
           ? { cwd: request.cwd.trim() }
+          : {}),
+        ...(typeof request.sourceAgentSessionId === "string" && request.sourceAgentSessionId.trim().length > 0
+          ? { sourceAgentSessionId: request.sourceAgentSessionId.trim() }
           : {})
       });
       if (split !== null) {
@@ -307,7 +314,11 @@ const openTerminalPane = (
           placement: split.tab.placement,
           isActive: true,
           ...(split.pane.cwd === undefined ? {} : { cwd: split.pane.cwd }),
-          ...(split.pane.shell === undefined ? {} : { shell: split.pane.shell })
+          ...(split.pane.currentCwd === undefined ? {} : { currentCwd: split.pane.currentCwd }),
+          ...(split.pane.shell === undefined ? {} : { shell: split.pane.shell }),
+          ...(split.pane.sourceAgentSessionId === undefined
+            ? {}
+            : { sourceAgentSessionId: split.pane.sourceAgentSessionId })
         };
       }
     }
@@ -320,6 +331,9 @@ const openTerminalPane = (
       : {}),
     ...(typeof request.cwd === "string" && request.cwd.trim().length > 0
       ? { cwd: request.cwd.trim() }
+      : {}),
+    ...(typeof request.sourceAgentSessionId === "string" && request.sourceAgentSessionId.trim().length > 0
+      ? { sourceAgentSessionId: request.sourceAgentSessionId.trim() }
       : {})
   });
   if (placement === "workspace") {

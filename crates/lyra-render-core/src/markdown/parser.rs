@@ -1,7 +1,7 @@
 use crate::ast::{InlineNode, ListItem, LyraRenderDocument, RenderBlock};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
-pub fn parse_markdown(content: &str) -> LyraRenderDocument {
+pub(crate) fn parse_markdown_plain(content: &str) -> LyraRenderDocument {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
@@ -90,7 +90,10 @@ impl MarkdownBuilder {
                 self.heading_level = Some(level);
             }
             Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. } => {
-                if let Tag::Link { dest_url, title, .. } = tag {
+                if let Tag::Link {
+                    dest_url, title, ..
+                } = tag
+                {
                     self.link_destination = Some(dest_url.to_string());
                     self.link_title = if title.is_empty() {
                         None
@@ -101,8 +104,7 @@ impl MarkdownBuilder {
                 self.inline_stack.push(Vec::new());
             }
             Tag::BlockQuote => {
-                self.block_targets
-                    .push(BlockTarget::Blockquote(Vec::new()));
+                self.block_targets.push(BlockTarget::Blockquote(Vec::new()));
             }
             Tag::CodeBlock(kind) => {
                 let language = match kind {
@@ -121,10 +123,11 @@ impl MarkdownBuilder {
                 self.list_items = Vec::new();
             }
             Tag::Item => {
-                self.block_targets
-                    .push(BlockTarget::ListItem(Vec::new()));
+                self.block_targets.push(BlockTarget::ListItem(Vec::new()));
             }
-            Tag::Image { dest_url, title, .. } => {
+            Tag::Image {
+                dest_url, title, ..
+            } => {
                 self.push_inline(InlineNode::Image {
                     src: dest_url.to_string(),
                     alt: String::new(),
@@ -266,10 +269,7 @@ impl MarkdownBuilder {
                     });
                 }
             }
-            Event::Text(text)
-            | Event::Code(text)
-            | Event::Html(text)
-            | Event::InlineHtml(text) => {
+            Event::Text(text) | Event::Code(text) | Event::Html(text) | Event::InlineHtml(text) => {
                 if let Some(block) = self.code_block.as_mut() {
                     block.body.push_str(&text);
                 }
@@ -364,24 +364,24 @@ mod tests {
 
     #[test]
     fn parses_headings_lists_and_code_blocks() {
-        let doc = parse_markdown("# Title\n\n- one\n- `two`\n\n```sh\necho ok\n```");
-        assert!(doc.blocks.iter().any(|block| matches!(
-            block,
-            RenderBlock::Heading { level: 1, .. }
-        )));
+        let doc = parse_markdown_plain("# Title\n\n- one\n- `two`\n\n```sh\necho ok\n```");
+        assert!(doc
+            .blocks
+            .iter()
+            .any(|block| matches!(block, RenderBlock::Heading { level: 1, .. })));
         assert!(doc
             .blocks
             .iter()
             .any(|block| matches!(block, RenderBlock::List { .. })));
-        assert!(doc.blocks.iter().any(|block| matches!(
-            block,
-            RenderBlock::CodeBlock { .. }
-        )));
+        assert!(doc
+            .blocks
+            .iter()
+            .any(|block| matches!(block, RenderBlock::CodeBlock { .. })));
     }
 
     #[test]
     fn parses_table_header_and_rows() {
-        let doc = parse_markdown("| A | B |\n|---|---|\n| 1 | 2 |");
+        let doc = parse_markdown_plain("| A | B |\n|---|---|\n| 1 | 2 |");
         let (headers, rows) = doc
             .blocks
             .iter()
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn parses_links() {
-        let doc = parse_markdown("[site](https://example.com)");
+        let doc = parse_markdown_plain("[site](https://example.com)");
         let paragraph = doc
             .blocks
             .iter()

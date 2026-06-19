@@ -268,4 +268,30 @@ describe("AI panel session tabs", () => {
     });
     expect(result.current.activeSessionId).toBe("session-a");
   });
+
+  test("maps backend cancelled runtime events to cancelled tab status", () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 1,
+      tabs: [
+        { sessionId: "session-a", title: "Alpha", lastKnownStatus: "running" }
+      ],
+      activeSessionId: "session-a"
+    }));
+    const { api, emit } = createDesktopApi();
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+
+    act(() => {
+      emit({
+        kind: "turnStateChanged",
+        sessionId: "session-a",
+        turnId: "turn-a",
+        state: "cancelled"
+      });
+    });
+
+    expect(result.current.tabs[0]).toMatchObject({
+      sessionId: "session-a",
+      lastKnownStatus: "cancelled"
+    });
+  });
 });

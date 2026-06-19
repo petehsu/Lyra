@@ -35,6 +35,7 @@ import {
 } from "./tool-parsing/workbench-software";
 import { toTerminalDetails } from "./tool-parsing/terminal";
 import { toRenderDetails } from "./tool-parsing/render";
+import { toEditDetails } from "./tool-parsing/edit";
 
 export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   const hintedKind = toolKindFromHint(tool.activityKind ?? tool.rendererHint ?? null);
@@ -60,7 +61,7 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
     return ["stage", "unstage", "discard"].includes(action) ? "edit" : "read";
   }
   if (domain === "filesystem" || toolPath.startsWith("/tools/filesystem/")) {
-    if (["write", "edit", "multiedit", "apply_patch"].includes(action)) return "edit";
+    if (["write", "edit", "strict_edit", "multiedit", "apply_patch"].includes(action)) return "edit";
     if (["glob", "list"].includes(action)) return "search";
     return "read";
   }
@@ -202,6 +203,9 @@ export const toToolDetails = (
   }
   if (kind === "workbench") {
     return toWorkbenchDetails(tool, output, rawOutputRecord);
+  }
+  if (kind === "edit") {
+    return toEditDetails(tool);
   }
   return {
     type: "text",

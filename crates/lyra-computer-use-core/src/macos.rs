@@ -128,8 +128,9 @@ impl Drop for CfOwned {
 
 fn cf_string(value: &str) -> Option<CfOwned> {
     let c_string = CString::new(value).ok()?;
-    let cf_string =
-        unsafe { CFStringCreateWithCString(ptr::null(), c_string.as_ptr(), CFSTRING_ENCODING_UTF8) };
+    let cf_string = unsafe {
+        CFStringCreateWithCString(ptr::null(), c_string.as_ptr(), CFSTRING_ENCODING_UTF8)
+    };
     CfOwned::new(cf_string as CFTypeRef)
 }
 
@@ -470,18 +471,12 @@ fn pid_for_element(element: AXUIElementRef) -> Option<PidT> {
 
 fn focused_application_element() -> Option<CfOwned> {
     let system = system_wide_element().ok()?;
-    copy_named_attr(
-        system.as_type() as AXUIElementRef,
-        "AXFocusedApplication",
-    )
+    copy_named_attr(system.as_type() as AXUIElementRef, "AXFocusedApplication")
 }
 
 fn focused_ui_element() -> Option<CfOwned> {
     let system = system_wide_element().ok()?;
-    copy_named_attr(
-        system.as_type() as AXUIElementRef,
-        "AXFocusedUIElement",
-    )
+    copy_named_attr(system.as_type() as AXUIElementRef, "AXFocusedUIElement")
 }
 
 fn focused_window_element() -> Option<CfOwned> {
@@ -524,8 +519,8 @@ fn read_windows_for_app(app: AXUIElementRef, pid: PidT) -> Vec<ComputerWindowEnt
             continue;
         }
         let title = read_string_attr(child as AXUIElementRef, "AXTitle").unwrap_or_default();
-        let is_focused = focused_window.as_ref().is_some_and(|focused| {
-            unsafe { CFGetTypeID(focused.as_type()) == CFGetTypeID(child as CFTypeRef) }
+        let is_focused = focused_window.as_ref().is_some_and(|focused| unsafe {
+            CFGetTypeID(focused.as_type()) == CFGetTypeID(child as CFTypeRef)
         });
         windows.push(ComputerWindowEntry {
             window_ref: Some(window_ref_for_pid(pid, index as usize)),
@@ -557,7 +552,10 @@ fn app_entry_for_pid(pid: PidT, is_foreground: bool) -> Option<ComputerAppEntry>
 
 fn set_app_frontmost(pid: PidT) -> Result<(), BackendError> {
     let app = app_element_for_pid(pid).ok_or_else(|| {
-        BackendError::new("appNotFound", format!("No accessibility application exists for pid {pid}."))
+        BackendError::new(
+            "appNotFound",
+            format!("No accessibility application exists for pid {pid}."),
+        )
     })?;
     let attr = cf_string("AXFrontmost")
         .ok_or_else(|| BackendError::new("internal", "Failed to build AXFrontmost key."))?;
@@ -580,11 +578,18 @@ fn set_app_frontmost(pid: PidT) -> Result<(), BackendError> {
 
 fn raise_window(pid: PidT, index: usize) -> Result<(), BackendError> {
     let app = app_element_for_pid(pid).ok_or_else(|| {
-        BackendError::new("appNotFound", format!("No accessibility application exists for pid {pid}."))
+        BackendError::new(
+            "appNotFound",
+            format!("No accessibility application exists for pid {pid}."),
+        )
     })?;
-    let children = copy_named_attr(app.as_type() as AXUIElementRef, "AXWindows").ok_or_else(|| {
-        BackendError::new("windowNotFound", format!("Application pid {pid} has no AXWindows."))
-    })?;
+    let children =
+        copy_named_attr(app.as_type() as AXUIElementRef, "AXWindows").ok_or_else(|| {
+            BackendError::new(
+                "windowNotFound",
+                format!("Application pid {pid} has no AXWindows."),
+            )
+        })?;
     let is_array = unsafe { CFGetTypeID(children.as_type()) == CFArrayGetTypeID() };
     if !is_array {
         return Err(BackendError::new(
@@ -599,7 +604,8 @@ fn raise_window(pid: PidT, index: usize) -> Result<(), BackendError> {
             format!("Window index {index} is out of range for pid {pid}."),
         ));
     }
-    let child = unsafe { CFArrayGetValueAtIndex(children.as_type() as CFArrayRef, index as CFIndex) };
+    let child =
+        unsafe { CFArrayGetValueAtIndex(children.as_type() as CFArrayRef, index as CFIndex) };
     if child.is_null() {
         return Err(BackendError::new(
             "windowNotFound",
@@ -729,7 +735,9 @@ impl ComputerBackend for MacBackend {
                 } else {
                     Err(BackendError::new(
                         "osAxActionFailed",
-                        format!("AXUIElementPerformAction({action_name}) failed with AXError {err}."),
+                        format!(
+                            "AXUIElementPerformAction({action_name}) failed with AXError {err}."
+                        ),
                     ))
                 }
             }
@@ -801,13 +809,13 @@ impl ComputerBackend for MacBackend {
                             .map(|index| window_ref_for_pid(pid as PidT, index))
                     })
                 }),
-            title: read_string_attr(window.as_type() as AXUIElementRef, "AXTitle").unwrap_or_default(),
+            title: read_string_attr(window.as_type() as AXUIElementRef, "AXTitle")
+                .unwrap_or_default(),
             is_focused: true,
         });
 
-        let focused_control = focused_ui_element().map(|element| {
-            node_for_element(element.as_type() as AXUIElementRef, "focused")
-        });
+        let focused_control = focused_ui_element()
+            .map(|element| node_for_element(element.as_type() as AXUIElementRef, "focused"));
 
         Ok(ComputerObserveResult {
             foreground_app,

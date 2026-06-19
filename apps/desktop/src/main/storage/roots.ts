@@ -12,6 +12,7 @@ export type LyraModuleStorageRoots = {
   readonly workbenchState: string;
   readonly uiuxPacks: string;
   readonly search: string;
+  readonly identity: string;
   readonly imageViewer: string;
   readonly downloadManager: string;
   readonly loginManager: string;
@@ -45,6 +46,7 @@ export const resolveLyraStorageRoots = (): LyraStorageRoots => {
       workbenchState: path.join(modulesRoot, "workbench-state"),
       uiuxPacks: path.join(modulesRoot, "uiux-packs"),
       search: path.join(modulesRoot, "search"),
+      identity: path.join(modulesRoot, "identity"),
       imageViewer: path.join(modulesRoot, "image-viewer"),
       downloadManager: path.join(modulesRoot, "download-manager"),
       loginManager: path.join(modulesRoot, "login-manager")

@@ -135,6 +135,9 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
     ...(request.title !== undefined ? { title: request.title } : {}),
     ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
+    ...(request.sourceAgentSessionId !== undefined
+      ? { sourceAgentSessionId: request.sourceAgentSessionId }
+      : {}),
     ...(normalizedShell !== undefined ? { shell: normalizedShell } : {}),
     ...(Array.isArray(request.env) ? { env: request.env } : {}),
     ...(request.mode !== undefined ? { mode: request.mode } : {}),

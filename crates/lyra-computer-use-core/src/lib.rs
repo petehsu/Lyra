@@ -34,5 +34,6 @@ pub use model::{
 };
 
 pub use runtime::{
-    act_json, diff_json, explain_json, find_json, focus_json, list_apps_json, map_json, observe_json,
+    act_json, diff_json, explain_json, find_json, focus_json, list_apps_json, map_json,
+    observe_json,
 };

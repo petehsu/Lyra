@@ -13,8 +13,8 @@ wasm-opt = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["math", "mermaid"]
-# tree-sitter links native C runtime; browser wasm builds omit highlight for now.
+default = ["highlight", "math", "mermaid"]
+highlight = ["lyra-render-core/highlight"]
 math = ["lyra-render-core/math"]
 mermaid = ["lyra-render-core/mermaid"]
 

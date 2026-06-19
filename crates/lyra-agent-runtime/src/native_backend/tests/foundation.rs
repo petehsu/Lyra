@@ -25,6 +25,138 @@ fn native_backend_creates_and_reads_session() {
 }
 
 #[test]
+fn session_read_falls_back_to_disk_when_state_lock_is_busy() {
+    let mut session = new_session(
+        Some(format!("Lock Busy Read {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let expected_title = session
+        .snapshot
+        .get("title")
+        .and_then(Value::as_str)
+        .expect("title")
+        .to_string();
+
+    let read = {
+        let mut state = state().lock().expect("state lock");
+        state.active_session_id = Some(session_id.clone());
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        read_session(json!({ "sessionId": session_id.clone() })).expect("read session")
+    };
+
+    assert_eq!(read["id"], session_id);
+    assert_eq!(read["title"], expected_title);
+}
+
+#[test]
+fn list_sessions_falls_back_to_disk_when_state_lock_is_busy() {
+    let (session_id, listed) = {
+        let mut state = state().lock().expect("state lock");
+        let mut session = new_session(
+            Some(format!("Lock Busy List {}", Uuid::new_v4())),
+            None,
+            "normal",
+        );
+        let session_id = session.id.clone();
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        let listed = list_sessions(json!({ "limit": 500 })).expect("list sessions");
+        (session_id, listed)
+    };
+
+    assert!(
+        listed["sessions"]
+            .as_array()
+            .expect("sessions")
+            .iter()
+            .any(|entry| entry["id"] == session_id),
+        "disk fallback should include the persisted session"
+    );
+}
+
+#[test]
+fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
+    let provider_id = format!("test-local-{}", Uuid::new_v4());
+    let model_id = format!("test-model-{}", Uuid::new_v4());
+    let catalog = {
+        let mut state = state().lock().expect("state lock");
+        let original_config = state.config.clone();
+        state.config.default_provider = Some(provider_id.clone());
+        state.config.default_model = Some(model_id.clone());
+        state.config.providers.insert(
+            provider_id.clone(),
+            NativeProviderProfile {
+                id: provider_id.clone(),
+                label: "Test Local".to_string(),
+                route_id: providers::routes::local_openai_compatible::ROUTE_ID.to_string(),
+                base_url: Some("http://127.0.0.1:8765/v1".to_string()),
+                default_model: Some(model_id.clone()),
+                api_key: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+                models: vec![NativeProviderModel {
+                    id: model_id.clone(),
+                    label: Some("Test Model".to_string()),
+                    context_window: Some(8_192),
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    enabled: true,
+                }],
+            },
+        );
+        state.save_state().expect("save test config");
+        let catalog = list_models(json!({ "sessionId": "test-session" })).expect("list models");
+        state.config = original_config;
+        state.save_state().expect("restore config");
+        catalog
+    };
+
+    assert!(
+        catalog["models"]
+            .as_array()
+            .expect("models")
+            .iter()
+            .any(|entry| {
+                entry["provider"] == provider_id
+                    && entry["model"] == model_id
+                    && entry["selected"] == true
+            }),
+        "state-file fallback should preserve configured models"
+    );
+}
+
+#[test]
+fn cancel_turn_signals_session_runtime_when_state_lock_is_busy() {
+    let session_id = format!("session-lock-busy-{}", Uuid::new_v4());
+    let turn_id = format!("turn-lock-busy-{}", Uuid::new_v4());
+    let cancellation = Arc::new(AtomicBool::new(false));
+    crate::native_backend::session_runtime::register_active_turn(
+        &session_id,
+        &turn_id,
+        cancellation.clone(),
+    );
+
+    let response = {
+        let _state = state().lock().expect("state lock");
+        cancel_turn(json!({ "sessionId": session_id.clone() })).expect("cancel turn")
+    };
+    let cancellation_requested = cancellation.load(Ordering::SeqCst);
+    crate::native_backend::session_runtime::clear_active_turn(&session_id, &turn_id);
+
+    assert_eq!(response["sessionId"], session_id);
+    assert_eq!(response["status"], "cancelling");
+    assert_eq!(response["deferred"], true);
+    assert!(cancellation_requested);
+}
+
+#[test]
 fn tool_activity_projects_trace_records_for_rebuild() {
     let activity = tool_activity(
         "tool-1",
@@ -57,6 +189,171 @@ fn tool_activity_projects_trace_records_for_rebuild() {
 }
 
 #[test]
+fn tool_activity_persists_tool_record_with_message_block() {
+    let mut session = new_session(
+        Some(format!("Tool Persist {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-tool-persist-{}", Uuid::new_v4());
+    let message_id = format!("message-tool-persist-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "waiting_for_tool" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "waiting_for_tool",
+        None,
+        None,
+    ));
+    push_array(
+        &mut session.snapshot,
+        "messages",
+        assistant_message_with_id(message_id.clone(), "Running tool".to_string()),
+    );
+
+    let root = {
+        let mut state = state().lock().expect("state lock");
+        let root = state.root.clone();
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        root
+    };
+    crate::native_backend::turns::set_active_ui_message_id(&session_id, &turn_id, &message_id);
+
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "call-persisted-tool",
+            "shell",
+            "Ran shell command",
+            "running",
+            json!({
+                "toolOperation": {
+                    "runtimeTurnId": turn_id,
+                },
+            }),
+            None,
+            &now(),
+            None,
+        ),
+        "toolStarted",
+    );
+
+    let persisted = load_session(&root, &session_id)
+        .expect("load session")
+        .expect("persisted session");
+    let tools = persisted
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("tools");
+    assert!(tools.iter().any(|tool| {
+        tool.get("id").and_then(Value::as_str) == Some("call-persisted-tool")
+            && tool.get("status").and_then(Value::as_str) == Some("running")
+    }));
+    let message = persisted
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages.iter().find(|message| {
+                message.get("id").and_then(Value::as_str) == Some(message_id.as_str())
+            })
+        })
+        .expect("message");
+    assert!(
+        message
+            .get("blocks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|block| block.get("toolId").and_then(Value::as_str)
+                == Some("call-persisted-tool"))
+    );
+
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+}
+
+#[test]
+fn finish_running_tools_recognizes_tool_operation_runtime_turn_id() {
+    let mut session = new_session(
+        Some(format!("Finish Running Tool {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let turn_id = "turn-tool-operation-id";
+    session.snapshot["tools"] = json!([
+        {
+            "id": "tool-current",
+            "status": "running",
+            "input": {
+                "toolOperation": {
+                    "runtimeTurnId": turn_id,
+                },
+            },
+        },
+        {
+            "id": "tool-other",
+            "status": "running",
+            "input": {
+                "toolOperation": {
+                    "runtimeTurnId": "turn-other",
+                },
+            },
+        },
+    ]);
+
+    finish_running_tools_for_turn(
+        &mut session,
+        turn_id,
+        "cancelled",
+        json!({ "content": "cancelled" }),
+    );
+
+    let tools = session
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("tools");
+    let current = tools
+        .iter()
+        .find(|tool| tool.get("id").and_then(Value::as_str) == Some("tool-current"))
+        .expect("current tool");
+    let other = tools
+        .iter()
+        .find(|tool| tool.get("id").and_then(Value::as_str) == Some("tool-other"))
+        .expect("other tool");
+    assert_eq!(current["status"], "cancelled");
+    assert_eq!(other["status"], "running");
+}
+
+#[test]
+fn shell_run_rejects_legacy_background_flag() {
+    let session = new_session(
+        Some(format!("Shell Background {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let error = tool_shell_run(
+        &session.id,
+        "turn-shell-background",
+        "call-shell-background",
+        &json!({
+            "command": "python3 -m http.server 8888",
+            "background": true,
+        }),
+    )
+    .expect_err("background shell command should be rejected");
+
+    assert_eq!(error.code, "background_not_supported");
+}
+
+#[test]
 fn native_backend_titles_default_sessions_from_first_user_message() {
     let mut session = new_session(None, None, "normal");
     assert_eq!(session.snapshot["title"], DEFAULT_SESSION_TITLE);
@@ -80,6 +377,73 @@ fn native_backend_keeps_explicit_or_manual_session_titles() {
     manual.snapshot["title"] = Value::String("Manual".to_string());
     maybe_title_session_from_first_user_message(&mut manual, "用户首条消息");
     assert_eq!(manual.snapshot["title"], "Manual");
+}
+
+#[test]
+fn orphan_running_turn_reconciliation_cancels_without_live_worker() {
+    let mut session = new_session(Some("Recover".to_string()), None, "normal");
+    let session_id = session.id.clone();
+    let turn_id = "turn-orphan";
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.to_string());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
+    session.runtime_turns.push(runtime_turn(
+        turn_id,
+        &session_id,
+        "calling_model",
+        None,
+        None,
+    ));
+
+    let changed = reconcile_orphan_running_turn(&mut session, false, "test_recovery");
+
+    assert!(changed);
+    assert_eq!(session.snapshot["turnStatus"], "cancelled");
+    assert_eq!(session.snapshot["activeTurnId"], Value::Null);
+    assert_eq!(
+        session.snapshot.pointer("/follow/running"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(session.runtime_turns[0]["state"], "interrupted");
+    assert_eq!(session.runtime_turns[0]["failureKind"], "test_recovery");
+    assert!(
+        session.runtime_turns[0]["completedAtIso"]
+            .as_str()
+            .is_some()
+    );
+}
+
+#[test]
+fn orphan_running_turn_reconciliation_recovers_stale_waiting_for_tool() {
+    let mut session = new_session(Some("Recover Stale Tool Wait".to_string()), None, "normal");
+    let session_id = session.id.clone();
+    let turn_id = "turn-stale-tool-wait";
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.to_string());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "waiting_for_tool" });
+    let mut turn = runtime_turn(turn_id, &session_id, "waiting_for_tool", None, None);
+    turn["updatedAtMs"] = json!(
+        Utc::now()
+            .timestamp_millis()
+            .saturating_sub(STALE_WAITING_FOR_TOOL_WITHOUT_RUNNING_TOOL_MS + 1_000)
+    );
+    session.runtime_turns.push(turn);
+    session.snapshot["tools"] = json!([{
+        "id": "tool-completed",
+        "status": "completed",
+        "input": { "turnId": turn_id }
+    }]);
+
+    let changed = reconcile_orphan_running_turn(&mut session, true, "test_live_token");
+
+    assert!(changed);
+    assert_eq!(session.snapshot["turnStatus"], "cancelled");
+    assert_eq!(session.snapshot["activeTurnId"], Value::Null);
+    assert_eq!(session.runtime_turns[0]["state"], "interrupted");
+    assert_eq!(
+        session.runtime_turns[0]["failureKind"],
+        "stale_waiting_for_tool_without_running_tools"
+    );
 }
 
 #[test]
@@ -247,17 +611,44 @@ fn provider_catalog_reports_rust_owned_routes_and_protocols() {
     );
 }
 #[test]
+fn session_store_roundtrips_messages_and_runtime_turns() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let mut session = new_session(Some("SQLite".to_string()), None, "normal");
+    push_array(
+        &mut session.snapshot,
+        "messages",
+        json!({
+            "id": "message-1",
+            "role": "user",
+            "text": "remember this session store path",
+            "createdAt": now(),
+        }),
+    );
+    session.runtime_turns.push(json!({
+        "turnId": "turn-1",
+        "state": "completed",
+    }));
+    save_session(temp.path(), &session).expect("save session");
+    let loaded = load_session(temp.path(), &session.id)
+        .expect("load session")
+        .expect("session exists");
+    assert_eq!(
+        loaded.snapshot["messages"][0]["text"],
+        "remember this session store path"
+    );
+    assert_eq!(loaded.runtime_turns[0]["turnId"], "turn-1");
+}
+
+#[test]
 fn native_state_save_only_rewrites_dirty_sessions() {
     let temp = tempfile::tempdir().expect("tempdir");
-    fs::create_dir_all(temp.path().join("sessions")).expect("sessions dir");
     let mut dirty_session = new_session(Some("Dirty".to_string()), None, "normal");
+    let dirty_id = dirty_session.id.clone();
     let mut clean_session = new_session(Some("Clean".to_string()), None, "normal");
     let clean_id = clean_session.id.clone();
-    let clean_path = temp
-        .path()
-        .join("sessions")
-        .join(format!("{clean_id}.json"));
-    fs::write(&clean_path, "clean sentinel").expect("write clean sentinel");
+    save_session(temp.path(), &clean_session).expect("seed clean session");
+    let clean_path = session_db_path(temp.path(), &clean_id);
+    let clean_bytes = fs::read(&clean_path).expect("read clean session db");
     dirty_session.dirty = true;
     clean_session.dirty = false;
     let mut state = NativeRuntimeState {
@@ -284,9 +675,10 @@ fn native_state_save_only_rewrites_dirty_sessions() {
     };
     state.save_state().expect("save state");
     assert_eq!(
-        fs::read_to_string(clean_path).expect("clean session untouched"),
-        "clean sentinel"
+        fs::read(&clean_path).expect("clean session untouched"),
+        clean_bytes
     );
+    assert!(session_db_path(temp.path(), &dirty_id).is_file());
     assert!(state.sessions.values().all(|session| !session.dirty));
 }
 
@@ -350,9 +742,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         tool_usage_cache: HashMap::new(),
         active_session_id: Some(legacy_session_id.clone()),
         config,
-        legacy_shared_memory: Vec::new(),
         active_skills: HashSet::from(["lyra-design-research".to_string()]),
-        legacy_overnight_runs: HashMap::new(),
         pending_permissions: HashMap::from([(
             "permission-legacy".to_string(),
             PermissionRequest {
@@ -390,8 +780,6 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
                 responded_at: None,
             },
         )]),
-        legacy_goals: HashMap::new(),
-        legacy_focused_goal_id: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -422,11 +810,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
     )
     .expect("read memory after schema upgrade");
     assert_eq!(memory_records.len(), 1);
-    assert!(
-        !sessions_dir
-            .join(format!("{legacy_session_id}.json"))
-            .exists()
-    );
+    assert!(!session_dir(&temp.path(), &legacy_session_id).exists());
     let persisted =
         read_json::<NativeStateFile>(&temp.path().join("state.json")).expect("persisted state");
     assert_eq!(
@@ -443,24 +827,24 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
 
 #[test]
 fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
+    use std::os::unix::fs::PermissionsExt;
+
     let temp = tempfile::tempdir().expect("tempdir");
     let sessions_dir = temp.path().join("sessions");
     fs::create_dir_all(&sessions_dir).expect("sessions dir");
-    let blocked_path = sessions_dir.join("blocked.json");
+    let blocked_path = sessions_dir.join("blocked");
     fs::create_dir_all(&blocked_path).expect("blocked dir");
+    fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o000))
+        .expect("lock blocked dir");
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
         tool_runtime_migration_diagnostics: Vec::new(),
         tool_usage_cache: HashMap::new(),
         active_session_id: Some("blocked".to_string()),
         config: NativeConfig::default(),
-        legacy_shared_memory: Vec::new(),
         active_skills: HashSet::new(),
-        legacy_overnight_runs: HashMap::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
-        legacy_goals: HashMap::new(),
-        legacy_focused_goal_id: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -1547,7 +1931,7 @@ fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
 }
 
 #[test]
-fn provider_visible_tool_schema_snapshot_is_tool_fs_only() {
+fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
     for tools in [model_tools(false), model_tools(true)] {
         let names = tools
             .iter()
@@ -1560,6 +1944,7 @@ fn provider_visible_tool_schema_snapshot_is_tool_fs_only() {
                 .and_then(Value::as_str)
                 .is_some_and(|name| {
                     name.starts_with("tool_fs_")
+                        || name == LYRA_CLARIFICATION_ASK_TOOL
                         || name == LYRA_SESSION_READ_MESSAGE_TOOL
                 })
         }));
@@ -1650,7 +2035,13 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
 #[test]
 fn tool_filesystem_scene_uses_runtime_state_signals() {
     assert_eq!(
-        infer_tool_filesystem_scene(Some("project-code"), None, false, &HashSet::new(), &json!({})),
+        infer_tool_filesystem_scene(
+            Some("project-code"),
+            None,
+            false,
+            &HashSet::new(),
+            &json!({})
+        ),
         "project-code"
     );
     assert_eq!(
@@ -1917,6 +2308,37 @@ fn terminal_activity_summary_includes_full_output_path_for_projected_memory() {
         "fullOutputPath=/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt"
     ));
     assert!(summary.contains("projected output"));
+}
+
+#[test]
+fn terminal_activity_summary_includes_lifecycle_projection() {
+    let summary = format_terminal_output(
+        "wait",
+        &json!({
+            "target": { "type": "private", "sessionId": "terminal-session-1" },
+            "sessionId": "terminal-session-1",
+            "output": "",
+            "running": true,
+            "exitCode": null,
+            "reason": "timeout",
+            "lifecycle": {
+                "sessionId": "terminal-session-1",
+                "state": "waiting",
+                "phase": "command_wait",
+                "reason": "timeout",
+                "terminalRunning": true,
+                "commandId": "command-1",
+                "commandStatus": "running",
+                "exitCode": null,
+                "waiting": true,
+                "background": false
+            }
+        }),
+    );
+
+    assert!(summary.contains("lifecycle state=waiting phase=command_wait"));
+    assert!(summary.contains("commandStatus=running"));
+    assert!(summary.contains("commandId=command-1"));
 }
 #[test]
 fn host_tool_ok_false_records_failed_activity() {

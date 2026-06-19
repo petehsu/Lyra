@@ -9,7 +9,7 @@ use crate::{
     Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtyPair, PtySize, PtySystem,
     SlavePty,
 };
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use filedescriptor::FileDescriptor;
 use serial::{
     BaudRate, CharSize, FlowControl, Parity, PortSettings, SerialPort, StopBits, SystemPort,

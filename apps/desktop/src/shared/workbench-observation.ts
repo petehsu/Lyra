@@ -128,7 +128,9 @@ export type WorkbenchTerminalPaneDescriptor = {
   readonly placement: WorkbenchTerminalPlacement;
   readonly isActive: boolean;
   readonly cwd?: string;
+  readonly currentCwd?: string;
   readonly shell?: string;
+  readonly sourceAgentSessionId?: string;
   readonly workspaceTabId?: string;
 };
 
@@ -145,6 +147,7 @@ export type WorkbenchTerminalOpenRequest = {
   readonly cwd?: string;
   readonly terminalTabId?: string;
   readonly paneId?: string;
+  readonly sourceAgentSessionId?: string;
   readonly splitDirection?: WorkbenchTerminalSplitDirection;
 };
 

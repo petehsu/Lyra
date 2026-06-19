@@ -47,10 +47,6 @@ impl MemoryService {
         self.backend.call("agent.memory.audit", payload)
     }
 
-    pub fn trim(&self, payload: serde_json::Value) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.memory.trim.run", payload)
-    }
-
     pub fn recover(
         &self,
         payload: serde_json::Value,
@@ -174,5 +170,62 @@ impl MemoryService {
         payload: serde_json::Value,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend.call("agent.memory.explainInjection", payload)
+    }
+
+    pub fn search_frozen(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.frozen.search", payload)
+    }
+
+    pub fn create_frozen(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.frozen.create", payload)
+    }
+
+    pub fn update_frozen(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.frozen.update", payload)
+    }
+
+    pub fn forget_frozen(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.frozen.forget", payload)
+    }
+
+    pub fn describe_layers(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.layers.describe", payload)
+    }
+
+    pub fn reconcile_sync(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.sync.reconcile", payload)
+    }
+
+    pub fn export_audit(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend.call("agent.memory.exportAudit", payload)
+    }
+
+    pub fn export_layer_projections(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
+        self.backend
+            .call("agent.memory.exportLayerProjections", payload)
     }
 }

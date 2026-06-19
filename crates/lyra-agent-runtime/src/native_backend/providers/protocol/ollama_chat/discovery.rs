@@ -32,7 +32,10 @@ pub(crate) fn discover_models(
     Ok(parse_tag_models(&body, route.as_ref()))
 }
 
-fn parse_tag_models(body: &Value, route: Option<&ProviderRouteDescriptor>) -> Vec<NativeProviderModel> {
+fn parse_tag_models(
+    body: &Value,
+    route: Option<&ProviderRouteDescriptor>,
+) -> Vec<NativeProviderModel> {
     let mut models = body
         .get("models")
         .and_then(Value::as_array)

@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::lifecycle::{input_lifecycle, terminal_lifecycle};
 use crate::memory;
 use crate::process_api::{signal_process, wait_command};
 use crate::protocol::*;
@@ -67,13 +68,16 @@ pub(crate) fn read_screen(
             .ok();
             let active_command =
                 active_command_from_memory(Some(storage_root.as_str()), &runtime.session_id);
+            let running = state.running;
+            let exit_code = state.exit_code;
+            let mode = snapshot.mode.clone();
             return Ok(enrich_tui_regions(TerminalScreenReadResponse {
                 session_id: runtime.session_id.clone(),
                 cursor: snapshot.cursor,
                 screen_version: snapshot.screen_version.min(u32::MAX as u64) as u32,
                 rows: snapshot.rows,
                 cols: snapshot.cols,
-                mode: snapshot.mode,
+                mode,
                 visible_text: snapshot.visible_text,
                 visible_rows: snapshot.visible_rows,
                 scrollback_text: snapshot.scrollback_text,
@@ -89,10 +93,19 @@ pub(crate) fn read_screen(
                 active_command: active_command.or(snapshot.active_command),
                 prompt: snapshot.prompt,
                 regions: snapshot.regions,
-                running: state.running,
-                exit_code: state.exit_code,
+                running,
+                exit_code,
                 truncated: snapshot.truncated,
                 memory,
+                lifecycle: Some(terminal_lifecycle(
+                    &runtime.session_id,
+                    "terminal_screen",
+                    running,
+                    exit_code,
+                    Some("screen"),
+                    Some(runtime.source.as_str()),
+                    Some(runtime.mode.as_str()),
+                )),
             }));
         }
         let storage_root = request
@@ -112,13 +125,17 @@ pub(crate) fn read_screen(
                 .ok();
         let active_command =
             active_command_from_memory(Some(storage_root.as_str()), &request.session_id);
+        let exit_code = memory::last_exit_code(&storage_root, &request.session_id)
+            .ok()
+            .flatten();
+        let mode = snapshot.mode.clone();
         return Ok(enrich_tui_regions(TerminalScreenReadResponse {
             session_id: request.session_id.clone(),
             cursor: snapshot.cursor,
             screen_version: snapshot.screen_version.min(u32::MAX as u64) as u32,
             rows: snapshot.rows,
             cols: snapshot.cols,
-            mode: snapshot.mode,
+            mode: mode.clone(),
             visible_text: snapshot.visible_text,
             visible_rows: snapshot.visible_rows,
             scrollback_text: snapshot.scrollback_text,
@@ -135,11 +152,18 @@ pub(crate) fn read_screen(
             prompt: snapshot.prompt,
             regions: snapshot.regions,
             running: false,
-            exit_code: memory::last_exit_code(&storage_root, &request.session_id)
-                .ok()
-                .flatten(),
+            exit_code,
             truncated: snapshot.truncated,
             memory,
+            lifecycle: Some(terminal_lifecycle(
+                &request.session_id,
+                "terminal_screen",
+                false,
+                exit_code,
+                Some("screen"),
+                None,
+                Some(mode.as_str()),
+            )),
         }));
     };
     let snapshot = {
@@ -175,13 +199,16 @@ pub(crate) fn read_screen(
             None
         }
     });
+    let running = state.running;
+    let exit_code = state.exit_code;
+    let mode = snapshot.mode.clone();
     Ok(enrich_tui_regions(TerminalScreenReadResponse {
         session_id: runtime.session_id.clone(),
         cursor: snapshot.cursor,
         screen_version: snapshot.screen_version.min(u32::MAX as u64) as u32,
         rows: snapshot.rows,
         cols: snapshot.cols,
-        mode: snapshot.mode,
+        mode,
         visible_text: snapshot.visible_text,
         visible_rows: snapshot.visible_rows,
         scrollback_text: snapshot.scrollback_text,
@@ -197,10 +224,19 @@ pub(crate) fn read_screen(
         active_command: active_command.or(snapshot.active_command),
         prompt: snapshot.prompt,
         regions: snapshot.regions,
-        running: state.running,
-        exit_code: state.exit_code,
+        running,
+        exit_code,
         truncated: snapshot.truncated,
         memory,
+        lifecycle: Some(terminal_lifecycle(
+            &runtime.session_id,
+            "terminal_screen",
+            running,
+            exit_code,
+            Some("screen"),
+            Some(runtime.source.as_str()),
+            Some(runtime.mode.as_str()),
+        )),
     }))
 }
 
@@ -501,6 +537,12 @@ pub(crate) fn execute_input(
                     .storage_root
                     .as_deref()
                     .and_then(|root| memory_json(root, &request.session_id, false)),
+                lifecycle: Some(input_lifecycle(
+                    &request.session_id,
+                    other,
+                    "notImplemented",
+                    Some("unsupportedAction"),
+                )),
             });
         }
     }
@@ -510,13 +552,19 @@ pub(crate) fn execute_input(
         .as_deref()
         .and_then(|root| memory_json(root, &request.session_id, false));
     Ok(TerminalInputExecuteResponse {
-        session_id: request.session_id,
+        session_id: request.session_id.clone(),
         input_id,
-        action,
+        action: action.clone(),
         status: "executed".to_string(),
         permission_id,
         events,
         memory,
+        lifecycle: Some(input_lifecycle(
+            &request.session_id,
+            action.as_str(),
+            "executed",
+            Some("inputAccepted"),
+        )),
     })
 }
 
@@ -532,6 +580,7 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 actor_json: request.actor_json.clone(),
                 correlation_json: request.correlation_json.clone(),
             })?;
+            let lifecycle = response.lifecycle.clone();
             Ok(TerminalWaitUntilResponse {
                 session_id: request.session_id,
                 matched: response.reason != "timeout" && response.reason != "notFound",
@@ -541,6 +590,7 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 command_id: response.command_id,
                 output: None,
                 memory: response.memory,
+                lifecycle,
             })
         }
         "screen" | "prompt" => {
@@ -570,6 +620,23 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                     )
                 };
                 if matched {
+                    let lifecycle = terminal_lifecycle(
+                        &request.session_id,
+                        if request.target == "prompt" {
+                            "wait_until:prompt"
+                        } else {
+                            "wait_until:screen"
+                        },
+                        screen.running,
+                        screen.exit_code,
+                        Some(if request.target == "prompt" {
+                            "prompt"
+                        } else {
+                            "screen"
+                        }),
+                        None,
+                        Some(screen.mode.as_str()),
+                    );
                     return Ok(TerminalWaitUntilResponse {
                         session_id: request.session_id,
                         matched: true,
@@ -584,9 +651,23 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                         command_id: None,
                         output: Some(screen.visible_text),
                         memory: screen.memory,
+                        lifecycle: Some(lifecycle),
                     });
                 }
                 if Instant::now() >= deadline {
+                    let lifecycle = terminal_lifecycle(
+                        &request.session_id,
+                        if request.target == "prompt" {
+                            "wait_until:prompt"
+                        } else {
+                            "wait_until:screen"
+                        },
+                        screen.running,
+                        screen.exit_code,
+                        Some("timeout"),
+                        None,
+                        Some(screen.mode.as_str()),
+                    );
                     return Ok(TerminalWaitUntilResponse {
                         session_id: request.session_id,
                         matched: false,
@@ -596,6 +677,7 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                         command_id: None,
                         output: Some(screen.visible_text),
                         memory: screen.memory,
+                        lifecycle: Some(lifecycle),
                     });
                 }
                 if let Some(runtime) = runtime.as_ref() {
@@ -620,6 +702,15 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 command_id: None,
                 output: None,
                 memory: memory_json(&request.storage_root, &request.session_id, false),
+                lifecycle: Some(terminal_lifecycle(
+                    &request.session_id,
+                    "wait_until:screen",
+                    false,
+                    None,
+                    Some("timeout"),
+                    None,
+                    None,
+                )),
             })
         }
         "event" => {
@@ -642,6 +733,15 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            let lifecycle = terminal_lifecycle(
+                &request.session_id,
+                "wait_until:event",
+                false,
+                None,
+                Some(if items.is_empty() { "timeout" } else { "event" }),
+                None,
+                None,
+            );
             Ok(TerminalWaitUntilResponse {
                 session_id: request.session_id,
                 matched: !items.is_empty(),
@@ -653,6 +753,7 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 memory: value
                     .get("memory")
                     .and_then(|memory| serde_json::to_string(memory).ok()),
+                lifecycle: Some(lifecycle),
             })
         }
         _ => {
@@ -668,6 +769,19 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 request.text.as_deref(),
                 request.regex.as_deref(),
             );
+            let lifecycle = if matched {
+                Some(terminal_lifecycle(
+                    &request.session_id,
+                    "wait_until:output",
+                    response.running,
+                    response.exit_code,
+                    Some("output"),
+                    Some(response.source.as_str()),
+                    Some(response.mode.as_str()),
+                ))
+            } else {
+                response.lifecycle.clone()
+            };
             Ok(TerminalWaitUntilResponse {
                 session_id: request.session_id,
                 matched,
@@ -681,6 +795,7 @@ pub(crate) fn wait_until(request: TerminalWaitUntilRequest) -> Result<TerminalWa
                 command_id: None,
                 output: Some(response.output),
                 memory: response.memory,
+                lifecycle,
             })
         }
     }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { writeClipboardText } from "../../../shared/clipboard";
+import { getDesktopApi } from "../shell/service";
 
 import type { GlobalDialogActionContext, GlobalDialogState } from "./types";
 
@@ -41,6 +42,10 @@ const resolveSourceIconLabel = (source: GlobalDialogState["source"]): string => 
   return fallback.length > 0 ? fallback : DEFAULT_SOURCE_ICON_LABEL;
 };
 
+const setWorkbenchModalOcclusion = (active: boolean): void => {
+  void getDesktopApi()?.workbenchBrowser?.setModalOcclusion?.({ active });
+};
+
 export const GlobalDialogHost = ({
   state,
   onClose,
@@ -74,6 +79,17 @@ export const GlobalDialogHost = ({
       }, COPIED_MARK_DURATION_MS);
     })();
   }, [clearCopiedResetTimer]);
+
+  useEffect(() => {
+    if (state.isOpen === false) {
+      setWorkbenchModalOcclusion(false);
+      return;
+    }
+    setWorkbenchModalOcclusion(true);
+    return () => {
+      setWorkbenchModalOcclusion(false);
+    };
+  }, [state.isOpen]);
 
   useEffect(() => {
     if (state.isOpen === false) {

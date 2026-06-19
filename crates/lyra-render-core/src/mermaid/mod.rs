@@ -13,10 +13,7 @@ pub fn render_mermaid(source: &str, theme: RenderTheme) -> MermaidRenderResult {
     #[cfg(feature = "mermaid")]
     {
         match render_mermaid_sync(source, theme) {
-            Ok(svg) => MermaidRenderResult {
-                svg,
-                error: None,
-            },
+            Ok(svg) => MermaidRenderResult { svg, error: None },
             Err(error) => MermaidRenderResult {
                 svg: None,
                 error: Some(error.to_string()),

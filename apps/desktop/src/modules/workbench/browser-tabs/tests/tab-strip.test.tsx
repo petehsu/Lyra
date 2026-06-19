@@ -18,6 +18,15 @@ const createTab = (
   query: undefined
 });
 
+const createAgentProjectTreeTab = (id: string, title: string, filePath: string): WorkspaceTab => ({
+  ...createTab(id, title, "app"),
+  appId: "agent-project-tree",
+  appInstanceId: `agent-project-tree-${id}`,
+  appIconKey: "agent-project-tree-default",
+  filePath,
+  fileSessionId: `session-${id}`
+});
+
 const createProps = (overrides: Partial<BrowserTabStripProps> = {}): BrowserTabStripProps => ({
   tabs: [
     createTab("home", "Home", "search"),
@@ -156,6 +165,52 @@ describe("BrowserTabStrip", () => {
     expect(onActivateTab).toHaveBeenCalledWith("docs");
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     expect(onOpenNewTab).toHaveBeenCalledTimes(1);
+  });
+
+  test("renders dynamic project identity icons for agent project tree tabs", () => {
+    const projectTreeTab = createAgentProjectTreeTab("tree", "Project", "/tmp/project");
+    const { container } = render(
+      <BrowserTabStrip
+        {...createProps({
+          tabs: [projectTreeTab],
+          activeTabId: projectTreeTab.id,
+          workspaceAppIdentityByTabId: {
+            [projectTreeTab.id]: {
+              url: "lyra-file://preview/project-logo.png",
+              label: "Project",
+              source: "project"
+            }
+          }
+        })}
+      />
+    );
+
+    const image = container.querySelector<HTMLImageElement>(".lyra-browser-tab-favicon");
+    expect(image?.src).toBe("lyra-file://preview/project-logo.png");
+    expect(container.querySelector(".lyra-file-manager-icon-shell")).toBeNull();
+  });
+
+  test("renders the theme-aware Lyra logo for Lyra project tree tabs", () => {
+    const projectTreeTab = createAgentProjectTreeTab("tree", "Lyra", "/Users/me/Lyra");
+    const { container } = render(
+      <BrowserTabStrip
+        {...createProps({
+          tabs: [projectTreeTab],
+          activeTabId: projectTreeTab.id,
+          workspaceAppIdentityByTabId: {
+            [projectTreeTab.id]: {
+              url: null,
+              label: "Lyra",
+              source: "project",
+              renderHint: "lyra-logo"
+            }
+          }
+        })}
+      />
+    );
+
+    expect(container.querySelector(".lyra-browser-tab-lyra-logo")).not.toBeNull();
+    expect(container.querySelector(".lyra-file-manager-icon-shell")).toBeNull();
   });
 
   test("renders navigation control in a toolbar above the tab strip", () => {

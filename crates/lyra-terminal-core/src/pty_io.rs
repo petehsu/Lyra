@@ -4,7 +4,7 @@ use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
-use crate::events::{emit_event, NativeEvent};
+use crate::events::{emit_cwd_changed, emit_event, NativeEvent};
 use crate::input_controller;
 use crate::live_output::{append_output, mark_session_exit, Utf8StreamDecoder};
 use crate::memory_writer::TerminalMemoryTask;
@@ -103,6 +103,12 @@ pub(crate) fn spawn_pty(
 }
 
 fn parse_exit_code(status: portable_pty::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    if let Some(signal) = status.signal() {
+        return 128 + signal;
+    }
     if status.success() {
         0
     } else {
@@ -120,6 +126,7 @@ pub(crate) fn spawn_io_threads(
     let mode_for_reader = runtime.mode.clone();
     let state_for_reader = Arc::clone(&runtime.state);
     let screen_for_reader = Arc::clone(&runtime.screen);
+    let current_cwd_for_reader = Arc::clone(&runtime.current_cwd);
     let memory_writer_for_reader = runtime.memory_writer.clone();
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
@@ -138,6 +145,8 @@ pub(crate) fn spawn_io_threads(
                             error: None,
                             source: Some(source_for_reader.clone()),
                             mode: Some(mode_for_reader.clone()),
+                            cwd: None,
+                            current_cwd: None,
                             command_id: None,
                             command: None,
                         });
@@ -146,11 +155,7 @@ pub(crate) fn spawn_io_threads(
                 }
                 Ok(size) => {
                     let chunk = &buffer[..size];
-                    let shell_events = if memory_writer_for_reader.is_some() {
-                        shell_parser.feed(chunk)
-                    } else {
-                        Vec::new()
-                    };
+                    let shell_events = shell_parser.feed(chunk);
                     append_output(&state_for_reader, chunk);
                     let data = event_decoder.decode(chunk);
                     if !data.is_empty() {
@@ -162,9 +167,27 @@ pub(crate) fn spawn_io_threads(
                             error: None,
                             source: Some(source_for_reader.clone()),
                             mode: Some(mode_for_reader.clone()),
+                            cwd: None,
+                            current_cwd: None,
                             command_id: None,
                             command: None,
                         });
+                    }
+                    for event in shell_events
+                        .iter()
+                        .filter(|event| event.kind == ShellIntegrationEventKind::CwdChanged)
+                    {
+                        if let Some(cwd) = event.cwd.as_ref() {
+                            if let Ok(mut current_cwd) = current_cwd_for_reader.lock() {
+                                *current_cwd = Some(cwd.clone());
+                            }
+                            emit_cwd_changed(
+                                &session_id_for_reader,
+                                &source_for_reader,
+                                &mode_for_reader,
+                                cwd,
+                            );
+                        }
                     }
                     let screen_diff_payload = screen_for_reader
                         .lock()
@@ -205,6 +228,8 @@ pub(crate) fn spawn_io_threads(
                         error: Some(error.to_string()),
                         source: Some(source_for_reader.clone()),
                         mode: Some(mode_for_reader.clone()),
+                        cwd: None,
+                        current_cwd: None,
                         command_id: None,
                         command: None,
                     });
@@ -238,6 +263,8 @@ pub(crate) fn spawn_io_threads(
             error: None,
             source: Some(source_for_exit),
             mode: Some(mode_for_exit),
+            cwd: None,
+            current_cwd: None,
             command_id: None,
             command: None,
         });

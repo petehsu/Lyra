@@ -52,6 +52,15 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
 
     const next = applyAgentRuntimeEventToSnapshot(current, {
       kind: "messageDelta",
+      renderDocument: {
+        blocks: [
+          {
+            kind: "paragraph",
+            children: [{ kind: "text", value: "Hello" }]
+          }
+        ]
+      },
+      renderRevision: 1,
       sessionId: "session-1",
       messageId: "message-1",
       blockId: "text-1",
@@ -60,7 +69,20 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
 
     expect(next.messages[0]?.text).toBe("Hello world");
     expect(next.messages[0]?.blocks).toEqual([
-      { type: "text", id: "text-1", text: "Hello world" }
+      {
+        type: "text",
+        id: "text-1",
+        text: "Hello world",
+        renderDocument: {
+          blocks: [
+            {
+              kind: "paragraph",
+              children: [{ kind: "text", value: "Hello" }]
+            }
+          ]
+        },
+        renderRevision: 1
+      }
     ]);
   });
 
@@ -97,6 +119,55 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     ]);
   });
 
+  test("upserts running tool diff on toolUpdated", () => {
+    const current = session({
+      tools: [{
+        id: "tool-1",
+        name: "tool_fs_run",
+        label: "Write file",
+        status: "running",
+        input: { path: "/tools/filesystem/write_file", args: { path: "src/main.ts" } },
+        output: {
+          raw: {
+            diff: "--- src/main.ts\n+++ src/main.ts\n@@ -1 +1,2 @@\n-old\n+new"
+          }
+        },
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }]
+    });
+    const updated = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "toolUpdated",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      tool: {
+        id: "tool-1",
+        name: "tool_fs_run",
+        label: "Write file",
+        status: "running",
+        input: { path: "/tools/filesystem/write_file", args: { path: "src/main.ts" } },
+        output: {
+          raw: {
+            diff: [
+              "--- src/main.ts",
+              "+++ src/main.ts",
+              "@@ -1 +1,3 @@",
+              "-old",
+              "+new",
+              "+line"
+            ].join("\n")
+          }
+        },
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }
+    });
+
+    expect(updated.tools[0]?.output).toMatchObject({
+      raw: {
+        diff: expect.stringContaining("+line")
+      }
+    });
+  });
+
   test("maps terminal turn states and clears completed turns", () => {
     const running = applyAgentRuntimeEventToSnapshot(session(), {
       kind: "turnStateChanged",
@@ -116,5 +187,24 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     expect(completed.turnStatus).toBe("finished");
     expect(completed.activeTurnId).toBeNull();
     expect(completed.follow.running).toBe(false);
+  });
+
+  test("maps backend cancelled turn state as terminal", () => {
+    const current = session({
+      turnStatus: "running",
+      activeTurnId: "turn-1",
+      follow: { running: true, activity: "calling_model" }
+    });
+
+    const cancelled = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "turnStateChanged",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      state: "cancelled"
+    });
+
+    expect(cancelled.turnStatus).toBe("cancelled");
+    expect(cancelled.activeTurnId).toBeNull();
+    expect(cancelled.follow.running).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 use super::*;
 
+pub(crate) const LYRA_CLARIFICATION_ASK_TOOL: &str = "lyra_clarification_ask";
+
 pub(crate) fn execute_clarification_tool_adapter(
     session_id: &str,
     turn_id: &str,

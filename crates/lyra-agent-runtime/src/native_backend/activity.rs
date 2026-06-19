@@ -265,23 +265,30 @@ fn dedupe_activity_values(values: Vec<Value>) -> Vec<Value> {
 }
 
 pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value, event_kind: &str) {
-    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
-    if event_kind == "toolStarted" {
-        if let (Some(message_id), Some(tool_id)) = (
-            ui_message_id.as_deref(),
-            tool.get("id").and_then(Value::as_str),
-        ) {
-            crate::native_backend::turns::append_tool_block_to_ui_message(
+    if event_kind == "toolFinished" {
+        if let Some(tool_call_id) = tool.get("id").and_then(Value::as_str) {
+            crate::native_backend::streaming_preview_state::clear_streaming_diff_preview_state(
                 session_id,
-                message_id,
-                tool_id,
+                turn_id,
+                tool_call_id,
             );
         }
     }
-    let callback = match state().lock() {
+    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
+    let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
+            let mut committed_message = None;
+            let mut changed = false;
             if let Some(session) = state.sessions.get_mut(session_id) {
+                if event_kind == "toolStarted"
+                    && let (Some(message_id), Some(tool_id)) = (
+                        ui_message_id.as_deref(),
+                        tool.get("id").and_then(Value::as_str),
+                    )
+                {
+                    committed_message = append_tool_block_to_message(session, message_id, tool_id);
+                }
                 upsert_tool(&mut session.snapshot, tool.clone());
                 record_rollback_file_candidates(session, turn_id, &tool);
                 session.snapshot["follow"] = json!({
@@ -289,12 +296,25 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
                     "activity": tool.get("label").and_then(Value::as_str).unwrap_or("Using Lyra tool")
                 });
                 touch_session(session);
+                changed = true;
+            }
+            if changed {
                 let _ = state.save_state();
             }
-            callback
+            (callback, committed_message)
         }
         Err(_) => return,
     };
+    if let Some(message) = committed_message {
+        emit_with_callback(
+            &callback,
+            json!({
+                "kind": "messageCommitted",
+                "sessionId": session_id,
+                "message": message,
+            }),
+        );
+    }
     let mut event = json!({
         "kind": event_kind,
         "sessionId": session_id,
@@ -314,6 +334,89 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
             "tool": tool,
         }),
     );
+    if event_kind == "toolFinished" {
+        if let Ok(state) = state().lock() {
+            if let Some(trigger) = memory_trigger_from_tool(&tool, session_id, turn_id) {
+                emit_memory_trigger(&state.root, trigger);
+            }
+        }
+    }
+}
+
+fn append_tool_block_to_message(
+    session: &mut NativeSession,
+    message_id: &str,
+    tool_id: &str,
+) -> Option<Value> {
+    let messages = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)?;
+    let message = messages
+        .iter_mut()
+        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
+    if !message.get("blocks").is_some_and(Value::is_array) {
+        message["blocks"] = json!([]);
+    }
+    let blocks = message.get_mut("blocks").and_then(Value::as_array_mut)?;
+    let already_present = blocks.iter().any(|block| {
+        block.get("type").and_then(Value::as_str) == Some("tool")
+            && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+    });
+    if already_present {
+        return None;
+    }
+    blocks.push(json!({
+        "type": "tool",
+        "id": format!("tool-{tool_id}"),
+        "toolId": tool_id,
+    }));
+    Some(message.clone())
+}
+
+pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value) {
+    let callback = match state().lock() {
+        Ok(mut state) => {
+            let callback = state.event_callback.clone();
+            if let Some(session) = state.sessions.get_mut(session_id) {
+                upsert_tool(&mut session.snapshot, tool.clone());
+                session.snapshot["follow"] = json!({
+                    "running": true,
+                    "activity": tool.get("label").and_then(Value::as_str).unwrap_or("Using Lyra tool")
+                });
+                touch_session(session);
+            }
+            let _ = state.save_state();
+            callback
+        }
+        Err(_) => return,
+    };
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "toolUpdated",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "tool": tool,
+        }),
+    );
+}
+
+pub(crate) fn tool_started_at_for_call(session_id: &str, tool_call_id: &str) -> String {
+    if let Ok(state) = state().lock() {
+        if let Some(session) = state.sessions.get(session_id) {
+            if let Some(tools) = session.snapshot.get("tools").and_then(Value::as_array) {
+                for tool in tools {
+                    if tool.get("id").and_then(Value::as_str) == Some(tool_call_id) {
+                        if let Some(started_at) = tool.get("startedAt").and_then(Value::as_str) {
+                            return started_at.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    now()
 }
 
 pub(crate) fn upsert_tool(snapshot: &mut Value, tool: Value) {
@@ -334,6 +437,13 @@ pub(crate) fn upsert_tool(snapshot: &mut Value, tool: Value) {
     }
 }
 
+pub(crate) fn tool_runtime_turn_id(tool: &Value) -> Option<&str> {
+    tool.pointer("/input/toolOperation/runtimeTurnId")
+        .or_else(|| tool.pointer("/input/runtimeCancellation/turnId"))
+        .or_else(|| tool.pointer("/input/turnId"))
+        .and_then(Value::as_str)
+}
+
 pub(crate) fn finish_running_tools_for_turn(
     session: &mut NativeSession,
     turn_id: &str,
@@ -352,10 +462,7 @@ pub(crate) fn finish_running_tools_for_turn(
         if tool.get("status").and_then(Value::as_str) != Some("running") {
             continue;
         }
-        let tool_turn_id = tool
-            .pointer("/input/runtimeCancellation/turnId")
-            .or_else(|| tool.pointer("/input/turnId"))
-            .and_then(Value::as_str);
+        let tool_turn_id = tool_runtime_turn_id(tool);
         if tool_turn_id != Some(turn_id) {
             continue;
         }
@@ -543,12 +650,20 @@ pub(crate) fn format_terminal_output(action: &str, value: &Value) -> String {
         .pointer("/memory/truncatedByProjection")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let mut lines = vec![format!(
+    let mut lines = Vec::new();
+    if let Some(lifecycle) = value
+        .get("lifecycle")
+        .or_else(|| value.pointer("/screen/lifecycle"))
+        && let Some(line) = format_terminal_lifecycle_line(lifecycle)
+    {
+        lines.push(line);
+    }
+    lines.push(format!(
         "{target_type} terminal {session_id}: running={running} exitCode={}",
         exit_code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "null".to_string())
-    )];
+    ));
     if let Some(reason) = reason {
         lines.push(format!("reason={reason}"));
     }
@@ -605,6 +720,47 @@ pub(crate) fn format_terminal_output(action: &str, value: &Value) -> String {
         lines.push(output.to_string());
     }
     lines.join("\n")
+}
+
+fn format_terminal_lifecycle_line(lifecycle: &Value) -> Option<String> {
+    let state = lifecycle.get("state").and_then(Value::as_str)?;
+    let phase = lifecycle
+        .get("phase")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let reason = lifecycle
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let terminal_running = lifecycle
+        .get("terminalRunning")
+        .and_then(Value::as_bool)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let command_status = lifecycle
+        .get("commandStatus")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let command_id = lifecycle
+        .get("commandId")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    let exit_code = lifecycle
+        .get("exitCode")
+        .and_then(Value::as_i64)
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string());
+    let waiting = lifecycle
+        .get("waiting")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let background = lifecycle
+        .get("background")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Some(format!(
+        "lifecycle state={state} phase={phase} reason={reason} terminalRunning={terminal_running} commandStatus={command_status} commandId={command_id} exitCode={exit_code} waiting={waiting} background={background}"
+    ))
 }
 
 pub(crate) fn format_tool_output(name: &str, action: &str, value: &Value) -> String {
@@ -1186,16 +1342,18 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                             .unwrap_or("iframe");
                         let tag = hint.get("tag").and_then(Value::as_str).unwrap_or("element");
                         let text = hint.get("text").and_then(Value::as_str).unwrap_or("");
-                        let pages_down = hint.get("pagesDown").and_then(Value::as_f64).unwrap_or(0.0);
+                        let pages_down =
+                            hint.get("pagesDown").and_then(Value::as_f64).unwrap_or(0.0);
                         let pages_suffix = if pages_down > 0.0 {
-                            format!(" ~{pages_down} page{} down", if pages_down == 1.0 { "" } else { "s" })
+                            format!(
+                                " ~{pages_down} page{} down",
+                                if pages_down == 1.0 { "" } else { "s" }
+                            )
                         } else {
                             String::new()
                         };
                         let label = if text.is_empty() { "(no label)" } else { text };
-                        lines.push(format!(
-                            "  [{frame_ref}] <{tag}> \"{label}\"{pages_suffix}"
-                        ));
+                        lines.push(format!("  [{frame_ref}] <{tag}> \"{label}\"{pages_suffix}"));
                     }
                 }
             }
@@ -1482,7 +1640,9 @@ pub(crate) fn emit_provider_fault(
     );
 }
 
-fn mimo_fault_category_label(category: &super::providers::mimo_faults::MimoFaultCategory) -> &'static str {
+fn mimo_fault_category_label(
+    category: &super::providers::mimo_faults::MimoFaultCategory,
+) -> &'static str {
     match category {
         super::providers::mimo_faults::MimoFaultCategory::Format => "format",
         super::providers::mimo_faults::MimoFaultCategory::Auth => "auth",
@@ -1515,6 +1675,7 @@ pub(crate) fn emit_turn_state(session_id: &str, turn_id: &str, state_name: &str,
     let callback = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
+            let mut changed = false;
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
                     return;
@@ -1522,6 +1683,9 @@ pub(crate) fn emit_turn_state(session_id: &str, turn_id: &str, state_name: &str,
                 session.snapshot["follow"] = json!({ "running": true, "activity": state_name });
                 update_runtime_turn_state(session, turn_id, state_name, None);
                 touch_session(session);
+                changed = true;
+            }
+            if changed {
                 let _ = state.save_state();
             }
             callback

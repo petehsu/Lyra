@@ -18,6 +18,7 @@ import {
 } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
 import { cn } from "@renderer/ui/utils";
+import { IdentityIconView, useSessionIdentityIcon } from "../identity";
 import { createRafCoalescer } from "../shell/raf-coalesce";
 import {
   getIsLayoutResizing,
@@ -253,7 +254,27 @@ const useAiSessionTabLayout = (
   };
 };
 
+const SessionTabIdentityIcon = ({
+  desktopApi,
+  workingDir
+}: {
+  readonly desktopApi: AiPanelSurfaceProps["desktopApi"];
+  readonly workingDir?: string | null;
+}) => {
+  const icon = useSessionIdentityIcon(desktopApi, workingDir);
+  return (
+    <IdentityIconView
+      className="lyra-agents-session-tab-icon"
+      imageClassName="lyra-agents-session-tab-image"
+      iconUrl={icon.url}
+      label={icon.label}
+      fallback={<LyraLogo className="lyra-agents-session-tab-logo" alt="" />}
+    />
+  );
+};
+
 const AiPanelTabsHeader = ({
+  desktopApi,
   tabs,
   activeSessionTabId,
   activeSessionId,
@@ -261,6 +282,7 @@ const AiPanelTabsHeader = ({
   onCloseSessionTab,
   onReorderSessionTabs
 }: {
+  readonly desktopApi: AiPanelSurfaceProps["desktopApi"];
   readonly tabs: readonly AiPanelSessionTab[];
   readonly activeSessionTabId: string | null;
   readonly activeSessionId: string | null;
@@ -281,14 +303,17 @@ const AiPanelTabsHeader = ({
     ?? tabs.find((tab) => tab.sessionId === activeSessionId)?.tabId
     ?? currentSessionId
     ?? (tabs.length === 0 ? "__local-draft" : null);
-  const currentTab =
+  const currentTab: AiPanelSessionTab | null =
     currentSessionId === null
       ? null
       : ({
           tabId: currentSessionId,
           sessionId: currentSessionId,
           title: session.title,
-          lastKnownStatus: isTurnRunning ? "running" : null
+          lastKnownStatus: isTurnRunning ? "running" : null,
+          workingDir: session.workingDir,
+          projectBound: session.projectBound,
+          workingDirIsHome: session.workingDirIsHome
         } satisfies AiPanelSessionTab);
   const visibleTabs =
     currentTab !== null && tabs.some((tab) => tab.sessionId === currentTab.sessionId) === false
@@ -453,6 +478,9 @@ const AiPanelTabsHeader = ({
               ? session.title.trim() || tab.title || DEFAULT_SESSION_TITLE
               : tab.title.trim() || DEFAULT_SESSION_TITLE;
             const running = hasCurrentSnapshot ? isTurnRunning : tab.lastKnownStatus === "running";
+            const workingDir = hasCurrentSnapshot
+              ? session.workingDir
+              : tab.workingDir ?? tab.draftWorkingDir ?? null;
             const tabLayout = layout.items[index];
             const tabStyle = tabLayout === undefined
               ? undefined
@@ -498,9 +526,7 @@ const AiPanelTabsHeader = ({
                     onActivateSessionTab?.(tab.tabId);
                   }}
                 >
-                  <span className="lyra-agents-session-tab-icon" aria-hidden="true">
-                    <LyraLogo className="lyra-agents-session-tab-logo" alt="" />
-                  </span>
+                  <SessionTabIdentityIcon desktopApi={desktopApi} workingDir={workingDir} />
                   <span className="lyra-agents-session-tab-title">{title}</span>
                 </AppButton>
                 <AppIconButton
@@ -617,8 +643,10 @@ export const AiPanelSurface = ({
       <div className="lyra-agents-host">
         <LyraAgentsApp
           data={provider.data}
+          desktopApi={desktopApi}
           headerSlot={
             <AiPanelTabsHeader
+              desktopApi={desktopApi}
               tabs={sessionTabs}
               activeSessionTabId={activeSessionTabId ?? null}
               activeSessionId={activeSessionId}

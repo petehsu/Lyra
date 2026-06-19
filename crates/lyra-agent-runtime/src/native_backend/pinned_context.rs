@@ -1,0 +1,271 @@
+use super::{NativeSession, Value, iso_ms, now};
+use serde_json::json;
+use std::collections::HashSet;
+
+#[derive(Clone, Debug)]
+pub(crate) struct PinnedItem {
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub source_ref: Option<String>,
+    pub message_ids: Vec<String>,
+}
+
+const ACTIVE_RUNTIME_TURN_STATES: &[&str] = &[
+    "calling_model",
+    "awaiting_tools",
+    "running",
+    "interrupted",
+    "failed_recoverable",
+];
+
+pub(crate) fn collect_pinned_items(
+    session: &NativeSession,
+    active_clarification: Option<&Value>,
+) -> Vec<PinnedItem> {
+    let mut items = Vec::new();
+    let snapshot = &session.snapshot;
+
+    items.push(PinnedItem {
+        kind: "session".to_string(),
+        title: snapshot
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("Session")
+            .to_string(),
+        content: format!(
+            "workingDir={}",
+            snapshot
+                .get("workingDir")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        ),
+        source_ref: Some(session.id.clone()),
+        message_ids: Vec::new(),
+    });
+
+    if let Some(clarification) = active_clarification.filter(|value| !value.is_null()) {
+        let question = clarification
+            .get("question")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if !question.is_empty() {
+            items.push(PinnedItem {
+                kind: "clarification".to_string(),
+                title: "Active clarification".to_string(),
+                content: question.to_string(),
+                source_ref: clarification
+                    .get("clarificationId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                message_ids: Vec::new(),
+            });
+        }
+    }
+
+    for todo in snapshot
+        .get("todos")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let status = todo.get("status").and_then(Value::as_str).unwrap_or("open");
+        if matches!(status, "done" | "completed" | "cancelled") {
+            continue;
+        }
+        let content = todo
+            .get("content")
+            .or_else(|| todo.get("title"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if content.is_empty() {
+            continue;
+        }
+        items.push(PinnedItem {
+            kind: "todo".to_string(),
+            title: "Active todo".to_string(),
+            content: content.to_string(),
+            source_ref: todo.get("id").and_then(Value::as_str).map(str::to_string),
+            message_ids: Vec::new(),
+        });
+    }
+
+    for turn in &session.runtime_turns {
+        let state = turn.get("state").and_then(Value::as_str).unwrap_or("");
+        if !ACTIVE_RUNTIME_TURN_STATES.contains(&state) {
+            continue;
+        }
+        let turn_id = turn
+            .get("runtimeTurnId")
+            .and_then(Value::as_str)
+            .unwrap_or("runtime-turn");
+        let user_message_id = turn
+            .get("userMessageId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        items.push(PinnedItem {
+            kind: "runtime_turn".to_string(),
+            title: format!("Runtime turn ({state})"),
+            content: format!("runtimeTurnId={turn_id}"),
+            source_ref: Some(turn_id.to_string()),
+            message_ids: user_message_id.into_iter().collect(),
+        });
+    }
+
+    let messages = snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    for message in &messages {
+        let msg_id = message
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if msg_id.is_empty() {
+            continue;
+        }
+
+        if message
+            .pointer("/metadata/pinned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            let text = message.get("text").and_then(Value::as_str).unwrap_or("");
+            if !text.is_empty() {
+                items.push(PinnedItem {
+                    kind: "user_constraint".to_string(),
+                    title: "Pinned user constraint".to_string(),
+                    content: truncate_pin_text(text),
+                    source_ref: Some(msg_id.clone()),
+                    message_ids: vec![msg_id.clone()],
+                });
+            }
+        }
+
+        if let Some(citations) = message
+            .pointer("/metadata/transcriptCitations")
+            .and_then(Value::as_array)
+            .filter(|items| !items.is_empty())
+        {
+            let summary = citations
+                .iter()
+                .filter_map(|cite| {
+                    cite.get("messageId")
+                        .and_then(Value::as_str)
+                        .map(|id| format!("cite:{id}"))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !summary.is_empty() {
+                items.push(PinnedItem {
+                    kind: "transcript_cite".to_string(),
+                    title: "Transcript citation anchor".to_string(),
+                    content: summary,
+                    source_ref: Some(msg_id.clone()),
+                    message_ids: vec![msg_id],
+                });
+            }
+        }
+    }
+
+    for tool in snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .rev()
+        .take(6)
+    {
+        let status = tool.get("status").and_then(Value::as_str).unwrap_or("");
+        if !matches!(status, "completed" | "running" | "failed") {
+            continue;
+        }
+        let tool_path = tool
+            .pointer("/output/toolPath")
+            .or_else(|| tool.get("toolPath"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if tool_path.is_empty() {
+            continue;
+        }
+        items.push(PinnedItem {
+            kind: "execution_evidence".to_string(),
+            title: tool
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("tool")
+                .to_string(),
+            content: format!("{tool_path} status={status}"),
+            source_ref: tool.get("id").and_then(Value::as_str).map(str::to_string),
+            message_ids: Vec::new(),
+        });
+    }
+
+    items
+}
+
+pub(crate) fn pinned_context_json(items: &[PinnedItem]) -> Value {
+    json!({
+        "items": items.iter().map(|item| json!({
+            "kind": item.kind,
+            "title": item.title,
+            "content": item.content,
+            "sourceRef": item.source_ref,
+            "messageIds": item.message_ids,
+        })).collect::<Vec<_>>()
+    })
+}
+
+pub(crate) fn pinned_message_ids(items: &[PinnedItem]) -> HashSet<String> {
+    items
+        .iter()
+        .flat_map(|item| item.message_ids.iter().cloned())
+        .collect()
+}
+
+pub(crate) fn pinned_context_prompt(items: &[PinnedItem]) -> String {
+    if items.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec!["Pinned context (do not lose during compaction):".to_string()];
+    for item in items.iter().take(24) {
+        lines.push(format!(
+            "- [{}] {}: {}",
+            item.kind, item.title, item.content
+        ));
+    }
+    lines.join("\n")
+}
+
+fn truncate_pin_text(text: &str) -> String {
+    const MAX_CHARS: usize = 480;
+    if text.chars().count() <= MAX_CHARS {
+        return text.to_string();
+    }
+    text.chars().take(MAX_CHARS).collect::<String>() + "…"
+}
+
+pub(crate) fn stamp_message_timestamps(message: &mut Value, created_at: Option<&str>) {
+    let iso = created_at.map(str::to_string).unwrap_or_else(now);
+    let ms = iso_ms(&iso);
+    if let Some(object) = message.as_object_mut() {
+        object.insert("createdAt".to_string(), Value::String(iso.clone()));
+        object.insert("createdAtIso".to_string(), Value::String(iso.clone()));
+        object.insert("createdAtMs".to_string(), Value::Number(ms.into()));
+        object.insert("updatedAtIso".to_string(), Value::String(iso.clone()));
+        object.insert("updatedAtMs".to_string(), Value::Number(ms.into()));
+    }
+}
+
+pub(crate) fn stamp_snapshot_timestamps(snapshot: &mut Value) {
+    let iso = now();
+    let ms = iso_ms(&iso);
+    if let Some(object) = snapshot.as_object_mut() {
+        object.insert("updatedAt".to_string(), Value::String(iso.clone()));
+        object.insert("updatedAtIso".to_string(), Value::String(iso));
+        object.insert("updatedAtMs".to_string(), Value::Number(ms.into()));
+    }
+}

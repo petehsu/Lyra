@@ -1,9 +1,25 @@
-type LayoutResizeEndListener = () => void;
+type LayoutResizeListener = () => void;
 
-const layoutResizeEndListeners = new Set<LayoutResizeEndListener>();
+const layoutResizeStartListeners = new Set<LayoutResizeListener>();
+const layoutResizeEndListeners = new Set<LayoutResizeListener>();
+
+export const subscribeLayoutResizeStart = (
+  listener: LayoutResizeListener
+): (() => void) => {
+  layoutResizeStartListeners.add(listener);
+  return () => {
+    layoutResizeStartListeners.delete(listener);
+  };
+};
+
+export const notifyLayoutResizeStart = (): void => {
+  for (const listener of layoutResizeStartListeners) {
+    listener();
+  }
+};
 
 export const subscribeLayoutResizeEnd = (
-  listener: LayoutResizeEndListener
+  listener: LayoutResizeListener
 ): (() => void) => {
   layoutResizeEndListeners.add(listener);
   return () => {

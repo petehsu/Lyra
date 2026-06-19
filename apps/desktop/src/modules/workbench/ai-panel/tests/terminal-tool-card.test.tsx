@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type {
@@ -33,31 +33,22 @@ const baseDetails = (overrides: Partial<TerminalDetails>): TerminalDetails => ({
   ...overrides
 });
 
-const renderCard = (
-  details: TerminalDetails,
-  options: {
-    readonly openLiveTerminal?: ReturnType<typeof vi.fn>;
-  } = {}
-) => {
-  const openLiveTerminal = options.openLiveTerminal ?? vi.fn(async () => undefined);
+const renderCard = (details: TerminalDetails) => {
   const data = createDataProviderValue({
     session,
     messages: [],
-    openTerminalLiveSession: openLiveTerminal
+    openTerminalLiveSession: vi.fn(async () => undefined)
   });
-  return {
-    openLiveTerminal,
-    ...render(
-      <DataContextProvider value={data}>
-        <TerminalToolCard details={details} />
-      </DataContextProvider>
-    )
-  };
+  return render(
+    <DataContextProvider value={data}>
+      <TerminalToolCard details={details} />
+    </DataContextProvider>
+  );
 };
 
 describe("terminal tool card release gate", () => {
-  test("renders screen snapshot metadata and opens only the live terminal", () => {
-    const { container, openLiveTerminal } = renderCard(baseDetails({
+  test("renders command and screen output without metadata chrome", () => {
+    const { container } = renderCard(baseDetails({
       action: "screen",
       target: "ui",
       terminalTabId: "terminal-tab-1",
@@ -86,22 +77,14 @@ describe("terminal tool card release gate", () => {
       }
     }));
 
-    expect(screen.getByText("ui terminal")).toBeInTheDocument();
-    expect(screen.getByText("v7 - alternate - 80x24")).toBeInTheDocument();
+    expect(screen.queryByText("ui terminal")).not.toBeInTheDocument();
+    expect(screen.queryByText("v7 - alternate - 80x24")).not.toBeInTheDocument();
+    expect(screen.queryByText("lines 44 - errors 1")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Terminal" })).not.toBeInTheDocument();
     expect(container).toHaveTextContent("FAIL src/terminal.test.ts");
-    expect(screen.getByText("lines 44 - errors 1")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Timeline$/u })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Timeline" })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Open Terminal" }));
-    expect(openLiveTerminal).toHaveBeenCalledWith({
-      sessionId: "terminal-session-1",
-      terminalTabId: "terminal-tab-1",
-      paneId: "pane-1"
-    });
   });
 
-  test("renders events, run, input, signal, map, and act summaries without compact overflow text", () => {
+  test("renders run, input, and other terminal summaries as command plus output", () => {
     const variants: readonly TerminalDetails[] = [
       baseDetails({ action: "events", output: "Read 2 terminal events.", target: "private" }),
       baseDetails({ action: "read_until", output: "Matched terminal prompt.", reason: "output" }),
@@ -121,12 +104,13 @@ describe("terminal tool card release gate", () => {
 
     for (const details of variants) {
       const { container, unmount } = renderCard(details);
-      expect(screen.getByText("private terminal")).toBeInTheDocument();
-      expect(screen.getByText(details.command ?? details.wrote ?? details.sessionId ?? details.action)).toBeInTheDocument();
-      if (details.output.trim().length > 0) {
+      expect(screen.getByText(details.command ?? details.wrote ?? details.output)).toBeInTheDocument();
+      if (details.output.trim().length > 0 && details.output !== (details.command ?? details.wrote)) {
         expect(screen.getByText(details.output)).toBeInTheDocument();
       }
-      expect(container.querySelector(".lyra-agents-shell-exit")).toHaveTextContent("running");
+      if (!details.running && details.exitCode !== null && details.exitCode !== undefined) {
+        expect(container.querySelector(".lyra-agents-shell-exit")).toHaveTextContent(`exit ${details.exitCode}`);
+      }
       unmount();
     }
   });

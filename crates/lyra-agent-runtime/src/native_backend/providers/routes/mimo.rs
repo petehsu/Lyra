@@ -504,9 +504,11 @@ mod tests {
         let tools = vec![json!({ "type": "function", "function": { "name": "tool_fs_run" } })];
         let error = validate_thinking_replay(&messages, "mimo-v2.5-pro", &tools)
             .expect_err("missing reasoning should fail");
-        assert!(error
-            .to_string()
-            .contains("reasoning_content on every historical assistant message with tool_calls"));
+        assert!(
+            error.to_string().contains(
+                "reasoning_content on every historical assistant message with tool_calls"
+            )
+        );
     }
 
     #[test]

@@ -673,7 +673,12 @@ export const TerminalPaneSurface = ({
           await desktopApi.terminal.createSession({
             sessionId: pane.sessionId,
             title: pane.title,
-            ...(pane.cwd !== undefined ? { cwd: pane.cwd } : {}),
+            ...(pane.currentCwd !== undefined || pane.cwd !== undefined
+              ? { cwd: pane.currentCwd ?? pane.cwd }
+              : {}),
+            ...(pane.sourceAgentSessionId === undefined
+              ? {}
+              : { sourceAgentSessionId: pane.sourceAgentSessionId }),
             ...(pane.shell !== undefined ? { shell: pane.shell } : {}),
             env: withTerminalRuntimeEnv(pane, terminalTabId),
             ...(pane.mode !== undefined ? { mode: pane.mode } : {}),

@@ -34,18 +34,15 @@ pub fn render_math(latex: &str, display_mode: bool, theme: RenderTheme) -> MathR
 }
 
 #[cfg(feature = "math")]
-fn render_math_ratex(
-    latex: &str,
-    display_mode: bool,
-    theme: RenderTheme,
-) -> RenderResult<String> {
+fn render_math_ratex(latex: &str, display_mode: bool, theme: RenderTheme) -> RenderResult<String> {
     use ratex_layout::{layout, to_display_list, LayoutOptions};
     use ratex_parser::parse;
     use ratex_svg::{render_to_svg, SvgOptions};
     use ratex_types::MathStyle;
 
     let parsed = parse(latex).map_err(|error| RenderError::Math(error.to_string()))?;
-    let mut layout_options = LayoutOptions::default().with_color(theme::math_color_for_theme(theme));
+    let mut layout_options =
+        LayoutOptions::default().with_color(theme::math_color_for_theme(theme));
     layout_options.style = if display_mode {
         MathStyle::Display
     } else {
@@ -134,6 +131,9 @@ mod tests {
     fn renders_inline_math_to_svg() {
         let rendered = render_math("x^2", false, RenderTheme::Dark);
         assert!(rendered.error.is_none());
-        assert!(rendered.svg.as_ref().is_some_and(|svg| svg.contains("<svg")));
+        assert!(rendered
+            .svg
+            .as_ref()
+            .is_some_and(|svg| svg.contains("<svg")));
     }
 }
