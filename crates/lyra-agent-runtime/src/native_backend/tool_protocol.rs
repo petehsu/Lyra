@@ -212,7 +212,15 @@ fn internal_protocol_markers() -> &'static [&'static str] {
 }
 
 fn collapse_visible_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    // Collapse runs of spaces/tabs *within* each line, but preserve newlines so
+    // markdown block structure (headings, lists, code fences, paragraphs)
+    // survives. Using a plain `split_whitespace().join(" ")` here would flatten
+    // every newline into a single space, turning multi-block assistant markdown
+    // into one undifferentiated paragraph.
+    text.split('\n')
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) fn find_ascii_case_insensitive(haystack: &str, needle: &str, from: usize) -> Option<usize> {
@@ -255,6 +263,24 @@ mod tests {
         assert_eq!(
             sanitize_visible_assistant_text("[Tool result ref: call_abc]"),
             None
+        );
+    }
+
+    #[test]
+    fn preserves_markdown_newlines_while_collapsing_inline_whitespace() {
+        let markdown = "# 标题\n\n这是一段   带多余空格的文本。\n\n## 列表\n\n- 项 1\n- 项 2";
+        assert_eq!(
+            sanitize_visible_assistant_text(markdown).as_deref(),
+            Some("# 标题\n\n这是一段 带多余空格的文本。\n\n## 列表\n\n- 项 1\n- 项 2")
+        );
+    }
+
+    #[test]
+    fn preserves_newlines_after_stripping_internal_marker() {
+        let text = "# 标题\n\n正文。 [Tool result ref: call_abc]\n\n## 小节\n\n- 项";
+        assert_eq!(
+            sanitize_visible_assistant_text(text).as_deref(),
+            Some("# 标题\n\n正文。\n\n## 小节\n\n- 项")
         );
     }
 

@@ -56,10 +56,19 @@ const stripInternalProtocolMarkers = (text: string): string => {
       searchFrom = start;
     }
   }
-  return output.replace(/\s+/g, " ").trim();
+  // Collapse runs of spaces/tabs *within* each line, but preserve newlines so
+  // markdown block structure (headings, lists, code fences, paragraphs) survives
+  // before it reaches the renderer. A blanket `replace(/\s+/g, " ")` here would
+  // flatten every newline into a space, turning multi-block assistant markdown
+  // into one undifferentiated paragraph.
+  return output
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+    .join("\n")
+    .trim();
 };
 
-const visibleAssistantText = (text: string): string => {
+export const visibleAssistantText = (text: string): string => {
   const visible = stripInternalProtocolMarkers(cleanSyntheticImageText(text));
   return isInternalRuntimeFallbackText(visible) ? "" : visible;
 };
