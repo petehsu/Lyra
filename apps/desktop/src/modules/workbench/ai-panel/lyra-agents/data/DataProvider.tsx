@@ -91,6 +91,9 @@ export interface DataProviderValue {
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;
 
+  /** Whether completed agent replies should use Rust-backed rich rendering. */
+  readonly aiRichRenderingEnabled: boolean;
+
   /** True when Agent browser actions should follow the visible Workbench page. */
   readonly browserFollowModeEnabled: boolean;
 

@@ -23,6 +23,26 @@ export const workbenchActionLabel = (action: string): string => {
       return "Workbench workspace";
     case "extract_tab_text":
       return "Workbench text";
+    case "activate_tab":
+      return "Activate tab";
+    case "close_tab":
+      return "Close tab";
+    case "reorder_tab":
+      return "Reorder tab";
+    case "split_tabs":
+      return "Split tabs";
+    case "detach_split":
+      return "Detach split";
+    case "list_terminals":
+      return "Terminal panes";
+    case "open_terminal":
+      return "Open terminal";
+    case "focus_terminal":
+      return "Focus terminal";
+    case "close_terminal":
+      return "Close terminal";
+    case "move_terminal":
+      return "Move terminal";
     default:
       return "Workbench";
   }

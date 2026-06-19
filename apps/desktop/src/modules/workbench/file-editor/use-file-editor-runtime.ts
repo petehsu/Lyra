@@ -20,6 +20,8 @@ import {
   acquireFileEditorTextModel,
   isFileEditorTextModelDisposed
 } from "./monaco-model-store";
+import { installMonacoTreeSitterTokenizers } from "./monaco-tree-sitter-tokenizer";
+import { useMonacoTreeSitterHighlight } from "./use-monaco-tree-sitter-highlight";
 import type {
   FileEditorAppState,
   FileEditorChangeReviewItem,
@@ -101,6 +103,15 @@ export const useFileEditorRuntime = ({
     activeEditorWorkItem !== undefined &&
     state.content !== diffOriginalContent;
 
+  useMonacoTreeSitterHighlight({
+    monacoRef,
+    textModelRef,
+    languageId: state?.languageId,
+    filePath: state?.filePath,
+    themeSignature,
+    enabled: editorReady && canShowEditor
+  });
+
   useEffect(() => {
     latestStateRef.current = state;
   }, [state]);
@@ -173,6 +184,7 @@ export const useFileEditorRuntime = ({
           return;
         }
         monacoRef.current = monaco;
+        installMonacoTreeSitterTokenizers(monaco);
         monaco.editor.defineTheme(MONACO_THEME_ID, buildMonacoTheme());
         monaco.editor.setTheme(MONACO_THEME_ID);
         const latestState = latestStateRef.current;
@@ -194,7 +206,9 @@ export const useFileEditorRuntime = ({
             top: MONACO_PADDING,
             bottom: MONACO_PADDING
           },
-          readOnly: latestState.isReadOnly || isAiOnly
+          readOnly: latestState.isReadOnly || isAiOnly,
+          colorDecorators: false,
+          "semanticHighlighting.enabled": false
         });
         editorRef.current = editor;
         setEditorReady(true);
@@ -432,6 +446,10 @@ export const useFileEditorRuntime = ({
       fontFamily: "var(--lyra-font-mono)",
       fontSize: MONACO_FONT_SIZE,
       lineHeight: MONACO_LINE_HEIGHT
+    });
+    diffEditor.getModifiedEditor().updateOptions({
+      colorDecorators: false,
+      "semanticHighlighting.enabled": false
     });
     diffEditorRef.current = diffEditor;
     diffEditor.setModel({

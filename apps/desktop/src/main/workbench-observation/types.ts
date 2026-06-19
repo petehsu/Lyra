@@ -1,12 +1,20 @@
 import type { BrowserWindow } from "electron";
 
 import type {
+  WorkbenchTabCloseRequest,
+  WorkbenchTabCloseResult,
+  WorkbenchTabDetachSplitRequest,
+  WorkbenchTabDetachSplitResult,
   WorkbenchTabExtractTextRequest,
   WorkbenchTabExtractTextResult,
   WorkbenchTabActivateRequest,
   WorkbenchTabActivateResult,
   WorkbenchTabObservationResult,
   WorkbenchTabReadRequest,
+  WorkbenchTabReorderRequest,
+  WorkbenchTabReorderResult,
+  WorkbenchTabSplitRequest,
+  WorkbenchTabSplitResult,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
   WorkbenchTerminalCloseRequest,
@@ -15,6 +23,8 @@ import type {
   WorkbenchTerminalFocusResult,
   WorkbenchTerminalListRequest,
   WorkbenchTerminalListResult,
+  WorkbenchTerminalMoveRequest,
+  WorkbenchTerminalMoveResult,
   WorkbenchTerminalOpenRequest,
   WorkbenchTerminalOpenResult,
   WorkbenchVisualCaptureRequest,
@@ -71,6 +81,17 @@ export type WorkbenchObservationService = {
   readonly closeTerminalPane: (
     request: WorkbenchTerminalCloseRequest
   ) => Promise<WorkbenchTerminalCloseResult>;
+  readonly closeTab: (request: WorkbenchTabCloseRequest) => Promise<WorkbenchTabCloseResult>;
+  readonly reorderTab: (
+    request: WorkbenchTabReorderRequest
+  ) => Promise<WorkbenchTabReorderResult>;
+  readonly splitTabs: (request: WorkbenchTabSplitRequest) => Promise<WorkbenchTabSplitResult>;
+  readonly detachSplit: (
+    request: WorkbenchTabDetachSplitRequest
+  ) => Promise<WorkbenchTabDetachSplitResult>;
+  readonly moveTerminalTab: (
+    request: WorkbenchTerminalMoveRequest
+  ) => Promise<WorkbenchTerminalMoveResult>;
 };
 
 export type WorkbenchObservationRendererClient = {
@@ -97,6 +118,19 @@ export type WorkbenchObservationRendererClient = {
   readonly closeLocalTerminalPane: (
     request: WorkbenchTerminalCloseRequest
   ) => Promise<WorkbenchTerminalCloseResult>;
+  readonly closeLocalTab: (request: WorkbenchTabCloseRequest) => Promise<WorkbenchTabCloseResult>;
+  readonly reorderLocalTab: (
+    request: WorkbenchTabReorderRequest
+  ) => Promise<WorkbenchTabReorderResult>;
+  readonly splitLocalTabs: (
+    request: WorkbenchTabSplitRequest
+  ) => Promise<WorkbenchTabSplitResult>;
+  readonly detachLocalSplit: (
+    request: WorkbenchTabDetachSplitRequest
+  ) => Promise<WorkbenchTabDetachSplitResult>;
+  readonly moveLocalTerminalTab: (
+    request: WorkbenchTerminalMoveRequest
+  ) => Promise<WorkbenchTerminalMoveResult>;
 };
 
 export type WorkbenchObservationWindowGetter = () => BrowserWindow | null;

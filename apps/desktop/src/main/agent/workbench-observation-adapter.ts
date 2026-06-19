@@ -240,6 +240,114 @@ export const createWorkbenchObservationAdapter = ({
       }
       return await service.activateTab({ tabId });
     },
+    "workbench.closeTab": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = await normalizeWorkbenchTabPayload(payload, service);
+      const tabId = readTabId(request);
+      if (tabId === null) {
+        throw new Error("tabId must be a non-empty string");
+      }
+      return await service.closeTab({ tabId });
+    },
+    "workbench.reorderTab": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = await normalizeWorkbenchTabPayload(payload, service);
+      const tabId = readTabId(request);
+      if (tabId === null) {
+        throw new Error("tabId must be a non-empty string");
+      }
+      const targetIndex = readClampedOptionalNumber(request, "targetIndex", 0, 0, 10_000);
+      return await service.reorderTab({ tabId, targetIndex });
+    },
+    "workbench.splitTabs": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = normalizePayload(payload);
+      const sourceTabId = readTabId({ tabId: request.sourceTabId });
+      const targetTabId = readTabId({ tabId: request.targetTabId });
+      if (sourceTabId === null || targetTabId === null) {
+        throw new Error("sourceTabId and targetTabId must be non-empty strings");
+      }
+      const listed = await service.listTabs({ scope: "all", includeUnsupported: true });
+      const resolvedSource = resolveWorkbenchTabId(sourceTabId, listed.tabs) ?? sourceTabId;
+      const resolvedTarget = resolveWorkbenchTabId(targetTabId, listed.tabs) ?? targetTabId;
+      return await service.splitTabs({
+        sourceTabId: resolvedSource,
+        targetTabId: resolvedTarget
+      });
+    },
+    "workbench.detachSplit": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = await normalizeWorkbenchTabPayload(payload, service);
+      const tabId = readTabId(request);
+      if (tabId === null) {
+        throw new Error("tabId must be a non-empty string");
+      }
+      return await service.detachSplit({ tabId });
+    },
+    "workbench.listTerminals": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      return await service.listTerminalPanes({});
+    },
+    "workbench.openTerminal": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      return await service.openTerminalPane(normalizePayload(payload));
+    },
+    "workbench.focusTerminal": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      return await service.focusTerminalPane(normalizePayload(payload));
+    },
+    "workbench.closeTerminal": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      return await service.closeTerminalPane(normalizePayload(payload));
+    },
+    "workbench.moveTerminal": async (payload) => {
+      const service = getWorkbenchObservationService();
+      if (service === null) {
+        throw new Error("Workbench observation capability is not available");
+      }
+      const request = normalizePayload(payload);
+      const terminalTabId =
+        typeof request.terminalTabId === "string" && request.terminalTabId.trim().length > 0
+          ? request.terminalTabId.trim()
+          : null;
+      if (terminalTabId === null) {
+        throw new Error("terminalTabId must be a non-empty string");
+      }
+      const placement = request.placement === "workspace" ? "workspace" : "dock";
+      const targetIndex =
+        typeof request.targetIndex === "number" && Number.isFinite(request.targetIndex)
+          ? Math.max(0, Math.trunc(request.targetIndex))
+          : undefined;
+      return await service.moveTerminalTab({
+        terminalTabId,
+        placement,
+        ...(targetIndex === undefined ? {} : { targetIndex })
+      });
+    },
     "workbench.readWorkspace": async (payload) => {
       const service = getWorkbenchObservationService();
       if (service === null) {

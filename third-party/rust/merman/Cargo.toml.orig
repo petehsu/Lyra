@@ -1,0 +1,139 @@
+[package]
+name = "merman"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Parity-focused, headless Rust implementation of Mermaid for parsing, layout, and rendering."
+documentation = "https://docs.rs/merman"
+readme = "../../README.md"
+keywords = ["mermaid", "diagrams", "svg", "parser", "headless"]
+categories = ["parser-implementations", "visualization"]
+exclude = [
+  "tests/mindmap_br_variants_031.rs",
+  "tests/resvg_safe_fixture_smoke.rs",
+  "tests/zed_mermaid_issue_fixtures.rs",
+  "tests/zed_pr_57644_corpus.rs",
+]
+
+[package.metadata.docs.rs]
+features = ["render", "ascii", "raster", "ratex-math"]
+
+[features]
+default = ["core-full", "core-host"]
+core-full = ["merman-core/full", "merman-render?/core-full"]
+core-host = ["merman-core/host", "merman-render?/host"]
+render = ["dep:merman-render", "dep:thiserror"]
+ascii = ["dep:merman-ascii", "dep:thiserror"]
+ratex-math = ["render", "merman-render/ratex-math"]
+egui-example = ["raster", "dep:eframe"]
+raster = [
+    "render",
+    "dep:image",
+    "dep:resvg",
+    "dep:usvg",
+    "dep:tiny-skia",
+    "dep:svg2pdf",
+]
+
+[dependencies]
+chrono.workspace = true
+merman-core.workspace = true
+merman-ascii = { workspace = true, optional = true }
+merman-render = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+eframe = { version = "0.32.3", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"], optional = true }
+image = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
+usvg = { workspace = true, optional = true }
+tiny-skia = { workspace = true, optional = true }
+svg2pdf = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+png.workspace = true
+roxmltree.workspace = true
+serde_json.workspace = true
+
+[[bench]]
+name = "pipeline"
+harness = false
+required-features = ["render"]
+
+[[bench]]
+name = "flowchart_stress"
+harness = false
+required-features = ["render"]
+
+[[bench]]
+name = "architecture_stress"
+harness = false
+required-features = ["render"]
+
+[[bench]]
+name = "architecture_layout_stress"
+harness = false
+required-features = ["render"]
+
+[[bench]]
+name = "mindmap_layout_stress"
+harness = false
+required-features = ["render"]
+
+[[bench]]
+name = "text_measure_stress"
+harness = false
+required-features = ["render"]
+
+[[example]]
+name = "example_01_svg_basic"
+required-features = ["render"]
+
+[[example]]
+name = "example_02_semantic_json"
+
+[[example]]
+name = "example_03_layout_json"
+required-features = ["render"]
+
+[[example]]
+name = "example_04_ascii_output"
+required-features = ["ascii"]
+
+[[example]]
+name = "example_05_raster_output"
+required-features = ["raster"]
+
+[[example]]
+name = "example_06_svg_pipeline"
+required-features = ["render"]
+
+[[example]]
+name = "example_07_theme_css"
+required-features = ["render"]
+
+[[example]]
+name = "example_08_deterministic_gantt"
+
+[[example]]
+name = "example_09_multiple_diagrams"
+required-features = ["render"]
+
+[[example]]
+name = "example_10_integration_egui"
+required-features = ["egui-example"]
+
+[[example]]
+name = "example_11_custom_output_environment"
+required-features = ["render"]
+
+[[example]]
+name = "example_12_host_theme_profile"
+required-features = ["render"]
+
+[[example]]
+name = "example_13_stylized_theme_showcase"
+required-features = ["render"]

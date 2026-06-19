@@ -1,0 +1,25 @@
+[package]
+name = "lyra-render-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["math", "mermaid"]
+# tree-sitter links native C runtime; browser wasm builds omit highlight for now.
+math = ["lyra-render-core/math"]
+mermaid = ["lyra-render-core/mermaid"]
+
+[dependencies]
+lyra-render-core = { path = "../lyra-render-core", default-features = false }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+wasm-bindgen = "0.2.100"

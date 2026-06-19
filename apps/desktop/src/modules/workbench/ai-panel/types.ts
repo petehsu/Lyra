@@ -54,6 +54,7 @@ export type AiPanelSurfaceProps = {
   ) => void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly locale?: WorkbenchLocale;
+  readonly aiRichRenderingEnabled?: boolean;
   readonly title: string;
   readonly emptyThreadLabel: string;
   readonly aiPanelSide?: AiPanelSide;

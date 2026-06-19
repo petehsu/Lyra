@@ -132,6 +132,8 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("workbench", "read_workspace")
             | ("workbench", "read_tab")
             | ("workbench", "capture_visual_evidence")
+            | ("workbench", "list_terminals")
+            | ("workbench", "extract_tab_text")
             | ("software", "list_capabilities")
             | ("software", "inspect_capability")
             | ("software", "read_state")

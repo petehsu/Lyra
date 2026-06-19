@@ -126,6 +126,7 @@ import type {
   LyraSensitiveValueApi
 } from "./sensitive-value";
 import type { AgentApi } from "./agent";
+import type { RenderApi } from "./render";
 
 export type {
   AgentApi,
@@ -663,7 +664,10 @@ export const LYRA_CHANNELS = {
   locationReverseGeocodeCandidates: "lyra:location/reverse-geocode-candidates",
   screenshotPreviewPresent: "lyra:screenshot-preview/present",
   screenshotPreviewDismiss: "lyra:screenshot-preview/dismiss",
-  screenshotPreviewEvent: "lyra:screenshot-preview/event"
+  screenshotPreviewEvent: "lyra:screenshot-preview/event",
+  renderDocument: "lyra:render/document",
+  renderHighlight: "lyra:render/highlight",
+  renderInvalidateCache: "lyra:render/invalidate-cache"
 } as const;
 
 export type WindowStatePayload = {
@@ -2620,4 +2624,5 @@ export type LyraDesktopApi = {
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
   readonly location?: LocationApi;
+  readonly render?: RenderApi;
 };

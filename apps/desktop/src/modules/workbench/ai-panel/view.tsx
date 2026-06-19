@@ -555,7 +555,8 @@ export const AiPanelSurface = ({
   onPickFileFromFileManager,
   listWorkspaceTabs,
   listTerminalTabs,
-  locationControls
+  locationControls,
+  aiRichRenderingEnabled = true
 }: AiPanelSurfaceProps) => {
   const activeTab =
     sessionTabs.find((tab) => tab.tabId === activeSessionTabId)
@@ -596,7 +597,8 @@ export const AiPanelSurface = ({
       onPickFileFromFileManager,
       listWorkspaceTabs,
       listTerminalTabs,
-      locationControls
+      locationControls,
+      aiRichRenderingEnabled
     }
   );
 

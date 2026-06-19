@@ -16,7 +16,7 @@ lyra-agent-api.workspace = true
 lyra-agent-plugins.workspace = true
 lyra-agent-runtime.workspace = true
 lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
-pulldown-cmark.workspace = true
+lyra-render-core = { path = "../lyra-render-core" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 shlex.workspace = true

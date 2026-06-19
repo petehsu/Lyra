@@ -339,6 +339,7 @@ type LyraAgentDataProviderCallbacks = {
   readonly listWorkspaceTabs?: (() => readonly WorkspaceTab[]) | undefined;
   readonly listTerminalTabs?: (() => readonly TerminalDockTab[]) | undefined;
   readonly locationControls?: WorkbenchLocationControls | undefined;
+  readonly aiRichRenderingEnabled?: boolean | undefined;
 };
 
 export const useLyraAgentDataProvider = (
@@ -377,7 +378,8 @@ export const useLyraAgentDataProvider = (
     onPickFileFromFileManager,
     listWorkspaceTabs,
     listTerminalTabs,
-    locationControls
+    locationControls,
+    aiRichRenderingEnabled = true
   } = callbacks;
   if (locale !== undefined) {
     setLocale(locale);
@@ -1662,6 +1664,7 @@ export const useLyraAgentDataProvider = (
       permissionModeControls,
       locationControls: locationControls ?? null,
       openModelSettings,
+      aiRichRenderingEnabled,
       browserFollowModeEnabled,
       setBrowserFollowMode,
       openUrlInWorkbench,
@@ -1757,6 +1760,7 @@ export const useLyraAgentDataProvider = (
     modelControls,
     permissionModeControls,
     locationControls,
+    aiRichRenderingEnabled,
     pendingClarifications,
     pendingPermissions,
     previewRollback,

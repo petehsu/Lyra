@@ -27,6 +27,10 @@ import {
 import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { loadDocsNativeBindings } from "./documents/native-loader";
+import { loadRenderNativeBindings } from "./render/native-loader";
+import { createRenderService } from "./render/service";
+import type { RenderService } from "./render/types";
+import type { HighlightRequest, RenderDocumentRequest } from "../shared/render";
 import { createAgentIpcBridge } from "./agent";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
@@ -125,6 +129,8 @@ let disposeSensitiveValuesBridge: (() => void) | null = null;
 let disposeWorkbenchObservationRendererClient: (() => void) | null = null;
 let disposeWorkbenchObservationService: (() => void) | null = null;
 let disposeWorkbenchDocumentsService: (() => void) | null = null;
+let renderService: RenderService | null = null;
+let disposeRenderService: (() => void) | null = null;
 let disposePowerSaveBlocker: (() => void) | null = null;
 let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
@@ -937,6 +943,19 @@ const registerIpcHandlers = async (): Promise<void> => {
     );
   }
   console.info(`[lyra-docs] native loaded from ${docsNativeLoadResult.loadedFrom}`);
+  const renderNativeLoadResult = loadRenderNativeBindings();
+  if (renderNativeLoadResult.ok) {
+    renderService = createRenderService(renderNativeLoadResult.bindings);
+    disposeRenderService = () => {
+      renderService?.dispose();
+      renderService = null;
+    };
+    console.info(`[lyra-render] native loaded from ${renderNativeLoadResult.loadedFrom}`);
+  } else {
+    console.warn(
+      `[lyra-render] native unavailable: ${renderNativeLoadResult.errorMessage}\ntried paths:\n${renderNativeLoadResult.triedPaths.join("\n")}`
+    );
+  }
   const workbenchDocumentsService = createWorkbenchDocumentsService({
     browserBridge: workbenchBrowserBridge,
     docsNativeBindings: docsNativeLoadResult.bindings
@@ -1015,6 +1034,27 @@ const registerIpcHandlers = async (): Promise<void> => {
     (_event, request?: LinuxCompatRestartRequest): LinuxCompatRestartResponse =>
       linuxCompatBridge.requestRestart(app, request)
   );
+
+  ipcMain.handle(LYRA_CHANNELS.renderDocument, (_event, request: RenderDocumentRequest) => {
+    if (renderService === null) {
+      throw new Error("render native unavailable");
+    }
+    return renderService.renderDocument(request);
+  });
+
+  ipcMain.handle(LYRA_CHANNELS.renderHighlight, (_event, request: HighlightRequest) => {
+    if (renderService === null) {
+      throw new Error("render native unavailable");
+    }
+    return renderService.highlightSpans(request);
+  });
+
+  ipcMain.handle(LYRA_CHANNELS.renderInvalidateCache, () => {
+    if (renderService === null) {
+      throw new Error("render native unavailable");
+    }
+    renderService.invalidateCache();
+  });
 
 };
 
@@ -1119,6 +1159,10 @@ app.on("before-quit", () => {
   if (disposeWorkbenchDocumentsService !== null) {
     disposeWorkbenchDocumentsService();
     disposeWorkbenchDocumentsService = null;
+  }
+  if (disposeRenderService !== null) {
+    disposeRenderService();
+    disposeRenderService = null;
   }
   if (disposePowerSaveBlocker !== null) {
     disposePowerSaveBlocker();

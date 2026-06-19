@@ -1348,10 +1348,21 @@ describe("AiPanelSurface", () => {
     );
   });
 
-  test("surfaces structured Render Surface output without embedding it inside tool details", async () => {
+  test("embeds structured Render Surface HTML in a sandboxed iframe outside tool details", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
+      messages: [{
+        id: "assistant-render-html",
+        role: "assistant",
+        text: "",
+        blocks: [{
+          type: "tool",
+          id: "render-surface-tool-block",
+          toolId: "render-surface-tool"
+        }],
+        createdAt: "2026-05-13T00:00:02.000Z"
+      }],
       tools: [{
         id: "render-surface-tool",
         name: "render_surface",
@@ -1397,17 +1408,31 @@ describe("AiPanelSurface", () => {
     expect(screen.getByText("release-radar")).toBeInTheDocument();
     expect(screen.getByText("Interactive sandbox")).toBeInTheDocument();
     expect(screen.getByText("No Node")).toBeInTheDocument();
-    expect(container.querySelector(".render-surface-frame")).toBeNull();
+    const frame = container.querySelector(".render-surface-frame");
+    expect(frame).toBeInstanceOf(HTMLIFrameElement);
+    expect((frame as HTMLIFrameElement).getAttribute("sandbox")).toBe("allow-scripts");
+    expect((frame as HTMLIFrameElement).getAttribute("srcDoc")).toContain("Release Radar");
 
     fireEvent.click(screen.getByText("Agent activity"));
     fireEvent.click((await screen.findAllByText("Release Radar"))[0]!);
-    expect(container.querySelector(".render-surface-frame")).toBeNull();
+    expect(container.querySelector(".render-surface-frame")).toBeInstanceOf(HTMLIFrameElement);
   });
 
-  test("summarizes structured Render Surface tables without embedding table previews", async () => {
+  test("embeds structured Render Surface tables outside tool details", async () => {
     const { api, setReadSnapshot } = createDesktopApi();
     setReadSnapshot({
       ...snapshot,
+      messages: [{
+        id: "assistant-render-table",
+        role: "assistant",
+        text: "",
+        blocks: [{
+          type: "tool",
+          id: "render-table-tool-block",
+          toolId: "render-table-tool"
+        }],
+        createdAt: "2026-05-13T00:00:03.000Z"
+      }],
       tools: [{
         id: "render-table-tool",
         name: "render_surface",
@@ -1448,13 +1473,13 @@ describe("AiPanelSurface", () => {
     expect(screen.getByText("table")).toBeInTheDocument();
     expect(screen.getByText("decision-matrix")).toBeInTheDocument();
     expect(screen.getByText("Static surface")).toBeInTheDocument();
-    expect(container.querySelector(".render-surface-table")).toBeNull();
+    expect(container.querySelector(".render-surface-table")).toBeInstanceOf(HTMLTableElement);
+    expect(screen.getByText("Option")).toBeInTheDocument();
+    expect(screen.getByText("Inline surface")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Agent activity"));
     fireEvent.click((await screen.findAllByText("Decision Matrix"))[0]!);
-    expect(container.querySelector(".render-surface-table")).toBeNull();
-    expect(screen.queryByText("Option")).not.toBeInTheDocument();
-    expect(screen.queryByText("Inline surface")).not.toBeInTheDocument();
+    expect(container.querySelector(".render-surface-table")).toBeInstanceOf(HTMLTableElement);
   });
 
   test("renders software open targets only when tool output provides explicit targets", async () => {

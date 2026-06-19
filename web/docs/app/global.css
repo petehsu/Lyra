@@ -204,3 +204,84 @@ html[data-lyra-host="lyra"] #nd-sidebar {
 html[data-lyra-host="lyra"] .lyra-docs-standalone-controls {
   display: none;
 }
+
+.lyra-docs-render-showcase {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 90%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-fd-muted) 42%, transparent);
+}
+
+.lyra-docs-rich-document {
+  display: grid;
+  gap: 0.75rem;
+  line-height: 1.6;
+}
+
+.lyra-docs-rich-document h2,
+.lyra-docs-rich-document h3 {
+  margin: 0.25rem 0 0;
+}
+
+.lyra-docs-render-loading,
+.lyra-docs-plain-text {
+  font-size: 0.9rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+.lyra-docs-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-fd-muted) 70%, transparent);
+}
+
+.lyra-docs-code-block {
+  overflow: auto;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-fd-background) 82%, #000 18%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.lyra-docs-hl-comment { color: #6a9955; }
+.lyra-docs-hl-string { color: #ce9178; }
+.lyra-docs-hl-number { color: #b5cea8; }
+.lyra-docs-hl-keyword { color: #569cd6; }
+.lyra-docs-hl-function { color: #dcdcaa; }
+.lyra-docs-hl-type { color: #4ec9b0; }
+.lyra-docs-hl-property { color: #9cdcfe; }
+.lyra-docs-hl-variable { color: #9cdcfe; }
+.lyra-docs-hl-default { color: var(--color-fd-foreground); }
+
+.lyra-docs-mermaid,
+.lyra-docs-math-block,
+.lyra-docs-math-inline {
+  overflow-x: auto;
+}
+
+.lyra-docs-mermaid svg,
+.lyra-docs-math-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.lyra-docs-table-wrap {
+  overflow-x: auto;
+}
+
+.lyra-docs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lyra-docs-table th,
+.lyra-docs-table td {
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 90%, transparent);
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+}

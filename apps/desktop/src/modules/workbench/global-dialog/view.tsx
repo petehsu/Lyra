@@ -4,6 +4,8 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { writeClipboardText } from "../../../shared/clipboard";
+
 import type { GlobalDialogActionContext, GlobalDialogState } from "./types";
 
 type GlobalDialogHostProps = {
@@ -37,44 +39,6 @@ const resolveSourceIconLabel = (source: GlobalDialogState["source"]): string => 
   const compactTitle = source.title.replace(/\s+/g, "");
   const fallback = compactTitle.slice(0, 2).toUpperCase();
   return fallback.length > 0 ? fallback : DEFAULT_SOURCE_ICON_LABEL;
-};
-
-const writeClipboardText = async (text: string): Promise<boolean> => {
-  if (
-    typeof navigator !== "undefined"
-    && typeof navigator.clipboard?.writeText === "function"
-  ) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // Fallback to execCommand below.
-    }
-  }
-
-  if (typeof document === "undefined") {
-    return false;
-  }
-
-  const probe = document.createElement("textarea");
-  probe.value = text;
-  probe.setAttribute("readonly", "true");
-  probe.style.position = "fixed";
-  probe.style.opacity = "0";
-  probe.style.pointerEvents = "none";
-  probe.style.left = "-10000px";
-  probe.style.top = "-10000px";
-  document.body.append(probe);
-  probe.focus();
-  probe.select();
-
-  try {
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  } finally {
-    document.body.removeChild(probe);
-  }
 };
 
 export const GlobalDialogHost = ({

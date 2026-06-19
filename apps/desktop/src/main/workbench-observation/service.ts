@@ -493,6 +493,73 @@ export const createWorkbenchObservationService = ({
       readCache.clear();
       extractCache.clear();
       return result;
+    },
+    closeTab: async (request) => {
+      const tab = await registry.get(request.tabId);
+      if (tab === null) {
+        throw createObservationError("tab_not_found", `Unknown tab: ${request.tabId}`);
+      }
+      const result = await rendererClient.closeLocalTab({ tabId: tab.tabId }).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    reorderTab: async (request) => {
+      const tab = await registry.get(request.tabId);
+      if (tab === null) {
+        throw createObservationError("tab_not_found", `Unknown tab: ${request.tabId}`);
+      }
+      const result = await rendererClient
+        .reorderLocalTab({ tabId: tab.tabId, targetIndex: request.targetIndex })
+        .catch((error: unknown) => {
+          throw mapRendererError(error);
+        });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    splitTabs: async (request) => {
+      const listed = await registry.list({ scope: "all", includeUnsupported: true });
+      const sourceExists = listed.tabs.some((entry) => entry.tabId === request.sourceTabId);
+      const targetExists = listed.tabs.some((entry) => entry.tabId === request.targetTabId);
+      if (!sourceExists || !targetExists) {
+        throw createObservationError("tab_not_found", "One or both tabs were not found for split.");
+      }
+      const result = await rendererClient.splitLocalTabs(request).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    detachSplit: async (request) => {
+      const tab = await registry.get(request.tabId);
+      if (tab === null) {
+        throw createObservationError("tab_not_found", `Unknown tab: ${request.tabId}`);
+      }
+      const result = await rendererClient
+        .detachLocalSplit({ tabId: tab.tabId })
+        .catch((error: unknown) => {
+          throw mapRendererError(error);
+        });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
+    },
+    moveTerminalTab: async (request) => {
+      const result = await rendererClient.moveLocalTerminalTab(request).catch((error: unknown) => {
+        throw mapRendererError(error);
+      });
+      registry.clear();
+      readCache.clear();
+      extractCache.clear();
+      return result;
     }
   };
 

@@ -1,10 +1,11 @@
+import { useData } from "../../data/DataProvider";
 import { useStreamText } from "../../hooks/useStreamText";
-import { RichText } from "./RichText";
+import { LyraDocument, PlainAgentText } from "./LyraDocument";
 
 /**
- * Renders text with a streaming (typewriter) effect.
- * Once streaming completes, renders the full rich markdown.
- * During streaming, renders plain text with a blinking cursor.
+ * Renders agent text during and after streaming.
+ * Rich mode: live LyraDocument (debounced) with a cursor while tokens arrive.
+ * Plain mode: typewriter text with a cursor, then static plain text when done.
  */
 export function StreamingText({
   content,
@@ -13,22 +14,34 @@ export function StreamingText({
   content: string;
   streaming: boolean;
 }) {
-  const { text, done } = useStreamText(content, {
+  const { aiRichRenderingEnabled } = useData();
+  const useTypewriter = streaming && !aiRichRenderingEnabled;
+  const { text } = useStreamText(content, {
     speed: 3,
     interval: 25,
-    enabled: streaming,
+    enabled: useTypewriter,
   });
 
-  // Once done or not streaming, render full rich markdown
-  if (done || !streaming) {
-    return <RichText content={content} />;
+  if (!streaming) {
+    if (aiRichRenderingEnabled) {
+      return <LyraDocument content={content} />;
+    }
+    return <PlainAgentText content={content} />;
   }
 
-  // While streaming, render plain text + cursor
+  if (aiRichRenderingEnabled) {
+    return (
+      <div className="lyra-agents-streaming-text lyra-agents-streaming-rich">
+        <LyraDocument content={content} />
+        <span className="lyra-agents-streaming-cursor" aria-hidden="true" />
+      </div>
+    );
+  }
+
   return (
-    <div className="lyra-agents-streaming-text">
+    <div className="lyra-agents-streaming-text lyra-agents-plain-text">
       <span>{text}</span>
-      <span className="lyra-agents-streaming-cursor" />
+      <span className="lyra-agents-streaming-cursor" aria-hidden="true" />
     </div>
   );
 }

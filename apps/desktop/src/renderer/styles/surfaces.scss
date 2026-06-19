@@ -6045,6 +6045,51 @@
   display: none;
 }
 
+.lyra-file-editor-host .lyra-monaco-ts-comment,
+.lyra-file-editor-diff-host .lyra-monaco-ts-comment {
+  color: #6a9955;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-string,
+.lyra-file-editor-diff-host .lyra-monaco-ts-string {
+  color: #ce9178;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-number,
+.lyra-file-editor-diff-host .lyra-monaco-ts-number {
+  color: #b5cea8;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-keyword,
+.lyra-file-editor-diff-host .lyra-monaco-ts-keyword {
+  color: #569cd6;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-function,
+.lyra-file-editor-diff-host .lyra-monaco-ts-function {
+  color: #dcdcaa;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-type,
+.lyra-file-editor-diff-host .lyra-monaco-ts-type {
+  color: #4ec9b0;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-property,
+.lyra-file-editor-diff-host .lyra-monaco-ts-property {
+  color: #9cdcfe;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-variable,
+.lyra-file-editor-diff-host .lyra-monaco-ts-variable {
+  color: #9cdcfe;
+}
+
+.lyra-file-editor-host .lyra-monaco-ts-default,
+.lyra-file-editor-diff-host .lyra-monaco-ts-default {
+  color: var(--lyra-text-secondary);
+}
+
 @keyframes lyra-spin {
   from {
     transform: rotate(0deg);

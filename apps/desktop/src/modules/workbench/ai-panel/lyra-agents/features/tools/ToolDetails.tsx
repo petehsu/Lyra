@@ -19,6 +19,7 @@ import {
 } from "../rich-text/ActionTargets";
 import { ToolPeekStrip } from "./ToolPeek";
 import { TerminalToolCard } from "./TerminalToolCard";
+import { RenderSurfacePreview } from "./RenderSurfacePreview";
 import { AppButton } from "@renderer/ui/components";
 
 /**
@@ -115,6 +116,7 @@ export function RenderSurfaceCard({
           <ActionText text={details.summary} />
         </p>
       ) : null}
+      <RenderSurfacePreview details={details} />
       <div className="lyra-agents-render-surface-footer">
         <span>{details.interactive ? "Interactive sandbox" : "Static surface"}</span>
         {details.security?.node === false ? <span>No Node</span> : null}

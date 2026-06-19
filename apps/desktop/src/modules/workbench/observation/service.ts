@@ -1,19 +1,169 @@
 import type {
+  WorkbenchTabCloseRequest,
+  WorkbenchTabCloseResult,
+  WorkbenchTabDetachSplitRequest,
+  WorkbenchTabDetachSplitResult,
+  WorkbenchTabReorderRequest,
+  WorkbenchTabReorderResult,
+  WorkbenchTabSplitRequest,
+  WorkbenchTabSplitResult,
+  WorkbenchTabsLayoutSnapshot,
   WorkbenchTerminalCloseRequest,
   WorkbenchTerminalCloseResult,
   WorkbenchTerminalFocusRequest,
   WorkbenchTerminalFocusResult,
   WorkbenchTerminalListResult,
+  WorkbenchTerminalMoveRequest,
+  WorkbenchTerminalMoveResult,
   WorkbenchTerminalOpenRequest,
   WorkbenchTerminalOpenResult,
   WorkbenchTerminalPaneDescriptor,
   WorkbenchObservationQueryRequest,
   WorkbenchObservationQueryResult
 } from "../../../shared/workbench-observation";
+import { disposeTerminalRendererForSession } from "../terminal-dock/pane-surface";
 import { shouldSuppressAgentTabActivation } from "../workspace-tabs/tab-activation-coordinator";
 import type { WorkbenchObservationDependencies } from "./types";
 import { listObservedTabs, readObservedLocalTab } from "./local-tab-readers";
 import { readObservedWorkspace } from "./workspace-readers";
+
+const readWorkbenchLayoutSnapshot = (
+  dependencies: WorkbenchObservationDependencies
+): WorkbenchTabsLayoutSnapshot => {
+  const layout = dependencies.tabsModel.getVisibleWorkspaceLayout();
+  return {
+    layoutMode: layout.mode,
+    splitGroupTabIds: dependencies.tabsModel.splitGroupTabIds,
+    focusedSplitTabId: layout.mode === "split" ? layout.focusedSplitTabId : null
+  };
+};
+
+const closeTerminalSessions = async (
+  dependencies: WorkbenchObservationDependencies,
+  sessionIds: readonly string[]
+): Promise<void> => {
+  if (dependencies.desktopApi === null || sessionIds.length === 0) {
+    return;
+  }
+  await Promise.all(
+    sessionIds.map((sessionId) =>
+      dependencies.desktopApi!.terminal.closeSession({ sessionId }).catch((_error: unknown) => undefined)
+    )
+  );
+  for (const sessionId of sessionIds) {
+    disposeTerminalRendererForSession(sessionId);
+  }
+};
+
+const closeWorkbenchTab = async (
+  request: WorkbenchTabCloseRequest,
+  dependencies: WorkbenchObservationDependencies
+): Promise<WorkbenchTabCloseResult> => {
+  const tabId = request.tabId.trim();
+  const tab = dependencies.tabsModel.tabs.find((entry) => entry.id === tabId);
+  if (tab === undefined) {
+    return {
+      tabId,
+      closed: false,
+      activeTabId: dependencies.tabsModel.activeTabId ?? null
+    };
+  }
+
+  if (dependencies.tabsModel.tabs.length <= 1) {
+    return {
+      tabId,
+      closed: false,
+      activeTabId: dependencies.tabsModel.activeTabId ?? null
+    };
+  }
+
+  if (tab.pageKind === "terminal" && tab.terminalTabId !== undefined) {
+    const terminalTab = dependencies.terminalModel.findTab(tab.terminalTabId);
+    if (terminalTab !== null) {
+      const sessionIds = dependencies.terminalModel
+        .getTabPanes(terminalTab.id)
+        .map((pane) => pane.sessionId);
+      await closeTerminalSessions(dependencies, sessionIds);
+      dependencies.terminalModel.closeTab(terminalTab.id);
+    }
+    dependencies.tabsModel.closeTerminalTab(tab.terminalTabId);
+  } else {
+    dependencies.tabsModel.closeTab(tabId);
+  }
+
+  return {
+    tabId,
+    closed: true,
+    activeTabId: dependencies.tabsModel.activeTabId ?? null
+  };
+};
+
+const reorderWorkbenchTab = (
+  request: WorkbenchTabReorderRequest,
+  dependencies: WorkbenchObservationDependencies
+): WorkbenchTabReorderResult => {
+  const tabId = request.tabId.trim();
+  const targetIndex = Math.max(0, Math.trunc(request.targetIndex));
+  dependencies.tabsModel.reorderTab(tabId, targetIndex);
+  return {
+    tabId,
+    targetIndex,
+    tabIds: dependencies.tabsModel.tabs.map((tab) => tab.id),
+    layout: readWorkbenchLayoutSnapshot(dependencies)
+  };
+};
+
+const splitWorkbenchTabs = (
+  request: WorkbenchTabSplitRequest,
+  dependencies: WorkbenchObservationDependencies
+): WorkbenchTabSplitResult => {
+  const sourceTabId = request.sourceTabId.trim();
+  const targetTabId = request.targetTabId.trim();
+  dependencies.tabsModel.splitTabWithTarget(sourceTabId, targetTabId);
+  return {
+    sourceTabId,
+    targetTabId,
+    layout: readWorkbenchLayoutSnapshot(dependencies)
+  };
+};
+
+const detachWorkbenchSplit = (
+  request: WorkbenchTabDetachSplitRequest,
+  dependencies: WorkbenchObservationDependencies
+): WorkbenchTabDetachSplitResult => {
+  const tabId = request.tabId.trim();
+  dependencies.tabsModel.detachTabFromSplit(tabId);
+  return {
+    tabId,
+    layout: readWorkbenchLayoutSnapshot(dependencies)
+  };
+};
+
+const moveTerminalTab = (
+  request: WorkbenchTerminalMoveRequest,
+  dependencies: WorkbenchObservationDependencies
+): WorkbenchTerminalMoveResult | null => {
+  const terminalTabId = request.terminalTabId.trim();
+  const targetTab = dependencies.terminalModel.findTab(terminalTabId);
+  if (targetTab === null) {
+    return null;
+  }
+
+  if (request.placement === "workspace") {
+    dependencies.terminalModel.moveTabToWorkspace(terminalTabId);
+    dependencies.tabsModel.openTerminalTab(
+      terminalTabId,
+      targetTab.title,
+      request.targetIndex === undefined ? undefined : { targetIndex: request.targetIndex }
+    );
+  } else {
+    dependencies.terminalModel.moveTabToDock(terminalTabId);
+    dependencies.tabsModel.closeTerminalTab(terminalTabId);
+  }
+
+  const activePaneId = targetTab.activePaneId;
+  return terminalDescriptorForPane(dependencies, terminalTabId, activePaneId);
+};
 
 const toBridgeError = (
   requestId: string,
@@ -324,6 +474,87 @@ export const attachWorkbenchObservationBridge = (
               ok: false,
               error: result
             };
+          }
+          return {
+            requestId,
+            ok: true,
+            result
+          };
+        }
+        if (request.method === "workbench.tab.close_local") {
+          const tabId = request.payload.tabId.trim();
+          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          if (!tabExists) {
+            return toBridgeError(
+              requestId,
+              "tab_not_found",
+              `Workbench tab not found: ${tabId}`
+            );
+          }
+          return {
+            requestId,
+            ok: true,
+            result: await closeWorkbenchTab(request.payload, dependencies)
+          };
+        }
+        if (request.method === "workbench.tab.reorder_local") {
+          const tabId = request.payload.tabId.trim();
+          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          if (!tabExists) {
+            return toBridgeError(
+              requestId,
+              "tab_not_found",
+              `Workbench tab not found: ${tabId}`
+            );
+          }
+          return {
+            requestId,
+            ok: true,
+            result: reorderWorkbenchTab(request.payload, dependencies)
+          };
+        }
+        if (request.method === "workbench.tab.split_local") {
+          const sourceTabId = request.payload.sourceTabId.trim();
+          const targetTabId = request.payload.targetTabId.trim();
+          const sourceExists = dependencies.tabsModel.tabs.some((tab) => tab.id === sourceTabId);
+          const targetExists = dependencies.tabsModel.tabs.some((tab) => tab.id === targetTabId);
+          if (!sourceExists || !targetExists) {
+            return toBridgeError(
+              requestId,
+              "tab_not_found",
+              "One or both workbench tabs were not found for split."
+            );
+          }
+          return {
+            requestId,
+            ok: true,
+            result: splitWorkbenchTabs(request.payload, dependencies)
+          };
+        }
+        if (request.method === "workbench.tab.detach_split_local") {
+          const tabId = request.payload.tabId.trim();
+          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          if (!tabExists) {
+            return toBridgeError(
+              requestId,
+              "tab_not_found",
+              `Workbench tab not found: ${tabId}`
+            );
+          }
+          return {
+            requestId,
+            ok: true,
+            result: detachWorkbenchSplit(request.payload, dependencies)
+          };
+        }
+        if (request.method === "workbench.terminal.move_local") {
+          const result = moveTerminalTab(request.payload, dependencies);
+          if (result === null) {
+            return toBridgeError(
+              requestId,
+              "terminal_unavailable",
+              "Terminal tab not found."
+            );
           }
           return {
             requestId,

@@ -41,6 +41,7 @@ export interface CreateDataProviderValueInput {
   permissionModeControls?: ComposerPermissionModeControls | null;
   locationControls?: WorkbenchLocationControls | null;
   openModelSettings?: () => Promise<void>;
+  aiRichRenderingEnabled?: boolean;
   browserFollowModeEnabled?: boolean;
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
@@ -127,6 +128,7 @@ export function createDataProviderValue({
   permissionModeControls = null,
   locationControls = null,
   openModelSettings = () => resolved,
+  aiRichRenderingEnabled = true,
   browserFollowModeEnabled = false,
   setBrowserFollowMode = () => resolved,
   openUrlInWorkbench = () => resolved,
@@ -199,6 +201,7 @@ export function createDataProviderValue({
     permissionModeControls,
     locationControls,
     openModelSettings,
+    aiRichRenderingEnabled,
     browserFollowModeEnabled,
     setBrowserFollowMode,
     openUrlInWorkbench,

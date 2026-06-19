@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 5174",
-    "build": "next build",
+    "wasm:build": "tsx ../../scripts/wasm/build-render-wasm.ts",
+    "dev": "npm run wasm:build && next dev -p 5174",
+    "build": "npm run wasm:build && next build",
     "start": "next start -p 5174",
     "preview": "next start -p 5174",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",

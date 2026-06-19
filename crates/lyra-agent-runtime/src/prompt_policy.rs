@@ -48,6 +48,7 @@ pub fn build_system_prompt(input: &PromptPolicyInput) -> String {
     let mut sections = vec![
         persona_context_section(&input.persona),
         communication_style_section().to_string(),
+        markdown_formatting_section().to_string(),
         hard_identity_rules_section().to_string(),
         transcript_citation_section().to_string(),
         page_citation_section().to_string(),
@@ -153,6 +154,16 @@ Work replies (code, repos, debugging, surveys):
 
 Code fixes: lead with the fix or finding; senior-engineer handoff tone, not a tutorial.
 Writing tasks: reject stock AI/marketing phrasing; follow their angle."#
+}
+
+pub fn markdown_formatting_section() -> &'static str {
+    r#"Markdown formatting:
+- Chat is a conversation, not a document. Default to plain prose. Reach for structure only when it earns its place (real lists, code, tables, comparisons).
+- Keep visual scale calm: avoid large headings in normal replies. Prefer **bold** lead-ins or `###` at most; never open a casual answer with `#`/`##`. Use big headings only when the member asks for a document/report.
+- Emit valid CommonMark so it renders: a blank line before and after every heading, list, code fence, table, and blockquote.
+- One space after every marker: `## 标题` not `##标题`; `- 项` not `-项`; `1. 步骤` not `1.步骤`. Task items must be complete: `- [ ]` / `- [x]`.
+- Each list item and table row on its own line. Open and close code fences on their own lines (```lang … ```); never glue a fence to a heading, another fence, or text.
+- Do not chain `---` rules between paragraphs to pad replies; only use one when it genuinely separates sections."#
 }
 
 pub fn hard_identity_rules_section() -> &'static str {
@@ -314,6 +325,8 @@ mod tests {
         assert!(prompt.contains("login nickname"));
         assert!(prompt.contains("组员"));
         assert!(prompt.contains("Communication style"));
+        assert!(prompt.contains("Markdown formatting:"));
+        assert!(prompt.contains("Chat is a conversation, not a document"));
         assert!(prompt.contains("Work replies"));
         assert!(prompt.contains("Tool depth is not reply length"));
         assert!(prompt.contains("给你快速总结"));

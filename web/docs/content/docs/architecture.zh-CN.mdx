@@ -27,6 +27,12 @@ Lyra 模块默认结构：
 2. 跨模块 deep import（如 `../../other/internal/*`）。
 3. 共享可变全局状态。
 
+## 富文档渲染
+
+文档站与桌面 AI 面板共用 Rust `lyra-render-core` 管线。Web 端通过 `lyra-render-wasm` 在浏览器中完成 RaTeX 数学与 merman 图表渲染。tree-sitter 高亮仍仅在原生端启用，待浏览器 wasm 运行时支持 tree-sitter C 依赖后再接入。
+
+<RenderShowcase />
+
 ## 工程守卫
 
 1. 单文件控制在 420 行以内。

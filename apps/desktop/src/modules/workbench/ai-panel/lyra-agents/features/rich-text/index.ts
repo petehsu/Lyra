@@ -1,3 +1,2 @@
-export { RichText } from "./RichText";
+export { LyraDocument, PlainAgentText } from "./LyraDocument";
 export { StreamingText } from "./StreamingText";
-export { MermaidBlock } from "./Mermaid";

@@ -197,6 +197,11 @@ export const listObservedTabs = (
   return {
     activeTabId: tabsModel.activeTabId ?? null,
     visibleTabIds: layout.visibleTabIds,
+    layout: {
+      layoutMode: layout.mode,
+      splitGroupTabIds: tabsModel.splitGroupTabIds,
+      focusedSplitTabId: layout.mode === "split" ? layout.focusedSplitTabId : null
+    },
     tabs
   };
 };

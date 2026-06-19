@@ -17,6 +17,7 @@
     "dev:desktop": "tsx scripts/dev/desktop-with-docs.ts",
     "dev:desktop:app": "pnpm --filter @lyra/desktop dev",
     "dev:docs": "npm --prefix web/docs run dev",
+    "wasm:build:render": "tsx scripts/wasm/build-render-wasm.ts",
     "build:docs": "npm --prefix web/docs run build",
     "preview:docs": "npm --prefix web/docs run preview",
     "dev:site": "npm --prefix web/site run dev",

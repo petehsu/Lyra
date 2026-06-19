@@ -22,6 +22,11 @@ describe("computer-surface-resolver", () => {
       listTabs: async () => ({
         activeTabId: "terminal-tab-1",
         visibleTabIds: ["terminal-tab-1"],
+        layout: {
+          layoutMode: "single",
+          splitGroupTabIds: [],
+          focusedSplitTabId: null
+        },
         tabs: [
           {
             tabId: "terminal-tab-1",

@@ -54,11 +54,68 @@ export type WorkbenchTabsListRequest = {
   readonly includeUnsupported?: boolean;
 };
 
+export type WorkbenchTabsLayoutSnapshot = {
+  readonly layoutMode: "single" | "split";
+  readonly splitGroupTabIds: readonly string[];
+  readonly focusedSplitTabId: string | null;
+};
+
 export type WorkbenchTabsListResult = {
   readonly activeTabId: string | null;
   readonly visibleTabIds: readonly string[];
+  readonly layout: WorkbenchTabsLayoutSnapshot;
   readonly tabs: readonly WorkbenchObservedTabDescriptor[];
 };
+
+export type WorkbenchTabCloseRequest = {
+  readonly tabId: string;
+};
+
+export type WorkbenchTabCloseResult = {
+  readonly tabId: string;
+  readonly closed: boolean;
+  readonly activeTabId: string | null;
+};
+
+export type WorkbenchTabReorderRequest = {
+  readonly tabId: string;
+  readonly targetIndex: number;
+};
+
+export type WorkbenchTabReorderResult = {
+  readonly tabId: string;
+  readonly targetIndex: number;
+  readonly tabIds: readonly string[];
+  readonly layout: WorkbenchTabsLayoutSnapshot;
+};
+
+export type WorkbenchTabSplitRequest = {
+  readonly sourceTabId: string;
+  readonly targetTabId: string;
+};
+
+export type WorkbenchTabSplitResult = {
+  readonly sourceTabId: string;
+  readonly targetTabId: string;
+  readonly layout: WorkbenchTabsLayoutSnapshot;
+};
+
+export type WorkbenchTabDetachSplitRequest = {
+  readonly tabId: string;
+};
+
+export type WorkbenchTabDetachSplitResult = {
+  readonly tabId: string;
+  readonly layout: WorkbenchTabsLayoutSnapshot;
+};
+
+export type WorkbenchTerminalMoveRequest = {
+  readonly terminalTabId: string;
+  readonly placement: WorkbenchTerminalPlacement;
+  readonly targetIndex?: number;
+};
+
+export type WorkbenchTerminalMoveResult = WorkbenchTerminalPaneDescriptor;
 
 export type WorkbenchTerminalPlacement = "dock" | "workspace";
 export type WorkbenchTerminalSplitDirection = "horizontal" | "vertical";
@@ -404,6 +461,31 @@ export type WorkbenchObservationQueryRequest =
       readonly requestId: string;
       readonly method: "workbench.terminal.close_local";
       readonly payload: WorkbenchTerminalCloseRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.tab.close_local";
+      readonly payload: WorkbenchTabCloseRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.tab.reorder_local";
+      readonly payload: WorkbenchTabReorderRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.tab.split_local";
+      readonly payload: WorkbenchTabSplitRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.tab.detach_split_local";
+      readonly payload: WorkbenchTabDetachSplitRequest;
+    }
+  | {
+      readonly requestId: string;
+      readonly method: "workbench.terminal.move_local";
+      readonly payload: WorkbenchTerminalMoveRequest;
     };
 
 export type WorkbenchObservationQueryResult = {

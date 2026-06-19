@@ -77,6 +77,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       desktopApi,
       settingsAiModel,
       locale: preferences.locale,
+      aiRichRenderingEnabled: preferences.aiRichRenderingEnabled,
       title: t("ai.tabTitle"),
       aiPanelSide,
       onToggleAiPanelSide,
@@ -114,6 +115,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       locationControls,
       openDialog,
       preferences.locale,
+      preferences.aiRichRenderingEnabled,
       t,
     ]
   );

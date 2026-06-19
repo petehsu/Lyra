@@ -5,6 +5,7 @@ import {
   type AgentRollbackPreviewResponse,
   type AgentRuntimeTurnState
 } from "../../../../../../shared/agent";
+import { writeClipboardText } from "../../../../../../shared/clipboard";
 import type { ChatMessage } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock } from "../tools/ToolGroup";
@@ -168,7 +169,7 @@ export function Message({
       .filter((b) => b.type === "text")
       .map((b) => (b as { body: string }).body)
       .join("\n\n");
-    navigator.clipboard.writeText(text);
+    void writeClipboardText(text);
   };
 
   const canRollback =
@@ -400,6 +401,7 @@ const AgentMessage = memo(function AgentMessage({
 }: AgentMessageProps) {
   const { isTurnRunning, followActivity } = useData();
   const working = isAgentMessageWorking(message);
+  const streamingTextActive = isTurnRunning || working;
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = message.blocks.filter((b) => b.type === "text");
   const lastBlock = message.blocks.at(-1);
@@ -420,7 +422,7 @@ const AgentMessage = memo(function AgentMessage({
       .filter((b) => b.type === "text")
       .map((b) => (b as { body: string }).body)
       .join("\n\n");
-    navigator.clipboard.writeText(text);
+    void writeClipboardText(text);
   };
 
   if (isEmptyPendingAgent && !showActivityIndicator) {
@@ -442,7 +444,8 @@ const AgentMessage = memo(function AgentMessage({
               // Only stream text that is actively being written (trailing block).
               // Avoid re-animating earlier narration when a new tool round starts.
               const isLastText = b.id === lastTextId;
-              const shouldStream = working && isLastText && lastBlockIsText;
+              const isStreamingHost = showActivityIndicator && streamingTextActive;
+              const shouldStream = isStreamingHost && isLastText && lastBlockIsText;
               return (
                 <div
                   key={b.id}

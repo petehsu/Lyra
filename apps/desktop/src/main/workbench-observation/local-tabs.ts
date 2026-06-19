@@ -6,10 +6,18 @@ import {
   type WorkbenchObservationQueryResult
 } from "../../shared/desktop-bridge";
 import type {
+  WorkbenchTabCloseRequest,
+  WorkbenchTabCloseResult,
+  WorkbenchTabDetachSplitRequest,
+  WorkbenchTabDetachSplitResult,
   WorkbenchTabObservationResult,
   WorkbenchTabActivateRequest,
   WorkbenchTabActivateResult,
   WorkbenchTabReadRequest,
+  WorkbenchTabReorderRequest,
+  WorkbenchTabReorderResult,
+  WorkbenchTabSplitRequest,
+  WorkbenchTabSplitResult,
   WorkbenchTabsListRequest,
   WorkbenchTabsListResult,
   WorkbenchTerminalCloseRequest,
@@ -18,6 +26,8 @@ import type {
   WorkbenchTerminalFocusResult,
   WorkbenchTerminalListRequest,
   WorkbenchTerminalListResult,
+  WorkbenchTerminalMoveRequest,
+  WorkbenchTerminalMoveResult,
   WorkbenchTerminalOpenRequest,
   WorkbenchTerminalOpenResult,
   WorkbenchWorkspaceReadRequest,
@@ -94,6 +104,16 @@ export const createWorkbenchObservationRendererClient = ({
           return { requestId, method, payload: payload as WorkbenchTerminalFocusRequest };
         case "workbench.terminal.close_local":
           return { requestId, method, payload: payload as WorkbenchTerminalCloseRequest };
+        case "workbench.tab.close_local":
+          return { requestId, method, payload: payload as WorkbenchTabCloseRequest };
+        case "workbench.tab.reorder_local":
+          return { requestId, method, payload: payload as WorkbenchTabReorderRequest };
+        case "workbench.tab.split_local":
+          return { requestId, method, payload: payload as WorkbenchTabSplitRequest };
+        case "workbench.tab.detach_split_local":
+          return { requestId, method, payload: payload as WorkbenchTabDetachSplitRequest };
+        case "workbench.terminal.move_local":
+          return { requestId, method, payload: payload as WorkbenchTerminalMoveRequest };
         default:
           return { requestId, method, payload: payload as WorkbenchTabReadRequest };
       }
@@ -150,6 +170,19 @@ export const createWorkbenchObservationRendererClient = ({
       await sendQuery<WorkbenchTerminalCloseResult>(
         "workbench.terminal.close_local",
         request
-      )
+      ),
+    closeLocalTab: async (request: WorkbenchTabCloseRequest) =>
+      await sendQuery<WorkbenchTabCloseResult>("workbench.tab.close_local", request),
+    reorderLocalTab: async (request: WorkbenchTabReorderRequest) =>
+      await sendQuery<WorkbenchTabReorderResult>("workbench.tab.reorder_local", request),
+    splitLocalTabs: async (request: WorkbenchTabSplitRequest) =>
+      await sendQuery<WorkbenchTabSplitResult>("workbench.tab.split_local", request),
+    detachLocalSplit: async (request: WorkbenchTabDetachSplitRequest) =>
+      await sendQuery<WorkbenchTabDetachSplitResult>(
+        "workbench.tab.detach_split_local",
+        request
+      ),
+    moveLocalTerminalTab: async (request: WorkbenchTerminalMoveRequest) =>
+      await sendQuery<WorkbenchTerminalMoveResult>("workbench.terminal.move_local", request)
   };
 };

@@ -96,6 +96,32 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/workbench/activate_tab" => {
             host("workbench.activateTab", "workbench", "activate_tab")
         }
+        "/tools/workbench/close_tab" => host("workbench.closeTab", "workbench", "close_tab"),
+        "/tools/workbench/reorder_tab" => {
+            host("workbench.reorderTab", "workbench", "reorder_tab")
+        }
+        "/tools/workbench/split_tabs" => host("workbench.splitTabs", "workbench", "split_tabs"),
+        "/tools/workbench/detach_split" => {
+            host("workbench.detachSplit", "workbench", "detach_split")
+        }
+        "/tools/workbench/list_terminals" => {
+            host("workbench.listTerminals", "workbench", "list_terminals")
+        }
+        "/tools/workbench/open_terminal" => {
+            host("workbench.openTerminal", "workbench", "open_terminal")
+        }
+        "/tools/workbench/focus_terminal" => {
+            host("workbench.focusTerminal", "workbench", "focus_terminal")
+        }
+        "/tools/workbench/close_terminal" => {
+            host("workbench.closeTerminal", "workbench", "close_terminal")
+        }
+        "/tools/workbench/move_terminal" => {
+            host("workbench.moveTerminal", "workbench", "move_terminal")
+        }
+        "/tools/workbench/extract_tab_text" => {
+            host("workbench.extractTabText", "workbench", "extract_tab_text")
+        }
         "/tools/software/list_capabilities" => {
             host("software.listCapabilities", "software", "list_capabilities")
         }

@@ -1,17 +1,32 @@
-/// Normalize common AI markdown glitches before parsing.
+/// Normalize common AI markdown glitches before parsing (non-streaming/final).
 pub fn fix_common_markdown_issues(content: &str) -> String {
+    fix_markdown_issues(content, false)
+}
+
+/// Normalize common AI markdown glitches before parsing.
+///
+/// When `streaming` is true the text is a partial, still-growing assistant
+/// response. In that mode we deliberately skip "auto-close the last unclosed
+/// marker" repairs (dangling ``` fence, odd `**`): mid-stream every inline
+/// marker is briefly unclosed, and auto-closing it makes bold/code flicker on
+/// and off as tokens arrive. The structural per-line fixes (run-on headings,
+/// list markers, glued fences/rules) are still applied — they are stable under
+/// streaming and only ever clarify block boundaries.
+pub fn fix_markdown_issues(content: &str, streaming: bool) -> String {
     let mut result = content.replace('｜', "|");
     result = convert_display_math_fences(&result);
     result = separate_run_on_block_markers(&result);
-    let fence_count = result
-        .lines()
-        .filter(|line| line.trim_start().starts_with("```"))
-        .count();
-    if fence_count % 2 != 0 {
-        result.push_str("\n```");
-    }
-    if result.matches("**").count() % 2 != 0 {
-        result.push_str("**");
+    if !streaming {
+        let fence_count = result
+            .lines()
+            .filter(|line| line.trim_start().starts_with("```"))
+            .count();
+        if fence_count % 2 != 0 {
+            result.push_str("\n```");
+        }
+        if result.matches("**").count() % 2 != 0 {
+            result.push_str("**");
+        }
     }
     result
 }
@@ -154,14 +169,13 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
             return pieces;
         }
 
-        // A heading marker glued mid-line: sit after real content, follow a
-        // boundary char (not an alphanumeric — so `C#`/`a#b` are excluded), and
-        // be a run of 2..=6 `#`. Restricting to >=2 hashes avoids false hits on
-        // lone `#` used as text (e.g. `issue #1`); the screenshot's run-on
-        // headings are all `##`/`###`.
+        // A heading marker glued mid-line: a run of 2..=6 `#` sitting after real
+        // content. Restricting to >=2 hashes avoids false hits on a lone `#`
+        // used as text (`issue #1`, `C#`, `F#`). When the run follows an
+        // alphanumeric char (e.g. `H3#### 四级`) we additionally require a space
+        // after the run, the canonical heading shape, to stay conservative.
         if chars[index] == '#'
             && index > 0
-            && !chars[index - 1].is_alphanumeric()
             && chars[index - 1] != '#'
             && !current.trim().is_empty()
         {
@@ -170,8 +184,14 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
                 hashes += 1;
             }
             let after = chars.get(index + hashes);
-            let looks_like_heading = (2..=6).contains(&hashes)
-                && matches!(after, Some(c) if *c != '#');
+            let prev_is_alnum = chars[index - 1].is_alphanumeric();
+            let after_ok = if prev_is_alnum {
+                // Stricter when glued to alphanumerics: must be `### ` with a space.
+                matches!(after, Some(' '))
+            } else {
+                matches!(after, Some(c) if *c != '#')
+            };
+            let looks_like_heading = (2..=6).contains(&hashes) && after_ok;
             if looks_like_heading {
                 let kept = current.trim_end().to_string();
                 if !kept.is_empty() {
@@ -255,6 +275,15 @@ fn split_run_on_leading_heading(line: &str) -> Option<(String, String)> {
             return None;
         }
         if !is_cjk {
+            // ASCII `.`/`!`/`?` only count as a sentence break when the char
+            // before is a letter. This excludes numbering and versions like
+            // `2.标题`, `3. 步骤`, `v1.2` — where the `.` is structural, not a
+            // sentence terminator — which would otherwise wrongly split a
+            // heading such as `## 2.标题层级`.
+            let prev = i.checked_sub(1).and_then(|p| chars.get(p)).copied();
+            if !prev.is_some_and(|p| p.is_alphabetic()) {
+                continue;
+            }
             match next {
                 Some(n) if n.is_whitespace() || n.is_ascii_digit() => continue,
                 None => return None,
@@ -541,6 +570,37 @@ mod tests {
     fn keeps_heading_that_merely_ends_with_punctuation() {
         // Trailing period, nothing after it -> still a single heading.
         assert_eq!(separate_run_on_block_markers("# 标题。"), "# 标题。");
+    }
+
+    #[test]
+    fn does_not_split_numbered_cjk_heading_on_dot() {
+        // `## 2.标题层级` — the `.` is part of section numbering, not a sentence
+        // break, so the heading must stay intact.
+        assert_eq!(
+            separate_run_on_block_markers("## 2.标题层级"),
+            "## 2.标题层级"
+        );
+        // Missing space after the run is normalized but not split.
+        assert_eq!(
+            separate_run_on_block_markers("##2.标题层级"),
+            "## 2.标题层级"
+        );
+    }
+
+    #[test]
+    fn splits_heading_run_glued_after_alphanumeric() {
+        // `### 三级 H3#### 四级 H4` — the `####` run after `H3` is a new heading.
+        let out = separate_run_on_block_markers("### 三级 H3#### 四级 H4");
+        assert_eq!(out, "### 三级 H3\n#### 四级 H4");
+    }
+
+    #[test]
+    fn does_not_split_csharp_like_token() {
+        // A single `#` after a letter (`C#`) is never a heading.
+        assert_eq!(
+            separate_run_on_block_markers("用 C# 写的服务"),
+            "用 C# 写的服务"
+        );
     }
 
     #[test]

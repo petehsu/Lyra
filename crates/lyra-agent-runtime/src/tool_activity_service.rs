@@ -463,6 +463,167 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 Some("workbench.activateTab"),
             ),
             capability(
+                "lyra-workbench",
+                "workbench_close_tab",
+                "Close one Lyra workbench tab by id.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string" }
+                    },
+                    "required": ["tabId"]
+                }),
+                Some("workbench.closeTab"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_reorder_tab",
+                "Reorder a workbench tab to a new strip index.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string" },
+                        "targetIndex": { "type": "integer", "minimum": 0 }
+                    },
+                    "required": ["tabId", "targetIndex"]
+                }),
+                Some("workbench.reorderTab"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_split_tabs",
+                "Split two workbench tabs into a visible split layout.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sourceTabId": { "type": "string" },
+                        "targetTabId": { "type": "string" }
+                    },
+                    "required": ["sourceTabId", "targetTabId"]
+                }),
+                Some("workbench.splitTabs"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_detach_split",
+                "Detach one tab from the current split layout.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string" }
+                    },
+                    "required": ["tabId"]
+                }),
+                Some("workbench.detachSplit"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_list_terminals",
+                "List terminal panes in the dock and workspace.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+                Some("workbench.listTerminals"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_open_terminal",
+                "Open a terminal pane in the dock or workspace, optionally splitting an existing pane.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "placement": { "type": "string", "enum": ["dock", "workspace"], "default": "dock" },
+                        "title": { "type": "string" },
+                        "cwd": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "splitDirection": { "type": "string", "enum": ["horizontal", "vertical"], "default": "horizontal" }
+                    }
+                }),
+                Some("workbench.openTerminal"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_focus_terminal",
+                "Focus a terminal pane by session, pane, or terminal tab id.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "terminalTabId": { "type": "string" }
+                    }
+                }),
+                Some("workbench.focusTerminal"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_close_terminal",
+                "Close a terminal pane by session, pane, or terminal tab id.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "terminalTabId": { "type": "string" }
+                    }
+                }),
+                Some("workbench.closeTerminal"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_move_terminal",
+                "Move a terminal tab between the dock and workspace.",
+                "action",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "terminalTabId": { "type": "string" },
+                        "placement": { "type": "string", "enum": ["dock", "workspace"] },
+                        "targetIndex": { "type": "integer", "minimum": 0 }
+                    },
+                    "required": ["terminalTabId", "placement"]
+                }),
+                Some("workbench.moveTerminal"),
+            ),
+            capability(
+                "lyra-workbench",
+                "workbench_extract_tab_text",
+                "Extract paginated text from one workbench tab.",
+                "read",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string" },
+                        "scope": { "type": "string", "enum": ["main", "full"], "default": "main" },
+                        "maxChars": { "type": "integer", "minimum": 1 },
+                        "cursor": { "type": "integer", "minimum": 0 },
+                        "paneId": { "type": "string" }
+                    },
+                    "required": ["tabId"]
+                }),
+                Some("workbench.extractTabText"),
+            ),
+            capability(
                 "lyra-software",
                 "software_list_capabilities",
                 "List installed Lyra software adapters and their lightweight capabilities.",

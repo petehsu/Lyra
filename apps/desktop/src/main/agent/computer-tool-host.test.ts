@@ -49,6 +49,11 @@ describe("computer-tool-host", () => {
         listWorkbenchTabs: async () => ({
           activeTabId: "browser-tab-1",
           visibleTabIds: ["browser-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
           tabs: []
         }),
         axHandlers: {
@@ -103,6 +108,11 @@ describe("computer-tool-host", () => {
         listWorkbenchTabs: async () => ({
           activeTabId: "terminal-tab-1",
           visibleTabIds: ["terminal-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
           tabs: [
             {
               tabId: "terminal-tab-1",
@@ -183,6 +193,11 @@ describe("computer-tool-host", () => {
         listWorkbenchTabs: async () => ({
           activeTabId: "browser-tab-1",
           visibleTabIds: ["browser-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
           tabs: [
             {
               tabId: "browser-tab-1",
@@ -220,6 +235,11 @@ describe("computer-tool-host", () => {
         listWorkbenchTabs: async () => ({
           activeTabId: "browser-tab-1",
           visibleTabIds: ["browser-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
           tabs: [
             {
               tabId: "browser-tab-1",
@@ -270,6 +290,11 @@ describe("computer-tool-host", () => {
         listWorkbenchTabs: async () => ({
           activeTabId: "browser-tab-1",
           visibleTabIds: ["browser-tab-1"],
+          layout: {
+            layoutMode: "single",
+            splitGroupTabIds: [],
+            focusedSplitTabId: null
+          },
           tabs: []
         }),
         activateWorkbenchTab

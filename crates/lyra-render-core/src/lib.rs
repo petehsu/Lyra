@@ -1,0 +1,20 @@
+pub mod ansi;
+pub mod ast;
+pub mod cache;
+pub mod error;
+pub mod highlight;
+pub mod markdown;
+pub mod math;
+pub mod mermaid;
+pub mod options;
+pub mod pipeline;
+pub mod preprocess;
+
+pub use ansi::{render_agent_markdown, render_document_ansi, render_markdown_ansi};
+pub use ast::{HighlightSpan, InlineNode, LyraRenderDocument, RenderBlock};
+pub use cache::invalidate_cache;
+pub use error::{RenderError, RenderResult};
+pub use highlight::{highlight_code, highlight_request};
+pub use options::{HighlightRequest, RenderDocumentOptions, RenderTheme};
+pub use pipeline::render_document;
+pub use preprocess::fix_common_markdown_issues;

@@ -397,6 +397,11 @@ describe("Agent IPC bridge", () => {
     const tabs = {
       activeTabId: "settings-1",
       visibleTabIds: ["settings-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
       tabs: [
         {
           tabId: "settings-1",
@@ -508,6 +513,11 @@ describe("Agent IPC bridge", () => {
     const tabs = {
       activeTabId: "browser-tab-35",
       visibleTabIds: ["browser-tab-35"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
       tabs: [imageTab]
     };
     const observationService = {
@@ -1480,6 +1490,11 @@ describe("Agent IPC bridge", () => {
     const tabs = {
       activeTabId: "page-1",
       visibleTabIds: ["page-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
       tabs: [
         {
           tabId: "page-1",
@@ -2387,6 +2402,11 @@ describe("Agent IPC bridge", () => {
     const tabs = {
       activeTabId: "terminal-1",
       visibleTabIds: ["terminal-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
       tabs: [
         {
           tabId: "terminal-1",
@@ -2472,6 +2492,11 @@ describe("Agent IPC bridge", () => {
     const tabs = {
       activeTabId: "terminal-1",
       visibleTabIds: ["terminal-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
       tabs: [
         {
           tabId: "terminal-1",

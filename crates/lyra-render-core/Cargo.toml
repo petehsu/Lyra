@@ -1,0 +1,40 @@
+[package]
+name = "lyra-render-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["highlight", "math", "mermaid"]
+highlight = ["dep:tree-sitter", "dep:tree-sitter-highlight", "dep:tree-sitter-rust", "dep:tree-sitter-typescript", "dep:tree-sitter-python", "dep:tree-sitter-json", "dep:tree-sitter-bash"]
+math = ["dep:ratex-layout", "dep:ratex-parser", "dep:ratex-svg", "dep:ratex-types"]
+mermaid = ["dep:merman"]
+
+[dependencies]
+blake3 = { workspace = true }
+lru = { workspace = true }
+once_cell = "1.21.3"
+pulldown-cmark = { workspace = true }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-highlight = { workspace = true, optional = true }
+tree-sitter-bash = { workspace = true, optional = true }
+tree-sitter-json = { version = "0.24", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-rust = { version = "0.24", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+
+merman = { version = "0.8.0-alpha.1", optional = true, default-features = false, features = ["render"] }
+ratex-layout = { version = "0.1.11", optional = true }
+ratex-parser = { version = "0.1.11", optional = true }
+ratex-svg = { version = "0.1.11", optional = true, features = ["standalone"] }
+ratex-types = { version = "0.1.11", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }

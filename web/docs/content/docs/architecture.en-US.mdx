@@ -27,6 +27,12 @@ Anti-patterns:
 2. Cross-module deep imports (`../../other/internal/*`).
 3. Shared mutable global state.
 
+## Rich document rendering
+
+Docs can render markdown through the same Rust `lyra-render-core` pipeline used by the desktop AI panel. The web build loads `lyra-render-wasm` in the browser for RaTeX math and merman diagrams. Tree-sitter highlighting remains native-only until the browser runtime can link the tree-sitter C runtime for `wasm32-unknown-unknown`.
+
+<RenderShowcase />
+
 ## Engineering guardrails
 
 1. Keep source files under 420 lines.
