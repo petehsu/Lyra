@@ -53,6 +53,20 @@ const pathWithoutLocation = (value: string): string =>
     .replace(/#L\d+(?:-L\d+)?$/iu, "")
     .replace(/:\d+(?::\d+)?$/u, "");
 
+const pathBasename = (value: string): string => {
+  const normalized = pathWithoutLocation(value.trim()).replace(/\\/g, "/").replace(/\/+$/u, "");
+  const separatorIndex = normalized.lastIndexOf("/");
+  return separatorIndex >= 0 ? normalized.slice(separatorIndex + 1) : normalized;
+};
+
+export const isFileOpenTarget = (target: ActionTarget): boolean => {
+  if (target.kind !== "file") {
+    return false;
+  }
+  const basename = pathBasename(target.value);
+  return CONFIG_BASENAME_PATTERN.test(basename) || FILE_EXTENSION_PATTERN.test(basename);
+};
+
 export const isProbablyTruncatedFileReference = (value: string): boolean => {
   const candidate = stripOuterPunctuation(value);
   return (
@@ -267,7 +281,7 @@ export const splitActionText = (text: string): readonly TextSegment[] => {
 };
 
 export function ActionText({ text }: { readonly text: string }) {
-  const { openUrlInWorkbench, openFileInWorkbench } = useData();
+  const { openUrlInWorkbench, openFileInWorkbench, revealPathInWorkbench } = useData();
   const segments = splitActionText(text);
 
   return (
@@ -280,8 +294,10 @@ export function ActionText({ text }: { readonly text: string }) {
         const open = () => {
           if (target.kind === "url") {
             void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
-          } else {
+          } else if (isFileOpenTarget(target)) {
             void openFileInWorkbench(target.value).catch(() => undefined);
+          } else {
+            void revealPathInWorkbench(target.value).catch(() => undefined);
           }
         };
         return (
@@ -309,7 +325,12 @@ export function ActionTargetButton({
   readonly className?: string | undefined;
   readonly children?: ReactNode;
 }) {
-  const { openUrlInWorkbench, openFileInWorkbench, revealSensitiveValueToUser } = useData();
+  const {
+    openUrlInWorkbench,
+    openFileInWorkbench,
+    revealPathInWorkbench,
+    revealSensitiveValueToUser
+  } = useData();
   const [revealedValue, setRevealedValue] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const open = () => {
@@ -323,8 +344,10 @@ export function ActionTargetButton({
     }
     if (target.kind === "url") {
       void openUrlInWorkbench(target.value, target.label).catch(() => undefined);
-    } else {
+    } else if (isFileOpenTarget(target)) {
       void openFileInWorkbench(target.value).catch(() => undefined);
+    } else {
+      void revealPathInWorkbench(target.value).catch(() => undefined);
     }
   };
   return (

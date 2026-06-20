@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileEditorModel, FileEditorRevealLocation } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import type { ImageViewerModel } from "../image-viewer";
@@ -18,6 +19,7 @@ export type WorkbenchOpenFileFromManager = (
 ) => string | null;
 
 type UseWorkbenchFileActionsParams = {
+  readonly desktopApi: LyraDesktopApi | null;
   readonly activeTab: WorkspaceTab | undefined;
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
@@ -31,13 +33,76 @@ export type WorkbenchFileActions = {
   readonly openDirectoryFromNavigation: (path: string) => Promise<void>;
 };
 
+type WorkbenchPathKind = "file" | "directory" | "missing" | "unknown";
+
+const parentPathFor = (filePath: string): string => {
+  const slashIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (slashIndex <= 0) {
+    return filePath;
+  }
+  return filePath.slice(0, slashIndex);
+};
+
+const resolvePathKind = async (
+  desktopApi: LyraDesktopApi | null,
+  filePath: string
+): Promise<WorkbenchPathKind> => {
+  try {
+    const stat = await desktopApi?.files.statFile({ path: filePath });
+    if (stat === undefined) {
+      return "unknown";
+    }
+    if (stat.exists === false) {
+      return "missing";
+    }
+    return stat.isDirectory ? "directory" : "file";
+  } catch {
+    return "unknown";
+  }
+};
+
 export const useWorkbenchFileActions = ({
+  desktopApi,
   activeTab,
   tabsModel,
   fileManagerModel,
   fileEditorModel,
   imageViewerModel
 }: UseWorkbenchFileActionsParams): WorkbenchFileActions => {
+  const openDirectoryInFileManager = useCallback(async (
+    directoryPath: string,
+    addToHistory = false
+  ): Promise<string> => {
+    const activeFileManagerTab =
+      activeTab?.pageKind === "app" &&
+      activeTab.appId === "file-manager" &&
+      activeTab.appInstanceId !== undefined
+        ? activeTab
+        : undefined;
+    const existingFileManagerTab = activeFileManagerTab ?? tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === "file-manager" &&
+        tab.appInstanceId !== undefined
+    );
+
+    if (existingFileManagerTab?.appInstanceId !== undefined) {
+      fileManagerModel.ensureInstance(existingFileManagerTab.appInstanceId);
+      tabsModel.setActiveTab(existingFileManagerTab.id);
+      await fileManagerModel.openDirectory(
+        existingFileManagerTab.appInstanceId,
+        directoryPath,
+        addToHistory
+      );
+      return existingFileManagerTab.appInstanceId;
+    }
+
+    const instance = fileManagerModel.createInstance();
+    tabsModel.openAppTab(instance);
+    await fileManagerModel.openDirectory(instance.appInstanceId, directoryPath, addToHistory);
+    return instance.appInstanceId;
+  }, [activeTab, fileManagerModel, tabsModel]);
+
   const onOpenFileFromManager = useCallback<WorkbenchOpenFileFromManager>(
     (filePath, location, options) => {
       if (options?.allowMissing !== true && isImageViewerSupportedPath(filePath)) {
@@ -136,38 +201,29 @@ export const useWorkbenchFileActions = ({
     if (normalized.length === 0) {
       return;
     }
-    const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-    const parentPath = slashIndex <= 0 ? normalized : normalized.slice(0, slashIndex);
-    const instance = fileManagerModel.createInstance();
-    tabsModel.openAppTab(instance);
-    await fileManagerModel.openDirectory(instance.appInstanceId, parentPath);
-    const state = fileManagerModel.getState(instance.appInstanceId);
+
+    const pathKind = await resolvePathKind(desktopApi, normalized);
+    if (pathKind === "directory") {
+      await openDirectoryInFileManager(normalized, false);
+      return;
+    }
+
+    const parentPath = parentPathFor(normalized);
+    const appInstanceId = await openDirectoryInFileManager(parentPath, false);
+    const state = fileManagerModel.getState(appInstanceId);
     const entry = state?.entries.find((item) => item.path === normalized);
     if (entry !== undefined) {
-      fileManagerModel.selectEntry(instance.appInstanceId, entry.id);
+      fileManagerModel.selectEntry(appInstanceId, entry.id);
     }
-  }, [fileManagerModel, tabsModel]);
+  }, [desktopApi, fileManagerModel, openDirectoryInFileManager]);
 
   const openDirectoryFromNavigation = useCallback(async (path: string): Promise<void> => {
     const normalizedPath = path.trim();
     if (normalizedPath.length === 0) {
       return;
     }
-
-    if (
-      activeTab?.pageKind === "app" &&
-      activeTab.appId === "file-manager" &&
-      activeTab.appInstanceId !== undefined
-    ) {
-      tabsModel.setActiveTab(activeTab.id);
-      await fileManagerModel.openDirectory(activeTab.appInstanceId, normalizedPath, false);
-      return;
-    }
-
-    const instance = fileManagerModel.createInstance();
-    tabsModel.openAppTab(instance);
-    await fileManagerModel.openDirectory(instance.appInstanceId, normalizedPath, false);
-  }, [activeTab, fileManagerModel, tabsModel]);
+    await openDirectoryInFileManager(normalizedPath, false);
+  }, [openDirectoryInFileManager]);
 
   return useMemo(
     () => ({

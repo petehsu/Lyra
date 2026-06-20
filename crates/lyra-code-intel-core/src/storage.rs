@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn snapshot_file(storage_root: &Path) -> PathBuf {
-    storage_root.join("code-intel").join("index.v1.json")
+    storage_root.join("code-intel").join("index.v2.json")
 }
 
 pub fn load_snapshot(path: &Path) -> Result<Option<IndexSnapshot>, String> {

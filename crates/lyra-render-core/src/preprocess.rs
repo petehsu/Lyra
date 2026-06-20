@@ -13,22 +13,96 @@ pub fn fix_common_markdown_issues(content: &str) -> String {
 /// list markers, glued fences/rules) are still applied — they are stable under
 /// streaming and only ever clarify block boundaries.
 pub fn fix_markdown_issues(content: &str, streaming: bool) -> String {
-    let mut result = content.replace('｜', "|");
+    let mut result = normalize_input(content);
+    result = normalize_fullwidth_markdown_chars(&result);
     result = convert_display_math_fences(&result);
     result = separate_run_on_block_markers(&result);
     if !streaming {
-        let fence_count = result
-            .lines()
-            .filter(|line| line.trim_start().starts_with("```"))
-            .count();
-        if fence_count % 2 != 0 {
-            result.push_str("\n```");
-        }
-        if result.matches("**").count() % 2 != 0 {
-            result.push_str("**");
-        }
+        result = auto_close_unclosed_markers(&result);
     }
     result
+}
+
+/// Universal input normalization (markdown-it `normalize.mjs`, marked `Lexer`).
+fn normalize_input(content: &str) -> String {
+    content
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\0', "\u{FFFD}")
+}
+
+/// Models often emit fullwidth punctuation that CommonMark does not treat as syntax.
+fn normalize_fullwidth_markdown_chars(content: &str) -> String {
+    content
+        .replace('｜', "|")
+        .replace('＃', "#")
+        .replace('＊', "*")
+        .replace('－', "-")
+        .replace('｀', "`")
+}
+
+/// Auto-close dangling markers only outside fenced/inline code (marked `emStrongMask` idea).
+fn auto_close_unclosed_markers(content: &str) -> String {
+    let mut result = content.to_string();
+    let fence_count = result
+        .lines()
+        .filter(|line| line.trim_start().starts_with("```"))
+        .count();
+    if fence_count % 2 != 0 {
+        result.push_str("\n```");
+    }
+    if count_marker_outside_protected(&result, "**") % 2 != 0 {
+        result.push_str("**");
+    }
+    if count_marker_outside_protected(&result, "`") % 2 != 0 {
+        result.push('`');
+    }
+    result
+}
+
+fn count_marker_outside_protected(content: &str, marker: &str) -> usize {
+    let mut count = 0usize;
+    let mut in_fence = false;
+
+    for line in content.split('\n') {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        count += count_marker_in_line_outside_inline_code(line, marker);
+    }
+
+    count
+}
+
+fn count_marker_in_line_outside_inline_code(line: &str, marker: &str) -> usize {
+    let marker_chars: Vec<char> = marker.chars().collect();
+    let line_chars: Vec<char> = line.chars().collect();
+    let mut count = 0usize;
+    let mut in_inline_code = false;
+    let mut index = 0usize;
+
+    while index < line_chars.len() {
+        if line_chars[index] == '`' {
+            if marker == "`" {
+                count += 1;
+            }
+            in_inline_code = !in_inline_code;
+            index += 1;
+            continue;
+        }
+        if !in_inline_code && line_chars[index..].starts_with(&marker_chars) {
+            count += 1;
+            index += marker_chars.len();
+            continue;
+        }
+        index += 1;
+    }
+
+    count
 }
 
 /// Models frequently emit "run-on" markdown where a block-level marker is glued
@@ -131,6 +205,15 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
         return pieces;
     }
 
+    if let Some((before, quote)) = split_run_on_blockquote(line) {
+        let mut pieces = Vec::new();
+        if !before.trim().is_empty() {
+            pieces.extend(split_line_block_markers(&before));
+        }
+        pieces.push(quote);
+        return pieces;
+    }
+
     // Normalize a leading heading run that is missing its space (`##列表`).
     let line = normalize_leading_heading_space(line);
 
@@ -138,6 +221,7 @@ fn split_line_block_markers(line: &str) -> Vec<String> {
     let line = normalize_leading_list_marker_space(&line);
     let line = normalize_leading_ordered_list_marker_space(&line);
     let line = normalize_task_list_marker_space(&line);
+    let line = normalize_leading_blockquote_space(&line);
 
     let line = normalize_closing_strong_marker_space(&line);
 
@@ -476,6 +560,49 @@ fn split_run_on_ordered_list_item(line: &str) -> Option<Vec<String>> {
         }
         let rest = &line[start..];
         return Some(vec![before.to_string(), rest.to_string()]);
+    }
+    None
+}
+
+/// Insert the missing space after a leading blockquote marker (`>引用` -> `> 引用`).
+fn normalize_leading_blockquote_space(line: &str) -> String {
+    let indent_len = line.len() - line.trim_start().len();
+    let (indent, rest) = line.split_at(indent_len);
+    let Some(after_marker) = rest.strip_prefix('>') else {
+        return line.to_string();
+    };
+    match after_marker.chars().next() {
+        Some(c) if c != ' ' => format!("{indent}> {after_marker}"),
+        _ => line.to_string(),
+    }
+}
+
+/// Split a blockquote marker glued onto preceding prose (`正文。>引用` -> before + `> 引用`).
+fn split_run_on_blockquote(line: &str) -> Option<(String, String)> {
+    for (index, ch) in line.char_indices() {
+        if ch != '>' || index == 0 {
+            continue;
+        }
+        let before = &line[..index];
+        if before.trim().is_empty() {
+            continue;
+        }
+        let after = line[index + ch.len_utf8()..].to_string();
+        if after.trim().is_empty() {
+            continue;
+        }
+        let prev = before.chars().last();
+        let missing_space = !after.starts_with(' ');
+        let after_sentence =
+            prev.is_some_and(|p| matches!(p, '。' | '！' | '？' | '.' | '!' | '?'));
+        if missing_space || after_sentence {
+            let quote = if after.starts_with(' ') {
+                format!(">{after}")
+            } else {
+                format!("> {after}")
+            };
+            return Some((before.trim_end().to_string(), quote));
+        }
     }
     None
 }
@@ -951,10 +1078,72 @@ mod tests {
     #[test]
     fn streaming_mode_skips_bold_and_fence_auto_close() {
         let input = "Hello **world\n```python\nx = 1";
-        assert_eq!(fix_markdown_issues(input, true), input.replace('｜', "|"));
+        assert_eq!(fix_markdown_issues(input, true), normalize_input(input));
         assert_ne!(
             fix_markdown_issues(input, false),
             fix_markdown_issues(input, true)
         );
+    }
+
+    #[test]
+    fn normalizes_windows_and_legacy_mac_line_endings() {
+        let input = "line one\r\nline two\rline three";
+        assert_eq!(normalize_input(input), "line one\nline two\nline three");
+    }
+
+    #[test]
+    fn replaces_null_bytes_with_replacement_character() {
+        let input = "before\0after";
+        assert_eq!(normalize_input(input), "before\u{FFFD}after");
+    }
+
+    #[test]
+    fn normalizes_fullwidth_markdown_punctuation() {
+        let input = "＃ 标题\n－－－\n＊强调＊";
+        let output = fix_common_markdown_issues(input);
+        assert!(output.contains("# 标题"));
+        assert!(output.contains("---"));
+        assert!(output.contains("*强调*"));
+    }
+
+    #[test]
+    fn auto_close_skips_strong_markers_inside_inline_code() {
+        let input = "Use `**not bold**` and **real";
+        let output = fix_common_markdown_issues(input);
+        assert!(output.ends_with("**"));
+        assert!(output.contains("`**not bold**`"));
+    }
+
+    #[test]
+    fn auto_close_appends_missing_inline_backtick() {
+        let input = "Run `cargo test";
+        assert_eq!(fix_common_markdown_issues(input), "Run `cargo test`");
+    }
+
+    #[test]
+    fn auto_close_skips_inline_backticks_inside_fenced_code() {
+        let input = "```rust\nlet s = `x`;\n```\nTail `open";
+        let output = fix_common_markdown_issues(input);
+        assert!(output.contains("let s = `x`;"));
+        assert!(output.ends_with('`'));
+    }
+
+    #[test]
+    fn inserts_space_after_leading_blockquote_marker() {
+        assert_eq!(
+            normalize_leading_blockquote_space(">引用内容"),
+            "> 引用内容"
+        );
+        assert_eq!(
+            normalize_leading_blockquote_space("> 已有空格"),
+            "> 已有空格"
+        );
+    }
+
+    #[test]
+    fn splits_blockquote_glued_after_sentence() {
+        let input = "正文结束。>引用段落";
+        let output = separate_run_on_block_markers(input);
+        assert_eq!(output, "正文结束。\n> 引用段落");
     }
 }

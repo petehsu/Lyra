@@ -1,6 +1,6 @@
 use crate::ast::{InlineNode, LyraRenderDocument, RenderBlock};
 
-use crate::markdown::parse_markdown_plain;
+use crate::markdown::parser::parse_markdown_plain;
 
 pub fn parse_markdown_with_details(content: &str) -> LyraRenderDocument {
     let mut document = LyraRenderDocument::default();

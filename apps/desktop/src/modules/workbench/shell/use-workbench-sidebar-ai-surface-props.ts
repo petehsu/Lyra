@@ -28,6 +28,13 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void;
+  readonly onRevealProjectPath: (request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+    readonly path: string;
+    readonly location?: { readonly line: number; readonly endLine?: number };
+    readonly mode: "reveal" | "open-file";
+  }) => Promise<void> | void;
   readonly onOpenModelSettings: () => Promise<void> | void;
   readonly onOpenUrlInWorkbench: (request: {
     readonly url: string;
@@ -42,6 +49,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }
   ) => void) | undefined;
+  readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly resolveActiveWorkspaceTab?: () => import("../workspace-tabs/types").WorkspaceTab | undefined;
   readonly onPickFileFromFileManager?: () => Promise<string | null>;
   readonly listWorkspaceTabs?: () => readonly import("../workspace-tabs/types").WorkspaceTab[];
@@ -59,10 +67,12 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onToggleAiPanelSide,
   onRequestProjectBind,
   onOpenProjectTree,
+  onRevealProjectPath,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
   onOpenTerminalLiveSession,
   onOpenFile,
+  onRevealPathInWorkbench,
   resolveActiveWorkspaceTab,
   onPickFileFromFileManager,
   listWorkspaceTabs,
@@ -83,10 +93,12 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onToggleAiPanelSide,
       onRequestProjectBind,
       onOpenProjectTree,
+      onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
       onOpenTerminalLiveSession,
       onOpenFile,
+      ...(onRevealPathInWorkbench === undefined ? {} : { onRevealPathInWorkbench }),
       ...(resolveActiveWorkspaceTab === undefined ? {} : { resolveActiveWorkspaceTab }),
       ...(onPickFileFromFileManager === undefined ? {} : { onPickFileFromFileManager }),
       ...(listWorkspaceTabs === undefined ? {} : { listWorkspaceTabs }),
@@ -104,10 +116,12 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onToggleAiPanelSide,
       onRequestProjectBind,
       onOpenProjectTree,
+      onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
       onOpenTerminalLiveSession,
       onOpenFile,
+      onRevealPathInWorkbench,
       resolveActiveWorkspaceTab,
       onPickFileFromFileManager,
       listWorkspaceTabs,

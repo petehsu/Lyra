@@ -12,10 +12,6 @@ path = "src/main.rs"
 name = "lyra_local_search"
 path = "src/lib.rs"
 
-[features]
-default = []
-asm-kernels = []
-
 [lints]
 workspace = true
 

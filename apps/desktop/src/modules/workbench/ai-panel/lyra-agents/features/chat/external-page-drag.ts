@@ -83,7 +83,6 @@ const parseHtmlDragContext = (html: string): HtmlDragContext | null => {
   let mediaType: WorkbenchBrowserPageContextMediaType | undefined;
   if (anchor !== null) {
     elementTag = "a";
-    mediaType = "link";
   } else if (image !== null) {
     elementTag = "img";
     mediaType = "image";
@@ -158,7 +157,7 @@ export const readExternalPageDragPayload = (
 
   const srcUrl = htmlContext?.srcUrl;
   const resolvedLinkUrl = htmlContext?.linkUrl
-    ?? (htmlContext?.mediaType === "link" ? (uriListUrl ?? plainUrl ?? undefined) : undefined);
+    ?? (htmlContext?.elementTag === "a" ? (uriListUrl ?? plainUrl ?? undefined) : undefined);
   const pageUrl = resolvedLinkUrl ?? uriListUrl ?? plainUrl ?? srcUrl ?? null;
   if (pageUrl === null) {
     return null;

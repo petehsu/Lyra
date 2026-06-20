@@ -249,6 +249,10 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
         if (window.webContents.isDestroyed()) {
           continue;
         }
+        const subscriptions = subscriptionsByWebContents.get(window.webContents.id);
+        if (subscriptions === undefined || subscriptions.has(patch.subscriptionId) === false) {
+          continue;
+        }
         window.webContents.send(LYRA_CHANNELS.filesDirectoryPatch, patch);
       }
     },

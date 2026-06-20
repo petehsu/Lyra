@@ -36,21 +36,22 @@ const buildElementSelector = (element: Element): string => {
   let current: Element | null = element;
   while (current !== null && parts.length < 5) {
     const tag = current.tagName.toLowerCase();
-    const parent = current.parentElement;
-    if (parent === null) {
+    const parentElement: Element | null = current.parentElement;
+    if (parentElement === null) {
       parts.unshift(tag);
       break;
     }
-    const siblings = Array.from(parent.children).filter(
-      (child) => child.tagName === current!.tagName
+    const currentTagName = current.tagName;
+    const siblings = Array.from(parentElement.children).filter(
+      (child): child is Element => child instanceof Element && child.tagName === currentTagName
     );
     const index = siblings.indexOf(current) + 1;
     parts.unshift(siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag);
-    if (parent.id.length > 0) {
-      parts.unshift(`#${cssEscape(parent.id)}`);
+    if (parentElement.id.length > 0) {
+      parts.unshift(`#${cssEscape(parentElement.id)}`);
       break;
     }
-    current = parent;
+    current = parentElement;
   }
   return parts.join(" > ");
 };
@@ -89,11 +90,11 @@ const resolveMediaType = (target: EventTarget | null): WorkbenchBrowserPageConte
   if (target.closest("canvas")) {
     return "canvas";
   }
-  if (target.closest("a[href]")) {
-    return "link";
+  if (target.closest("input[type='file']")) {
+    return "file";
   }
-  if (target.closest("input,textarea,[contenteditable='true'],[contenteditable='']")) {
-    return "editable";
+  if (target.closest("object,embed")) {
+    return "plugin";
   }
   return "none";
 };

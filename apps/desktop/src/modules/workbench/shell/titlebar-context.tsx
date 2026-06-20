@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
@@ -99,11 +100,26 @@ export const useWorkbenchTitlebarContribution = (
 ): void => {
   const registry = useContext(WorkbenchTitlebarRegistryContext);
   const scopeId = useContext(WorkbenchTitlebarScopeContext);
+  const contributionRef = useRef<WorkbenchTitlebarContribution | null>(null);
 
   useEffect(() => {
     if (registry === null || scopeId === null || contribution === null) {
+      contributionRef.current = null;
       return undefined;
     }
+    const previous = contributionRef.current;
+    if (
+      previous !== null
+      && previous.ariaLabel === contribution.ariaLabel
+      && previous.className === contribution.className
+      && previous.content === contribution.content
+      && previous.leading === contribution.leading
+      && previous.meta === contribution.meta
+      && previous.controls === contribution.controls
+    ) {
+      return undefined;
+    }
+    contributionRef.current = contribution;
     return registry.registerContribution(scopeId, contribution);
   }, [contribution, registry, scopeId]);
 };

@@ -56,6 +56,8 @@ struct CodeSearchTextRequest {
     limit: Option<usize>,
     #[serde(default)]
     case_sensitive: Option<bool>,
+    #[serde(default)]
+    regex: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,6 +145,7 @@ pub fn search_code_text_json(request_json: String) -> Result<String, String> {
         glob: request.glob,
         limit: request.limit.unwrap_or(40),
         case_sensitive: request.case_sensitive.unwrap_or(false),
+        regex: request.regex.unwrap_or(false),
     })?;
     serde_json::to_string(&response).map_err(|error| format!("serialize response failed: {error}"))
 }

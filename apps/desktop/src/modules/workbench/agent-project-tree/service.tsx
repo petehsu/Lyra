@@ -33,6 +33,71 @@ export const createAgentProjectTreeInstanceId = (agentSessionId: string): string
 const createEditorInstanceId = (appInstanceId: string): string =>
   `agent-project-tree-editor-${normalizeInstanceToken(appInstanceId)}`;
 
+export const resolveAgentProjectTreeEditorInstanceId = (
+  treeInstanceId: string,
+  editorInstanceId: string | null | undefined
+): string =>
+  editorInstanceId !== null && editorInstanceId !== undefined && editorInstanceId.trim().length > 0
+    ? editorInstanceId
+    : createEditorInstanceId(treeInstanceId);
+
+const pathSeparatorFor = (value: string): "/" | "\\" =>
+  value.includes("\\") && !value.includes("/") ? "\\" : "/";
+
+const normalizeComparablePath = (value: string): string =>
+  value.trim().replace(/\\/g, "/").replace(/\/+$/u, "");
+
+const expansionPathsFor = (
+  rootPath: string,
+  targetPath: string,
+  options: { readonly includeTarget?: boolean } = {}
+): string[] => {
+  const root = normalizePath(rootPath).replace(/[\\/]+$/u, "");
+  const target = normalizePath(targetPath).replace(/[\\/]+$/u, "");
+  if (root.length === 0 || target.length === 0) {
+    return root.length === 0 ? [] : [root];
+  }
+  const rootComparable = normalizeComparablePath(root);
+  const targetComparable = normalizeComparablePath(target);
+  if (
+    targetComparable !== rootComparable &&
+    !targetComparable.startsWith(`${rootComparable}/`)
+  ) {
+    return [root];
+  }
+
+  const separator = pathSeparatorFor(root);
+  const relative = targetComparable === rootComparable
+    ? ""
+    : targetComparable.slice(rootComparable.length + 1);
+  const paths = [root];
+  if (relative.length === 0) {
+    return paths;
+  }
+  const rootParts = root.split(/[\\/]+/u);
+  const parts = relative.split("/").filter((part) => part.length > 0);
+  const limit = options.includeTarget === false
+    ? Math.max(0, parts.length - 1)
+    : parts.length;
+  for (let index = 0; index < limit; index += 1) {
+    paths.push([...rootParts, ...parts.slice(0, index + 1)].join(separator));
+  }
+  return paths;
+};
+
+const expandedPathUnion = (
+  current: readonly string[],
+  rootPath: string,
+  targetPath: string,
+  options?: { readonly includeTarget?: boolean }
+): string[] => {
+  const expanded = new Set(current);
+  for (const path of expansionPathsFor(rootPath, targetPath, options)) {
+    expanded.add(path);
+  }
+  return Array.from(expanded);
+};
+
 const createState = (
   instanceId: string,
   options: {
@@ -47,6 +112,7 @@ const createState = (
     agentSessionId: options.agentSessionId,
     rootPath,
     title: options.title?.trim() || resolveProjectTreeTitle(rootPath),
+    selectedPath: null,
     selectedFilePath: null,
     editorInstanceId: null,
     expandedPaths: [rootPath]
@@ -147,26 +213,55 @@ export const useAgentProjectTreeModel = ({
     syncExternalEditors(current);
   }, [replaceStates, syncExternalEditors]);
 
-  const openFile = useCallback<AgentProjectTreeModel["openFile"]>(async (instanceId, filePath) => {
+  const revealPath = useCallback<AgentProjectTreeModel["revealPath"]>((instanceId, path) => {
     const current = statesRef.current[instanceId];
-    if (current === undefined) {
+    const targetPath = normalizePath(path);
+    if (current === undefined || targetPath.length === 0) {
       return;
     }
-    const editorInstanceId = current.editorInstanceId ?? createEditorInstanceId(instanceId);
-    fileEditorModel.ensureInstance(editorInstanceId, {
-      filePath,
-      fileSessionId: `agent-project-tree:${current.agentSessionId}`
-    });
     const next = {
       ...current,
-      selectedFilePath: filePath,
-      editorInstanceId
+      selectedPath: targetPath,
+      expandedPaths: expandedPathUnion(current.expandedPaths, current.rootPath, targetPath)
     };
     replaceStates({
       ...statesRef.current,
       [instanceId]: next
     });
-    await fileEditorModel.openFile(editorInstanceId, filePath);
+  }, [replaceStates]);
+
+  const openFile = useCallback<AgentProjectTreeModel["openFile"]>(async (
+    instanceId,
+    filePath,
+    location
+  ) => {
+    const current = statesRef.current[instanceId];
+    const targetPath = normalizePath(filePath);
+    if (current === undefined || targetPath.length === 0) {
+      return;
+    }
+    const editorInstanceId = current.editorInstanceId ?? createEditorInstanceId(instanceId);
+    fileEditorModel.ensureInstance(editorInstanceId, {
+      filePath: targetPath,
+      fileSessionId: `agent-project-tree:${current.agentSessionId}`
+    });
+    const next = {
+      ...current,
+      selectedPath: targetPath,
+      selectedFilePath: targetPath,
+      editorInstanceId,
+      expandedPaths: expandedPathUnion(current.expandedPaths, current.rootPath, targetPath, {
+        includeTarget: false
+      })
+    };
+    replaceStates({
+      ...statesRef.current,
+      [instanceId]: next
+    });
+    await fileEditorModel.openFile(editorInstanceId, targetPath);
+    if (location !== undefined) {
+      fileEditorModel.revealLocation(editorInstanceId, location);
+    }
   }, [fileEditorModel, replaceStates]);
 
   const toggleDirectory = useCallback<AgentProjectTreeModel["toggleDirectory"]>((instanceId, path) => {
@@ -195,6 +290,7 @@ export const useAgentProjectTreeModel = ({
       getState,
       ensureInstance,
       syncTabInstances,
+      revealPath,
       openFile,
       toggleDirectory,
       updateRoot
@@ -203,6 +299,7 @@ export const useAgentProjectTreeModel = ({
       ensureInstance,
       getState,
       openFile,
+      revealPath,
       syncTabInstances,
       toggleDirectory,
       updateRoot

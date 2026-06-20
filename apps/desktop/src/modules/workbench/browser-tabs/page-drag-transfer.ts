@@ -68,9 +68,6 @@ const normalizeMediaType = (
     case "video":
     case "audio":
     case "canvas":
-    case "link":
-    case "editable":
-    case "selection":
     case "file":
     case "plugin":
       return value;
@@ -96,21 +93,31 @@ const normalizePayload = (payload: PageDragCitationPayload): PageDragCitationPay
     return null;
   }
   const mediaType = normalizeMediaType(payload.mediaType);
+  const frameUrl = optionalString(payload.frameUrl);
+  const selectionText = optionalString(payload.selectionText);
+  const linkUrl = optionalString(payload.linkUrl);
+  const linkText = optionalString(payload.linkText);
+  const srcUrl = optionalString(payload.srcUrl);
+  const elementTag = optionalString(payload.elementTag);
+  const elementSelector = optionalString(payload.elementSelector);
+  const elementId = optionalString(payload.elementId);
+  const elementRole = optionalString(payload.elementRole);
+  const elementAriaLabel = optionalString(payload.elementAriaLabel);
   return {
     tabId,
     pageUrl,
     pageTitle: pageTitle.length > 0 ? pageTitle : pageUrl,
-    ...(optionalString(payload.frameUrl) === undefined ? {} : { frameUrl: optionalString(payload.frameUrl) }),
-    ...(optionalString(payload.selectionText) === undefined ? {} : { selectionText: optionalString(payload.selectionText) }),
-    ...(optionalString(payload.linkUrl) === undefined ? {} : { linkUrl: optionalString(payload.linkUrl) }),
-    ...(optionalString(payload.linkText) === undefined ? {} : { linkText: optionalString(payload.linkText) }),
-    ...(optionalString(payload.srcUrl) === undefined ? {} : { srcUrl: optionalString(payload.srcUrl) }),
+    ...(frameUrl === undefined ? {} : { frameUrl }),
+    ...(selectionText === undefined ? {} : { selectionText }),
+    ...(linkUrl === undefined ? {} : { linkUrl }),
+    ...(linkText === undefined ? {} : { linkText }),
+    ...(srcUrl === undefined ? {} : { srcUrl }),
     ...(mediaType === undefined ? {} : { mediaType }),
-    ...(optionalString(payload.elementTag) === undefined ? {} : { elementTag: optionalString(payload.elementTag) }),
-    ...(optionalString(payload.elementSelector) === undefined ? {} : { elementSelector: optionalString(payload.elementSelector) }),
-    ...(optionalString(payload.elementId) === undefined ? {} : { elementId: optionalString(payload.elementId) }),
-    ...(optionalString(payload.elementRole) === undefined ? {} : { elementRole: optionalString(payload.elementRole) }),
-    ...(optionalString(payload.elementAriaLabel) === undefined ? {} : { elementAriaLabel: optionalString(payload.elementAriaLabel) })
+    ...(elementTag === undefined ? {} : { elementTag }),
+    ...(elementSelector === undefined ? {} : { elementSelector }),
+    ...(elementId === undefined ? {} : { elementId }),
+    ...(elementRole === undefined ? {} : { elementRole }),
+    ...(elementAriaLabel === undefined ? {} : { elementAriaLabel })
   };
 };
 

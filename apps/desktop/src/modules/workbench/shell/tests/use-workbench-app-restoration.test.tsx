@@ -24,6 +24,7 @@ const createAgentProjectTreeModel = (): AgentProjectTreeModel => ({
   syncTabInstances: vi.fn(),
   getState: vi.fn(() => null),
   ensureInstance: vi.fn(),
+  revealPath: vi.fn(),
   openFile: vi.fn().mockResolvedValue(undefined),
   toggleDirectory: vi.fn(),
   updateRoot: vi.fn()

@@ -375,10 +375,21 @@ fn append_tool_block_to_message(
 }
 
 pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value) {
-    let callback = match state().lock() {
+    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
+    let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
+            let mut committed_message = None;
             if let Some(session) = state.sessions.get_mut(session_id) {
+                if tool.get("status").and_then(Value::as_str) == Some("running")
+                    && let (Some(message_id), Some(tool_id)) = (
+                        ui_message_id.as_deref(),
+                        tool.get("id").and_then(Value::as_str),
+                    )
+                {
+                    committed_message =
+                        append_tool_block_to_message(session, message_id, tool_id);
+                }
                 upsert_tool(&mut session.snapshot, tool.clone());
                 session.snapshot["follow"] = json!({
                     "running": true,
@@ -387,10 +398,20 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
                 touch_session(session);
             }
             let _ = state.save_state();
-            callback
+            (callback, committed_message)
         }
         Err(_) => return,
     };
+    if let Some(message) = committed_message {
+        emit_with_callback(
+            &callback,
+            json!({
+                "kind": "messageCommitted",
+                "sessionId": session_id,
+                "message": message,
+            }),
+        );
+    }
     emit_with_callback(
         &callback,
         json!({

@@ -6,10 +6,12 @@ import {
   ErrorCircleIcon,
   ToolCallIcon,
 } from "../../components/Icons";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { RenderSurfaceCard, ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
 import { AppButton } from "@renderer/ui/components";
+import { useData } from "../../data/DataProvider";
 import {
   InlineDiffStats,
   editDiffCounts,
@@ -27,10 +29,15 @@ type RenderToolCall = ToolCall & {
  *   - done:    green ✓ icon + group label
  */
 export function ToolGroupBlock({ group }: { group: ToolGroup }) {
-  const [open, setOpen] = useState(false);
+  const isRunning = group.status === "running";
+  const isLiveEditGroup =
+    isRunning &&
+    group.calls.some(
+      (call) => call.status === "running" && call.details?.type === "edit"
+    );
+  const [open, setOpen] = useState(isLiveEditGroup);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const isRunning = group.status === "running";
   const hasError = group.calls.some((c) => c.status === "error");
   const currentCall =
     isRunning && group.currentCallId
@@ -43,6 +50,12 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
   const mode = isRunning ? "running" : hasError ? "error" : "done";
   const currentEditStats = editDiffCounts(currentCall?.details);
   const showGroupEditStats = shouldShowEditDiffStats(currentEditStats);
+
+  useEffect(() => {
+    if (isLiveEditGroup) {
+      setOpen(true);
+    }
+  }, [isLiveEditGroup, currentCall?.details]);
 
   return (
     <div className={`lyra-agents-tool-group ${open ? "open" : ""} mode-${mode}`}>
@@ -68,7 +81,16 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
         </span>
 
         <span className={`lyra-agents-tool-group-label ${isRunning ? "lyra-agents-shimmer" : ""}`}>
-          {isRunning && currentCall ? currentCall.title : group.label}
+          {isRunning && currentCall ? (
+            <ToolCallHeadLabel
+              call={currentCall}
+              shimmer={
+                currentCall.details?.type === "edit" && currentCall.details.hunks.length === 0
+              }
+            />
+          ) : (
+            group.label
+          )}
         </span>
         {showGroupEditStats ? (
           <InlineDiffStats
@@ -114,12 +136,19 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
   );
 }
 
+const editFileBasename = (filePath: string): string => {
+  const normalized = filePath.replace(/\\/g, "/");
+  const leaf = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return leaf.length > 0 ? leaf : filePath;
+};
+
 function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }) {
   const isLiveEdit = call.status === "running" && call.details?.type === "edit";
   const [open, setOpen] = useState(isLiveEdit);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasDetails = !!call.details && call.details.type !== "render";
+  const editFile = call.details?.type === "edit" ? call.details.file : undefined;
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
 
@@ -146,11 +175,10 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
             <ChevronIcon open={open} />
           </span>
         </span>
-        <span
-          className={`lyra-agents-tool-call-title ${call.status === "running" ? "lyra-agents-shimmer" : ""}`}
-        >
-          {call.title}
-        </span>
+        <ToolCallHeadLabel
+          call={call}
+          shimmer={call.status === "running" && call.details?.type === "edit" && call.details.hunks.length === 0}
+        />
         {showRowEditStats ? (
           <InlineDiffStats
             additions={editStats.additions}
@@ -173,6 +201,9 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
           <div className="lyra-agents-collapse" data-open={open}>
             <div className="lyra-agents-collapse-inner">
               <div className="lyra-agents-tool-call-body">
+                {groupOpen && open && editFile !== undefined ? (
+                  <EditFilePathRow filePath={editFile} />
+                ) : null}
                 {groupOpen && open && call.details && call.details.type !== "render" ? (
                   <ToolDetails details={call.details} running={call.status === "running"} />
                 ) : null}
@@ -181,6 +212,72 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ToolCallHeadLabel({
+  call,
+  shimmer = false
+}: {
+  readonly call: ToolCall;
+  readonly shimmer?: boolean;
+}) {
+  const editFile = call.details?.type === "edit" ? call.details.file : undefined;
+  const { openFileInWorkbench } = useData();
+  const openEditFile = (event: { stopPropagation: () => void }) => {
+    if (editFile === undefined) return;
+    event.stopPropagation();
+    void openFileInWorkbench(editFile).catch(() => undefined);
+  };
+
+  return (
+    <span className="lyra-agents-tool-call-head-label">
+      <span className={`lyra-agents-tool-call-title ${shimmer ? "lyra-agents-shimmer" : ""}`}>
+        {call.title}
+      </span>
+      {editFile !== undefined ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className="lyra-agents-tool-call-target"
+          title={editFile}
+          onClick={openEditFile}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            openEditFile(event);
+          }}
+        >
+          {editFileBasename(editFile)}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function EditFilePathRow({ filePath }: { readonly filePath: string }) {
+  const { openFileInWorkbench } = useData();
+
+  return (
+    <div className="lyra-agents-info-line lyra-agents-tool-call-edit-path">
+      <FileTypeIcon filename={filePath} />
+      <span
+        role="button"
+        tabIndex={0}
+        className="lyra-agents-tool-call-file-path"
+        title={filePath}
+        onClick={() => {
+          void openFileInWorkbench(filePath).catch(() => undefined);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          void openFileInWorkbench(filePath).catch(() => undefined);
+        }}
+      >
+        {filePath}
+      </span>
     </div>
   );
 }

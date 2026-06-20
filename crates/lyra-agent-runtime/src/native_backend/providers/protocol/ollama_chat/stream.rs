@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     io::BufRead,
     sync::{
         Arc,
@@ -12,17 +12,20 @@ use serde_json::Value;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, ModelToolCall},
+        provider::ModelReply,
         turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
     },
 };
 
-use super::response::tool_calls_from_message;
+use super::super::openai_common::{
+    StreamingToolCallAccumulator, finalize_streaming_tool_calls, is_valid_tool_call_id,
+    tool_name_set,
+};
 
 #[derive(Default)]
 struct OllamaStreamState {
     content: String,
-    tool_calls: BTreeMap<usize, ModelToolCall>,
+    tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -71,7 +74,11 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         }
     }
 
-    let tool_calls = state.tool_calls.into_values().collect::<Vec<_>>();
+    let allowed_tool_names = tool_name_set(tools);
+    let tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?
+        .into_iter()
+        .map(|(_, tool_call)| tool_call)
+        .collect::<Vec<_>>();
     if state.content.trim().is_empty() && tool_calls.is_empty() {
         return Err(AgentRuntimeError::Core(
             "provider returned no assistant text or tool call".to_string(),
@@ -98,6 +105,38 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     Ok(reply)
 }
 
+fn merge_tool_call_chunk(
+    accumulator: &mut StreamingToolCallAccumulator,
+    chunk: &Value,
+) {
+    if let Some(id) = chunk.get("id").and_then(Value::as_str)
+        && is_valid_tool_call_id(id)
+    {
+        accumulator.id = Some(id.trim().to_string());
+    }
+    let Some(function) = chunk.get("function") else {
+        return;
+    };
+    if let Some(name) = function.get("name").and_then(Value::as_str)
+        && !name.trim().is_empty()
+    {
+        accumulator.name = Some(name.trim().to_string());
+    }
+    let args_text = match function.get("arguments") {
+        Some(Value::String(text)) => text.clone(),
+        Some(value) => serde_json::to_string(value).unwrap_or_default(),
+        None => String::new(),
+    };
+    if args_text.is_empty() {
+        return;
+    }
+    if accumulator.arguments.is_empty() || args_text.starts_with(&accumulator.arguments) {
+        accumulator.arguments = args_text;
+    } else {
+        accumulator.arguments.push_str(&args_text);
+    }
+}
+
 fn map_stream_chunk(
     value: &Value,
     state: &mut OllamaStreamState,
@@ -105,7 +144,7 @@ fn map_stream_chunk(
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
-    tools: &[Value],
+    _tools: &[Value],
 ) -> AgentRuntimeResult<()> {
     let message = value.get("message").unwrap_or(&Value::Null);
     if let Some(text) = message.get("content").and_then(Value::as_str)
@@ -123,11 +162,16 @@ fn map_stream_chunk(
         }
         state.content.push_str(text);
     }
-    for (index, tool_call) in tool_calls_from_message(message, tools)
-        .into_iter()
-        .enumerate()
-    {
-        state.tool_calls.insert(index, tool_call);
+    if let Some(chunks) = message.get("tool_calls").and_then(Value::as_array) {
+        for (index, chunk) in chunks.iter().enumerate() {
+            let accumulator = state.tool_calls.entry(index).or_default();
+            merge_tool_call_chunk(accumulator, chunk);
+        }
+        crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
+            session_id,
+            turn_id,
+            &state.tool_calls,
+        );
     }
     Ok(())
 }

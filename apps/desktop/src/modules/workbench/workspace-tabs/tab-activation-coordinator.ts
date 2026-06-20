@@ -11,6 +11,8 @@ export const setBrowserFollowModeEnabled = (enabled: boolean): void => {
   browserFollowModeEnabled = enabled;
 };
 
+export const readBrowserFollowModeEnabled = (): boolean => browserFollowModeEnabled;
+
 export const shouldSuppressAgentTabActivation = (): boolean =>
   browserFollowModeEnabled === false
   && Date.now() - lastUserTabActivationAt < USER_FOCUS_GUARD_MS;

@@ -38,6 +38,13 @@ export type AiPanelSurfaceProps = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void;
+  readonly onRevealProjectPath?: (request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+    readonly path: string;
+    readonly location?: { readonly line: number; readonly endLine?: number };
+    readonly mode: "reveal" | "open-file";
+  }) => Promise<void> | void;
   readonly onOpenModelSettings?: () => Promise<void> | void;
   readonly onOpenUrlInWorkbench?: (request: {
     readonly url: string;
@@ -52,6 +59,7 @@ export type AiPanelSurfaceProps = {
     filePath: string,
     location?: { readonly line: number; readonly endLine?: number }
   ) => void) | undefined;
+  readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly locale?: WorkbenchLocale;
   readonly aiRichRenderingEnabled?: boolean;

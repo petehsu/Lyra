@@ -33,13 +33,6 @@ uint32_t lyra_local_search_subsequence_score(
     size_t needle_len
 );
 
-uint32_t lyra_local_search_asm_subsequence_score(
-    const uint8_t *haystack,
-    size_t haystack_len,
-    const uint8_t *needle,
-    size_t needle_len
-);
-
 LyraLocalSearchV3Score lyra_local_search_v3_score_entry(
     const uint8_t *query,
     size_t query_len,

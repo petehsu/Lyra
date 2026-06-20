@@ -99,6 +99,7 @@ type TreeDirectoryProps = {
   readonly path: string;
   readonly depth: number;
   readonly labels: AgentProjectTreeSurfaceProps["labels"];
+  readonly selectedPath: string | null;
   readonly selectedFilePath: string | null;
   readonly expandedPaths: ReadonlySet<string>;
   readonly directoryStates: DirectoryStateMap;
@@ -111,6 +112,7 @@ const TreeDirectory = ({
   path,
   depth,
   labels,
+  selectedPath,
   selectedFilePath,
   expandedPaths,
   directoryStates,
@@ -167,7 +169,11 @@ const TreeDirectory = ({
     <>
       {entries.map((entry) => {
         const expanded = entry.kind === "directory" && expandedPaths.has(entry.path);
-        const selected = entry.kind === "file" && selectedFilePath === entry.path;
+        const selected = selectedPath === entry.path || (
+          selectedPath === null &&
+          entry.kind === "file" &&
+          selectedFilePath === entry.path
+        );
         return (
           <div key={entry.path} className="lyra-agent-project-tree-node">
             <AppObjectRow
@@ -203,6 +209,7 @@ const TreeDirectory = ({
                 path={entry.path}
                 depth={depth + 1}
                 labels={labels}
+                selectedPath={selectedPath}
                 selectedFilePath={selectedFilePath}
                 expandedPaths={expandedPaths}
                 directoryStates={directoryStates}
@@ -329,6 +336,7 @@ export const AgentProjectTreeSurface = ({
       <aside className="lyra-agent-project-tree-sidebar">
         <AppObjectRow
           className="lyra-agent-project-tree-root-row"
+          active={state.selectedPath === state.rootPath}
           aria-expanded={expandedPaths.has(state.rootPath)}
           aria-label={state.rootPath}
           title={(
@@ -353,6 +361,7 @@ export const AgentProjectTreeSurface = ({
               path={state.rootPath}
               depth={1}
               labels={labels}
+              selectedPath={state.selectedPath}
               selectedFilePath={state.selectedFilePath}
               expandedPaths={expandedPaths}
               directoryStates={directoryStates}

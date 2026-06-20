@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { SessionMeta } from "../../../core/types";
 import type { LyraRenderDocument } from "../../../../../../../shared/render";
@@ -102,5 +102,124 @@ describe("LyraDocument", () => {
     expect(screen.getByText("world")).toBeTruthy();
     expect(screen.getByText(/let/)).toBeTruthy();
     expect(screen.getByText(/x = 1;/)).toBeTruthy();
+  });
+
+  it("reveals inline path targets instead of opening them as files", () => {
+    const openFileInWorkbench = vi.fn().mockResolvedValue(undefined);
+    const revealPathInWorkbench = vi.fn().mockResolvedValue(undefined);
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      openFileInWorkbench,
+      revealPathInWorkbench
+    });
+
+    render(
+      <DataContextProvider value={data}>
+        <LyraDocument
+          content=""
+          document={{
+            blocks: [
+              {
+                kind: "paragraph",
+                children: [
+                  { kind: "text", value: "Open " },
+                  { kind: "code", value: "/tmp/project/src" }
+                ]
+              }
+            ]
+          }}
+        />
+      </DataContextProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/project/src" }));
+
+    expect(revealPathInWorkbench).toHaveBeenCalledWith("/tmp/project/src");
+    expect(openFileInWorkbench).not.toHaveBeenCalled();
+  });
+
+  it("renders image alt text from the render snapshot", () => {
+    renderWithData(
+      <LyraDocument
+        content=""
+        document={{
+          blocks: [
+            {
+              kind: "paragraph",
+              children: [
+                {
+                  kind: "image",
+                  src: "https://example.com/logo.png",
+                  alt: "Alt text"
+                }
+              ]
+            }
+          ]
+        }}
+      />
+    );
+
+    expect(screen.getByRole("img", { name: "Alt text" })).toBeTruthy();
+  });
+
+  it("does not render clickable anchors for unsafe javascript links", () => {
+    renderWithData(
+      <LyraDocument
+        content=""
+        document={{
+          blocks: [
+            {
+              kind: "paragraph",
+              children: [
+                {
+                  kind: "link",
+                  href: "javascript:alert(1)",
+                  children: [{ kind: "text", value: "unsafe" }]
+                }
+              ]
+            }
+          ]
+        }}
+      />
+    );
+
+    expect(screen.getByText("unsafe")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "unsafe" })).toBeNull();
+  });
+
+  it("opens inline file path targets in the workbench editor", () => {
+    const openFileInWorkbench = vi.fn().mockResolvedValue(undefined);
+    const revealPathInWorkbench = vi.fn().mockResolvedValue(undefined);
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      openFileInWorkbench,
+      revealPathInWorkbench
+    });
+
+    render(
+      <DataContextProvider value={data}>
+        <LyraDocument
+          content=""
+          document={{
+            blocks: [
+              {
+                kind: "paragraph",
+                children: [
+                  { kind: "text", value: "Open " },
+                  { kind: "code", value: "/tmp/project/src/App.tsx:42" }
+                ]
+              }
+            ]
+          }}
+        />
+      </DataContextProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "/tmp/project/src/App.tsx:42" }));
+
+    expect(openFileInWorkbench).toHaveBeenCalledWith("/tmp/project/src/App.tsx:42");
+    expect(revealPathInWorkbench).not.toHaveBeenCalled();
   });
 });

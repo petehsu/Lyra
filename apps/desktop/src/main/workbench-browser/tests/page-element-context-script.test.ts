@@ -37,7 +37,7 @@ describe("buildPageCitationFromContextMenu", () => {
         pageUrl: "https://example.com/docs",
         pageTitle: "Docs",
         selectionText: "hello",
-        mediaType: "selection",
+        mediaType: "none",
         elementTag: "p",
         elementSelector: "article > p:nth-of-type(2)",
         elementRole: "paragraph",

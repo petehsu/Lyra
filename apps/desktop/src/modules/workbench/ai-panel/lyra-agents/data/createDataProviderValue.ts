@@ -46,6 +46,7 @@ export interface CreateDataProviderValueInput {
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
+  revealPathInWorkbench?: (filePath: string) => Promise<void>;
   openTerminalLiveSession?: (request: {
     readonly sessionId?: string | null;
     readonly terminalTabId?: string | null;
@@ -133,6 +134,7 @@ export function createDataProviderValue({
   setBrowserFollowMode = () => resolved,
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
+  revealPathInWorkbench = () => resolved,
   openTerminalLiveSession = () => resolved,
   openImageInWorkbench = () => resolved,
   canOpenImageInWorkbench = () => false,
@@ -206,6 +208,7 @@ export function createDataProviderValue({
     setBrowserFollowMode,
     openUrlInWorkbench,
     openFileInWorkbench,
+    revealPathInWorkbench,
     openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,

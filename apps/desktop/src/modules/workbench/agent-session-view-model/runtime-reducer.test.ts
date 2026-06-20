@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentSessionSnapshot } from "../../../shared/agent";
-import { applyAgentRuntimeEventToSnapshot } from "./runtime-reducer";
+import {
+  applyAgentRuntimeEventToSnapshot,
+  mergeRunningSessionSnapshot
+} from "./runtime-reducer";
 
 const session = (
   overrides: Partial<AgentSessionSnapshot> = {}
@@ -117,6 +120,79 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     expect(twice.messages[0]?.blocks).toEqual([
       { type: "tool", id: "tool-tool-1", toolId: "tool-1" }
     ]);
+  });
+
+  test("appends toolStarted to last assistant message when messageId is missing", () => {
+    const current = session({
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "",
+        blocks: [],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+    const updated = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "toolStarted",
+      sessionId: "session-1",
+      turnId: "turn-1",
+      tool: {
+        id: "tool-stream-1",
+        name: "tool_fs_run",
+        label: "Write file",
+        status: "running",
+        input: { path: "/tools/filesystem/write_file", args: { path: "src/main.ts" } },
+        output: {
+          raw: {
+            diff: "--- src/main.ts\n+++ src/main.ts\n@@ -0,0 +1 @@\n+export const x = 1;"
+          }
+        },
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }
+    });
+
+    expect(updated.messages[0]?.blocks).toEqual([
+      { type: "tool", id: "tool-tool-stream-1", toolId: "tool-stream-1" }
+    ]);
+  });
+
+  test("mergeRunningSessionSnapshot keeps streaming tool diff over stale snapshot", () => {
+    const current = session({
+      tools: [{
+        id: "tool-1",
+        name: "tool_fs_run",
+        label: "Write file",
+        status: "running",
+        input: { path: "/tools/filesystem/write_file", args: { path: "src/main.ts" } },
+        output: {
+          raw: {
+            diff: "--- src/main.ts\n+++ src/main.ts\n@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3",
+            preview: true
+          }
+        },
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }]
+    });
+    const incoming = session({
+      tools: [{
+        id: "tool-1",
+        name: "tool_fs_run",
+        label: "Write file",
+        status: "running",
+        input: { path: "/tools/filesystem/write_file", args: { path: "src/main.ts" } },
+        output: {
+          content: "Editing src/main.ts"
+        },
+        startedAt: "2026-06-05T00:00:01.000Z"
+      }]
+    });
+
+    const merged = mergeRunningSessionSnapshot(current, incoming);
+    expect(merged.tools[0]?.output).toMatchObject({
+      raw: {
+        diff: expect.stringContaining("+line3")
+      }
+    });
   });
 
   test("upserts running tool diff on toolUpdated", () => {

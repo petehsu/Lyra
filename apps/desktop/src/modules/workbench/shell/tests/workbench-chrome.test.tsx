@@ -44,6 +44,7 @@ const createActions = (): WorkbenchActionApi => ({
 const presentationState: WorkbenchPresentationState = {
   isMac: false,
   isMaximized: false,
+  isFullScreen: false,
   isAiPanelVisible: true,
   isTerminalPanelVisible: true,
   terminalPanelSide: "top"
@@ -117,5 +118,67 @@ describe("WorkbenchChrome", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open Software Store" }));
     expect(actions.openSoftwareStore).toHaveBeenCalledTimes(1);
+  });
+
+  test("leaves macOS window controls to the native traffic lights", () => {
+    const actions = createActions();
+
+    render(
+      <WorkbenchChrome
+        rootRef={createRef<HTMLElement>()}
+        rootClassName="lyra-root"
+        rootStyle={{}}
+        uiRuntime={{ rootAttributes: {} } as never}
+        actions={actions}
+        labels={labels}
+        presentationState={{
+          ...presentationState,
+          isMac: true,
+          isFullScreen: true
+        }}
+        isMac={true}
+        layout={{
+          aiPanelSide: "left",
+          terminalPanelSide: "top",
+          isLeftPanelVisible: true,
+          isBottomPanelVisible: true
+        }}
+        layoutActions={{
+          onLeftResizeMouseDown: vi.fn(),
+          onBottomResizeMouseDown: vi.fn()
+        }}
+        slots={{
+          titlebarNavigation: null,
+          titlebarContext: null,
+          leftPanel: null,
+          workspace: null,
+          browserTabs: null,
+          terminalPanel: null,
+          overlays: null
+        }}
+        notificationTopbar={{
+          labels: {
+            openCenter: "Open notification center",
+            openPreview: "Open notification preview"
+          },
+          notificationCount: 0,
+          unreadCount: 0,
+          preview: null,
+          onOpenCenter: vi.fn(),
+          onOpenPreview: vi.fn()
+        }}
+        aiLaunch={{
+          logoUrl: "",
+          prefix: "AI",
+          verbs: ["Chat"]
+        }}
+        onRootDragStartCapture={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "Minimize" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Maximize" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(document.querySelector(".lyra-titlebar-traffic-spacer")).not.toBeNull();
   });
 });

@@ -76,3 +76,34 @@ export const parseUnifiedDiff = (text: string): ParsedUnifiedDiff => {
     deletions: stats.deletions
   };
 };
+
+/** Reconstruct post-edit file text by applying parsed hunks onto a before snapshot. */
+export const reconstructContentAfterDiff = (
+  before: string,
+  hunks: readonly DiffHunk[]
+): string => {
+  const lines = before.length === 0 ? [] : before.replace(/\r\n/g, "\n").split("\n");
+  for (const hunk of hunks) {
+    let cursor = Math.max(0, hunk.startLine - 1);
+    for (const line of hunk.lines) {
+      if (line.kind === "ctx") {
+        if (cursor >= lines.length) {
+          lines.push(line.text);
+        } else {
+          lines[cursor] = line.text;
+        }
+        cursor += 1;
+        continue;
+      }
+      if (line.kind === "del") {
+        if (cursor < lines.length) {
+          lines.splice(cursor, 1);
+        }
+        continue;
+      }
+      lines.splice(cursor, 0, line.text);
+      cursor += 1;
+    }
+  }
+  return lines.join("\n");
+};

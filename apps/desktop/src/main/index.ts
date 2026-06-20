@@ -146,9 +146,35 @@ const windowMaterialDecision = resolveLyraWindowMaterial({
 });
 let activeWindowMaterialMode: LyraWindowMaterialMode = windowMaterialDecision.mode;
 
+const LYRA_MAC_WINDOW_BUTTON_POSITION = { x: 10, y: 9 } as const;
+/** Matches `--lyra-shell-titlebar-h` (34px) in renderer tokens. */
+const LYRA_MAC_TITLEBAR_OVERLAY_HEIGHT = 34;
+
 const storageRoots = resolveLyraStorageRoots();
 ensureLyraStorageRoots(storageRoots);
 applyElectronStoragePaths(storageRoots);
+
+const focusExistingMainWindow = (): void => {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+};
+
+const singleInstanceLockAcquired = app.requestSingleInstanceLock();
+if (!singleInstanceLockAcquired) {
+  console.warn("[lyra-electron] another Lyra instance is already using this profile; exiting");
+  app.exit(0);
+  process.exit(0);
+}
+
+app.on("second-instance", () => {
+  focusExistingMainWindow();
+});
 
 const linuxCompatBridge = createLinuxCompatBridge({
   platform: process.platform,
@@ -225,9 +251,20 @@ const configureApplicationMenu = (): void => {
   Menu.setApplicationMenu(null);
 };
 
+const readMacWindowFullScreenState = (window: BrowserWindow): boolean => {
+  if (pendingMacFullScreenTarget !== null) {
+    return pendingMacFullScreenTarget;
+  }
+  return window.isFullScreen();
+};
+
 const toWindowState = (window: BrowserWindow): WindowStatePayload => ({
   isFocused: window.isFocused(),
-  isMaximized: window.isMaximized()
+  isMaximized: window.isMaximized(),
+  isFullScreen:
+    process.platform === "darwin"
+      ? readMacWindowFullScreenState(window)
+      : window.isFullScreen()
 });
 
 const isLinuxRendererStartupFailure = (
@@ -266,6 +303,153 @@ const readAppMetaPayload = (): AppMetaPayload => {
 
 const publishWindowState = (window: BrowserWindow): void => {
   window.webContents.send(LYRA_CHANNELS.windowStateChanged, toWindowState(window));
+};
+
+const applyMacWindowButtonPosition = (window: BrowserWindow): void => {
+  if (process.platform !== "darwin" || window.isDestroyed()) {
+    return;
+  }
+  window.setWindowButtonVisibility(true);
+  window.setWindowButtonPosition(LYRA_MAC_WINDOW_BUTTON_POSITION);
+};
+
+const isWindowFullScreen = (window: BrowserWindow): boolean =>
+  process.platform === "darwin"
+    ? readMacWindowFullScreenState(window)
+    : window.isFullScreen();
+
+const FULLSCREEN_LAYOUT_SETTLE_MS = 650;
+const FULLSCREEN_LAYOUT_MAX_WAIT_MS = 1500;
+
+let fullscreenLayoutTransitionActive = false;
+let fullscreenLayoutSettleTimer: ReturnType<typeof setTimeout> | null = null;
+let fullscreenLayoutTransitionStartedAt = 0;
+let lastKnownWindowFullScreenState = false;
+let pendingMacFullScreenTarget: boolean | null = null;
+const fullscreenLayoutFlushes = new Set<() => void>();
+
+const clearFullscreenLayoutSettleTimer = (): void => {
+  if (fullscreenLayoutSettleTimer !== null) {
+    clearTimeout(fullscreenLayoutSettleTimer);
+    fullscreenLayoutSettleTimer = null;
+  }
+};
+
+const completeFullscreenLayoutTransition = (window: BrowserWindow): void => {
+  fullscreenLayoutTransitionActive = false;
+  fullscreenLayoutTransitionStartedAt = 0;
+  pendingMacFullScreenTarget = null;
+  if (window.isDestroyed()) {
+    fullscreenLayoutFlushes.clear();
+    return;
+  }
+  lastKnownWindowFullScreenState = isWindowFullScreen(window);
+  publishWindowState(window);
+  const flushes = Array.from(fullscreenLayoutFlushes);
+  fullscreenLayoutFlushes.clear();
+  if (flushes.length > 0) {
+    for (const flush of flushes) {
+      flush();
+    }
+    return;
+  }
+  workbenchBrowserBridge?.reapplyLayout();
+  if (process.platform === "darwin") {
+    applyMacWindowButtonPosition(window);
+    setTimeout(() => applyMacWindowButtonPosition(window), 120);
+  }
+};
+
+const settleFullscreenLayout = (window: BrowserWindow): void => {
+  clearFullscreenLayoutSettleTimer();
+  if (fullscreenLayoutTransitionStartedAt === 0) {
+    fullscreenLayoutTransitionStartedAt = Date.now();
+  }
+  const elapsed = Date.now() - fullscreenLayoutTransitionStartedAt;
+  const delay = Math.max(
+    0,
+    Math.min(FULLSCREEN_LAYOUT_SETTLE_MS, FULLSCREEN_LAYOUT_MAX_WAIT_MS - elapsed)
+  );
+  if (delay === 0) {
+    completeFullscreenLayoutTransition(window);
+    return;
+  }
+  fullscreenLayoutSettleTimer = setTimeout(() => {
+    fullscreenLayoutSettleTimer = null;
+    completeFullscreenLayoutTransition(window);
+  }, delay);
+};
+
+const beginFullscreenLayoutTransition = (window: BrowserWindow): void => {
+  fullscreenLayoutTransitionActive = true;
+  if (fullscreenLayoutTransitionStartedAt === 0) {
+    fullscreenLayoutTransitionStartedAt = Date.now();
+  }
+  publishWindowState(window);
+  settleFullscreenLayout(window);
+};
+
+const syncFullscreenStateFromWindow = (window: BrowserWindow): boolean => {
+  if (pendingMacFullScreenTarget !== null) {
+    return false;
+  }
+  const actualFullScreenState = isWindowFullScreen(window);
+  if (actualFullScreenState === lastKnownWindowFullScreenState) {
+    return false;
+  }
+  lastKnownWindowFullScreenState = actualFullScreenState;
+  beginFullscreenLayoutTransition(window);
+  return true;
+};
+
+const setMacWindowFullScreen = (window: BrowserWindow, nextFullScreenState: boolean): void => {
+  if (process.platform !== "darwin") {
+    window.setFullScreen(nextFullScreenState);
+    return;
+  }
+  // Cherry Studio / VS Code (nativeFullScreen default) / Zed all use native
+  // setFullScreen on macOS so the Dock and menu bar are hidden. Avoid
+  // setSimpleFullScreen with titleBarStyle: 'hidden' (VS Code #63291).
+  pendingMacFullScreenTarget = nextFullScreenState;
+  beginFullscreenLayoutTransition(window);
+  if (nextFullScreenState && window.isMaximized()) {
+    window.unmaximize();
+  }
+  window.setFullScreen(nextFullScreenState);
+  window.webContents.focus();
+  applyMacWindowButtonPosition(window);
+  setTimeout(() => applyMacWindowButtonPosition(window), 120);
+  setTimeout(() => applyMacWindowButtonPosition(window), 400);
+};
+
+const requestWorkbenchLayoutReapply = (window: BrowserWindow): void => {
+  if (process.platform === "darwin") {
+    if (syncFullscreenStateFromWindow(window)) {
+      return;
+    }
+    if (fullscreenLayoutTransitionActive) {
+      settleFullscreenLayout(window);
+      return;
+    }
+  }
+  workbenchBrowserBridge?.reapplyLayout();
+};
+
+const deferWorkbenchBrowserLayoutSync = (flush: () => void): boolean => {
+  if (process.platform !== "darwin") {
+    return false;
+  }
+  const window = mainWindow;
+  if (window === null || window.isDestroyed()) {
+    return false;
+  }
+  syncFullscreenStateFromWindow(window);
+  if (!fullscreenLayoutTransitionActive) {
+    return false;
+  }
+  fullscreenLayoutFlushes.add(flush);
+  settleFullscreenLayout(window);
+  return true;
 };
 
 const isDevToolsToggleInput = (input: Electron.Input): boolean => {
@@ -318,15 +502,6 @@ const reloadActiveWorkbenchPage = (ignoreCache: boolean): boolean => {
   }
   workbenchBrowserBridge?.reload(tabId, ignoreCache);
   return true;
-};
-
-const exitWindowFullscreen = (window: BrowserWindow): void => {
-  if (process.platform === "darwin" && window.isSimpleFullScreen()) {
-    window.setSimpleFullScreen(false);
-  }
-  if (window.isFullScreen()) {
-    window.setFullScreen(false);
-  }
 };
 
 const registerWorkbenchInputShortcuts = (): void => {
@@ -689,11 +864,20 @@ const createMainWindow = (): BrowserWindow => {
     height: 920,
     minWidth: 1160,
     minHeight: 720,
-    fullscreenable: false,
+    fullscreenable: true,
     frame: isMac,
+    ...(isMac
+      ? {
+          acceptFirstMouse: true,
+          trafficLightPosition: LYRA_MAC_WINDOW_BUTTON_POSITION,
+          titleBarOverlay: {
+            height: LYRA_MAC_TITLEBAR_OVERLAY_HEIGHT
+          }
+        }
+      : {}),
     ...windowMaterialDecision.options,
     autoHideMenuBar: true,
-    titleBarStyle: isMac ? "hiddenInset" : "default",
+    titleBarStyle: isMac ? "hidden" : "default",
     ...(iconPath === null ? {} : { icon: iconPath }),
     webPreferences: {
       preload: join(currentDir, "../preload/index.cjs"),
@@ -704,6 +888,7 @@ const createMainWindow = (): BrowserWindow => {
     }
   });
   activeWindowMaterialMode = applyLyraWindowMaterial(window, windowMaterialDecision);
+  applyMacWindowButtonPosition(window);
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (typeof rendererUrl === "string" && rendererUrl.length > 0) {
@@ -743,25 +928,53 @@ const createMainWindow = (): BrowserWindow => {
   });
 
   window.on("focus", () => {
+    applyMacWindowButtonPosition(window);
     publishWindowState(window);
-    workbenchBrowserBridge?.reapplyLayout();
+    requestWorkbenchLayoutReapply(window);
   });
   window.on("blur", () => publishWindowState(window));
   window.on("maximize", () => {
     publishWindowState(window);
-    workbenchBrowserBridge?.reapplyLayout();
+    requestWorkbenchLayoutReapply(window);
   });
   window.on("unmaximize", () => {
     publishWindowState(window);
-    workbenchBrowserBridge?.reapplyLayout();
+    requestWorkbenchLayoutReapply(window);
+  });
+  window.on("enter-full-screen", () => {
+    lastKnownWindowFullScreenState = true;
+    if (pendingMacFullScreenTarget === null) {
+      beginFullscreenLayoutTransition(window);
+    }
+    applyMacWindowButtonPosition(window);
+    publishWindowState(window);
+    settleFullscreenLayout(window);
+    setTimeout(() => applyMacWindowButtonPosition(window), 400);
+  });
+  window.on("leave-full-screen", () => {
+    lastKnownWindowFullScreenState = false;
+    pendingMacFullScreenTarget = null;
+    if (fullscreenLayoutTransitionActive === false) {
+      beginFullscreenLayoutTransition(window);
+    }
+    applyMacWindowButtonPosition(window);
+    publishWindowState(window);
+    settleFullscreenLayout(window);
+    setTimeout(() => applyMacWindowButtonPosition(window), 400);
+  });
+  window.on("enter-html-full-screen", () => {
+    publishWindowState(window);
+    requestWorkbenchLayoutReapply(window);
+  });
+  window.on("leave-html-full-screen", () => {
+    publishWindowState(window);
+    requestWorkbenchLayoutReapply(window);
   });
   window.on("resize", createReapplyLayoutScheduler(window, () => {
-    workbenchBrowserBridge?.reapplyLayout();
+    requestWorkbenchLayoutReapply(window);
   }));
-  window.on("enter-full-screen", () => {
-    setImmediate(() => {
-      exitWindowFullscreen(window);
-    });
+  window.on("closed", () => {
+    clearFullscreenLayoutSettleTimer();
   });
 
   return window;
@@ -908,7 +1121,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     loginManager: loginManagerBridge,
     accessibilityNative: accessibilityNativeLoadResult,
     workbenchState: workbenchStateBridge,
-    performanceScheduler
+    performanceScheduler,
+    deferLayoutSync: deferWorkbenchBrowserLayoutSync
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const uiuxPacksBridge = createUiuxPacksIpcBridge({
@@ -981,11 +1195,29 @@ const registerIpcHandlers = async (): Promise<void> => {
   };
 
   ipcMain.handle(LYRA_CHANNELS.minimizeWindow, () => {
-    mainWindow?.minimize();
+    const window = mainWindow;
+    if (window === null || window.isDestroyed()) {
+      return;
+    }
+    if (process.platform === "darwin" && isWindowFullScreen(window)) {
+      setMacWindowFullScreen(window, false);
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          window.minimize();
+        }
+      }, 120);
+      return;
+    }
+    window.minimize();
   });
 
   ipcMain.handle(LYRA_CHANNELS.toggleWindowMaximize, () => {
     if (mainWindow === null) {
+      return;
+    }
+    if (process.platform === "darwin") {
+      const nextFullScreenState = !isWindowFullScreen(mainWindow);
+      setMacWindowFullScreen(mainWindow, nextFullScreenState);
       return;
     }
     if (mainWindow.isMaximized()) {

@@ -15,6 +15,8 @@ pub struct RenderDocumentOptions {
     pub theme: RenderTheme,
     pub enable_math: bool,
     pub enable_mermaid: bool,
+    #[serde(default = "default_enable_linkify")]
+    pub enable_linkify: bool,
     pub highlight_code: bool,
     pub locale: Option<String>,
 }
@@ -72,6 +74,10 @@ pub struct HighlightRequest {
     pub theme: RenderTheme,
 }
 
+fn default_enable_linkify() -> bool {
+    true
+}
+
 impl Default for RenderDocumentOptions {
     fn default() -> Self {
         Self {
@@ -79,6 +85,7 @@ impl Default for RenderDocumentOptions {
             theme: RenderTheme::Dark,
             enable_math: true,
             enable_mermaid: true,
+            enable_linkify: true,
             highlight_code: true,
             locale: None,
         }

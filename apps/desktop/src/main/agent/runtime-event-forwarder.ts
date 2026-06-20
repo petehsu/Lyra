@@ -19,7 +19,7 @@ import { isRecord } from "./host-payload";
 
 const AGENT_RUNTIME_EVENT_NAME = "agent.runtime";
 const TERMINAL_RUNTIME_EVENT_NAME = "terminal.runtime";
-const AGENT_EVENT_THROTTLE_MS = 50;
+const AGENT_EVENT_THROTTLE_MS = 32;
 const AGENT_EVENT_MAX_QUEUE_SIZE = 512;
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;

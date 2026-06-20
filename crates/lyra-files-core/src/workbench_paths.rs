@@ -8,6 +8,34 @@ use crate::paths::{
 };
 use crate::{FilesCoreError, Result};
 
+const MAX_COLLECTED_FILE_PATHS: usize = 5_000;
+const MAX_SCANNED_DIRECTORIES: usize = 1_500;
+const MAX_COLLECT_DEPTH: usize = 16;
+// Background path candidates should avoid generated dependency/cache trees.
+// Direct file-manager directory reads do not use this collector and remain complete.
+const SKIPPED_DIRECTORY_NAMES: &[&str] = &[
+    ".cache",
+    ".git",
+    ".gradle",
+    ".next",
+    ".nuxt",
+    ".parcel-cache",
+    ".pnpm-store",
+    ".svelte-kit",
+    ".turbo",
+    ".venv",
+    ".yarn",
+    "__pycache__",
+    "build",
+    "coverage",
+    "DerivedData",
+    "dist",
+    "node_modules",
+    "out",
+    "target",
+    "venv",
+];
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchPathProbeResult {
@@ -30,15 +58,42 @@ fn io_error(context: impl Into<String>, source: std::io::Error) -> FilesCoreErro
     }
 }
 
+#[derive(Default)]
+struct CollectState {
+    scanned_directories: usize,
+    collected_files: usize,
+}
+
+fn should_skip_directory_name(name: &str) -> bool {
+    SKIPPED_DIRECTORY_NAMES
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+}
+
 fn collect_workbench_file_paths_recursive(
     root_path: &Path,
     base_path: &Path,
     collected: &mut Vec<WorkbenchCollectedFilePath>,
+    state: &mut CollectState,
+    depth: usize,
 ) -> Result<()> {
+    if depth > MAX_COLLECT_DEPTH
+        || state.scanned_directories >= MAX_SCANNED_DIRECTORIES
+        || state.collected_files >= MAX_COLLECTED_FILE_PATHS
+    {
+        return Ok(());
+    }
+    state.scanned_directories = state.scanned_directories.saturating_add(1);
+
     let directory = fs::read_dir(root_path)
         .map_err(|error| io_error(format!("failed to read {}", root_path.display()), error))?;
 
     for entry in directory {
+        if state.collected_files >= MAX_COLLECTED_FILE_PATHS
+            || state.scanned_directories >= MAX_SCANNED_DIRECTORIES
+        {
+            break;
+        }
         let entry =
             entry.map_err(|error| io_error("failed to iterate directory entries", error))?;
         let entry_path = entry.path();
@@ -50,7 +105,17 @@ fn collect_workbench_file_paths_recursive(
         })?;
 
         if file_type.is_dir() {
-            collect_workbench_file_paths_recursive(&entry_path, base_path, collected)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if should_skip_directory_name(&name) {
+                continue;
+            }
+            collect_workbench_file_paths_recursive(
+                &entry_path,
+                base_path,
+                collected,
+                state,
+                depth + 1,
+            )?;
             continue;
         }
 
@@ -59,6 +124,7 @@ fn collect_workbench_file_paths_recursive(
             collected.push(WorkbenchCollectedFilePath {
                 path: path_to_string(&relative_path).replace('\\', "/"),
             });
+            state.collected_files = state.collected_files.saturating_add(1);
         }
     }
 
@@ -132,7 +198,14 @@ pub fn collect_workbench_file_paths(
         .unwrap_or(normalized_base_path);
 
     let mut collected = Vec::new();
-    collect_workbench_file_paths_recursive(&canonical_root_path, &base_path, &mut collected)?;
+    let mut state = CollectState::default();
+    collect_workbench_file_paths_recursive(
+        &canonical_root_path,
+        &base_path,
+        &mut collected,
+        &mut state,
+        0,
+    )?;
     collected.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(collected)
 }
@@ -173,6 +246,33 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(paths, vec!["README.md", "src/main.rs"]);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn skips_generated_dependency_directories_while_collecting_paths() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src").join("main.ts"), b"console.log('ok')").unwrap();
+        fs::create_dir_all(root.join("node_modules").join("dep")).unwrap();
+        fs::write(
+            root.join("node_modules").join("dep").join("index.js"),
+            b"module.exports = {}",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join(".git").join("objects")).unwrap();
+        fs::write(root.join(".git").join("config"), b"[core]").unwrap();
+
+        let collected =
+            collect_workbench_file_paths(&path_to_string(&root), Some(&path_to_string(&root)))
+                .unwrap();
+        let paths = collected
+            .into_iter()
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec!["src/main.ts"]);
 
         fs::remove_dir_all(root).unwrap();
     }

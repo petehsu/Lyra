@@ -4,6 +4,7 @@ export {
   AGENT_PROJECT_TREE_ICON_KEY,
   createAgentProjectTreeAppRequest,
   createAgentProjectTreeInstanceId,
+  resolveAgentProjectTreeEditorInstanceId,
   resolveProjectTreeTitle,
   useAgentProjectTreeModel
 } from "./service";

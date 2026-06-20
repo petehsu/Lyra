@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type DragEvent,
+  type DragEvent as ReactDragEvent,
   type ReactNode
 } from "react";
 
@@ -73,7 +73,7 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     return true;
   }, []);
 
-  const handleDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleDragEnter = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     if (!activateIfSupported(event.dataTransfer)) {
       return;
     }
@@ -81,7 +81,7 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     dragDepthRef.current += 1;
   }, [activateIfSupported]);
 
-  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     if (!isComposerAttachDrag(event.dataTransfer)) {
       return;
     }
@@ -92,7 +92,7 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     }
   }, [activateIfSupported]);
 
-  const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     if (!dragActiveRef.current) {
       return;
     }
@@ -106,7 +106,7 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     }
   }, [resetDragVisualState]);
 
-  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleDrop = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     if (!isComposerAttachDrag(event.dataTransfer)) {
       return;
     }
@@ -135,21 +135,23 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     const isWithinHost = (target: EventTarget | null): boolean =>
       target instanceof Node && host.contains(target);
 
-    const handleCaptureDragOver = (event: DragEvent) => {
-      if (!isComposerAttachDrag(event.dataTransfer)) {
+    const handleCaptureDragOver = (event: globalThis.DragEvent) => {
+      const dataTransfer = event.dataTransfer;
+      if (dataTransfer === null || !isComposerAttachDrag(dataTransfer)) {
         return;
       }
       if (!isWithinHost(event.target)) {
         return;
       }
       event.preventDefault();
-      event.dataTransfer.dropEffect = resolveAiPanelDropEffect(event.dataTransfer);
+      dataTransfer.dropEffect = resolveAiPanelDropEffect(dataTransfer);
       dragActiveRef.current = true;
       setDragActive(true);
     };
 
-    const handleCaptureDrop = (event: DragEvent) => {
-      if (!isComposerAttachDrag(event.dataTransfer)) {
+    const handleCaptureDrop = (event: globalThis.DragEvent) => {
+      const dataTransfer = event.dataTransfer;
+      if (dataTransfer === null || !isComposerAttachDrag(dataTransfer)) {
         return;
       }
       if (!isWithinHost(event.target)) {
@@ -159,7 +161,7 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
       event.stopPropagation();
       pageDragDropHandledRef.current = true;
       resetDragVisualState();
-      void attachDragPayloadToComposer(event.dataTransfer)
+      void attachDragPayloadToComposer(dataTransfer)
         .then((attached) => {
           if (attached) {
             void getDesktopApi()?.screenshotPreview.dismiss().catch(() => undefined);

@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
   ToolDetails as ToolDetailsType,
   WorkbenchTabSummary
 } from "../../core/types";
-import { ChevronIcon } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
 import {
@@ -17,7 +15,7 @@ import {
 import { TerminalToolCard } from "./TerminalToolCard";
 import { RenderSurfacePreview } from "./RenderSurfacePreview";
 import { AppButton } from "@renderer/ui/components";
-import { InlineDiffStats } from "./InlineDiffStats";
+import { VirtualizedDiffView } from "./VirtualizedDiffView";
 
 /**
  * Level-3 renderer. Rendered inline without surrounding borders or panels so
@@ -133,86 +131,16 @@ function EditCard({
   details: Extract<ToolDetailsType, { type: "edit" }>;
   running?: boolean;
 }) {
-  const [open, setOpen] = useState(running);
-  const anchorRef = useRef<HTMLSpanElement>(null);
-  const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasDiff = details.hunks.length > 0;
-  const showStats = details.additions > 0 || details.deletions > 0;
-
-  useEffect(() => {
-    if (running) {
-      setOpen(true);
-    }
-  }, [running]);
 
   return (
-    <div className={`lyra-agents-edit-card ${open ? "open" : ""} ${running ? "is-running" : ""}`}>
-      <AppButton variant="ghost" size="sm"
-        type="button"
-        className="lyra-agents-edit-card-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span ref={anchorRef} className="lyra-agents-icon-swap">
-          <span className="lyra-agents-icon-swap-tool">
-            <FileTypeIcon filename={details.file} />
-          </span>
-          <span className="lyra-agents-icon-swap-chevron">
-            <ChevronIcon open={open} />
-          </span>
-        </span>
-        <span className={`lyra-agents-edit-card-file ${running && !hasDiff ? "lyra-agents-shimmer" : ""}`}>
-          {details.file}
-        </span>
-        {showStats ? (
-          <InlineDiffStats
-            additions={details.additions}
-            deletions={details.deletions}
-            className="lyra-agents-edit-card-stats lyra-agents-inline-stats"
-          />
-        ) : null}
-      </AppButton>
-
-      {open && !anchorVisible && (
-        <AppButton variant="ghost" size="sm"
-          type="button"
-          className="lyra-agents-fold-line lyra-agents-fold-line-edit"
-          onClick={() => setOpen(false)}
-          aria-label={t("tool.collapseEditDetails")}
-        />
-      )}
-
-      <div className="lyra-agents-collapse" data-open={open}>
-        <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-edit-card-body">
-            {running && !hasDiff ? (
-              <div className="lyra-agents-edit-card-waiting lyra-agents-shimmer">
-                {t("tool.streamingDiff")}
-              </div>
-            ) : null}
-            {details.hunks.map((hunk, i) => (
-              <div key={i} className="lyra-agents-diff-hunk">
-                {hunk.lines.map((line, j) => {
-                  const lineNumber = hunk.startLine + j;
-                  return (
-                    <div
-                      key={j}
-                      className={`lyra-agents-diff-line lyra-agents-diff-line-${line.kind} lyra-agents-stagger-item`}
-                      style={{ "--stagger-index": j } as React.CSSProperties}
-                    >
-                      <span className="lyra-agents-diff-gutter">{lineNumber}</span>
-                      <span className="lyra-agents-diff-sign">
-                        {line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}
-                      </span>
-                      <span className="lyra-agents-diff-text">{line.text || "\u00A0"}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+    <div className="lyra-agents-info-block lyra-agents-edit-details">
+      {running && !hasDiff ? (
+        <div className="lyra-agents-edit-card-waiting lyra-agents-shimmer">
+          {t("tool.streamingDiff")}
         </div>
-      </div>
+      ) : null}
+      <VirtualizedDiffView hunks={details.hunks} running={running} />
     </div>
   );
 }

@@ -3186,6 +3186,8 @@
   padding: var(--lyra-space-8) var(--lyra-space-10);
   border-color: transparent;
   background: transparent;
+  content-visibility: auto;
+  contain-intrinsic-size: var(--lyra-control-h-40);
 }
 
 .lyra-file-manager-home-card:hover:not(:disabled),
@@ -3363,6 +3365,8 @@
   border-radius: var(--lyra-radius-6);
   color: var(--lyra-text-secondary);
   background: transparent;
+  content-visibility: auto;
+  contain-intrinsic-size: var(--lyra-control-h-36);
 }
 
 .lyra-file-manager-list-row:hover:not(:disabled) {
@@ -3473,6 +3477,8 @@
     background-color var(--lyra-motion-fast),
     border-color var(--lyra-motion-fast),
     color var(--lyra-motion-fast);
+  content-visibility: auto;
+  contain-intrinsic-size: var(--lyra-unit-150);
 }
 
 .lyra-file-manager-large-tile.lyra-ui-button {

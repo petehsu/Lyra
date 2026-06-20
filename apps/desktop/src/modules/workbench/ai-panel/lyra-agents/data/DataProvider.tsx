@@ -106,6 +106,9 @@ export interface DataProviderValue {
   /** Open a local file path in the center Workbench area. */
   openFileInWorkbench(filePath: string): Promise<void>;
 
+  /** Reveal a local path in the Workbench without assuming it is an editable file. */
+  revealPathInWorkbench(filePath: string): Promise<void>;
+
   /** Open the live Workbench terminal pane for a terminal session when it exists. */
   openTerminalLiveSession(request: {
     readonly sessionId?: string | null;

@@ -125,6 +125,7 @@ impl CodeIntelService {
             &snapshot.files,
             &request.query,
             request.case_sensitive,
+            request.regex,
             request.glob.as_deref(),
             request.limit,
         );
@@ -277,7 +278,9 @@ fn build_snapshot(
             continue;
         };
         let language = language_from_extension(scanned.extension.as_deref());
-        let symbols = extract_symbols(&content, &language);
+        let symbols = extract_symbols(&content, &language, scanned.extension.as_deref());
+        // Content is only needed to extract symbols; full-text search reads from
+        // disk on demand, so we drop it from the snapshot.
         files.push(IndexedFile {
             path: absolute_path,
             relative_path: scanned.relative_path,
@@ -285,7 +288,6 @@ fn build_snapshot(
             extension: scanned.extension,
             modified_at: scanned.modified_at,
             size_bytes: scanned.size_bytes,
-            content,
             symbols,
         });
     }
@@ -357,4 +359,78 @@ fn unix_seconds_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{load_snapshot, snapshot_file};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn project_dir() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        // scan_workspace uses `require_git(true)`, so the tree must be a git repo.
+        fs::create_dir_all(dir.path().join(".git")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn rebuild_writes_v2_snapshot_without_content() {
+        let storage = TempDir::new().unwrap();
+        let project = project_dir();
+        fs::write(project.path().join("lib.rs"), "pub fn alpha() {}\n").unwrap();
+
+        let service = CodeIntelService::new(storage.path());
+        service
+            .rebuild_index(CodeIndexRebuildParams {
+                roots: vec![project.path().to_path_buf()],
+                include_hidden: false,
+                force: true,
+            })
+            .unwrap();
+
+        let snapshot_path = snapshot_file(storage.path());
+        assert!(snapshot_path.ends_with("index.v2.json"));
+        let snapshot = load_snapshot(&snapshot_path).unwrap().unwrap();
+        assert_eq!(snapshot.version, 2);
+        assert!(snapshot.files.iter().any(|file| file
+            .symbols
+            .iter()
+            .any(|symbol| symbol.name == "alpha")));
+    }
+
+    #[test]
+    fn symbol_and_text_search_round_trip() {
+        let storage = TempDir::new().unwrap();
+        let project = project_dir();
+        fs::write(project.path().join("lib.rs"), "pub fn alpha() {}\n// needle\n").unwrap();
+        let service = CodeIntelService::new(storage.path());
+
+        let symbols = service
+            .search_symbol(CodeSearchSymbolParams {
+                query: "alpha".to_string(),
+                roots: vec![project.path().to_path_buf()],
+                include_hidden: false,
+                limit: 40,
+                kind: None,
+                language: None,
+            })
+            .unwrap();
+        assert!(symbols.symbols.iter().any(|symbol| symbol.name == "alpha"));
+
+        let text = service
+            .search_text(CodeSearchTextParams {
+                query: "needle".to_string(),
+                roots: vec![project.path().to_path_buf()],
+                include_hidden: false,
+                glob: None,
+                limit: 40,
+                case_sensitive: false,
+                regex: false,
+            })
+            .unwrap();
+        assert_eq!(text.matches.len(), 1);
+        assert_eq!(text.matches[0].line, 2);
+    }
 }

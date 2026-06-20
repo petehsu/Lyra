@@ -96,13 +96,19 @@ type FileRevealLocation = {
   readonly endLine?: number;
 };
 
+type WorkbenchPathTarget = {
+  readonly path: string;
+  readonly location?: FileRevealLocation | undefined;
+};
+
 const isAbsoluteOrHomePath = (filePath: string): boolean =>
   /^(?:\/|~\/|[A-Za-z]:[\\/]|file:\/\/)/u.test(filePath);
 
 const resolveSessionRelativePath = (filePath: string, workingDir: string | null | undefined): string => {
   const trimmed = filePath.trim();
   const base = workingDir?.trim() ?? "";
-  if (trimmed.length === 0 || isAbsoluteOrHomePath(trimmed) || !base.startsWith("/") || base === "/") {
+  const hasAbsoluteBase = base.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(base);
+  if (trimmed.length === 0 || isAbsoluteOrHomePath(trimmed) || !hasAbsoluteBase || base === "/") {
     return trimmed;
   }
   const parts: string[] = [];
@@ -116,13 +122,74 @@ const resolveSessionRelativePath = (filePath: string, workingDir: string | null 
     }
     parts.push(part);
   }
-  return `/${parts.join("/")}`;
+  return base.startsWith("/") ? `/${parts.join("/")}` : parts.join("/");
 };
 
 const inferHomePathFromWorkingDir = (workingDir: string | null | undefined): string | null => {
   const normalized = (workingDir ?? "").trim().replaceAll("\\", "/");
   const match = normalized.match(/^\/(?:Users|home)\/[^/]+(?=\/|$)/u);
   return match?.[0] ?? null;
+};
+
+const parseWorkbenchPathTarget = (
+  filePath: string,
+  workingDir: string | null | undefined
+): WorkbenchPathTarget | null => {
+  let cleanedPath = filePath.trim();
+  if (cleanedPath.length === 0) {
+    return null;
+  }
+
+  if (cleanedPath.startsWith("file:///")) {
+    cleanedPath = `/${cleanedPath.slice(8)}`;
+  } else if (cleanedPath.startsWith("file://")) {
+    cleanedPath = `/${cleanedPath.slice(7)}`;
+  }
+  if (cleanedPath.startsWith("~/")) {
+    const homePath = inferHomePathFromWorkingDir(workingDir);
+    if (homePath !== null) {
+      cleanedPath = `${homePath}${cleanedPath.slice(1)}`;
+    }
+  }
+
+  let line: number | undefined;
+  let endLine: number | undefined;
+
+  const hashMatch = cleanedPath.match(/#L(\d+)(?:-L(\d+))?$/u);
+  if (hashMatch !== null) {
+    line = Number.parseInt(hashMatch[1]!, 10);
+    if (hashMatch[2] !== undefined) {
+      endLine = Number.parseInt(hashMatch[2], 10);
+    }
+    cleanedPath = cleanedPath.replace(/#L\d+(?:-L\d+)?$/u, "");
+  }
+
+  const colonMatch = cleanedPath.match(/:(\d+)(?::(\d+))?$/u);
+  if (colonMatch !== null) {
+    line = Number.parseInt(colonMatch[1]!, 10);
+    cleanedPath = cleanedPath.replace(/:\d+(?::\d+)?$/u, "");
+  }
+
+  const path = resolveSessionRelativePath(cleanedPath, workingDir).trim();
+  if (path.length === 0) {
+    return null;
+  }
+  const location = line === undefined
+    ? undefined
+    : (endLine === undefined ? { line } : { line, endLine });
+  return { path, location };
+};
+
+const normalizeProjectPathBoundary = (value: string): string =>
+  value.trim().replace(/\\/g, "/").replace(/\/+$/u, "");
+
+const isPathInsideProjectRoot = (filePath: string, rootPath: string): boolean => {
+  const normalizedPath = normalizeProjectPathBoundary(filePath);
+  const normalizedRoot = normalizeProjectPathBoundary(rootPath);
+  if (normalizedPath.length === 0 || normalizedRoot.length === 0 || normalizedRoot === "/") {
+    return false;
+  }
+  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
 };
 
 const imageUrlSource = (source: string | null | undefined): string | null => {
@@ -319,12 +386,20 @@ type LyraAgentDataProviderCallbacks = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void) | undefined;
+  readonly onRevealProjectPath?: ((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+    readonly path: string;
+    readonly location?: FileRevealLocation;
+    readonly mode: "reveal" | "open-file";
+  }) => Promise<void> | void) | undefined;
   readonly onOpenModelSettings?: (() => Promise<void> | void) | undefined;
   readonly onOpenUrlInWorkbench?: ((request: {
     readonly url: string;
     readonly title?: string;
   }) => Promise<void> | void) | undefined;
   readonly onOpenFile?: ((filePath: string, location?: FileRevealLocation) => void) | undefined;
+  readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly onOpenTerminalLiveSession?: ((request: {
     readonly sessionId?: string | null;
     readonly terminalTabId?: string | null;
@@ -366,9 +441,11 @@ export const useLyraAgentDataProvider = (
     onRequestProjectBind,
     onUpdateDraftWorkingDir,
     onOpenProjectTree,
+    onRevealProjectPath,
     onOpenModelSettings,
     onOpenUrlInWorkbench,
     onOpenFile,
+    onRevealPathInWorkbench,
     onOpenTerminalLiveSession,
     openDialog,
     locale,
@@ -1221,51 +1298,67 @@ export const useLyraAgentDataProvider = (
     });
   }, [onOpenUrlInWorkbench]);
 
+  const routeProjectPathIfBound = useCallback(async (
+    target: WorkbenchPathTarget,
+    mode: "reveal" | "open-file"
+  ): Promise<boolean> => {
+    const session = state.session;
+    if (
+      onRevealProjectPath === undefined ||
+      session?.projectBound !== true ||
+      session.workingDirIsHome === true
+    ) {
+      return false;
+    }
+    const sessionId = session.id.trim();
+    const workingDir = session.workingDir.trim();
+    if (
+      sessionId.length === 0 ||
+      workingDir.length === 0 ||
+      !isPathInsideProjectRoot(target.path, workingDir)
+    ) {
+      return false;
+    }
+    await onRevealProjectPath({
+      sessionId,
+      workingDir,
+      path: target.path,
+      mode,
+      ...(mode === "open-file" && target.location !== undefined
+        ? { location: target.location }
+        : {})
+    });
+    return true;
+  }, [
+    onRevealProjectPath,
+    state.session
+  ]);
+
   const openFileInWorkbench = useCallback(async (filePath: string): Promise<void> => {
-    let cleanedPath = filePath.trim();
-    if (cleanedPath.length === 0) return;
-
-    // 1. Remove file:/// prefix if present
-    if (cleanedPath.startsWith("file:///")) {
-      cleanedPath = "/" + cleanedPath.slice(8); // Keep the starting slash for absolute path
-    } else if (cleanedPath.startsWith("file://")) {
-      cleanedPath = "/" + cleanedPath.slice(7);
+    const target = parseWorkbenchPathTarget(filePath, state.session?.workingDir);
+    if (target === null) return;
+    if (await routeProjectPathIfBound(target, "open-file")) {
+      return;
     }
-    if (cleanedPath.startsWith("~/")) {
-      const homePath = inferHomePathFromWorkingDir(state.session?.workingDir);
-      if (homePath !== null) {
-        cleanedPath = `${homePath}${cleanedPath.slice(1)}`;
-      }
-    }
+    onOpenFile?.(target.path, target.location);
+  }, [
+    onOpenFile,
+    routeProjectPathIfBound,
+    state.session?.workingDir
+  ]);
 
-    let line: number | undefined;
-    let endLine: number | undefined;
-
-    // 2. Parse #L123-L145
-    const hashMatch = cleanedPath.match(/#L(\d+)(?:-L(\d+))?$/);
-    if (hashMatch) {
-      line = parseInt(hashMatch[1]!, 10);
-      if (hashMatch[2]) {
-        endLine = parseInt(hashMatch[2]!, 10);
-      }
-      cleanedPath = cleanedPath.replace(/#L\d+(?:-L\d+)?$/, "");
+  const revealPathInWorkbench = useCallback(async (filePath: string): Promise<void> => {
+    const target = parseWorkbenchPathTarget(filePath, state.session?.workingDir);
+    if (target === null) return;
+    if (await routeProjectPathIfBound(target, "reveal")) {
+      return;
     }
-
-    // 3. Parse :123 or :123:45
-    const colonMatch = cleanedPath.match(/:(\d+)(?::(\d+))?$/);
-    if (colonMatch) {
-      line = parseInt(colonMatch[1]!, 10);
-      cleanedPath = cleanedPath.replace(/:\d+(?::\d+)?$/, "");
-    }
-
-    if (onOpenFile) {
-      cleanedPath = resolveSessionRelativePath(cleanedPath, state.session?.workingDir);
-      const location = line === undefined
-        ? undefined
-        : (endLine === undefined ? { line } : { line, endLine });
-      onOpenFile(cleanedPath, location);
-    }
-  }, [onOpenFile, state.session?.workingDir]);
+    await onRevealPathInWorkbench?.(target.path);
+  }, [
+    onRevealPathInWorkbench,
+    routeProjectPathIfBound,
+    state.session?.workingDir
+  ]);
 
   const openTerminalLiveSession = useCallback(async (request: {
     readonly sessionId?: string | null;
@@ -1669,6 +1762,7 @@ export const useLyraAgentDataProvider = (
       setBrowserFollowMode,
       openUrlInWorkbench,
       openFileInWorkbench,
+      revealPathInWorkbench,
       openTerminalLiveSession,
       openImageInWorkbench,
       canOpenImageInWorkbench,
@@ -1736,6 +1830,7 @@ export const useLyraAgentDataProvider = (
     openModelSettings,
     openUrlInWorkbench,
     openFileInWorkbench,
+    revealPathInWorkbench,
     openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,

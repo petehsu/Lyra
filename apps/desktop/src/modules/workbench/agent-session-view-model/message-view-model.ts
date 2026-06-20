@@ -440,5 +440,77 @@ export const agentSessionToChatMessages = (
     finalMessages.push(msg);
   }
 
-  return finalMessages;
+  return attachEphemeralRunningTools(session, finalMessages);
+};
+
+const collectLinkedToolIds = (messages: readonly ChatMessage[]): Set<string> => {
+  const linked = new Set<string>();
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.type !== "tools") continue;
+      for (const call of block.group.calls) {
+        linked.add(call.id);
+      }
+    }
+  }
+  return linked;
+};
+
+/** Surface in-flight tools before the assistant message gains explicit tool blocks. */
+const attachEphemeralRunningTools = (
+  session: AgentSessionSnapshot,
+  messages: readonly ChatMessage[]
+): ChatMessage[] => {
+  if (session.turnStatus !== "running") {
+    return [...messages];
+  }
+
+  const runningTools = latestToolActivities(session.tools).filter((tool) => tool.status === "running");
+  if (runningTools.length === 0) {
+    return [...messages];
+  }
+
+  const linkedToolIds = collectLinkedToolIds(messages);
+  const orphanTools = runningTools.filter((tool) => !linkedToolIds.has(tool.id));
+  if (orphanTools.length === 0) {
+    return [...messages];
+  }
+
+  const group = toToolGroup(orphanTools, "lyra-ephemeral-running-tools");
+  if (group === null) {
+    return [...messages];
+  }
+
+  const toolBlock: Extract<MessageBlock, { type: "tools" }> = {
+    type: "tools",
+    id: "lyra-ephemeral-running-tools-block",
+    group
+  };
+
+  let targetIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.author === "agent") {
+      targetIndex = index;
+      break;
+    }
+  }
+
+  if (targetIndex < 0) {
+    return [
+      ...messages,
+      {
+        id: "lyra-agent-running-tools",
+        author: "agent",
+        blocks: [toolBlock]
+      }
+    ];
+  }
+
+  return messages.map((message, index) => {
+    if (index !== targetIndex) return message;
+    return {
+      ...message,
+      blocks: appendToolBlock(message.blocks, toolBlock)
+    };
+  });
 };

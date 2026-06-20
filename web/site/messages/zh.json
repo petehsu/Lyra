@@ -1,14 +1,53 @@
 {
   "Hero": {
-    "title": "Agent 原生终端",
-    "subtitle": "为下一代 AI 驱动的开发者而生。",
-    "cta_primary": "下载 Lyra",
-    "cta_secondary": "阅读文档"
+    "title": "Agent 原生终端与工作区环境",
+    "subtitle": "专为下一代 AI 驱动的开发者而生。融合高性能 Native 核心与直观集成界面的全功能 AI 协作开发环境。",
+    "cta_primary": "下载桌面客户端",
+    "cta_secondary": "阅读技术规格",
+    "status_bar": "VOL 01. 生产级技术文档就绪"
   },
   "Navigation": {
-    "features": "功能",
-    "docs": "文档",
-    "pricing": "定价",
-    "download": "下载"
+    "features": "核心架构与功能",
+    "docs": "技术文档",
+    "pricing": "定价与授权",
+    "download": "获取 Lyra"
+  },
+  "Features": {
+    "section_title": "核心支柱",
+    "panel1_title": "Tool-FS",
+    "panel1_summary": "虚拟工具文件系统",
+    "panel1_desc": "仅向大模型暴露 6 个元工具，大幅降低上下文窗口开销。Agent 通过虚拟路径按需动态发现并运行具体的业务能力，规避传统 function calling 模式下的误选与幻觉。",
+    "panel2_title": "语义操控",
+    "panel2_summary": "非视觉 OS 后台自动化",
+    "panel2_desc": "直接调用操作系统无障碍 API（macOS AX、Windows UI Automation、Linux AT-SPI）在后台静默操作，而不是粗暴地截图和点击屏幕绝对坐标，避免抢夺用户的前台系统焦点。",
+    "panel3_title": "智能记忆",
+    "panel3_summary": "分布式多层 SQLite 同步",
+    "panel3_desc": "基于向量 + 全文检索混合模型召回历史上下文与开发意图。引入 Git 式版本控制理念（单调版本号、CAS 冲突校验、增量同步），实现记忆在多端设备间的一致性流转。",
+    "panel4_title": "架构卫士",
+    "panel4_summary": "棘轮机制复杂度守护",
+    "panel4_desc": "通过静态代码健康度守卫强力规范模块物理边界。采用棘轮政策锁定历史遗留代码预算上限，迫使新业务逻辑向高内聚的解耦模块沉淀。"
+  },
+  "Architecture": {
+    "title": "前后端解耦的 Native 架构",
+    "subtitle": "极低延迟，安全可控的系统调度",
+    "desc": "Lyra 彻底分离了界面层与本地执行层。Electron 仅作为极轻量的 TypeScript 跨平台壳（负责 IPC 转发与托盘逻辑），所有耗时操作（PTY 终端管理器、文件遍历索引、系统无障碍 Hook 等）均在底层的 Rust 守护进程 (lyrad) 中高效执行。"
+  },
+  "Pricing": {
+    "title": "灵活的授权与付费模式",
+    "subtitle": "选择适合您团队与开发规模的运行模式。",
+    "community_name": "社区版",
+    "community_price": "免费",
+    "community_sub": "面向个人开发者的开源本地运行核心",
+    "pro_name": "专业版",
+    "pro_price": "$29",
+    "pro_sub": "解锁云端记忆同步与高级多智能体协作能力",
+    "enterprise_name": "企业版",
+    "enterprise_price": "定制",
+    "enterprise_sub": "支持单租户隔离部署与SLA高可用保障的安全合规版本",
+    "cta": "选择此方案"
+  },
+  "CLIDemo": {
+    "title": "交互式命令行演示",
+    "subtitle": "输入虚拟工具路径指令，实时预览 Tool-FS 的解析与反馈逻辑。"
   }
 }

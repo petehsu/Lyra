@@ -1,4 +1,5 @@
 import type { WorkbenchBrowserElementPickerAppearance } from "../../../shared/desktop-bridge";
+import { PAGE_ELEMENT_CONTEXT_HELPERS } from "../page-element-context-script";
 import { WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX } from "./types";
 
 const OVERLAY_ROOT_ID = "__lyra_element_picker_root";
@@ -177,6 +178,173 @@ export const buildElementPickerPrimeScript = (
     width: Math.round(rect.width),
     height: Math.round(rect.height)
   });
+
+  ${PAGE_ELEMENT_CONTEXT_HELPERS}
+
+  const absoluteUrl = (value) => {
+    const trimmed = normalizeText(value || '', 2000);
+    if (trimmed.length === 0) {
+      return '';
+    }
+    try {
+      return new URL(trimmed, window.location.href).href;
+    } catch (_error) {
+      return trimmed;
+    }
+  };
+
+  const closestLink = (element) => {
+    if (!(element instanceof Element)) {
+      return null;
+    }
+    return element.closest('a[href], area[href]');
+  };
+
+  const readLinkText = (link) => normalizeText(
+    link instanceof Element
+      ? link.innerText
+        || link.textContent
+        || link.getAttribute?.('aria-label')
+        || link.getAttribute?.('title')
+        || link.getAttribute?.('href')
+        || ''
+      : '',
+    240
+  );
+
+  const readSrcUrl = (element) => {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+    if (
+      element instanceof HTMLImageElement
+      || element instanceof HTMLVideoElement
+      || element instanceof HTMLAudioElement
+      || element instanceof HTMLSourceElement
+    ) {
+      return absoluteUrl(element.currentSrc || element.src || element.getAttribute('src') || '');
+    }
+    if (element instanceof HTMLObjectElement || element instanceof HTMLEmbedElement) {
+      return absoluteUrl(element.data || element.getAttribute('src') || '');
+    }
+    const media = element.querySelector?.('img[src], video[src], audio[src], source[src], object[data], embed[src]');
+    if (media instanceof Element) {
+      return readSrcUrl(media);
+    }
+    return '';
+  };
+
+  const readMediaType = (element) => {
+    if (!(element instanceof Element)) {
+      return 'none';
+    }
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'img' || element.querySelector?.('img[src]')) return 'image';
+    if (tag === 'video' || element.querySelector?.('video[src], video source[src]')) return 'video';
+    if (tag === 'audio' || element.querySelector?.('audio[src], audio source[src]')) return 'audio';
+    if (tag === 'canvas') return 'canvas';
+    if (tag === 'object' || tag === 'embed') return 'plugin';
+    if (element instanceof HTMLInputElement && element.type === 'file') return 'file';
+    return 'none';
+  };
+
+  const isEditableElement = (element) => Boolean(
+    element instanceof HTMLInputElement
+    || element instanceof HTMLTextAreaElement
+    || (element instanceof HTMLElement && element.isContentEditable)
+    || (element instanceof Element && ['textbox', 'searchbox'].includes(normalizeText(element.getAttribute('role') || '', 32)))
+  );
+
+  const selectionInsideElement = (element) => {
+    const selection = window.getSelection?.();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return '';
+    }
+    const range = selection.getRangeAt(0);
+    if (
+      element instanceof Node &&
+      (element.contains(range.commonAncestorContainer) || range.commonAncestorContainer === element)
+    ) {
+      return normalizeText(selection.toString(), 1000);
+    }
+    return '';
+  };
+
+  const preferredSelectionText = (element, snapshot, linkUrl, srcUrl) => {
+    const selected = selectionInsideElement(element);
+    if (selected.length > 0) {
+      return selected;
+    }
+    if (linkUrl.length > 0) {
+      return '';
+    }
+    return normalizeText(
+      snapshot.textSnippet
+        || snapshot.affordanceLabel
+        || snapshot.tooltipText
+        || snapshot.widgetLabel
+        || snapshot.ariaLabel
+        || snapshot.placeholder
+        || srcUrl
+        || '',
+      1000
+    );
+  };
+
+  const suppressPointerCompletion = () => {
+    const stop = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+    };
+    const cleanup = () => {
+      document.removeEventListener('pointerup', stop, true);
+      document.removeEventListener('click', stop, true);
+    };
+    document.addEventListener('pointerup', stop, true);
+    document.addEventListener('click', stop, true);
+    window.setTimeout(cleanup, 800);
+  };
+
+  const emitSelect = (element, snapshot) => {
+    if (!(element instanceof Element) || !snapshot || typeof snapshot !== 'object') {
+      return false;
+    }
+    const bounds = snapshot.bounds;
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+      return false;
+    }
+    const elementContext = readElementContext(element) || {};
+    const link = closestLink(element);
+    const linkUrl = link instanceof Element ? absoluteUrl(link.getAttribute('href') || '') : '';
+    const linkText = readLinkText(link);
+    const srcUrl = readSrcUrl(element);
+    const selectionText = preferredSelectionText(element, snapshot, linkUrl, srcUrl);
+    const payload = {
+      kind: 'select',
+      frameTreeNodeId: FRAME_TREE_NODE_ID,
+      anchorX: Math.round(bounds.x + bounds.width / 2),
+      anchorY: Math.round(bounds.y + bounds.height / 2),
+      pageUrl: absoluteUrl(window.location.href || ''),
+      pageTitle: normalizeText(document.title || window.location.href || '', 400),
+      frameUrl: normalizeText(window.location.href || '', 2000),
+      mediaType: readMediaType(element),
+      isEditable: isEditableElement(element),
+      ...(selectionText.length === 0 ? {} : { selectionText }),
+      ...(linkUrl.length === 0 ? {} : { linkUrl }),
+      ...(linkText.length === 0 ? {} : { linkText }),
+      ...(srcUrl.length === 0 ? {} : { srcUrl }),
+      ...(elementContext.elementTag === undefined ? {} : { elementTag: elementContext.elementTag }),
+      ...(elementContext.elementSelector === undefined ? {} : { elementSelector: elementContext.elementSelector }),
+      ...(elementContext.elementId === undefined ? {} : { elementId: elementContext.elementId }),
+      ...(elementContext.elementRole === undefined ? {} : { elementRole: elementContext.elementRole }),
+      ...(elementContext.elementAriaLabel === undefined ? {} : { elementAriaLabel: elementContext.elementAriaLabel })
+    };
+    emit(payload);
+    return true;
+  };
 
   const ensureSession = () => {
     if (window[SESSION_KEY] && typeof window[SESSION_KEY] === "object") {
@@ -371,6 +539,7 @@ export const buildElementPickerPrimeScript = (
       lastHoverKey: '',
       rafId: 0,
       pointerMove: null,
+      pointerDown: null,
       refresh: null,
       keydown: null,
       visibility: null,
@@ -665,6 +834,26 @@ export const buildElementPickerPrimeScript = (
       });
     };
 
+    session.pointerDown = (event) => {
+      if (session.manualEnabled !== true || event.button !== 0) {
+        return;
+      }
+      const target = resolveElement(event);
+      const snapshot = toManualSnapshot(target);
+      if (!snapshot) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+      suppressPointerCompletion();
+      if (emitSelect(target, snapshot)) {
+        session.teardown('user_toggle', true);
+      }
+    };
+
     session.refresh = () => {
       if (!(session.currentElement instanceof Element)) {
         session.currentSnapshot = null;
@@ -709,6 +898,7 @@ export const buildElementPickerPrimeScript = (
         session.rafId = 0;
       }
       document.removeEventListener('pointermove', session.pointerMove, true);
+      document.removeEventListener('pointerdown', session.pointerDown, true);
       document.removeEventListener('keydown', session.keydown, true);
       document.removeEventListener('scroll', session.scroll, true);
       window.removeEventListener('resize', session.refresh, true);
@@ -730,6 +920,7 @@ export const buildElementPickerPrimeScript = (
     };
 
     document.addEventListener('pointermove', session.pointerMove, true);
+    document.addEventListener('pointerdown', session.pointerDown, true);
     document.addEventListener('keydown', session.keydown, true);
     document.addEventListener('scroll', session.scroll, true);
     window.addEventListener('resize', session.refresh, true);

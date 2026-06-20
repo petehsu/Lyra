@@ -51,7 +51,7 @@ const toSnapshot = (
   })
 });
 
-const DEFAULT_ANIMATED_LAYOUT_SYNC_INTERVAL_MS = 16;
+const DEFAULT_ANIMATED_LAYOUT_SYNC_INTERVAL_MS = 33;
 const ANIMATED_LAYOUT_FINAL_SYNC_DELAY_MS = 32;
 /** Panel-splitter drags rely on RAF coalescing only (no extra throttle). */
 

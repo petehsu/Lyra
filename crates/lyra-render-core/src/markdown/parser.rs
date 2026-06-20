@@ -1,7 +1,7 @@
 use crate::ast::{InlineNode, ListItem, LyraRenderDocument, RenderBlock};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
-pub(crate) fn parse_markdown_plain(content: &str) -> LyraRenderDocument {
+pub fn parse_markdown_plain(content: &str) -> LyraRenderDocument {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
@@ -24,6 +24,8 @@ struct MarkdownBuilder {
     table: Option<TableState>,
     link_destination: Option<String>,
     link_title: Option<String>,
+    image_destination: Option<String>,
+    image_title: Option<String>,
     pending_task_checked: Option<bool>,
     list_items: Vec<ListItem>,
     list_ordered: bool,
@@ -128,15 +130,13 @@ impl MarkdownBuilder {
             Tag::Image {
                 dest_url, title, ..
             } => {
-                self.push_inline(InlineNode::Image {
-                    src: dest_url.to_string(),
-                    alt: String::new(),
-                    title: if title.is_empty() {
-                        None
-                    } else {
-                        Some(title.to_string())
-                    },
-                });
+                self.image_destination = Some(dest_url.to_string());
+                self.image_title = if title.is_empty() {
+                    None
+                } else {
+                    Some(title.to_string())
+                };
+                self.inline_stack.push(Vec::new());
             }
             Tag::Table(_) => {
                 self.table = Some(TableState::default());
@@ -192,6 +192,16 @@ impl MarkdownBuilder {
                     children,
                 };
                 self.push_inline(node);
+            }
+            TagEnd::Image => {
+                let children = self.inline_stack.pop().unwrap_or_default();
+                let src = self.image_destination.take().unwrap_or_default();
+                let title = self.image_title.take();
+                self.push_inline(InlineNode::Image {
+                    src,
+                    alt: inline_nodes_to_plain_text(&children),
+                    title,
+                });
             }
             TagEnd::BlockQuote => {
                 if let Some(BlockTarget::Blockquote(children)) = self.block_targets.pop() {
@@ -339,6 +349,23 @@ impl MarkdownBuilder {
     }
 }
 
+fn inline_nodes_to_plain_text(nodes: &[InlineNode]) -> String {
+    nodes
+        .iter()
+        .map(|node| match node {
+            InlineNode::Text { value } | InlineNode::Code { value } => value.clone(),
+            InlineNode::Strong { children }
+            | InlineNode::Emphasis { children }
+            | InlineNode::Strikethrough { children }
+            | InlineNode::Link { children, .. } => inline_nodes_to_plain_text(children),
+            InlineNode::Image { alt, .. } => alt.clone(),
+            InlineNode::MathInline { latex, .. } => format!("${latex}$"),
+            InlineNode::SoftBreak | InlineNode::HardBreak => " ".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 impl Default for MarkdownBuilder {
     fn default() -> Self {
         Self {
@@ -349,6 +376,8 @@ impl Default for MarkdownBuilder {
             table: None,
             link_destination: None,
             link_title: None,
+            image_destination: None,
+            image_title: None,
             pending_task_checked: None,
             list_items: Vec::new(),
             list_ordered: false,
@@ -411,6 +440,45 @@ mod tests {
         assert!(matches!(
             &paragraph[0],
             InlineNode::Link { href, .. } if href == "https://example.com"
+        ));
+    }
+
+    #[test]
+    fn parses_image_alt_text() {
+        let doc = parse_markdown_plain("![Alt text](https://example.com/logo.png)");
+        let paragraph = doc
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                RenderBlock::Paragraph { children } => Some(children),
+                _ => None,
+            })
+            .expect("paragraph");
+        assert!(matches!(
+            &paragraph[0],
+            InlineNode::Image { src, alt, .. }
+                if src == "https://example.com/logo.png" && alt == "Alt text"
+        ));
+    }
+
+    #[test]
+    fn parses_reference_style_links() {
+        let doc = parse_markdown_plain("[link]: https://example.com\n\n[link]");
+        let paragraph = doc
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                RenderBlock::Paragraph { children } => Some(children),
+                _ => None,
+            })
+            .expect("paragraph");
+        assert!(matches!(
+            &paragraph[0],
+            InlineNode::Link { href, children, .. }
+                if href == "https://example.com"
+                    && children == &vec![InlineNode::Text {
+                        value: "link".to_string()
+                    }]
         ));
     }
 }

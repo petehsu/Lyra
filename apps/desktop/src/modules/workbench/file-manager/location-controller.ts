@@ -101,21 +101,27 @@ export const useFileManagerLocationController = ({
     }
     return desktopApi.files.onDirectoryPatch((patch) => {
       updateStates((current) => {
-        let changed = false;
-        const nextEntries = Object.entries(current).map(([instanceId, state]) => {
-          const nextState = applyDirectoryPatchToState(state, patch, labels);
-          if (nextState !== state) {
-            changed = true;
-            onMetaChange({
-              appId: "file-manager",
-              appInstanceId: instanceId,
-              title: nextState.title,
-              iconKey: nextState.iconKey
-            });
-          }
-          return [instanceId, nextState] as const;
+        const match = Object.entries(current).find(
+          ([, state]) => state.directorySubscriptionId === patch.subscriptionId
+        );
+        if (match === undefined) {
+          return current;
+        }
+        const [instanceId, state] = match;
+        const nextState = applyDirectoryPatchToState(state, patch, labels);
+        if (nextState === state) {
+          return current;
+        }
+        onMetaChange({
+          appId: "file-manager",
+          appInstanceId: instanceId,
+          title: nextState.title,
+          iconKey: nextState.iconKey
         });
-        return changed ? Object.fromEntries(nextEntries) : current;
+        return {
+          ...current,
+          [instanceId]: nextState
+        };
       });
     });
   }, [desktopApi, labels, onMetaChange, updateStates]);

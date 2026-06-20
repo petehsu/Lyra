@@ -145,7 +145,7 @@ export const resolveAiPanelDragAttachAction = async (
 
   const externalFiles = readFileAttachmentsFromDataTransfer(dataTransfer);
   if (externalFiles.length === 1) {
-    return { kind: "file", file: externalFiles[0] };
+    return { kind: "file", file: externalFiles[0]! };
   }
   if (externalFiles.length > 1) {
     return { kind: "files", files: externalFiles };

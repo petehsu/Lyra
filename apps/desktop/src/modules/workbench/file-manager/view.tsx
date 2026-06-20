@@ -1,5 +1,4 @@
 import {
-  type DragEvent as ReactDragEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -7,27 +6,12 @@ import {
   useState
 } from "react";
 
-import {
-  clearFileManagerEntryDragPayload,
-  type FileManagerEntryDragPayload,
-  writeFileManagerEntryDragPayload
-} from "./drag-transfer";
-import { resolveFileManagerEntryIconKind } from "./entry-icon-classifier";
-import type {
-  FileManagerEntry,
-  FileManagerTrashEntry
-} from "../../../shared/file-manager";
-import type {
-  LyraDesktopApi,
-  SearchIndexStatusResponse
-} from "../../../shared/desktop-bridge";
 import { useLoadingVisibility } from "../shell/use-loading-visibility";
 import {
   deriveFileManagerSurfaceModel
 } from "./surface-model";
 import {
-  FileManagerSurfaceView,
-  type FileManagerSurfaceActions
+  FileManagerSurfaceView
 } from "./surface-view";
 import { FileManagerToolbarContent } from "./surface-toolbar";
 import type {
@@ -38,6 +22,8 @@ import type {
   FileManagerSurfaceLabels
 } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import type { LyraDesktopApi, SearchIndexStatusResponse } from "../../../shared/desktop-bridge";
+import { useFileManagerSurfaceActions } from "./use-file-manager-surface-actions";
 
 export type FileManagerSurfaceProps = {
   readonly desktopApi?: LyraDesktopApi | null;
@@ -132,41 +118,6 @@ const useFileManagerSearchIndexStatus = (
   );
 };
 
-const toDirectoryEntryDragPayload = (
-  entry: FileManagerEntry
-): FileManagerEntryDragPayload => ({
-  name: entry.name,
-  kind: entry.kind,
-  source: "directory",
-  path: entry.path,
-  iconKind: resolveFileManagerEntryIconKind(entry)
-});
-
-const toTrashEntryDragPayload = (
-  entry: FileManagerTrashEntry
-): FileManagerEntryDragPayload => ({
-  name: entry.name,
-  kind: entry.kind,
-  source: "trash",
-  iconKind: resolveFileManagerEntryIconKind(entry),
-  ...(entry.originalPath === undefined
-    ? entry.trashedPath === undefined
-      ? {}
-      : { path: entry.trashedPath }
-    : { path: entry.originalPath })
-});
-
-const createFileManagerDragPreview = (
-  documentRef: Document,
-  label: string
-): HTMLDivElement => {
-  const preview = documentRef.createElement("div");
-  preview.className = "lyra-file-manager-drag-preview";
-  preview.textContent = label;
-  documentRef.body.append(preview);
-  return preview;
-};
-
 const FileManagerTitlebarBridge = ({
   renderModel,
   labels,
@@ -175,7 +126,7 @@ const FileManagerTitlebarBridge = ({
 }: {
   readonly renderModel: ReturnType<typeof deriveFileManagerSurfaceModel>;
   readonly labels: FileManagerSurfaceLabels;
-  readonly actions: FileManagerSurfaceActions;
+  readonly actions: NonNullable<ReturnType<typeof useFileManagerSurfaceActions>>;
   readonly searchIndex: FileManagerSearchIndexModel;
 }) => {
   const contribution = useMemo(
@@ -213,18 +164,38 @@ export const FileManagerSurface = ({
   const [pageKindOverride, setPageKindOverride] = useState<"favorites" | null>(null);
   const searchIndex = useFileManagerSearchIndexStatus(desktopApi);
 
-  const clearEntryDragPreview = (): void => {
-    const currentPreview = dragPreviewRef.current;
-    if (currentPreview === null) {
-      return;
-    }
-    dragPreviewRef.current = null;
-    currentPreview.remove();
-  };
+  const effectiveViewKind = pageKindOverride ?? state?.viewKind;
+  const renderModel = useMemo(
+    () =>
+      state === null
+        ? null
+        : deriveFileManagerSurfaceModel(
+          state,
+          chooser,
+          showLoadingSkeleton,
+          effectiveViewKind
+        ),
+    [chooser, effectiveViewKind, showLoadingSkeleton, state]
+  );
+
+  const actions = useFileManagerSurfaceActions({
+    state,
+    model,
+    onOpenFile,
+    chooser,
+    renderModel,
+    searchIndex,
+    setPageKindOverride,
+    dragPreviewRef
+  });
 
   useEffect(
     () => () => {
-      clearEntryDragPreview();
+      const currentPreview = dragPreviewRef.current;
+      if (currentPreview !== null) {
+        dragPreviewRef.current = null;
+        currentPreview.remove();
+      }
     },
     []
   );
@@ -233,274 +204,10 @@ export const FileManagerSurface = ({
     setPageKindOverride(null);
   }, [state?.instanceId]);
 
-  if (state === null) {
+  if (state === null || renderModel === null || actions === null) {
     return null;
   }
 
-  const renderModel = deriveFileManagerSurfaceModel(
-    state,
-    chooser,
-    showLoadingSkeleton,
-    pageKindOverride ?? state.viewKind
-  );
-
-  const onEntryDragEnd = (): void => {
-    clearEntryDragPreview();
-    clearFileManagerEntryDragPayload();
-  };
-
-  const applyEntryDragImage = (
-    event: ReactDragEvent<HTMLButtonElement>,
-    label: string
-  ): void => {
-    clearEntryDragPreview();
-    const preview = createFileManagerDragPreview(
-      event.currentTarget.ownerDocument,
-      label
-    );
-    dragPreviewRef.current = preview;
-    event.dataTransfer.setDragImage(preview, 14, 12);
-  };
-
-  const actions: FileManagerSurfaceActions = {
-    onGoBack: () => {
-      setPageKindOverride(null);
-      void model.goBack(state.instanceId);
-    },
-    onGoForward: () => {
-      setPageKindOverride(null);
-      void model.goForward(state.instanceId);
-    },
-    onGoUp: () => {
-      setPageKindOverride(null);
-      void model.goUp(state.instanceId);
-    },
-    onRefresh: () => {
-      void model.refresh(state.instanceId);
-    },
-    onOpenBreadcrumb: (path) => {
-      setPageKindOverride(null);
-      void model.openDirectory(state.instanceId, path);
-    },
-    onSetPresentationMode: (mode) => {
-      model.setPresentationMode(state.instanceId, mode);
-    },
-    onToggleFavorite: () => {
-      void model.toggleCurrentDirectoryFavorite(state.instanceId);
-    },
-    onBeginCreateDraft: (kind) => {
-      model.beginCreateDraft(state.instanceId, kind);
-    },
-    onMoveSelectionToTrash: () => {
-      void model.moveSelectionToTrash(state.instanceId);
-    },
-    onRestoreSelectionFromTrash: () => {
-      void model.restoreSelectionFromTrash(state.instanceId);
-    },
-    onEmptyTrash: () => {
-      void model.emptyTrash(state.instanceId);
-    },
-    onOpenHome: () => {
-      setPageKindOverride(null);
-      void model.openHome(state.instanceId);
-    },
-    onOpenFavorites: () => {
-      setPageKindOverride("favorites");
-    },
-    onOpenDownloads: () => {
-      setPageKindOverride(null);
-      void model.openDownloads(state.instanceId);
-    },
-    onOpenLocation: (location) => {
-      setPageKindOverride(null);
-      if (location.specialId === "trash") {
-        void model.openTrash(state.instanceId);
-        return;
-      }
-      if (location.specialId === "downloadManager") {
-        void model.openDownloads(state.instanceId);
-        return;
-      }
-      if (location.path !== undefined) {
-        void model.openDirectory(state.instanceId, location.path);
-      }
-    },
-    onOpenDirectoryPath: (path) => {
-      setPageKindOverride(null);
-      void model.openDirectory(state.instanceId, path);
-    },
-    onOpenDisk: (disk) => {
-      setPageKindOverride(null);
-      void model.openDirectory(state.instanceId, disk.mountPath);
-    },
-    onOpenRecentLocation: (recent) => {
-      setPageKindOverride(null);
-      void model.openDirectory(state.instanceId, recent.path);
-    },
-    onFavoriteContextMenu: (favorite, anchorX, anchorY) => {
-      model.openFavoriteContextMenu(state.instanceId, favorite, anchorX, anchorY);
-    },
-    onLocationContextMenu: (location, anchorX, anchorY) => {
-      model.openLocationContextMenu(state.instanceId, location, anchorX, anchorY);
-    },
-    onDiskContextMenu: (disk, anchorX, anchorY) => {
-      model.openDiskContextMenu(state.instanceId, disk, anchorX, anchorY);
-    },
-    onDeviceContextMenu: (device, anchorX, anchorY) => {
-      model.openDeviceContextMenu(state.instanceId, device, anchorX, anchorY);
-    },
-    onRecentLocationContextMenu: (recent, anchorX, anchorY) => {
-      model.openRecentLocationContextMenu(state.instanceId, recent, anchorX, anchorY);
-    },
-    onContentContextMenu: (anchorX, anchorY) => {
-      if (state.viewKind === "directory") {
-        model.openDirectoryContextMenu(state.instanceId, anchorX, anchorY);
-        return;
-      }
-      if (state.viewKind === "trash") {
-        model.openTrashContextMenu(state.instanceId, anchorX, anchorY);
-      }
-    },
-    onDraftValueChange: (value) => {
-      model.updateCreateDraft(state.instanceId, value);
-    },
-    onCommitCreateDraft: () => {
-      void model.commitCreateDraft(state.instanceId);
-    },
-    onCancelCreateDraft: () => {
-      model.cancelCreateDraft(state.instanceId);
-    },
-    onSelectEntry: (entryId) => {
-      model.selectEntry(state.instanceId, entryId);
-    },
-    onOpenEntry: (entry) => {
-      if (entry.kind === "directory") {
-        setPageKindOverride(null);
-        void model.openDirectory(state.instanceId, entry.path);
-        return;
-      }
-      onOpenFile(entry.path);
-    },
-    onEntryContextMenu: (entryId, anchorX, anchorY) => {
-      model.openEntryContextMenu(state.instanceId, entryId, anchorX, anchorY);
-    },
-    onDirectoryEntryDragStart: (event, entry) => {
-      applyEntryDragImage(event, entry.name);
-      writeFileManagerEntryDragPayload(
-        event.dataTransfer,
-        toDirectoryEntryDragPayload(entry)
-      );
-    },
-    onSelectTrashEntry: (entryId) => {
-      model.selectTrashEntry(state.instanceId, entryId);
-    },
-    onTrashEntryContextMenu: (entryId, anchorX, anchorY) => {
-      model.openTrashEntryContextMenu(state.instanceId, entryId, anchorX, anchorY);
-    },
-    onTrashEntryDragStart: (event, entry) => {
-      applyEntryDragImage(event, entry.name);
-      writeFileManagerEntryDragPayload(
-        event.dataTransfer,
-        toTrashEntryDragPayload(entry)
-      );
-    },
-    onEntryDragEnd,
-    onConfirmChooser: () => {
-      if (renderModel.chooserBar?.canConfirm !== true) {
-        return;
-      }
-      chooser?.onConfirm();
-    },
-    onDownloadUrlDraftChange: (value) => {
-      model.updateDownloadUrlDraft(state.instanceId, value);
-    },
-    onToggleDownloadAdvancedOptions: () => {
-      model.toggleDownloadAdvancedOptions(state.instanceId);
-    },
-    onDownloadAdvancedDraftChange: (patch) => {
-      model.updateDownloadAdvancedDraft(state.instanceId, patch);
-    },
-    onSubmitDownloadUrlDraft: () => {
-      void model.submitDownloadUrlDraft(state.instanceId);
-    },
-    onImportDownloadUrlsFromClipboard: () => {
-      const clipboard = navigator.clipboard;
-      if (clipboard === undefined) {
-        return;
-      }
-      void clipboard.readText()
-        .then((text) => {
-          if (text.trim().length === 0) {
-            return;
-          }
-          void model.submitDownloadText(state.instanceId, text);
-        })
-        .catch(() => undefined);
-    },
-    onImportExternalBrowserDownloads: () => {
-      void model.importExternalBrowserDownloads(state.instanceId);
-    },
-    onPauseDownload: (taskId) => {
-      void model.pauseDownload(taskId);
-    },
-    onResumeDownload: (taskId) => {
-      void model.resumeDownload(taskId);
-    },
-    onCancelDownload: (taskId) => {
-      void model.cancelDownload(taskId);
-    },
-    onRetryDownload: (taskId) => {
-      void model.retryDownload(taskId);
-    },
-    onRemoveDownload: (taskId) => {
-      void model.removeDownload(taskId);
-    },
-    onSetDownloadPriority: (taskId, priority) => {
-      void model.setDownloadPriority(taskId, priority);
-    },
-    onPauseAllDownloads: () => {
-      void model.pauseAllDownloads();
-    },
-    onResumeAllDownloads: () => {
-      void model.resumeAllDownloads();
-    },
-    onCancelAllDownloads: () => {
-      void model.cancelAllDownloads();
-    },
-    onOpenDownloadedFile: (taskId) => {
-      void model.openDownloadedFile(taskId);
-    },
-    onRevealDownloadedFile: (taskId) => {
-      void model.revealDownloadedFile(taskId);
-    },
-    onToggleDownloadSettings: () => {
-      void model.toggleDownloadSettings(state.instanceId);
-    },
-    onDownloadSettingsDraftChange: (patch) => {
-      model.updateDownloadSettingsDraft(state.instanceId, patch);
-    },
-    onAddDownloadSaveRule: () => {
-      model.addDownloadSaveRuleDraft(state.instanceId);
-    },
-    onRemoveDownloadSaveRule: (ruleId) => {
-      model.removeDownloadSaveRuleDraft(state.instanceId, ruleId);
-    },
-    onDownloadSaveRuleDraftChange: (ruleId, patch) => {
-      model.updateDownloadSaveRuleDraft(state.instanceId, ruleId, patch);
-    },
-    onSaveDownloadSettings: () => {
-      void model.saveDownloadSettings(state.instanceId);
-    },
-    onStartDownloadRemoteApi: () => {
-      void model.startDownloadRemoteApi(state.instanceId);
-    },
-    onStopDownloadRemoteApi: () => {
-      void model.stopDownloadRemoteApi(state.instanceId);
-    },
-    onRebuildSearchIndex: () => {
-      void searchIndex.rebuildSearchIndex();
-    }
-  };
   return (
     <>
       <FileManagerTitlebarBridge

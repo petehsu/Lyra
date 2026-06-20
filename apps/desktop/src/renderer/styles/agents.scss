@@ -289,7 +289,7 @@
 .lyra-agents-search-results,
 .lyra-agents-shell-command,
 .lyra-agents-task-card,
-.lyra-agents-edit-card-body,
+.lyra-agents-diff-viewport,
 .lyra-agents-diff-text,
 .lyra-agents-ask-card,
 .lyra-agents-permission-cmd,
@@ -1592,6 +1592,7 @@
 }
 
 .lyra-agents-tool-group-label {
+  min-width: 0;
   font-size: var(--lyra-unit-13);
   color: var(--lyra-text-secondary);
   transition: color 120ms ease;
@@ -1873,6 +1874,62 @@
   opacity: 1;
 }
 
+.lyra-agents-tool-call-head-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  min-width: 0;
+  flex: 1;
+}
+
+.lyra-agents-tool-call-edit-path {
+  min-width: 0;
+  margin-bottom: var(--lyra-unit-4);
+}
+
+.lyra-agents-tool-call-file-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--lyra-text-muted);
+  flex-shrink: 0;
+}
+
+.lyra-agents-tool-call-target,
+.lyra-agents-tool-call-file-path {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--lyra-font-mono);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 120ms ease;
+}
+
+.lyra-agents-tool-call-target {
+  font-size: var(--lyra-unit-13);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agents-tool-call-file-path {
+  font-size: calc(var(--lyra-unit-12) + var(--lyra-unit-0-5));
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-tool-call-target:hover,
+.lyra-agents-tool-call-file-path:hover {
+  color: var(--lyra-text-primary);
+}
+
+.lyra-agents-tool-call-target:focus-visible,
+.lyra-agents-tool-call-file-path:focus-visible {
+  outline: var(--lyra-stroke-strong) solid var(--lyra-app-focus);
+  outline-offset: var(--lyra-space-2);
+  border-radius: var(--lyra-unit-2);
+}
+
 .lyra-agents-tool-call-title {
   min-width: 0;
   font-family: var(--lyra-font-mono);
@@ -1882,6 +1939,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .lyra-agents-tool-call-meta {
@@ -2913,12 +2971,58 @@
   animation: tick-out-down 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-.lyra-agents-edit-card-body {
-  margin-top: var(--lyra-unit-6);
-  /* Diff lines align with lyra-agents-edit-card file name start: lyra-agents-icon-swap(16) + gap(8) = var(--lyra-unit-24) */
-  margin-left: var(--lyra-unit-24);
-  border-left: var(--lyra-unit-2) solid color-mix(in srgb, var(--lyra-app-border) 46%, transparent);
-  padding: var(--lyra-unit-2) 0;
+.lyra-agents-edit-details {
+  min-width: 0;
+}
+
+.lyra-agents-diff-viewport {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.lyra-agents-diff-viewport:hover {
+  scrollbar-color: var(--lyra-effect-scrollbar-soft) transparent;
+}
+
+.lyra-agents-diff-viewport::-webkit-scrollbar {
+  width: var(--lyra-unit-5);
+  height: var(--lyra-unit-5);
+}
+
+.lyra-agents-diff-viewport::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--lyra-unit-3);
+}
+
+.lyra-agents-diff-viewport:hover::-webkit-scrollbar-thumb {
+  background: var(--lyra-effect-scrollbar-soft);
+}
+
+.lyra-agents-diff-viewport-track {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 100%;
+  font-family: var(--lyra-font-mono);
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agents-diff-width-probe {
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.lyra-agents-diff-viewport .lyra-agents-diff-line {
+  height: var(--lyra-unit-20);
+  line-height: var(--lyra-unit-20);
+  flex-shrink: 0;
+  width: max-content;
+  min-width: 100%;
 }
 
 .lyra-agents-diff-hunk {
@@ -2931,8 +3035,8 @@
 
 .lyra-agents-diff-line {
   display: grid;
-  grid-template-columns: var(--lyra-unit-42) var(--lyra-unit-16) 1fr;
-  padding: 0 0 0 var(--lyra-unit-8);
+  grid-template-columns: var(--lyra-unit-42) var(--lyra-unit-16) max-content;
+  padding: 0 var(--lyra-unit-8) 0 var(--lyra-unit-8);
 }
 
 .lyra-agents-diff-line-add {
@@ -2965,7 +3069,6 @@
 
 .lyra-agents-diff-text {
   white-space: pre;
-  overflow-x: auto;
 }
 
 /* -------- Diff Stats Pill (floating, same style as lyra-agents-todo-pill) -------- */
@@ -5287,12 +5390,8 @@
     padding-left: var(--lyra-unit-20);
   }
 
-  .lyra-agents-edit-card-body {
-    margin-left: var(--lyra-unit-20);
-  }
-
   .lyra-agents-diff-line {
-    grid-template-columns: var(--lyra-unit-32) var(--lyra-unit-14) 1fr;
+    grid-template-columns: var(--lyra-unit-32) var(--lyra-unit-14) max-content;
     font-size: var(--lyra-unit-11);
   }
 
@@ -5406,11 +5505,7 @@
     padding-left: var(--lyra-unit-18);
   }
 
-  .lyra-agents-edit-card-body {
-    margin-left: var(--lyra-unit-18);
-  }
-
-  .lyra-agents-edit-card-file {
+  .lyra-agents-tool-call-file-path {
     font-size: var(--lyra-unit-11-5);
   }
 
@@ -5419,7 +5514,7 @@
   }
 
   .lyra-agents-diff-line {
-    grid-template-columns: var(--lyra-unit-28) var(--lyra-unit-12) 1fr;
+    grid-template-columns: var(--lyra-unit-28) var(--lyra-unit-12) max-content;
     font-size: var(--lyra-unit-10-5);
     padding-left: var(--lyra-unit-4);
   }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const INDEX_VERSION: u32 = 1;
+pub const INDEX_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +46,7 @@ pub struct CodeSearchTextParams {
     pub glob: Option<String>,
     pub limit: usize,
     pub case_sensitive: bool,
+    pub regex: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,7 +169,6 @@ pub struct IndexedFile {
     pub extension: Option<String>,
     pub modified_at: u64,
     pub size_bytes: u64,
-    pub content: String,
     pub symbols: Vec<IndexedSymbol>,
 }
 

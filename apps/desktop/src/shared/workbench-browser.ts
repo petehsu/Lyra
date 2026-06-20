@@ -1700,6 +1700,11 @@ export type WorkbenchBrowserEvent =
       readonly hover: WorkbenchBrowserHoveredElementInfo;
     }
   | {
+      readonly kind: "element-picker-select";
+      readonly menu: WorkbenchBrowserPageContextMenuPayload;
+      readonly tabTitle?: string;
+    }
+  | {
       readonly kind: "chrome-popover-state";
       readonly tabId: string;
       readonly popoverKind: "security" | "find" | "omnibox";

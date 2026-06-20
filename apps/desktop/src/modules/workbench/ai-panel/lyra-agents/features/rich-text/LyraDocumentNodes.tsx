@@ -5,6 +5,10 @@ import type {
   RenderBlock
 } from "../../../../../../shared/render";
 import {
+  isSafeRenderImageSrc,
+  isSafeRenderUrl
+} from "../../../../../../shared/render-safety";
+import {
   ActionTargetButton,
   ClickableImage,
   classifyActionTarget
@@ -45,6 +49,13 @@ const renderInlineNode = (node: InlineRenderNode, index: number): ReactNode => {
     case "strikethrough":
       return <s key={index}>{renderInlineNodes(node.children)}</s>;
     case "link": {
+      if (!isSafeRenderUrl(node.href)) {
+        return (
+          <span key={index} className="lyra-agents-md-link">
+            {renderInlineNodes(node.children)}
+          </span>
+        );
+      }
       const target = classifyActionTarget(node.href);
       if (target !== null) {
         return (
@@ -60,6 +71,10 @@ const renderInlineNode = (node: InlineRenderNode, index: number): ReactNode => {
       );
     }
     case "image":
+      if (!isSafeRenderImageSrc(node.src)) {
+        const label = node.alt.trim().length > 0 ? `[${node.alt}]` : "[image]";
+        return <span key={index}>{label}</span>;
+      }
       return (
         <ClickableImage
           key={index}

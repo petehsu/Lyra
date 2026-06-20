@@ -24,19 +24,14 @@ export const buildPageDragCitationInstallScript = (tabId: string): string => {
 
   ${PAGE_ELEMENT_CONTEXT_HELPERS}
 
-  const trim = (value) => {
-    if (typeof value !== "string") return "";
-    return value.trim();
-  };
-
   const resolveMediaType = (target) => {
     if (!(target instanceof Element)) return "none";
     if (target.closest("img,picture,svg")) return "image";
     if (target.closest("video")) return "video";
     if (target.closest("audio")) return "audio";
     if (target.closest("canvas")) return "canvas";
-    if (target.closest("a[href]")) return "link";
-    if (target.closest("input,textarea,[contenteditable='true'],[contenteditable='']")) return "editable";
+    if (target.closest("input[type='file']")) return "file";
+    if (target.closest("object,embed")) return "plugin";
     return "none";
   };
 

@@ -345,7 +345,8 @@ export const createWorkbenchBrowserIpcBridge = ({
   loginManager,
   accessibilityNative,
   workbenchState,
-  performanceScheduler
+  performanceScheduler,
+  deferLayoutSync
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
@@ -353,6 +354,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   readonly accessibilityNative?: AccessibilityNativeLoadResult;
   readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
+  readonly deferLayoutSync?: (flush: () => void) => boolean;
 }): WorkbenchBrowserIpcBridge => {
   registerBrowserPageFramePreload();
   const osAxAdapter = createOsAxAdapter(accessibilityNative);
@@ -381,11 +383,28 @@ export const createWorkbenchBrowserIpcBridge = ({
     )
   });
 
+  let pendingDeferredLayoutSnapshot: WorkbenchBrowserLayoutSnapshot | null = null;
+  const flushDeferredLayoutSync = (): void => {
+    const snapshot = pendingDeferredLayoutSnapshot;
+    pendingDeferredLayoutSnapshot = null;
+    if (snapshot !== null) {
+      manager.syncLayout(snapshot);
+    }
+  };
+  const syncLayout = (snapshot: WorkbenchBrowserLayoutSnapshot): void => {
+    pendingDeferredLayoutSnapshot = snapshot;
+    if (deferLayoutSync?.(flushDeferredLayoutSync) === true) {
+      return;
+    }
+    pendingDeferredLayoutSnapshot = null;
+    manager.syncLayout(snapshot);
+  };
+
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserSyncTopology, (_event, snapshot: unknown) => {
     manager.syncTopology(snapshot as WorkbenchBrowserTopologySnapshot);
   });
   ipcMain.on(LYRA_CHANNELS.workbenchBrowserSyncLayout, (_event, snapshot: unknown) => {
-    manager.syncLayout(snapshot as WorkbenchBrowserLayoutSnapshot);
+    syncLayout(snapshot as WorkbenchBrowserLayoutSnapshot);
   });
   ipcMain.handle(LYRA_CHANNELS.workbenchBrowserNavigate, async (_event, request: unknown) => {
     return await manager.navigate(request as WorkbenchBrowserNavigateRequest);
@@ -577,7 +596,7 @@ export const createWorkbenchBrowserIpcBridge = ({
       manager.dispose();
     },
     syncTopology: manager.syncTopology,
-    syncLayout: manager.syncLayout,
+    syncLayout,
     navigate: manager.navigate,
     goBack: manager.goBack,
     goForward: manager.goForward,

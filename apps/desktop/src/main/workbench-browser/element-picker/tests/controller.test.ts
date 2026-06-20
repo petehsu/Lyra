@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { createWorkbenchBrowserElementPickerController } from "../controller";
+import { WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX } from "../types";
 import type { WorkbenchBrowserFrameDescriptor } from "../../types";
 
 const mainFrame = (origin = "https://example.com"): WorkbenchBrowserFrameDescriptor => ({
@@ -88,6 +89,60 @@ describe("browser element picker controller", () => {
         mode: "inspect",
         cause: "tab_switched"
       }
+    });
+  });
+
+  test("publishes selected element context as a page citation payload", async () => {
+    const publishEvent = vi.fn();
+    const controller = createWorkbenchBrowserElementPickerController({
+      host: {
+        publishEvent,
+        listFrames: () => [mainFrame()],
+        executeFrameScript: vi.fn(async () => undefined)
+      }
+    });
+
+    await controller.setMode({ tabId: "browser-tab-4", enabled: true });
+    controller.handleConsoleMessage(
+      "browser-tab-4",
+      WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX + JSON.stringify({
+        kind: "select",
+        frameTreeNodeId: 1,
+        anchorX: 120,
+        anchorY: 80,
+        pageUrl: "https://example.com/docs",
+        pageTitle: "Docs",
+        frameUrl: "https://example.com/docs",
+        mediaType: "none",
+        isEditable: false,
+        selectionText: "Install Lyra",
+        elementTag: "button",
+        elementSelector: "#app > button:nth-of-type(1)",
+        elementRole: "button",
+        elementAriaLabel: "Install"
+      })
+    );
+
+    expect(publishEvent).toHaveBeenCalledWith({
+      kind: "element-picker-select",
+      menu: {
+        tabId: "browser-tab-4",
+        anchorX: 120,
+        anchorY: 80,
+        pageUrl: "https://example.com/docs",
+        pageTitle: "Docs",
+        frameUrl: "https://example.com/docs",
+        mediaType: "none",
+        isEditable: false,
+        canGoBack: false,
+        canGoForward: false,
+        selectionText: "Install Lyra",
+        elementTag: "button",
+        elementSelector: "#app > button:nth-of-type(1)",
+        elementRole: "button",
+        elementAriaLabel: "Install"
+      },
+      tabTitle: "Docs"
     });
   });
 });

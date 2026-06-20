@@ -1,6 +1,7 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { FileManagerEntry } from "../../../shared/file-manager";
 import type {
+  FileEditorRevealLocation,
   FileEditorLabels,
   FileEditorModel
 } from "../file-editor";
@@ -25,6 +26,7 @@ export type AgentProjectTreeAppState = {
   readonly agentSessionId: string;
   readonly rootPath: string;
   readonly title: string;
+  readonly selectedPath: string | null;
   readonly selectedFilePath: string | null;
   readonly editorInstanceId: string | null;
   readonly expandedPaths: readonly string[];
@@ -41,7 +43,12 @@ export type AgentProjectTreeModel = {
     }
   ) => void;
   readonly syncTabInstances: (instanceIds: readonly string[]) => void;
-  readonly openFile: (instanceId: string, filePath: string) => Promise<void>;
+  readonly revealPath: (instanceId: string, path: string) => void;
+  readonly openFile: (
+    instanceId: string,
+    filePath: string,
+    location?: FileEditorRevealLocation
+  ) => Promise<void>;
   readonly toggleDirectory: (instanceId: string, path: string) => void;
   readonly updateRoot: (
     instanceId: string,

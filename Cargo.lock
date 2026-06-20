@@ -1470,6 +1470,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "encoding_rs_io"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cc3c5651fb62ab8aa3103998dade57efdd028544bd300516baa31840c252a83"
+dependencies = [
+ "encoding_rs",
+]
+
+[[package]]
 name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2035,6 +2044,43 @@ dependencies = [
  "log",
  "regex-automata",
  "regex-syntax",
+]
+
+[[package]]
+name = "grep-matcher"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36d7b71093325ab22d780b40d7df3066ae4aebb518ba719d38c697a8228a8023"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "grep-regex"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce0c256c3ad82bcc07b812c15a45ec1d398122e8e15124f96695234db7112ef"
+dependencies = [
+ "bstr",
+ "grep-matcher",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "grep-searcher"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac63295322dc48ebb20a25348147905d816318888e64f531bfc2a2bc0577dc34"
+dependencies = [
+ "bstr",
+ "encoding_rs",
+ "encoding_rs_io",
+ "grep-matcher",
+ "log",
+ "memchr",
+ "memmap2",
 ]
 
 [[package]]
@@ -3108,12 +3154,21 @@ dependencies = [
 name = "lyra-code-intel-core"
 version = "0.1.0"
 dependencies = [
+ "arborium-tree-sitter",
  "globset",
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
  "ignore",
  "once_cell",
  "regex",
  "serde",
  "serde_json",
+ "tempfile",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
 ]
 
 [[package]]
@@ -3306,6 +3361,7 @@ dependencies = [
  "arborium",
  "blake3",
  "criterion",
+ "idna",
  "lru",
  "merman",
  "once_cell",
@@ -3315,9 +3371,11 @@ dependencies = [
  "ratex-svg",
  "ratex-types",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]
@@ -5875,10 +5933,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-javascript"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf40bf599e0416c16c125c3cec10ee5ddc7d1bb8b0c60fa5c4de249ad34dc1b1"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-language"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-typescript"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
 
 [[package]]
 name = "try-lock"

@@ -45,6 +45,7 @@ describe("useWorkbenchFileActions", () => {
 
     const { result } = renderHook(() =>
       useWorkbenchFileActions({
+        desktopApi: null,
         activeTab: undefined,
         tabsModel,
         fileManagerModel: {} as FileManagerModel,
@@ -92,6 +93,7 @@ describe("useWorkbenchFileActions", () => {
 
     const { result } = renderHook(() =>
       useWorkbenchFileActions({
+        desktopApi: null,
         activeTab: undefined,
         tabsModel,
         fileManagerModel: {} as FileManagerModel,
@@ -110,5 +112,110 @@ describe("useWorkbenchFileActions", () => {
       appInstanceId: "image-1",
     }));
     expect(imageViewerModel.openImage).toHaveBeenCalledWith("image-1", "/tmp/cat.png");
+  });
+
+  test("reveals directories by opening the directory in a reusable file manager tab", async () => {
+    const fileManagerModel = {
+      createInstance: vi.fn(() => ({
+        appId: "file-manager" as const,
+        appInstanceId: "files-1",
+        title: "Files",
+        iconKey: "file-manager-home" as const,
+      })),
+      ensureInstance: vi.fn(),
+      openDirectory: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn(),
+      selectEntry: vi.fn(),
+    } as unknown as FileManagerModel;
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn(),
+    } as unknown as WorkspaceTabsModel;
+    const desktopApi = {
+      files: {
+        statFile: vi.fn().mockResolvedValue({
+          path: "/project/src",
+          exists: true,
+          isDirectory: true,
+          readOnly: false,
+          sizeBytes: 0,
+        }),
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useWorkbenchFileActions({
+        desktopApi: desktopApi as never,
+        activeTab: undefined,
+        tabsModel,
+        fileManagerModel,
+        fileEditorModel: {} as FileEditorModel,
+        imageViewerModel: {} as ImageViewerModel,
+      })
+    );
+
+    await act(async () => {
+      await result.current.onRevealPathInFileManager("/project/src");
+    });
+
+    expect(fileManagerModel.openDirectory).toHaveBeenCalledWith("files-1", "/project/src", false);
+    expect(fileManagerModel.selectEntry).not.toHaveBeenCalled();
+  });
+
+  test("reveals files by opening the parent directory and selecting the entry", async () => {
+    const fileManagerModel = {
+      createInstance: vi.fn(() => ({
+        appId: "file-manager" as const,
+        appInstanceId: "files-1",
+        title: "Files",
+        iconKey: "file-manager-home" as const,
+      })),
+      ensureInstance: vi.fn(),
+      openDirectory: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn(() => ({
+        entries: [
+          {
+            id: "entry-1",
+            path: "/project/src/App.tsx",
+          },
+        ],
+      })),
+      selectEntry: vi.fn(),
+    } as unknown as FileManagerModel;
+    const tabsModel = {
+      tabs: [],
+      openAppTab: vi.fn(),
+      setActiveTab: vi.fn(),
+    } as unknown as WorkspaceTabsModel;
+    const desktopApi = {
+      files: {
+        statFile: vi.fn().mockResolvedValue({
+          path: "/project/src/App.tsx",
+          exists: true,
+          isDirectory: false,
+          readOnly: false,
+          sizeBytes: 32,
+        }),
+      },
+    };
+
+    const { result } = renderHook(() =>
+      useWorkbenchFileActions({
+        desktopApi: desktopApi as never,
+        activeTab: undefined,
+        tabsModel,
+        fileManagerModel,
+        fileEditorModel: {} as FileEditorModel,
+        imageViewerModel: {} as ImageViewerModel,
+      })
+    );
+
+    await act(async () => {
+      await result.current.onRevealPathInFileManager("/project/src/App.tsx");
+    });
+
+    expect(fileManagerModel.openDirectory).toHaveBeenCalledWith("files-1", "/project/src", false);
+    expect(fileManagerModel.selectEntry).toHaveBeenCalledWith("files-1", "entry-1");
   });
 });

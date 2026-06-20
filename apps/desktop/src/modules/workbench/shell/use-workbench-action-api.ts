@@ -31,6 +31,7 @@ export type WorkbenchActionApi = {
 export type WorkbenchPresentationState = {
   readonly isMac: boolean;
   readonly isMaximized: boolean;
+  readonly isFullScreen: boolean;
   readonly isAiPanelVisible: boolean;
   readonly isTerminalPanelVisible: boolean;
   readonly terminalPanelSide: "top" | "bottom";

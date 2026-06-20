@@ -5,6 +5,7 @@ import type {
   WorkbenchBrowserEvent,
   WorkbenchBrowserHoveredElementInfo
 } from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserPageContextMenuPayload } from "../../../shared/workbench-browser";
 import { createWorkbenchElementPickerOverlayRuntime } from "./overlay-runtime";
 import type {
   WorkbenchElementPickerConsoleMessage,
@@ -103,6 +104,36 @@ export const createWorkbenchManualElementPickerSession = ({
           ...(message.crossOriginBoundary === true ? { crossOriginBoundary: true } : {})
         };
         host.publishEvent({ kind: "element-picker-hover", hover });
+        return { disableRequested: false };
+      }
+
+      if (message.kind === "select") {
+        const menu: WorkbenchBrowserPageContextMenuPayload = {
+          tabId,
+          anchorX: message.anchorX,
+          anchorY: message.anchorY,
+          pageUrl: message.pageUrl,
+          pageTitle: message.pageTitle,
+          mediaType: message.mediaType,
+          isEditable: message.isEditable,
+          canGoBack: false,
+          canGoForward: false,
+          ...(message.selectionText === undefined ? {} : { selectionText: message.selectionText }),
+          ...(message.linkUrl === undefined ? {} : { linkUrl: message.linkUrl }),
+          ...(message.linkText === undefined ? {} : { linkText: message.linkText }),
+          ...(message.srcUrl === undefined ? {} : { srcUrl: message.srcUrl }),
+          ...(message.frameUrl === undefined ? {} : { frameUrl: message.frameUrl }),
+          ...(message.elementTag === undefined ? {} : { elementTag: message.elementTag }),
+          ...(message.elementSelector === undefined ? {} : { elementSelector: message.elementSelector }),
+          ...(message.elementId === undefined ? {} : { elementId: message.elementId }),
+          ...(message.elementRole === undefined ? {} : { elementRole: message.elementRole }),
+          ...(message.elementAriaLabel === undefined ? {} : { elementAriaLabel: message.elementAriaLabel })
+        };
+        host.publishEvent({
+          kind: "element-picker-select",
+          menu,
+          tabTitle: message.pageTitle
+        });
         return { disableRequested: false };
       }
 

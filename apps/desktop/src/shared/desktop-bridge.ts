@@ -673,6 +673,7 @@ export const LYRA_CHANNELS = {
 
 export type WindowStatePayload = {
   readonly isMaximized: boolean;
+  readonly isFullScreen?: boolean;
   readonly isFocused: boolean;
 };
 

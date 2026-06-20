@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseUnifiedDiff } from "./diff";
+import { parseUnifiedDiff, reconstructContentAfterDiff } from "./diff";
 
 describe("parseUnifiedDiff", () => {
   test("parses diffy-style hunks with file headers", () => {
@@ -26,5 +26,19 @@ describe("parseUnifiedDiff", () => {
       additions: 0,
       deletions: 0
     });
+  });
+
+  test("reconstructs post-edit content from hunks", () => {
+    const diff = [
+      "--- src/a.ts",
+      "+++ src/a.ts",
+      "@@ -1,2 +1,3 @@",
+      " line",
+      "-old",
+      "+new",
+      "+added"
+    ].join("\n");
+    const parsed = parseUnifiedDiff(diff);
+    expect(reconstructContentAfterDiff("line\nold", parsed.hunks)).toBe("line\nnew\nadded");
   });
 });

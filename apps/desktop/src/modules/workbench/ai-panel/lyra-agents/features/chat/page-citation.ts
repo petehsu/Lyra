@@ -97,11 +97,11 @@ export const enrichPageCitationFromWorkspaceTab = (
   const iconFields = pageCitationIconFieldsFromWorkspaceTab(tab);
   return {
     ...citation,
-    tabPageKind: iconFields.tabPageKind,
-    faviconUrl: iconFields.faviconUrl,
-    appId: iconFields.appId,
-    appIconKey: iconFields.appIconKey,
-    sourceKind: citation.sourceKind ?? iconFields.sourceKind,
+    tabPageKind: iconFields.tabPageKind ?? null,
+    faviconUrl: iconFields.faviconUrl ?? null,
+    appId: iconFields.appId ?? null,
+    appIconKey: iconFields.appIconKey ?? null,
+    sourceKind: citation.sourceKind ?? "workspace-tab",
     tabTitle: tab.title.trim().length > 0 ? tab.title.trim() : citation.tabTitle
   };
 };

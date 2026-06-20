@@ -16,6 +16,24 @@ const messageRichness = (message: AgentMessage): number => {
 const chooseRicherMessage = (left: AgentMessage, right: AgentMessage): AgentMessage =>
   messageRichness(left) >= messageRichness(right) ? left : right;
 
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
+const toolActivityRichness = (tool: AgentToolActivity): number => {
+  const output = asRecord(tool.output);
+  const raw = asRecord(output.raw);
+  const diff = typeof raw.diff === "string" ? raw.diff.length : 0;
+  const content = typeof output.content === "string" ? output.content.length : 0;
+  const running = tool.status === "running" ? 1_000_000 : 0;
+  const preview = raw.preview === true ? 10_000 : 0;
+  return running + preview + diff * 100 + Math.min(content, 5_000);
+};
+
+const chooseRicherTool = (left: AgentToolActivity, right: AgentToolActivity): AgentToolActivity =>
+  toolActivityRichness(left) >= toolActivityRichness(right) ? left : right;
+
 export const mergeRunningSessionSnapshot = (
   current: AgentSessionSnapshot,
   incoming: AgentSessionSnapshot
@@ -42,7 +60,11 @@ export const mergeRunningSessionSnapshot = (
 
   const toolsById = new Map(current.tools.map((tool) => [tool.id, tool]));
   for (const tool of incoming.tools) {
-    toolsById.set(tool.id, tool);
+    const existing = toolsById.get(tool.id);
+    toolsById.set(
+      tool.id,
+      existing === undefined ? tool : chooseRicherTool(existing, tool)
+    );
   }
 
   return {
@@ -51,11 +73,6 @@ export const mergeRunningSessionSnapshot = (
     tools: [...toolsById.values()]
   };
 };
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 
 const upsertTool = (
   tools: readonly AgentToolActivity[],
@@ -146,6 +163,18 @@ const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
 };
 
+const lastAssistantMessageId = (
+  messages: readonly AgentSessionSnapshot["messages"]
+): string | null => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "assistant") {
+      return message.id;
+    }
+  }
+  return null;
+};
+
 const appendToolBlockToMessage = (
   blocks: readonly AgentMessageBlock[] | undefined,
   toolId: string
@@ -226,12 +255,13 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "toolStarted") {
+    const targetMessageId = event.messageId ?? lastAssistantMessageId(session.messages);
     return {
       ...session,
-      messages: event.messageId === undefined || event.messageId === null
+      messages: targetMessageId === null
         ? session.messages
         : session.messages.map((message) =>
-            message.id === event.messageId
+            message.id === targetMessageId
               ? {
                   ...message,
                   blocks: appendToolBlockToMessage(message.blocks, event.tool.id)
@@ -287,8 +317,21 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "toolUpdated") {
+    const targetMessageId = event.tool.status === "running"
+      ? lastAssistantMessageId(session.messages)
+      : null;
     return {
       ...session,
+      messages: targetMessageId === null || targetMessageId === undefined
+        ? session.messages
+        : session.messages.map((message) =>
+            message.id === targetMessageId
+              ? {
+                  ...message,
+                  blocks: appendToolBlockToMessage(message.blocks, event.tool.id)
+                }
+              : message
+          ),
       tools: upsertTool(session.tools, event.tool),
       updatedAt: new Date().toISOString()
     };

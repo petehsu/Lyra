@@ -9,6 +9,7 @@ import type {
   WorkbenchBrowserHoveredElementInfo,
   WorkbenchBrowserSetElementPickerModeRequest
 } from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserPageContextMediaType } from "../../../shared/workbench-browser";
 import type { WorkbenchBrowserFrameDescriptor } from "../types";
 
 export const WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX = "__LYRA_PICKER__";
@@ -42,9 +43,31 @@ export type WorkbenchElementPickerConsoleHoverMessage = {
   readonly crossOriginBoundary?: boolean;
 };
 
+export type WorkbenchElementPickerConsoleSelectMessage = {
+  readonly kind: "select";
+  readonly frameTreeNodeId: number;
+  readonly anchorX: number;
+  readonly anchorY: number;
+  readonly pageUrl: string;
+  readonly pageTitle: string;
+  readonly mediaType: WorkbenchBrowserPageContextMediaType;
+  readonly isEditable: boolean;
+  readonly selectionText?: string;
+  readonly linkUrl?: string;
+  readonly linkText?: string;
+  readonly srcUrl?: string;
+  readonly frameUrl?: string;
+  readonly elementTag?: string;
+  readonly elementSelector?: string;
+  readonly elementId?: string;
+  readonly elementRole?: string;
+  readonly elementAriaLabel?: string;
+};
+
 export type WorkbenchElementPickerConsoleMessage =
   | WorkbenchElementPickerConsoleStateMessage
-  | WorkbenchElementPickerConsoleHoverMessage;
+  | WorkbenchElementPickerConsoleHoverMessage
+  | WorkbenchElementPickerConsoleSelectMessage;
 
 export type WorkbenchElementPickerSessionHost = {
   readonly publishEvent: (event: WorkbenchBrowserEvent) => void;

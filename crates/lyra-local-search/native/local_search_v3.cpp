@@ -1,4 +1,5 @@
 #include "local_search_native.h"
+#include "local_search_subsequence.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -26,13 +27,6 @@ constexpr uint32_t PATH_SUBSTRING_SCORE = 760000;
 constexpr uint32_t FUZZY_SCORE_BASE = 420000;
 constexpr uint32_t VENDOR_PENALTY = 220000;
 constexpr uint32_t DIRECTORY_PENALTY = 40000;
-
-static unsigned char lower_ascii(unsigned char value) {
-    if (value >= 'A' && value <= 'Z') {
-        return static_cast<unsigned char>(value + ('a' - 'A'));
-    }
-    return value;
-}
 
 static std::string slice_string(const uint8_t *bytes, size_t len) {
     if (bytes == nullptr || len == 0) {
@@ -92,51 +86,6 @@ static LyraLocalSearchV3Score no_score() {
     return out;
 }
 
-static uint32_t subsequence_score_bytes(const std::string &haystack, const std::string &needle) {
-    if (haystack.empty() || needle.empty()) {
-        return 0;
-    }
-
-    size_t cursor = 0;
-    size_t gaps = 0;
-    size_t contiguous = 0;
-    size_t best_contiguous = 0;
-
-    for (size_t n = 0; n < needle.size(); n++) {
-        unsigned char needle_ch = lower_ascii(static_cast<unsigned char>(needle[n]));
-        bool found = false;
-        size_t found_at = cursor;
-
-        for (size_t h = cursor; h < haystack.size(); h++) {
-            if (lower_ascii(static_cast<unsigned char>(haystack[h])) == needle_ch) {
-                found = true;
-                found_at = h;
-                break;
-            }
-        }
-
-        if (!found) {
-            return 0;
-        }
-
-        if (found_at == cursor) {
-            contiguous++;
-        } else {
-            gaps += found_at - cursor;
-            best_contiguous = std::max(best_contiguous, contiguous);
-            contiguous = 1;
-        }
-        cursor = found_at + 1;
-    }
-
-    best_contiguous = std::max(best_contiguous, contiguous);
-    uint32_t coverage = static_cast<uint32_t>((needle.size() * 1000u) / haystack.size());
-    uint32_t continuity = static_cast<uint32_t>((best_contiguous * 500u) / needle.size());
-    uint32_t penalty = gaps > 240u ? 240u : static_cast<uint32_t>(gaps);
-    uint32_t score = 700u + coverage + continuity;
-    return score <= penalty ? 1 : score - penalty;
-}
-
 } // namespace
 
 extern "C" LyraLocalSearchV3Score lyra_local_search_v3_score_entry(
@@ -187,8 +136,18 @@ extern "C" LyraLocalSearchV3Score lyra_local_search_v3_score_entry(
         return make_score(PATH_SUBSTRING_SCORE, MATCH_PATH, SOURCE_INDEX, is_directory, vendor);
     }
     if (enable_fuzzy != 0) {
-        uint32_t basename_fuzzy = subsequence_score_bytes(name_string, query_string);
-        uint32_t path_fuzzy = subsequence_score_bytes(path_string, query_string) / 2u;
+        uint32_t basename_fuzzy = lyra_ls_subsequence_score(
+            reinterpret_cast<const uint8_t *>(name_string.data()),
+            name_string.size(),
+            reinterpret_cast<const uint8_t *>(query_string.data()),
+            query_string.size()
+        );
+        uint32_t path_fuzzy = lyra_ls_subsequence_score(
+            reinterpret_cast<const uint8_t *>(path_string.data()),
+            path_string.size(),
+            reinterpret_cast<const uint8_t *>(query_string.data()),
+            query_string.size()
+        ) / 2u;
         uint32_t fuzzy = std::max(basename_fuzzy, path_fuzzy);
         if (fuzzy > 900u) {
             return make_score(FUZZY_SCORE_BASE + fuzzy, MATCH_FUZZY, SOURCE_INDEX, is_directory, vendor);

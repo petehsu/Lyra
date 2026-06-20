@@ -41,6 +41,7 @@ const createState = (overrides: Partial<AgentProjectTreeAppState> = {}): AgentPr
   agentSessionId: "session-1",
   rootPath: "/Users/petehsu/Documents/Lyra",
   title: "Lyra",
+  selectedPath: null,
   selectedFilePath: null,
   editorInstanceId: null,
   expandedPaths: ["/Users/petehsu/Documents/Lyra"],
@@ -109,6 +110,7 @@ describe("AgentProjectTreeSurface", () => {
       getState: vi.fn(() => createState()),
       ensureInstance: vi.fn(),
       syncTabInstances: vi.fn(),
+      revealPath: vi.fn(),
       openFile: vi.fn().mockResolvedValue(undefined),
       toggleDirectory: vi.fn(),
       updateRoot: vi.fn()
@@ -159,6 +161,7 @@ describe("AgentProjectTreeSurface", () => {
       getState: vi.fn(() => createState()),
       ensureInstance: vi.fn(),
       syncTabInstances: vi.fn(),
+      revealPath: vi.fn(),
       openFile: vi.fn().mockResolvedValue(undefined),
       toggleDirectory: vi.fn(),
       updateRoot: vi.fn()
@@ -182,6 +185,37 @@ describe("AgentProjectTreeSurface", () => {
 });
 
 describe("useAgentProjectTreeModel", () => {
+  test("reveals a project path by selecting it and expanding its ancestors", () => {
+    const fileEditorModel = createFileEditorModel();
+    const onMetaChange = vi.fn();
+    const { result } = renderHook(() =>
+      useAgentProjectTreeModel({ fileEditorModel, onMetaChange })
+    );
+
+    act(() => {
+      result.current.ensureInstance("tree-1", {
+        agentSessionId: "session-1",
+        rootPath: "/project",
+        title: "project"
+      });
+    });
+
+    act(() => {
+      result.current.revealPath("tree-1", "/project/src/components");
+    });
+
+    const state = result.current.getState("tree-1");
+    expect(state?.selectedPath).toBe("/project/src/components");
+    expect(state?.selectedFilePath).toBeNull();
+    expect(state?.editorInstanceId).toBeNull();
+    expect(state?.expandedPaths).toEqual([
+      "/project",
+      "/project/src",
+      "/project/src/components"
+    ]);
+    expect(fileEditorModel.openFile).not.toHaveBeenCalled();
+  });
+
   test("keeps embedded file editor instances outside normal file-editor tabs", async () => {
     const fileEditorModel = createFileEditorModel();
     const onMetaChange = vi.fn();
@@ -198,20 +232,29 @@ describe("useAgentProjectTreeModel", () => {
     });
 
     await act(async () => {
-      await result.current.openFile("tree-1", "/project/package.json");
+      await result.current.openFile("tree-1", "/project/src/package.json", { line: 12 });
     });
 
     expect(fileEditorModel.ensureInstance).toHaveBeenCalledWith(
       "agent-project-tree-editor-tree-1",
       {
-        filePath: "/project/package.json",
+        filePath: "/project/src/package.json",
         fileSessionId: "agent-project-tree:session-1"
       }
     );
     expect(fileEditorModel.openFile).toHaveBeenCalledWith(
       "agent-project-tree-editor-tree-1",
-      "/project/package.json"
+      "/project/src/package.json"
     );
+    expect(fileEditorModel.revealLocation).toHaveBeenCalledWith(
+      "agent-project-tree-editor-tree-1",
+      { line: 12 }
+    );
+    expect(result.current.getState("tree-1")?.selectedPath).toBe("/project/src/package.json");
+    expect(result.current.getState("tree-1")?.expandedPaths).toEqual([
+      "/project",
+      "/project/src"
+    ]);
     expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([
       "agent-project-tree-editor-tree-1"
     ]);

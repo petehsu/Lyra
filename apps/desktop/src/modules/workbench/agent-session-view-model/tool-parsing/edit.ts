@@ -8,7 +8,15 @@ import {
   toolInputRecord,
   toolOutputText
 } from "./common";
-import { parseUnifiedDiff } from "./diff";
+import { parseUnifiedDiff, reconstructContentAfterDiff } from "./diff";
+
+const EDIT_TOOL_PATH_MARKERS = [
+  "/tools/filesystem/write_file",
+  "/tools/filesystem/edit_file",
+  "/tools/filesystem/strict_edit",
+  "/tools/filesystem/multi_edit",
+  "/tools/filesystem/apply_patch"
+] as const;
 
 const diffTextFromTool = (tool: AgentToolActivity): string | null => {
   const output = asRecord(tool.output);
@@ -34,7 +42,7 @@ const diffTextFromTool = (tool: AgentToolActivity): string | null => {
   return null;
 };
 
-const editFilePathFromTool = (tool: AgentToolActivity): string => {
+export const editFilePathFromTool = (tool: AgentToolActivity): string => {
   const output = asRecord(tool.output);
   const rawOutput = asRecord(output.raw);
   const changedFiles = rawOutput.changedFiles;
@@ -51,6 +59,43 @@ const editFilePathFromTool = (tool: AgentToolActivity): string => {
     ?? stringField(input, "path")
     ?? toolFsPath(tool)
     ?? "Edited file";
+};
+
+export const isEditToolActivity = (tool: AgentToolActivity): boolean => {
+  const hint = (tool.activityKind ?? tool.rendererHint ?? "").trim().toLowerCase();
+  if (hint === "edit") return true;
+  const rawOutput = asRecord(asRecord(tool.output).raw);
+  if (
+    stringField(rawOutput, "activityKind") === "edit" ||
+    stringField(rawOutput, "rendererHint") === "edit"
+  ) {
+    return true;
+  }
+  const toolPath = (toolFsPath(tool) ?? stringField(toolArgsRecord(tool), "path") ?? "").toLowerCase();
+  return EDIT_TOOL_PATH_MARKERS.some((marker) => toolPath.includes(marker));
+};
+
+export const previewContentFromEditTool = (
+  tool: AgentToolActivity,
+  before = ""
+): string | null => {
+  const diffText = diffTextFromTool(tool);
+  if (diffText === null) return null;
+  const parsed = parseUnifiedDiff(diffText);
+  if (parsed.hunks.length === 0) return null;
+  return reconstructContentAfterDiff(before, parsed.hunks);
+};
+
+export const firstEditHunkLine = (tool: AgentToolActivity): number | undefined => {
+  const diffText = diffTextFromTool(tool);
+  if (diffText === null) return undefined;
+  const parsed = parseUnifiedDiff(diffText);
+  const firstHunk = parsed.hunks[0];
+  if (firstHunk === undefined) return undefined;
+  const firstChange = firstHunk.lines.find((line) => line.kind === "add" || line.kind === "del");
+  if (firstChange === undefined) return firstHunk.startLine;
+  const offset = firstHunk.lines.indexOf(firstChange);
+  return firstHunk.startLine + offset;
 };
 
 export const toEditDetails = (tool: AgentToolActivity): ToolDetails => {

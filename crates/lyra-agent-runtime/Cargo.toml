@@ -14,7 +14,9 @@ lyra-agent-api.workspace = true
 lyra-render-core = { workspace = true }
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
-lyra-agent-reader.workspace = true
+# Enable the real BPE tokenizer (o200k_base) so token estimates used for
+# context-window trimming and memory checkpoints are accurate for CJK/code.
+lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
 lyra-hardware-core.workspace = true
 lyra-search-core.workspace = true
 lyra-tool-fs-core.workspace = true

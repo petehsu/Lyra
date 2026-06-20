@@ -75,6 +75,7 @@ import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-choos
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
+import { useAgentEditFollow } from "./use-agent-edit-follow";
 import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
@@ -94,7 +95,7 @@ import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
 
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
-const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 16;
+const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 33;
 const AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID = "lyra-agent-history-browser-preview";
 
 export const WorkbenchShell = () => {
@@ -105,6 +106,7 @@ export const WorkbenchShell = () => {
     useState<BrowserSettingsCategoryFocusRequest | null>(null);
 
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [stackedBrowserTabs, setStackedBrowserTabs] = useState(false);
   const aiSessionTabsModel = useWorkbenchAiSessionTabs(desktopApi);
   const [agentHistoryRefreshRequestKey, setAgentHistoryRefreshRequestKey] = useState(0);
@@ -349,6 +351,7 @@ resolvedThemeId,
     onRevealPathInFileManager,
     openDirectoryFromNavigation
   } = useWorkbenchFileActions({
+    desktopApi,
     activeTab,
     tabsModel,
     fileManagerModel,
@@ -420,9 +423,19 @@ resolvedThemeId,
   const {
     onOpenAgentProjectTree,
     onOpenAgentGit,
+    onRevealAgentProjectPath,
   } = useWorkbenchAgentAppOpeners({
+    desktopApi,
     tabsModel,
     agentProjectTreeModel,
+  });
+  useAgentEditFollow({
+    desktopApi,
+    activeSessionId: aiSessionTabsModel.activeSessionId,
+    fileEditorModel,
+    agentProjectTreeModel,
+    onOpenFileFromManager,
+    onRevealAgentProjectPath
   });
   const onOpenAgentModelSettings = useCallback((): void => {
     setSettingsFocusRequest((current) => ({
@@ -465,10 +478,12 @@ resolvedThemeId,
     },
     onRequestProjectBind: requestProjectBind,
     onOpenProjectTree: onOpenAgentProjectTree,
+    onRevealProjectPath: onRevealAgentProjectPath,
     onOpenModelSettings: onOpenAgentModelSettings,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
     onOpenTerminalLiveSession,
     onOpenFile: onOpenFileFromManager,
+    onRevealPathInWorkbench: onRevealPathInFileManager,
     resolveActiveWorkspaceTab: () => tabsModel.activeTab,
     onPickFileFromFileManager: requestFileAttach,
     listWorkspaceTabs,
@@ -485,6 +500,7 @@ resolvedThemeId,
     }
     const unsubscribe = desktopApi.shellEvents.onWindowStateChange((state) => {
       setIsMaximized(state.isMaximized);
+      setIsFullScreen(state.isFullScreen === true);
     });
     return () => {
       unsubscribe();
@@ -710,6 +726,7 @@ resolvedThemeId,
   const rootClassName = cx(
     "lyra-root",
     uiRuntime.rootClassName,
+    isFullScreen && "lyra-root-fullscreen",
     globalDialogModel.state.isOpen && "lyra-root-modal-open"
   );
   const isMac = desktopApi?.appMeta.platform === "darwin";
@@ -717,12 +734,14 @@ resolvedThemeId,
     () => ({
       isMac,
       isMaximized,
+      isFullScreen,
       isAiPanelVisible: panelLayoutModel.isLeftPanelVisible,
       isTerminalPanelVisible: panelLayoutModel.isBottomPanelVisible,
       terminalPanelSide: panelLayoutModel.terminalPanelSide
     }),
     [
       isMac,
+      isFullScreen,
       isMaximized,
       panelLayoutModel.isBottomPanelVisible,
       panelLayoutModel.isLeftPanelVisible,

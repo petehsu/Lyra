@@ -400,7 +400,7 @@ pub(crate) fn memory_projection_metrics(session: &NativeSession, projection: &Va
         "projectedTimelineCount": projection.get("timeline").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
         "activeTodoCount": projection.get("activeTodos").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
         "toolEvidenceCount": projection.get("toolEvidence").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
-        "estimatedProjectionTokens": serde_json::to_string(projection).map(|text| text.chars().count() / 4).unwrap_or(0),
+        "estimatedProjectionTokens": serde_json::to_string(projection).map(|text| lyra_agent_reader::estimate_tokens(&text)).unwrap_or(0),
     })
 }
 

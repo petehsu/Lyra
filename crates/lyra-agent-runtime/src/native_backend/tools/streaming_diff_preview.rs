@@ -19,7 +19,7 @@ use crate::native_backend::{
 
 use super::{apply_exact_replacement, budgeted_tool_output, diff_text, resolve_workspace_path};
 
-const PREVIEW_THROTTLE: Duration = Duration::from_millis(100);
+const PREVIEW_THROTTLE: Duration = Duration::from_millis(32);
 
 #[derive(Clone, Debug)]
 struct MutationToolTarget {
@@ -143,9 +143,8 @@ fn parse_mutation_preview_input(
     partial_arguments: &str,
 ) -> Option<MutationPreviewInput> {
     let args_section = extract_args_section(partial_arguments).unwrap_or(partial_arguments);
-    let file_path = extract_json_string_field(args_section, "path")
-        .or_else(|| extract_json_string_field(partial_arguments, "path"))?;
-    if file_path.starts_with("/tools/") {
+    let file_path = extract_json_string_field(args_section, "path")?;
+    if file_path.starts_with("/tools/") || file_path.trim().is_empty() {
         return None;
     }
     match target.operation.as_str() {

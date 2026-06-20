@@ -16,8 +16,35 @@ pub struct Budgeted {
     pub next_cursor: Option<usize>,
 }
 
-/// Estimate token count from character count (~4 chars/token heuristic).
+/// Estimate the token count of `text`.
+///
+/// With the `tokenizer-tiktoken` feature enabled this runs a real BPE
+/// tokenizer (OpenAI's `o200k_base`, used here as an offline proxy for Claude's
+/// proprietary tokenizer — the rank tables are embedded in the binary, so this
+/// never touches the network). The BPE table is initialized once and reused via
+/// a process-wide singleton.
+///
+/// Without the feature it falls back to the cheap ~4 chars/token heuristic,
+/// which badly under-counts CJK text and code.
 pub fn estimate_tokens(text: &str) -> usize {
+    #[cfg(feature = "tokenizer-tiktoken")]
+    {
+        if text.is_empty() {
+            return 0;
+        }
+        let bpe = tiktoken_rs::o200k_base_singleton();
+        return bpe.encode_with_special_tokens(text).len().max(1);
+    }
+    #[cfg(not(feature = "tokenizer-tiktoken"))]
+    {
+        estimate_tokens_heuristic(text)
+    }
+}
+
+/// The character-count heuristic (~4 chars/token). Retained as the fallback for
+/// builds without `tokenizer-tiktoken` and exposed for callers that explicitly
+/// want the cheap estimate.
+pub fn estimate_tokens_heuristic(text: &str) -> usize {
     let chars = text.chars().count();
     chars.div_ceil(4)
 }
@@ -153,9 +180,25 @@ mod tests {
     }
 
     #[test]
-    fn token_estimate() {
-        assert_eq!(estimate_tokens("abcd"), 1);
-        assert_eq!(estimate_tokens("abcde"), 2);
+    fn token_estimate_heuristic() {
+        assert_eq!(estimate_tokens_heuristic("abcd"), 1);
+        assert_eq!(estimate_tokens_heuristic("abcde"), 2);
+        assert_eq!(estimate_tokens_heuristic(""), 0);
+    }
+
+    #[cfg(feature = "tokenizer-tiktoken")]
+    #[test]
+    fn token_estimate_bpe_beats_heuristic_for_cjk() {
+        // CJK encodes to roughly one-or-more tokens per character, far above the
+        // chars/4 heuristic. This guards the under-counting bug the BPE path fixes.
+        let chinese = "这是一段中文测试文本用于验证分词器";
+        let bpe = estimate_tokens(chinese);
+        let heuristic = estimate_tokens_heuristic(chinese);
+        assert!(
+            bpe > heuristic,
+            "expected BPE estimate {bpe} to exceed heuristic {heuristic}"
+        );
+        assert_eq!(estimate_tokens(""), 0);
     }
 
     #[test]

@@ -195,15 +195,8 @@ fn terminal_lifecycle_with_cwd(
     mode: Option<&str>,
     current_cwd: Option<String>,
 ) -> TerminalLifecycleProjection {
-    let mut lifecycle = terminal_lifecycle(
-        session_id,
-        phase,
-        running,
-        exit_code,
-        reason,
-        source,
-        mode,
-    );
+    let mut lifecycle =
+        terminal_lifecycle(session_id, phase, running, exit_code, reason, source, mode);
     lifecycle.current_cwd = current_cwd;
     lifecycle
 }

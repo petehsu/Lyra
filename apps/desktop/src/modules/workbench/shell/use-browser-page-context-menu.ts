@@ -20,13 +20,18 @@ export const useBrowserPageContextMenu = ({
   useEffect(() => {
     if (desktopApi === null) return;
     return desktopApi.workbenchBrowser.onEvent((event) => {
-      if (event.kind !== "page-context-menu-select" || event.itemId !== "cite-page") {
+      if (event.kind === "element-picker-select") {
+        composerCitationSinkRef.current?.addPageCitation(
+          buildPageCitationFromContextMenu(event.menu, event.tabTitle ?? event.menu.pageTitle)
+        );
         return;
       }
-      const tabTitle = event.tabTitle?.trim() || event.menu.pageTitle;
-      composerCitationSinkRef.current?.addPageCitation(
-        buildPageCitationFromContextMenu(event.menu, tabTitle)
-      );
+      if (event.kind === "page-context-menu-select" && event.itemId === "cite-page") {
+        const tabTitle = event.tabTitle?.trim() || event.menu.pageTitle;
+        composerCitationSinkRef.current?.addPageCitation(
+          buildPageCitationFromContextMenu(event.menu, tabTitle)
+        );
+      }
     });
   }, [composerCitationSinkRef, desktopApi]);
 };

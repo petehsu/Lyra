@@ -20,7 +20,7 @@ export default function CustomCursor() {
     };
 
     const onMouseEnter = () => {
-      gsap.to(cursor, { scale: 2.5, backgroundColor: 'transparent', border: '1px solid #ccff00', duration: 0.3 });
+      gsap.to(cursor, { scale: 2.5, backgroundColor: 'transparent', border: '1px solid #06b6d4', duration: 0.3 });
     };
 
     const onMouseLeave = () => {

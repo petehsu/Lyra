@@ -42,16 +42,7 @@ unsafe extern "C" {
         max_spans: usize,
     ) -> usize;
 
-    #[cfg(not(feature = "asm-kernels"))]
     fn lyra_local_search_subsequence_score(
-        haystack: *const u8,
-        haystack_len: usize,
-        needle: *const u8,
-        needle_len: usize,
-    ) -> u32;
-
-    #[cfg(feature = "asm-kernels")]
-    fn lyra_local_search_asm_subsequence_score(
         haystack: *const u8,
         haystack_len: usize,
         needle: *const u8,
@@ -85,24 +76,12 @@ pub(crate) fn subsequence_score(haystack: &str, needle: &str) -> u32 {
     // SAFETY: The C scorer treats both pointers as read-only byte slices for the
     // exact lengths supplied here and does not retain either pointer.
     unsafe {
-        #[cfg(feature = "asm-kernels")]
-        {
-            return lyra_local_search_asm_subsequence_score(
-                haystack.as_ptr(),
-                haystack.len(),
-                needle.as_ptr(),
-                needle.len(),
-            );
-        }
-        #[cfg(not(feature = "asm-kernels"))]
-        {
-            lyra_local_search_subsequence_score(
-                haystack.as_ptr(),
-                haystack.len(),
-                needle.as_ptr(),
-                needle.len(),
-            )
-        }
+        lyra_local_search_subsequence_score(
+            haystack.as_ptr(),
+            haystack.len(),
+            needle.as_ptr(),
+            needle.len(),
+        )
     }
 }
 
@@ -183,5 +162,101 @@ mod tests {
     fn subsequence_score_rejects_null_equivalent_inputs() {
         assert_eq!(subsequence_score("", "abc"), 0);
         assert_eq!(subsequence_score("abc", ""), 0);
+    }
+
+    /// Pure-Rust reference mirroring the scalar contract in
+    /// `local_search_subsequence.h`. The SIMD-backed FFI must agree with this
+    /// for every input, which locks SIMD output to the scalar reference.
+    fn reference_score(haystack: &str, needle: &str) -> u32 {
+        if haystack.is_empty() || needle.is_empty() {
+            return 0;
+        }
+        let hay = haystack.as_bytes();
+        let need = needle.as_bytes();
+        let lower = |b: u8| -> u8 {
+            if b.is_ascii_uppercase() {
+                b + (b'a' - b'A')
+            } else {
+                b
+            }
+        };
+        let mut cursor = 0usize;
+        let mut gaps = 0usize;
+        let mut contiguous = 0usize;
+        let mut best_contiguous = 0usize;
+        for &nb in need {
+            let target = lower(nb);
+            let mut found_at = hay.len();
+            for h in cursor..hay.len() {
+                if lower(hay[h]) == target {
+                    found_at = h;
+                    break;
+                }
+            }
+            if found_at == hay.len() {
+                return 0;
+            }
+            if found_at == cursor {
+                contiguous += 1;
+            } else {
+                gaps += found_at - cursor;
+                best_contiguous = best_contiguous.max(contiguous);
+                contiguous = 1;
+            }
+            cursor = found_at + 1;
+        }
+        best_contiguous = best_contiguous.max(contiguous);
+        let coverage = (need.len() * 1000) / hay.len();
+        let continuity = (best_contiguous * 500) / need.len();
+        let penalty = gaps.min(240);
+        let score = 700 + coverage + continuity;
+        if score <= penalty {
+            1
+        } else {
+            (score - penalty) as u32
+        }
+    }
+
+    #[test]
+    fn simd_matches_scalar_reference_across_inputs() {
+        // Deterministic pseudo-random corpus crossing the 16/32-byte SIMD lane
+        // boundaries, with a small alphabet so subsequences actually hit, plus
+        // mixed case to exercise the case-folding path.
+        let alphabet = b"abcAB/._12";
+        let mut state: u64 = 0x9E3779B97F4A7C15;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..4000 {
+            let hay_len = (next() % 80) as usize;
+            let need_len = (next() % 8) as usize;
+            let hay: String = (0..hay_len)
+                .map(|_| alphabet[(next() as usize) % alphabet.len()] as char)
+                .collect();
+            let need: String = (0..need_len)
+                .map(|_| alphabet[(next() as usize) % alphabet.len()] as char)
+                .collect();
+            assert_eq!(
+                subsequence_score(&hay, &need),
+                reference_score(&hay, &need),
+                "mismatch for haystack={hay:?} needle={need:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn simd_matches_scalar_on_long_haystack() {
+        // Long inputs ensure multiple full SIMD iterations before the tail.
+        let hay = "the_quick_brown_fox/jumps/over_the_lazy_DOG.rs".repeat(10);
+        for needle in ["qbf", "dogrs", "OVER", "zzz", "the_lazy", "/jumps/"] {
+            assert_eq!(
+                subsequence_score(&hay, needle),
+                reference_score(&hay, needle),
+                "mismatch for needle={needle:?}"
+            );
+        }
     }
 }

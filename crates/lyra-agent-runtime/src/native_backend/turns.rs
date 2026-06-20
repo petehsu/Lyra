@@ -825,10 +825,19 @@ pub(crate) fn append_assistant_delta(
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
             append_text_to_message(message, delta);
+            // Capture the revision before enrich so we can tell whether the
+            // render actually changed. enrich only bumps the revision when the
+            // rendered AST changed; if it stayed the same we skip re-sending the
+            // (potentially large) renderDocument over the event channel.
+            let previous_revision = message
+                .get("renderRevision")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             let (render_document, render_revision) =
                 super::message_render::enrich_assistant_message_render(message, true);
+            let render_changed = render_revision != previous_revision;
             touch_session(session);
-            (callback, render_document, render_revision)
+            (callback, render_document, render_revision, render_changed)
         }
         Err(_) => {
             return Err(AgentRuntimeError::Core(
@@ -836,19 +845,23 @@ pub(crate) fn append_assistant_delta(
             ));
         }
     };
-    let (callback, render_document, render_revision) = callback;
-    emit_with_callback(
-        &callback,
-        json!({
-            "kind": "messageDelta",
-            "sessionId": session_id,
-            "messageId": message_id,
-            "blockId": "text-0",
-            "delta": delta,
-            "renderDocument": render_document,
-            "renderRevision": render_revision,
-        }),
-    );
+    let (callback, render_document, render_revision, render_changed) = callback;
+    // Always carry the delta so the frontend can accumulate the raw text, but
+    // only attach the render snapshot when it actually changed. The reducer
+    // treats a missing renderDocument/renderRevision as "keep the current AST",
+    // so this avoids shipping an unchanged AST on every token.
+    let mut event = json!({
+        "kind": "messageDelta",
+        "sessionId": session_id,
+        "messageId": message_id,
+        "blockId": "text-0",
+        "delta": delta,
+    });
+    if render_changed {
+        event["renderDocument"] = render_document;
+        event["renderRevision"] = json!(render_revision);
+    }
+    emit_with_callback(&callback, event);
     Ok(())
 }
 

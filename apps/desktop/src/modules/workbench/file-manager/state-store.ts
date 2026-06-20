@@ -99,12 +99,17 @@ export const useFileManagerStateStore = ({
     updateStates((current) => {
       const base = current[instanceId] ?? createState(instanceId);
       const nextState = updater(base);
-      onMetaChange({
-        appId: "file-manager",
-        appInstanceId: instanceId,
-        title: nextState.title,
-        iconKey: nextState.iconKey
-      });
+      if (
+        nextState.title !== base.title
+        || nextState.iconKey !== base.iconKey
+      ) {
+        onMetaChange({
+          appId: "file-manager",
+          appInstanceId: instanceId,
+          title: nextState.title,
+          iconKey: nextState.iconKey
+        });
+      }
       return {
         ...current,
         [instanceId]: nextState

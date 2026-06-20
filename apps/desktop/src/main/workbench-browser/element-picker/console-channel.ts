@@ -1,4 +1,5 @@
 import type { WorkbenchBrowserElementPickerDisableCause } from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserPageContextMediaType } from "../../../shared/workbench-browser";
 import {
   WORKBENCH_ELEMENT_PICKER_CONSOLE_PREFIX,
   type WorkbenchElementPickerConsoleMessage
@@ -23,6 +24,23 @@ const readNumber = (value: unknown): number | undefined => {
     return undefined;
   }
   return Math.round(value);
+};
+
+const readBoolean = (value: unknown): boolean | undefined =>
+  typeof value === "boolean" ? value : undefined;
+
+const readMediaType = (value: unknown): WorkbenchBrowserPageContextMediaType => {
+  switch (value) {
+    case "image":
+    case "video":
+    case "audio":
+    case "canvas":
+    case "file":
+    case "plugin":
+      return value;
+    default:
+      return "none";
+  }
 };
 
 const readBounds = (value: unknown) => {
@@ -120,6 +138,56 @@ export const parseElementPickerConsoleMessage = (
       ...(stateHint === undefined ? {} : { stateHint }),
       ...(frameUrl === undefined ? {} : { frameUrl }),
       ...(record.crossOriginBoundary === true ? { crossOriginBoundary: true } : {})
+    };
+  }
+
+  if (record.kind === "select") {
+    const frameTreeNodeId = readNumber(record.frameTreeNodeId);
+    const anchorX = readNumber(record.anchorX);
+    const anchorY = readNumber(record.anchorY);
+    const pageUrl = readString(record.pageUrl, 2000);
+    const pageTitle = readString(record.pageTitle, 400) ?? pageUrl;
+    const isEditable = readBoolean(record.isEditable) ?? false;
+    if (
+      frameTreeNodeId === undefined ||
+      anchorX === undefined ||
+      anchorY === undefined ||
+      pageUrl === undefined ||
+      pageTitle === undefined
+    ) {
+      return null;
+    }
+
+    const selectionText = readString(record.selectionText, 1000);
+    const linkUrl = readString(record.linkUrl, 2000);
+    const linkText = readString(record.linkText, 400);
+    const srcUrl = readString(record.srcUrl, 2000);
+    const frameUrl = readString(record.frameUrl, 2000);
+    const elementTag = readString(record.elementTag, 64);
+    const elementSelector = readString(record.elementSelector, 500);
+    const elementId = readString(record.elementId, 160);
+    const elementRole = readString(record.elementRole, 160);
+    const elementAriaLabel = readString(record.elementAriaLabel, 300);
+
+    return {
+      kind: "select",
+      frameTreeNodeId,
+      anchorX,
+      anchorY,
+      pageUrl,
+      pageTitle,
+      mediaType: readMediaType(record.mediaType),
+      isEditable,
+      ...(selectionText === undefined ? {} : { selectionText }),
+      ...(linkUrl === undefined ? {} : { linkUrl }),
+      ...(linkText === undefined ? {} : { linkText }),
+      ...(srcUrl === undefined ? {} : { srcUrl }),
+      ...(frameUrl === undefined ? {} : { frameUrl }),
+      ...(elementTag === undefined ? {} : { elementTag }),
+      ...(elementSelector === undefined ? {} : { elementSelector }),
+      ...(elementId === undefined ? {} : { elementId }),
+      ...(elementRole === undefined ? {} : { elementRole }),
+      ...(elementAriaLabel === undefined ? {} : { elementAriaLabel })
     };
   }
 
