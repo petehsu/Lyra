@@ -214,17 +214,42 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .expect("todo read content")
             .contains("verify native tool surface")
     );
-    let outside = execute_model_tool(
-        &session_id,
-        &turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-outside",
-            "/tools/filesystem/read_file",
-            json!({ "path": "/etc/passwd" }),
-        ),
-    );
+    let outside_turn_id = start_test_runtime_turn(&session_id);
+    let outside_session_id = session_id.clone();
+    let outside_cancellation = cancellation.clone();
+    let outside_handle = thread::spawn(move || {
+        execute_model_tool(
+            &outside_session_id,
+            &outside_turn_id,
+            &None,
+            &outside_cancellation,
+            tool_fs_run_call(
+                "tool-outside",
+                "/tools/filesystem/read_file",
+                json!({ "path": "/etc/passwd" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    let pending = state()
+        .lock()
+        .expect("state lock")
+        .pending_permissions
+        .get(&permission_id)
+        .cloned()
+        .expect("pending permission");
+    assert_eq!(pending.risk, "workspace_escape");
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({
+                "sessionId": session_id.clone(),
+                "permissionId": permission_id,
+                "allowed": false
+            }),
+        )
+        .expect("deny outside read");
+    let outside = outside_handle.join().expect("join outside read");
     assert_eq!(
         outside.pointer("/error/code").and_then(Value::as_str),
         Some("permission_denied")
@@ -240,9 +265,10 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     fs::create_dir_all(&lumen_dir).expect("create lumen evidence dir");
     let lumen_path = lumen_dir.join("lumen-see-test-browser-tab-1.png");
     fs::write(&lumen_path, b"\x89PNG\r\n\x1a\nlyra-test-image").expect("write lumen image");
+    let artifact_turn_id = start_test_runtime_turn(&session_id);
     let artifact = execute_model_tool(
         &session_id,
-        &turn_id,
+        &artifact_turn_id,
         &None,
         &cancellation,
         tool_fs_run_call(
@@ -251,6 +277,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             json!({ "path": lumen_path.display().to_string() }),
         ),
     );
+    assert_eq!(artifact["status"].as_str(), Some("completed"));
     assert_eq!(artifact["raw"]["kind"], "lyra_artifact_read");
     assert_eq!(artifact["raw"]["mediaType"], "image/png");
     let lumen_path_text = lumen_path
@@ -280,9 +307,10 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     fs::create_dir_all(&terminal_memory_dir).expect("create terminal memory dir");
     let terminal_output_path = terminal_memory_dir.join("session-output.txt");
     fs::write(&terminal_output_path, "terminal artifact output").expect("write terminal output");
+    let terminal_artifact_turn_id = start_test_runtime_turn(&session_id);
     let terminal_artifact = execute_model_tool(
         &session_id,
-        &turn_id,
+        &terminal_artifact_turn_id,
         &None,
         &cancellation,
         tool_fs_run_call(

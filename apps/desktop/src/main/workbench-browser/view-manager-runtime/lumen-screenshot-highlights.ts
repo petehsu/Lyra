@@ -107,6 +107,7 @@ export const buildHighlightRegionsFromElements = (
   return elements
     .filter((element) =>
       element.discoveryScope !== "visual"
+      && element.discoveryScope !== "coordinate"
       && element.disabled === false
       && element.visibility?.visible !== false
       && element.visibility?.covered !== true

@@ -157,6 +157,8 @@ type FakeWebContents = {
   sendInputEvent: ReturnType<typeof vi.fn>;
   executeJavaScript: ReturnType<typeof vi.fn>;
   loadURL: ReturnType<typeof vi.fn>;
+  reload: ReturnType<typeof vi.fn>;
+  reloadIgnoringCache: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   setWindowOpenHandler: ReturnType<typeof vi.fn>;
@@ -283,7 +285,11 @@ const appendChildFrame = (parent: FakeFrame, child: FakeFrame): void => {
 const createWebContents = (
   mainFrame: FakeFrame,
   options: {
-    readonly sendCommand?: (method: string, params?: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+    readonly sendCommand?: (
+      method: string,
+      params?: Record<string, unknown>,
+      sessionId?: string
+    ) => Record<string, unknown> | Promise<Record<string, unknown>>;
     readonly hangLoad?: boolean;
   } = {}
 ): FakeWebContents => {
@@ -311,9 +317,13 @@ const createWebContents = (
     detach: vi.fn(() => {
       attached = false;
     }),
-    sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+    sendCommand: vi.fn(async (
+      method: string,
+      params?: Record<string, unknown>,
+      sessionId?: string
+    ) => {
       if (options.sendCommand !== undefined) {
-        return await options.sendCommand(method, params);
+        return await options.sendCommand(method, params, sessionId);
       }
       if (method === "Accessibility.getFullAXTree") {
         return { nodes: [] };
@@ -370,6 +380,16 @@ const createWebContents = (
       if (options.hangLoad === true) {
         await new Promise(() => undefined);
       }
+    }),
+    reload: vi.fn(() => {
+      queueMicrotask(() => {
+        webContents.emit("did-stop-loading");
+      });
+    }),
+    reloadIgnoringCache: vi.fn(() => {
+      queueMicrotask(() => {
+        webContents.emit("did-stop-loading");
+      });
     }),
     close: vi.fn(),
     stop: vi.fn(),
@@ -1087,7 +1107,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect((textInput as HTMLInputElement).value).toBe("main");
   });
 
-  test("returns blocked regions and visual fallback target for cross-origin iframe", async () => {
+  test("returns coordinate fallback target and allows act for cross-origin iframe", async () => {
     const mainFrame = createFrame({
       id: 1,
       url: "https://merchant.test/checkout",
@@ -1112,7 +1132,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
     setRect(iframe as Element, { x: 240, y: 140, width: 360, height: 220 });
 
-    const { manager } = createManager(mainFrame);
+    const { manager, webContents } = createManager(mainFrame);
     const observation = await manager.observeAgentPage("tab-1", {
       targetMode: "live",
       strategy: "hybrid"
@@ -1124,35 +1144,152 @@ describe("Workbench browser semantic tree fixtures", () => {
           kind: "cross-origin",
           frameTreeNodeId: 2,
           bounds: { x: 240, y: 140, width: 360, height: 220 },
-          fallback: "visual"
+          fallback: "coordinate"
         })
       ])
     );
-    const visualTarget = observation.elements.find((element) => element.discoveryScope === "visual");
-    expect(visualTarget).toBeDefined();
-    expect(visualTarget).toMatchObject({
+    const coordinateTarget = observation.elements.find((element) => element.discoveryScope === "coordinate");
+    expect(coordinateTarget).toBeDefined();
+    expect(coordinateTarget).toMatchObject({
       frameTreeNodeId: 2,
       frameBounds: { x: 240, y: 140, width: 360, height: 220 },
       bounds: { x: 400, y: 230, width: 40, height: 40 }
     });
-    expect(observation.semanticTree?.coverage.visualCoverage).toBe(1);
-    expect(observation.nextRecommendedAction).toBe("lyra_lumen.see");
-    expect(visualTarget?.actionHint).toBe("use_visual_act");
-    expect(visualTarget?.actionCapabilities).toEqual([]);
+    expect(observation.semanticTree?.coverage.visualCoverage).toBe(0);
+    expect(observation.nextRecommendedAction).toBe("lyra_lumen.act");
+    expect(coordinateTarget?.actionHint).toBe("use_coordinate_act");
+    expect(coordinateTarget?.actionCapabilities).toEqual(["click"]);
 
     await expect(
       manager.actOnAgentElement("tab-1", {
         targetMode: "live",
-        targetRef: visualTarget!.targetRef,
+        targetRef: coordinateTarget!.targetRef,
         interaction: "click"
       })
     ).resolves.toMatchObject({
-      ok: false,
-      error: {
-        kind: "visualActRequired"
-      },
-      nextRecommendedAction: "lyra_lumen.see"
+      ok: true,
+      targetRef: coordinateTarget!.targetRef
     });
+    expect(webContents.sentInputEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "mouseDown",
+          x: 420,
+          y: 250
+        })
+      ])
+    );
+  });
+
+  test("maps cross-origin iframe controls via OOPIF CDP attach", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://merchant.test/checkout",
+      html: "<!doctype html><title>Checkout</title><iframe name=\"pay\" src=\"https://pay.example/auth\"></iframe>"
+    });
+    const childFrame = createFrame({
+      id: 2,
+      url: "https://pay.example/auth",
+      name: "pay",
+      parent: mainFrame,
+      html: "<!doctype html><title>Pay</title><button>Pay now</button>",
+      executeJavaScript: (script) => {
+        if (script.includes("const FRAME_TREE_NODE_ID")) {
+          throw new Error("cross origin frame execution blocked");
+        }
+        throw new Error("unexpected child frame script");
+      }
+    });
+    appendChildFrame(mainFrame, childFrame);
+    const iframe = mainFrame.window.document.querySelector("iframe");
+    expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
+    setRect(iframe as Element, { x: 240, y: 140, width: 360, height: 220 });
+
+    const oopifObservation = {
+      title: "Pay",
+      url: "https://pay.example/auth",
+      elements: [
+        {
+          id: 1,
+          frameTreeNodeId: 2,
+          tagName: "button",
+          role: "button",
+          label: "Pay now",
+          selectorPreview: "button",
+          bounds: { x: 252, y: 156, width: 120, height: 30 },
+          localBounds: { x: 12, y: 16, width: 120, height: 30 },
+          frameBounds: { x: 240, y: 140, width: 360, height: 220 },
+          focusable: true,
+          disabled: false,
+          editable: false
+        }
+      ],
+      focusOrder: [1],
+      activeElementId: null,
+      authChallengeSignals: [],
+      blockedRegions: [],
+      warnings: []
+    };
+
+    const { manager, webContents } = createManager(mainFrame, {
+      sendCommand: async (method, _params, sessionId) => {
+        if (method === "Target.getTargets") {
+          return {
+            targetInfos: [{ type: "iframe", targetId: "oopif-target", url: "https://pay.example/auth" }]
+          };
+        }
+        if (method === "Target.attachToTarget") {
+          return { sessionId: "oopif-session" };
+        }
+        if (method === "Runtime.evaluate" && sessionId === "oopif-session") {
+          return { result: { value: oopifObservation } };
+        }
+        if (method === "Accessibility.getFullAXTree") {
+          return { nodes: [] };
+        }
+        if (method === "DOMSnapshot.captureSnapshot") {
+          return { documents: [], strings: [], computedStyles: [] };
+        }
+        return {};
+      }
+    });
+
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "hybrid"
+    });
+
+    const payTarget = findByLabel(observation.elements, "Pay now");
+    expect(payTarget.discoveryScope).toBe("frame");
+    expect(payTarget.bounds).toEqual({ x: 252, y: 156, width: 120, height: 30 });
+    expect(observation.blockedRegions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "cross-origin",
+          frameTreeNodeId: 2
+        })
+      ])
+    );
+
+    await expect(
+      manager.actOnAgentElement("tab-1", {
+        targetMode: "live",
+        targetRef: payTarget.targetRef,
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      targetRef: payTarget.targetRef
+    });
+    expect(webContents.sentInputEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "mouseDown",
+          x: 312,
+          y: 171
+        })
+      ])
+    );
   });
 
   test("does not treat a visible Google sign-in trigger as an auth prompt", async () => {
@@ -1250,6 +1387,47 @@ describe("Workbench browser semantic tree fixtures", () => {
       ])
     );
     expect(observation.nextRecommendedAction).toBe("browser_ax.map");
+  });
+
+  test("does not block automation for a dormant visible file input", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://user.qzone.qq.com/3434993851",
+      html: `
+        <!doctype html>
+        <title>QQ Space</title>
+        <textarea placeholder="说点儿什么吧"></textarea>
+        <label>本地相册<input type="file" accept="image/*" /></label>
+      `
+    });
+    const fileInput = mainFrame.window.document.querySelector("input[type='file']");
+    expect(fileInput).toBeInstanceOf(mainFrame.window.HTMLInputElement);
+    setRect(fileInput as Element, { x: 120, y: 420, width: 120, height: 28 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+
+    expect(observation.authChallengeSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "dormant_file_input",
+          confidence: "low",
+          label: "dormant page upload control"
+        })
+      ])
+    );
+    expect(observation.blockedRegions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "permission-prompt" })
+      ])
+    );
+    expect(observation.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("dormant_file_input")])
+    );
+    expect(observation.nextRecommendedAction).not.toBe("ask_user");
   });
 
   test("detects captcha iframe and returns ask_user with map appendix support", async () => {
@@ -1459,6 +1637,72 @@ describe("Workbench browser semantic tree fixtures", () => {
     const menuitem = findByLabel(after.elements, "Delete");
     expect(menuitem.role).toBe("menuitem");
     expect(menuitem.actionCapabilities).toEqual(expect.arrayContaining(["menuitem", "click"]));
+  });
+
+  test("reloadAgentPage calls webContents.reload even when the URL is unchanged", async () => {
+    const shadowFrame = createFrame({
+      id: 1,
+      url: "https://app.test/dashboard",
+      html: "<!doctype html><title>Dashboard</title><main>Before reload</main>"
+    });
+    const shadowWebContents = createWebContents(shadowFrame);
+    electronMock.webContentsQueue.push(shadowWebContents);
+    const manager = createEmptyManager();
+
+    const result = await manager.reloadAgentPage("agent-tab", {
+      targetMode: "isolated",
+      timeoutMs: 2_000
+    });
+
+    expect(shadowWebContents.reload).toHaveBeenCalledTimes(1);
+    expect(shadowWebContents.reloadIgnoringCache).not.toHaveBeenCalled();
+    expect(shadowWebContents.loadURL).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      address: "https://app.test/dashboard",
+      targetMode: "isolated",
+      reloaded: true,
+      ignoreCache: false
+    });
+  });
+
+  test("reloadAgentPage can bypass cache when ignoreCache is true", async () => {
+    const shadowFrame = createFrame({
+      id: 1,
+      url: "https://app.test/dashboard",
+      html: "<!doctype html><title>Dashboard</title><main>Stale</main>"
+    });
+    const shadowWebContents = createWebContents(shadowFrame);
+    electronMock.webContentsQueue.push(shadowWebContents);
+    const manager = createEmptyManager();
+
+    await manager.reloadAgentPage("agent-tab", {
+      targetMode: "isolated",
+      ignoreCache: true,
+      timeoutMs: 2_000
+    });
+
+    expect(shadowWebContents.reloadIgnoringCache).toHaveBeenCalledTimes(1);
+    expect(shadowWebContents.reload).not.toHaveBeenCalled();
+  });
+
+  test("navigateAgentPage does not reload when the target URL matches the current page", async () => {
+    const shadowFrame = createFrame({
+      id: 1,
+      url: "https://app.test/dashboard",
+      html: "<!doctype html><title>Dashboard</title><main>Still stale</main>"
+    });
+    const shadowWebContents = createWebContents(shadowFrame);
+    electronMock.webContentsQueue.push(shadowWebContents);
+    const manager = createEmptyManager();
+
+    await manager.navigateAgentPage("agent-tab", {
+      targetMode: "isolated",
+      url: "https://app.test/dashboard",
+      timeoutMs: 2_000
+    });
+
+    expect(shadowWebContents.loadURL).not.toHaveBeenCalled();
+    expect(shadowWebContents.reload).not.toHaveBeenCalled();
   });
 
   test("cancels stale page-load waits when isolated navigation is superseded", async () => {

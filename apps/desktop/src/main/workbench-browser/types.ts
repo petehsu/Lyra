@@ -100,6 +100,7 @@ export type WorkbenchBrowserSemanticTreeScope =
   | "shadow"
   | "frame"
   | "ax"
+  | "coordinate"
   | "visual";
 
 export type WorkbenchBrowserSemanticFrame = {
@@ -132,7 +133,7 @@ export type WorkbenchBrowserSemanticNode = {
   readonly label: string;
   readonly selectorPreview?: string;
   readonly bounds: WorkbenchBrowserAgentElementBounds;
-  readonly source: readonly ("dom" | "ax" | "visual")[];
+  readonly source: readonly ("dom" | "ax" | "coordinate" | "visual")[];
   readonly treeScope: WorkbenchBrowserSemanticTreeScope;
   readonly hostChain?: readonly string[];
   readonly hostChainFingerprint?: string;
@@ -179,7 +180,7 @@ export type WorkbenchBrowserSemanticBlockedRegion = {
   readonly bounds?: WorkbenchBrowserAgentElementBounds;
   readonly reason: string;
   readonly url?: string;
-  readonly fallback?: "ax" | "visual" | "elevate" | "user";
+  readonly fallback?: "ax" | "coordinate" | "visual" | "elevate" | "user";
   readonly confidence: "high" | "medium" | "low";
 };
 
@@ -259,6 +260,9 @@ export type WorkbenchBrowserAgentObserveStrategy =
   | "hybrid"
   | "domFallback"
   | "visionFallback";
+
+/** Controls whether map output is clipped to the visible viewport or spans the document. */
+export type WorkbenchBrowserAgentMapScope = "viewport" | "document";
 
 export type WorkbenchBrowserAgentTargetMode =
   | "isolated"
@@ -366,6 +370,7 @@ export type WorkbenchBrowserAgentObservation = {
   readonly observationId: string;
   readonly mapEpoch: number;
   readonly strategy: WorkbenchBrowserAgentObserveStrategy;
+  readonly mapScope?: WorkbenchBrowserAgentMapScope;
   readonly url: string;
   readonly title: string;
   readonly targets: readonly WorkbenchLumenTargetRef[];
@@ -773,6 +778,67 @@ export type WorkbenchBrowserAgentVisualStaleResult = {
   readonly message: string;
   readonly nextRecommendedAction: "lyra_lumen.see";
 };
+
+export type WorkbenchBrowserDetectedQrCode = {
+  readonly payload: string;
+  readonly format: "qr";
+  readonly bounds: WorkbenchBrowserAgentElementBounds;
+  readonly center: {
+    readonly x: number;
+    readonly y: number;
+  };
+  readonly corners: {
+    readonly topLeft: { readonly x: number; readonly y: number };
+    readonly topRight: { readonly x: number; readonly y: number };
+    readonly bottomLeft: { readonly x: number; readonly y: number };
+    readonly bottomRight: { readonly x: number; readonly y: number };
+  };
+  readonly confidence: number;
+  readonly cropArtifact?: {
+    readonly mimeType: "image/png";
+    readonly imageBase64: string;
+    readonly width: number;
+    readonly height: number;
+  };
+};
+
+export type WorkbenchBrowserAgentQrDetectResult =
+  | {
+      readonly ok: false;
+      readonly kind: "lyraLumenDetectQr";
+      readonly tabId: string;
+      readonly targetMode: WorkbenchBrowserAgentTargetMode;
+      readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+      readonly codes: readonly [];
+      readonly coordinateSpace: "device-pixels";
+      readonly width: number;
+      readonly height: number;
+      readonly message: string;
+      readonly nextRecommendedAction: "lyra_lumen.map" | "lyra_lumen.see";
+    }
+  | {
+      readonly ok: true;
+      readonly kind: "lyraLumenDetectQr";
+      readonly tabId: string;
+      readonly targetMode: WorkbenchBrowserAgentTargetMode;
+      readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+      readonly codes: readonly WorkbenchBrowserDetectedQrCode[];
+      readonly coordinateSpace: "device-pixels";
+      readonly captureId: string;
+      readonly width: number;
+      readonly height: number;
+      readonly visualFrame: import("../../../shared/workbench-observation").WorkbenchVisualFrame;
+      readonly pageCapture?: {
+        readonly mimeType: "image/png";
+        readonly imageBase64: string;
+        readonly width: number;
+        readonly height: number;
+        readonly visibleOnly: boolean;
+      };
+      readonly evidenceRefs?: readonly string[];
+      readonly message: string;
+      readonly nextRecommendedAction: "lyra_lumen.vact" | "lyra_lumen.map" | "lyra_lumen.see";
+    };
 
 export type WorkbenchBrowserAgentScrollDirection =
   | "up"
@@ -1222,6 +1288,18 @@ export type WorkbenchBrowserViewManager = {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   }>;
+  readonly reloadAgentPage: (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly ignoreCache?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<WorkbenchBrowserNavigateResult & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+    readonly reloaded: true;
+    readonly ignoreCache: boolean;
+  }>;
   readonly readAgentPage: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -1248,6 +1326,16 @@ export type WorkbenchBrowserViewManager = {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   }>;
+  readonly detectAgentPageQr: (
+    tabId: string,
+    request?: WorkbenchBrowserAgentModeRequest & {
+      readonly region?: WorkbenchBrowserAgentElementBounds;
+      readonly maxCodes?: number;
+      readonly cropQr?: boolean;
+      readonly includePageCapture?: boolean;
+      readonly cropPadding?: number;
+    }
+  ) => Promise<WorkbenchBrowserAgentQrDetectResult>;
   readonly showAgentActivity: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -1327,6 +1415,16 @@ export type WorkbenchBrowserViewManager = {
     readonly tabId: string;
     readonly decision: "continue_agent" | "user_takeover" | "use_isolated" | "cancel_task";
   }>;
+  readonly verifyAgentActionOutcome: (
+    tabId: string,
+    request: {
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+      readonly targetRef?: string;
+      readonly elementId?: number;
+      readonly interaction?: WorkbenchBrowserAgentInteraction;
+      readonly timeoutMs?: number;
+    }
+  ) => Promise<Record<string, unknown>>;
 };
 
 export type WorkbenchBrowserElementPickerController = {

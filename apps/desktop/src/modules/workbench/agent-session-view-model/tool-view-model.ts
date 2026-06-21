@@ -216,6 +216,7 @@ export const toToolDetails = (
 export const toolStatus = (tool: AgentToolActivity): ToolCall["status"] => {
   if (tool.status === "running") return "running";
   if (tool.status === "failed") return "error";
+  if (tool.status === "uncertain") return "success";
   return "success";
 };
 
@@ -274,7 +275,11 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
   const changes = tool.changes ?? arrayField(output, "changes");
   const artifactTargets = artifactTargetsFromEvidence(artifactRefs, changes);
   const artifactPreviews = artifactPreviewsFromEvidence(artifactRefs, changes);
-  const failureReason = stringField(output, "notRunReason", "not_run_reason");
+  const failureReason = tool.status === "uncertain"
+    ? stringField(output, "message")
+      ?? stringField(asRecord(output.raw), "message")
+      ?? "Result unconfirmed — verify before retrying."
+    : stringField(output, "notRunReason", "not_run_reason");
   const title = manifestToolTitle(tool)
     ?? (isLyraLumenTool(tool)
     ? lumenTitle(tool)

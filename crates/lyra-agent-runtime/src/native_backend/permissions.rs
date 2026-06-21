@@ -29,6 +29,7 @@ pub(crate) fn permission_request_for_tool(
     let title = match risk.as_str() {
         "shell" => "Run shell command",
         "file" => "Modify workspace files",
+        "workspace_escape" => "Access path outside project workspace",
         "network" => "Use network or browser action",
         risk if risk.starts_with("hardware") => "Use hardware device",
         "sensitive" => "Use browser login state",
@@ -37,6 +38,8 @@ pub(crate) fn permission_request_for_tool(
     .to_string();
     let why = if risk == "sensitive" {
         "The requested browser action would use the user's existing Lyra browser login state in an isolated background page."
+    } else if risk == "workspace_escape" {
+        "The requested path is outside the bound project workspace. Lyra can access it after approval."
     } else {
         "The requested tool can change external state or perform a high-risk action."
     };
@@ -168,6 +171,8 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
             | ("lyra_lumen", "press")
             | ("lyra_lumen", "submit")
             | ("lyra_lumen", "navigate")
+            | ("lyra_lumen", "reload")
+            | ("lyra_lumen", "detect_qr")
             | ("lyra_lumen", "elevate")
             | ("lyra_ax", "act")
             | ("lyra_ax", "press")
@@ -192,6 +197,8 @@ pub(crate) fn permission_summary(display_name: &str, action: &str, input: &Value
     for key in [
         "path",
         "filePath",
+        "workspaceRoot",
+        "outsideWorkspacePath",
         "command",
         "url",
         "softwareId",

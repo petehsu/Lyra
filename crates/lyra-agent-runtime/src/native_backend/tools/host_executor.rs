@@ -285,7 +285,15 @@ pub(crate) fn execute_host_tool_adapter(
                 redacted_tool_raw_output(display_name, action, value.clone()),
             );
             let raw = attach_policy_decision_to_raw(raw, policy_decision.clone());
-            let status = if value.get("ok").and_then(Value::as_bool) == Some(false)
+            let status = if value.get("status").and_then(Value::as_str) == Some("uncertain")
+                || value.get("outcome").and_then(Value::as_str) == Some("uncertain")
+            {
+                "uncertain"
+            } else if value.get("status").and_then(Value::as_str) == Some("blocked")
+                || value.get("browserBlocked").and_then(Value::as_bool) == Some(true)
+            {
+                "failed"
+            } else if value.get("ok").and_then(Value::as_bool) == Some(false)
                 || value.get("error").is_some_and(|value| !value.is_null())
             {
                 "failed"

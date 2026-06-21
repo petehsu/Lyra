@@ -1231,6 +1231,8 @@ export type WorkbenchBrowserAuthChallengeKind =
   | "mfa"
   | "oauth_popup"
   | "permission_prompt"
+  | "dormant_file_input"
+  | "active_file_chooser"
   | "login_wall"
   | "download_prompt"
   | "payment_auth";

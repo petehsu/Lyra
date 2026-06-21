@@ -4,6 +4,7 @@ import { createBrowserAgentInteractionExecutor } from "./agent-interaction-execu
 import { createBrowserAgentLocator } from "./agent-locator";
 import { createBrowserAgentObservationEngine } from "./agent-observation-engine";
 import { createBrowserAgentPageController } from "./agent-page-controller";
+import { createBrowserAgentQrController } from "./agent-qr-controller";
 import { createBrowserAgentPlanController } from "./agent-plan-controller";
 import { createBrowserAgentStateStore } from "./agent-state-store";
 import {
@@ -114,7 +115,8 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     requireEntry: host.requireEntry,
     resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
     stateStore,
-    waitForAgentPageLoad: host.waitForAgentPageLoad
+    waitForAgentPageLoad: host.waitForAgentPageLoad,
+    waitForAgentPageReload: host.waitForAgentPageReload
   });
   const elevation = createBrowserAgentElevationController({
     entries: host.entries,
@@ -123,6 +125,13 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     publishEvent: host.publishEvent,
     resolveBrowserAgentTarget: host.resolveBrowserAgentTarget,
     waitForAgentPageLoad: host.waitForAgentPageLoad
+  });
+  const qr = createBrowserAgentQrController({
+    captureTargetPage: host.captureTargetPage,
+    createVisualFrame: host.createVisualFrame,
+    publishBrowserAgentActivity: host.publishBrowserAgentActivity,
+    rememberVisualFrame: host.rememberVisualFrame,
+    resolveBrowserAgentTarget: host.resolveBrowserAgentTarget
   });
   const ax = createBrowserAxController({
     openDebuggerSessionForTarget: host.openDebuggerSessionForTarget,
@@ -217,6 +226,9 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
 
   return {
     actOnAgentElement: interaction.actOnAgentElement,
+    markCdpFileChooserClosed: stateStore.markCdpFileChooserClosed,
+    markCdpFileChooserOpen: stateStore.markCdpFileChooserOpen,
+    verifyAgentActionOutcome: interaction.verifyAgentActionOutcome,
     actOnAgentPoint: interaction.actOnAgentPoint,
     actOnAgentVisualPoint: interaction.actOnAgentVisualPoint,
     axMapAgentPage: ax.axMapAgentPage,
@@ -226,6 +238,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     axPressAgentKey: ax.axPressAgentKey,
     axExplainNode: ax.axExplainNode,
     captureAgentPage: page.captureAgentPage,
+    detectAgentPageQr: qr.detectAgentPageQr,
     completeElevationSession: elevation.completeElevationSession,
     dispose,
     elevateAgentPage: elevation.elevateAgentPage,
@@ -235,6 +248,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     invalidateBrowserAgentTargets,
     locateAgentPage: locator.locateAgentPage,
     navigateAgentPage: page.navigateAgentPage,
+    reloadAgentPage: page.reloadAgentPage,
     observeAgentPage: observationEngine.observeAgentPage,
     planAgentPage: plan.planAgentPage,
     pressAgentKey: focusInput.pressAgentKey,

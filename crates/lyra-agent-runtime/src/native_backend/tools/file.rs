@@ -525,9 +525,7 @@ pub(crate) fn collect_workspace_files(
             Err(_) => continue,
         };
         if metadata.is_dir() {
-            if path.starts_with(workspace_root) {
-                collect_workspace_files(workspace_root, &path, include_hidden, max_files, files)?;
-            }
+            collect_workspace_files(workspace_root, &path, include_hidden, max_files, files)?;
         } else if metadata.is_file() {
             files.push(path);
         }
@@ -1021,6 +1019,36 @@ pub(crate) fn diff_text(path: &str, old: &str, new: &str) -> String {
     } else {
         format!("--- {path}\n+++ {path}\n{patch}")
     }
+}
+
+pub(crate) fn path_qualifies_for_lyra_artifact_access(
+    raw_path: &str,
+) -> Result<bool, NativeToolFailure> {
+    let Some(path) = normalize_lyra_artifact_path_input(raw_path) else {
+        return Ok(false);
+    };
+    let candidate = PathBuf::from(path);
+    if !candidate.is_absolute() {
+        return Ok(false);
+    }
+    let allowed_roots = lyra_artifact_roots()?;
+    if allowed_roots.is_empty() {
+        return Ok(false);
+    }
+    let absolute = if candidate.exists() {
+        candidate.canonicalize().map_err(|error| {
+            NativeToolFailure::new(
+                "path_unavailable",
+                format!("failed to canonicalize Lyra artifact path: {error}"),
+                "Retry with a readable Lyra artifact path.",
+            )
+        })?
+    } else {
+        candidate
+    };
+    Ok(allowed_roots
+        .iter()
+        .any(|(root, _)| absolute.starts_with(root)))
 }
 
 pub(crate) fn resolve_lyra_artifact_path(

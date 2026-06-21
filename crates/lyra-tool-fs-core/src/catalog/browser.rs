@@ -59,6 +59,14 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             None,
         ),
         super::s(
+            "/tools/browser/detect_qr",
+            "browser",
+            "detect_qr",
+            "Detect browser QR codes",
+            "Capture the current browser viewport and detect QR codes with device-pixel bounds, optional QR-only crops, and vact-compatible captureId.",
+            None,
+        ),
+        super::s(
             "/tools/browser/act",
             "browser",
             "act",

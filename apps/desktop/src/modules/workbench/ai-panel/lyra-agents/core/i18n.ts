@@ -129,6 +129,9 @@ const ZH_MESSAGES = {
   "lyra-agents-turnFailure.providerAuth": "模型服务认证失败，请检查 API 配置。",
   "lyra-agents-turnFailure.contextLength": "对话上下文过长，请新建会话或缩短历史消息后重试。",
   "lyra-agents-turnFailure.cancelled": "这轮对话已取消。",
+  "lyra-agents-turnFailure.retry": "重试本轮",
+  "lyra-agents-turnFailure.browserBlocked":
+    "页面上传或权限窗口阻塞了浏览器自动化，请手动关闭后重试。",
   "lyra-agents-message.imageAttachment": "图片附件",
   "lyra-agents-message.workspaceScreenshot": "工作区截图",
   "lyra-agents-message.windowScreenshot": "窗口截图",
@@ -279,6 +282,9 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-turnFailure.providerAuth": "Model provider authentication failed. Check your API configuration.",
   "lyra-agents-turnFailure.contextLength": "The conversation context is too long. Start a new session or shorten history.",
   "lyra-agents-turnFailure.cancelled": "This turn was cancelled.",
+  "lyra-agents-turnFailure.retry": "Retry this turn",
+  "lyra-agents-turnFailure.browserBlocked":
+    "An upload or permission dialog is blocking browser automation. Close it and try again.",
   "lyra-agents-message.imageAttachment": "Image attachment",
   "lyra-agents-message.workspaceScreenshot": "Workspace screenshot",
   "lyra-agents-message.windowScreenshot": "Window screenshot",

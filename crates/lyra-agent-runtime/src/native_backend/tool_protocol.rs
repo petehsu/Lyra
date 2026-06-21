@@ -79,8 +79,65 @@ pub(crate) fn is_missing_tool_call_reply_error(error: &AgentRuntimeError) -> boo
         .contains("assistant promised tool use without structured tool_call")
 }
 
+pub(crate) fn is_tool_payload_leak_error(error: &AgentRuntimeError) -> bool {
+    error
+        .to_string()
+        .contains("tool payload envelope in visible assistant text")
+}
+
+pub(crate) fn is_browser_anchor_without_tools_error(error: &AgentRuntimeError) -> bool {
+    error.to_string().contains(
+        "assistant completed a browser-anchored request without structured browser tool_call",
+    )
+}
+
 pub(crate) fn protocol_leak_corrective_prompt() -> &'static str {
     "The previous assistant draft leaked Lyra internal tool placeholders or textual tool syntax into visible prose. Do not echo [Tool result ref:], [Tool call:], or similar internal markers. Emit a structured tool_call when a capability is required, otherwise answer with normal assistant text only."
+}
+
+pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str =
+    "Browser automation is paused because the page has an active upload dialog, permission prompt, or OS file picker. Do not call more browser tools until the user closes it. Tell the user to close the dialog and retry.";
+
+pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str =
+    "The previous assistant draft pasted raw browser tool output into visible chat text. Do not echo map/see/read tool payloads. Summarize the outcome in a few sentences, or emit a structured tool_call if more browser evidence is required.";
+
+pub(crate) const ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT: &str =
+    "The user anchored this request to a Workbench browser page via <lyra-page-cite> metadata, but no browser tool ran this turn. Emit the required structured browser tool_call now instead of claiming the page action is done.";
+
+pub(crate) const TURN_FAILURE_BROWSER_BLOCKED: &str = "lyra_turn_failure:browser_blocked";
+pub(crate) const TURN_FAILURE_EMPTY_RESPONSE: &str = "lyra_turn_failure:empty_response";
+pub(crate) const TURN_FAILURE_TIMEOUT: &str = "lyra_turn_failure:timeout";
+pub(crate) const TURN_FAILURE_CONTEXT_LENGTH: &str = "lyra_turn_failure:context_length";
+pub(crate) const TURN_FAILURE_PROVIDER_AUTH: &str = "lyra_turn_failure:provider_auth";
+pub(crate) const TURN_FAILURE_CANCELLED: &str = "lyra_turn_failure:cancelled";
+pub(crate) const TURN_FAILURE_GENERIC: &str = "lyra_turn_failure:generic";
+
+pub(crate) fn classify_turn_failure(message: &str) -> String {
+    if message.starts_with("lyra_turn_failure:") {
+        return message.to_string();
+    }
+    if super::activity::is_empty_model_reply_error(&AgentRuntimeError::Core(message.to_string())) {
+        return TURN_FAILURE_EMPTY_RESPONSE.to_string();
+    }
+    if super::activity::is_context_length_error(message) {
+        return TURN_FAILURE_CONTEXT_LENGTH.to_string();
+    }
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") {
+        return TURN_FAILURE_TIMEOUT.to_string();
+    }
+    if lower.contains("cancelled") || lower.contains("canceled") {
+        return TURN_FAILURE_CANCELLED.to_string();
+    }
+    if lower.contains("unauthorized")
+        || lower.contains("api key")
+        || lower.contains("authentication")
+        || lower.contains(" 401")
+        || lower.contains(" 403")
+    {
+        return TURN_FAILURE_PROVIDER_AUTH.to_string();
+    }
+    TURN_FAILURE_GENERIC.to_string()
 }
 
 pub(crate) fn no_tools_used_corrective_prompt(tools_available: bool) -> &'static str {
@@ -102,46 +159,7 @@ pub(crate) fn should_retry_missing_tool_call(
     let Some(content) = content.filter(|text| !text.trim().is_empty()) else {
         return false;
     };
-    if contains_leaked_internal_protocol_markers(content) {
-        return true;
-    }
-    looks_like_tool_action_preamble(content)
-}
-
-pub(crate) fn looks_like_tool_action_preamble(content: &str) -> bool {
-    let trimmed = content.trim();
-    if trimmed.is_empty() || trimmed.chars().count() > 240 {
-        return false;
-    }
-    let lower = trimmed.to_ascii_lowercase();
-    const NEEDLES: &[&str] = &[
-        "让我搜索",
-        "让我查",
-        "让我找",
-        "我去搜",
-        "我去查",
-        "我来搜",
-        "我来查",
-        "先搜索",
-        "先查",
-        "search for",
-        "searching for",
-        "let me search",
-        "let me look",
-        "let me fetch",
-        "let me check",
-        "i'll search",
-        "i will search",
-        "i'll look",
-        "i will look",
-        "i'll fetch",
-        "going to search",
-        "use web_search",
-        "use tool_fs",
-        "call web_",
-        "tool_call",
-    ];
-    NEEDLES.iter().any(|needle| lower.contains(needle))
+    contains_leaked_internal_protocol_markers(content)
 }
 
 pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> String {
@@ -169,6 +187,131 @@ pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> 
     format!(
         "{trimmed}\n\n{TOOL_OUTPUT_TRUNCATED_MARKER}; full output retained in session evidence.]"
     )
+}
+
+pub(crate) fn is_browser_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "lyra_lumen" | "lyra_ax" | "browser" | "browser_interact" | "lyra_computer" | "computer"
+    )
+}
+
+pub(crate) fn is_browser_tool_blocked_output(output: &Value) -> bool {
+    if output.get("browserBlocked").and_then(Value::as_bool) == Some(true) {
+        return true;
+    }
+    if output.pointer("/raw/browserBlocked").and_then(Value::as_bool) == Some(true) {
+        return true;
+    }
+    if output.pointer("/raw/status").and_then(Value::as_str) == Some("blocked") {
+        return true;
+    }
+    output
+        .pointer("/raw/blockedRegions")
+        .and_then(Value::as_array)
+        .is_some_and(|regions| {
+            regions.iter().any(|region| {
+                region.get("kind").and_then(Value::as_str) == Some("permission-prompt")
+            })
+        })
+}
+
+pub(crate) fn latest_user_message<'a>(messages: &'a [Value]) -> Option<&'a Value> {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+}
+
+pub(crate) fn user_message_has_browser_page_anchor(message: &Value) -> bool {
+    message
+        .pointer("/metadata/pageCitations")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+        || message
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| content.contains("<lyra-page-cite"))
+}
+
+pub(crate) fn tools_include_browser_capabilities(tools: &[Value]) -> bool {
+    tools.iter().any(|tool| {
+        tool.pointer("/function/name")
+            .and_then(Value::as_str)
+            .is_some_and(is_browser_tool_name)
+    })
+}
+
+pub(crate) fn should_reject_browser_anchor_without_browser_tools(
+    messages: &[Value],
+    tools: &[Value],
+    browser_tools_used_this_turn: usize,
+    tool_calls_empty: bool,
+) -> bool {
+    if !tool_calls_empty || browser_tools_used_this_turn > 0 {
+        return false;
+    }
+    if !tools_include_browser_capabilities(tools) {
+        return false;
+    }
+    latest_user_message(messages).is_some_and(user_message_has_browser_page_anchor)
+}
+
+fn value_is_host_tool_result_envelope(value: &Value) -> bool {
+    let kind = value.get("kind").and_then(Value::as_str).unwrap_or("");
+    if kind.starts_with("lyraLumen") || kind.starts_with("lyraAx") {
+        return true;
+    }
+    value.get("semanticTree").is_some()
+        || value.get("blockedRegions").is_some()
+        || value.get("observationId").is_some()
+        || value.get("browserBlocked").is_some()
+}
+
+fn tool_payload_envelope_markers() -> &'static [&'static str] {
+    &[
+        "\"semanticTree\"",
+        "\"blockedRegions\"",
+        "\"observationId\"",
+        "\"mapEpoch\"",
+        "\"targetRef\":\"lumen:",
+        "\"kind\":\"lyraLumenMap\"",
+        "\"kind\": \"lyraLumenMap\"",
+        "\"kind\":\"lyraLumenSee\"",
+        "\"kind\": \"lyraLumenSee\"",
+        "\"kind\":\"lyraLumenActionResult\"",
+        "\"kind\": \"lyraLumenActionResult\"",
+        "\"browserBlocked\"",
+        "\"elements\":[",
+    ]
+}
+
+pub(crate) fn contains_leaked_tool_payload_in_assistant_text(text: &str) -> bool {
+    if contains_leaked_internal_protocol_markers(text) {
+        return true;
+    }
+    if serde_json::from_str::<Value>(text.trim())
+        .ok()
+        .is_some_and(|value| value_is_host_tool_result_envelope(&value))
+    {
+        return true;
+    }
+    if text.trim().chars().count() < 120 {
+        return false;
+    }
+    tool_payload_envelope_markers()
+        .iter()
+        .any(|marker| find_ascii_case_insensitive(text, marker, 0).is_some())
+}
+
+pub(crate) fn validate_visible_assistant_text_protocol(text: &str) -> Result<(), AgentRuntimeError> {
+    if contains_leaked_tool_payload_in_assistant_text(text) {
+        return Err(AgentRuntimeError::Core(
+            "provider emitted tool payload envelope in visible assistant text instead of a structured Lyra tool_call"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn tool_outputs_by_id_from_session_tools(tools: &[Value]) -> HashMap<String, String> {
@@ -257,16 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn detects_missing_tool_call_preamble() {
-        assert!(looks_like_tool_action_preamble(
-            "让我搜索一下黑盒安全测试相关的开源项目。"
-        ));
-        assert!(!looks_like_tool_action_preamble(
-            "这是 Shannon 的完整介绍，包含部署方式、限制和适用场景。"
-        ));
-    }
-
-    #[test]
     fn sanitize_empty_when_only_protocol_marker_remains() {
         assert_eq!(
             sanitize_visible_assistant_text("[Tool result ref: call_abc]"),
@@ -295,8 +428,94 @@ mod tests {
     #[test]
     fn should_retry_when_placeholder_leaks_without_tool_calls() {
         assert!(should_retry_missing_tool_call(
-            Some("让我搜索一下。 [Tool result ref: call_abc]"),
+            Some("Follow-up context. [Tool result ref: call_abc]"),
             &[json!({"type": "function"})],
+            true,
+        ));
+        assert!(!should_retry_missing_tool_call(
+            Some("让我搜索一下黑盒安全测试相关的开源项目。"),
+            &[json!({"type": "function"})],
+            true,
+        ));
+    }
+
+    #[test]
+    fn detects_browser_blocked_output_from_map_payload() {
+        let output = json!({
+            "content": "map",
+            "raw": {
+                "browserBlocked": true,
+                "blockedRegions": [{ "kind": "permission-prompt" }]
+            }
+        });
+        assert!(is_browser_tool_blocked_output(&output));
+    }
+
+    #[test]
+    fn detects_structural_tool_payload_leak_in_assistant_text() {
+        let assistant = r#"{"kind":"lyraLumenMap","blockedRegions":[],"elements":[]}"#;
+        assert!(contains_leaked_tool_payload_in_assistant_text(assistant));
+    }
+
+    #[test]
+    fn rejects_browser_anchor_without_tools_when_page_cite_present() {
+        let messages = vec![json!({
+            "role": "user",
+            "content": "Please comment on this element.",
+            "metadata": {
+                "pageCitations": [{
+                    "id": "page-cite-1",
+                    "tabId": "browser-tab-1",
+                    "pageUrl": "https://example.test/post"
+                }]
+            }
+        })];
+        let tools = vec![json!({
+            "type": "function",
+            "function": { "name": "lyra_lumen" }
+        })];
+        assert!(should_reject_browser_anchor_without_browser_tools(
+            &messages,
+            &tools,
+            0,
+            true,
+        ));
+    }
+
+    #[test]
+    fn classify_turn_failure_maps_runtime_errors_to_structured_codes() {
+        assert_eq!(
+            classify_turn_failure("provider returned no assistant text or tool call"),
+            TURN_FAILURE_EMPTY_RESPONSE
+        );
+        assert_eq!(
+            classify_turn_failure("context length exceeds maximum window"),
+            TURN_FAILURE_CONTEXT_LENGTH
+        );
+        assert_eq!(
+            classify_turn_failure(TURN_FAILURE_BROWSER_BLOCKED),
+            TURN_FAILURE_BROWSER_BLOCKED
+        );
+        assert_eq!(
+            classify_turn_failure("provider request timed out"),
+            TURN_FAILURE_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn does_not_reject_plain_text_without_browser_anchor() {
+        let messages = vec![json!({
+            "role": "user",
+            "content": "请在说说下评论自我评价"
+        })];
+        let tools = vec![json!({
+            "type": "function",
+            "function": { "name": "lyra_lumen" }
+        })];
+        assert!(!should_reject_browser_anchor_without_browser_tools(
+            &messages,
+            &tools,
+            0,
             true,
         ));
     }

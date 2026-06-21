@@ -895,7 +895,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_navigate",
-                "Navigate a Lyra browser page.",
+                "Navigate a Lyra browser page to a URL. Does not reload when the target URL already matches the current page; use lyra_lumen_reload for a hard refresh.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -904,6 +904,43 @@ impl ToolProvider for BuiltInLyraToolProvider {
                     "timeoutMs": { "type": "number" }
                 }))
                 .with_required(vec!["url"]),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_reload",
+                "Reload the current Lyra browser page in place. Use this when the member asks to refresh/reload, when stale DOM state is suspected, or after auth/modal changes. Set ignoreCache=true to bypass cache.",
+                "hostCapability",
+                "runtimePolicy",
+                lumen_target_schema(json!({
+                    "ignoreCache": { "type": "boolean", "default": false },
+                    "timeoutMs": { "type": "number" }
+                })),
+                Some("browser.operate"),
+            ),
+            capability(
+                "lyra-browser",
+                "lyra_lumen_detect_qr",
+                "Capture the current Lyra browser viewport and detect QR codes without a vision model. Returns device-pixel bounds, decoded payload, optional QR-only crop artifacts, and a vact-compatible captureId. Works through cross-origin iframes because detection runs on the composited screenshot. Use region to scan a blocked iframe/login area first.",
+                "read",
+                "hostCapability",
+                lumen_target_schema(json!({
+                    "region": {
+                        "type": "object",
+                        "properties": {
+                            "x": { "type": "number" },
+                            "y": { "type": "number" },
+                            "width": { "type": "number" },
+                            "height": { "type": "number" }
+                        },
+                        "required": ["x", "y", "width", "height"]
+                    },
+                    "maxCodes": { "type": "number", "default": 4 },
+                    "cropQr": { "type": "boolean", "default": true },
+                    "includePageCapture": { "type": "boolean", "default": false },
+                    "cropPadding": { "type": "number", "default": 8 },
+                    "timeoutMs": { "type": "number" }
+                })),
                 Some("browser.operate"),
             ),
             capability(
@@ -2262,6 +2299,7 @@ mod tests {
             "lyra_lumen_wait",
             "lyra_lumen_read_until",
             "lyra_lumen_navigate",
+            "lyra_lumen_reload",
             "lyra_lumen_reveal",
             "lyra_lumen_focus_scan",
         ] {

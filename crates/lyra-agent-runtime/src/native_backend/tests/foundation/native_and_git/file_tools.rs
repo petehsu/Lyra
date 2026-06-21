@@ -66,14 +66,27 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
             .and_then(Value::as_str),
         Some("raw_data")
     );
-    let outside_write = tool_file_write(
+    let outside_path = temp
+        .path()
+        .parent()
+        .expect("temp parent")
+        .join("outside-tool-test.txt");
+    tool_file_write(
         &session_id,
         &turn_id,
         "tool-outside-write",
-        &json!({ "path": "../outside.txt", "content": "no", "overwrite": true }),
+        &json!({
+            "path": outside_path.display().to_string(),
+            "content": "outside workspace write",
+            "overwrite": true
+        }),
     )
-    .expect_err("outside write should fail");
-    assert_eq!(outside_write.code, "permission_denied");
+    .expect("direct file tool can write outside workspace after approval layer is bypassed");
+    assert_eq!(
+        fs::read_to_string(&outside_path).expect("read outside file"),
+        "outside workspace write"
+    );
+    let _ = fs::remove_file(&outside_path);
     let unread_edit = tool_file_edit(
         &session_id,
         &turn_id,

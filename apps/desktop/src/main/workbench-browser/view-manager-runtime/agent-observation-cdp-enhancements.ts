@@ -641,7 +641,11 @@ export const applyCdpEnhancementsToElements = (
   let computedStyleFiltered = 0;
 
   const enhanced = elements.flatMap((element) => {
-    if (element.discoveryScope === "visual" || element.discoveryScope === "ax") {
+    if (
+      element.discoveryScope === "visual"
+      || element.discoveryScope === "coordinate"
+      || element.discoveryScope === "ax"
+    ) {
       return [element];
     }
     const matched = matchSnapshotNodeForElement(element, enhancements.snapshotNodes);

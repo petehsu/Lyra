@@ -117,3 +117,50 @@ export const materializeLumenCapture = async (
   };
 };
 
+export const materializeQrCropCapture = async (
+  storageRoot: string,
+  tabId: string,
+  capture: {
+    readonly mimeType: string;
+    readonly imageBase64: string;
+    readonly width: number;
+    readonly height: number;
+  },
+  index: number
+) => {
+  const mediaType = capture.mimeType.trim().toLowerCase();
+  if (!mediaType.startsWith("image/")) {
+    throw new Error("QR crop capture did not return an image.");
+  }
+  const buffer = Buffer.from(capture.imageBase64, "base64");
+  if (buffer.length === 0 || buffer.length > IMAGE_ATTACHMENT_MAX_BYTES) {
+    throw new Error("QR crop capture size is invalid.");
+  }
+  const directory = join(storageRoot, "lumen-evidence");
+  await mkdir(directory, { recursive: true });
+  const artifactId = `lumen-qr-${Date.now()}-${randomUUID()}`;
+  const sanitizedTabId = tabId
+    .replace(/[^A-Za-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 48) || "browser";
+  const filePath = join(
+    directory,
+    `${artifactId}-${sanitizedTabId}-${index}.${extensionForImageMediaType(mediaType)}`
+  );
+  await writeFile(filePath, buffer);
+  return {
+    id: artifactId,
+    kind: "image",
+    mediaType,
+    path: filePath,
+    width: capture.width,
+    height: capture.height,
+    visibleOnly: true,
+    sizeBytes: buffer.length,
+    openTarget: {
+      kind: "file",
+      path: filePath
+    }
+  };
+};
+

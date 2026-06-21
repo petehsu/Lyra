@@ -1,3 +1,4 @@
+import { canonicalizeBrowserCitationUrls } from "../../../shared/canonicalize-browser-url";
 import {
   PAGE_DRAG_CITATION_MIME,
   PAGE_DRAG_CITATION_PLAIN_PREFIX,
@@ -87,13 +88,17 @@ const isPageDragCitationPayload = (value: unknown): value is PageDragCitationPay
 
 const normalizePayload = (payload: PageDragCitationPayload): PageDragCitationPayload | null => {
   const tabId = payload.tabId.trim();
-  const pageUrl = payload.pageUrl.trim();
   const pageTitle = payload.pageTitle.trim();
-  if (tabId.length === 0 || pageUrl.length === 0) {
+  const canonical = canonicalizeBrowserCitationUrls(
+    payload.pageUrl,
+    payload.frameUrl
+  );
+  if (tabId.length === 0 || canonical === null) {
     return null;
   }
+  const pageUrl = canonical.pageUrl;
   const mediaType = normalizeMediaType(payload.mediaType);
-  const frameUrl = optionalString(payload.frameUrl);
+  const frameUrl = canonical.frameUrl ?? undefined;
   const selectionText = optionalString(payload.selectionText);
   const linkUrl = optionalString(payload.linkUrl);
   const linkText = optionalString(payload.linkText);

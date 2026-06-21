@@ -117,6 +117,8 @@ struct ModelLoopProgressGuard {
     last_fingerprint: Option<String>,
     repeated_occurrences: usize,
     browser_loop_detector: browser_loop_detector::BrowserLoopDetector,
+    browser_automation_paused: bool,
+    browser_tools_used_this_turn: usize,
 }
 
 #[derive(Debug)]
@@ -304,7 +306,10 @@ pub(crate) fn run_model_loop(
                 if !retried_after_context_error && is_context_length_error(&error.to_string()) =>
             {
                 retried_after_context_error = true;
-                messages = compact_messages_for_retry(messages);
+                messages = compact_messages_for_retry(
+                    messages,
+                    request.capabilities.context_window,
+                );
                 emit_context_trimmed(
                     session_id,
                     json!({
@@ -326,6 +331,22 @@ pub(crate) fn run_model_loop(
             Err(error) if !retried_after_empty_reply && is_empty_model_reply_error(&error) => {
                 retried_after_empty_reply = true;
                 clear_failed_assistant_draft(session_id, turn_id);
+                let signals = crate::retention_policy::retention_signals_from_provider_messages(
+                    &messages,
+                    request.capabilities.context_window,
+                );
+                messages = crate::retention_policy::compact_provider_messages_for_retry(
+                    messages,
+                    &signals,
+                    crate::retention_policy::TrimAggressiveness::Elevated,
+                );
+                emit_context_trimmed(
+                    session_id,
+                    json!({
+                        "reason": "provider_empty_reply_retry",
+                        "retry": true,
+                    }),
+                );
                 messages.push(json!({
                     "role": "system",
                     "content": "The previous provider response was empty and could not be committed to Lyra's factual timeline. Continue the same user request now. If a capability is needed, emit a structured tool_call. Otherwise answer with normal assistant text. Do not return an empty assistant message."
@@ -354,6 +375,44 @@ pub(crate) fn run_model_loop(
                     turn_id,
                     "provider_textual_protocol_leak_retry",
                     protocol_leak_retries,
+                    &error.to_string(),
+                );
+                continue;
+            }
+            Err(error)
+                if protocol_leak_retries < max_protocol_leak_retry()
+                    && is_tool_payload_leak_error(&error) =>
+            {
+                protocol_leak_retries += 1;
+                clear_failed_assistant_draft(session_id, turn_id);
+                messages.push(json!({
+                    "role": "system",
+                    "content": tool_protocol::TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT,
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_tool_payload_leak_retry",
+                    protocol_leak_retries,
+                    &error.to_string(),
+                );
+                continue;
+            }
+            Err(error)
+                if missing_tool_retries < max_missing_tool_retry()
+                    && is_browser_anchor_without_tools_error(&error) =>
+            {
+                missing_tool_retries += 1;
+                clear_failed_assistant_draft(session_id, turn_id);
+                messages.push(json!({
+                    "role": "system",
+                    "content": tool_protocol::ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT,
+                }));
+                emit_provider_retry(
+                    session_id,
+                    turn_id,
+                    "provider_browser_anchor_without_tools_retry",
+                    missing_tool_retries,
                     &error.to_string(),
                 );
                 continue;
@@ -496,6 +555,22 @@ pub(crate) fn run_model_loop(
                     "provider returned no assistant text or tool call".to_string(),
                 ));
             }
+            if tool_protocol::should_reject_browser_anchor_without_browser_tools(
+                &messages,
+                &request.tools,
+                progress_guard.browser_tools_used_this_turn,
+                true,
+            ) {
+                if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
+                    let _ = remove_assistant_message(session_id, message_id);
+                } else {
+                    clear_failed_assistant_draft(session_id, turn_id);
+                }
+                return Err(AgentRuntimeError::Core(
+                    "assistant completed a browser-anchored request without structured browser tool_call"
+                        .to_string(),
+                ));
+            }
             let final_text = reply.content.clone().unwrap_or_default();
             if !reply.provider_replay_items.is_empty() {
                 provider_replay_items.extend(reply.provider_replay_items.clone());
@@ -563,6 +638,35 @@ pub(crate) fn run_model_loop(
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
             }
+            if progress_guard.browser_automation_paused
+                && tool_protocol::is_browser_tool_name(&call.name)
+            {
+                let skipped = json!({
+                    "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                    "raw": {
+                        "ok": false,
+                        "status": "blocked",
+                        "browserBlocked": true,
+                        "skipped": true,
+                        "reason": "browser_automation_paused",
+                    }
+                });
+                provider_tool_results.push(
+                    skipped
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                );
+                let mut tool_message = json!({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": skipped["content"],
+                });
+                messages.push(tool_message.clone());
+                provider_transcript.push(tool_message);
+                continue;
+            }
             emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
             let output = execute_model_tool_with_runtime(
                 session_id,
@@ -574,11 +678,18 @@ pub(crate) fn run_model_loop(
             );
             let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
             provider_tool_results.push(content.clone());
+            if tool_protocol::is_browser_tool_name(&call.name) {
+                progress_guard.browser_tools_used_this_turn =
+                    progress_guard.browser_tools_used_this_turn.saturating_add(1);
+            }
             if let Some(parsed) =
                 browser_loop_detector::parse_browser_tool_call(&call.name, &call.arguments)
             {
                 browser_tool_calls.push(parsed);
                 browser_tool_outputs.push(output.clone());
+            }
+            if tool_protocol::is_browser_tool_blocked_output(&output) {
+                progress_guard.browser_automation_paused = true;
             }
             if let Some(evidence_ref) = evidence_ref {
                 emit_context_trimmed(
@@ -634,6 +745,12 @@ pub(crate) fn run_model_loop(
             messages.push(json!({
                 "role": "system",
                 "content": nudge,
+            }));
+        }
+        if progress_guard.browser_automation_paused {
+            messages.push(json!({
+                "role": "system",
+                "content": tool_protocol::BROWSER_BLOCKED_CORRECTIVE_PROMPT,
             }));
         }
 
@@ -1641,6 +1758,7 @@ pub(crate) fn normalize_model_reply_protocol(
                 .to_string(),
         ));
     }
+    tool_protocol::validate_visible_assistant_text_protocol(&content)?;
     let sanitized = sanitize_visible_assistant_text(&content);
     if reply.tool_calls.is_empty()
         && should_retry_missing_tool_call(sanitized.as_deref(), tools, true)

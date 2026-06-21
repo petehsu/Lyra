@@ -98,6 +98,7 @@ export const createWorkbenchBrowserViewManager = ({
   const webContentsLoadWaiter = createWebContentsLoadWaiter();
   const cancelPendingAgentPageLoad = webContentsLoadWaiter.cancelPendingLoad;
   const waitForAgentPageLoad = webContentsLoadWaiter.waitForLoad;
+  const waitForAgentPageReload = webContentsLoadWaiter.waitForReload;
   let agentShadowController: ReturnType<typeof createAgentShadowController>;
   let agentController: ReturnType<typeof createWorkbenchBrowserAgentController>;
   let chromePopoverRuntime: ReturnType<typeof createChromePopoverRuntime>;
@@ -137,9 +138,15 @@ export const createWorkbenchBrowserViewManager = ({
   };
   const readBrowserAgentShadow = (tabId: string): BrowserAgentShadowEntry | undefined =>
     agentShadowController.readShadow(tabId);
+  const fileChooserHooks: {
+    onOpened?: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => void;
+    onClosed?: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => void;
+  } = {};
   const cdpDiagnostics = createCdpDiagnosticsController({
     resolveBrowserAgentTarget: async (tabId, request, timeoutMs) =>
-      await resolveBrowserAgentTarget(tabId, request, timeoutMs)
+      await resolveBrowserAgentTarget(tabId, request, timeoutMs),
+    onFileChooserOpened: (tabId, targetMode) => fileChooserHooks.onOpened?.(tabId, targetMode),
+    onFileChooserClosed: (tabId, targetMode) => fileChooserHooks.onClosed?.(tabId, targetMode)
   });
   const {
     auditAgentPageDiagnostics,
@@ -436,6 +443,7 @@ export const createWorkbenchBrowserViewManager = ({
     resolveBrowserAgentTarget,
     navigateInEntry: pageRegistry.navigateInEntry,
     waitForAgentPageLoad,
+    waitForAgentPageReload,
     openDebuggerSessionForTarget,
     ...(osAxAdapter === undefined ? {} : { osAxAdapter }),
     readPageDiagnostics,
@@ -471,6 +479,7 @@ export const createWorkbenchBrowserViewManager = ({
     axPressAgentKey,
     axExplainNode,
     captureAgentPage,
+    detectAgentPageQr,
     completeElevationSession,
     elevateAgentPage,
     explainAgentTargetRef,
@@ -478,6 +487,7 @@ export const createWorkbenchBrowserViewManager = ({
     focusAgentPage,
     locateAgentPage,
     navigateAgentPage,
+    reloadAgentPage,
     observeAgentPage,
     planAgentPage,
     pressAgentKey,
@@ -487,6 +497,8 @@ export const createWorkbenchBrowserViewManager = ({
     showAgentActivity,
     typeIntoAgentElement
   } = agentController;
+  fileChooserHooks.onOpened = agentController.markCdpFileChooserOpen;
+  fileChooserHooks.onClosed = agentController.markCdpFileChooserClosed;
 
   const readSessionSnapshot = (): BrowserSessionSnapshot | null => persistBrowserSessionSnapshot();
 
@@ -708,11 +720,13 @@ export const createWorkbenchBrowserViewManager = ({
     typeIntoAgentElement,
     pressAgentKey,
     navigateAgentPage,
+    reloadAgentPage,
     readAgentPage,
     replayWorkflowOnPage,
     findAgentPage,
     locateAgentPage,
     captureAgentPage,
+    detectAgentPageQr,
     showAgentActivity,
     readAgentFollowAudit,
     finishAgentFollowSessions,
@@ -720,6 +734,7 @@ export const createWorkbenchBrowserViewManager = ({
     auditAgentPageDiagnostics,
     elevateAgentPage,
     completeElevationSession,
-    resolveSharedControlDecision
+    resolveSharedControlDecision,
+    verifyAgentActionOutcome: agentController.verifyAgentActionOutcome
   };
 };

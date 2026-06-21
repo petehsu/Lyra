@@ -290,6 +290,9 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
                     committed_message = append_tool_block_to_message(session, message_id, tool_id);
                 }
                 upsert_tool(&mut session.snapshot, tool.clone());
+                if event_kind == "toolFinished" {
+                    super::session_resilience::update_resilience_from_tool_finish(session, &tool);
+                }
                 record_rollback_file_candidates(session, turn_id, &tool);
                 session.snapshot["follow"] = json!({
                     "running": true,
@@ -601,6 +604,8 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("lyra_lumen", "wait") => "Waited for browser",
         ("lyra_lumen", "read_until") => "Read browser until condition",
         ("lyra_lumen", "navigate") => "Navigated browser",
+        ("lyra_lumen", "reload") => "Reloaded browser page",
+        ("lyra_lumen", "detect_qr") => "Detected browser QR codes",
         ("lyra_lumen", "reveal") => "Revealed browser controls",
         ("lyra_lumen", "focus_scan") => "Scanned browser focus",
         ("lyra_lumen", "follow_audit") => "Read browser follow audit",
@@ -1590,29 +1595,19 @@ pub(crate) fn is_empty_model_reply_error(error: &AgentRuntimeError) -> bool {
         || message.contains("provider finished with tool_calls but returned no complete tool call")
 }
 
-pub(crate) fn compact_messages_for_retry(messages: Vec<Value>) -> Vec<Value> {
-    if messages.len() <= 12 {
-        return messages;
-    }
-    let mut compacted = Vec::new();
-    if let Some(system) = messages.first() {
-        compacted.push(system.clone());
-    }
-    let dropped = messages.len().saturating_sub(11);
-    compacted.push(json!({
-        "role": "system",
-        "content": format!("Lyra compacted earlier provider context after a context length error. Dropped message count: {dropped}. Prefer the latest user intent and retained tool evidence over older summaries."),
-    }));
-    compacted.extend(
-        messages
-            .into_iter()
-            .rev()
-            .take(10)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev(),
+pub(crate) fn compact_messages_for_retry(
+    messages: Vec<Value>,
+    context_window: Option<usize>,
+) -> Vec<Value> {
+    let signals = crate::retention_policy::retention_signals_from_provider_messages(
+        &messages,
+        context_window,
     );
-    compacted
+    crate::retention_policy::compact_provider_messages_for_retry(
+        messages,
+        &signals,
+        crate::retention_policy::TrimAggressiveness::Emergency,
+    )
 }
 
 pub(crate) fn emit_context_trimmed(session_id: &str, detail: Value) {

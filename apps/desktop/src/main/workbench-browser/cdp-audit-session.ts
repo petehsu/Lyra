@@ -56,6 +56,8 @@ type CreateCdpAuditSessionOptions = {
   readonly targetMode: WorkbenchBrowserAgentTargetMode;
   readonly acquireDebugger: () => Promise<WorkbenchBrowserDebuggerSession>;
   readonly onDiagnostic: (entry: WorkbenchBrowserPageDiagnosticEntry) => void;
+  readonly onFileChooserOpened?: () => void;
+  readonly onFileChooserClosed?: () => void;
   readonly maxBufferedEntries?: number;
   readonly responseBodyMaxBytes?: number;
 };
@@ -170,6 +172,8 @@ export const createCdpAuditSession = ({
   targetMode,
   acquireDebugger,
   onDiagnostic,
+  onFileChooserOpened,
+  onFileChooserClosed,
   maxBufferedEntries = 300,
   responseBodyMaxBytes = 16 * 1024
 }: CreateCdpAuditSessionOptions): CdpAuditSession => {
@@ -339,6 +343,14 @@ export const createCdpAuditSession = ({
         }
         break;
       }
+      case "Page.fileChooserOpened": {
+        onFileChooserOpened?.();
+        break;
+      }
+      case "Page.frameNavigated": {
+        onFileChooserClosed?.();
+        break;
+      }
       case "Inspector.targetCrashed": {
         emitDiagnostic({
           source: "page",
@@ -402,6 +414,13 @@ export const createCdpAuditSession = ({
               `CDP domain ${command.method.replace(".enable", "")} unavailable: ${toErrorMessage(error)}`
             );
           }
+        }
+        try {
+          await session.sendCommand("Page.setInterceptFileChooserDialog", { enabled: true });
+        } catch (error) {
+          emitSessionWarning(
+            `CDP file chooser interception unavailable: ${toErrorMessage(error)}`
+          );
         }
         available = true;
         unavailableReason = undefined;

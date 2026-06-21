@@ -63,6 +63,55 @@ pub(crate) fn collect_pinned_items(
         }
     }
 
+    for line in super::session_resilience::resume_context_lines(session) {
+        items.push(PinnedItem {
+            kind: "resume_context".to_string(),
+            title: "Session resume context".to_string(),
+            content: line,
+            source_ref: Some(session.id.clone()),
+            message_ids: Vec::new(),
+        });
+    }
+
+    if let Some(blocked) = super::session_resilience::active_blocked_browser(session) {
+        items.push(PinnedItem {
+            kind: "browser_blocked".to_string(),
+            title: "Blocked browser regions".to_string(),
+            content: blocked
+                .get("blockedRegions")
+                .and_then(Value::as_array)
+                .map(|regions| format!("{} active blocked region(s)", regions.len()))
+                .unwrap_or_else(|| "Browser automation is blocked".to_string()),
+            source_ref: Some(session.id.clone()),
+            message_ids: Vec::new(),
+        });
+    }
+
+    for milestone in snapshot
+        .get("taskMilestones")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .rev()
+        .take(6)
+    {
+        let detail = milestone.get("detail").and_then(Value::as_str).unwrap_or("");
+        if detail.is_empty() {
+            continue;
+        }
+        items.push(PinnedItem {
+            kind: "milestone".to_string(),
+            title: milestone
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("milestone")
+                .to_string(),
+            content: detail.to_string(),
+            source_ref: milestone.get("id").and_then(Value::as_str).map(str::to_string),
+            message_ids: Vec::new(),
+        });
+    }
+
     for todo in snapshot
         .get("todos")
         .and_then(Value::as_array)

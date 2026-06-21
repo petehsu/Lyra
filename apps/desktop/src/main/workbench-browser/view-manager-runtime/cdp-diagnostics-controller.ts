@@ -28,16 +28,25 @@ import {
 import { MAX_BROWSER_PAGE_DIAGNOSTICS, normalizeAddress } from "./normalizers";
 import type { BrowserAgentPageTarget, BrowserPageEntry } from "./types";
 
+type FileChooserHook = (
+  tabId: string,
+  targetMode: WorkbenchBrowserAgentTargetMode
+) => void;
+
 type CdpDiagnosticsControllerHost = {
   readonly resolveBrowserAgentTarget: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest | WorkbenchBrowserAgentTargetMode | undefined,
     timeoutMs: number | undefined
   ) => Promise<BrowserAgentPageTarget>;
+  readonly onFileChooserOpened?: FileChooserHook;
+  readonly onFileChooserClosed?: FileChooserHook;
 };
 
 export const createCdpDiagnosticsController = ({
-  resolveBrowserAgentTarget
+  resolveBrowserAgentTarget,
+  onFileChooserOpened,
+  onFileChooserClosed
 }: CdpDiagnosticsControllerHost) => {
   const pageDiagnostics = new Map<string, WorkbenchBrowserPageDiagnosticEntry[]>();
   const debuggerSessions = new Map<
@@ -120,6 +129,12 @@ export const createCdpDiagnosticsController = ({
       onDiagnostic: (diagnostic) => {
         appendPageDiagnostic(target.tabId, diagnostic);
       },
+      ...(onFileChooserOpened === undefined
+        ? {}
+        : { onFileChooserOpened: () => onFileChooserOpened(target.tabId, target.targetMode) }),
+      ...(onFileChooserClosed === undefined
+        ? {}
+        : { onFileChooserClosed: () => onFileChooserClosed(target.tabId, target.targetMode) }),
       maxBufferedEntries: MAX_BROWSER_PAGE_DIAGNOSTICS
     });
     cdpAuditSessions.set(key, created);

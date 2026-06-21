@@ -222,7 +222,26 @@ pub(crate) fn spawn_post_turn_session_trim(root: PathBuf, session_id: String) {
                 .get("updatedAt")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            let config = TrimControllerConfig::default();
+            let messages = session
+                .snapshot
+                .get("messages")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let session_tool_count = session
+                .snapshot
+                .get("tools")
+                .and_then(Value::as_array)
+                .map(|tools| tools.len())
+                .unwrap_or(0);
+            let signals = crate::retention_policy::retention_signals_from_session_messages(
+                &messages,
+                session_tool_count,
+                None,
+            );
+            let config = crate::retention_policy::trim_controller_config_from_policy(
+                crate::retention_policy::retention_policy_from_messages(&messages, &signals),
+            );
             let _ = maybe_trim_session_with_active_clarification(
                 &mut session,
                 &root,

@@ -44,13 +44,15 @@ const buildBrowserAgentObservationScript = ({
   frameRef,
   frameBounds,
   strategy,
-  includeChildFrames
+  includeChildFrames,
+  activeFileChooserPending = false
 }: {
   readonly frameTreeNodeId: number;
   readonly frameRef: string;
   readonly frameBounds: WorkbenchBrowserFrameGlobalBounds;
   readonly strategy: WorkbenchBrowserAgentObserveStrategy;
   readonly includeChildFrames: boolean;
+  readonly activeFileChooserPending?: boolean;
 }): string => `
   (() => {
     const FRAME_TREE_NODE_ID = ${JSON.stringify(frameTreeNodeId)};
@@ -58,6 +60,7 @@ const buildBrowserAgentObservationScript = ({
     const FRAME_BOUNDS = ${JSON.stringify(frameBounds)};
     const STRATEGY = ${JSON.stringify(strategy)};
     const INCLUDE_CHILD_FRAMES = ${JSON.stringify(includeChildFrames)};
+    const ACTIVE_FILE_CHOOSER_PENDING = ${JSON.stringify(activeFileChooserPending)};
     const LIGHTWEIGHT_STRATEGY = STRATEGY === "interactiveOnly" || STRATEGY === "picker" || STRATEGY === "focus";
     const MAX_LIGHTWEIGHT_SCAN_NODES = 3000;
     const MAX_LIGHTWEIGHT_CANDIDATES = 220;
@@ -455,13 +458,24 @@ const buildBrowserAgentObservationScript = ({
       const fileInputs = Array.from(doc.querySelectorAll("input[type='file']"))
         .filter((element) => isVisible(element, win) && !isDisabled(element));
       if (fileInputs.length > 0) {
-        pushSignal({
-          kind: "permission_prompt",
-          confidence: "medium",
-          source: "attribute",
-          label: "visible file chooser",
-          url: frameUrl
-        });
+        if (ACTIVE_FILE_CHOOSER_PENDING) {
+          pushSignal({
+            kind: "active_file_chooser",
+            confidence: "high",
+            source: "attribute",
+            label: "system file picker or active upload dialog",
+            url: frameUrl
+          });
+        } else {
+          pushSignal({
+            kind: "dormant_file_input",
+            confidence: "low",
+            source: "attribute",
+            label: "dormant page upload control",
+            url: frameUrl
+          });
+          warnings.push("dormant_file_input_detected");
+        }
       }
       const paymentFields = Array.from(doc.querySelectorAll(
         "input[autocomplete='cc-number'], input[autocomplete='cc-csc'], input[autocomplete='cc-exp'], iframe[src*='stripe'], iframe[src*='paypal']"

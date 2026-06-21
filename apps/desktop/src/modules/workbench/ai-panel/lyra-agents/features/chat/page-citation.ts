@@ -2,6 +2,7 @@ import type {
   AgentPageCitation,
   AgentPageCitationExcerptKind
 } from "../../../../../../shared/agent";
+import { canonicalizeBrowserCitationUrls } from "../../../../../../shared/canonicalize-browser-url";
 import type { ExternalPageDragPayload } from "./external-page-drag";
 import type {
   PageDragCitationPayload,
@@ -259,8 +260,14 @@ export const normalizePageCitation = (raw: unknown): AgentPageCitation | null =>
   if (raw === null || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
   const tabId = typeof value.tabId === "string" && value.tabId.length > 0 ? value.tabId : null;
-  const pageUrl = typeof value.pageUrl === "string" && value.pageUrl.length > 0 ? value.pageUrl : null;
-  if (tabId === null || pageUrl === null) return null;
+  const rawPageUrl = typeof value.pageUrl === "string" && value.pageUrl.length > 0 ? value.pageUrl : null;
+  const rawFrameUrl = typeof value.frameUrl === "string" ? value.frameUrl : null;
+  const canonical =
+    rawPageUrl === null
+      ? null
+      : canonicalizeBrowserCitationUrls(rawPageUrl, rawFrameUrl);
+  if (tabId === null || canonical === null) return null;
+  const pageUrl = canonical.pageUrl;
   const id = typeof value.id === "string" && value.id.length > 0 ? value.id : `page-cite-${tabId}`;
   const excerptKind: AgentPageCitationExcerptKind =
     value.excerptKind === "selection" || value.excerptKind === "link" || value.excerptKind === "page"
@@ -288,7 +295,7 @@ export const normalizePageCitation = (raw: unknown): AgentPageCitation | null =>
     tabTitle: typeof value.tabTitle === "string" ? value.tabTitle : "",
     pageUrl,
     pageTitle: typeof value.pageTitle === "string" ? value.pageTitle : pageUrl,
-    frameUrl: typeof value.frameUrl === "string" ? value.frameUrl : null,
+    frameUrl: canonical.frameUrl,
     linkUrl: typeof value.linkUrl === "string" ? value.linkUrl : null,
     linkText: typeof value.linkText === "string" ? value.linkText : null,
     srcUrl: typeof value.srcUrl === "string" ? value.srcUrl : null,

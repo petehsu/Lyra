@@ -53,6 +53,11 @@ export type WorkbenchBrowserAgentControllerHost = {
     timeoutMs: number,
     options?: { readonly waitForReady?: boolean }
   ) => Promise<void>;
+  readonly waitForAgentPageReload: (
+    webContents: BrowserAgentPageTarget["webContents"],
+    timeoutMs: number,
+    options?: { readonly ignoreCache?: boolean; readonly waitForReady?: boolean }
+  ) => Promise<void>;
   readonly openDebuggerSessionForTarget: (target: BrowserAgentPageTarget) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
   readonly readPageDiagnostics: (tabId: string) => readonly import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry[];

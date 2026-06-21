@@ -20,7 +20,7 @@ import { normalizeWorkflowCacheMode } from "../workbench-browser/view-manager-ru
 import type { WorkbenchBrowserAgentObservation } from "../workbench-browser/types";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
-import { materializeLumenCapture } from "./artifact-materializer";
+import { materializeLumenCapture, materializeQrCropCapture } from "./artifact-materializer";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import {
   isRecord,
@@ -100,6 +100,80 @@ const readLumenAuditRequest = (
 };
 
 
+const LUMEN_SEE_CONTENT_CHAR_BUDGET = 8_000;
+const LUMEN_MAP_JSON_CHAR_BUDGET = 8_000;
+
+const readLumenQueryField = (payload: Record<string, unknown>): string => {
+  const query = readOptionalStringField(payload, "query");
+  if (query !== undefined && query.trim().length > 0) {
+    return query.trim();
+  }
+  const text = readOptionalStringField(payload, "text");
+  if (text !== undefined && text.trim().length > 0) {
+    return text.trim();
+  }
+  throw new Error("query must be a non-empty string");
+};
+
+type BlockedRegionLike = {
+  readonly kind?: string;
+  readonly reason?: string;
+};
+
+const findActiveBrowserBlock = (
+  blockedRegions: readonly BlockedRegionLike[] | undefined
+): BlockedRegionLike | undefined =>
+  blockedRegions?.find((region) => region.kind === "permission-prompt");
+
+const applyBrowserBlockedEnvelope = <T extends Record<string, unknown>>(
+  result: T,
+  blockedRegion: BlockedRegionLike | undefined
+): T => {
+  if (blockedRegion === undefined) {
+    return result;
+  }
+  const reason = blockedRegion.reason ?? "browser automation blocked";
+  return {
+    ...result,
+    ok: false,
+    status: "blocked",
+    browserBlocked: true,
+    blockedRegions: "blockedRegions" in result && Array.isArray(result.blockedRegions)
+      ? result.blockedRegions
+      : [blockedRegion],
+    message:
+      `Browser automation paused: ${reason}. Close the upload or permission dialog, then retry.`,
+    nextRecommendedAction: "ask_user"
+  };
+};
+
+const truncateLumenTextContent = (
+  content: string,
+  budget = LUMEN_SEE_CONTENT_CHAR_BUDGET
+): { readonly content: string; readonly truncated: boolean } => {
+  if (content.length <= budget) {
+    return { content, truncated: false };
+  }
+  const headBudget = Math.floor(budget * 0.6);
+  const tailBudget = Math.floor(budget * 0.3);
+  return {
+    content: `${content.slice(0, headBudget)}\n\n[... truncated for provider budget ...]\n\n${content.slice(-tailBudget)}`,
+    truncated: true
+  };
+};
+
+const budgetMapResult = <T extends Record<string, unknown>>(result: T): T => {
+  if (JSON.stringify(result).length <= LUMEN_MAP_JSON_CHAR_BUDGET) {
+    return result;
+  }
+  return {
+    ...result,
+    outputTruncated: true,
+    outputTruncatedReason:
+      `map observation exceeded ${LUMEN_MAP_JSON_CHAR_BUDGET} characters; full evidence remains in session artifacts`
+  };
+};
+
 class InvalidLumenElementIdError extends Error {
   readonly received: string;
   readonly recommendedTool: string;
@@ -135,6 +209,13 @@ export const createLumenToolHost = ({
     readWorkbenchTabWithSummaryFallback,
     describeWorkbenchTabKind
   } = tabResolver;
+
+  const readLumenMapScope = (
+    payload: Record<string, unknown>
+  ): "viewport" | "document" | undefined => {
+    const value = payload.mapScope;
+    return value === "viewport" || value === "document" ? value : undefined;
+  };
 
   const readLumenStrategy = (
     payload: Record<string, unknown>,
@@ -210,12 +291,15 @@ export const createLumenToolHost = ({
       : "textStable";
   };
 
-  const readLumenVerification = (payload: Record<string, unknown>): WorkbenchBrowserAgentVerification => {
+  const readLumenVerification = (
+    payload: Record<string, unknown>,
+    defaultVerification: WorkbenchBrowserAgentVerification = "none"
+  ): WorkbenchBrowserAgentVerification => {
     const value = payload.verification ?? payload.verify;
-    if (value === "full" || value === "fast") {
+    if (value === "full" || value === "fast" || value === "none") {
       return value;
     }
-    return "none";
+    return defaultVerification;
   };
 
   const readLumenSettle = (payload: Record<string, unknown>): boolean | undefined => {
@@ -257,6 +341,11 @@ export const createLumenToolHost = ({
     if (result.ok === false) {
       return "lyra_lumen_audit";
     }
+    const elementDiff = isRecord(result.elementDiff) ? result.elementDiff : null;
+    const changed = Array.isArray(elementDiff?.changed) ? elementDiff.changed : [];
+    if (changed.length === 0 && elementDiff?.noObservableChange === true) {
+      return "lyra_lumen.read";
+    }
     if (result.navigationStarted === true) {
       return "lyra_lumen.wait";
     }
@@ -264,6 +353,59 @@ export const createLumenToolHost = ({
       return "lyra_lumen.map";
     }
     return "continue_with_cached_targets";
+  };
+
+  const attemptPostTimeoutActionVerification = async (
+    normalized: Record<string, unknown>,
+    requestedMethod: string
+  ): Promise<Record<string, unknown> | null> => {
+    const actionMethods = new Set([
+      "lyraLumen.act",
+      "lyraLumen.type",
+      "lyraLumen.submit",
+      "lyraLumen.press"
+    ]);
+    if (!actionMethods.has(requestedMethod)) {
+      return null;
+    }
+    const browser = getBrowserBridge();
+    if (browser?.verifyAgentActionOutcome === undefined) {
+      return null;
+    }
+    try {
+      const targetMode = readLumenTargetMode(normalized);
+      const tabId = await resolveBrowserAgentTabId(normalized, targetMode);
+      const targetRef = readOptionalLumenTargetRef(normalized);
+      const elementId = readOptionalLumenElementId(normalized);
+      const verification = await browser.verifyAgentActionOutcome(tabId, {
+        targetMode,
+        ...(targetRef === undefined ? {} : { targetRef }),
+        ...(elementId === undefined ? {} : { elementId }),
+        ...(requestedMethod === "lyraLumen.type"
+          ? {}
+          : { interaction: readLumenInteraction(normalized) }),
+        timeoutMs: 4_000
+      }) as Record<string, unknown>;
+      if (verification.verified !== true) {
+        return null;
+      }
+      return {
+        ok: true,
+        kind: "lyraLumenActionResult",
+        requestedMethod,
+        status: "uncertain",
+        outcome: "verified_after_timeout",
+        verifiedAfterTimeout: true,
+        tabId,
+        targetMode,
+        actionVerification: verification,
+        message:
+          "Action timed out before confirmation finished, but a follow-up observation detected a structural state change. Verify once with lyra_lumen.read before repeating the action.",
+        nextRecommendedAction: "lyra_lumen.read"
+      };
+    } catch {
+      return null;
+    }
   };
 
   const readLumenTargetMode = (payload: Record<string, unknown>): WorkbenchBrowserAgentTargetMode => {
@@ -506,13 +648,40 @@ export const createLumenToolHost = ({
           nextRecommendedAction: error.recommendedTool
         };
       }
+      const message = error instanceof Error ? error.message : String(error);
+      const isTimeout = message.toLowerCase().includes("timed out");
+      const isUncertainAction = isTimeout && (
+        requestedMethod.includes("act")
+        || requestedMethod.includes("scroll")
+        || requestedMethod.includes("navigate")
+      );
+      if (isUncertainAction) {
+        const verified = await attemptPostTimeoutActionVerification(normalized, requestedMethod);
+        if (verified !== null) {
+          return verified;
+        }
+        return {
+          ok: false,
+          kind: "lyraLumenResult",
+          requestedMethod,
+          status: "uncertain",
+          outcome: "uncertain",
+          error: {
+            kind: "lyraLumenTimeout",
+            message
+          },
+          message:
+            "Action timed out before Lyra could confirm the result. Use lyra_lumen.read or lyra_lumen.find to verify whether it succeeded before retrying.",
+          nextRecommendedAction: "lyra_lumen.read"
+        };
+      }
       return {
         ok: false,
         kind: "lyraLumenResult",
         requestedMethod,
         error: {
           kind: "lyraLumenRuntimeError",
-          message: error instanceof Error ? error.message : String(error)
+          message
         },
         nextRecommendedAction: "lyra_lumen.map"
       };
@@ -677,6 +846,7 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const observation = await browser.observeAgentPage(tabId, {
         strategy: readLumenStrategy(payload, "interactiveOnly"),
+        mapScope: readLumenMapScope(payload) ?? "viewport",
         ...readLumenModeRequest(payload, targetMode),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
@@ -693,9 +863,15 @@ export const createLumenToolHost = ({
         );
       const highConfidenceOauthSignal = observation.authChallengeSignals
         ?.find((signal) => signal.confidence === "high" && signal.kind === "oauth_popup");
+      const mapResult = applyBrowserBlockedEnvelope(
+        budgetMapResult({
+          ...compacted.observation,
+          kind: "lyraLumenMap"
+        }),
+        findActiveBrowserBlock(compacted.observation.blockedRegions)
+      );
       return withLumenTargetIds({
-        ...compacted.observation,
-        kind: "lyraLumenMap",
+        ...mapResult,
         ...(observation.needsUserAction !== undefined
           ? { needsUserAction: observation.needsUserAction }
           : highConfidenceBlockingSignal !== undefined
@@ -740,7 +916,7 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
-      const verification = readLumenVerification(payload);
+      const verification = readLumenVerification(payload, "fast");
       const settle = readLumenSettle(payload);
       const workflow = readWorkflowFields(payload);
       const optionLabel = readOptionalStringField(payload, "optionLabel");
@@ -943,7 +1119,7 @@ export const createLumenToolHost = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
-      const verification = readLumenVerification(payload);
+      const verification = readLumenVerification(payload, "fast");
       const fillText = await readSensitiveFillText(payload);
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
@@ -1227,8 +1403,37 @@ export const createLumenToolHost = ({
         title: res.title,
         targetMode,
         ...("browserMode" in res && res.browserMode !== undefined ? { browserMode: res.browserMode } : {}),
-        message: `Navigated Lyra Lumen to ${res.address}.`
+        message: `Navigated Lyra Lumen to ${res.address}.`,
+        nextRecommendedAction: "lyra_lumen.map"
       }, res.tabId ?? resolvedTabId);
+    }),
+    "lyraLumen.reload": withLyraLumenResult("lyraLumen.reload", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const ignoreCache = payload.ignoreCache === true;
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const res = await browser.reloadAgentPage(tabId, {
+        ...readLumenModeRequest(payload, targetMode),
+        ignoreCache,
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      return withLumenTargetIds({
+        ok: true,
+        kind: "lyraLumenReload",
+        tabId: res.tabId,
+        url: res.address,
+        title: res.title,
+        targetMode: res.targetMode,
+        reloaded: true,
+        ignoreCache: res.ignoreCache,
+        ...("browserMode" in res && res.browserMode !== undefined ? { browserMode: res.browserMode } : {}),
+        message: res.ignoreCache
+          ? "Reloaded the current Lyra browser page and bypassed cache."
+          : "Reloaded the current Lyra browser page.",
+        nextRecommendedAction: "lyra_lumen.map"
+      }, res.tabId ?? tabId);
     }),
     "lyraLumen.find": withLyraLumenResult("lyraLumen.find", async (payload) => {
       const browser = getBrowserBridge();
@@ -1242,7 +1447,7 @@ export const createLumenToolHost = ({
       const maxMatches = readOptionalNumberField(payload, "maxMatches");
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const result = await browser.findAgentPage(tabId, {
-        query: readStringField(payload, "query"),
+        query: readLumenQueryField(payload),
         direction,
         reveal: payload.reveal === true,
         caseSensitive: payload.caseSensitive === true,
@@ -1266,7 +1471,7 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const matchMode = payload.matchMode === "exact" ? "exact" : "semantic";
       const result = await browser.locateAgentPage(tabId, {
-        query: readStringField(payload, "query"),
+        query: readLumenQueryField(payload),
         matchMode,
         reveal: payload.reveal !== false,
         autoMap: payload.autoMap !== false,
@@ -1344,8 +1549,10 @@ export const createLumenToolHost = ({
           ...(fallback !== null && "browserMode" in fallback && fallback.browserMode !== undefined
             ? { browserMode: fallback.browserMode }
             : {}),
-          content: fallback?.content ?? "",
-          truncated: fallback === null ? false : ("truncated" in fallback ? fallback.truncated : false),
+          ...(() => {
+            const budgeted = truncateLumenTextContent(fallback?.content ?? "");
+            return { content: budgeted.content, truncated: budgeted.truncated };
+          })(),
           message:
             "The active model does not support image input; Lyra used DOM/text extraction instead of browser visual capture.",
           nextRecommendedAction: "lyra_lumen.map"
@@ -1386,8 +1593,10 @@ export const createLumenToolHost = ({
           ...(fallback !== null && "browserMode" in fallback && fallback.browserMode !== undefined
             ? { browserMode: fallback.browserMode }
             : {}),
-          content: fallback?.content ?? "",
-          truncated: fallback === null ? false : ("truncated" in fallback ? fallback.truncated : false),
+          ...(() => {
+            const budgeted = truncateLumenTextContent(fallback?.content ?? "");
+            return { content: budgeted.content, truncated: budgeted.truncated };
+          })(),
           message:
             "Visual capture is unavailable while this browser tab is in the background; Lyra used text extraction instead.",
           nextRecommendedAction: "lyra_lumen.map"
@@ -1420,6 +1629,98 @@ export const createLumenToolHost = ({
             "highlighted" in capture && capture.highlighted === true ? " with targetRef highlights" : ""
           }.`,
         nextRecommendedAction: "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.detectQr": withLyraLumenResult("lyraLumen.detectQr", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const regionRecord = isRecord(payload.region) ? payload.region : undefined;
+      const region = regionRecord === undefined
+        ? undefined
+        : (() => {
+            const x = Number(regionRecord.x);
+            const y = Number(regionRecord.y);
+            const width = Number(regionRecord.width);
+            const height = Number(regionRecord.height);
+            if (
+              Number.isFinite(x) === false
+              || Number.isFinite(y) === false
+              || Number.isFinite(width) === false
+              || Number.isFinite(height) === false
+              || width <= 0
+              || height <= 0
+            ) {
+              return undefined;
+            }
+            return {
+              x: Math.round(x),
+              y: Math.round(y),
+              width: Math.round(width),
+              height: Math.round(height)
+            };
+          })();
+      const maxCodes = readOptionalNumberField(payload, "maxCodes");
+      const cropPadding = readOptionalNumberField(payload, "cropPadding");
+      const result = await browser.detectAgentPageQr(tabId, {
+        ...readLumenModeRequest(payload, targetMode),
+        ...(region === undefined ? {} : { region }),
+        ...(maxCodes === undefined ? {} : { maxCodes }),
+        cropQr: readOptionalBooleanField(payload, "cropQr") ?? true,
+        includePageCapture: readOptionalBooleanField(payload, "includePageCapture") ?? false,
+        ...(cropPadding === undefined ? {} : { cropPadding })
+      });
+      if (result.ok === false) {
+        return withLumenTargetIds(result, tabId);
+      }
+      const evidenceRefs: string[] = [];
+      const codes = await Promise.all(
+        result.codes.map(async (code, index) => {
+          if (code.cropArtifact === undefined) {
+            return {
+              payload: code.payload,
+              format: code.format,
+              bounds: code.bounds,
+              center: code.center,
+              corners: code.corners,
+              confidence: code.confidence
+            };
+          }
+          const cropArtifact = await materializeQrCropCapture(storageRoot, tabId, code.cropArtifact, index);
+          evidenceRefs.push(cropArtifact.id);
+          return {
+            payload: code.payload,
+            format: code.format,
+            bounds: code.bounds,
+            center: code.center,
+            corners: code.corners,
+            confidence: code.confidence,
+            cropArtifact
+          };
+        })
+      );
+      let pageArtifact: Awaited<ReturnType<typeof materializeLumenCapture>> | undefined;
+      if (result.pageCapture !== undefined) {
+        pageArtifact = await materializeLumenCapture(storageRoot, tabId, result.pageCapture);
+        evidenceRefs.unshift(pageArtifact.id);
+      }
+      return withLumenTargetIds({
+        ok: true,
+        kind: "lyraLumenDetectQr",
+        tabId,
+        targetMode: result.targetMode,
+        ...("browserMode" in result && result.browserMode !== undefined ? { browserMode: result.browserMode } : {}),
+        codes,
+        coordinateSpace: result.coordinateSpace,
+        captureId: result.captureId,
+        width: result.width,
+        height: result.height,
+        visualFrame: result.visualFrame,
+        ...(pageArtifact === undefined ? {} : { pageArtifact }),
+        ...(evidenceRefs.length > 0 ? { evidenceRefs } : {}),
+        message: result.message,
+        nextRecommendedAction: result.nextRecommendedAction
       }, tabId);
     }),
     "lyraLumen.judgeTask": withLyraLumenResult("lyraLumen.judgeTask", async (payload) => {

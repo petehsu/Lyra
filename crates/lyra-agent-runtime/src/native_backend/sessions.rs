@@ -136,6 +136,13 @@ pub(crate) fn new_session(
         "turnStatus": "idle",
         "activeTurnId": Value::Null,
         "follow": { "running": false, "activity": Value::Null },
+        "sessionResilience": {
+            "blockedBrowser": Value::Null,
+            "lastInterruptReason": Value::Null,
+            "consecutiveFailedRecoverable": 0,
+            "updatedAt": Value::Null
+        },
+        "taskMilestones": [],
         "updatedAt": created_at,
         "memory": Value::Null
     });

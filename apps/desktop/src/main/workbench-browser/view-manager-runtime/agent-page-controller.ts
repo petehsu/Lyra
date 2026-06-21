@@ -25,6 +25,7 @@ type BrowserAgentPageControllerDeps = Pick<
   | "requireEntry"
   | "resolveBrowserAgentTarget"
   | "waitForAgentPageLoad"
+  | "waitForAgentPageReload"
 > & { readonly stateStore: BrowserAgentStateStore };
 
 export const createBrowserAgentPageController = (deps: BrowserAgentPageControllerDeps) => {
@@ -39,7 +40,8 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     requireEntry,
     resolveBrowserAgentTarget,
     stateStore,
-    waitForAgentPageLoad
+    waitForAgentPageLoad,
+    waitForAgentPageReload
   } = deps;
   const { invalidateBrowserAgentTargets, readBrowserAgentCacheEntry } = stateStore;
 
@@ -268,6 +270,66 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     };
   };
 
+  const reloadAgentPage = async (
+    tabId: string,
+    request: WorkbenchBrowserAgentModeRequest & {
+      readonly ignoreCache?: boolean;
+      readonly timeoutMs?: number;
+    }
+  ): Promise<WorkbenchBrowserNavigateResult & {
+    readonly targetMode: WorkbenchBrowserAgentTargetMode;
+    readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+    readonly reloaded: true;
+    readonly ignoreCache: boolean;
+  }> => {
+    const timeoutMs = request.timeoutMs ?? 12_000;
+    const ignoreCache = request.ignoreCache === true;
+    const target = await resolveBrowserAgentTarget(tabId, request, timeoutMs);
+    const addressBeforeReload = agentTargetAddress(target);
+    publishBrowserAgentActivity({
+      tabId,
+      targetMode: target.targetMode,
+      action: "navigate",
+      inputActive: true,
+      visibleFollow: target.browserMode.visibleFollow,
+      durationMs: Math.max(1_800, Math.min(5_000, timeoutMs))
+    });
+    await waitForAgentPageReload(target.webContents, timeoutMs, {
+      ignoreCache,
+      waitForReady: true
+    });
+    if (target.targetMode === "live") {
+      const entry = requireEntry(tabId);
+      const address = normalizeAddress(entry.webContents.getURL()) ?? addressBeforeReload;
+      const title = normalizeString(entry.webContents.getTitle()) ?? entry.runtime.title ?? address;
+      entry.requestedAddress = address;
+      invalidateBrowserAgentTargets(tabId, target.targetMode, "frameReload");
+      return {
+        address,
+        tabId,
+        title,
+        targetMode: "live",
+        browserMode: target.browserMode,
+        reloaded: true,
+        ignoreCache
+      };
+    }
+    const shadow = target as BrowserAgentShadowEntry;
+    shadow.detached = true;
+    shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? shadow.address;
+    shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.title;
+    invalidateBrowserAgentTargets(tabId, shadow.targetMode, "frameReload");
+    return {
+      address: shadow.address,
+      tabId,
+      title: shadow.title,
+      targetMode: shadow.targetMode,
+      browserMode: target.browserMode,
+      reloaded: true,
+      ignoreCache
+    };
+  };
+
   const readAgentPage = async (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -422,6 +484,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
   return {
     captureAgentPage,
     navigateAgentPage,
+    reloadAgentPage,
     readAgentFollowFinalPageState,
     readAgentPage,
     showAgentActivity

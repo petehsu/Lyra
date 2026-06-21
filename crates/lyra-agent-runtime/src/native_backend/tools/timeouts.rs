@@ -70,7 +70,7 @@ pub(crate) fn requested_timeout_ms(input: &Value) -> Option<u64> {
 pub(crate) fn default_tool_timeout_ms(display_name: &str, action: &str) -> u64 {
     match (display_name, action) {
         ("lyra_lumen", "wait" | "read_until") => DEFAULT_BROWSER_WAIT_TIMEOUT_MS,
-        ("lyra_lumen", "navigate") => 20_000,
+        ("lyra_lumen", "navigate" | "reload" | "detect_qr") => 20_000,
         ("lyra_lumen", "map" | "read") => 12_000,
         ("lyra_lumen", _) => DEFAULT_BROWSER_TOOL_TIMEOUT_MS,
         ("browser", "interact") => 90_000,

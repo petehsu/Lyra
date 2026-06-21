@@ -2,6 +2,7 @@ pub mod archive_service;
 pub mod browser_service;
 pub mod clarification_service;
 pub mod context_builder;
+pub mod retention_policy;
 pub mod design_tools;
 pub mod event_bus;
 pub mod event_mapper;
@@ -217,9 +218,10 @@ impl AgentRuntimeServices {
                 self.backend.call(method, payload)
             }
 
-            "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" | "agent.turn.retry" => {
+            "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" => {
                 self.turn_runner.send(payload)
             }
+            "agent.turn.retry" => self.turn_runner.retry(payload),
             "agent.turn.cancel" => self.turn_runner.cancel_from_payload(payload),
             "agent.memory.snapshot" => self.memory.snapshot_from_payload(payload),
             "agent.memory.audit" => self.memory.audit(payload),

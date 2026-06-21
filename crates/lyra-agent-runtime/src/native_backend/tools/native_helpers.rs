@@ -1,6 +1,15 @@
 use super::*;
 
 const DEFAULT_TOOL_RAW_CHARS: usize = 32_000;
+const BROWSER_MAP_TOOL_CONTENT_CHARS: usize = 8_000;
+
+pub(crate) fn tool_content_char_budget(display_name: &str, action: &str) -> usize {
+    if display_name == "lyra_lumen" && matches!(action, "map" | "see" | "read") {
+        BROWSER_MAP_TOOL_CONTENT_CHARS
+    } else {
+        DEFAULT_TOOL_CONTENT_CHARS
+    }
+}
 
 pub(crate) fn budgeted_tool_output(
     session_id: &str,
@@ -10,17 +19,56 @@ pub(crate) fn budgeted_tool_output(
     raw: Value,
     recommended_next_action: Option<String>,
 ) -> Value {
+    budgeted_tool_output_with_budget(
+        session_id,
+        turn_id,
+        tool_call_id,
+        content,
+        raw,
+        recommended_next_action,
+        DEFAULT_TOOL_CONTENT_CHARS,
+    )
+}
+
+pub(crate) fn budgeted_browser_tool_output(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    content: String,
+    raw: Value,
+    recommended_next_action: Option<String>,
+) -> Value {
+    budgeted_tool_output_with_budget(
+        session_id,
+        turn_id,
+        tool_call_id,
+        content,
+        raw,
+        recommended_next_action,
+        tool_content_char_budget(display_name, action),
+    )
+}
+
+fn budgeted_tool_output_with_budget(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    content: String,
+    raw: Value,
+    recommended_next_action: Option<String>,
+    content_budget: usize,
+) -> Value {
     let content_char_count = content.chars().count();
     let (content, truncated, artifact_ref, truncated_reason) =
-        if content_char_count > DEFAULT_TOOL_CONTENT_CHARS {
+        if content_char_count > content_budget {
             let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
             (
-                truncate_chars(&content, DEFAULT_TOOL_CONTENT_CHARS),
+                truncate_chars(&content, content_budget),
                 true,
                 artifact_ref,
-                Some(format!(
-                    "tool output exceeded {DEFAULT_TOOL_CONTENT_CHARS} characters"
-                )),
+                Some(format!("tool output exceeded {content_budget} characters")),
             )
         } else {
             (content, false, None, None)
@@ -214,16 +262,16 @@ pub(crate) fn session_workspace_root(session_id: &str) -> Result<PathBuf, Native
     Ok(root)
 }
 
-pub(crate) fn resolve_workspace_path(
+fn resolve_session_absolute_path(
     session_id: &str,
     raw_path: &str,
     allow_missing_leaf: bool,
-) -> Result<WorkspacePath, NativeToolFailure> {
+) -> Result<(PathBuf, PathBuf), NativeToolFailure> {
     if raw_path.contains('\0') {
         return Err(NativeToolFailure::new(
-            "permission_denied",
+            "bad_request",
             "path contains a NUL byte",
-            "Retry with a normal workspace-relative path.",
+            "Retry with a normal filesystem path.",
         ));
     }
     let root = session_workspace_root(session_id)?;
@@ -238,7 +286,7 @@ pub(crate) fn resolve_workspace_path(
             NativeToolFailure::new(
                 "path_unavailable",
                 format!("failed to canonicalize path: {error}"),
-                "Retry with a readable workspace path.",
+                "Retry with a readable path.",
             )
         })?
     } else if allow_missing_leaf {
@@ -246,7 +294,7 @@ pub(crate) fn resolve_workspace_path(
             NativeToolFailure::new(
                 "bad_request",
                 "path has no parent directory",
-                "Retry with a file path inside the workspace.",
+                "Retry with a file path that has a parent directory.",
             )
         })?;
         let parent = parent.canonicalize().map_err(|error| {
@@ -260,7 +308,7 @@ pub(crate) fn resolve_workspace_path(
             NativeToolFailure::new(
                 "bad_request",
                 "path has no file name",
-                "Retry with a file path inside the workspace.",
+                "Retry with a file path that includes a file name.",
             )
         })?;
         parent.join(file_name)
@@ -268,23 +316,31 @@ pub(crate) fn resolve_workspace_path(
         return Err(NativeToolFailure::new(
             "path_not_found",
             format!("path does not exist: {}", candidate.display()),
-            "Retry with an existing workspace path.",
+            "Retry with an existing path.",
         ));
     };
-    if !absolute.starts_with(&root) {
-        return Err(NativeToolFailure::new(
-            "permission_denied",
-            format!(
-                "path is outside the session workspace: {}",
-                absolute.display()
-            ),
-            "Use a path inside the bound project workspace.",
-        )
-        .with_detail(json!({
-            "workspaceRoot": root.display().to_string(),
-            "path": absolute.display().to_string(),
-        })));
+    Ok((root, absolute))
+}
+
+pub(crate) fn path_escapes_session_workspace(
+    session_id: &str,
+    raw_path: &str,
+    allow_missing_leaf: bool,
+) -> Result<Option<(PathBuf, PathBuf)>, NativeToolFailure> {
+    let (root, absolute) = resolve_session_absolute_path(session_id, raw_path, allow_missing_leaf)?;
+    if absolute.starts_with(&root) {
+        return Ok(None);
     }
+    Ok(Some((root, absolute)))
+}
+
+pub(crate) fn resolve_workspace_path(
+    session_id: &str,
+    raw_path: &str,
+    allow_missing_leaf: bool,
+) -> Result<WorkspacePath, NativeToolFailure> {
+    let (root, absolute) = resolve_session_absolute_path(session_id, raw_path, allow_missing_leaf)?;
+    let outside_workspace = !absolute.starts_with(&root);
     let relative = absolute
         .strip_prefix(&root)
         .map(|path| path.to_string_lossy().replace('\\', "/"))
@@ -297,5 +353,77 @@ pub(crate) fn resolve_workspace_path(
         } else {
             relative
         },
+        outside_workspace,
     })
+}
+
+pub(crate) fn filesystem_path_permission_candidates(
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Vec<(String, bool)> {
+    match (display_name, action) {
+        ("file", "glob") => vec![(
+            value_string(input, "root").unwrap_or_else(|| ".".to_string()),
+            false,
+        )],
+        ("file", "list") => vec![(
+            value_string(input, "path").unwrap_or_else(|| ".".to_string()),
+            false,
+        )],
+        ("file", "multiedit") => {
+            let mut paths = Vec::new();
+            if let Some(path) = value_string(input, "path") {
+                paths.push((path, false));
+            }
+            if let Some(edits) = input.get("edits").and_then(Value::as_array) {
+                for edit in edits {
+                    if let Some(path) = value_string(edit, "path") {
+                        paths.push((path, false));
+                    }
+                }
+            }
+            paths
+        }
+        ("file", "apply_patch") => {
+            let mut paths = Vec::new();
+            if let Some(operations) = input.get("operations").and_then(Value::as_array) {
+                for operation in operations {
+                    if let Some(path) = value_string(operation, "path") {
+                        let allow_missing = operation
+                            .get("op")
+                            .and_then(Value::as_str)
+                            .is_some_and(|op| op == "add");
+                        paths.push((path, allow_missing));
+                    }
+                    if let Some(new_path) = value_string(operation, "newPath") {
+                        paths.push((new_path, true));
+                    }
+                }
+            }
+            paths
+        }
+        ("file", "write" | "read" | "edit" | "strict_edit") => value_string(input, "path")
+            .map(|path| {
+                vec![(
+                    path,
+                    matches!(action, "write"),
+                )]
+            })
+            .unwrap_or_default(),
+        ("search", "project")
+        | ("code", "search_text" | "grep_text" | "search_symbol" | "graph_expand") => {
+            if let Some(path) = value_string(input, "root").or_else(|| value_string(input, "path"))
+            {
+                vec![(path, false)]
+            } else {
+                Vec::new()
+            }
+        }
+        ("lsp", "query") => value_string(input, "filePath")
+            .or_else(|| value_string(input, "path"))
+            .map(|path| vec![(path, false)])
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
 }

@@ -1,6 +1,16 @@
 use super::*;
 
 pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
+    let requested_session = string_opt(&payload, "sessionId");
+    if let Ok(mut state) = state().lock() {
+        if let Ok(session_id) = state.resolve_session_id(requested_session.clone()) {
+            if let Some(session) = state.sessions.get(&session_id) {
+                if let Some(failure) = gate_turn_on_blocked_browser(session) {
+                    return Err(AgentRuntimeError::Core(failure));
+                }
+            }
+        }
+    }
     let text = string_opt(&payload, "text")
         .or_else(|| string_opt(&payload, "prompt"))
         .unwrap_or_default();
@@ -63,6 +73,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         if let Some(previous_turn_id) = interrupted_turn_id.as_ref() {
             session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
             session.snapshot["activeTurnId"] = Value::Null;
+            finalize_interrupt_state(session, "soft_interrupt_new_user_message");
             finish_running_tools_for_turn(
                 session,
                 previous_turn_id,
@@ -182,6 +193,156 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     Ok(json!({ "sessionId": session_id, "turnId": turn_id, "status": "running" }))
 }
 
+pub(crate) fn retry_turn(payload: Value) -> AgentRuntimeResult<Value> {
+    let requested_session = string_opt(&payload, "sessionId");
+    let requested_turn_id = string_opt(&payload, "turnId");
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    let (session_id, callback, snapshot, parent_turn_id, user_message_id, cancellation, recovery_hint) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let session_id = state.resolve_session_id(requested_session)?;
+        let session = state
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        if session.snapshot["turnStatus"] == "running" {
+            return Err(AgentRuntimeError::Core(
+                "cannot retry while another turn is running".to_string(),
+            ));
+        }
+        if let Some(failure) = gate_turn_on_blocked_browser(session) {
+            return Err(AgentRuntimeError::Core(failure));
+        }
+        let recovery_hint = should_apply_failure_recovery(session);
+        let failed_turn = if let Some(turn_id) = requested_turn_id.as_deref() {
+            session
+                .runtime_turns
+                .iter()
+                .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id))
+        } else {
+            session.runtime_turns.iter().rfind(|turn| {
+                turn.get("state").and_then(Value::as_str) == Some("failed_recoverable")
+            })
+        }
+        .ok_or_else(|| {
+            AgentRuntimeError::Core("no failed turn is available to retry".to_string())
+        })?;
+        let parent_turn_id = failed_turn
+            .get("runtimeTurnId")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| AgentRuntimeError::Core("failed turn is missing runtimeTurnId".to_string()))?;
+        let user_message_id = failed_turn
+            .get("userMessageId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                AgentRuntimeError::Core(
+                    "failed turn is missing userMessageId; cannot retry without a visible user anchor"
+                        .to_string(),
+                )
+            })?;
+        let messages = session
+            .snapshot
+            .get("messages")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let user_message_exists = messages
+            .iter()
+            .any(|message| message.get("id").and_then(Value::as_str) == Some(user_message_id.as_str()));
+        if !user_message_exists {
+            return Err(AgentRuntimeError::Core(format!(
+                "user message {user_message_id} is not present in the session transcript"
+            )));
+        }
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+        session.snapshot["follow"] = json!({ "running": true, "activity": "retrying_provider" });
+        touch_session(session);
+        session.runtime_turns.push(runtime_turn(
+            &turn_id,
+            &session_id,
+            "retrying_provider",
+            Some(user_message_id.clone()),
+            Some(parent_turn_id.clone()),
+        ));
+        let snapshot = session.snapshot.clone();
+        let cancellation = Arc::new(AtomicBool::new(false));
+        state
+            .active_cancellations
+            .insert(turn_id.clone(), cancellation.clone());
+        super::session_runtime::register_active_turn(&session_id, &turn_id, cancellation.clone());
+        let callback = state.event_callback.clone();
+        state.save_state()?;
+        (
+            session_id,
+            callback,
+            snapshot,
+            parent_turn_id,
+            user_message_id,
+            cancellation,
+            recovery_hint,
+        )
+    };
+
+    if recovery_hint {
+        emit_context_trimmed(
+            &session_id,
+            json!({
+                "reason": "consecutive_failed_recoverable",
+                "message": "Multiple recoverable turn failures detected before retry; compact context and continue from pending todos.",
+                "retry": true,
+            }),
+        );
+    }
+
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "turnStarted",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "state": "retrying_provider",
+            "parentTurnId": parent_turn_id,
+            "userMessageId": user_message_id,
+            "retry": true,
+            "recoveryHint": recovery_hint
+        }),
+    );
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "turnStateChanged",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "state": "retrying_provider",
+            "reason": "turn_retry",
+            "parentTurnId": parent_turn_id,
+            "userMessageId": user_message_id
+        }),
+    );
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
+    );
+
+    let thread_session_id = session_id.clone();
+    let thread_turn_id = turn_id.clone();
+    thread::spawn(move || run_native_turn(thread_session_id, thread_turn_id, cancellation));
+
+    Ok(json!({
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "parentTurnId": parent_turn_id,
+        "userMessageId": user_message_id,
+        "status": "running",
+        "retry": true
+    }))
+}
+
 pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
     let model_result = build_model_request(&session_id)
         .and_then(|request| run_model_loop(&session_id, &turn_id, request, &cancellation));
@@ -213,15 +374,21 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
                 assistant_text,
                 None,
                 metadata,
+                None,
             )
         }
-        Err(error) => finish_turn(
-            &session_id,
-            &turn_id,
-            "failed",
-            None,
-            Some(error.to_string()),
-        ),
+        Err(error) => {
+            let failure_message = error.to_string();
+            let failure_kind = tool_protocol::classify_turn_failure(&failure_message);
+            finish_turn_with_failure_kind(
+                &session_id,
+                &turn_id,
+                "failed",
+                None,
+                Some(failure_message),
+                Some(failure_kind),
+            )
+        }
     }
 }
 
@@ -347,6 +514,12 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &session_messages,
     )
     .unwrap_or_default();
+    let capabilities = model_capabilities(&provider, &model);
+    let retention_signals = crate::retention_policy::retention_signals_from_session_messages(
+        &session_messages,
+        session_tools.len(),
+        capabilities.context_window,
+    );
     let mut session_messages = session_messages;
     let mut provider_context_trimmed = false;
     {
@@ -355,7 +528,12 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         if let Some(session) = state.sessions.get(session_id) {
             let active_clarification = active_clarification_projection(&state, session_id);
-            let trim_config = TrimControllerConfig::default();
+            let trim_config = crate::retention_policy::trim_controller_config_from_policy(
+                crate::retention_policy::retention_policy_from_messages(
+                    &session_messages,
+                    &retention_signals,
+                ),
+            );
             if let Some(plan) = context_window::build_context_window_plan(
                 session,
                 &trim_config,
@@ -370,7 +548,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             }
         }
     }
-    let capabilities = model_capabilities(&provider, &model);
     let route = providers::registry::require_route(&provider.route_id)?;
     let openai_responses_replay =
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
@@ -468,6 +645,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             last_turn_tool_count,
             openai_responses_replay,
             tool_outputs_by_id: tool_outputs_by_id_from_session_tools(&session_tools),
+            halve_tool_output_message_ids: HashSet::new(),
         },
     );
     if let Some(overflow) = context.overflow.clone() {
@@ -1036,7 +1214,37 @@ pub(crate) fn finish_turn(
     assistant_text: Option<String>,
     failure: Option<String>,
 ) {
-    finish_turn_with_metadata(session_id, turn_id, status, assistant_text, failure, None);
+    let failure_kind = failure
+        .as_deref()
+        .map(tool_protocol::classify_turn_failure);
+    finish_turn_with_metadata(
+        session_id,
+        turn_id,
+        status,
+        assistant_text,
+        failure,
+        None,
+        failure_kind,
+    );
+}
+
+pub(crate) fn finish_turn_with_failure_kind(
+    session_id: &str,
+    turn_id: &str,
+    status: &str,
+    assistant_text: Option<String>,
+    failure: Option<String>,
+    failure_kind: Option<String>,
+) {
+    finish_turn_with_metadata(
+        session_id,
+        turn_id,
+        status,
+        assistant_text,
+        failure,
+        None,
+        failure_kind,
+    );
 }
 
 pub(crate) fn finish_turn_with_metadata(
@@ -1046,8 +1254,10 @@ pub(crate) fn finish_turn_with_metadata(
     assistant_text: Option<String>,
     failure: Option<String>,
     metadata: Option<Value>,
+    failure_kind: Option<String>,
 ) {
     let failure_for_ledger = failure.clone();
+    let failure_kind_for_turn = failure_kind.clone();
     let mut extraction_job: Option<(PathBuf, String, String, String, Option<String>, Vec<Value>)> =
         None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
@@ -1109,7 +1319,16 @@ pub(crate) fn finish_turn_with_metadata(
                     session.snapshot["activeTurnId"] = Value::Null;
                     session.snapshot["follow"] =
                         json!({ "running": false, "activity": Value::Null });
-                    update_runtime_turn(session, turn_id, status);
+                    if status == "failed" {
+                        if let Some(failure_kind) = failure_kind_for_turn.as_deref() {
+                            update_runtime_turn_state(session, turn_id, "failed_recoverable", Some(failure_kind));
+                        } else {
+                            update_runtime_turn(session, turn_id, status);
+                        }
+                        sync_failure_resilience_state(session);
+                    } else {
+                        update_runtime_turn(session, turn_id, status);
+                    }
                     let _ = prune_empty_assistant_messages(&mut session.snapshot);
                     let retention_metrics = prune_transient_tool_outputs(session);
                     touch_session(session);
@@ -1179,7 +1398,12 @@ pub(crate) fn finish_turn_with_metadata(
                             "kind": "turnFailed",
                             "sessionId": session_id,
                             "turnId": turn_id,
-                            "message": failure.unwrap_or_else(|| "turn failed".to_string())
+                            "message": failure.clone().unwrap_or_else(|| "turn failed".to_string()),
+                            "failureKind": failure_kind_for_turn
+                                .clone()
+                                .unwrap_or_else(|| tool_protocol::classify_turn_failure(
+                                    failure.as_deref().unwrap_or("turn failed")
+                                ))
                         })),
                         _ => {}
                     }
@@ -1260,7 +1484,7 @@ pub(crate) fn reconcile_orphan_running_turn(
     let turn_id = active_turn_id.unwrap_or_else(|| format!("orphan-turn-{}", Uuid::new_v4()));
     session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
     session.snapshot["activeTurnId"] = Value::Null;
-    session.snapshot["follow"] = json!({ "running": false, "activity": Value::Null });
+    finalize_interrupt_state(session, reason);
     let recovery_message = if stale_waiting_for_tool {
         "Lyra marked this turn as interrupted because it was still waiting for a tool even though no tool was running."
     } else {
@@ -1426,7 +1650,7 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
         session.snapshot["turnStatus"] = Value::String("cancelled".to_string());
         session.snapshot["activeTurnId"] = Value::Null;
-        session.snapshot["follow"] = json!({ "running": false, "activity": Value::Null });
+        finalize_interrupt_state(session, "cancelled_by_user");
         finish_running_tools_for_turn(
             session,
             &turn_id,

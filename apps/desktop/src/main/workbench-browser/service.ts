@@ -327,8 +327,10 @@ export type WorkbenchBrowserIpcBridge = {
   readonly axPressAgentKey: WorkbenchBrowserViewManager["axPressAgentKey"];
   readonly axExplainNode: WorkbenchBrowserViewManager["axExplainNode"];
   readonly navigateAgentPage: WorkbenchBrowserViewManager["navigateAgentPage"];
+  readonly reloadAgentPage: WorkbenchBrowserViewManager["reloadAgentPage"];
   readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
   readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
+  readonly detectAgentPageQr: WorkbenchBrowserViewManager["detectAgentPageQr"];
   readonly showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"];
   readonly readAgentFollowAudit: WorkbenchBrowserViewManager["readAgentFollowAudit"];
   readonly finishAgentFollowSessions: WorkbenchBrowserViewManager["finishAgentFollowSessions"];
@@ -643,10 +645,12 @@ export const createWorkbenchBrowserIpcBridge = ({
     typeIntoAgentElement: manager.typeIntoAgentElement,
     pressAgentKey: manager.pressAgentKey,
     navigateAgentPage: manager.navigateAgentPage,
+    reloadAgentPage: manager.reloadAgentPage,
     readAgentPage: manager.readAgentPage,
     findAgentPage: manager.findAgentPage,
     locateAgentPage: manager.locateAgentPage,
     captureAgentPage: manager.captureAgentPage,
+    detectAgentPageQr: manager.detectAgentPageQr,
     showAgentActivity: manager.showAgentActivity,
     readAgentFollowAudit: manager.readAgentFollowAudit,
     finishAgentFollowSessions: manager.finishAgentFollowSessions,
@@ -654,6 +658,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     auditAgentPageDiagnostics: manager.auditAgentPageDiagnostics,
     elevateAgentPage: manager.elevateAgentPage,
     completeElevationSession: manager.completeElevationSession,
-    resolveSharedControlDecision: manager.resolveSharedControlDecision
+    resolveSharedControlDecision: manager.resolveSharedControlDecision,
+    verifyAgentActionOutcome: manager.verifyAgentActionOutcome
   };
 };

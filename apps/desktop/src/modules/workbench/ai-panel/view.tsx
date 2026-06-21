@@ -641,7 +641,19 @@ export const AiPanelSurface = ({
       )}
       {provider.turnFailureMessage === null ? null : (
         <AppStatusMessage className="lyra-ai-panel-turn-failure" role="status" tone="warning">
-          {provider.turnFailureMessage}
+          <div className="lyra-ai-panel-turn-failure-row">
+            <span>{provider.turnFailureMessage}</span>
+            <AppButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void provider.retryFailedTurn();
+              }}
+            >
+              {t("lyra-agents-turnFailure.retry")}
+            </AppButton>
+          </div>
         </AppStatusMessage>
       )}
       <div className="lyra-agents-host">

@@ -1679,6 +1679,75 @@ describe("Agent IPC bridge", () => {
         title: "Docs",
         targetMode: request.targetMode ?? "live"
       })),
+      reloadAgentPage: vi.fn(async (
+        _tabId: string,
+        request: { readonly targetMode?: "isolated" | "live"; readonly ignoreCache?: boolean }
+      ) => ({
+        address: "https://example.com/docs",
+        tabId: "page-1",
+        title: "Docs",
+        targetMode: request.targetMode ?? "live",
+        reloaded: true as const,
+        ignoreCache: request.ignoreCache === true
+      })),
+      detectAgentPageQr: vi.fn(async (
+        _tabId: string,
+        request: {
+          readonly targetMode?: "isolated" | "live";
+          readonly region?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+          readonly maxCodes?: number;
+          readonly cropQr?: boolean;
+          readonly includePageCapture?: boolean;
+          readonly cropPadding?: number;
+        } = {}
+      ) => ({
+        ok: true as const,
+        kind: "lyraLumenDetectQr",
+        tabId: "page-1",
+        targetMode: request.targetMode ?? "live",
+        codes: [
+          {
+            payload: "https://login.example.com/qr/session-123",
+            format: "qr" as const,
+            bounds: { x: 120, y: 80, width: 180, height: 180 },
+            center: { x: 210, y: 170 },
+            corners: {
+              topLeft: { x: 120, y: 80 },
+              topRight: { x: 300, y: 80 },
+              bottomLeft: { x: 120, y: 260 },
+              bottomRight: { x: 300, y: 260 }
+            },
+            confidence: 0.94,
+            cropArtifact: request.cropQr === false
+              ? undefined
+              : {
+                  mimeType: "image/png" as const,
+                  imageBase64: "cXItY3JvcA==",
+                  width: 196,
+                  height: 196
+                }
+          }
+        ],
+        coordinateSpace: "device-pixels" as const,
+        captureId: "visual-capture-qr-1",
+        width: 640,
+        height: 480,
+        visualFrame: {
+          captureId: "visual-capture-qr-1",
+          dpr: 2,
+          cssViewportWidth: 320,
+          cssViewportHeight: 240,
+          imageWidth: 640,
+          imageHeight: 480,
+          imageScale: 1,
+          scrollX: 0,
+          scrollY: 0,
+          viewBoundsHash: "bounds-hash-qr-1",
+          viewBoundsEpoch: 0
+        },
+        message: "Detected 1 QR code(s) in the current browser screenshot.",
+        nextRecommendedAction: "lyra_lumen.vact" as const
+      })),
       readAgentFollowAudit: vi.fn(async () => ({
         ok: true,
         kind: "lyraLumenFollowAudit",
@@ -1819,7 +1888,8 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.observeAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "interactiveOnly",
-      targetMode: "live"
+      targetMode: "live",
+      mapScope: "viewport"
     });
 
     expect(
@@ -1839,7 +1909,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "interactiveOnly",
       targetMode: "live",
-      visibleFollow: true
+      visibleFollow: true,
+      mapScope: "viewport"
     });
     browserBridge.observeAgentPage.mockClear();
     await expect(registered.get("lyraLumen.map")?.({ target: "isolated" })).resolves.toMatchObject({
@@ -1847,7 +1918,8 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "interactiveOnly",
-      targetMode: "isolated"
+      targetMode: "isolated",
+      mapScope: "viewport"
     });
 
     browserBridge.observeAgentPage.mockResolvedValueOnce({
@@ -1915,7 +1987,8 @@ describe("Agent IPC bridge", () => {
       strategy: "interactiveOnly",
       targetMode: "isolated",
       authState: "borrowLiveLogin",
-      useLiveLoginState: true
+      useLiveLoginState: true,
+      mapScope: "viewport"
     });
 
     await expect(
@@ -2348,6 +2421,22 @@ describe("Agent IPC bridge", () => {
     });
 
     await expect(
+      registered.get("lyraLumen.reload")?.({
+        targetMode: "isolated",
+        ignoreCache: true
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenReload",
+      reloaded: true,
+      ignoreCache: true,
+      nextRecommendedAction: "lyra_lumen.map"
+    });
+    expect(browserBridge.reloadAgentPage).toHaveBeenCalledWith("page-1", {
+      targetMode: "isolated",
+      ignoreCache: true
+    });
+
+    await expect(
       registered.get("lyraLumen.followAudit")?.({ maxActions: 10, includeFrames: true })
     ).resolves.toMatchObject({
       kind: "lyraLumenFollowAudit",
@@ -2392,6 +2481,143 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.elevateAgentPage).toHaveBeenCalledWith("page-1", {
       targetMode: "isolated",
       reason: "captcha"
+    });
+
+    bridge.dispose();
+  });
+
+  test("lyraLumen.detectQr routes to browser QR detection", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const tabs = {
+      activeTabId: "page-1",
+      visibleTabIds: ["page-1"],
+      layout: {
+        layoutMode: "single",
+        splitGroupTabIds: [],
+        focusedSplitTabId: null
+      },
+      tabs: [
+        {
+          tabId: "page-1",
+          title: "Login",
+          pageKind: "page",
+          active: true,
+          visible: true,
+          focusedPane: true,
+          observable: true,
+          observationKind: "page"
+        }
+      ]
+    };
+    const observationService = {
+      dispose: vi.fn(),
+      listTabs: vi.fn(async () => tabs),
+      readWorkspace: vi.fn(),
+      extractTabText: vi.fn(),
+      readTab: vi.fn(),
+      captureVisual: vi.fn()
+    } as unknown as WorkbenchObservationService;
+    const browserBridge = {
+      readActiveTabId: vi.fn(() => "page-1"),
+      detectAgentPageQr: vi.fn(async (
+        _tabId: string,
+        request: {
+          readonly targetMode?: "isolated" | "live";
+          readonly maxCodes?: number;
+          readonly cropQr?: boolean;
+          readonly includePageCapture?: boolean;
+        } = {}
+      ) => ({
+        ok: true as const,
+        kind: "lyraLumenDetectQr",
+        tabId: "page-1",
+        targetMode: request.targetMode ?? "live",
+        codes: [
+          {
+            payload: "https://login.example.com/qr/session-123",
+            format: "qr" as const,
+            bounds: { x: 120, y: 80, width: 180, height: 180 },
+            center: { x: 210, y: 170 },
+            corners: {
+              topLeft: { x: 120, y: 80 },
+              topRight: { x: 300, y: 80 },
+              bottomLeft: { x: 120, y: 260 },
+              bottomRight: { x: 300, y: 260 }
+            },
+            confidence: 0.94,
+            cropArtifact: request.cropQr === false
+              ? undefined
+              : {
+                  mimeType: "image/png" as const,
+                  imageBase64: "cXItY3JvcA==",
+                  width: 196,
+                  height: 196
+                }
+          }
+        ],
+        coordinateSpace: "device-pixels" as const,
+        captureId: "visual-capture-qr-1",
+        width: 640,
+        height: 480,
+        visualFrame: {
+          captureId: "visual-capture-qr-1",
+          dpr: 2,
+          cssViewportWidth: 320,
+          cssViewportHeight: 240,
+          imageWidth: 640,
+          imageHeight: 480,
+          imageScale: 1,
+          scrollX: 0,
+          scrollY: 0,
+          viewBoundsHash: "bounds-hash-qr-1",
+          viewBoundsEpoch: 0
+        },
+        message: "Detected 1 QR code(s) in the current browser screenshot.",
+        nextRecommendedAction: "lyra_lumen.vact" as const
+      }))
+    };
+
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(),
+        subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn((method, handler) => {
+          registered.set(method, handler);
+        }),
+        unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => browserBridge as never,
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    expect(registered.has("lyraLumen.detectQr")).toBe(true);
+
+    await expect(
+      registered.get("lyraLumen.detectQr")?.({
+        targetMode: "live",
+        maxCodes: 2,
+        cropQr: true
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenDetectQr",
+      captureId: "visual-capture-qr-1",
+      codes: [
+        {
+          payload: "https://login.example.com/qr/session-123",
+          bounds: { x: 120, y: 80, width: 180, height: 180 }
+        }
+      ],
+      nextRecommendedAction: "lyra_lumen.vact"
+    });
+    expect(browserBridge.detectAgentPageQr).toHaveBeenCalledWith("page-1", {
+      targetMode: "live",
+      maxCodes: 2,
+      cropQr: true,
+      includePageCapture: false
     });
 
     bridge.dispose();
@@ -2480,7 +2706,8 @@ describe("Agent IPC bridge", () => {
       WORKBENCH_BROWSER_AGENT_STANDALONE_TAB_ID,
       {
         strategy: "interactiveOnly",
-        targetMode: "isolated"
+        targetMode: "isolated",
+        mapScope: "viewport"
       }
     );
 

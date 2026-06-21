@@ -210,6 +210,7 @@ type State = {
   readonly session: AgentSessionSnapshot | null;
   readonly error: string | null;
   readonly turnError: string | null;
+  readonly turnFailureKind: string | null;
   readonly loading: boolean;
 };
 
@@ -224,6 +225,7 @@ const initialState: State = {
   session: null,
   error: null,
   turnError: null,
+  turnFailureKind: null,
   loading: true
 };
 
@@ -242,6 +244,7 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
       session,
       loading: false,
       turnError: session.turnStatus === "failed" ? state.turnError : null,
+      turnFailureKind: session.turnStatus === "failed" ? state.turnFailureKind : null,
       error: null
     };
   }
@@ -260,6 +263,7 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
       ...state,
       session: applyAgentRuntimeEventToSnapshot(session, event),
       turnError: event.message,
+      turnFailureKind: event.failureKind ?? null,
       error: null
     };
   }
@@ -305,12 +309,15 @@ function isCustomOptionLabel(label: string): boolean {
 }
 
 const reducer = (state: State, action: Action): State => {
-  if (action.type === "loading") return { ...state, loading: true, error: null, turnError: null };
+  if (action.type === "loading") {
+    return { ...state, loading: true, error: null, turnError: null, turnFailureKind: null };
+  }
   if (action.type === "empty") {
     return {
       session: null,
       error: null,
       turnError: null,
+      turnFailureKind: null,
       loading: false
     };
   }
@@ -320,7 +327,8 @@ const reducer = (state: State, action: Action): State => {
       session: action.snapshot,
       loading: false,
       error: null,
-      turnError: action.snapshot.turnStatus === "failed" ? state.turnError : null
+      turnError: action.snapshot.turnStatus === "failed" ? state.turnError : null,
+      turnFailureKind: action.snapshot.turnStatus === "failed" ? state.turnFailureKind : null
     };
   }
   if (action.type === "event") return applyEvent(state, action.event);
@@ -430,6 +438,7 @@ export const useLyraAgentDataProvider = (
   readonly followActivity: string | null;
   readonly error: string | null;
   readonly turnFailureMessage: string | null;
+  readonly retryFailedTurn: () => Promise<void>;
   readonly cancel: () => Promise<void>;
 } => {
   const {
@@ -997,6 +1006,22 @@ export const useLyraAgentDataProvider = (
     if (sessionId === null) return;
     await desktopApi.agent.cancelTurn({ sessionId });
   }, [desktopApi, resolvedSessionId]);
+
+  const retryFailedTurn = useCallback(async (): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const session = state.session;
+    if (session === null || session.turnStatus !== "failed") return;
+    const failedTurn = [...session.runtimeTurns]
+      .reverse()
+      .find((turn) => turn.state === "failed_recoverable");
+    await desktopApi.agent.retryTurn({
+      sessionId: session.id,
+      text: "",
+      ...(failedTurn?.runtimeTurnId === undefined
+        ? {}
+        : { turnId: failedTurn.runtimeTurnId })
+    });
+  }, [desktopApi, state.session]);
 
   const setBrowserFollowMode = useCallback(async (enabled: boolean): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
@@ -1881,7 +1906,7 @@ export const useLyraAgentDataProvider = (
 
   const turnFailureMessage =
     state.session?.turnStatus === "failed"
-      ? mapTurnFailureMessage(state.turnError)
+      ? mapTurnFailureMessage(state.turnError, state.turnFailureKind)
       : null;
 
   return {
@@ -1892,6 +1917,7 @@ export const useLyraAgentDataProvider = (
       (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null),
     error: state.error,
     turnFailureMessage,
+    retryFailedTurn,
     cancel
   };
 };

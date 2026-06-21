@@ -80,6 +80,7 @@ mod providers;
 mod rollback;
 mod secret_guard;
 pub(crate) mod session_ledger;
+mod session_resilience;
 mod session_runtime;
 mod session_store;
 pub(crate) mod session_trim;
@@ -103,7 +104,8 @@ use self::{
     memory_retrieval_policy::*, memory_store::*, memory_sync::*, memory_token_checkpoint::*,
     network::*, page_citations::*, permission_policy::*, permissions::*, projections::*,
     prompt_cache::*, provider::*, provider_config::*, rollback::*, session_ledger::*,
-    session_store::*, session_trim::*, sessions::*, state::*, token_estimate::*, tool_protocol::*,
+    session_resilience::*, session_store::*, session_trim::*, sessions::*, state::*,
+    token_estimate::*, tool_protocol::*,
     tools::*, transcript_citations::*, turns::*, types::*,
 };
 
@@ -122,9 +124,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
 
             "agent.cli.follow.read" => read_cli_follow(payload),
             "agent.cli.follow.update" => update_cli_follow(payload),
-            "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" | "agent.turn.retry" => {
-                send_turn(payload)
-            }
+            "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" => send_turn(payload),
+            "agent.turn.retry" => retry_turn(payload),
             "agent.turn.cancel" => cancel_turn(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),

@@ -139,8 +139,90 @@ export const createWebContentsLoadWaiter = () => {
     }
   };
 
+  const waitForReload = async (
+    webContents: WebContents,
+    timeoutMs: number,
+    options?: { readonly ignoreCache?: boolean; readonly waitForReady?: boolean }
+  ): Promise<void> => {
+    if (webContents.isDestroyed()) {
+      return;
+    }
+    ensureWebContentsListenerBudget(webContents);
+    cancelPendingLoad(webContents);
+    const reloadStartedAt = Date.now();
+
+    let superseded = false;
+    let activeCancel: (() => void) | null = null;
+    const reservation: PendingPageLoadWait = {
+      cancel: () => {
+        superseded = true;
+        activeCancel?.();
+      }
+    };
+    pendingPageLoadWaits.set(webContents, reservation);
+
+    try {
+      await new Promise<void>((resolve) => {
+        if (superseded) {
+          resolve();
+          return;
+        }
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const finish = (stopLoading: boolean): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timer !== null) {
+            clearTimeout(timer);
+          }
+          webContents.off("did-stop-loading", onStopLoading);
+          webContents.off("did-fail-load", onFailLoad);
+          webContents.off("destroyed", onDestroyed);
+          if (pendingPageLoadWaits.get(webContents) === reservation) {
+            pendingPageLoadWaits.delete(webContents);
+          }
+          if (stopLoading) {
+            stopWebContentsLoading(webContents);
+          }
+          resolve();
+        };
+        const onStopLoading = (): void => {
+          if (options?.waitForReady === true) {
+            const remainingMs = Math.max(250, timeoutMs - (Date.now() - reloadStartedAt));
+            void waitForPageReady(webContents, remainingMs).finally(() => finish(false));
+            return;
+          }
+          finish(false);
+        };
+        const onFailLoad = (): void => finish(false);
+        const onDestroyed = (): void => finish(false);
+        activeCancel = () => finish(true);
+        if (superseded) {
+          resolve();
+          return;
+        }
+        timer = setTimeout(() => finish(true), Math.max(250, timeoutMs));
+        webContents.on("did-stop-loading", onStopLoading);
+        webContents.on("did-fail-load", onFailLoad);
+        webContents.on("destroyed", onDestroyed);
+        if (options?.ignoreCache === true) {
+          webContents.reloadIgnoringCache();
+        } else {
+          webContents.reload();
+        }
+      });
+    } finally {
+      if (pendingPageLoadWaits.get(webContents) === reservation) {
+        pendingPageLoadWaits.delete(webContents);
+      }
+    }
+  };
+
   return {
     cancelPendingLoad,
-    waitForLoad
+    waitForLoad,
+    waitForReload
   };
 };

@@ -393,6 +393,8 @@ fn execute_interact_action(
 fn interact_host_mapping(kind: &str) -> Result<(&'static str, &'static str), InteractFailure> {
     Ok(match kind {
         "navigate" | "goto" | "open" => ("lyraLumen.navigate", "navigate"),
+        "reload" | "refresh" => ("lyraLumen.reload", "reload"),
+        "detect_qr" | "qr" | "scan_qr" => ("lyraLumen.detectQr", "detect_qr"),
         "wait" => ("lyraLumen.wait", "wait"),
         "read_until" => ("lyraLumen.wait", "read_until"),
         "click" | "hover" | "act" => ("lyraLumen.act", "act"),

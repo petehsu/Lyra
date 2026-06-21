@@ -152,6 +152,8 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/browser/wait" => host("lyraLumen.wait", "lyra_lumen", "wait"),
         "/tools/browser/read_until" => host("lyraLumen.wait", "lyra_lumen", "read_until"),
         "/tools/browser/navigate" => host("lyraLumen.navigate", "lyra_lumen", "navigate"),
+        "/tools/browser/reload" => host("lyraLumen.reload", "lyra_lumen", "reload"),
+        "/tools/browser/detect_qr" => host("lyraLumen.detectQr", "lyra_lumen", "detect_qr"),
         "/tools/browser/reveal" => host("lyraLumen.reveal", "lyra_lumen", "reveal"),
         "/tools/browser/focus_scan" => host("lyraLumen.focusScan", "lyra_lumen", "focus_scan"),
         "/tools/browser/follow_audit" => {

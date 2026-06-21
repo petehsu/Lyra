@@ -42,6 +42,7 @@ pub(crate) struct WorkspacePath {
     pub(crate) root: PathBuf,
     pub(crate) absolute: PathBuf,
     pub(crate) relative: String,
+    pub(crate) outside_workspace: bool,
 }
 
 pub(crate) fn execute_native_tool_adapter(
@@ -297,6 +298,50 @@ pub(crate) fn native_tool_input(action: &str, arguments: Value) -> Value {
     Value::Object(input)
 }
 
+fn outside_workspace_permission_input(
+    session_id: &str,
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Option<Value> {
+    for (raw_path, allow_missing_leaf) in
+        filesystem_path_permission_candidates(display_name, action, input)
+    {
+        if path_qualifies_for_lyra_artifact_access(&raw_path).unwrap_or(false) {
+            continue;
+        }
+        let Ok(Some((workspace_root, absolute))) =
+            path_escapes_session_workspace(session_id, &raw_path, allow_missing_leaf)
+        else {
+            continue;
+        };
+        let mut permission_input = input.clone();
+        if let Some(object) = permission_input.as_object_mut() {
+            object.insert("permissionRequired".to_string(), Value::Bool(true));
+            object.insert(
+                "permissionRisk".to_string(),
+                Value::String("workspace_escape".to_string()),
+            );
+            object.insert(
+                "workspaceRoot".to_string(),
+                Value::String(workspace_root.display().to_string()),
+            );
+            object.insert(
+                "outsideWorkspacePath".to_string(),
+                Value::String(absolute.display().to_string()),
+            );
+            if object.get("path").is_none() {
+                object.insert(
+                    "path".to_string(),
+                    Value::String(absolute.display().to_string()),
+                );
+            }
+        }
+        return Some(permission_input);
+    }
+    None
+}
+
 pub(crate) fn native_permission_request_for_tool(
     session_id: &str,
     turn_id: &str,
@@ -305,6 +350,18 @@ pub(crate) fn native_permission_request_for_tool(
     action: &str,
     input: &Value,
 ) -> Option<PermissionRequest> {
+    if let Some(permission_input) =
+        outside_workspace_permission_input(session_id, display_name, action, input)
+    {
+        return permission_request_for_tool(
+            session_id,
+            turn_id,
+            tool_call_id,
+            display_name,
+            action,
+            &permission_input,
+        );
+    }
     if display_name == "file"
         && matches!(
             action,

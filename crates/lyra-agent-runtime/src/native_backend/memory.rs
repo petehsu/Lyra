@@ -483,8 +483,10 @@ fn is_high_value_tool(name: &str, action: &str) -> bool {
             | ("lyra_lumen", "press")
             | ("lyra_lumen", "submit")
             | ("lyra_lumen", "navigate")
+            | ("lyra_lumen", "reload")
             | ("lyra_lumen", "elevate")
             | ("lyra_lumen", "see")
+            | ("lyra_lumen", "detect_qr")
     )
 }
 
@@ -503,6 +505,7 @@ fn is_transient_tool(name: &str, action: &str) -> bool {
             | ("lyra_lumen", "follow_audit")
             | ("lyra_lumen", "explain_target")
             | ("lyra_lumen", "audit")
+            | ("lyra_lumen", "detect_qr")
     ) || matches!(
         name,
         "file_read"

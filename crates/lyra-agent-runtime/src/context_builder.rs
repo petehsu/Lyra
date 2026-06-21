@@ -1,7 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
+
+use crate::retention_policy::{
+    ComplexityBand, RetentionPolicy, RetentionSignals, TrimAggressiveness, halve_tool_message_ids,
+    retention_policy_from_messages, select_interleaved_provider_keep, CONTEXT_GUARD_TOKENS,
+};
 
 use crate::native_backend::inline_images::{
     effective_inline_images_for_user_turn, enrich_inline_images_for_provider,
@@ -37,6 +42,7 @@ pub struct ProviderContextOptions {
     pub last_turn_tool_count: usize,
     pub openai_responses_replay: bool,
     pub tool_outputs_by_id: HashMap<String, String>,
+    pub halve_tool_output_message_ids: HashSet<String>,
 }
 
 impl Default for ProviderContextOptions {
@@ -49,6 +55,7 @@ impl Default for ProviderContextOptions {
             last_turn_tool_count: 0,
             openai_responses_replay: false,
             tool_outputs_by_id: HashMap::new(),
+            halve_tool_output_message_ids: HashSet::new(),
         }
     }
 }
@@ -126,6 +133,16 @@ impl ContextBuilder {
             ..ProviderContext::default()
         };
 
+        let retention_signals = RetentionSignals {
+            context_window: options.context_window,
+            session_tool_count: options.session_tool_count,
+            last_turn_tool_count: options.last_turn_tool_count,
+        };
+        let retention = retention_policy_from_messages(&messages, &retention_signals);
+        let mut options = options;
+        options.halve_tool_output_message_ids =
+            halve_tool_message_ids(&messages, &retention, &HashSet::new());
+
         for (message_index, message) in messages.iter().enumerate() {
             let provider_messages = provider_messages_from_agent_message(
                 message,
@@ -136,11 +153,9 @@ impl ContextBuilder {
             );
             output.messages.extend(provider_messages);
         }
-
         output.token_estimate = estimate_messages_tokens(&output.messages);
-        let retention = RetentionPolicy::from_context(&output.messages, &options);
-        if output.token_estimate >= retention.trim_trigger_tokens {
-            compact_to_retention_policy(&mut output, retention);
+        if should_compact_provider_context(&output, &retention, messages.len()) {
+            compact_to_retention_policy(&mut output, retention, TrimAggressiveness::Normal);
         }
         output
     }
@@ -171,8 +186,11 @@ fn provider_messages_from_agent_message(
         .unwrap_or_default();
 
     if role == "tool" {
-        let (content, evidence_ref) =
-            trim_tool_output(text, options.max_tool_output_chars, message.get("id"));
+        let (content, evidence_ref) = trim_tool_output(
+            text,
+            effective_tool_output_budget(options, message.get("id")),
+            message.get("id"),
+        );
         if let Some(evidence_ref) = evidence_ref {
             output.evidence_refs.push(evidence_ref);
         }
@@ -585,19 +603,21 @@ fn content_from_blocks(
                     .cloned()
                     .filter(|text| !text.trim().is_empty())
                     .unwrap_or_else(|| TOOL_OUTPUT_OMITTED_SUMMARY.to_string());
-                let (summary, maybe_ref) = if options.max_tool_output_chars == 0 {
+                let tool_budget =
+                    effective_tool_output_budget(options, message.get("id"));
+                let (summary, maybe_ref) = if tool_budget == 0 {
                     (TOOL_OUTPUT_CLEARED_SUMMARY.to_string(), None)
-                } else if summary.chars().count() > options.max_tool_output_chars {
+                } else if summary.chars().count() > tool_budget {
                     let trimmed = tool_activity_output_summary(
                         &json!({ "content": summary }),
-                        options.max_tool_output_chars,
+                        tool_budget,
                     );
                     let evidence_ref = json!({
                         "kind": "truncated_tool_output",
                         "toolId": tool_id,
                         "messageId": message.get("id").cloned().unwrap_or(Value::Null),
                         "originalChars": summary.chars().count(),
-                        "keptChars": options.max_tool_output_chars,
+                        "keptChars": tool_budget,
                     });
                     (trimmed, Some(evidence_ref))
                 } else {
@@ -667,184 +687,90 @@ fn trim_tool_output(
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ComplexityBand {
-    Simple,
-    Normal,
-    Complex,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct RetentionPolicy {
-    usable_context_tokens: usize,
-    trim_trigger_tokens: usize,
-    target_tokens: usize,
-    protected_recent_tokens: usize,
-    complexity_score: usize,
-    complexity_band: ComplexityBand,
-    has_explicit_context_window: bool,
-}
-
-const DEFAULT_RETENTION_CONTEXT_TOKENS: usize = 100_000;
-const RETENTION_TRIM_TRIGGER_CAP_TOKENS: usize = 100_000;
-const TARGET_MIN_RETAINED_TOKENS: usize = 100_000;
-const RECENT_PROTECTED_TOKENS: usize = 50_000;
-const CONTEXT_GUARD_TOKENS: usize = 128;
-
-impl RetentionPolicy {
-    fn from_context(messages: &[Value], options: &ProviderContextOptions) -> Self {
-        let usable_context_tokens = options
-            .context_window
-            .filter(|window| *window > 0)
-            .unwrap_or(DEFAULT_RETENTION_CONTEXT_TOKENS);
-        let trim_trigger_tokens = if usable_context_tokens >= RETENTION_TRIM_TRIGGER_CAP_TOKENS {
-            RETENTION_TRIM_TRIGGER_CAP_TOKENS
-        } else {
-            ((usable_context_tokens as f64 * 0.82) as usize).max(1)
-        };
-        let complexity_score = complexity_score(messages, options);
-        let complexity_band = if complexity_score >= 120 {
-            ComplexityBand::Complex
-        } else if complexity_score >= 48 {
-            ComplexityBand::Normal
-        } else {
-            ComplexityBand::Simple
-        };
-        let base_target =
-            if usable_context_tokens >= TARGET_MIN_RETAINED_TOKENS {
-                match complexity_band {
-                    ComplexityBand::Complex => ((usable_context_tokens as f64 * 0.92) as usize)
-                        .max(TARGET_MIN_RETAINED_TOKENS),
-                    ComplexityBand::Normal => ((usable_context_tokens as f64 * 0.84) as usize)
-                        .max(TARGET_MIN_RETAINED_TOKENS),
-                    ComplexityBand::Simple => TARGET_MIN_RETAINED_TOKENS,
-                }
-            } else {
-                match complexity_band {
-                    ComplexityBand::Complex => (usable_context_tokens as f64 * 0.88) as usize,
-                    ComplexityBand::Normal => (usable_context_tokens as f64 * 0.78) as usize,
-                    ComplexityBand::Simple => (usable_context_tokens as f64 * 0.68) as usize,
-                }
-            };
-        let target_tokens = base_target
-            .min(usable_context_tokens.saturating_sub(CONTEXT_GUARD_TOKENS))
-            .max((usable_context_tokens / 2).max(1));
-        let protected_recent_tokens = if usable_context_tokens >= RECENT_PROTECTED_TOKENS {
-            RECENT_PROTECTED_TOKENS.min(target_tokens.saturating_sub(CONTEXT_GUARD_TOKENS))
-        } else {
-            (usable_context_tokens as f64 * 0.45) as usize
-        }
-        .max(1);
-
-        Self {
-            usable_context_tokens,
-            trim_trigger_tokens,
-            target_tokens,
-            protected_recent_tokens,
-            complexity_score,
-            complexity_band,
-            has_explicit_context_window: options.context_window.is_some(),
-        }
+fn should_compact_provider_context(
+    output: &ProviderContext,
+    retention: &RetentionPolicy,
+    session_message_count: usize,
+) -> bool {
+    if output.token_estimate >= retention.trim_trigger_tokens {
+        return true;
     }
+    matches!(retention.complexity_band, ComplexityBand::Complex)
+        && session_message_count >= 32
+        && output.token_estimate * 2 > retention.protected_recent_tokens
 }
 
-fn complexity_score(messages: &[Value], options: &ProviderContextOptions) -> usize {
-    let mut total_user_chars = 0;
-    let mut total_assistant_chars = 0;
-    let mut latest_user_chars = 0;
-    let mut latest_assistant_chars = 0;
-
-    for message in messages {
-        let chars = message_text_chars(message);
-        match message.get("role").and_then(Value::as_str) {
-            Some("user") => {
-                total_user_chars += chars;
-                latest_user_chars = chars;
+fn apply_budget_fallback_keep(
+    messages: &[Value],
+    keep: &mut [bool],
+    policy: &RetentionPolicy,
+) {
+    if keep.iter().any(|kept| !*kept) {
+        return;
+    }
+    let token_counts: Vec<usize> = messages.iter().map(estimate_message_tokens).collect();
+    let tail_start = crate::retention_policy::tail_keep_start(
+        messages,
+        &token_counts,
+        policy.protected_recent_tokens,
+    );
+    let mut total = keep
+        .iter()
+        .enumerate()
+        .filter_map(|(index, kept)| kept.then_some(token_counts[index]))
+        .sum::<usize>();
+    let budget_target = policy
+        .trim_trigger_tokens
+        .min(policy.target_tokens)
+        .saturating_sub(CONTEXT_GUARD_TOKENS);
+    for ordinal in 0..messages.len() {
+        if ordinal >= tail_start || !keep[ordinal] {
+            continue;
+        }
+        if total <= budget_target {
+            break;
+        }
+        keep[ordinal] = false;
+        total = total.saturating_sub(token_counts[ordinal]);
+    }
+    if keep.iter().all(|kept| *kept)
+        && matches!(policy.complexity_band, ComplexityBand::Complex)
+    {
+        for ordinal in 0..tail_start {
+            if ordinal % 2 == 0 && keep[ordinal] {
+                keep[ordinal] = false;
             }
-            Some("assistant") => {
-                total_assistant_chars += chars;
-                latest_assistant_chars = chars;
-            }
-            _ => {}
         }
     }
-
-    options.session_tool_count.saturating_mul(8)
-        + options.last_turn_tool_count.saturating_mul(18)
-        + total_user_chars / 900
-        + total_assistant_chars / 1_200
-        + latest_user_chars / 350
-        + latest_assistant_chars / 700
 }
 
-fn message_text_chars(message: &Value) -> usize {
-    match message.get("content") {
-        Some(Value::String(text)) => text.chars().count(),
-        Some(Value::Array(parts)) => parts
-            .iter()
-            .filter_map(|part| part.get("text").and_then(Value::as_str))
-            .map(|text| text.chars().count())
-            .sum(),
-        _ => message
-            .get("text")
-            .and_then(Value::as_str)
-            .map(|text| text.chars().count())
-            .unwrap_or(0),
+fn effective_tool_output_budget(options: &ProviderContextOptions, message_id: Option<&Value>) -> usize {
+    let base = options.max_tool_output_chars;
+    if base == 0 {
+        return 0;
+    }
+    let halve = message_id
+        .and_then(Value::as_str)
+        .is_some_and(|id| options.halve_tool_output_message_ids.contains(id));
+    if halve {
+        (base / 2).max(1)
+    } else {
+        base
     }
 }
 
-fn compact_to_retention_policy(output: &mut ProviderContext, policy: RetentionPolicy) {
+fn compact_to_retention_policy(
+    output: &mut ProviderContext,
+    policy: RetentionPolicy,
+    aggressiveness: TrimAggressiveness,
+) {
     let Some(system) = output.messages.first().cloned() else {
         return;
     };
-    let system_tokens = estimate_tokens(&serde_json::to_string(&system).unwrap_or_default());
     let messages = output.messages.iter().skip(1).cloned().collect::<Vec<_>>();
-    let message_tokens = messages
-        .iter()
-        .map(|message| estimate_message_tokens(message))
-        .collect::<Vec<_>>();
-    let mut keep = vec![false; messages.len()];
-    let mut protected_tokens = 0_usize;
-    for index in (0..messages.len()).rev() {
-        if protected_tokens >= policy.protected_recent_tokens
-            && latest_user_is_already_kept(&messages, &keep)
-        {
-            break;
-        }
-        let estimate = message_tokens[index];
-        if protected_tokens > 0
-            && protected_tokens.saturating_add(estimate) > policy.protected_recent_tokens
-            && latest_user_is_already_kept(&messages, &keep)
-        {
-            break;
-        }
-        keep[index] = true;
-        protected_tokens = protected_tokens.saturating_add(estimate);
-    }
-
-    let mut token_total = system_tokens.saturating_add(protected_tokens);
-    let target_without_notice = policy.target_tokens.saturating_sub(CONTEXT_GUARD_TOKENS);
-    let include_older_tools = matches!(policy.complexity_band, ComplexityBand::Complex);
-    for index in (0..messages.len()).rev() {
-        if keep[index] {
-            continue;
-        }
-        let role = messages[index]
-            .get("role")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if role == "tool" && !include_older_tools {
-            continue;
-        }
-        let estimate = message_tokens[index];
-        if token_total.saturating_add(estimate) > target_without_notice {
-            continue;
-        }
-        keep[index] = true;
-        token_total = token_total.saturating_add(estimate);
-    }
-
+    let mut keep = select_interleaved_provider_keep(&messages, &policy, aggressiveness);
     normalize_tool_round_retention(&messages, &mut keep);
+    apply_budget_fallback_keep(&messages, &mut keep, &policy);
 
     let kept = messages
         .into_iter()
@@ -1192,18 +1118,33 @@ mod tests {
     }
 
     #[test]
-    fn retention_policy_uses_100k_default_trigger() {
-        let policy = RetentionPolicy::from_context(&[], &ProviderContextOptions::default());
-        assert_eq!(
-            policy.trim_trigger_tokens,
-            RETENTION_TRIM_TRIGGER_CAP_TOKENS
-        );
-
-        let small_policy = RetentionPolicy::from_context(
+    fn retention_policy_uses_complexity_aware_trigger() {
+        let policy = retention_policy_from_messages(
             &[],
-            &ProviderContextOptions {
+            &RetentionSignals {
+                context_window: None,
+                session_tool_count: 0,
+                last_turn_tool_count: 0,
+            },
+        );
+        assert_eq!(policy.trim_trigger_tokens, 82_000);
+
+        let heavy_policy = retention_policy_from_messages(
+            &[],
+            &RetentionSignals {
+                context_window: Some(200_000),
+                session_tool_count: 49,
+                last_turn_tool_count: 12,
+            },
+        );
+        assert_eq!(heavy_policy.trim_trigger_tokens, 90_000);
+
+        let small_policy = retention_policy_from_messages(
+            &[],
+            &RetentionSignals {
                 context_window: Some(4_000),
-                ..ProviderContextOptions::default()
+                session_tool_count: 0,
+                last_turn_tool_count: 0,
             },
         );
         assert_eq!(small_policy.trim_trigger_tokens, 3_280);
@@ -1247,14 +1188,15 @@ mod tests {
             messages,
             ..ProviderContext::default()
         };
-        let retention = RetentionPolicy::from_context(
+        let retention = retention_policy_from_messages(
             &output.messages,
-            &ProviderContextOptions {
+            &RetentionSignals {
                 context_window: Some(96),
-                ..ProviderContextOptions::default()
+                session_tool_count: 0,
+                last_turn_tool_count: 0,
             },
         );
-        compact_to_retention_policy(&mut output, retention);
+        compact_to_retention_policy(&mut output, retention, TrimAggressiveness::Normal);
 
         let payload = serde_json::to_string(&output.messages).unwrap();
         assert!(!payload.contains("call-tabs"));
@@ -1353,6 +1295,10 @@ mod tests {
                 .unwrap()
                 .contains("latest protected intent")
         );
-        assert!(context.token_estimate <= TARGET_MIN_RETAINED_TOKENS + RECENT_PROTECTED_TOKENS);
+        assert!(
+            context.token_estimate
+                <= crate::retention_policy::TARGET_MIN_RETAINED_TOKENS
+                    + crate::retention_policy::RECENT_PROTECTED_TOKENS
+        );
     }
 }

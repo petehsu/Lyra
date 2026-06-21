@@ -32,6 +32,11 @@ export const createBrowserAgentStateStore = () => {
   const lumenTargetRegistry = new LumenTargetRegistry();
   const browserAgentInputTargets = new Map<string, CachedInputTarget>();
   const pendingSettleHints = new Map<string, boolean>();
+  const pendingFileChooserHints = new Map<string, number>();
+  const cdpFileChooserOpen = new Map<string, number>();
+
+  const PENDING_FILE_CHOOSER_TTL_MS = 30_000;
+  const CDP_FILE_CHOOSER_TTL_MS = 120_000;
 
   const invalidateBrowserAgentTargets = (
     tabId: string,
@@ -165,20 +170,71 @@ export const createBrowserAgentStateStore = () => {
     return pending;
   };
 
+  const markPendingFileChooser = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): void => {
+    pendingFileChooserHints.set(browserAgentCacheKey(tabId, targetMode), Date.now());
+  };
+
+  const markCdpFileChooserOpen = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): void => {
+    cdpFileChooserOpen.set(browserAgentCacheKey(tabId, targetMode), Date.now());
+  };
+
+  const markCdpFileChooserClosed = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): void => {
+    cdpFileChooserOpen.delete(browserAgentCacheKey(tabId, targetMode));
+  };
+
+  const isActiveFileChooserPending = (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode
+  ): boolean => {
+    const key = browserAgentCacheKey(tabId, targetMode);
+    const cdpOpenedAt = cdpFileChooserOpen.get(key);
+    if (cdpOpenedAt !== undefined) {
+      if (Date.now() - cdpOpenedAt > CDP_FILE_CHOOSER_TTL_MS) {
+        cdpFileChooserOpen.delete(key);
+      } else {
+        return true;
+      }
+    }
+    const markedAt = pendingFileChooserHints.get(key);
+    if (markedAt === undefined) {
+      return false;
+    }
+    if (Date.now() - markedAt > PENDING_FILE_CHOOSER_TTL_MS) {
+      pendingFileChooserHints.delete(key);
+      return false;
+    }
+    return true;
+  };
+
   const dispose = (): void => {
     browserAgentInputTargets.clear();
     browserAgentCache.clear();
     lumenTargetRegistry.clear();
     pendingSettleHints.clear();
+    pendingFileChooserHints.clear();
+    cdpFileChooserOpen.clear();
   };
 
   return {
     activeEditableElementFromObservation,
     cacheBrowserAgentInputTarget,
     consumePendingSettle,
+    isActiveFileChooserPending,
     dispose,
     explainTargetRef,
     invalidateBrowserAgentTargets,
+    markCdpFileChooserClosed,
+    markCdpFileChooserOpen,
+    markPendingFileChooser,
     markPendingSettle,
     isAgentEditableElement,
     nextMapEpoch,

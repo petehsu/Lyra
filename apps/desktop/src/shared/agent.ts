@@ -1,6 +1,6 @@
 export type AgentRole = "user" | "assistant" | "system";
 export type AgentTurnStatus = "idle" | "running" | "cancelled" | "finished" | "failed";
-export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled";
+export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled" | "uncertain";
 export type AgentSessionKind = "normal";
 
 export type AgentMessage = {
@@ -408,6 +408,7 @@ export type AgentFileCitation = {
 
 export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
+  readonly turnId?: string | null;
   readonly text: string;
   readonly images?: readonly AgentImageInput[];
   readonly citations?: readonly AgentTranscriptCitation[];
@@ -827,6 +828,7 @@ export type AgentRuntimeEvent =
       readonly sessionId: string;
       readonly turnId: string;
       readonly message: string;
+      readonly failureKind?: string;
     }
   | {
       readonly kind: "providerFault";

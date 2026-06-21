@@ -18,6 +18,8 @@ import type {
   WorkbenchBrowserWorkflowCacheMode,
   WorkbenchBrowserViewManager
 } from "../types";
+import { verifyActionOutcome } from "./agent-action-verification";
+import { elementStateFromCached } from "./agent-element-probe";
 import {
   agentPointInsideViewport,
   centerOfAgentElement,
@@ -110,6 +112,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     cacheBrowserAgentInputTarget,
     consumePendingSettle,
     isAgentEditableElement,
+    markPendingFileChooser,
     markPendingSettle,
     readBrowserAgentCacheEntry
   } = stateStore;
@@ -637,6 +640,13 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       interaction,
     });
     await delay(interaction === "hover" ? 40 : 30);
+    if (
+      interaction === "click"
+      && interactionElement.tagName === "input"
+      && interactionElement.inputType === "file"
+    ) {
+      markPendingFileChooser(tabId, target.targetMode);
+    }
 
     let elementDiffResult = await measureElementDiff(target, interactionElement, request.timeoutMs);
     if (
@@ -711,6 +721,10 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       );
     }
     const runtimeCostMs = Date.now() - startedAt;
+    const noObservableChange =
+      !("diffUnavailable" in elementDiffResult)
+      && "noObservableChange" in elementDiffResult
+      && elementDiffResult.noObservableChange === true;
     return {
       ok: true,
       kind: "lyraLumenActionResult",
@@ -738,7 +752,59 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       runtimeCostMs,
       ...(request.workflowId === undefined ? {} : { workflowId: request.workflowId }),
       message: `${request.interaction} sent to element ${interactionElement.id} (${interactionElement.targetRef}) with Chromium virtual input.`,
-      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
+      ...(noObservableChange
+        ? {
+          warning:
+            "Action was dispatched but no observable element state change was detected; verify with lyra_lumen.read or lyra_lumen.find before retrying."
+        }
+        : {}),
+      nextRecommendedAction: noObservableChange
+        ? "lyra_lumen.read"
+        : nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
+    };
+  };
+
+  const verifyAgentActionOutcome = async (
+    tabId: string,
+    request: {
+      readonly targetMode?: import("../types").WorkbenchBrowserAgentTargetMode;
+      readonly targetRef?: string;
+      readonly elementId?: number;
+      readonly interaction?: import("../types").WorkbenchBrowserAgentInteraction;
+      readonly timeoutMs?: number;
+    }
+  ) => {
+    const targetMode = request.targetMode ?? "live";
+    const cache = readBrowserAgentCacheEntry(tabId, targetMode);
+    const cachedElement = request.targetRef !== undefined
+      ? cache?.elementsByTargetRef.get(request.targetRef)
+      : request.elementId !== undefined
+        ? cache?.elementsById.get(request.elementId)
+        : undefined;
+    const observation = await observeAgentPage(tabId, {
+      strategy: "interactiveOnly",
+      targetMode,
+      suppressActivity: true,
+      timeoutMs: Math.max(250, Math.min(request.timeoutMs ?? 4_000, 8_000))
+    });
+    return {
+      ok: true,
+      kind: "lyraLumenActionVerification",
+      tabId,
+      targetMode,
+      observationId: observation.observationId,
+      ...verifyActionOutcome({
+        ...(request.interaction === undefined ? {} : { interaction: request.interaction }),
+        ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef }),
+        ...(cache?.url === undefined ? {} : { priorUrl: cache.url }),
+        ...(cachedElement === undefined
+          ? {}
+          : { priorElement: elementStateFromCached(cachedElement) }),
+        ...(cache === undefined
+          ? {}
+          : { priorObservation: { elements: cache.elements, url: cache.url } }),
+        observation
+      })
     };
   };
 
@@ -1132,6 +1198,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     performAgentPointerInteraction,
     readFocusedElementSignature,
     scrollAgentPage,
-    staleElementResult
+    staleElementResult,
+    verifyAgentActionOutcome
   };
 };

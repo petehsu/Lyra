@@ -79,6 +79,84 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
     );
 }
 #[test]
+fn permission_request_denies_and_allows_outside_workspace_read() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Outside Workspace Permission", "workingDir": temp.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let denied_turn_id = start_test_runtime_turn(&session_id);
+    let denied_session_id = session_id.clone();
+    let denied_handle = thread::spawn(move || {
+        execute_model_tool(
+            &denied_session_id,
+            &denied_turn_id,
+            &None,
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-outside-denied",
+                "/tools/filesystem/read_file",
+                json!({ "path": "/etc/passwd" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    let pending = state()
+        .lock()
+        .expect("state lock")
+        .pending_permissions
+        .get(&permission_id)
+        .cloned()
+        .expect("pending permission");
+    assert_eq!(pending.risk, "workspace_escape");
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": false }),
+        )
+        .expect("deny outside read");
+    let denied_output = denied_handle.join().expect("join denied outside read");
+    assert_eq!(
+        denied_output.pointer("/error/code").and_then(Value::as_str),
+        Some("permission_denied")
+    );
+
+    let allowed_turn_id = start_test_runtime_turn(&session_id);
+    let allowed_session_id = session_id.clone();
+    let allowed_handle = thread::spawn(move || {
+        execute_model_tool(
+            &allowed_session_id,
+            &allowed_turn_id,
+            &None,
+            &Arc::new(AtomicBool::new(false)),
+            tool_fs_run_call(
+                "tool-outside-allowed",
+                "/tools/filesystem/read_file",
+                json!({ "path": "/etc/passwd", "maxBytes": 64 }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow outside read");
+    let allowed_output = allowed_handle.join().expect("join allowed outside read");
+    assert_eq!(allowed_output["status"].as_str(), Some("completed"));
+    assert!(
+        allowed_output["content"]
+            .as_str()
+            .is_some_and(|content| !content.trim().is_empty())
+    );
+}
+
+#[test]
 fn permission_request_denies_and_allows_native_file_write() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
