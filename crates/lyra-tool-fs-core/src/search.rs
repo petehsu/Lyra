@@ -51,13 +51,13 @@ pub(crate) fn score_manifest_search(
         score += 42.0;
         reasons.push("exact path match".to_string());
     }
-    if score <= 0.0 {
-        return None;
-    }
     let intent_adjustment = search_intent_adjustment(manifest, query, &normalized_query);
     if intent_adjustment.score != 0.0 {
         score += intent_adjustment.score;
         reasons.push(intent_adjustment.reason);
+    }
+    if score <= 0.0 {
+        return None;
     }
     if scene_domain_order(scene)
         .first()
@@ -206,7 +206,190 @@ fn search_intent_adjustment(
         };
     }
 
+    if is_terminal_or_shell_intent(&query, normalized_query) {
+        if path == "/tools/shell/run_command" {
+            return IntentAdjustment {
+                score: 56.0,
+                reason: "terminal-shell intent boost".to_string(),
+            };
+        }
+        if path.starts_with("/tools/terminal/") {
+            return IntentAdjustment {
+                score: 24.0,
+                reason: "interactive-terminal intent boost".to_string(),
+            };
+        }
+    }
+
+    if is_code_edit_intent(&query, normalized_query) {
+        if matches!(
+            path,
+            "/tools/filesystem/apply_patch"
+                | "/tools/filesystem/strict_edit"
+                | "/tools/filesystem/edit_file"
+                | "/tools/filesystem/multi_edit"
+        ) {
+            return IntentAdjustment {
+                score: 32.0,
+                reason: "code-edit intent boost".to_string(),
+            };
+        }
+        if matches!(
+            path,
+            "/tools/filesystem/write_file" | "/tools/shell/run_command"
+        ) {
+            return IntentAdjustment {
+                score: 12.0,
+                reason: "code-edit support intent boost".to_string(),
+            };
+        }
+    }
+
+    if is_file_or_code_search_intent(&query, normalized_query) {
+        if matches!(
+            path,
+            "/tools/code/grep_text"
+                | "/tools/code/search_code"
+                | "/tools/code/search_symbol"
+                | "/tools/filesystem/find_files"
+                | "/tools/filesystem/read_file"
+        ) {
+            return IntentAdjustment {
+                score: 28.0,
+                reason: "code-search intent boost".to_string(),
+            };
+        }
+    }
+
+    if is_git_diff_intent(&query, normalized_query) && path == "/tools/git/diff" {
+        return IntentAdjustment {
+            score: 34.0,
+            reason: "git-diff intent boost".to_string(),
+        };
+    }
+
+    if is_git_status_intent(&query, normalized_query) && path == "/tools/git/status" {
+        return IntentAdjustment {
+            score: 30.0,
+            reason: "git-status intent boost".to_string(),
+        };
+    }
+
+    if is_computer_use_intent(&query, normalized_query) && path.starts_with("/tools/computer/") {
+        let score = match operation {
+            "list_apps" | "observe" | "map" | "find" => 28.0,
+            "act" | "focus" => 22.0,
+            _ => 12.0,
+        };
+        return IntentAdjustment {
+            score,
+            reason: "computer-use intent boost".to_string(),
+        };
+    }
+
+    if is_memory_intent(&query, normalized_query) && path.starts_with("/tools/memory/") {
+        let score = match operation {
+            "search" | "list" | "explain_injection" => 28.0,
+            "remember" | "update" | "forget" => 18.0,
+            _ => 12.0,
+        };
+        return IntentAdjustment {
+            score,
+            reason: "memory intent boost".to_string(),
+        };
+    }
+
     IntentAdjustment::default()
+}
+
+fn is_terminal_or_shell_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("terminal")
+        || normalized_query.contains("shell")
+        || normalized_query.contains("command")
+        || normalized_query.contains("run test")
+        || normalized_query.contains("run tests")
+        || normalized_query.contains("run build")
+        || normalized_query.contains("typecheck")
+        || normalized_query.contains("lint")
+        || query.contains("终端")
+        || query.contains("命令")
+        || query.contains("跑测试")
+        || query.contains("执行测试")
+        || query.contains("运行测试")
+        || query.contains("跑命令")
+        || query.contains("执行命令")
+        || query.contains("构建")
+}
+
+fn is_code_edit_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("edit code")
+        || normalized_query.contains("modify code")
+        || normalized_query.contains("change file")
+        || normalized_query.contains("patch file")
+        || normalized_query.contains("apply patch")
+        || normalized_query.contains("fix bug")
+        || query.contains("改代码")
+        || query.contains("修改代码")
+        || query.contains("修改文件")
+        || query.contains("编辑文件")
+        || query.contains("修复问题")
+}
+
+fn is_file_or_code_search_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("search code")
+        || normalized_query.contains("find file")
+        || normalized_query.contains("read file")
+        || normalized_query.contains("grep")
+        || normalized_query.contains("find definition")
+        || normalized_query.contains("search symbol")
+        || query.contains("查文件")
+        || query.contains("找文件")
+        || query.contains("读文件")
+        || query.contains("搜索代码")
+        || query.contains("查代码")
+        || query.contains("找定义")
+}
+
+fn is_git_diff_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("git diff")
+        || normalized_query.contains("code changes")
+        || normalized_query.contains("show diff")
+        || query.contains("代码变更")
+        || query.contains("查看变更")
+        || query.contains("看diff")
+}
+
+fn is_git_status_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("git status")
+        || normalized_query.contains("working tree")
+        || normalized_query.contains("worktree status")
+        || query.contains("工作区状态")
+        || query.contains("git状态")
+}
+
+fn is_computer_use_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("computer")
+        || normalized_query.contains("desktop")
+        || normalized_query.contains("window")
+        || normalized_query.contains("native app")
+        || normalized_query.contains("application")
+        || normalized_query.contains("accessibility")
+        || query.contains("电脑")
+        || query.contains("桌面")
+        || query.contains("窗口")
+        || query.contains("应用")
+        || query.contains("软件")
+}
+
+fn is_memory_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("memory")
+        || normalized_query.contains("remember")
+        || normalized_query.contains("preference")
+        || normalized_query.contains("stored fact")
+        || query.contains("记忆")
+        || query.contains("偏好")
+        || query.contains("记住")
+        || query.contains("长期记忆")
 }
 
 fn is_web_crawl_intent(query: &str, normalized_query: &str) -> bool {
@@ -226,9 +409,13 @@ fn is_browser_interact_intent(query: &str, normalized_query: &str) -> bool {
         || normalized_query.contains("operate then")
         || normalized_query.contains("after clicking")
         || normalized_query.contains("navigate wait")
+        || normalized_query.contains("browser operation")
+        || normalized_query.contains("operate browser")
         || query.contains("先操作")
         || query.contains("操作后读取")
         || query.contains("点击后读取")
+        || query.contains("浏览器操作")
+        || query.contains("操作浏览器")
 }
 
 fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {

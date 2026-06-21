@@ -56,9 +56,10 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &V
         ("terminal", terminal_action) => terminal_action_requires_policy(terminal_action),
         ("hardware", "session_open" | "session_read" | "session_write" | "run_action") => true,
         ("git", "stage" | "unstage" | "discard") => true,
-        ("lyra_lumen", "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate") => {
-            true
-        }
+        (
+            "lyra_lumen",
+            "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate",
+        ) => true,
         ("lyra_ax", "act" | "press") => true,
         ("software", "invoke_capability") => true,
         _ => false,

@@ -159,6 +159,11 @@ pub(crate) fn config_json(config: &NativeConfig) -> Value {
             "serviceTier": config.service_tier,
             "verbosity": config.verbosity,
         },
+        "promptDelivery": {
+            "mode": config.prompt_delivery_mode.as_deref().unwrap_or("full"),
+            "leanExperimental": config.prompt_delivery_mode.as_deref() == Some("lean-experimental"),
+            "openaiResponsesStatefulPromptContract": config.openai_responses_stateful_prompt_contract,
+        },
         "notifications": config.notifications,
         "proactive": {
             "enabled": config.proactive_enabled,

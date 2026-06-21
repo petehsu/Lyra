@@ -26,6 +26,7 @@ glob.workspace = true
 hmac.workspace = true
 image = { workspace = true, features = ["png", "jpeg", "webp"] }
 libc.workspace = true
+minijinja.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json", "rustls-tls", "system-proxy"] }
 regex.workspace = true
 rusqlite.workspace = true
@@ -39,4 +40,5 @@ urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 [dev-dependencies]
+insta.workspace = true
 tempfile.workspace = true

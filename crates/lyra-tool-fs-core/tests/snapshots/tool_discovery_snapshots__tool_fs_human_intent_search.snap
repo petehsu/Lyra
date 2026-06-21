@@ -1,0 +1,405 @@
+---
+source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
+expression: pretty(&snapshot)
+---
+{
+  "browser": {
+    "domain": null,
+    "fallbackListPath": "/tools/browser",
+    "query": "browser brower 浏览器操作",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "scene": "browser",
+    "topResults": [
+      {
+        "domain": "browser",
+        "handle": "browser_interact",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; browser-interact intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "actions",
+          "baselineSnapshotId",
+          "cacheMode",
+          "extract",
+          "tabId",
+          "targetMode",
+          "workflowId"
+        ],
+        "miniSchemaRequired": [
+          "actions"
+        ],
+        "operation": "interact",
+        "path": "/tools/browser/interact",
+        "runHint": "tool_fs_run with toolHandle: browser_interact; operation: interact; provide args matching miniSchema.",
+        "score": 97.33,
+        "summary": "Run a short declarative action sequence (navigate, wait, click, scroll, type) then extract read/map in one call.",
+        "title": "Browser interact"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_find",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "activeIndex",
+          "amount",
+          "autoMap",
+          "behavior",
+          "block",
+          "caseSensitive",
+          "containerRef",
+          "direction",
+          "elementId",
+          "matchMode",
+          "maxMatches",
+          "nearbyLimit"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "find",
+        "path": "/tools/browser/find",
+        "runHint": "tool_fs_run with toolHandle: browser_find; operation: find; provide args matching miniSchema.",
+        "score": 79.67,
+        "summary": "Search text within a browser page and optionally reveal the selected match.",
+        "title": "Find in browser page"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_locate",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "activeIndex",
+          "amount",
+          "autoMap",
+          "behavior",
+          "block",
+          "caseSensitive",
+          "containerRef",
+          "direction",
+          "elementId",
+          "matchMode",
+          "maxMatches",
+          "nearbyLimit"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "locate",
+        "path": "/tools/browser/locate",
+        "runHint": "tool_fs_run with toolHandle: browser_locate; operation: locate; provide args matching miniSchema.",
+        "score": 79.67,
+        "summary": "Find or semantically locate text on a browser page, reveal it, and map nearby controls.",
+        "title": "Locate browser page section"
+      }
+    ],
+    "total": 41
+  },
+  "code": {
+    "domain": null,
+    "fallbackListPath": "/tools/browser",
+    "query": "改代码 修改文件 apply patch",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "scene": "project-code",
+    "topResults": [
+      {
+        "domain": "filesystem",
+        "handle": "apply_patch",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; code-edit intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "operations",
+          "patch"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "apply_patch",
+        "path": "/tools/filesystem/apply_patch",
+        "runHint": "tool_fs_run with toolHandle: apply_patch; operation: apply_patch; provide args matching miniSchema.",
+        "score": 114.9,
+        "summary": "Apply structured workspace patch operations.",
+        "title": "Apply patch"
+      },
+      {
+        "domain": "filesystem",
+        "handle": null,
+        "matchReason": "aliases fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match; code-edit intent boost",
+        "matchedFields": [
+          "aliases",
+          "summary",
+          "description",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "edits",
+          "path"
+        ],
+        "miniSchemaRequired": [
+          "edits",
+          "path"
+        ],
+        "operation": "multiedit",
+        "path": "/tools/filesystem/multi_edit",
+        "runHint": "tool_fs_run with path: /tools/filesystem/multi_edit; operation: multiedit; provide args matching miniSchema.",
+        "score": 48.93,
+        "summary": "Apply multiple exact replacements.",
+        "title": "Multi-edit file"
+      },
+      {
+        "domain": "filesystem",
+        "handle": "strict_edit",
+        "matchReason": "aliases fuzzy match; description fuzzy match; schema fuzzy match; code-edit intent boost",
+        "matchedFields": [
+          "aliases",
+          "description",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "newString",
+          "oldString",
+          "path",
+          "expectedReadVersion",
+          "replaceAll"
+        ],
+        "miniSchemaRequired": [
+          "newString",
+          "oldString",
+          "path"
+        ],
+        "operation": "strict_edit",
+        "path": "/tools/filesystem/strict_edit",
+        "runHint": "tool_fs_run with toolHandle: strict_edit; operation: strict_edit; provide args matching miniSchema.",
+        "score": 48.51,
+        "summary": "Replace exact text in a file after verifying the file was read and has not changed.",
+        "title": "Strict edit"
+      }
+    ],
+    "total": 149
+  },
+  "git": {
+    "domain": null,
+    "fallbackListPath": "/tools/git",
+    "query": "查看 git diff 代码变更",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "scene": "git",
+    "topResults": [
+      {
+        "domain": "git",
+        "handle": "git_diff",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases token match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; git-diff intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags"
+        ],
+        "miniSchemaParameterNames": [
+          "path",
+          "scope",
+          "workingDir"
+        ],
+        "miniSchemaRequired": [
+          "path"
+        ],
+        "operation": "diff",
+        "path": "/tools/git/diff",
+        "runHint": "tool_fs_run with toolHandle: git_diff; operation: diff; provide args matching miniSchema.",
+        "score": 128.0,
+        "summary": "Read Git diff for a changed file.",
+        "title": "Git diff"
+      },
+      {
+        "domain": "git",
+        "handle": "git_status",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags"
+        ],
+        "miniSchemaParameterNames": [
+          "workingDir"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "status",
+        "path": "/tools/git/status",
+        "runHint": "tool_fs_run with toolHandle: git_status; operation: status; provide args matching miniSchema.",
+        "score": 55.69,
+        "summary": "Read Git repository status.",
+        "title": "Git status"
+      },
+      {
+        "domain": "git",
+        "handle": "git_log",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags"
+        ],
+        "miniSchemaParameterNames": [
+          "limit",
+          "workingDir"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "log",
+        "path": "/tools/git/log",
+        "runHint": "tool_fs_run with toolHandle: git_log; operation: log; provide args matching miniSchema.",
+        "score": 48.14,
+        "summary": "Read recent Git commits.",
+        "title": "Git log"
+      }
+    ],
+    "total": 36
+  },
+  "terminal": {
+    "domain": null,
+    "fallbackListPath": "/tools/terminal",
+    "query": "terminal shell 终端 跑测试",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "scene": "terminal",
+    "topResults": [
+      {
+        "domain": "shell",
+        "handle": "run_command",
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; terminal-shell intent boost",
+        "matchedFields": [
+          "path",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "command",
+          "cwd",
+          "description",
+          "maxOutputBytes",
+          "runInBackground",
+          "timeoutMs",
+          "workingDir"
+        ],
+        "miniSchemaRequired": [
+          "command"
+        ],
+        "operation": "run",
+        "path": "/tools/shell/run_command",
+        "runHint": "tool_fs_run with toolHandle: run_command; operation: run; provide args matching miniSchema.",
+        "score": 100.19,
+        "summary": "Run a bounded non-interactive shell command in a local cwd. Defaults to the bound project root, or the user home directory when the session is unbound. Prefer this for one-shot checks like git config, pwd, tests, or file inspection when no persistent terminal is needed.",
+        "title": "Run one-shot shell command"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_run",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases token match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "command",
+          "cwd",
+          "sessionId",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [
+          "command"
+        ],
+        "operation": "run",
+        "path": "/tools/terminal/run",
+        "runHint": "tool_fs_run with toolHandle: terminal_run; operation: run; provide args matching miniSchema.",
+        "score": 96.44,
+        "summary": "Run persistent terminal command; prefer shell for one-shot commands",
+        "title": "Run persistent terminal command; prefer shell for one-shot commands"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_list",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "input",
+          "sessionId",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "list",
+        "path": "/tools/terminal/list",
+        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
+        "score": 75.85,
+        "summary": "List terminal sessions",
+        "title": "List terminal sessions"
+      }
+    ],
+    "total": 48
+  }
+}

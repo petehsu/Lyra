@@ -71,12 +71,8 @@ pub(crate) fn build_context_window_plan(
         complexity_band: crate::retention_policy::ComplexityBand::Simple,
         has_explicit_context_window: false,
     };
-    let interleaved = build_interleaved_trim_plan(
-        messages,
-        &policy,
-        &pinned_ids,
-        TrimAggressiveness::Normal,
-    )?;
+    let interleaved =
+        build_interleaved_trim_plan(messages, &policy, &pinned_ids, TrimAggressiveness::Normal)?;
     if interleaved.trim_ordinals.is_empty() {
         return None;
     }
@@ -96,12 +92,7 @@ pub(crate) fn build_context_window_plan_from_signals(
     let pinned_items = collect_pinned_items(session, active_clarification);
     let pinned_ids = pinned_message_ids(&pinned_items);
     let policy = crate::retention_policy::retention_policy_from_messages(messages, signals);
-    let interleaved = build_interleaved_trim_plan(
-        messages,
-        &policy,
-        &pinned_ids,
-        aggressiveness,
-    )?;
+    let interleaved = build_interleaved_trim_plan(messages, &policy, &pinned_ids, aggressiveness)?;
     if interleaved.trim_ordinals.is_empty() {
         return None;
     }

@@ -6,7 +6,10 @@ const MAX_TASK_MILESTONES: usize = 24;
 const MAX_CONSECUTIVE_FAILED_BEFORE_RECOVERY: usize = 3;
 
 pub(crate) fn init_session_resilience_fields(snapshot: &mut Value) {
-    if !snapshot.get("sessionResilience").is_some_and(Value::is_object) {
+    if !snapshot
+        .get("sessionResilience")
+        .is_some_and(Value::is_object)
+    {
         snapshot["sessionResilience"] = json!({
             "blockedBrowser": Value::Null,
             "lastInterruptReason": Value::Null,
@@ -43,9 +46,7 @@ pub(crate) fn blocked_browser_turn_failure_message(blocked: &Value) -> String {
         .map(|items| items.len())
         .unwrap_or(0);
     if regions > 0 {
-        format!(
-            "lyra_turn_failure:browser_blocked ({regions} blocked region(s) still active)"
-        )
+        format!("lyra_turn_failure:browser_blocked ({regions} blocked region(s) still active)")
     } else {
         super::tool_protocol::TURN_FAILURE_BROWSER_BLOCKED.to_string()
     }
@@ -125,10 +126,7 @@ pub(crate) fn sync_failure_resilience_state(session: &mut NativeSession) {
     init_session_resilience_fields(&mut session.snapshot);
     let count = consecutive_failed_recoverable_count(session);
     if let Some(object) = session.snapshot["sessionResilience"].as_object_mut() {
-        object.insert(
-            "consecutiveFailedRecoverable".to_string(),
-            json!(count),
-        );
+        object.insert("consecutiveFailedRecoverable".to_string(), json!(count));
         object.insert("updatedAt".to_string(), Value::String(now()));
     }
 }
@@ -153,10 +151,20 @@ pub(crate) fn resume_context_lines(session: &NativeSession) -> Vec<String> {
             "Browser automation is blocked by {region_count} active region(s). Ask the user to close upload/permission dialogs before more browser tools."
         ));
     }
-    if let Some(milestones) = session.snapshot.get("taskMilestones").and_then(Value::as_array) {
+    if let Some(milestones) = session
+        .snapshot
+        .get("taskMilestones")
+        .and_then(Value::as_array)
+    {
         for milestone in milestones.iter().rev().take(6) {
-            let kind = milestone.get("kind").and_then(Value::as_str).unwrap_or("milestone");
-            let detail = milestone.get("detail").and_then(Value::as_str).unwrap_or("");
+            let kind = milestone
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("milestone");
+            let detail = milestone
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             if !detail.is_empty() {
                 lines.push(format!("Completed milestone [{kind}]: {detail}"));
             }
@@ -167,7 +175,9 @@ pub(crate) fn resume_context_lines(session: &NativeSession) -> Vec<String> {
             .iter()
             .filter(|todo| {
                 !matches!(
-                    todo.get("status").and_then(Value::as_str).unwrap_or("pending"),
+                    todo.get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("pending"),
                     "completed" | "done" | "cancelled"
                 )
             })
@@ -334,7 +344,10 @@ mod tests {
         let mut session = test_session();
         finalize_interrupt_state(&mut session, "soft_interrupt_new_user_message");
         assert_eq!(
-            session.snapshot.pointer("/follow/running").and_then(Value::as_bool),
+            session
+                .snapshot
+                .pointer("/follow/running")
+                .and_then(Value::as_bool),
             Some(false)
         );
         assert_eq!(

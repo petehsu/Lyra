@@ -106,10 +106,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     Ok(reply)
 }
 
-fn merge_tool_call_chunk(
-    accumulator: &mut StreamingToolCallAccumulator,
-    chunk: &Value,
-) {
+fn merge_tool_call_chunk(accumulator: &mut StreamingToolCallAccumulator, chunk: &Value) {
     if let Some(id) = chunk.get("id").and_then(Value::as_str)
         && is_valid_tool_call_id(id)
     {

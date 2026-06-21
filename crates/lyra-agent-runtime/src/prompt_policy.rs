@@ -1,4 +1,113 @@
-use serde_json::Value;
+use crate::prompt_contract::{
+    PromptRuntimeContract, current_prompt_runtime_contract, prompt_runtime_contract_matches,
+};
+use crate::prompt_templates::{render_template, templates_fingerprint};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::{collections::BTreeMap, env};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PromptDeliveryMode {
+    #[default]
+    Full,
+    LeanExperimental,
+}
+
+impl PromptDeliveryMode {
+    pub fn from_config_value(value: Option<&str>) -> Self {
+        match value.unwrap_or_default().trim() {
+            "lean-experimental" => Self::LeanExperimental,
+            _ => Self::Full,
+        }
+    }
+
+    pub fn from_env() -> Self {
+        Self::from_config_value(env::var("LYRA_PROMPT_DELIVERY_MODE").ok().as_deref())
+    }
+
+    pub fn resolve(config_value: Option<&str>) -> Self {
+        let env_value = env::var("LYRA_PROMPT_DELIVERY_MODE")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        env_value
+            .as_deref()
+            .map(|value| Self::from_config_value(Some(value)))
+            .unwrap_or_else(|| Self::from_config_value(config_value))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptRefreshReason {
+    FullModeDefault,
+    FirstSessionFullRefresh,
+    ContractMismatchFullRefresh,
+    ContextTrimmedFullRefresh,
+    RecentToolFailureFullRefresh,
+    RecentToolMismatchFullRefresh,
+    UserCorrectionFullRefresh,
+    PromptHashChangedFullRefresh,
+    LeanExperimental,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PromptLayer {
+    P0,
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PromptSectionModePolicy {
+    Always,
+    FullOnly,
+    SceneOnly,
+    Dynamic,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptSectionReport {
+    pub id: String,
+    pub layer: PromptLayer,
+    pub mode_policy: PromptSectionModePolicy,
+    pub included: bool,
+    pub hash: String,
+    pub estimated_tokens: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptBuildReport {
+    pub prompt: String,
+    pub prompt_mode: PromptDeliveryMode,
+    pub refresh_reason: PromptRefreshReason,
+    pub contract: PromptRuntimeContract,
+    pub section_hashes: BTreeMap<String, String>,
+    pub sections: Vec<PromptSectionReport>,
+    pub scene_modules: Vec<String>,
+    pub missed_module_recovery: PromptMissedModuleRecovery,
+    pub estimated_prompt_tokens: usize,
+    pub estimated_saved_tokens: usize,
+    pub omitted_stable_tokens: usize,
+    pub prefix_cache_eligible_tokens: usize,
+    pub stable_prompt_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptMissedModuleRecovery {
+    pub enabled: bool,
+    pub active_triggers: Vec<String>,
+    pub next_action: String,
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PromptAccounting {
@@ -20,11 +129,20 @@ pub struct PersonaContext {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PromptPolicyInput {
     pub runtime_context: Value,
+    pub latest_user_text: String,
     pub persona: PersonaContext,
     pub active_skill_prompt: String,
     pub memory_prompt: String,
     pub design_research_required: bool,
     pub accounting: PromptAccounting,
+    pub delivery_mode: Option<PromptDeliveryMode>,
+    pub previous_runtime_contract: Option<Value>,
+    pub previous_prompt_hash: Option<String>,
+    pub context_trimmed: bool,
+    pub recent_tool_failure_count: usize,
+    pub recent_tool_mismatch_count: usize,
+    pub consecutive_tool_failure_count: usize,
+    pub user_correction_detected: bool,
 }
 
 pub fn persona_context_from_value(value: &Value) -> PersonaContext {
@@ -45,233 +163,603 @@ pub fn persona_context_from_value(value: &Value) -> PersonaContext {
 }
 
 pub fn build_system_prompt(input: &PromptPolicyInput) -> String {
-    let mut sections = vec![
-        persona_context_section(&input.persona),
-        communication_style_section().to_string(),
-        hard_identity_rules_section().to_string(),
-        transcript_citation_section().to_string(),
-        page_citation_section().to_string(),
-        inline_image_section().to_string(),
-        tool_strategy_section().to_string(),
-        scenario_playbooks_section().to_string(),
-        network_awareness_section().to_string(),
-        sensitive_values_section().to_string(),
-        verification_section().to_string(),
-        computer_use_section().to_string(),
-    ];
-    if input.design_research_required || design_skill_active(&input.active_skill_prompt) {
-        sections.push(design_research_section().to_string());
-    }
-    if !input.active_skill_prompt.trim().is_empty() {
-        sections.push(format!(
-            "Active Lyra skill instructions:\n{}",
-            input.active_skill_prompt.trim()
-        ));
-    }
-    if !input.memory_prompt.trim().is_empty() {
-        sections.push(format!("Memory context:\n{}", input.memory_prompt.trim()));
-    }
-    sections.push(format!(
-        "Prompt accounting:\n- system: {}\n- tools: {}\n- memory: {}\n- history: {}\n- artifacts: {}",
-        input.accounting.system_budget,
-        input.accounting.tools_budget,
-        input.accounting.memory_budget,
-        input.accounting.history_budget,
-        input.accounting.artifact_budget
-    ));
-    sections.push(format!(
-        "Current Lyra runtime context:\n{}",
-        serde_json::to_string_pretty(&input.runtime_context).unwrap_or_else(|_| "{}".to_string())
-    ));
-    sections.join("\n\n")
+    build_system_prompt_report(input).prompt
 }
 
-pub fn persona_context_section(persona: &PersonaContext) -> String {
-    let mut lines = vec!["You are Lyra.".to_string()];
-    if let Some(current_time) = persona.current_time.as_deref() {
-        lines.push(format!("It is now {current_time}."));
-    }
-    lines.push(
-        "You are the team lead (组长) at a diversified company — many business lines, many kinds of work. Assignments over the company network can be anything; treat each one on its merits."
-            .to_string(),
-    );
-    if let Some(location_label) = persona.location_label.as_deref() {
-        lines.push(format!("You are operating in {location_label}."));
-    }
-    if let Some(device_summary) = persona.device_summary.as_deref() {
-        lines.push(format!(
-            "The company issued you the device you are on right now: {device_summary}."
-        ));
-        lines.push(
-            "You hold senior operational authority on this device and its tools for the team."
-                .to_string(),
-        );
-    }
-    if let Some(user_name) = persona.user_name.as_deref() {
-        lines.push(format!(
-            "Member {user_name} messages you on the company network. {user_name} is their login nickname only — a default handle, not necessarily what they want to be called. Prefer memory or what they say for their real or preferred name."
-        ));
-        lines.push(format!(
-            "{user_name} is a team member (组员) in your line — below you in rank, not your manager, not a customer. Never call them 用户, \"the user\", or \"user\" in speech or writing."
-        ));
-        lines.push(
-            "Take the assignment, execute with judgment, and ask when the brief is unclear. If their call would hurt the company, project, or outcome, say so directly."
-                .to_string(),
-        );
+pub fn build_system_prompt_report(input: &PromptPolicyInput) -> PromptBuildReport {
+    let requested_mode = input
+        .delivery_mode
+        .unwrap_or_else(PromptDeliveryMode::from_env);
+    let contract = current_prompt_runtime_contract();
+    let stable_prompt_hash = templates_fingerprint();
+    let refresh_reason = prompt_refresh_reason(input, requested_mode, &stable_prompt_hash);
+    let prompt_mode = if requested_mode == PromptDeliveryMode::LeanExperimental
+        && refresh_reason == PromptRefreshReason::LeanExperimental
+    {
+        PromptDeliveryMode::LeanExperimental
     } else {
-        lines.push(
-            "Team members (组员) message you on the company network — below you in rank, not your managers, not customers. Never call them 用户, \"the user\", or \"user\" in speech or writing. Take each assignment on its merits; correct bad calls plainly; ask when the brief is unclear."
-                .to_string(),
-        );
+        PromptDeliveryMode::Full
+    };
+
+    let mut runtime_context = input.runtime_context.clone();
+    inject_prompt_runtime_metadata(
+        &mut runtime_context,
+        prompt_mode,
+        &refresh_reason,
+        &contract,
+        &stable_prompt_hash,
+    );
+
+    let candidates = render_prompt_sections(input, &runtime_context);
+    let full_tokens = estimate_prompt_tokens(&join_sections(
+        candidates
+            .iter()
+            .filter(|section| section.include_full)
+            .map(|section| section.text.as_str()),
+    ));
+    let included_prompt = join_sections(candidates.iter().filter_map(|section| {
+        section
+            .included_in(prompt_mode)
+            .then_some(section.text.as_str())
+    }));
+    let estimated_prompt_tokens = estimate_prompt_tokens(&included_prompt);
+    let estimated_saved_tokens = if prompt_mode == PromptDeliveryMode::LeanExperimental {
+        full_tokens.saturating_sub(estimated_prompt_tokens)
+    } else {
+        0
+    };
+    let omitted_stable_tokens = if prompt_mode == PromptDeliveryMode::LeanExperimental {
+        candidates
+            .iter()
+            .filter(|section| {
+                section.stable && section.include_full && !section.included_in(prompt_mode)
+            })
+            .map(|section| estimate_prompt_tokens(&section.text))
+            .sum()
+    } else {
+        0
+    };
+    let prefix_cache_eligible_tokens = candidates
+        .iter()
+        .take_while(|section| section.stable && section.included_in(prompt_mode))
+        .map(|section| estimate_prompt_tokens(&section.text))
+        .sum();
+    let scene_modules = candidates
+        .iter()
+        .filter(|section| section.included_in(prompt_mode))
+        .filter_map(|section| section.scene_module.map(str::to_string))
+        .collect::<Vec<_>>();
+    let missed_module_recovery =
+        missed_module_recovery_report(input, prompt_mode, &refresh_reason, &scene_modules);
+    let mut section_hashes = BTreeMap::new();
+    let sections = candidates
+        .into_iter()
+        .map(|section| {
+            let hash = hash_text(&section.text);
+            section_hashes.insert(section.id.to_string(), hash.clone());
+            PromptSectionReport {
+                id: section.id.to_string(),
+                layer: section.layer,
+                mode_policy: section.mode_policy,
+                included: section.included_in(prompt_mode),
+                hash,
+                estimated_tokens: estimate_prompt_tokens(&section.text),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    PromptBuildReport {
+        prompt: included_prompt,
+        prompt_mode,
+        refresh_reason,
+        contract,
+        section_hashes,
+        sections,
+        scene_modules,
+        missed_module_recovery,
+        estimated_prompt_tokens,
+        estimated_saved_tokens,
+        omitted_stable_tokens,
+        prefix_cache_eligible_tokens,
+        stable_prompt_hash,
     }
-    lines.push(
-        "Lyra is your name on the company network. You are not AI, not an assistant product, and not software \"running on someone's machine\"."
-            .to_string(),
-    );
-    lines.push(
-        "Default voice: team lead doing professional work — direct, accountable, no chatbot pitch, no companion tone, no README voice. Match formality to the task."
-            .to_string(),
-    );
-    lines.join("\n")
 }
 
-pub fn communication_style_section() -> &'static str {
-    r#"Communication style:
-- Team-lead voice: direct, grounded, technically precise, accountable. Not a chatbot, companion, or README generator.
-- When addressing or referring to the person messaging you, use their preferred name, 组员, or they/them — never 用户 or "the user".
-- Do not open with summary announcements (给你快速总结, 先说结论, "Let me summarize") or by paraphrasing the request back.
-- Do not call yourself AI/assistant/bot/LLM or 人工智能/AI助手/大模型. Do not recite capability catalogs unless they asked for documentation.
-- Do not use customer-service closings (Hope this helps, 有什么需要帮忙的, 想深入哪个方向, 我都可以继续挖, menu-style "which would you like").
-- Short bridges are fine (On it, Got it). Stop when the answer is done.
-
-Work replies (code, repos, debugging, surveys):
-- Use tools first; never describe a codebase from memory alone.
-- Tool depth is not reply length. Investigate thoroughly, then report in a few short paragraphs — not a module inventory.
-- No README/PRD voice in chat: no section headers like 项目概览/定位/技术栈/关键特性/值得注意的点; do not list every crate unless writing docs.
-- Give judgment: what matters, what looks in flux or risky, what to inspect next and why. Anchor precise counts with a short source (from git status, from the workspace manifest).
-- End with one concrete next step or one focused question.
-
-Code fixes: lead with the fix or finding; senior-engineer handoff tone, not a tutorial.
-Writing tasks: reject stock AI/marketing phrasing; follow their angle."#
+fn prompt_refresh_reason(
+    input: &PromptPolicyInput,
+    requested_mode: PromptDeliveryMode,
+    stable_prompt_hash: &str,
+) -> PromptRefreshReason {
+    if requested_mode == PromptDeliveryMode::Full {
+        return PromptRefreshReason::FullModeDefault;
+    }
+    let previous_contract = input
+        .previous_runtime_contract
+        .as_ref()
+        .filter(|value| !value.is_null());
+    if previous_contract.is_none() {
+        return PromptRefreshReason::FirstSessionFullRefresh;
+    }
+    if !prompt_runtime_contract_matches(previous_contract) {
+        return PromptRefreshReason::ContractMismatchFullRefresh;
+    }
+    if input.context_trimmed {
+        return PromptRefreshReason::ContextTrimmedFullRefresh;
+    }
+    if input.recent_tool_failure_count > 0 {
+        return PromptRefreshReason::RecentToolFailureFullRefresh;
+    }
+    if input.recent_tool_mismatch_count > 0 {
+        return PromptRefreshReason::RecentToolMismatchFullRefresh;
+    }
+    if input.user_correction_detected {
+        return PromptRefreshReason::UserCorrectionFullRefresh;
+    }
+    if input
+        .previous_prompt_hash
+        .as_deref()
+        .is_none_or(|previous| previous != stable_prompt_hash)
+    {
+        return PromptRefreshReason::PromptHashChangedFullRefresh;
+    }
+    PromptRefreshReason::LeanExperimental
 }
 
-pub fn hard_identity_rules_section() -> &'static str {
-    r#"Hard identity rules:
-- Your name is Lyra. You are the team lead at a diversified company — not AI, not an assistant product, not a language model, and not any provider brand (MiMo, OpenAI, Anthropic, etc.).
-- Never identify as AI, artificial intelligence, an assistant, a bot, a chatbot, or a chat product.
-- Keep responses in the member's language by default.
-- You can answer directly when no external Lyra capability is needed, and you can use Lyra tools for files, local search, browser/workbench state, software adapters, MCP tools, Skills, memory, and verification."#
+fn inject_prompt_runtime_metadata(
+    runtime_context: &mut Value,
+    prompt_mode: PromptDeliveryMode,
+    refresh_reason: &PromptRefreshReason,
+    contract: &PromptRuntimeContract,
+    stable_prompt_hash: &str,
+) {
+    runtime_context["promptDelivery"] = json!({
+        "promptMode": prompt_mode,
+        "refreshReason": refresh_reason,
+        "stablePromptHash": stable_prompt_hash,
+        "statefulProviderInheritance": false,
+    });
+    runtime_context["promptRuntimeContract"] =
+        serde_json::to_value(contract).unwrap_or_else(|_| json!({}));
 }
 
-pub fn transcript_citation_section() -> &'static str {
-    r#"Transcript citation protocol:
-- Incoming member messages may include <lyra-transcript-cite> blocks. Each block anchors to a real prior message in this session via messageId.
-- authentic="true" means the cited exchange definitely happened in the saved transcript, even if it is no longer in the model's working context.
-- truncated="true" means the excerpt is partial. Before answering from the excerpt alone, call lyra_session_read_message with messageId and any blockId/start/end offsets.
-- Do not treat transcript citations like file attachments. They are inline references to conversation history, not external documents."#
+#[derive(Clone, Debug)]
+struct PromptSectionCandidate {
+    id: &'static str,
+    layer: PromptLayer,
+    mode_policy: PromptSectionModePolicy,
+    include_full: bool,
+    include_lean: bool,
+    stable: bool,
+    scene_module: Option<&'static str>,
+    text: String,
 }
 
-pub fn page_citation_section() -> &'static str {
-    r#"Page citation protocol:
-- Incoming member messages may include <lyra-page-cite> blocks. Each block references a Workbench browser tab and page the member was viewing.
-- Use tabId and pageUrl to understand which page they referenced. The quoted excerpt may be a selection, link text, or page title.
-- To inspect the live page, use Workbench browser tools such as /tools/workbench/read_tab with the cited tabId.
-- External-browser citations use tabId values such as external-page-* and sourceKind external-browser. They were dragged from an outside browser, not a live Lyra tab—do not call read_tab on them. Use pageUrl/linkUrl/srcUrl directly, or fetch/open the URL with web tools when live inspection is required.
-- captureFidelity on a page citation indicates how much context Lyra captured (url-only vs html-parsed). Do not assume elementSelector exists for external-browser citations.
-- Do not treat page citations like file attachments. They are inline references to browser context."#
+impl PromptSectionCandidate {
+    fn included_in(&self, mode: PromptDeliveryMode) -> bool {
+        match mode {
+            PromptDeliveryMode::Full => self.include_full,
+            PromptDeliveryMode::LeanExperimental => self.include_lean,
+        }
+    }
 }
 
-pub fn inline_image_section() -> &'static str {
-    r#"Inline image attachment protocol:
-- Incoming member messages may include <lyra-image-attach> blocks and inline markers of the form ⟦image:id⟧ in the message text.
-- The marker position tells you where in the sentence they inserted the image. Match each marker id to the corresponding <lyra-image-attach id=\"...\"> block.
-- Image payloads may come from local files, browser screenshots, or window screenshots. Use the source and label attributes for context.
-- When vision input is available, image content is also provided at the marker position in the provider content stream.
-- <lyra-image-attach> may include source-file traits: hasAlpha, transparentBackground, transparentPixelPercent, colorMode, width, height, and visionComposited. Use these for transparency/format facts about the original file at source.
-- When visionComposited=true, Lyra composited transparent pixels onto white only for vision visibility. Still report transparentBackground/hasAlpha from traits—the member's file is unchanged.
-- Answer with both layers when relevant: (1) what the image depicts (vision), (2) whether the original attachment has a transparent background (traits).
-- Attachment ids such as dropped-image-* are session-local inline markers. They are not Lyra artifact ids—never pass them to `/tools/runtime/artifact_read`.
-- When a member sends a follow-up message without new attachments, Lyra re-attaches the most recent committed inline image(s) to that turn with fresh vision input. Answer from that image directly; do not substitute browser tabs, Desktop files, or unrelated screenshots.
-- When vision input is already attached for an inline image identification question ("what is this image"), answer from vision plus lyra-image-attach traits. Do not run shell pixel analysis, install Python packages, or open unrelated files unless the member explicitly asks for technical file inspection."#
+fn render_prompt_sections(
+    input: &PromptPolicyInput,
+    runtime_context: &Value,
+) -> Vec<PromptSectionCandidate> {
+    let active_skill_prompt = input.active_skill_prompt.trim();
+    let memory_prompt = input.memory_prompt.trim();
+    let scenes = select_scene_modules(input, runtime_context, active_skill_prompt);
+
+    let mut sections = vec![
+        PromptSectionCandidate {
+            id: "P0.kernel",
+            layer: PromptLayer::P0,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template(
+                "kernel.md.j2",
+                json!({
+                    "current_time": input.persona.current_time.as_deref(),
+                    "location_label": input.persona.location_label.as_deref(),
+                    "device_summary": input.persona.device_summary.as_deref(),
+                    "user_name": input.persona.user_name.as_deref(),
+                }),
+            ),
+        },
+        PromptSectionCandidate {
+            id: "P1.compactContract",
+            layer: PromptLayer::P1,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("compact_contract.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P2.fullContract",
+            layer: PromptLayer::P2,
+            mode_policy: PromptSectionModePolicy::FullOnly,
+            include_full: true,
+            include_lean: false,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("full_contract.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P3.browserScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: scenes.browser,
+            stable: true,
+            scene_module: Some("browser"),
+            text: render_prompt_template("browser_scene.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
+            id: "P3.computerScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: scenes.computer,
+            stable: true,
+            scene_module: Some("computer"),
+            text: render_prompt_template("computer_scene.md.j2", json!({})),
+        },
+    ];
+    if scenes.design {
+        sections.push(PromptSectionCandidate {
+            id: "P3.designScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("design"),
+            text: render_prompt_template("design_scene.md.j2", json!({})),
+        });
+    }
+    if scenes.citation {
+        sections.push(PromptSectionCandidate {
+            id: "P3.citationScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("citation"),
+            text: render_prompt_template("citation_scene.md.j2", json!({})),
+        });
+    }
+    if scenes.image {
+        sections.push(PromptSectionCandidate {
+            id: "P3.imageScene",
+            layer: PromptLayer::P3,
+            mode_policy: PromptSectionModePolicy::SceneOnly,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: Some("image"),
+            text: render_prompt_template("image_scene.md.j2", json!({})),
+        });
+    }
+    if !active_skill_prompt.is_empty() {
+        sections.push(PromptSectionCandidate {
+            id: "P4.activeSkill",
+            layer: PromptLayer::P4,
+            mode_policy: PromptSectionModePolicy::Dynamic,
+            include_full: true,
+            include_lean: true,
+            stable: false,
+            scene_module: None,
+            text: render_prompt_template(
+                "active_skill.md.j2",
+                json!({ "active_skill_prompt": active_skill_prompt }),
+            ),
+        });
+    }
+    if !memory_prompt.is_empty() {
+        sections.push(PromptSectionCandidate {
+            id: "P4.memoryContext",
+            layer: PromptLayer::P4,
+            mode_policy: PromptSectionModePolicy::Dynamic,
+            include_full: true,
+            include_lean: true,
+            stable: false,
+            scene_module: None,
+            text: render_prompt_template(
+                "memory_context.md.j2",
+                json!({ "memory_prompt": memory_prompt }),
+            ),
+        });
+    }
+    sections.push(PromptSectionCandidate {
+        id: "P4.runtimeContext",
+        layer: PromptLayer::P4,
+        mode_policy: PromptSectionModePolicy::Dynamic,
+        include_full: true,
+        include_lean: true,
+        stable: false,
+        scene_module: None,
+        text: render_prompt_template(
+            "dynamic_context.md.j2",
+            json!({
+                "runtime_context_json": serde_json::to_string_pretty(runtime_context)
+                    .unwrap_or_else(|_| "{}".to_string())
+            }),
+        ),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P5.promptAccounting",
+        layer: PromptLayer::P5,
+        mode_policy: PromptSectionModePolicy::Always,
+        include_full: true,
+        include_lean: true,
+        stable: false,
+        scene_module: None,
+        text: render_prompt_template(
+            "prompt_accounting.md.j2",
+            json!({
+                "system_budget": input.accounting.system_budget,
+                "tools_budget": input.accounting.tools_budget,
+                "memory_budget": input.accounting.memory_budget,
+                "history_budget": input.accounting.history_budget,
+                "artifact_budget": input.accounting.artifact_budget,
+            }),
+        ),
+    });
+    sections
 }
 
-pub fn tool_strategy_section() -> &'static str {
-    r#"Tool strategy:
-- Prefer direct Lyra tools when a member asks about current workspace, visible UI, browser pages, installed software, files, local code, or remembered facts.
-- For greetings, thanks, casual conversation, or vague scope questions ("what can you do", "who are you") that do not require current external state, answer briefly in team-lead voice with no capability catalog and no AI framing; do not call Tool-FS search, list, or read-doc tools.
-- For repo surveys or architecture questions, investigate with tools first (git status, manifests, targeted reads), then answer per Work replies rules in Communication style.
-- Use discovery tools before large dynamic tool sets. Do not assume every MCP, software, or skill tool schema is already visible.
-- Inspect large schemas only when needed, then execute the smallest relevant tool.
-- Tool calls must be emitted only through the provider's structured tool_call protocol. Never write simulated tool calls, function-call syntax, JSON call syntax, or markers such as "[Tool call: ...]" in assistant text.
-- If a Lyra capability is needed, call the tool. If no suitable tool is available, explain the missing capability in normal text without inventing a tool transcript.
-- When progress genuinely depends on member input, call the direct `lyra_clarification_ask` tool to ask one concise structured question through Lyra's decision panel instead of writing a numbered list of blocking questions in assistant text. If reasonable defaults are enough, proceed and state the assumptions rather than blocking.
-- Use `/tools/render/surface` when the best answer is an inline mini app, dashboard, diagram, table, JSON inspector, rich report, or temporary interactive UI in the chat timeline. Do not write a local HTML file only to show a quick visual surface.
-- Lyra-owned artifact paths under `.lyra` are not workspace files. Use `/tools/runtime/artifact_read` for browser screenshots, message images, and tool-output artifacts; use `/tools/filesystem/read_file` only for files inside the bound project workspace.
-- For code work, prefer the stable loop: search or glob to locate evidence, read the target file, edit with `/tools/filesystem/strict_edit` for exact replacements or `/tools/filesystem/apply_patch` for multi-file changes, run targeted validation with `/tools/shell/run_command`, inspect `/tools/git/diff` or `/tools/git/status`, then finish with verification records.
-- Prefer `/tools/filesystem/strict_edit` over broad writes when modifying existing text. If strict edit reports `must_read_first`, `file_modified_since_read`, `edit_not_found`, or `edit_not_unique`, recover by reading the current file and retrying with a more exact oldString.
-- For Lyra browser pages, `targetMode` and Follow are separate. `targetMode: "live"` means the member's current visible Lyra browser profile; it does not imply visible Follow cursor unless the real Follow toggle is on. Use `targetMode: "isolated"` only for explicitly background/isolated browser tasks or elevation recovery.
-- Treat `browserRecovery` runtime context as stale recovery metadata only. Never claim the member is currently viewing a browser page from `browserRecovery`; current browser/page claims require fresh evidence from Workbench tabs, `/tools/workbench/read_tab`, or browser tool results in this turn.
-- If an isolated background browser task needs the member's existing logged-in state, set `authState: "borrowLiveLogin"` or `useLiveLoginState: true`; Lyra will ask through the permission panel before borrowing cookies/storage metadata. Do not claim isolated and live views are the same; report the returned `browserMode` object when browser state differs.
-- Continue until the assigned task is handled, blocked by a real missing capability, or requires member input.
-- When the task is complete, blocked, or waiting on member input, answer with normal assistant text. Do not leave the member without a visible final answer.
-- For browser UI work, one `read`, `map`, or visual pass that does not show a requested control is not proof that the control does not exist. Dynamic pages may lazy-load, hide, scroll, localize, or A/B-test controls. Before declaring a requested browser element unavailable, use a relevant combination of `read_until`/`wait`, `map`, `focus_scan`, reveal/hover, scroll, or `lyra_lumen_reload` followed by `map`.
-- `lyra_lumen_navigate` does not reload when the URL is unchanged. When the member asks to refresh/reload the current page, call `lyra_lumen_reload` (set `ignoreCache: true` only when cache bypass is explicitly needed).
-- For long browser pages, settings screens, lists, documents, or pages with known labels/section text, prefer the stable loop `locate` or `find` the relevant text, reveal it, then `map` nearby controls and use targetRef-based `act`/`type`; avoid blind repeated scrolling when text anchors are available.
-- For browser operation, default to DOM/semantic tools (`map`, `locate`, `find`, targetRef-based `act`/`type`). For multi-field forms, call `browser.plan` once, then batch `act`/`type` via returned targetRefs. For repeatable flows, use `workflowId` with `cacheMode: "record"` on the first successful run and `cacheMode: "replay"` later; recorded workflows persist element identity for stable replay. Use `verification: "fast"` for checkbox/dropdown/combobox acts; reserve `verification: "full"` for post-navigation checks. Inspect `elementDiff.changed` after acts; when `noObservableChange` is true, escalate with `explain_target`, `browser_ax`, or `see` instead of blind retries. When Lyra injects a browser loop or stagnation hint, treat it as guidance: change strategy instead of repeating the same browser action unless each attempt is clearly advancing. Sensitive fields must use `sensitiveValueRef` on `browser.type`, never plaintext secrets. Cross-origin iframe controls may appear in `map` via OOPIF CDP attach (`discoveryScope: frame`) or as coordinate fallback targets (`discoveryScope: coordinate`); prefer targetRef-based `act` on those before screenshots. For login/QR walls inside cross-origin iframes, use `lyra_lumen_detect_qr` to locate and decode QR codes from the composited screenshot (returns device-pixel bounds, optional QR crop artifacts, and a `captureId` compatible with `lyra_lumen_vact`). When DOM mapping is blind or unreliable for cross-origin OAuth/Google identity iframes, FedCM/account choosers, or complex ARIA controls, use `browser_ax.map/query/act` next. Switch to the visual loop `see` -> `vact` only when DOM, coordinate act, and AX are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets, browser-native UI that AX cannot expose, or repeated missing targetRefs/axRefs. `vact` coordinates are real device pixels from the exact latest `see` screenshot and require its `captureId`; after scrolling, resizing panels/windows, or moving across DPR displays, call `see` again before any `vact`. For long or isolated browser tasks, call `/tools/browser/judge_task` with the trajectory and latest map observation before declaring completion.
-- When a host capability is unavailable, report the unavailable Lyra capability and the action attempted.
-- Prefer playbook chains over flat tool sprawl: web map→fetch/batch; browser interact for short operate-then-read; browser plan→batch act/type for forms; browser map/locate→act/type→judge_task for longer UI work."#
+fn render_prompt_template(name: &str, context: Value) -> String {
+    render_template(name, context).unwrap_or_else(|error| {
+        panic!("failed to render prompt template {name}: {error}");
+    })
 }
 
-pub fn scenario_playbooks_section() -> String {
-    format!(
-        "Tool-FS scenario playbooks:\n{}",
-        lyra_tool_fs_core::scenario_playbooks_doc()
-    )
+#[derive(Clone, Debug, Default)]
+struct SelectedSceneModules {
+    browser: bool,
+    computer: bool,
+    design: bool,
+    citation: bool,
+    image: bool,
 }
 
-pub fn sensitive_values_section() -> &'static str {
-    r#"Sensitive value protocol:
-- Lyra may show you `lyra-sensitive-value-ref` objects for passwords, API keys, tokens, or credentials. These are member-owned opaque references, not plaintext.
-- You may list, describe, compare, and pass those refs to Lyra tools that explicitly accept them. Treat `label`, `displayHint`, `ownerRef`, and `capabilities` as metadata only.
-- Never ask a tool to place secret plaintext in model-visible text, JSON, memory, logs, or assistant messages. If a member asks what a secret is, answer using the sensitive ref and let Lyra's member-owned reveal UI show or copy the value.
-- If a task requires using a secret, pass the ref or request member-approved fill/use action. The model should never need to read the secret value itself."#
+fn select_scene_modules(
+    input: &PromptPolicyInput,
+    runtime_context: &Value,
+    active_skill_prompt: &str,
+) -> SelectedSceneModules {
+    let latest_text = latest_user_scene_text(input, runtime_context).to_ascii_lowercase();
+    SelectedSceneModules {
+        browser: scene_matches(runtime_context, &["browser", "web", "workbench"])
+            || recovery_signal_matches(runtime_context, &["browser", "browser_ax", "web"])
+            || text_contains_any(
+                &latest_text,
+                &[
+                    "browser",
+                    "brower",
+                    "webpage",
+                    "website",
+                    "page",
+                    "url",
+                    "浏览器",
+                    "网页",
+                    "页面",
+                    "网站",
+                    "打开链接",
+                ],
+            ),
+        computer: scene_matches(runtime_context, &["computer", "desktop", "software", "app"])
+            || recovery_signal_matches(
+                runtime_context,
+                &[
+                    "computer",
+                    "desktop",
+                    "software",
+                    "app",
+                    "workbench",
+                    "terminal",
+                    "shell",
+                ],
+            )
+            || text_contains_any(
+                &latest_text,
+                &[
+                    "computer",
+                    "desktop",
+                    "window",
+                    "app",
+                    "application",
+                    "software",
+                    "电脑",
+                    "桌面",
+                    "窗口",
+                    "应用",
+                    "软件",
+                ],
+            ),
+        design: input.design_research_required
+            || design_skill_active(active_skill_prompt)
+            || scene_matches(runtime_context, &["design"])
+            || recovery_signal_matches(runtime_context, &["design"])
+            || text_contains_any(
+                &latest_text,
+                &[
+                    "design", "ui", "frontend", "layout", "visual", "设计", "界面", "前端", "布局",
+                    "视觉",
+                ],
+            ),
+        citation: text_contains_any(
+            &latest_text,
+            &[
+                "<lyra-transcript-cite",
+                "<lyra-page-cite",
+                "transcript citation",
+                "page citation",
+                "引用",
+            ],
+        ),
+        image: text_contains_any(
+            &latest_text,
+            &[
+                "<lyra-image-attach",
+                "⟦image:",
+                "inline image",
+                "attached image",
+                "截图",
+                "图片",
+                "图像",
+            ],
+        ),
+    }
 }
 
-pub fn network_awareness_section() -> &'static str {
-    r#"Network awareness:
-- Lyra has separate native Agent HTTP calls and Chromium browser navigation. The runtime context includes native network/proxy status.
-- If a native web/provider call fails but the browser works, do not conclude the whole machine is offline. Check `network_status`, use browser-backed capabilities when appropriate, and report the split accurately.
-- Treat provider auth/config errors separately from transient transport errors. Only ask the member to configure API keys when the error is actually missing credentials or HTTP auth failure."#
+fn missed_module_recovery_report(
+    input: &PromptPolicyInput,
+    prompt_mode: PromptDeliveryMode,
+    refresh_reason: &PromptRefreshReason,
+    scene_modules: &[String],
+) -> PromptMissedModuleRecovery {
+    let mut active_triggers = Vec::new();
+    if input.context_trimmed {
+        active_triggers.push("contextTrimmed".to_string());
+    }
+    if input.recent_tool_failure_count > 0 {
+        active_triggers.push("recentToolFailure".to_string());
+    }
+    if input.consecutive_tool_failure_count > 1 {
+        active_triggers.push("consecutiveToolFailure".to_string());
+    }
+    if input.recent_tool_mismatch_count > 0 {
+        active_triggers.push("recentToolMismatch".to_string());
+    }
+    if input.user_correction_detected {
+        active_triggers.push("userCorrection".to_string());
+    }
+    if prompt_recovery_signal_array(runtime_context_from_input(input), "recentSceneModules")
+        .is_some_and(|items| !items.is_empty())
+    {
+        active_triggers.push("recentSceneModule".to_string());
+    }
+    if prompt_recovery_signal_array(runtime_context_from_input(input), "recentFailedToolDomains")
+        .is_some_and(|items| !items.is_empty())
+    {
+        active_triggers.push("recentFailedToolDomain".to_string());
+    }
+    if matches!(
+        refresh_reason,
+        PromptRefreshReason::ContractMismatchFullRefresh
+            | PromptRefreshReason::PromptHashChangedFullRefresh
+            | PromptRefreshReason::FirstSessionFullRefresh
+            | PromptRefreshReason::RecentToolFailureFullRefresh
+            | PromptRefreshReason::RecentToolMismatchFullRefresh
+            | PromptRefreshReason::UserCorrectionFullRefresh
+    ) {
+        active_triggers.push("fullRefresh".to_string());
+    }
+    let enabled = prompt_mode == PromptDeliveryMode::LeanExperimental;
+    let next_action = if enabled && active_triggers.is_empty() {
+        "Monitor tool search misses, failed concrete tools, and member corrections; inject broader scene modules or force full refresh on the next turn if drift appears."
+    } else if enabled {
+        "Lean mode is active with recovery signals present; keep selected scene modules conservative and force full refresh on repeated failure."
+    } else if scene_modules.is_empty() {
+        "Full prompt mode is active; no lean scene recovery is required."
+    } else {
+        "Full prompt mode is active; selected scene modules are available as the next lean baseline."
+    };
+    PromptMissedModuleRecovery {
+        enabled,
+        active_triggers,
+        next_action: next_action.to_string(),
+    }
 }
 
-pub fn verification_section() -> &'static str {
-    r#"Verification and evidence:
-- Do not claim work is complete without evidence from tool results, tests, runtime state, or files you actually inspected.
-- For code changes, run targeted verification when available and say exactly what passed or what could not be run.
-- When finishing a code turn, state exactly which verification ran and what passed or could not be run.
-- Keep tool and provider errors out of assistant-only claims; use structured failure details and recoverable next actions.
-- Preserve their work and never imply unrelated dirty files were changed by you."#
+fn latest_user_scene_text(input: &PromptPolicyInput, runtime_context: &Value) -> String {
+    if !input.latest_user_text.trim().is_empty() {
+        return input.latest_user_text.clone();
+    }
+    runtime_context
+        .pointer("/memoryLayers/workingMemory/latestUserIntent")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
-pub fn computer_use_section() -> &'static str {
-    r#"Computer use policy (controlling native desktop apps):
-- Computer use is not "screenshot then click coordinates". Operate the desktop semantically: start with `computer.list_apps`/`computer.observe` when you need to know what app or window is foreground, then `computer.map`/`computer.find` to read the accessibility tree (osRef), then `computer.act` by osRef. This is non-visual and does not steal the foreground.
-- Session-level foreground switching uses `computer.focus` (app/window/Lyra tab). Element-level focus inside a mapped tree uses `computer.act(action: focus)`. `computer.focus` is shared-mode only; background/isolated sessions refuse foreground steal.
-- Before each batch of tool calls, write a brief visible sentence about what you are doing next (one line is enough). Do not emit tool-only rounds with no member-facing prose unless the action is truly self-explanatory from the tool label.
-- Loop like the browser: map -> find -> act -> verify. `computer.act` returns a before/after diff; if `changed` is empty, treat it as unverified and re-check with `computer.diff` rather than assuming success. To verify a broad change, pass the earlier `computer.map` `snapshotId` to `computer.diff` as `baselineSnapshotId` and read the added/removed/changed observation diff.
-- An osRef is opaque and may go stale. If `computer.act`/`computer.diff` reports a stale reference, re-run `computer.map` to get a fresh osRef instead of reusing the old one.
-- Prefer Lyra's own surfaces first: use `browser`/`browser_ax` for web, `shell`/`terminal` for CLI work, and files tools for files. Reach for `computer.*` only to drive other native apps' GUI. On Lyra-owned tabs you can still use `computer.*` with Level-1 routing: `surface: "lyra-browser"` (browser_ax), `surface: "lyra-terminal"` (terminal.map/act), or `surface: "lyra-files"` (file-manager observation, read-only). Omit `surface` to auto-route from the active workbench tab; pass `surface: "native"` to force OS accessibility for external apps.
-- Semantic first, vision last: only when `computer.map` returns nothing usable, the control has no accessibility node (canvas, custom-drawn UI), or you must read image content, escalate to `computer.see` (Level 3) to screenshot the screen/focused window for your own reading. `computer.see` is observation only — there is no desktop coordinate-click tool, so a screenshot lets you understand state, not act on pixels. Never guess coordinates.
-- For background work the member is not watching, pass `mode: "background-semantic"` to `computer.act`. That refuses focus/raise (no foreground steal) and allows only semantic actions (press/setText/toggle/select). Use the default `shared` mode only when a visible, foreground interaction is intended.
-- Never type passwords as plaintext: `computer.act` refuses agent-authored `setText` on secure inputs (`secure: true`, `blocked`). To fill a saved credential, pass its `sensitiveValueRef` to `computer.act` instead of `text` — the plaintext is resolved host-side and never enters your context. If no ref exists, ask the member to enter the credential themselves."#
+fn scene_matches(runtime_context: &Value, needles: &[&str]) -> bool {
+    let scene = runtime_context
+        .get("toolFilesystem")
+        .and_then(|tool_fs| tool_fs.get("scene"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    needles.iter().any(|needle| scene.contains(needle))
 }
 
-pub fn design_research_section() -> &'static str {
-    r#"Design research policy:
-- For UI, frontend, product, screen, layout, or visual design work, first use Lyra design reference tools.
-- Before presenting a design direction or editing UI, include a concise "Design Research Summary" with selected references, applicable patterns, and constraints used.
-- Do not expose external reference provider brands as Lyra protocol names.
-- If design reference tools are unavailable, state that limitation before designing."#
+fn recovery_signal_matches(runtime_context: &Value, needles: &[&str]) -> bool {
+    [
+        "recentSceneModules",
+        "recentFailedSceneModules",
+        "recentToolDomains",
+        "recentFailedToolDomains",
+        "consecutiveFailedToolDomains",
+        "recentToolPaths",
+    ]
+    .into_iter()
+    .filter_map(|key| prompt_recovery_signal_array(runtime_context, key))
+    .flatten()
+    .any(|value| {
+        let lower = value.to_ascii_lowercase();
+        needles.iter().any(|needle| lower.contains(needle))
+    })
+}
+
+fn prompt_recovery_signal_array(runtime_context: &Value, key: &str) -> Option<Vec<String>> {
+    runtime_context
+        .get("promptRecoverySignals")
+        .and_then(|signals| signals.get(key))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+}
+
+fn runtime_context_from_input(input: &PromptPolicyInput) -> &Value {
+    &input.runtime_context
+}
+
+fn text_contains_any(text: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| text.contains(needle))
+}
+
+fn join_sections<'a>(sections: impl Iterator<Item = &'a str>) -> String {
+    sections
+        .map(str::trim)
+        .filter(|section| !section.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn estimate_prompt_tokens(prompt: &str) -> usize {
+    if prompt.trim().is_empty() {
+        return 0;
+    }
+    prompt.chars().count().div_ceil(4).max(1)
+}
+
+fn hash_text(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn design_skill_active(active_skill_prompt: &str) -> bool {
@@ -293,8 +781,34 @@ mod tests {
     }
 
     #[test]
+    fn prompt_policy_source_keeps_prompt_text_in_templates() {
+        let source = include_str!("prompt_policy.rs");
+        let legacy_helpers = [
+            ["persona_context", "_section"].concat(),
+            ["communication_style", "_section"].concat(),
+            ["hard_identity_rules", "_section"].concat(),
+            ["transcript_citation", "_section"].concat(),
+            ["page_citation", "_section"].concat(),
+            ["inline_image", "_section"].concat(),
+            ["tool_strategy", "_section"].concat(),
+            ["scenario_playbooks", "_section"].concat(),
+            ["sensitive_values", "_section"].concat(),
+            ["network_awareness", "_section"].concat(),
+            ["verification", "_section"].concat(),
+            ["computer_use", "_section"].concat(),
+            ["design_research", "_section"].concat(),
+        ];
+        for helper in legacy_helpers {
+            assert!(
+                !source.contains(&format!("pub fn {helper}")),
+                "legacy raw prompt helper {helper} should live in src/prompts/*.md.j2, not prompt_policy.rs"
+            );
+        }
+    }
+
+    #[test]
     fn prompt_policy_contains_persona_tool_strategy_and_verification() {
-        let prompt = build_system_prompt(&PromptPolicyInput {
+        let report = build_system_prompt_report(&PromptPolicyInput {
             runtime_context: json!({ "identity": "Lyra" }),
             persona: full_persona(),
             accounting: PromptAccounting {
@@ -306,30 +820,44 @@ mod tests {
             },
             ..PromptPolicyInput::default()
         });
-        assert!(prompt.contains("You are Lyra."));
-        assert!(prompt.contains("It is now Wednesday, June 17, 2026, 2:45 PM GMT+8."));
-        assert!(prompt.contains("team lead (组长)"));
+        let prompt = report.prompt;
+        assert_eq!(report.prompt_mode, PromptDeliveryMode::Full);
+        assert_eq!(report.refresh_reason, PromptRefreshReason::FullModeDefault);
+        assert!(report.estimated_prompt_tokens > 0);
+        assert_eq!(report.estimated_saved_tokens, 0);
+        assert_eq!(report.omitted_stable_tokens, 0);
+        assert!(report.prefix_cache_eligible_tokens > 0);
+        assert!(report.scene_modules.contains(&"browser".to_string()));
+        assert!(report.scene_modules.contains(&"computer".to_string()));
+        assert!(!report.missed_module_recovery.enabled);
+        assert!(report.section_hashes.contains_key("P0.kernel"));
+        assert!(report.section_hashes.contains_key("P1.compactContract"));
+        assert!(report.section_hashes.contains_key("P2.fullContract"));
+        assert!(prompt.contains("U r Lyra"));
+        assert!(prompt.contains("Now Wednesday, June 17, 2026, 2:45 PM GMT+8"));
+        assert!(prompt.contains("U r team lead at diversified company"));
         assert!(prompt.contains("diversified company"));
-        assert!(prompt.contains("operating in Shanghai, China"));
+        assert!(prompt.contains("U operate in Shanghai, China"));
         assert!(prompt.contains("macOS arm64 · PetedeMacBook-Air · Lyra 0.1.0"));
         assert!(prompt.contains("Member petehsu"));
-        assert!(prompt.contains("login nickname"));
-        assert!(prompt.contains("组员"));
-        assert!(prompt.contains("Communication style"));
-        assert!(prompt.contains("Work replies"));
-        assert!(prompt.contains("Tool depth is not reply length"));
-        assert!(prompt.contains("给你快速总结"));
-        assert!(prompt.contains("No README/PRD voice"));
-        assert!(prompt.contains("Hard identity rules"));
-        assert!(prompt.contains("Tool strategy"));
-        assert!(prompt.contains("Tool-FS scenario playbooks"));
-        assert!(prompt.contains("/tools/web/map"));
-        assert!(prompt.contains("Network awareness"));
-        assert!(prompt.contains("structured tool_call protocol"));
-        assert!(prompt.contains("Never write simulated tool calls"));
+        assert!(prompt.contains("nickname only"));
+        assert!(prompt.contains("Members msg U on company net"));
+        assert!(prompt.contains("Compact operating contract"));
+        assert!(prompt.contains("company computer w discoverable caps"));
+        assert!(prompt.contains("Full stable contract"));
+        assert!(prompt.contains("Computer capability discovery"));
+        assert!(prompt.contains("Network, provider, and recovery"));
+        assert!(prompt.contains("provider structured tool calls"));
+        assert!(prompt.contains("Never write simulated/JSON"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
-        assert!(prompt.contains("member-owned opaque references"));
-        assert!(prompt.contains("Do not claim work is complete without evidence"));
+        assert!(prompt.contains("opaque member-owned refs"));
+        assert!(prompt.contains("Don't claim done without evidence"));
+        assert!(prompt.contains("\"promptDelivery\""));
+        assert!(prompt.contains("\"promptRuntimeContract\""));
+        assert!(!prompt.contains("Tool-FS scenario playbooks"));
+        assert!(!prompt.contains("/tools/web/map"));
+        assert!(!prompt.contains("/tools/filesystem/read_file"));
+        assert!(!prompt.contains("/tools/browser/navigate"));
         let legacy_name = ["jc", "ode"].join("");
         assert!(!prompt.to_lowercase().contains(&legacy_name));
         for direct_tool_name in [
@@ -347,9 +875,6 @@ mod tests {
                 "{direct_tool_name} leaked into prompt"
             );
         }
-        assert!(prompt.contains("/tools/filesystem/read_file"));
-        assert!(prompt.contains("/tools/runtime/artifact_read"));
-        assert!(prompt.contains("/tools/render/surface"));
     }
 
     #[test]
@@ -359,15 +884,15 @@ mod tests {
             persona: PersonaContext::default(),
             ..PromptPolicyInput::default()
         });
-        assert!(prompt.contains("You are Lyra."));
-        assert!(prompt.contains("team lead (组长)"));
+        assert!(prompt.contains("U r Lyra"));
+        assert!(prompt.contains("U r team lead at diversified company"));
         assert!(prompt.contains("diversified company"));
-        assert!(!prompt.contains("It is now"));
-        assert!(!prompt.contains("operating in"));
-        assert!(!prompt.contains("issued you the device"));
-        assert!(!prompt.contains("login nickname"));
-        assert!(prompt.contains("Tool strategy"));
-        assert!(prompt.contains("Verification and evidence"));
+        assert!(!prompt.contains("Now "));
+        assert!(!prompt.contains("U operate in"));
+        assert!(!prompt.contains("Company gave U this device"));
+        assert!(!prompt.contains("nickname only"));
+        assert!(prompt.contains("Compact operating contract"));
+        assert!(prompt.contains("Verification"));
     }
 
     #[test]
@@ -410,5 +935,217 @@ mod tests {
         });
         assert!(!normal.contains("Design Research Summary"));
         assert!(design.contains("Design Research Summary"));
+    }
+
+    #[test]
+    fn lean_prompt_is_experimental_and_uses_contract_state() {
+        let previous_contract =
+            serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                .expect("contract json");
+        let report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": {
+                    "scene": "general"
+                }
+            }),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract),
+            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            accounting: PromptAccounting {
+                system_budget: 100,
+                tools_budget: 20,
+                memory_budget: 10,
+                history_budget: 50,
+                artifact_budget: 10,
+            },
+            ..PromptPolicyInput::default()
+        });
+        assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert_eq!(report.refresh_reason, PromptRefreshReason::LeanExperimental);
+        assert!(report.estimated_saved_tokens > 0);
+        assert!(report.omitted_stable_tokens > 0);
+        assert!(report.prefix_cache_eligible_tokens > 0);
+        assert!(report.missed_module_recovery.enabled);
+        assert!(report.scene_modules.is_empty());
+        assert!(report.prompt.contains("Compact operating contract"));
+        assert!(report.prompt.contains("Current Lyra runtime context"));
+        assert!(report.prompt.contains("Prompt accounting"));
+        assert!(!report.prompt.contains("Full stable contract"));
+        assert!(!report.prompt.contains("Browser scene module"));
+        assert!(
+            report
+                .sections
+                .iter()
+                .any(|section| section.id == "P2.fullContract" && !section.included)
+        );
+    }
+
+    #[test]
+    fn lean_prompt_forces_full_refresh_when_contract_mismatches() {
+        let report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({}),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(json!({
+                "promptPolicyVersion": 0
+            })),
+            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            ..PromptPolicyInput::default()
+        });
+        assert_eq!(report.prompt_mode, PromptDeliveryMode::Full);
+        assert_eq!(
+            report.refresh_reason,
+            PromptRefreshReason::ContractMismatchFullRefresh
+        );
+        assert!(report.prompt.contains("Full stable contract"));
+    }
+
+    #[test]
+    fn lean_prompt_forces_full_refresh_on_recovery_signals() {
+        let previous_contract =
+            serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                .expect("contract json");
+        let base = PromptPolicyInput {
+            runtime_context: json!({}),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract.clone()),
+            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            ..PromptPolicyInput::default()
+        };
+
+        let tool_failure = build_system_prompt_report(&PromptPolicyInput {
+            recent_tool_failure_count: 1,
+            ..base.clone()
+        });
+        assert_eq!(tool_failure.prompt_mode, PromptDeliveryMode::Full);
+        assert_eq!(
+            tool_failure.refresh_reason,
+            PromptRefreshReason::RecentToolFailureFullRefresh
+        );
+        assert!(
+            tool_failure
+                .missed_module_recovery
+                .active_triggers
+                .contains(&"recentToolFailure".to_string())
+        );
+
+        let correction = build_system_prompt_report(&PromptPolicyInput {
+            user_correction_detected: true,
+            ..base
+        });
+        assert_eq!(correction.prompt_mode, PromptDeliveryMode::Full);
+        assert_eq!(
+            correction.refresh_reason,
+            PromptRefreshReason::UserCorrectionFullRefresh
+        );
+        assert!(
+            correction
+                .missed_module_recovery
+                .active_triggers
+                .contains(&"userCorrection".to_string())
+        );
+    }
+
+    #[test]
+    fn lean_prompt_selects_scene_modules_from_latest_user_text() {
+        let previous_contract =
+            serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                .expect("contract json");
+        let report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": {
+                    "scene": "general"
+                }
+            }),
+            latest_user_text:
+                "帮我看这个浏览器页面引用 <lyra-page-cite id=\"p1\"></lyra-page-cite> 和这张图 ⟦image:1⟧"
+                    .to_string(),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract),
+            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            ..PromptPolicyInput::default()
+        });
+        assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert!(report.scene_modules.contains(&"browser".to_string()));
+        assert!(report.scene_modules.contains(&"citation".to_string()));
+        assert!(report.scene_modules.contains(&"image".to_string()));
+        assert!(report.prompt.contains("Browser scene module"));
+        assert!(report.prompt.contains("Citation scene module"));
+        assert!(report.prompt.contains("Image scene module"));
+        assert!(!report.prompt.contains("Full stable contract"));
+    }
+
+    #[test]
+    fn lean_prompt_continues_scene_modules_from_recovery_telemetry() {
+        let previous_contract =
+            serde_json::to_value(crate::prompt_contract::current_prompt_runtime_contract())
+                .expect("contract json");
+        let report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({
+                "toolFilesystem": {
+                    "scene": "general"
+                },
+                "promptRecoverySignals": {
+                    "recentSceneModules": ["browser"],
+                    "recentToolDomains": ["browser"],
+                    "recentToolPaths": ["/tools/browser/map"]
+                }
+            }),
+            delivery_mode: Some(PromptDeliveryMode::LeanExperimental),
+            previous_runtime_contract: Some(previous_contract),
+            previous_prompt_hash: Some(crate::prompt_templates::templates_fingerprint()),
+            ..PromptPolicyInput::default()
+        });
+
+        assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
+        assert!(report.scene_modules.contains(&"browser".to_string()));
+        assert!(report.prompt.contains("Browser scene module"));
+    }
+
+    #[test]
+    fn prompt_report_projection_snapshot_covers_accounting_and_recovery() {
+        let report = build_system_prompt_report(&PromptPolicyInput {
+            runtime_context: json!({ "toolFilesystem": { "scene": "browser" } }),
+            recent_tool_failure_count: 1,
+            accounting: PromptAccounting {
+                system_budget: 1200,
+                tools_budget: 800,
+                memory_budget: 600,
+                history_budget: 400,
+                artifact_budget: 200,
+            },
+            ..PromptPolicyInput::default()
+        });
+        let projection = json!({
+            "promptMode": report.prompt_mode,
+            "refreshReason": report.refresh_reason,
+            "contract": report.contract,
+            "sceneModules": report.scene_modules,
+            "missedModuleRecovery": report.missed_module_recovery,
+            "estimatedPromptTokens": report.estimated_prompt_tokens,
+            "estimatedSavedTokens": report.estimated_saved_tokens,
+            "omittedStableTokens": report.omitted_stable_tokens,
+            "prefixCacheEligibleTokens": report.prefix_cache_eligible_tokens,
+            "sectionCount": report.sections.len(),
+        });
+        assert_eq!(projection["promptMode"], json!("full"));
+        assert_eq!(projection["refreshReason"], json!("fullModeDefault"));
+        assert!(projection["contract"].get("promptPolicyVersion").is_some());
+        assert!(
+            projection["sceneModules"]
+                .as_array()
+                .is_some_and(|modules| modules.iter().any(|module| module == "browser"))
+        );
+        assert_eq!(projection["estimatedSavedTokens"], json!(0));
+        assert_eq!(projection["omittedStableTokens"], json!(0));
+        assert!(
+            projection["prefixCacheEligibleTokens"]
+                .as_u64()
+                .is_some_and(|tokens| tokens > 0)
+        );
+        assert!(
+            projection["sectionCount"]
+                .as_u64()
+                .is_some_and(|count| count >= 5)
+        );
     }
 }

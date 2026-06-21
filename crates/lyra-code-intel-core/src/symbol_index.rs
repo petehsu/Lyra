@@ -105,7 +105,10 @@ fn grammar_for(language: &str, extension: Option<&str>) -> Option<(Language, &'s
             };
             Some((language, TYPESCRIPT_TAGS_QUERY))
         }
-        "javascript" => Some((tree_sitter_javascript::LANGUAGE.into(), JAVASCRIPT_TAGS_QUERY)),
+        "javascript" => Some((
+            tree_sitter_javascript::LANGUAGE.into(),
+            JAVASCRIPT_TAGS_QUERY,
+        )),
         _ => None,
     }
 }
@@ -121,9 +124,14 @@ fn map_kind(raw: &str) -> &str {
     }
 }
 
-pub fn extract_symbols(content: &str, language: &str, extension: Option<&str>) -> Vec<IndexedSymbol> {
+pub fn extract_symbols(
+    content: &str,
+    language: &str,
+    extension: Option<&str>,
+) -> Vec<IndexedSymbol> {
     if let Some((grammar, query_source)) = grammar_for(language, extension) {
-        if let Some(symbols) = extract_symbols_tree_sitter(content, language, &grammar, query_source)
+        if let Some(symbols) =
+            extract_symbols_tree_sitter(content, language, &grammar, query_source)
         {
             return symbols;
         }
@@ -466,7 +474,9 @@ mod tests {
     fn regex_fallback_used_for_unparseable_input() {
         // Force the fallback path directly to confirm it still extracts symbols.
         let symbols = extract_symbols_regex("pub fn legacy() {}\n", "rust");
-        assert!(symbols.iter().any(|s| s.name == "legacy" && s.kind == "function"));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "legacy" && s.kind == "function"));
     }
 
     #[test]

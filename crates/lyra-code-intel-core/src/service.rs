@@ -394,17 +394,21 @@ mod tests {
         assert!(snapshot_path.ends_with("index.v2.json"));
         let snapshot = load_snapshot(&snapshot_path).unwrap().unwrap();
         assert_eq!(snapshot.version, 2);
-        assert!(snapshot.files.iter().any(|file| file
-            .symbols
+        assert!(snapshot
+            .files
             .iter()
-            .any(|symbol| symbol.name == "alpha")));
+            .any(|file| file.symbols.iter().any(|symbol| symbol.name == "alpha")));
     }
 
     #[test]
     fn symbol_and_text_search_round_trip() {
         let storage = TempDir::new().unwrap();
         let project = project_dir();
-        fs::write(project.path().join("lib.rs"), "pub fn alpha() {}\n// needle\n").unwrap();
+        fs::write(
+            project.path().join("lib.rs"),
+            "pub fn alpha() {}\n// needle\n",
+        )
+        .unwrap();
         let service = CodeIntelService::new(storage.path());
 
         let symbols = service

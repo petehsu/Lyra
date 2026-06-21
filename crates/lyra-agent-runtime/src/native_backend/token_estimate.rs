@@ -51,7 +51,10 @@ mod tests {
         // the two should land close together rather than thousands apart.
         let delta =
             estimate_message_tokens(&with_image).abs_diff(estimate_message_tokens(&without_image));
-        assert!(delta < 50, "inline image data should be stripped, delta={delta}");
+        assert!(
+            delta < 50,
+            "inline image data should be stripped, delta={delta}"
+        );
     }
 }
 

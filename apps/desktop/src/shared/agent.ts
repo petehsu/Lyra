@@ -943,6 +943,8 @@ export type AgentConfigUpdateRequest = {
   readonly openaiReasoningEffort?: string | null;
   readonly openaiServiceTier?: string | null;
   readonly openaiVerbosity?: string | null;
+  readonly promptDeliveryMode?: "full" | "lean-experimental" | null;
+  readonly openaiResponsesStatefulPromptContract?: boolean;
   readonly ntfyTopic?: string | null;
   readonly ntfyServer?: string | null;
   readonly desktopNotifications?: boolean;

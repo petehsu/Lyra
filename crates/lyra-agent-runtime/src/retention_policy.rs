@@ -108,7 +108,9 @@ pub fn retention_policy_from_messages(
     }
 }
 
-pub fn trim_controller_config_from_policy(policy: RetentionPolicy) -> crate::native_backend::context_window::TrimControllerConfig {
+pub fn trim_controller_config_from_policy(
+    policy: RetentionPolicy,
+) -> crate::native_backend::context_window::TrimControllerConfig {
     crate::native_backend::context_window::TrimControllerConfig {
         trim_trigger_tokens: policy.trim_trigger_tokens,
         target_tokens: policy.target_tokens,
@@ -151,7 +153,8 @@ pub fn build_interleaved_trim_plan(
         if trim_ordinals.is_empty() {
             return None;
         }
-        let token_after = estimate_tokens_after_plan(&token_counts, &trim_ordinals, &HashSet::new());
+        let token_after =
+            estimate_tokens_after_plan(&token_counts, &trim_ordinals, &HashSet::new());
         return Some(InterleavedTrimPlan {
             head_end,
             tail_start: messages.len().saturating_sub(1),
@@ -363,7 +366,8 @@ pub fn user_turn_segments_in_range(
         }
         let start = index;
         index += 1;
-        while index < range_end && messages[index].get("role").and_then(Value::as_str) != Some("user")
+        while index < range_end
+            && messages[index].get("role").and_then(Value::as_str) != Some("user")
         {
             index += 1;
         }
@@ -586,7 +590,11 @@ fn message_has_tool_payload(message: &Value) -> bool {
     if message
         .get("blocks")
         .and_then(Value::as_array)
-        .is_some_and(|blocks| blocks.iter().any(|block| block.get("type") == Some(&Value::String("tool".to_string()))))
+        .is_some_and(|blocks| {
+            blocks
+                .iter()
+                .any(|block| block.get("type") == Some(&Value::String("tool".to_string())))
+        })
     {
         return true;
     }
@@ -680,8 +688,13 @@ mod tests {
             has_explicit_context_window: true,
         };
 
-        let plan = build_interleaved_trim_plan(&messages, &policy, &HashSet::new(), TrimAggressiveness::Normal)
-            .expect("plan");
+        let plan = build_interleaved_trim_plan(
+            &messages,
+            &policy,
+            &HashSet::new(),
+            TrimAggressiveness::Normal,
+        )
+        .expect("plan");
         assert!(!plan.trim_ordinals.is_empty() || !plan.halve_tool_ordinals.is_empty());
         assert!(plan.token_after <= plan.token_before);
         assert!(!plan.trim_ordinals.contains(&0));

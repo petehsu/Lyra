@@ -197,7 +197,15 @@ pub(crate) fn retry_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let requested_session = string_opt(&payload, "sessionId");
     let requested_turn_id = string_opt(&payload, "turnId");
     let turn_id = format!("turn-{}", Uuid::new_v4());
-    let (session_id, callback, snapshot, parent_turn_id, user_message_id, cancellation, recovery_hint) = {
+    let (
+        session_id,
+        callback,
+        snapshot,
+        parent_turn_id,
+        user_message_id,
+        cancellation,
+        recovery_hint,
+    ) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -232,7 +240,9 @@ pub(crate) fn retry_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .get("runtimeTurnId")
             .and_then(Value::as_str)
             .map(str::to_string)
-            .ok_or_else(|| AgentRuntimeError::Core("failed turn is missing runtimeTurnId".to_string()))?;
+            .ok_or_else(|| {
+                AgentRuntimeError::Core("failed turn is missing runtimeTurnId".to_string())
+            })?;
         let user_message_id = failed_turn
             .get("userMessageId")
             .and_then(Value::as_str)
@@ -250,9 +260,9 @@ pub(crate) fn retry_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        let user_message_exists = messages
-            .iter()
-            .any(|message| message.get("id").and_then(Value::as_str) == Some(user_message_id.as_str()));
+        let user_message_exists = messages.iter().any(|message| {
+            message.get("id").and_then(Value::as_str) == Some(user_message_id.as_str())
+        });
         if !user_message_exists {
             return Err(AgentRuntimeError::Core(format!(
                 "user message {user_message_id} is not present in the session transcript"
@@ -405,6 +415,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         session_kind,
         active_turn_id,
         pinned_context_prompt,
+        previous_runtime_contract,
+        previous_prompt_hash,
+        previous_context_trimmed,
+        configured_prompt_delivery_mode,
+        configured_stateful_prompt_contract,
     ) = {
         let state = state()
             .lock()
@@ -427,7 +442,15 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .clone()
             .or_else(|| state.config.default_model.clone())
             .unwrap_or_else(|| "gpt-5-mini".to_string());
-        let (session_messages, session_tools, working_dir, session_kind) = {
+        let (
+            session_messages,
+            session_tools,
+            working_dir,
+            session_kind,
+            previous_runtime_contract,
+            previous_prompt_hash,
+            previous_context_trimmed,
+        ) = {
             let session = state.sessions.get(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
@@ -453,7 +476,28 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 .get("sessionKind")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            (session_messages, session_tools, working_dir, session_kind)
+            let previous_runtime_contract = session.snapshot.get("promptRuntimeContract").cloned();
+            let previous_prompt_hash = session
+                .snapshot
+                .get("promptDelivery")
+                .and_then(|delivery| delivery.get("stablePromptHash"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let previous_context_trimmed = session
+                .snapshot
+                .get("promptDelivery")
+                .and_then(|delivery| delivery.get("contextTrimmed"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            (
+                session_messages,
+                session_tools,
+                working_dir,
+                session_kind,
+                previous_runtime_contract,
+                previous_prompt_hash,
+                previous_context_trimmed,
+            )
         };
         let active_turn_id = state
             .sessions
@@ -482,8 +526,15 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             session_kind,
             active_turn_id,
             pinned_context_prompt,
+            previous_runtime_contract,
+            previous_prompt_hash,
+            previous_context_trimmed,
+            state.config.prompt_delivery_mode.clone(),
+            state.config.openai_responses_stateful_prompt_contract,
         )
     };
+    let prompt_delivery_mode =
+        prompt_policy::PromptDeliveryMode::resolve(configured_prompt_delivery_mode.as_deref());
     let latest_user = latest_user_text(&session_messages);
     let selected_ranked_memory = select_ranked_long_term_memory_for_injection(
         &root,
@@ -520,6 +571,12 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         session_tools.len(),
         capabilities.context_window,
     );
+    let previous_tool_telemetry = previous_turn_tool_telemetry(&session_tools, &session_messages);
+    let recent_tool_failure_count = previous_tool_telemetry.recent_failure_count;
+    debug_assert_eq!(
+        recent_tool_failure_count,
+        estimate_previous_turn_failed_tool_count(&session_tools, &session_messages)
+    );
     let mut session_messages = session_messages;
     let mut provider_context_trimmed = false;
     {
@@ -552,6 +609,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let openai_responses_replay =
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
+    let user_correction_detected = detect_user_correction(&latest_user_text);
     let design_research_required = design_tools::is_design_task(&latest_user_text)
         || active_skills.contains("lyra-design-research");
     let tools = if capabilities.supports_tool_calling {
@@ -568,6 +626,27 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &memory_record_summaries,
         &capabilities,
     );
+    let stateful_prompt_contract_enabled = route.supports_stateful_prompt_contract
+        && openai_responses_stateful_prompt_contract_enabled(configured_stateful_prompt_contract);
+    runtime_context["providerStatefulPrompt"] = json!({
+        "routeSupportsStatefulPromptContract": route.supports_stateful_prompt_contract,
+        "enabled": stateful_prompt_contract_enabled,
+        "defaultEnabled": false,
+        "billingNote": "Provider stateful prompt inheritance is experimental and does not guarantee lower billed input tokens; Lyra's default token saving path is sending less stable prompt text in lean mode."
+    });
+    runtime_context["promptRecoverySignals"] = json!({
+        "recentToolFailureCount": recent_tool_failure_count,
+        "recentToolMismatchCount": previous_tool_telemetry.recent_mismatch_count,
+        "consecutiveToolFailureCount": previous_tool_telemetry.consecutive_failure_count,
+        "recentToolPaths": previous_tool_telemetry.recent_tool_paths.clone(),
+        "recentToolDomains": previous_tool_telemetry.recent_tool_domains.clone(),
+        "recentFailedToolDomains": previous_tool_telemetry.recent_failed_tool_domains.clone(),
+        "recentSceneModules": previous_tool_telemetry.recent_scene_modules.clone(),
+        "recentFailedSceneModules": previous_tool_telemetry.recent_failed_scene_modules.clone(),
+        "consecutiveFailedToolDomains": previous_tool_telemetry.consecutive_failed_tool_domains.clone(),
+        "userCorrectionDetected": user_correction_detected,
+        "effect": "Lean prompt delivery upgrades to a full refresh on failure/mismatch signals and keeps recent scene modules active after relevant tool use."
+    });
     let tool_scene = infer_tool_filesystem_scene(
         session_kind.as_deref(),
         working_dir.as_deref(),
@@ -612,18 +691,16 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     });
     runtime_context["design"] = json!({
         "researchRequired": design_research_required,
-        "availableTools": if design_research_required {
-            vec![
-                "/tools/design/search_styles",
-                "/tools/design/get_style_details",
-            ]
+        "discovery": if design_research_required {
+            "Design work: first discover/use design ref caps through Tool-FS search/inspect/run"
         } else {
-            Vec::new()
+            "No design ref discovery needed for latest msg"
         },
     });
     let persona_context = read_host_persona_context(host_dispatcher.as_ref());
-    let system_prompt = build_system_prompt(
+    let prompt_report = build_system_prompt_report(
         &runtime_context,
+        &latest_user_text,
         &persona_context,
         &active_skill_prompt(&active_skills),
         design_research_required,
@@ -632,7 +709,16 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             &system_recall_records,
             &pinned_context_prompt,
         ),
+        previous_runtime_contract,
+        previous_prompt_hash,
+        provider_context_trimmed || previous_context_trimmed,
+        recent_tool_failure_count,
+        previous_tool_telemetry.recent_mismatch_count,
+        previous_tool_telemetry.consecutive_failure_count,
+        user_correction_detected,
+        Some(prompt_delivery_mode),
     );
+    let system_prompt = prompt_report.prompt.clone();
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);
     let context = ContextBuilder::default().build_provider_context(
         system_prompt,
@@ -648,6 +734,31 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             halve_tool_output_message_ids: HashSet::new(),
         },
     );
+    let request_context_trimmed = provider_context_trimmed || context.trimmed;
+    {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        if let Some(session) = state.sessions.get_mut(session_id) {
+            session.snapshot["promptRuntimeContract"] =
+                serde_json::to_value(&prompt_report.contract).unwrap_or_else(|_| json!({}));
+            session.snapshot["promptDelivery"] = json!({
+                "promptMode": prompt_report.prompt_mode,
+                "refreshReason": prompt_report.refresh_reason,
+                "stablePromptHash": prompt_report.stable_prompt_hash,
+                "estimatedPromptTokens": prompt_report.estimated_prompt_tokens,
+                "estimatedSavedTokens": prompt_report.estimated_saved_tokens,
+                "omittedStableTokens": prompt_report.omitted_stable_tokens,
+                "prefixCacheEligibleTokens": prompt_report.prefix_cache_eligible_tokens,
+                "sceneModules": prompt_report.scene_modules,
+                "missedModuleRecovery": prompt_report.missed_module_recovery,
+                "sectionHashes": prompt_report.section_hashes,
+                "contextTrimmed": request_context_trimmed,
+            });
+            touch_session(session);
+            state.save_state()?;
+        }
+    }
     if let Some(overflow) = context.overflow.clone() {
         return Err(AgentRuntimeError::Core(format!(
             "context_overflow: {}",
@@ -723,39 +834,22 @@ fn first_user_message_exists(session: &NativeSession) -> bool {
         })
 }
 
-pub(crate) fn estimate_previous_turn_tool_count(tools: &[Value], messages: &[Value]) -> usize {
-    let user_times = messages
-        .iter()
-        .filter(|message| message.get("role").and_then(Value::as_str) == Some("user"))
-        .filter_map(|message| message.get("createdAt").and_then(Value::as_str))
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    let Some(latest_user_time) = user_times.last() else {
-        return 0;
-    };
-    let previous_user_time = user_times
-        .len()
-        .checked_sub(2)
-        .and_then(|index| user_times.get(index));
-    tools
-        .iter()
-        .filter_map(|tool| tool.get("startedAt").and_then(Value::as_str))
-        .filter(|started_at| {
-            let started_at = *started_at;
-            previous_user_time
-                .map(|previous| started_at >= previous.as_str())
-                .unwrap_or(true)
-                && started_at < latest_user_time.as_str()
-        })
-        .count()
-}
-
 pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
     let mut prompts = Vec::new();
     if active_skills.contains("lyra-design-research") {
-        prompts.push("Skill lyra-design-research: For design or UI work, call Lyra design reference tools first, then include a concise Design Research Summary before proposing or editing UI.");
+        prompts.push("Skill lyra-design-research: Design/UI work: call Lyra design ref tools first, then include concise Design Research Summary before proposal/UI edit");
     }
     prompts.join("\n")
+}
+
+fn openai_responses_stateful_prompt_contract_enabled(configured: bool) -> bool {
+    env_bool_override("LYRA_OPENAI_RESPONSES_STATEFUL_PROMPT_CONTRACT").unwrap_or(configured)
+}
+
+pub(crate) fn env_bool_override(name: &str) -> Option<bool> {
+    std::env::var(name)
+        .map(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
+        .ok()
 }
 
 pub(crate) fn combined_memory_prompt(
@@ -1214,9 +1308,7 @@ pub(crate) fn finish_turn(
     assistant_text: Option<String>,
     failure: Option<String>,
 ) {
-    let failure_kind = failure
-        .as_deref()
-        .map(tool_protocol::classify_turn_failure);
+    let failure_kind = failure.as_deref().map(tool_protocol::classify_turn_failure);
     finish_turn_with_metadata(
         session_id,
         turn_id,
@@ -1321,7 +1413,12 @@ pub(crate) fn finish_turn_with_metadata(
                         json!({ "running": false, "activity": Value::Null });
                     if status == "failed" {
                         if let Some(failure_kind) = failure_kind_for_turn.as_deref() {
-                            update_runtime_turn_state(session, turn_id, "failed_recoverable", Some(failure_kind));
+                            update_runtime_turn_state(
+                                session,
+                                turn_id,
+                                "failed_recoverable",
+                                Some(failure_kind),
+                            );
                         } else {
                             update_runtime_turn(session, turn_id, status);
                         }

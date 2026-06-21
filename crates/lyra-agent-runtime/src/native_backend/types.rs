@@ -144,6 +144,10 @@ pub(crate) struct NativeConfig {
     pub(crate) service_tier: Option<String>,
     pub(crate) verbosity: Option<String>,
     #[serde(default)]
+    pub(crate) prompt_delivery_mode: Option<String>,
+    #[serde(default = "default_false")]
+    pub(crate) openai_responses_stateful_prompt_contract: bool,
+    #[serde(default)]
     pub(crate) providers: HashMap<String, NativeProviderProfile>,
     #[serde(default)]
     pub(crate) roles: HashMap<String, String>,

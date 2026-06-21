@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prompt contract gate
+        run: pnpm lint:prompt-contract
+
       - name: Run Rust Agent slice tests
         run: cargo test -p lyrad -p lyra-agent-core
 

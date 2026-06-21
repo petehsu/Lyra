@@ -404,12 +404,7 @@ pub(crate) fn filesystem_path_permission_candidates(
             paths
         }
         ("file", "write" | "read" | "edit" | "strict_edit") => value_string(input, "path")
-            .map(|path| {
-                vec![(
-                    path,
-                    matches!(action, "write"),
-                )]
-            })
+            .map(|path| vec![(path, matches!(action, "write"))])
             .unwrap_or_default(),
         ("search", "project")
         | ("code", "search_text" | "grep_text" | "search_symbol" | "graph_expand") => {

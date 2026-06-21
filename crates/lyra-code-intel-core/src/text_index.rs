@@ -163,7 +163,11 @@ mod tests {
     #[test]
     fn literal_match_is_case_insensitive_by_default() {
         let dir = TempDir::new().unwrap();
-        let files = vec![write_file(dir.path(), "a.rs", "let Foo = 1;\nlet bar = 2;\n")];
+        let files = vec![write_file(
+            dir.path(),
+            "a.rs",
+            "let Foo = 1;\nlet bar = 2;\n",
+        )];
         let (matches, truncated) = search_text(&files, "foo", false, false, None, 40);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].line, 1);
@@ -182,7 +186,11 @@ mod tests {
     #[test]
     fn literal_does_not_interpret_regex_metacharacters() {
         let dir = TempDir::new().unwrap();
-        let files = vec![write_file(dir.path(), "a.rs", "value.method()\nvaluexmethod\n")];
+        let files = vec![write_file(
+            dir.path(),
+            "a.rs",
+            "value.method()\nvaluexmethod\n",
+        )];
         let (matches, _) = search_text(&files, "value.method", false, false, None, 40);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].line, 1);

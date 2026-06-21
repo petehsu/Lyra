@@ -28,6 +28,7 @@ pub(crate) fn descriptor() -> ProviderRouteDescriptor {
         local_backend: None,
         catalog_section: "custom".to_string(),
         quick_setup_supported: true,
+        supports_stateful_prompt_contract: false,
     }
 }
 

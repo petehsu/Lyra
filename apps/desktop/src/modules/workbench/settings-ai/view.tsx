@@ -74,6 +74,11 @@ type AgentConfigShape = {
     readonly memoryModel?: string | null;
     readonly ambientModel?: string | null;
   };
+  readonly promptDelivery?: {
+    readonly mode?: string | null;
+    readonly leanExperimental?: boolean;
+    readonly openaiResponsesStatefulPromptContract?: boolean;
+  };
   readonly notifications?: {
     readonly ntfyTopic?: string | null;
     readonly ntfyServer?: string | null;
@@ -1144,6 +1149,11 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const oauthLoginProviders = loginProviders.filter((provider) =>
     provider.requiresCallback && provider.id !== "google"
   );
+  const leanPromptDeliveryEnabled =
+    config.promptDelivery?.mode === "lean-experimental"
+    || config.promptDelivery?.leanExperimental === true;
+  const statefulPromptContractEnabled =
+    config.promptDelivery?.openaiResponsesStatefulPromptContract === true;
   const [pendingLogin, setPendingLogin] = useState<{
     readonly provider: string;
     readonly label?: string | null;
@@ -1415,6 +1425,36 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             </footer>
           </div>
         )}
+      </div>
+
+      <div className="lyra-settings-ai-inline-editor">
+        <header className="lyra-settings-ai-inline-editor-header">
+          <span className="lyra-settings-ai-inline-editor-title-copy">
+            <h3>{labels.promptExperimentsTitle}</h3>
+            <small>{labels.promptExperimentsDescription}</small>
+          </span>
+        </header>
+
+        <div className="lyra-settings-ai-form">
+          <SettingsAiSwitchRow
+            checked={leanPromptDeliveryEnabled}
+            label={labels.leanPromptDeliveryLabel}
+            onCheckedChange={(checked) => {
+              void model.updateAgentConfig?.({
+                promptDeliveryMode: checked ? "lean-experimental" : "full",
+              });
+            }}
+          />
+          <SettingsAiSwitchRow
+            checked={statefulPromptContractEnabled}
+            label={labels.statefulPromptContractLabel}
+            onCheckedChange={(checked) => {
+              void model.updateAgentConfig?.({
+                openaiResponsesStatefulPromptContract: checked,
+              });
+            }}
+          />
+        </div>
       </div>
 
       <div className="lyra-settings-ai-inline-editor">

@@ -1647,6 +1647,35 @@ fn model_catalog_does_not_synthesize_models_without_configured_providers() {
 }
 
 #[test]
+fn config_json_projects_prompt_delivery_settings() {
+    let config = NativeConfig {
+        prompt_delivery_mode: Some("lean-experimental".to_string()),
+        openai_responses_stateful_prompt_contract: true,
+        ..NativeConfig::default()
+    };
+    let projection = config_json(&config);
+
+    assert_eq!(
+        projection
+            .pointer("/promptDelivery/mode")
+            .and_then(Value::as_str),
+        Some("lean-experimental")
+    );
+    assert_eq!(
+        projection
+            .pointer("/promptDelivery/leanExperimental")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        projection
+            .pointer("/promptDelivery/openaiResponsesStatefulPromptContract")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+}
+
+#[test]
 fn default_provider_install_does_not_seed_hardcoded_models() {
     let mut config = NativeConfig::default();
     install_default_providers(&mut config);
@@ -1849,8 +1878,8 @@ fn model_request_injects_lyra_identity_and_tools() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("You are Lyra."));
-    assert!(system_prompt.contains("answer directly when no external Lyra capability is needed"));
+    assert!(system_prompt.contains("U r Lyra"));
+    assert!(system_prompt.contains("company computer w discoverable caps"));
     let names = request
         .tools
         .iter()
@@ -1865,6 +1894,45 @@ fn model_request_injects_lyra_identity_and_tools() {
     );
     assert!(system_prompt.contains("toolFilesystem"));
     assert!(system_prompt.contains("pinnedHandles"));
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(session_id).expect("session");
+        assert!(session.snapshot.get("promptRuntimeContract").is_some());
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/promptDelivery/promptMode")
+                .and_then(Value::as_str),
+            Some("full")
+        );
+        assert_eq!(
+            session
+                .snapshot
+                .pointer("/promptDelivery/refreshReason")
+                .and_then(Value::as_str),
+            Some("fullModeDefault")
+        );
+        assert!(
+            session
+                .snapshot
+                .pointer("/promptDelivery/sceneModules")
+                .and_then(Value::as_array)
+                .is_some()
+        );
+        assert!(
+            session
+                .snapshot
+                .pointer("/promptDelivery/prefixCacheEligibleTokens")
+                .and_then(Value::as_u64)
+                .is_some_and(|tokens| tokens > 0)
+        );
+        assert!(
+            session
+                .snapshot
+                .pointer("/promptDelivery/missedModuleRecovery")
+                .is_some()
+        );
+    }
     assert!(!request.tools.iter().any(|tool| {
         tool.pointer("/function/name").and_then(Value::as_str) == Some("lyra_design_search_styles")
     }));
@@ -1905,6 +1973,7 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
+    assert!(system_prompt.contains("\"presearchHints\""));
     assert!(system_prompt.contains("/tools/browser/navigate"));
     assert!(!system_prompt.contains("\"toolDiscoverySuppressed\": true"));
 }
@@ -2151,8 +2220,9 @@ fn design_prompt_gets_design_tools_and_dynamic_policy() {
     assert!(request.tools.iter().any(|tool| {
         tool.pointer("/function/name").and_then(Value::as_str) == Some("tool_fs_run")
     }));
-    assert!(system_prompt.contains("/tools/design/search_styles"));
-    assert!(system_prompt.contains("/tools/design/get_style_details"));
+    assert!(system_prompt.contains("design ref"));
+    assert!(system_prompt.contains("\"presearchHints\""));
+    assert!(!system_prompt.contains("\"availableTools\""));
 }
 #[test]
 fn model_tool_execution_records_workbench_activity() {

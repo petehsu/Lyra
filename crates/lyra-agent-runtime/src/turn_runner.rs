@@ -27,7 +27,10 @@ impl TurnRunner {
         self.backend.call("agent.turn.send", payload)
     }
 
-    pub fn retry(&self, payload: serde_json::Value) -> crate::AgentRuntimeResult<serde_json::Value> {
+    pub fn retry(
+        &self,
+        payload: serde_json::Value,
+    ) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend.call("agent.turn.retry", payload)
     }
 

@@ -120,6 +120,10 @@ const labels: SettingsAiLabels = {
   roleProviderDefaultPlaceholder: "provider default",
   roleMemoryDefaultPlaceholder: "sidecar auto-select",
   saveRoleModels: "Save role models",
+  promptExperimentsTitle: "Prompt delivery",
+  promptExperimentsDescription: "Experimental prompt token controls.",
+  leanPromptDeliveryLabel: "Lean prompt delivery",
+  statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
   notificationsTitle: "Notifications",
   notificationsDescription: "Configure notifications.",
   desktopNotificationsLabel: "Desktop notifications",
@@ -326,6 +330,11 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
         reviewModel: "gpt-5-mini",
         judgeModel: "gpt-5",
         ambientModel: "mimo-v2.5-pro",
+      },
+      promptDelivery: {
+        mode: "full",
+        leanExperimental: false,
+        openaiResponsesStatefulPromptContract: false,
       },
       notifications: {
         desktopNotifications: true,
@@ -944,6 +953,11 @@ describe("SettingsAiView", () => {
           },
           providers: {},
           roles: {},
+          promptDelivery: {
+            mode: "full",
+            leanExperimental: false,
+            openaiResponsesStatefulPromptContract: false,
+          },
           notifications: {},
         },
         commands: [],
@@ -1058,6 +1072,23 @@ describe("SettingsAiView", () => {
       judgeModel: "gpt-5-judge",
       memoryModel: "mimo-v2.5-pro",
       ambientModel: "gpt-5-ambient",
+    });
+  });
+
+  test("toggles prompt delivery experiments through the Lyra Agent config bridge", () => {
+    const updateAgentConfig = vi.fn();
+    const model = createModel({ updateAgentConfig });
+
+    render(<SettingsAiView labels={labels} model={model} />);
+
+    fireEvent.click(screen.getByLabelText("Lean prompt delivery"));
+    fireEvent.click(screen.getByLabelText("OpenAI Responses stateful prompt contract"));
+
+    expect(updateAgentConfig).toHaveBeenCalledWith({
+      promptDeliveryMode: "lean-experimental",
+    });
+    expect(updateAgentConfig).toHaveBeenCalledWith({
+      openaiResponsesStatefulPromptContract: true,
     });
   });
 

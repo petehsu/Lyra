@@ -95,7 +95,10 @@ pub(crate) fn collect_pinned_items(
         .rev()
         .take(6)
     {
-        let detail = milestone.get("detail").and_then(Value::as_str).unwrap_or("");
+        let detail = milestone
+            .get("detail")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         if detail.is_empty() {
             continue;
         }
@@ -107,7 +110,10 @@ pub(crate) fn collect_pinned_items(
                 .unwrap_or("milestone")
                 .to_string(),
             content: detail.to_string(),
-            source_ref: milestone.get("id").and_then(Value::as_str).map(str::to_string),
+            source_ref: milestone
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             message_ids: Vec::new(),
         });
     }
@@ -279,12 +285,9 @@ pub(crate) fn pinned_context_prompt(items: &[PinnedItem]) -> String {
     if items.is_empty() {
         return String::new();
     }
-    let mut lines = vec!["Pinned context (do not lose during compaction):".to_string()];
+    let mut lines = vec!["Pinned context keep through compaction:".to_string()];
     for item in items.iter().take(24) {
-        lines.push(format!(
-            "- [{}] {}: {}",
-            item.kind, item.title, item.content
-        ));
+        lines.push(format!("[{}] {}: {}", item.kind, item.title, item.content));
     }
     lines.join("\n")
 }

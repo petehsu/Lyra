@@ -1,0 +1,148 @@
+---
+source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
+expression: pretty(&snapshot)
+---
+{
+  "browser": {
+    "directories": [],
+    "hasMore": true,
+    "kind": "tool_fs_directory",
+    "page": 0,
+    "pageSize": 5,
+    "path": "/tools/browser",
+    "tools": [
+      {
+        "domain": "browser",
+        "handle": "browser_locate",
+        "operation": "locate",
+        "path": "/tools/browser/locate",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: browser_locate; operation: locate; provide args matching miniSchema.",
+        "summary": "Find or semantically locate text on a browser page, reveal it, and map nearby controls.",
+        "title": "Locate browser page section"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_find",
+        "operation": "find",
+        "path": "/tools/browser/find",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: browser_find; operation: find; provide args matching miniSchema.",
+        "summary": "Search text within a browser page and optionally reveal the selected match.",
+        "title": "Find in browser page"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_map",
+        "operation": "map",
+        "path": "/tools/browser/map",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: browser_map; operation: map; provide args matching miniSchema.",
+        "summary": "Map actionable browser elements.",
+        "title": "Map browser page"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_read",
+        "operation": "read",
+        "path": "/tools/browser/read",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: browser_read; operation: read; provide args matching miniSchema.",
+        "summary": "Read text from a browser page.",
+        "title": "Read browser page"
+      },
+      {
+        "domain": "browser",
+        "handle": null,
+        "operation": "act",
+        "path": "/tools/browser/act",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "browser",
+        "runHint": "tool_fs_run with path: /tools/browser/act; operation: act; provide args matching miniSchema.",
+        "summary": "Click or hover a browser target.",
+        "title": "Act in browser"
+      }
+    ],
+    "total": 26
+  },
+  "terminal": {
+    "directories": [],
+    "hasMore": true,
+    "kind": "tool_fs_directory",
+    "page": 0,
+    "pageSize": 5,
+    "path": "/tools/terminal",
+    "tools": [
+      {
+        "domain": "terminal",
+        "handle": "terminal_list",
+        "operation": "list",
+        "path": "/tools/terminal/list",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
+        "summary": "List terminal sessions",
+        "title": "List terminal sessions"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_read",
+        "operation": "read",
+        "path": "/tools/terminal/read",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: terminal_read; operation: read; provide args matching miniSchema.",
+        "summary": "Read terminal output",
+        "title": "Read terminal output"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_run",
+        "operation": "run",
+        "path": "/tools/terminal/run",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "terminal",
+        "runHint": "tool_fs_run with toolHandle: terminal_run; operation: run; provide args matching miniSchema.",
+        "summary": "Run persistent terminal command; prefer shell for one-shot commands",
+        "title": "Run persistent terminal command; prefer shell for one-shot commands"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_wait",
+        "operation": "wait",
+        "path": "/tools/terminal/wait",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "read",
+        "runHint": "tool_fs_run with toolHandle: terminal_wait; operation: wait; provide args matching miniSchema.",
+        "summary": "Wait terminal",
+        "title": "Wait terminal"
+      },
+      {
+        "domain": "terminal",
+        "handle": null,
+        "operation": "act",
+        "path": "/tools/terminal/act",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "terminal",
+        "runHint": "tool_fs_run with path: /tools/terminal/act; operation: act; provide args matching miniSchema.",
+        "summary": "Act in terminal UI",
+        "title": "Act in terminal UI"
+      }
+    ],
+    "total": 20
+  }
+}

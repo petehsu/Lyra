@@ -145,7 +145,10 @@ mod tests {
         // Same text + same streaming mode: dedup should return the same revision
         // without re-rendering.
         let (_, second) = enrich_assistant_message_render(&mut message, true);
-        assert_eq!(first, second, "revision must not change for identical input");
+        assert_eq!(
+            first, second,
+            "revision must not change for identical input"
+        );
     }
 
     #[test]

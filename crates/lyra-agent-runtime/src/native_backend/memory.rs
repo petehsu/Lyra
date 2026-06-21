@@ -955,7 +955,7 @@ pub(crate) fn shared_memory_prompt(records: &[RankedMemoryRecord]) -> String {
         return String::new();
     }
     let mut lines = vec![
-        "Injected Lyra shared memory rotation slice (L0/L1/L2). Frozen facts are protected; shared facts are corrigible. Prefer newer user instructions when they conflict.".to_string(),
+        "Lyra shared memory slice L0/L1/L2. Frozen facts protected; shared facts corrigible. Prefer newer member instr on conflict.".to_string(),
     ];
     for (index, ranked) in records.iter().enumerate() {
         lines.push(format_ranked_memory_injection_line(index, ranked));

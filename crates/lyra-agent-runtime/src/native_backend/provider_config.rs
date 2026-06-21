@@ -31,6 +31,18 @@ pub(crate) fn update_config(payload: Value) -> AgentRuntimeResult<Value> {
     if let Some(value) = string_opt(&payload, "openaiVerbosity") {
         state.config.verbosity = Some(value);
     }
+    if let Some(value) = string_opt(&payload, "promptDeliveryMode") {
+        state.config.prompt_delivery_mode = Some(match value.trim() {
+            "lean-experimental" => "lean-experimental".to_string(),
+            _ => "full".to_string(),
+        });
+    }
+    if let Some(value) = payload
+        .get("openaiResponsesStatefulPromptContract")
+        .and_then(Value::as_bool)
+    {
+        state.config.openai_responses_stateful_prompt_contract = value;
+    }
     if let Some(value) = payload.get("proactiveEnabled").and_then(Value::as_bool) {
         state.config.proactive_enabled = value;
     }

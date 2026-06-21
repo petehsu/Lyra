@@ -95,14 +95,11 @@ pub(crate) fn protocol_leak_corrective_prompt() -> &'static str {
     "The previous assistant draft leaked Lyra internal tool placeholders or textual tool syntax into visible prose. Do not echo [Tool result ref:], [Tool call:], or similar internal markers. Emit a structured tool_call when a capability is required, otherwise answer with normal assistant text only."
 }
 
-pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str =
-    "Browser automation is paused because the page has an active upload dialog, permission prompt, or OS file picker. Do not call more browser tools until the user closes it. Tell the user to close the dialog and retry.";
+pub(crate) const BROWSER_BLOCKED_CORRECTIVE_PROMPT: &str = "Browser automation is paused because the page has an active upload dialog, permission prompt, or OS file picker. Do not call more browser tools until the user closes it. Tell the user to close the dialog and retry.";
 
-pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str =
-    "The previous assistant draft pasted raw browser tool output into visible chat text. Do not echo map/see/read tool payloads. Summarize the outcome in a few sentences, or emit a structured tool_call if more browser evidence is required.";
+pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str = "The previous assistant draft pasted raw browser tool output into visible chat text. Do not echo map/see/read tool payloads. Summarize the outcome in a few sentences, or emit a structured tool_call if more browser evidence is required.";
 
-pub(crate) const ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT: &str =
-    "The user anchored this request to a Workbench browser page via <lyra-page-cite> metadata, but no browser tool ran this turn. Emit the required structured browser tool_call now instead of claiming the page action is done.";
+pub(crate) const ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT: &str = "The user anchored this request to a Workbench browser page via <lyra-page-cite> metadata, but no browser tool ran this turn. Emit the required structured browser tool_call now instead of claiming the page action is done.";
 
 pub(crate) const TURN_FAILURE_BROWSER_BLOCKED: &str = "lyra_turn_failure:browser_blocked";
 pub(crate) const TURN_FAILURE_EMPTY_RESPONSE: &str = "lyra_turn_failure:empty_response";
@@ -200,7 +197,11 @@ pub(crate) fn is_browser_tool_blocked_output(output: &Value) -> bool {
     if output.get("browserBlocked").and_then(Value::as_bool) == Some(true) {
         return true;
     }
-    if output.pointer("/raw/browserBlocked").and_then(Value::as_bool) == Some(true) {
+    if output
+        .pointer("/raw/browserBlocked")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
         return true;
     }
     if output.pointer("/raw/status").and_then(Value::as_str) == Some("blocked") {
@@ -304,7 +305,9 @@ pub(crate) fn contains_leaked_tool_payload_in_assistant_text(text: &str) -> bool
         .any(|marker| find_ascii_case_insensitive(text, marker, 0).is_some())
 }
 
-pub(crate) fn validate_visible_assistant_text_protocol(text: &str) -> Result<(), AgentRuntimeError> {
+pub(crate) fn validate_visible_assistant_text_protocol(
+    text: &str,
+) -> Result<(), AgentRuntimeError> {
     if contains_leaked_tool_payload_in_assistant_text(text) {
         return Err(AgentRuntimeError::Core(
             "provider emitted tool payload envelope in visible assistant text instead of a structured Lyra tool_call"
@@ -475,10 +478,7 @@ mod tests {
             "function": { "name": "lyra_lumen" }
         })];
         assert!(should_reject_browser_anchor_without_browser_tools(
-            &messages,
-            &tools,
-            0,
-            true,
+            &messages, &tools, 0, true,
         ));
     }
 
@@ -513,10 +513,7 @@ mod tests {
             "function": { "name": "lyra_lumen" }
         })];
         assert!(!should_reject_browser_anchor_without_browser_tools(
-            &messages,
-            &tools,
-            0,
-            true,
+            &messages, &tools, 0, true,
         ));
     }
 }

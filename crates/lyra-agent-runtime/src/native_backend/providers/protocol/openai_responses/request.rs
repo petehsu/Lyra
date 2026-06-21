@@ -9,6 +9,8 @@ pub(crate) struct RequestOptions {
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) verbosity: Option<String>,
     pub(crate) service_tier: Option<String>,
+    pub(crate) stateful_prompt_contract: bool,
+    pub(crate) previous_response_id: Option<String>,
 }
 
 pub(crate) fn build_request_body(
@@ -26,6 +28,17 @@ pub(crate) fn build_request_body(
         "store": false,
         "include": ["reasoning.encrypted_content"],
     });
+    if options.stateful_prompt_contract {
+        body["store"] = Value::Bool(true);
+        if let Some(previous_response_id) = options
+            .previous_response_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            body["previous_response_id"] = Value::String(previous_response_id.to_string());
+        }
+    }
     if let Some(instructions) = instructions.filter(|value| !value.trim().is_empty()) {
         body["instructions"] = Value::String(instructions);
     }
@@ -275,6 +288,8 @@ mod tests {
                 reasoning_effort: Some("medium".to_string()),
                 verbosity: Some("low".to_string()),
                 service_tier: Some("flex".to_string()),
+                stateful_prompt_contract: false,
+                previous_response_id: None,
             },
         )
         .expect("request body");
@@ -320,5 +335,34 @@ mod tests {
         )
         .expect("request body");
         assert_eq!(body["input"][0], item);
+    }
+
+    #[test]
+    fn stateful_prompt_contract_is_explicit_and_disabled_by_default() {
+        let default_body = build_request_body(
+            "gpt-5-mini",
+            &[json!({ "role": "user", "content": "Hi" })],
+            &[],
+            false,
+            RequestOptions::default(),
+        )
+        .expect("default body");
+        assert_eq!(default_body["store"], false);
+        assert!(default_body.get("previous_response_id").is_none());
+
+        let stateful_body = build_request_body(
+            "gpt-5-mini",
+            &[json!({ "role": "user", "content": "Hi" })],
+            &[],
+            false,
+            RequestOptions {
+                stateful_prompt_contract: true,
+                previous_response_id: Some("resp_previous".to_string()),
+                ..RequestOptions::default()
+            },
+        )
+        .expect("stateful body");
+        assert_eq!(stateful_body["store"], true);
+        assert_eq!(stateful_body["previous_response_id"], "resp_previous");
     }
 }

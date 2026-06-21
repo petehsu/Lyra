@@ -163,6 +163,7 @@ mod tests {
         assert_eq!(route.api_method, "responses");
         assert!(route.runtime_supported);
         assert!(route.model_discovery_supported);
+        assert!(route.supports_stateful_prompt_contract);
     }
 
     #[test]
@@ -173,6 +174,7 @@ mod tests {
         assert_eq!(route.api_method, "messages");
         assert!(route.runtime_supported);
         assert!(route.model_discovery_supported);
+        assert!(!route.supports_stateful_prompt_contract);
     }
 
     #[test]

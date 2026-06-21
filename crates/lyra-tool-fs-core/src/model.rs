@@ -48,7 +48,7 @@ pub struct ToolDirectory {
     pub kind: String,
     pub path: String,
     pub directories: Vec<ToolDirectoryEntry>,
-    pub tools: Vec<ToolManifest>,
+    pub tools: Vec<ToolDirectoryToolEntry>,
     pub total: usize,
     pub page: usize,
     pub page_size: usize,
@@ -61,6 +61,21 @@ pub struct ToolDirectoryEntry {
     pub path: String,
     pub name: String,
     pub summary: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDirectoryToolEntry {
+    pub path: String,
+    pub handle: Option<String>,
+    pub title: String,
+    pub domain: String,
+    pub operation: String,
+    pub summary: String,
+    pub risk_level: String,
+    pub permission_policy: String,
+    pub run_hint: String,
+    pub recommended_next_action: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

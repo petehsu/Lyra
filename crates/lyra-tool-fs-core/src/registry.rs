@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashSet};
 use crate::catalog::{builtin_manifests, domain_summary, validate_manifest_set};
 use crate::error::ToolFsError;
 use crate::model::{
-    PinnedToolHandle, ResolvedToolRun, ToolDirectory, ToolDirectoryEntry, ToolManifest,
-    ToolManifestProvider, ToolSearchResponse, ToolSearchResult,
+    PinnedToolHandle, ResolvedToolRun, ToolDirectory, ToolDirectoryEntry, ToolDirectoryToolEntry,
+    ToolManifest, ToolManifestProvider, ToolSearchResponse, ToolSearchResult,
 };
 use crate::scene::{ToolScene, pinned_handle_names, scene_domain_order};
 use crate::search::{best_fallback_list_path, round_score, score_manifest_search};
@@ -99,7 +99,6 @@ impl ToolFsRegistry {
             .manifests
             .iter()
             .filter(|manifest| manifest.path.starts_with(&prefix))
-            .cloned()
             .collect::<Vec<_>>();
         if tools.is_empty() {
             return Err(ToolFsError::new(
@@ -108,15 +107,19 @@ impl ToolFsRegistry {
                 "Call tool_fs_list with /tools to discover available directories.",
             ));
         }
-        self.sort_manifests(&mut tools, scene);
+        self.sort_manifest_refs(&mut tools, scene);
         let total = tools.len();
         let start = page.saturating_mul(page_size).min(total);
         let end = (start + page_size).min(total);
+        let tools = tools[start..end]
+            .iter()
+            .map(|manifest| compact_directory_tool_entry(manifest))
+            .collect::<Vec<_>>();
         Ok(ToolDirectory {
             kind: "tool_fs_directory".to_string(),
             path: normalized,
             directories: Vec::new(),
-            tools: tools[start..end].to_vec(),
+            tools,
             total,
             page,
             page_size,
@@ -233,7 +236,15 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": format!("Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run.\n\n{}", crate::scenario_playbooks_doc())
+                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
+            }));
+        }
+        if normalized == "/tools/playbooks" {
+            return Ok(json!({
+                "kind": "tool_fs_doc",
+                "path": "/tools/playbooks",
+                "title": "Tool-FS scenario playbooks",
+                "content": crate::scenario_playbooks_doc()
             }));
         }
         if let Some(manifest) = self.lookup_path(&normalized) {
@@ -454,7 +465,7 @@ impl ToolFsRegistry {
         ordered
     }
 
-    fn sort_manifests(&self, tools: &mut [ToolManifest], scene: ToolScene) {
+    fn sort_manifest_refs(&self, tools: &mut [&ToolManifest], scene: ToolScene) {
         let pinned = pinned_handle_names(scene);
         tools.sort_by(|left, right| {
             let left_rank = left
@@ -471,6 +482,23 @@ impl ToolFsRegistry {
                 .cmp(&right_rank)
                 .then_with(|| left.path.cmp(&right.path))
         });
+    }
+}
+
+fn compact_directory_tool_entry(manifest: &ToolManifest) -> ToolDirectoryToolEntry {
+    ToolDirectoryToolEntry {
+        path: manifest.path.clone(),
+        handle: manifest.handle.clone(),
+        title: manifest.title.clone(),
+        domain: manifest.domain.clone(),
+        operation: manifest.operation.clone(),
+        summary: manifest.summary.clone(),
+        risk_level: manifest.risk_level.clone(),
+        permission_policy: manifest.permission_policy.clone(),
+        run_hint: run_hint_for_manifest(manifest),
+        recommended_next_action:
+            "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description."
+                .to_string(),
     }
 }
 

@@ -4,8 +4,8 @@ use lyra_agent_plugins::SkillRegistry;
 use serde_json::{Value, json};
 
 use crate::retention_policy::{
-    ComplexityBand, RetentionPolicy, RetentionSignals, TrimAggressiveness, halve_tool_message_ids,
-    retention_policy_from_messages, select_interleaved_provider_keep, CONTEXT_GUARD_TOKENS,
+    CONTEXT_GUARD_TOKENS, ComplexityBand, RetentionPolicy, RetentionSignals, TrimAggressiveness,
+    halve_tool_message_ids, retention_policy_from_messages, select_interleaved_provider_keep,
 };
 
 use crate::native_backend::inline_images::{
@@ -603,15 +603,12 @@ fn content_from_blocks(
                     .cloned()
                     .filter(|text| !text.trim().is_empty())
                     .unwrap_or_else(|| TOOL_OUTPUT_OMITTED_SUMMARY.to_string());
-                let tool_budget =
-                    effective_tool_output_budget(options, message.get("id"));
+                let tool_budget = effective_tool_output_budget(options, message.get("id"));
                 let (summary, maybe_ref) = if tool_budget == 0 {
                     (TOOL_OUTPUT_CLEARED_SUMMARY.to_string(), None)
                 } else if summary.chars().count() > tool_budget {
-                    let trimmed = tool_activity_output_summary(
-                        &json!({ "content": summary }),
-                        tool_budget,
-                    );
+                    let trimmed =
+                        tool_activity_output_summary(&json!({ "content": summary }), tool_budget);
                     let evidence_ref = json!({
                         "kind": "truncated_tool_output",
                         "toolId": tool_id,
@@ -700,11 +697,7 @@ fn should_compact_provider_context(
         && output.token_estimate * 2 > retention.protected_recent_tokens
 }
 
-fn apply_budget_fallback_keep(
-    messages: &[Value],
-    keep: &mut [bool],
-    policy: &RetentionPolicy,
-) {
+fn apply_budget_fallback_keep(messages: &[Value], keep: &mut [bool], policy: &RetentionPolicy) {
     if keep.iter().any(|kept| !*kept) {
         return;
     }
@@ -733,9 +726,7 @@ fn apply_budget_fallback_keep(
         keep[ordinal] = false;
         total = total.saturating_sub(token_counts[ordinal]);
     }
-    if keep.iter().all(|kept| *kept)
-        && matches!(policy.complexity_band, ComplexityBand::Complex)
-    {
+    if keep.iter().all(|kept| *kept) && matches!(policy.complexity_band, ComplexityBand::Complex) {
         for ordinal in 0..tail_start {
             if ordinal % 2 == 0 && keep[ordinal] {
                 keep[ordinal] = false;
@@ -744,7 +735,10 @@ fn apply_budget_fallback_keep(
     }
 }
 
-fn effective_tool_output_budget(options: &ProviderContextOptions, message_id: Option<&Value>) -> usize {
+fn effective_tool_output_budget(
+    options: &ProviderContextOptions,
+    message_id: Option<&Value>,
+) -> usize {
     let base = options.max_tool_output_chars;
     if base == 0 {
         return 0;
@@ -752,11 +746,7 @@ fn effective_tool_output_budget(options: &ProviderContextOptions, message_id: Op
     let halve = message_id
         .and_then(Value::as_str)
         .is_some_and(|id| options.halve_tool_output_message_ids.contains(id));
-    if halve {
-        (base / 2).max(1)
-    } else {
-        base
-    }
+    if halve { (base / 2).max(1) } else { base }
 }
 
 fn compact_to_retention_policy(

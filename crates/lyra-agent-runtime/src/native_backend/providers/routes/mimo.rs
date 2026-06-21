@@ -257,6 +257,7 @@ fn descriptor_for(route_id: &str) -> ProviderRouteDescriptor {
             route_id,
             PAY_AS_YOU_GO_ROUTE_ID | ANTHROPIC_PAY_AS_YOU_GO_ROUTE_ID
         ),
+        supports_stateful_prompt_contract: false,
     }
 }
 

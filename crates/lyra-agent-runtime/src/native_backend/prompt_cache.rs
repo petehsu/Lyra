@@ -56,7 +56,7 @@ pub(crate) fn rebuild_prompt_cache_from_injection_events(root: &Path) -> AgentRu
             continue;
         }
         let prompt_text = format!(
-            "Injected Lyra shared memory rotation slice (L0/L1/L2).\n{}",
+            "Lyra shared memory slice L0/L1/L2\n{}",
             selected
                 .iter()
                 .enumerate()

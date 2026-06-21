@@ -83,7 +83,11 @@ where
     F: FnOnce() -> CachedSvg,
 {
     let key = block_cache_key("mermaid", source, theme_tag);
-    if let Some(hit) = MERMAID_CACHE.lock().ok().and_then(|mut c| c.get(&key).cloned()) {
+    if let Some(hit) = MERMAID_CACHE
+        .lock()
+        .ok()
+        .and_then(|mut c| c.get(&key).cloned())
+    {
         return hit;
     }
     let value = compute();
@@ -100,7 +104,11 @@ where
     F: FnOnce() -> CachedSvg,
 {
     let key = block_cache_key("math", latex, tag);
-    if let Some(hit) = MATH_CACHE.lock().ok().and_then(|mut c| c.get(&key).cloned()) {
+    if let Some(hit) = MATH_CACHE
+        .lock()
+        .ok()
+        .and_then(|mut c| c.get(&key).cloned())
+    {
         return hit;
     }
     let value = compute();

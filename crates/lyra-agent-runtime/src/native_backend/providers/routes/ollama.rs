@@ -20,5 +20,6 @@ pub(crate) fn descriptor() -> ProviderRouteDescriptor {
         local_backend: Some("ollama".to_string()),
         catalog_section: "local".to_string(),
         quick_setup_supported: false,
+        supports_stateful_prompt_contract: false,
     }
 }

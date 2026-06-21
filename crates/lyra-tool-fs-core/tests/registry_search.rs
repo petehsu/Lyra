@@ -24,6 +24,21 @@ fn registry_lists_root_and_pages_domain_tools() {
     assert_eq!(files.page_size, 2);
     assert_eq!(files.tools.len(), 2);
     assert!(files.has_more);
+    let listed_json = serde_json::to_value(&files.tools[0]).expect("listed tool json");
+    assert!(listed_json.get("path").is_some());
+    assert!(listed_json.get("handle").is_some());
+    assert!(listed_json.get("title").is_some());
+    assert!(listed_json.get("domain").is_some());
+    assert!(listed_json.get("operation").is_some());
+    assert!(listed_json.get("summary").is_some());
+    assert!(listed_json.get("riskLevel").is_some());
+    assert!(listed_json.get("permissionPolicy").is_some());
+    assert!(listed_json.get("runHint").is_some());
+    assert!(listed_json.get("recommendedNextAction").is_some());
+    assert!(listed_json.get("inputSchema").is_none());
+    assert!(listed_json.get("description").is_none());
+    assert!(listed_json.get("examples").is_none());
+    assert!(listed_json.get("aliases").is_none());
 
     let files_page_2 = registry
         .list("/tools/filesystem", 1, 2, ToolScene::ProjectCode)
@@ -49,6 +64,20 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
     let registry = ToolFsRegistry::default();
     let root_doc = registry.read_doc("/tools").expect("root doc");
     assert_eq!(root_doc["kind"], "tool_fs_doc");
+    assert!(
+        root_doc["content"]
+            .as_str()
+            .is_some_and(|content| !content.contains("Tool-FS scenario playbooks"))
+    );
+    let playbooks_doc = registry
+        .read_doc("/tools/playbooks")
+        .expect("playbooks doc");
+    assert_eq!(playbooks_doc["path"], "/tools/playbooks");
+    assert!(
+        playbooks_doc["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("Lyra Tool-FS scenario decision tree"))
+    );
 
     let domain_doc = registry.read_doc("/tools/git").expect("git doc");
     assert_eq!(domain_doc["path"], "/tools/git");
@@ -74,6 +103,11 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
         .expect("path");
     assert_eq!(by_path.handle.as_deref(), Some("read_file"));
     assert_eq!(by_path.input_schema["type"], "object");
+    let inspected_json = serde_json::to_value(&by_path).expect("inspect json");
+    assert!(inspected_json.get("inputSchema").is_some());
+    assert!(inspected_json.get("description").is_some());
+    assert!(inspected_json.get("examples").is_some());
+    assert!(inspected_json.get("aliases").is_some());
 
     let by_handle = registry.inspect_handle("run_command").expect("handle");
     assert_eq!(by_handle.path, "/tools/shell/run_command");
@@ -428,6 +462,98 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             .results
             .iter()
             .any(|result| result.path == "/tools/code/search_symbol")
+    );
+}
+
+#[test]
+fn registry_search_handles_human_computer_intents_without_list_fallback() {
+    let registry = ToolFsRegistry::default();
+
+    let browser = registry
+        .search("browser brower 浏览器操作", None, 0, 8, ToolScene::Browser)
+        .expect("browser operation search");
+    assert!(
+        browser
+            .results
+            .iter()
+            .any(|result| result.path.starts_with("/tools/browser/")),
+        "browser intent should return concrete browser tools"
+    );
+    assert!(!browser.results.is_empty());
+
+    let terminal = registry
+        .search(
+            "terminal shell 终端 跑测试",
+            None,
+            0,
+            8,
+            ToolScene::Terminal,
+        )
+        .expect("terminal shell search");
+    assert_eq!(
+        terminal.results.first().map(|result| result.path.as_str()),
+        Some("/tools/shell/run_command")
+    );
+    assert!(
+        terminal
+            .results
+            .first()
+            .is_some_and(|result| result.match_reason.contains("terminal-shell intent boost"))
+    );
+
+    let edit = registry
+        .search(
+            "改代码 修改文件 apply patch",
+            None,
+            0,
+            8,
+            ToolScene::ProjectCode,
+        )
+        .expect("code edit search");
+    assert!(edit.results.iter().any(|result| {
+        matches!(
+            result.path.as_str(),
+            "/tools/filesystem/apply_patch"
+                | "/tools/filesystem/strict_edit"
+                | "/tools/filesystem/edit_file"
+        )
+    }));
+
+    let file_search = registry
+        .search(
+            "查文件 搜索代码 read file",
+            None,
+            0,
+            8,
+            ToolScene::ProjectCode,
+        )
+        .expect("file/code search");
+    assert!(file_search.results.iter().any(|result| {
+        matches!(
+            result.path.as_str(),
+            "/tools/code/grep_text"
+                | "/tools/code/search_code"
+                | "/tools/filesystem/read_file"
+                | "/tools/filesystem/glob"
+        )
+    }));
+
+    let git_diff = registry
+        .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)
+        .expect("git diff search");
+    assert_eq!(
+        git_diff.results.first().map(|result| result.path.as_str()),
+        Some("/tools/git/diff")
+    );
+
+    let computer = registry
+        .search("电脑 桌面 窗口 应用操作", None, 0, 8, ToolScene::Automation)
+        .expect("computer-use search");
+    assert!(
+        computer
+            .results
+            .iter()
+            .any(|result| result.path.starts_with("/tools/computer/"))
     );
 }
 

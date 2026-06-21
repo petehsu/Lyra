@@ -1,0 +1,8 @@
+# Prompt Contract Gate audit acknowledgements.
+#
+# Keep this file small and explicit. A protected prompt/context/memory/Tool-FS
+# change may update this file only when the author intentionally reviewed the
+# prompt runtime contract and decided a version/snapshot change is not required.
+
+reviewed_prompt_contract = true
+reason = "Initial dynamic prompt delivery V1 audit baseline."

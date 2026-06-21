@@ -226,7 +226,12 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    fn indexed_file(dir: &Path, name: &str, contents: &str, symbols: Vec<IndexedSymbol>) -> IndexedFile {
+    fn indexed_file(
+        dir: &Path,
+        name: &str,
+        contents: &str,
+        symbols: Vec<IndexedSymbol>,
+    ) -> IndexedFile {
         let path = dir.join(name);
         fs::write(&path, contents).unwrap();
         IndexedFile {
@@ -257,7 +262,12 @@ mod tests {
                 language: "rust".to_string(),
             }],
         );
-        let usage = indexed_file(dir.path(), "use.rs", "fn caller() {\n    Foo();\n}\n", Vec::new());
+        let usage = indexed_file(
+            dir.path(),
+            "use.rs",
+            "fn caller() {\n    Foo();\n}\n",
+            Vec::new(),
+        );
         let snapshot = IndexSnapshot {
             version: INDEX_VERSION,
             roots: vec![dir.path().to_string_lossy().to_string()],
@@ -296,6 +306,9 @@ mod tests {
         // `Foo()` appears at column 5 of line 2 in use.rs.
         assert_eq!(reference.line, 2);
         assert_eq!(reference.column, 5);
-        assert!(response.edges.iter().any(|edge| edge.relation == "references"));
+        assert!(response
+            .edges
+            .iter()
+            .any(|edge| edge.relation == "references"));
     }
 }

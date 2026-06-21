@@ -10,3 +10,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 regex.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

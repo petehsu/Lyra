@@ -904,7 +904,7 @@ pub(crate) fn system_recall_prompt(records: &[RankedSystemRecallItem]) -> String
         return String::new();
     }
     let mut lines = vec![
-        "System-recalled Lyra context. These snippets were added by local deterministic retrieval from Lyra storage, not by the user in this turn. Treat them as source-marked evidence and prefer the latest user message if there is conflict.".to_string(),
+        "System-recalled Lyra context. Local deterministic retrieval, not current-turn member text. Treat as source-marked evidence; latest member msg wins conflicts.".to_string(),
     ];
     for (index, record) in records.iter().enumerate() {
         lines.push(format!(

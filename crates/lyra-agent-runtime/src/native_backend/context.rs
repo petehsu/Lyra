@@ -311,11 +311,15 @@ pub(crate) fn tool_filesystem_runtime_context(
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
-        "scenarioPlaybooks": lyra_tool_fs_core::scenario_playbooks_doc(),
+        "scenarioPlaybooks": {
+            "status": "availableOnDemand",
+            "readDocPath": "/tools/playbooks",
+            "useWhen": "Read only when a long scenario chain would materially help after search/list/inspect are not enough."
+        },
         "policy": {
             "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
-            "discovery": "Use inspectedDescriptors, presearchHints, cachedHandles, or scenarioPlaybooks when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback.",
+            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
@@ -437,8 +441,44 @@ pub(crate) fn build_system_prompt(
     design_research_required: bool,
     memory_prompt: &str,
 ) -> String {
-    prompt_policy::build_system_prompt(&PromptPolicyInput {
+    build_system_prompt_report(
+        runtime_context,
+        "",
+        persona,
+        active_skill_prompt,
+        design_research_required,
+        memory_prompt,
+        None,
+        None,
+        false,
+        0,
+        0,
+        0,
+        false,
+        None,
+    )
+    .prompt
+}
+
+pub(crate) fn build_system_prompt_report(
+    runtime_context: &Value,
+    latest_user_text: &str,
+    persona: &PersonaContext,
+    active_skill_prompt: &str,
+    design_research_required: bool,
+    memory_prompt: &str,
+    previous_runtime_contract: Option<Value>,
+    previous_prompt_hash: Option<String>,
+    context_trimmed: bool,
+    recent_tool_failure_count: usize,
+    recent_tool_mismatch_count: usize,
+    consecutive_tool_failure_count: usize,
+    user_correction_detected: bool,
+    delivery_mode: Option<prompt_policy::PromptDeliveryMode>,
+) -> prompt_policy::PromptBuildReport {
+    prompt_policy::build_system_prompt_report(&PromptPolicyInput {
         runtime_context: runtime_context.clone(),
+        latest_user_text: latest_user_text.to_string(),
         persona: persona.clone(),
         active_skill_prompt: active_skill_prompt.to_string(),
         memory_prompt: memory_prompt.to_string(),
@@ -450,6 +490,14 @@ pub(crate) fn build_system_prompt(
             history_budget: 0,
             artifact_budget: 0,
         },
+        delivery_mode,
+        previous_runtime_contract,
+        previous_prompt_hash,
+        context_trimmed,
+        recent_tool_failure_count,
+        recent_tool_mismatch_count,
+        consecutive_tool_failure_count,
+        user_correction_detected,
     })
 }
 

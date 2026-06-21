@@ -131,6 +131,10 @@ export type SettingsAiLabels = {
   readonly roleProviderDefaultPlaceholder: string;
   readonly roleMemoryDefaultPlaceholder: string;
   readonly saveRoleModels: string;
+  readonly promptExperimentsTitle: string;
+  readonly promptExperimentsDescription: string;
+  readonly leanPromptDeliveryLabel: string;
+  readonly statefulPromptContractLabel: string;
   readonly notificationsTitle: string;
   readonly notificationsDescription: string;
   readonly desktopNotificationsLabel: string;

@@ -13,8 +13,8 @@ pub use model::{
     DEFAULT_TOOL_TIMEOUT_MS, MAX_TOOL_TIMEOUT_MS, PROVIDER_VISIBLE_TOOL_NAMES, PinnedToolHandle,
     ResolvedToolRun, TOOL_FS_INSPECT, TOOL_FS_LIST, TOOL_FS_READ_DOC, TOOL_FS_RUN,
     TOOL_FS_SCHEMA_VERSION, TOOL_FS_SEARCH, ToolChangeRecord, ToolDirectory, ToolDirectoryEntry,
-    ToolManifest, ToolManifestProvider, ToolResultEnvelope, ToolSearchResponse, ToolSearchResult,
-    provider_tool_names,
+    ToolDirectoryToolEntry, ToolManifest, ToolManifestProvider, ToolResultEnvelope,
+    ToolSearchResponse, ToolSearchResult, provider_tool_names,
 };
 pub use operation::{
     ToolOperationContext, ToolOperationEnvelope, ToolTraceRecord, new_operation_envelope,

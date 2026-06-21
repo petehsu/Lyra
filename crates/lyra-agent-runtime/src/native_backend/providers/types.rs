@@ -30,6 +30,7 @@ pub(crate) struct ProviderRouteDescriptor {
     pub(crate) local_backend: Option<String>,
     pub(crate) catalog_section: String,
     pub(crate) quick_setup_supported: bool,
+    pub(crate) supports_stateful_prompt_contract: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

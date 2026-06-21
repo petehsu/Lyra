@@ -29,11 +29,17 @@
 const OPEN_TAG_NAMES: &[&str] = &["think", "thinking", "reasoning", "thought"];
 
 fn open_tags() -> Vec<String> {
-    OPEN_TAG_NAMES.iter().map(|name| format!("<{name}>")).collect()
+    OPEN_TAG_NAMES
+        .iter()
+        .map(|name| format!("<{name}>"))
+        .collect()
 }
 
 fn close_tags() -> Vec<String> {
-    OPEN_TAG_NAMES.iter().map(|name| format!("</{name}>")).collect()
+    OPEN_TAG_NAMES
+        .iter()
+        .map(|name| format!("</{name}>"))
+        .collect()
 }
 
 fn max_tag_len() -> usize {

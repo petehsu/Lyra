@@ -347,10 +347,8 @@ pub(crate) fn run_model_loop(
                 if !retried_after_context_error && is_context_length_error(&error.to_string()) =>
             {
                 retried_after_context_error = true;
-                messages = compact_messages_for_retry(
-                    messages,
-                    request.capabilities.context_window,
-                );
+                messages =
+                    compact_messages_for_retry(messages, request.capabilities.context_window);
                 emit_context_trimmed(
                     session_id,
                     json!({
@@ -555,7 +553,11 @@ pub(crate) fn run_model_loop(
             // conversational replies still end in one turn.
             let wants_tool_retry = !request.tools.is_empty()
                 && (reply.stop_signal == TurnStopSignal::ToolUse
-                    || should_retry_missing_tool_call(reply.content.as_deref(), &request.tools, true));
+                    || should_retry_missing_tool_call(
+                        reply.content.as_deref(),
+                        &request.tools,
+                        true,
+                    ));
             if wants_tool_retry && missing_tool_retries < max_missing_tool_retry() {
                 missing_tool_retries += 1;
                 if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
@@ -729,8 +731,9 @@ pub(crate) fn run_model_loop(
             let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
             provider_tool_results.push(content.clone());
             if tool_protocol::is_browser_tool_name(&call.name) {
-                progress_guard.browser_tools_used_this_turn =
-                    progress_guard.browser_tools_used_this_turn.saturating_add(1);
+                progress_guard.browser_tools_used_this_turn = progress_guard
+                    .browser_tools_used_this_turn
+                    .saturating_add(1);
             }
             if let Some(parsed) =
                 browser_loop_detector::parse_browser_tool_call(&call.name, &call.arguments)
@@ -1289,7 +1292,8 @@ pub(crate) fn call_model_once_non_streaming(
         ));
     }
     let stop_signal = TurnStopSignal::from_raw(
-        body.pointer("/choices/0/finish_reason").and_then(Value::as_str),
+        body.pointer("/choices/0/finish_reason")
+            .and_then(Value::as_str),
     );
     Ok(ModelReply {
         content,
@@ -1628,10 +1632,20 @@ fn openai_responses_request_options() -> AgentRuntimeResult<openai_responses::Re
     let state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let stateful_prompt_contract = crate::native_backend::turns::env_bool_override(
+        "LYRA_OPENAI_RESPONSES_STATEFUL_PROMPT_CONTRACT",
+    )
+    .unwrap_or(state.config.openai_responses_stateful_prompt_contract);
+    let previous_response_id = std::env::var("LYRA_OPENAI_RESPONSES_PREVIOUS_RESPONSE_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     Ok(openai_responses::RequestOptions {
         reasoning_effort: state.config.reasoning_effort.clone(),
         verbosity: state.config.verbosity.clone(),
         service_tier: state.config.service_tier.clone(),
+        stateful_prompt_contract,
+        previous_response_id,
     })
 }
 
@@ -2031,30 +2045,57 @@ mod stop_signal_tests {
 
     #[test]
     fn maps_openai_finish_reasons() {
-        assert_eq!(TurnStopSignal::from_raw(Some("tool_calls")), TurnStopSignal::ToolUse);
-        assert_eq!(TurnStopSignal::from_raw(Some("stop")), TurnStopSignal::EndTurn);
-        assert_eq!(TurnStopSignal::from_raw(Some("length")), TurnStopSignal::MaxTokens);
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("tool_calls")),
+            TurnStopSignal::ToolUse
+        );
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("stop")),
+            TurnStopSignal::EndTurn
+        );
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("length")),
+            TurnStopSignal::MaxTokens
+        );
     }
 
     #[test]
     fn maps_anthropic_and_bedrock_stop_reasons() {
-        assert_eq!(TurnStopSignal::from_raw(Some("tool_use")), TurnStopSignal::ToolUse);
-        assert_eq!(TurnStopSignal::from_raw(Some("end_turn")), TurnStopSignal::EndTurn);
-        assert_eq!(TurnStopSignal::from_raw(Some("max_tokens")), TurnStopSignal::MaxTokens);
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("tool_use")),
+            TurnStopSignal::ToolUse
+        );
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("end_turn")),
+            TurnStopSignal::EndTurn
+        );
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("max_tokens")),
+            TurnStopSignal::MaxTokens
+        );
     }
 
     #[test]
     fn is_case_insensitive_and_trims() {
         // Gemini reports uppercase STOP.
-        assert_eq!(TurnStopSignal::from_raw(Some(" STOP ")), TurnStopSignal::EndTurn);
-        assert_eq!(TurnStopSignal::from_raw(Some("Tool_Use")), TurnStopSignal::ToolUse);
+        assert_eq!(
+            TurnStopSignal::from_raw(Some(" STOP ")),
+            TurnStopSignal::EndTurn
+        );
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("Tool_Use")),
+            TurnStopSignal::ToolUse
+        );
     }
 
     #[test]
     fn unknown_or_missing_is_unknown() {
         assert_eq!(TurnStopSignal::from_raw(None), TurnStopSignal::Unknown);
         assert_eq!(TurnStopSignal::from_raw(Some("")), TurnStopSignal::Unknown);
-        assert_eq!(TurnStopSignal::from_raw(Some("content_filter")), TurnStopSignal::Unknown);
+        assert_eq!(
+            TurnStopSignal::from_raw(Some("content_filter")),
+            TurnStopSignal::Unknown
+        );
     }
 
     #[test]

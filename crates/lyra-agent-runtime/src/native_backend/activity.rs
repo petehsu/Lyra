@@ -390,8 +390,7 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
                         tool.get("id").and_then(Value::as_str),
                     )
                 {
-                    committed_message =
-                        append_tool_block_to_message(session, message_id, tool_id);
+                    committed_message = append_tool_block_to_message(session, message_id, tool_id);
                 }
                 upsert_tool(&mut session.snapshot, tool.clone());
                 session.snapshot["follow"] = json!({
