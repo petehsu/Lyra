@@ -113,6 +113,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: replay_items,
+        stop_signal: Default::default(),
     };
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(

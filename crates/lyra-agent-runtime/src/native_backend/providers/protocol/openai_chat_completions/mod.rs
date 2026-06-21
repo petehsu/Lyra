@@ -6,9 +6,9 @@ pub(crate) const PROTOCOL_ID: &str = "openai_chat_completions";
 pub(crate) const PROTOCOL_FAMILY: &str = "openai_chat_completions";
 
 pub(crate) use super::openai_common::{
-    SseEvent, StreamingToolCallAccumulator, finalize_streaming_tool_calls, is_valid_tool_call_id,
-    message_content, message_reasoning_text, parse_sse_line, parse_tool_call, repair_tool_name,
-    tool_name_set,
+    SseEvent, StreamingThinkScrubber, StreamingToolCallAccumulator, finalize_streaming_tool_calls,
+    is_valid_tool_call_id, message_content, message_reasoning_text, parse_sse_line, parse_tool_call,
+    repair_tool_name, scrub_think_blocks, tool_name_set,
 };
 pub(crate) use request::build_request_body;
 

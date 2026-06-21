@@ -32,12 +32,16 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
             "provider returned no assistant text or tool call".to_string(),
         ));
     }
+    let stop_signal = crate::native_backend::provider::TurnStopSignal::from_raw(
+        body.get("stop_reason").and_then(Value::as_str),
+    );
     Ok(ModelReply {
         content: text,
         reasoning_content: reasoning_content,
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal,
     })
 }
 

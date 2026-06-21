@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, type ReactNode } from "react";
 
 import type { ChatMessage } from "../../core/types";
 import {
@@ -29,13 +29,6 @@ export type VirtualizedMessageListProps = {
   readonly ignoreOffScreenPins?: boolean;
   readonly renderMessage: (message: ChatMessage) => ReactNode;
 };
-
-const messageSlotStyle = (
-  heightTable: MessageHeightTable,
-  messageId: string
-): CSSProperties => ({
-  containIntrinsicBlockSize: `auto ${heightTable.heightOf(messageId)}px`
-});
 
 export const VirtualizedMessageList = ({
   messages,
@@ -147,7 +140,6 @@ export const VirtualizedMessageList = ({
           key={message.id}
           ref={heightTable.measureRef(message.id)}
           className="lyra-agents-chat-message-slot"
-          style={messageSlotStyle(heightTable, message.id)}
           data-chat-message-id={message.id}
           data-chat-message-author={message.author}
         >

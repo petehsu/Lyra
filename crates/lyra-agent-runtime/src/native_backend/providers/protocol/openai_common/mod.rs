@@ -2,9 +2,11 @@ mod content;
 mod discovery;
 mod schema;
 mod sse;
+mod think_scrubber;
 mod tools;
 
 pub(crate) use content::{content_to_plain_text, message_content, message_reasoning_text};
+pub(crate) use think_scrubber::{StreamingThinkScrubber, scrub_think_blocks};
 pub(crate) use discovery::{ModelDiscoveryScope, discover_models, is_supported_text_model_id};
 pub(crate) use schema::strict_tool_schema;
 pub(crate) use sse::{SseEvent, parse_sse_line};

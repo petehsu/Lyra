@@ -47,12 +47,16 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
             "provider returned no assistant text or tool call".to_string(),
         ));
     }
+    let stop_signal = crate::native_backend::provider::TurnStopSignal::from_raw(
+        candidate.get("finishReason").and_then(Value::as_str),
+    );
     Ok(ModelReply {
         content: text,
         reasoning_content: None,
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal,
     })
 }
 
@@ -96,6 +100,8 @@ pub(crate) fn tool_calls_from_parts(parts: &[Value], tools: &[Value]) -> Vec<Mod
 mod tests {
     use serde_json::json;
 
+    use crate::native_backend::provider::TurnStopSignal;
+
     use super::*;
 
     #[test]
@@ -132,5 +138,25 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+        assert_eq!(reply.stop_signal, TurnStopSignal::EndTurn);
+    }
+
+    #[test]
+    fn maps_finish_reason_to_stop_signal() {
+        let reply = parse_response_body(
+            &json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{ "text": "Partial answer." }]
+                    },
+                    "finishReason": "MAX_TOKENS"
+                }]
+            }),
+            &[],
+        )
+        .expect("reply");
+
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
     }
 }

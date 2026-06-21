@@ -89,12 +89,15 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     }
 
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
+    let stop_signal =
+        crate::native_backend::provider::TurnStopSignal::from_raw(state.stop_reason.as_deref());
     let mut reply = ModelReply {
         content: (!state.text.trim().is_empty()).then_some(state.text),
         reasoning_content: (!state.thinking.trim().is_empty()).then_some(state.thinking),
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        stop_signal,
     };
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(

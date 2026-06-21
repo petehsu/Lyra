@@ -69,7 +69,7 @@ const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null => {
   return null;
 };
 
-const mergeAgentRuntimeEvent = (
+export const mergeAgentRuntimeEvent = (
   current: AgentRuntimeEvent,
   incoming: AgentRuntimeEvent
 ): AgentRuntimeEvent => {
@@ -77,9 +77,23 @@ const mergeAgentRuntimeEvent = (
     if (incoming.replace === true) {
       return incoming;
     }
+    // Concatenate the streamed text, but DO NOT drop the render snapshot the
+    // incoming delta carries. Rust only attaches renderDocument/renderRevision
+    // when the rendered AST actually changed, so a naive merge that keeps only
+    // `current`'s snapshot would freeze the rich-text view on the first token's
+    // AST until the next non-merged event (e.g. toolStarted) forces a re-render.
+    // Latest non-empty snapshot wins; if incoming carries none, keep current's.
     return {
       ...current,
-      delta: `${current.delta}${incoming.delta}`
+      delta: `${current.delta}${incoming.delta}`,
+      ...(incoming.renderDocument === undefined
+        ? {}
+        : {
+            renderDocument: incoming.renderDocument,
+            ...(incoming.renderRevision === undefined
+              ? {}
+              : { renderRevision: incoming.renderRevision })
+          })
     };
   }
   return incoming;

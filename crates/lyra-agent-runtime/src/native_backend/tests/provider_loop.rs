@@ -156,6 +156,7 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
@@ -174,6 +175,7 @@ fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
@@ -189,6 +191,7 @@ fn missing_tool_preamble_is_rejected_for_retry() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
@@ -216,6 +219,7 @@ fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
@@ -234,6 +238,7 @@ fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
@@ -252,6 +257,7 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
         tool_calls: Vec::new(),
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal: Default::default(),
     };
 
     let error = normalize_model_reply_protocol(&mut reply, &[])

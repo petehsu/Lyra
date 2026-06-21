@@ -56,6 +56,7 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: output,
+        stop_signal: Default::default(),
     })
 }
 

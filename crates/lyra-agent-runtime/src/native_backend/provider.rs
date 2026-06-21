@@ -33,6 +33,42 @@ pub(crate) struct ModelReply {
     pub(crate) tool_calls: Vec<ModelToolCall>,
     pub(crate) ui_message_id: Option<String>,
     pub(crate) provider_replay_items: Vec<Value>,
+    /// The provider's normalized stop signal for this reply. Used by the turn
+    /// loop to tell "model wanted to call a tool but emitted none" (=> retry)
+    /// apart from "model is done" (=> end turn), instead of guessing from prose.
+    /// `None` when the provider did not report one (older/odd endpoints).
+    pub(crate) stop_signal: TurnStopSignal,
+}
+
+/// Provider-agnostic stop reason. Each protocol maps its native field
+/// (OpenAI `finish_reason`, Anthropic/Bedrock `stop_reason`/`stopReason`,
+/// Gemini `finishReason`) onto this so the turn loop reasons about one vocabulary.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum TurnStopSignal {
+    /// The model finished a normal text answer (OpenAI `stop`, Anthropic
+    /// `end_turn`, Gemini `STOP`). No tool was requested.
+    EndTurn,
+    /// The model signalled it wants to use a tool (OpenAI `tool_calls`,
+    /// Anthropic `tool_use`). If no structured tool_call was parsed, this is the
+    /// reliable "forgot to emit the tool_call" signal.
+    ToolUse,
+    /// Length/token cap (OpenAI `length`, Anthropic `max_tokens`).
+    MaxTokens,
+    /// Provider reported nothing usable, or an unrecognized value.
+    #[default]
+    Unknown,
+}
+
+impl TurnStopSignal {
+    /// Map a raw provider stop string (any protocol) onto the unified vocabulary.
+    pub(crate) fn from_raw(raw: Option<&str>) -> Self {
+        match raw.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("stop" | "end_turn" | "endturn") => Self::EndTurn,
+            Some("tool_calls" | "tool_use" | "tooluse" | "function_call") => Self::ToolUse,
+            Some("length" | "max_tokens" | "max_token" | "model_length") => Self::MaxTokens,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -50,6 +86,11 @@ pub(crate) struct ProviderStreamState {
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
+    /// Strips inline `<think>…</think>` reasoning from OpenAI-compatible content
+    /// deltas so it never leaks into the visible message; routed to
+    /// `reasoning_content` instead. Stateful across deltas (handles tags split
+    /// across stream chunks).
+    pub(crate) think_scrubber: openai_chat::StreamingThinkScrubber,
 }
 
 #[derive(Clone, Debug)]
@@ -504,9 +545,18 @@ pub(crate) fn run_model_loop(
             Err(error) => return Err(error),
         };
         if reply.tool_calls.is_empty() {
-            if should_retry_missing_tool_call(reply.content.as_deref(), &request.tools, true)
-                && missing_tool_retries < max_missing_tool_retry()
-            {
+            // Decide whether the model *meant* to call a tool but emitted none.
+            // Primary signal is the provider's structured stop reason
+            // (finish_reason == tool_calls / stop_reason == tool_use): reliable,
+            // language-agnostic, and not fooled by reasoning prose. The legacy
+            // internal-marker heuristic stays as a fallback for endpoints that
+            // report no usable stop signal. EndTurn / MaxTokens never trigger a
+            // retry — those are the model legitimately finishing, so normal
+            // conversational replies still end in one turn.
+            let wants_tool_retry = !request.tools.is_empty()
+                && (reply.stop_signal == TurnStopSignal::ToolUse
+                    || should_retry_missing_tool_call(reply.content.as_deref(), &request.tools, true));
+            if wants_tool_retry && missing_tool_retries < max_missing_tool_retry() {
                 missing_tool_retries += 1;
                 if let Some(message_id) = reply.ui_message_id.as_ref().filter(|id| !id.is_empty()) {
                     let _ = remove_assistant_message(session_id, message_id);
@@ -1197,8 +1247,23 @@ pub(crate) fn call_model_once_non_streaming(
     let message = body.pointer("/choices/0/message").ok_or_else(|| {
         AgentRuntimeError::Core("provider returned no assistant message".to_string())
     })?;
-    let content = openai_chat::message_content(message.get("content"));
-    let reasoning = openai_chat::message_reasoning_text(message);
+    // Strip inline <think>…</think> reasoning from non-streaming content too, so
+    // reasoning models that lack a dedicated reasoning field don't leak it into
+    // the visible message. Extracted reasoning is merged into the reasoning
+    // channel. Only applied to the freshly-parsed provider response here — NOT to
+    // content_to_plain_text, which also replays stored history.
+    let raw_content = openai_chat::message_content(message.get("content"));
+    let mut reasoning = openai_chat::message_reasoning_text(message);
+    let content = raw_content.map(|text| {
+        let scrubbed = openai_chat::scrub_think_blocks(&text);
+        if !scrubbed.reasoning.trim().is_empty() {
+            match reasoning.as_mut() {
+                Some(existing) => existing.push_str(&scrubbed.reasoning),
+                None => reasoning = Some(scrubbed.reasoning.clone()),
+            }
+        }
+        scrubbed.visible
+    });
     let allowed_tool_names = openai_chat::tool_name_set(tools);
     let tool_calls = message
         .get("tool_calls")
@@ -1223,12 +1288,16 @@ pub(crate) fn call_model_once_non_streaming(
             "provider returned no assistant text or tool call".to_string(),
         ));
     }
+    let stop_signal = TurnStopSignal::from_raw(
+        body.pointer("/choices/0/finish_reason").and_then(Value::as_str),
+    );
     Ok(ModelReply {
         content,
         reasoning_content: reasoning,
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
+        stop_signal,
     })
 }
 
@@ -1605,6 +1674,30 @@ fn parse_streaming_response_with_commit<R: BufRead>(
         )?;
     }
 
+    // Flush any held-back partial tag the scrubber kept across the final delta.
+    // If it turned out not to be a real tag it surfaces as visible text; trailing
+    // in-block reasoning is routed to the reasoning channel.
+    let flushed = state.think_scrubber.flush();
+    if !flushed.reasoning.is_empty() {
+        state.reasoning_chars = state
+            .reasoning_chars
+            .saturating_add(flushed.reasoning.chars().count());
+        state.reasoning_content.push_str(&flushed.reasoning);
+    }
+    if !flushed.visible.is_empty() {
+        if !buffer_assistant_text {
+            let message_id = ui_message_id
+                .get_or_insert_with(|| {
+                    emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
+                })
+                .clone();
+            if !message_id.is_empty() {
+                append_assistant_delta(session_id, turn_id, &message_id, &flushed.visible)?;
+            }
+        }
+        state.content.push_str(&flushed.visible);
+    }
+
     let mut tool_calls =
         openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
     tool_calls.sort_by_key(|(index, _)| *index);
@@ -1630,6 +1723,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     }
 
     let streamed_message_id = ui_message_id.filter(|id| !id.is_empty());
+    let stop_signal = TurnStopSignal::from_raw(state.finish_reason.as_deref());
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
@@ -1637,6 +1731,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
+        stop_signal,
     };
     normalize_model_reply_protocol(&mut reply, tools)?;
     if commit_assistant_text {
@@ -1673,27 +1768,41 @@ pub(crate) fn map_provider_stream_chunk(
         state.finish_reason = Some(finish_reason.to_string());
     }
     let delta = choice.get("delta").unwrap_or(&Value::Null);
-    if let Some(text) = openai_chat::message_content(delta.get("content"))
-        && !text.is_empty()
+    if let Some(raw_text) = openai_chat::message_content(delta.get("content"))
+        && !raw_text.is_empty()
     {
-        let candidate = format!("{}{}", state.content, text);
-        if contains_leaked_internal_protocol_markers(&candidate) {
-            return Err(AgentRuntimeError::Core(
-                "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
-                    .to_string(),
-            ));
+        // Strip inline <think>…</think> reasoning before it can reach the visible
+        // message. Reasoning-model providers (DeepSeek/Qwen/MiniMax/Kimi) inline
+        // reasoning into `content`; without this it leaks into the chat and also
+        // poisons the missing-tool-call heuristic downstream. The scrubber is
+        // stateful so a tag split across stream chunks is handled correctly.
+        let scrubbed = state.think_scrubber.feed(&raw_text);
+        if !scrubbed.reasoning.is_empty() {
+            state.reasoning_chars = state
+                .reasoning_chars
+                .saturating_add(scrubbed.reasoning.chars().count());
+            state.reasoning_content.push_str(&scrubbed.reasoning);
         }
-        if !buffer_assistant_text {
-            let message_id = ui_message_id
-                .get_or_insert_with(|| {
-                    emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-                })
-                .clone();
-            if !message_id.is_empty() {
-                append_assistant_delta(session_id, turn_id, &message_id, &text)?;
+        if !scrubbed.visible.is_empty() {
+            let candidate = format!("{}{}", state.content, scrubbed.visible);
+            if contains_leaked_internal_protocol_markers(&candidate) {
+                return Err(AgentRuntimeError::Core(
+                    "provider emitted textual tool protocol leak instead of a structured Lyra tool call"
+                        .to_string(),
+                ));
             }
+            if !buffer_assistant_text {
+                let message_id = ui_message_id
+                    .get_or_insert_with(|| {
+                        emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
+                    })
+                    .clone();
+                if !message_id.is_empty() {
+                    append_assistant_delta(session_id, turn_id, &message_id, &scrubbed.visible)?;
+                }
+            }
+            state.content.push_str(&scrubbed.visible);
         }
-        state.content.push_str(&text);
     }
     if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
         state.reasoning_chars = state
@@ -1913,5 +2022,43 @@ fn observe_successful_provider_capabilities(
             true,
             "provider_streaming_request_succeeded",
         );
+    }
+}
+
+#[cfg(test)]
+mod stop_signal_tests {
+    use super::TurnStopSignal;
+
+    #[test]
+    fn maps_openai_finish_reasons() {
+        assert_eq!(TurnStopSignal::from_raw(Some("tool_calls")), TurnStopSignal::ToolUse);
+        assert_eq!(TurnStopSignal::from_raw(Some("stop")), TurnStopSignal::EndTurn);
+        assert_eq!(TurnStopSignal::from_raw(Some("length")), TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn maps_anthropic_and_bedrock_stop_reasons() {
+        assert_eq!(TurnStopSignal::from_raw(Some("tool_use")), TurnStopSignal::ToolUse);
+        assert_eq!(TurnStopSignal::from_raw(Some("end_turn")), TurnStopSignal::EndTurn);
+        assert_eq!(TurnStopSignal::from_raw(Some("max_tokens")), TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn is_case_insensitive_and_trims() {
+        // Gemini reports uppercase STOP.
+        assert_eq!(TurnStopSignal::from_raw(Some(" STOP ")), TurnStopSignal::EndTurn);
+        assert_eq!(TurnStopSignal::from_raw(Some("Tool_Use")), TurnStopSignal::ToolUse);
+    }
+
+    #[test]
+    fn unknown_or_missing_is_unknown() {
+        assert_eq!(TurnStopSignal::from_raw(None), TurnStopSignal::Unknown);
+        assert_eq!(TurnStopSignal::from_raw(Some("")), TurnStopSignal::Unknown);
+        assert_eq!(TurnStopSignal::from_raw(Some("content_filter")), TurnStopSignal::Unknown);
+    }
+
+    #[test]
+    fn default_is_unknown() {
+        assert_eq!(TurnStopSignal::default(), TurnStopSignal::Unknown);
     }
 }

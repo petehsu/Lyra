@@ -1059,10 +1059,12 @@
 
 .lyra-agents-chat-message-slot {
   min-width: 0;
-  /* Skip layout/paint for off-screen messages; pair with contain-intrinsic-size
-     (set per-slot from measured height in ChatView) to keep scroll stable. */
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 80px;
+  /* Off-screen virtualization is handled entirely by the JS window in
+     `VirtualizedMessageList` (only viewport+overscan slots are mounted, with
+     top/bottom spacers). Do NOT add `content-visibility: auto` here: it makes
+     the browser independently collapse mounted slots it deems off-screen,
+     which fights the JS window and causes blank/jumping messages during scroll
+     and panel resize. */
 }
 
 /* -------- Messages -------- */

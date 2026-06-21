@@ -404,9 +404,7 @@ const AgentMessage = memo(function AgentMessage({
   const streamingTextActive = isTurnRunning || working;
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = message.blocks.filter((b) => b.type === "text");
-  const lastBlock = message.blocks.at(-1);
   const lastTextId = textBlocks.at(-1)?.id ?? null;
-  const lastBlockIsText = lastBlock?.type === "text";
   const isEmptyPendingAgent = isEmptyPendingAgentMessage(message);
   const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
   const hasImages = message.blocks.some((b) => b.type === "image");
@@ -441,11 +439,16 @@ const AgentMessage = memo(function AgentMessage({
         {isEmptyPendingAgent ? null : (
           message.blocks.map((b) => {
             if (b.type === "text") {
-              // Only stream text that is actively being written (trailing block).
-              // Avoid re-animating earlier narration when a new tool round starts.
+              // Only stream text that is actively being written (trailing text
+              // block). Avoid re-animating earlier narration when a new tool
+              // round starts. NOTE: we intentionally do NOT require the last
+              // block overall to be text — when a tool block lands after the
+              // current sentence (`[text, tool]`), the last *text* block is
+              // still being streamed and must keep updating, otherwise it freezes
+              // until the tool finishes.
               const isLastText = b.id === lastTextId;
               const isStreamingHost = showActivityIndicator && streamingTextActive;
-              const shouldStream = isStreamingHost && isLastText && lastBlockIsText;
+              const shouldStream = isStreamingHost && isLastText;
               return (
                 <div
                   key={b.id}
@@ -454,7 +457,7 @@ const AgentMessage = memo(function AgentMessage({
                 >
                   <StreamingText
                     content={b.body}
-                    document={b.renderDocument}
+                    document={b.renderDocument ?? null}
                     streaming={shouldStream}
                   />
                 </div>

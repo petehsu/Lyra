@@ -1715,6 +1715,7 @@ mod narration_tests {
             }],
             ui_message_id: None,
             provider_replay_items: Vec::new(),
+            stop_signal: Default::default(),
         });
         assert_eq!(visible, None);
     }
@@ -1731,6 +1732,7 @@ mod narration_tests {
             }],
             ui_message_id: None,
             provider_replay_items: Vec::new(),
+            stop_signal: Default::default(),
         });
         assert_eq!(visible.as_deref(), Some("Opening Google."));
     }

@@ -681,7 +681,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             viewportTop={viewportTop}
             viewportHeight={viewportHeight}
             contentWidth={resolveContentWidthPx()}
-            overscan={isLayoutResizing ? 0 : CHAT_VIRTUAL_OVERSCAN}
+            overscan={CHAT_VIRTUAL_OVERSCAN}
             ignoreOffScreenPins={isLayoutResizing}
             {...(pinnedMessageIds === undefined
               ? {}
