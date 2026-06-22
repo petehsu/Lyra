@@ -12,6 +12,8 @@ import {
 } from "@renderer/ui/components";
 import {
   Archive,
+  ArrowLeftToLine,
+  ArrowRightToLine,
   CheckCircle,
   Hammer,
   MoreHorizontal,
@@ -24,6 +26,7 @@ import {
 import { useState } from "react";
 import { t } from "../../core/i18n";
 import { useData } from "../../data/DataProvider";
+import type { AiPanelSide } from "../../../types";
 
 export function Header() {
   const { session } = useData();
@@ -37,10 +40,18 @@ export function Header() {
 
 export function HeaderControls({
   showNewSessionButton = true,
-  forceShowNewSessionButton = false
+  forceShowNewSessionButton = false,
+  aiPanelSide,
+  onToggleAiPanelSide,
+  movePanelToLeftLabel,
+  movePanelToRightLabel
 }: {
   readonly showNewSessionButton?: boolean;
   readonly forceShowNewSessionButton?: boolean;
+  readonly aiPanelSide?: AiPanelSide;
+  readonly onToggleAiPanelSide?: () => void;
+  readonly movePanelToLeftLabel?: string;
+  readonly movePanelToRightLabel?: string;
 }) {
   const {
     session,
@@ -67,7 +78,13 @@ export function HeaderControls({
     session.projectBound && !session.workingDirIsHome;
   const canManageSession =
     typeof session.id === "string" && session.id.trim().length > 0;
-  const hasMenuItems = showProjectActions || canManageSession;
+  const canMovePanel =
+    onToggleAiPanelSide !== undefined
+    && aiPanelSide !== undefined
+    && (aiPanelSide === "left"
+      ? movePanelToRightLabel !== undefined
+      : movePanelToLeftLabel !== undefined);
+  const hasMenuItems = showProjectActions || canManageSession || canMovePanel;
 
   const onCreateSession = async () => {
     if (creating) return;
@@ -201,6 +218,27 @@ export function HeaderControls({
                 >
                   <Trash2 aria-hidden="true" size={14} strokeWidth={1.8} />
                   <span className="lyra-app-menu-item-label">{t("header.delete")}</span>
+                </AppMenuItem>
+              </>
+            ) : null}
+            {canMovePanel ? (
+              <>
+                {showProjectActions || canManageSession ? <AppMenuSeparator /> : null}
+                <AppMenuItem
+                  className={menuItemClassName}
+                  onSelect={() => {
+                    setMenuOpen(false);
+                    onToggleAiPanelSide?.();
+                  }}
+                >
+                  {aiPanelSide === "left" ? (
+                    <ArrowRightToLine aria-hidden="true" size={14} strokeWidth={1.8} />
+                  ) : (
+                    <ArrowLeftToLine aria-hidden="true" size={14} strokeWidth={1.8} />
+                  )}
+                  <span className="lyra-app-menu-item-label">
+                    {aiPanelSide === "left" ? movePanelToRightLabel : movePanelToLeftLabel}
+                  </span>
                 </AppMenuItem>
               </>
             ) : null}

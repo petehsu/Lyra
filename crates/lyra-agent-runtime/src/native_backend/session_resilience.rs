@@ -3,7 +3,6 @@ use serde_json::json;
 use uuid::Uuid;
 
 const MAX_TASK_MILESTONES: usize = 24;
-const MAX_CONSECUTIVE_FAILED_BEFORE_RECOVERY: usize = 3;
 
 pub(crate) fn init_session_resilience_fields(snapshot: &mut Value) {
     if !snapshot
@@ -12,23 +11,22 @@ pub(crate) fn init_session_resilience_fields(snapshot: &mut Value) {
     {
         snapshot["sessionResilience"] = json!({
             "blockedBrowser": Value::Null,
-            "lastInterruptReason": Value::Null,
-            "consecutiveFailedRecoverable": 0,
             "updatedAt": Value::Null
         });
+    } else if let Some(object) = snapshot
+        .get_mut("sessionResilience")
+        .and_then(Value::as_object_mut)
+    {
+        object
+            .entry("blockedBrowser".to_string())
+            .or_insert(Value::Null);
+        object.entry("updatedAt".to_string()).or_insert(Value::Null);
+        object.remove("lastInterruptReason");
+        object.remove("consecutiveFailedRecoverable");
     }
     if !snapshot.get("taskMilestones").is_some_and(Value::is_array) {
         snapshot["taskMilestones"] = json!([]);
     }
-}
-
-pub(crate) fn consecutive_failed_recoverable_count(session: &NativeSession) -> usize {
-    session
-        .runtime_turns
-        .iter()
-        .rev()
-        .take_while(|turn| turn.get("state").and_then(Value::as_str) == Some("failed_recoverable"))
-        .count()
 }
 
 pub(crate) fn active_blocked_browser(session: &NativeSession) -> Option<Value> {
@@ -60,15 +58,12 @@ pub(crate) fn release_session_follow(session: &mut NativeSession) {
     session.snapshot["follow"] = json!({ "running": false, "activity": Value::Null });
 }
 
-pub(crate) fn finalize_interrupt_state(session: &mut NativeSession, reason: &str) {
+pub(crate) fn finalize_interrupt_state(session: &mut NativeSession, _reason: &str) {
     init_session_resilience_fields(&mut session.snapshot);
     release_session_follow(session);
     let blocked = latest_blocked_browser_from_tools(session);
-    let failed_count = consecutive_failed_recoverable_count(session);
     session.snapshot["sessionResilience"] = json!({
         "blockedBrowser": blocked,
-        "lastInterruptReason": reason,
-        "consecutiveFailedRecoverable": failed_count,
         "updatedAt": now(),
     });
 }
@@ -118,29 +113,8 @@ pub(crate) fn update_resilience_from_tool_finish(session: &mut NativeSession, to
     }
 }
 
-pub(crate) fn should_apply_failure_recovery(session: &NativeSession) -> bool {
-    consecutive_failed_recoverable_count(session) >= MAX_CONSECUTIVE_FAILED_BEFORE_RECOVERY
-}
-
-pub(crate) fn sync_failure_resilience_state(session: &mut NativeSession) {
-    init_session_resilience_fields(&mut session.snapshot);
-    let count = consecutive_failed_recoverable_count(session);
-    if let Some(object) = session.snapshot["sessionResilience"].as_object_mut() {
-        object.insert("consecutiveFailedRecoverable".to_string(), json!(count));
-        object.insert("updatedAt".to_string(), Value::String(now()));
-    }
-}
-
 pub(crate) fn resume_context_lines(session: &NativeSession) -> Vec<String> {
     let mut lines = Vec::new();
-    if let Some(reason) = session
-        .snapshot
-        .pointer("/sessionResilience/lastInterruptReason")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-    {
-        lines.push(format!("Last interrupt reason: {reason}"));
-    }
     if let Some(blocked) = active_blocked_browser(session) {
         let region_count = blocked
             .get("blockedRegions")
@@ -187,12 +161,6 @@ pub(crate) fn resume_context_lines(session: &NativeSession) -> Vec<String> {
         if !pending.is_empty() {
             lines.push(format!("Pending todos: {}", pending.join(" | ")));
         }
-    }
-    let failed_count = consecutive_failed_recoverable_count(session);
-    if failed_count >= MAX_CONSECUTIVE_FAILED_BEFORE_RECOVERY {
-        lines.push(format!(
-            "This session has {failed_count} consecutive recoverable turn failures. Prefer compact context, avoid repeating failed browser actions, and continue from the next pending todo."
-        ));
     }
     lines
 }
@@ -304,8 +272,6 @@ fn extract_verified_milestone_from_tool(tool: &Value) -> Option<(String, String,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native_backend::projections::runtime_turn;
-
     fn test_session() -> NativeSession {
         let mut snapshot = json!({
             "tools": [],
@@ -322,11 +288,7 @@ mod tests {
             archived: false,
             custom_title: None,
             short_name: None,
-            runtime_turns: vec![
-                runtime_turn("turn-1", "session-test", "completed", None, None),
-                runtime_turn("turn-2", "session-test", "failed_recoverable", None, None),
-                runtime_turn("turn-3", "session-test", "failed_recoverable", None, None),
-            ],
+            runtime_turns: Vec::new(),
             rollback_checkpoints: Vec::new(),
             file_read_state: std::collections::HashMap::new(),
             dirty: false,
@@ -334,13 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn consecutive_failed_recoverable_counts_trailing_failures_only() {
-        let session = test_session();
-        assert_eq!(consecutive_failed_recoverable_count(&session), 2);
-    }
-
-    #[test]
-    fn finalize_interrupt_state_releases_follow_and_records_reason() {
+    fn finalize_interrupt_state_releases_follow_and_keeps_resilience_minimal() {
         let mut session = test_session();
         finalize_interrupt_state(&mut session, "soft_interrupt_new_user_message");
         assert_eq!(
@@ -350,12 +306,17 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(false)
         );
-        assert_eq!(
+        assert!(
             session
                 .snapshot
                 .pointer("/sessionResilience/lastInterruptReason")
-                .and_then(Value::as_str),
-            Some("soft_interrupt_new_user_message")
+                .is_none()
+        );
+        assert!(
+            session
+                .snapshot
+                .pointer("/sessionResilience/consecutiveFailedRecoverable")
+                .is_none()
         );
     }
 

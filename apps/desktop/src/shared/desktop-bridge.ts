@@ -126,7 +126,6 @@ import type {
   LyraSensitiveValueApi
 } from "./sensitive-value";
 import type { AgentApi } from "./agent";
-import type { RenderApi } from "./render";
 
 export type {
   AgentApi,
@@ -177,7 +176,6 @@ export type {
   AgentTurnCancelResponse,
   AgentTurnSendRequest,
   AgentTurnSendResponse,
-  AgentTurnStatus,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
   AgentAccountLoginCompleteRequest,
@@ -601,7 +599,6 @@ export const LYRA_CHANNELS = {
   agentTurnSend: "lyra:agent/turn/send",
   agentTurnResume: "lyra:agent/turn/resume",
   agentTurnCancel: "lyra:agent/turn/cancel",
-  agentTurnRetry: "lyra:agent/turn/retry",
   agentMemorySnapshot: "lyra:agent/memory/snapshot",
   agentMemoryAudit: "lyra:agent/memory/audit",
   agentMemoryRecoverRun: "lyra:agent/memory/recover/run",
@@ -666,9 +663,6 @@ export const LYRA_CHANNELS = {
   screenshotPreviewPresent: "lyra:screenshot-preview/present",
   screenshotPreviewDismiss: "lyra:screenshot-preview/dismiss",
   screenshotPreviewEvent: "lyra:screenshot-preview/event",
-  renderDocument: "lyra:render/document",
-  renderHighlight: "lyra:render/highlight",
-  renderInvalidateCache: "lyra:render/invalidate-cache"
 } as const;
 
 export type WindowStatePayload = {
@@ -2696,5 +2690,4 @@ export type LyraDesktopApi = {
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
   readonly location?: LocationApi;
-  readonly render?: RenderApi;
 };

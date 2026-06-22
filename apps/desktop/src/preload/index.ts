@@ -244,12 +244,6 @@ import {
   type WindowStatePayload
 } from "../shared/desktop-bridge";
 import type {
-  HighlightRequest,
-  HighlightSpan,
-  LyraRenderDocument,
-  RenderDocumentRequest
-} from "../shared/render";
-import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
   FileManagerDirectoryMutationResponse,
@@ -846,14 +840,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       };
     }
   },
-  render: {
-    renderDocument: (request: RenderDocumentRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.renderDocument, request) as Promise<LyraRenderDocument>,
-    highlightSpans: (request: HighlightRequest) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.renderHighlight, request) as Promise<readonly HighlightSpan[]>,
-    invalidateCache: () =>
-      ipcRenderer.invoke(LYRA_CHANNELS.renderInvalidateCache) as Promise<void>
-  },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
   identity: {
     readUserIcon: () =>
@@ -1447,11 +1433,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentTurnCancel,
         request
       ) as Promise<AgentTurnCancelResponse>,
-    retryTurn: (request: AgentTurnSendRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentTurnRetry,
-        request
-      ) as Promise<AgentTurnSendResponse>,
     readMemorySnapshot: (request?: AgentSessionReadRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentMemorySnapshot,

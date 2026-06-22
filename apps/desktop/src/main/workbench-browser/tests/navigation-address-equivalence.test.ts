@@ -3,6 +3,15 @@ import { describe, expect, test } from "vitest";
 import { areNavigationAddressesEquivalent } from "../view-manager-runtime/normalizers";
 
 describe("navigation address equivalence", () => {
+  test("normalizes bare domains with the renderer default scheme", () => {
+    expect(
+      areNavigationAddressesEquivalent("example.com/docs", "https://example.com/docs")
+    ).toBe(true);
+    expect(
+      areNavigationAddressesEquivalent("example.com/docs", "http://example.com/docs")
+    ).toBe(false);
+  });
+
   test("treats googtrans hash variants as the same page", () => {
     expect(
       areNavigationAddressesEquivalent(

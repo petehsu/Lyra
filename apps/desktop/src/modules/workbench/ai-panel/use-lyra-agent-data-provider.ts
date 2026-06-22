@@ -39,7 +39,6 @@ import type {
   PermissionRequest
 } from "./lyra-agents/core/types";
 import { setLocale, t, type Locale } from "./lyra-agents/core/i18n";
-import { mapTurnFailureMessage } from "./lyra-agents/core/turn-failure-message";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
@@ -51,7 +50,8 @@ import {
   agentSessionToTodos,
   applyAgentRuntimeEventToSnapshot,
   agentModelsToModelOptions,
-  agentSessionMetaWithDraftWorkingDir
+  agentSessionMetaWithDraftWorkingDir,
+  normalizeAgentSessionSnapshot
 } from "../agent-session-view-model";
 import {
   CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
@@ -209,8 +209,6 @@ const imageUrlSource = (source: string | null | undefined): string | null => {
 type State = {
   readonly session: AgentSessionSnapshot | null;
   readonly error: string | null;
-  readonly turnError: string | null;
-  readonly turnFailureKind: string | null;
   readonly loading: boolean;
 };
 
@@ -224,8 +222,6 @@ type Action =
 const initialState: State = {
   session: null,
   error: null,
-  turnError: null,
-  turnFailureKind: null,
   loading: true
 };
 
@@ -235,16 +231,12 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
       return state;
     }
     const session = state.session === null
-      ? event.snapshot
-      : state.session.turnStatus === "running"
-        ? mergeRunningSessionSnapshot(state.session, event.snapshot)
-        : event.snapshot;
+      ? normalizeAgentSessionSnapshot(event.snapshot)
+      : mergeRunningSessionSnapshot(state.session, event.snapshot);
     return {
       ...state,
       session,
       loading: false,
-      turnError: session.turnStatus === "failed" ? state.turnError : null,
-      turnFailureKind: session.turnStatus === "failed" ? state.turnFailureKind : null,
       error: null
     };
   }
@@ -262,8 +254,6 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
     return {
       ...state,
       session: applyAgentRuntimeEventToSnapshot(session, event),
-      turnError: event.message,
-      turnFailureKind: event.failureKind ?? null,
       error: null
     };
   }
@@ -310,25 +300,24 @@ function isCustomOptionLabel(label: string): boolean {
 
 const reducer = (state: State, action: Action): State => {
   if (action.type === "loading") {
-    return { ...state, loading: true, error: null, turnError: null, turnFailureKind: null };
+    return { ...state, loading: true, error: null };
   }
   if (action.type === "empty") {
     return {
       session: null,
       error: null,
-      turnError: null,
-      turnFailureKind: null,
       loading: false
     };
   }
   if (action.type === "snapshot") {
+    const session = state.session !== null && state.session.id === action.snapshot.id
+      ? mergeRunningSessionSnapshot(state.session, action.snapshot)
+      : normalizeAgentSessionSnapshot(action.snapshot);
     return {
       ...state,
-      session: action.snapshot,
+      session,
       loading: false,
-      error: null,
-      turnError: action.snapshot.turnStatus === "failed" ? state.turnError : null,
-      turnFailureKind: action.snapshot.turnStatus === "failed" ? state.turnFailureKind : null
+      error: null
     };
   }
   if (action.type === "event") return applyEvent(state, action.event);
@@ -437,8 +426,6 @@ export const useLyraAgentDataProvider = (
   readonly followRunning: boolean;
   readonly followActivity: string | null;
   readonly error: string | null;
-  readonly turnFailureMessage: string | null;
-  readonly retryFailedTurn: () => Promise<void>;
   readonly cancel: () => Promise<void>;
 } => {
   const {
@@ -1006,22 +993,6 @@ export const useLyraAgentDataProvider = (
     if (sessionId === null) return;
     await desktopApi.agent.cancelTurn({ sessionId });
   }, [desktopApi, resolvedSessionId]);
-
-  const retryFailedTurn = useCallback(async (): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const session = state.session;
-    if (session === null || session.turnStatus !== "failed") return;
-    const failedTurn = [...session.runtimeTurns]
-      .reverse()
-      .find((turn) => turn.state === "failed_recoverable");
-    await desktopApi.agent.retryTurn({
-      sessionId: session.id,
-      text: "",
-      ...(failedTurn?.runtimeTurnId === undefined
-        ? {}
-        : { turnId: failedTurn.runtimeTurnId })
-    });
-  }, [desktopApi, state.session]);
 
   const setBrowserFollowMode = useCallback(async (enabled: boolean): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
@@ -1892,7 +1863,6 @@ export const useLyraAgentDataProvider = (
     activeDraftWorkingDir,
     state.session,
     state.loading,
-    state.turnError,
     visibleMessageLimit,
     runJudge,
     renameSession,
@@ -1904,11 +1874,6 @@ export const useLyraAgentDataProvider = (
     locale
   ]);
 
-  const turnFailureMessage =
-    state.session?.turnStatus === "failed"
-      ? mapTurnFailureMessage(state.turnError, state.turnFailureKind)
-      : null;
-
   return {
     data,
     followRunning: state.session?.follow.running ?? state.loading,
@@ -1916,8 +1881,6 @@ export const useLyraAgentDataProvider = (
       state.session?.follow.activity ??
       (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null),
     error: state.error,
-    turnFailureMessage,
-    retryFailedTurn,
     cancel
   };
 };

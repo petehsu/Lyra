@@ -1,13 +1,7 @@
-import type {
-  InlineRenderNode,
-  LyraRenderDocument,
-  RenderBlock,
-  RenderTheme
-} from "../../../../../../shared/render";
-import { scopeToHighlightClass } from "../rich-text/scope-theme";
+type RenderSurfaceTheme = "dark" | "light" | "auto";
 
 export type RenderSurfaceIframeOptions = {
-  readonly theme: RenderTheme;
+  readonly theme: RenderSurfaceTheme;
   readonly interactive: boolean;
   readonly title: string;
 };
@@ -20,131 +14,7 @@ const escapeHtml = (value: string): string =>
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&#39;");
 
-const renderInlineNodesToHtml = (nodes: readonly InlineRenderNode[]): string =>
-  nodes.map((node) => renderInlineNodeToHtml(node)).join("");
-
-const renderInlineNodeToHtml = (node: InlineRenderNode): string => {
-  switch (node.kind) {
-    case "text":
-      return escapeHtml(node.value);
-    case "code":
-      return `<code>${escapeHtml(node.value)}</code>`;
-    case "strong":
-      return `<strong>${renderInlineNodesToHtml(node.children)}</strong>`;
-    case "emphasis":
-      return `<em>${renderInlineNodesToHtml(node.children)}</em>`;
-    case "strikethrough":
-      return `<s>${renderInlineNodesToHtml(node.children)}</s>`;
-    case "link":
-      return `<a href="${escapeHtml(node.href)}">${renderInlineNodesToHtml(node.children)}</a>`;
-    case "image":
-      return `<img src="${escapeHtml(node.src)}" alt="${escapeHtml(node.alt)}" />`;
-    case "mathInline":
-      return node.svg ?? `<code>$${escapeHtml(node.latex)}$</code>`;
-    case "softBreak":
-      return " ";
-    case "hardBreak":
-      return "<br />";
-    default:
-      return "";
-  }
-};
-
-const renderTableCellsToHtml = (
-  cells: readonly InlineRenderNode[][],
-  cellTag: "td" | "th"
-): string =>
-  cells
-    .map((cell) => `<${cellTag}>${renderInlineNodesToHtml(cell)}</${cellTag}>`)
-    .join("");
-
-const renderBlockToHtml = (block: RenderBlock): string => {
-  switch (block.kind) {
-    case "paragraph":
-      return `<p>${renderInlineNodesToHtml(block.children)}</p>`;
-    case "heading": {
-      const level = Math.min(6, Math.max(1, block.level));
-      return `<h${level}>${renderInlineNodesToHtml(block.children)}</h${level}>`;
-    }
-    case "blockquote":
-      return `<blockquote>${block.children.map((child) => renderBlockToHtml(child)).join("")}</blockquote>`;
-    case "list": {
-      const tag = block.ordered ? "ol" : "ul";
-      const items = block.items
-        .map((item) => {
-          const checkbox = item.checked === undefined
-            ? ""
-            : `<input type="checkbox" disabled ${item.checked ? "checked" : ""} />`;
-          const body = item.children.map((child) => renderBlockToHtml(child)).join("");
-          return `<li>${checkbox}${body}</li>`;
-        })
-        .join("");
-      return `<${tag}>${items}</${tag}>`;
-    }
-    case "codeBlock": {
-      const highlighted = renderHighlightedSourceToHtml(block.source, block.spans);
-      return `<pre class="hljs"><code>${highlighted}</code></pre>`;
-    }
-    case "mermaid":
-      return block.svg ?? `<pre>${escapeHtml(block.source)}</pre>`;
-    case "mathBlock":
-      return block.svg ?? `<pre>${escapeHtml(block.latex)}</pre>`;
-    case "table": {
-      const headers = block.headers.length > 0
-        ? `<thead><tr>${renderTableCellsToHtml(block.headers, "th")}</tr></thead>`
-        : "";
-      const rows = block.rows
-        .map((row) => `<tr>${renderTableCellsToHtml(row, "td")}</tr>`)
-        .join("");
-      return `<table>${headers}<tbody>${rows}</tbody></table>`;
-    }
-    case "thematicBreak":
-      return "<hr />";
-    default:
-      return "";
-  }
-};
-
-const renderHighlightedSourceToHtml = (
-  source: string,
-  spans: readonly { readonly start: number; readonly end: number; readonly scope: string }[]
-): string => {
-  if (spans.length === 0) {
-    return escapeHtml(source);
-  }
-
-  const sorted = [...spans].sort(
-    (left, right) => left.start - right.start || left.end - right.end
-  );
-  const parts: string[] = [];
-  let cursor = 0;
-
-  for (const span of sorted) {
-    const start = Math.max(0, Math.min(span.start, source.length));
-    const end = Math.max(start, Math.min(span.end, source.length));
-    if (start > cursor) {
-      parts.push(escapeHtml(source.slice(cursor, start)));
-    }
-    if (end > start) {
-      const className = scopeToHighlightClass(span.scope);
-      parts.push(
-        `<span class="${className}">${escapeHtml(source.slice(start, end))}</span>`
-      );
-    }
-    cursor = Math.max(cursor, end);
-  }
-
-  if (cursor < source.length) {
-    parts.push(escapeHtml(source.slice(cursor)));
-  }
-
-  return parts.join("");
-};
-
-export const renderDocumentToHtml = (document: LyraRenderDocument): string =>
-  document.blocks.map((block) => renderBlockToHtml(block)).join("");
-
-const surfaceThemeCss = (theme: RenderTheme): string => {
+const surfaceThemeCss = (theme: RenderSurfaceTheme): string => {
   const dark = `
     :root {
       color-scheme: dark;

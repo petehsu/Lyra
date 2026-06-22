@@ -3,6 +3,8 @@
 @source "../main.tsx";
 @source "../ui/**/*.{ts,tsx}";
 @source "../../modules/workbench/**/*.{ts,tsx}";
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/@streamdown/cjk/dist/*.js";
 
 @theme inline {
   --font-sans: var(--lyra-font-ui);

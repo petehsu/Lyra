@@ -4,7 +4,7 @@ import { LyraDocument } from "@/components/lyra-document/LyraDocument";
 
 const SAMPLE_MARKDOWN = `## Lyra render pipeline
 
-Rust-powered markdown with **tree-sitter**, **RaTeX**, and **merman**.
+Markdown-it powered rich rendering with **KaTeX** and lazy **Mermaid** diagrams.
 
 Inline math: $E = mc^2$
 
@@ -16,8 +16,8 @@ fn main() {
 
 \`\`\`mermaid
 flowchart LR
-  Markdown --> RenderCore
-  RenderCore --> WASM
+  Markdown --> MarkdownIt
+  MarkdownIt --> React
 \`\`\`
 `;
 

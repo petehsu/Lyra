@@ -9,6 +9,9 @@ Mode, scene, hash, token, refresh, memory, and context-window logic belongs in R
 `kernel.md.j2`: tiny always-on identity and safety kernel.
 Keep it minimal. It is sent in every mode.
 
+`interaction_contract.md.j2`: blocking interaction protocol.
+It must stay always-on in full and lean. Waiting for member input must be structured, not inferred from assistant text.
+
 `compact_contract.md.j2`: lean operating rules.
 It must stand alone with `kernel.md.j2` in `lean-experimental`.
 
@@ -58,7 +61,7 @@ No simulated JSON or fake tool calls.
 No done claims without evidence.
 Secrets staying as refs.
 Latest member msg and runtime context outranking old memory/summary/recall.
-Asking one concise clarification when progress truly needs missing input.
+Blocking clarification through `lyra_clarification_ask`, never plain assistant text.
 
 ## Dynamic Delivery Rules
 

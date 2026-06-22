@@ -147,6 +147,11 @@ const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
   return (metadata as { readonly uiHidden?: boolean }).uiHidden === true;
 };
 
+const isApiErrorAgentMessage = (metadata: unknown): boolean => {
+  if (metadata === null || typeof metadata !== "object") return false;
+  return (metadata as { readonly isApiError?: boolean }).isApiError === true;
+};
+
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
@@ -206,18 +211,11 @@ const chatBlocksForAgentMessage = (
         ? [emptyPendingTextBlock(message)]
         : [];
     }
-    const textBlock = message.blocks?.find((block) => block.type === "text");
     return [
       {
         type: "text",
         id: `${message.id}-text`,
-        body,
-        ...(textBlock?.type === "text" && textBlock.renderDocument !== undefined
-          ? { renderDocument: textBlock.renderDocument }
-          : {}),
-        ...(textBlock?.type === "text" && textBlock.renderRevision !== undefined
-          ? { renderRevision: textBlock.renderRevision }
-          : {})
+        body
       }
     ];
   }
@@ -255,9 +253,7 @@ const chatBlocksForAgentMessage = (
         chatBlocks.push({
           type: "text",
           id: `${message.id}-${block.id}`,
-          body: cleaned,
-          ...(block.renderDocument === undefined ? {} : { renderDocument: block.renderDocument }),
-          ...(block.renderRevision === undefined ? {} : { renderRevision: block.renderRevision })
+          body: cleaned
         });
       }
       continue;
@@ -303,22 +299,11 @@ const chatBlocksForAgentMessage = (
       ? [emptyPendingTextBlock(message)]
       : [];
   }
-  const textBlock = message.blocks?.find((block) => block.type === "text");
   return [
     {
       type: "text",
       id: `${message.id}-text`,
-      body,
-      ...(textBlock?.type === "text" && textBlock.renderDocument !== undefined
-        ? { renderDocument: textBlock.renderDocument }
-        : message.renderDocument === undefined
-          ? {}
-          : { renderDocument: message.renderDocument }),
-      ...(textBlock?.type === "text" && textBlock.renderRevision !== undefined
-        ? { renderRevision: textBlock.renderRevision }
-        : message.renderRevision === undefined
-          ? {}
-          : { renderRevision: message.renderRevision })
+      body
     }
   ];
 };
@@ -357,9 +342,11 @@ export const agentSessionToChatMessages = (
       const pageCitations = parsePageCitationsFromMetadata(message.metadata);
       const inlineImages = parseInlineImagesFromMetadata(message.metadata);
       const fileAttachments = parseFileAttachmentsFromMetadata(message.metadata);
+      const isApiError = author === "agent" && isApiErrorAgentMessage(message.metadata);
       const chatMessage: ChatMessage = {
         id: message.id,
         author,
+        ...(isApiError ? { isApiError: true } : {}),
         ...(formattedTime === undefined ? {} : { time: formattedTime }),
         ...(transcriptCitations.length === 0 ? {} : { transcriptCitations }),
         ...(pageCitations.length === 0 ? {} : { pageCitations }),

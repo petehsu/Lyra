@@ -55,15 +55,6 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
 
     const next = applyAgentRuntimeEventToSnapshot(current, {
       kind: "messageDelta",
-      renderDocument: {
-        blocks: [
-          {
-            kind: "paragraph",
-            children: [{ kind: "text", value: "Hello" }]
-          }
-        ]
-      },
-      renderRevision: 1,
       sessionId: "session-1",
       messageId: "message-1",
       blockId: "text-1",
@@ -75,18 +66,81 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
       {
         type: "text",
         id: "text-1",
-        text: "Hello world",
-        renderDocument: {
-          blocks: [
-            {
-              kind: "paragraph",
-              children: [{ kind: "text", value: "Hello" }]
-            }
-          ]
-        },
-        renderRevision: 1
+        text: "Hello world"
       }
     ]);
+  });
+
+  test("merges same-session snapshots even when current turn is idle", () => {
+    const current = session({
+      turnStatus: "idle",
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "Hello complete text",
+        blocks: [{ type: "text", id: "text-1", text: "Hello complete text" }],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "sessionSnapshot",
+      snapshot: session({
+        messages: [{
+          id: "assistant-1",
+          role: "assistant",
+          text: "Hello",
+          blocks: [{ type: "text", id: "text-1", text: "Hello" }],
+          createdAt: "2026-06-05T00:00:00.000Z"
+        }]
+      })
+    });
+
+    expect(next.messages[0]?.text).toBe("Hello complete text");
+    expect(next.messages[0]?.blocks?.[0]).toEqual({
+      type: "text",
+      id: "text-1",
+      text: "Hello complete text"
+    });
+  });
+
+  test("replaces committed messages in place", () => {
+    const current = session({
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "first",
+          blocks: [{ type: "text", id: "text-1", text: "first" }],
+          createdAt: "2026-06-05T00:00:00.000Z"
+        },
+        {
+          id: "assistant-2",
+          role: "assistant",
+          text: "second",
+          blocks: [{ type: "text", id: "text-2", text: "second" }],
+          createdAt: "2026-06-05T00:00:01.000Z"
+        }
+      ]
+    });
+
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "messageCommitted",
+      sessionId: "session-1",
+      message: {
+        id: "assistant-1",
+        role: "assistant",
+        text: "first final",
+        blocks: [{ type: "text", id: "text-1", text: "first final" }],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }
+    });
+
+    expect(next.messages.map((message) => message.id)).toEqual([
+      "assistant-1",
+      "assistant-2"
+    ]);
+    expect(next.messages[0]?.text).toBe("first final");
   });
 
   test("adds a tool block once while upserting tool activity", () => {
@@ -135,7 +189,6 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     const updated = applyAgentRuntimeEventToSnapshot(current, {
       kind: "toolStarted",
       sessionId: "session-1",
-      turnId: "turn-1",
       tool: {
         id: "tool-stream-1",
         name: "tool_fs_run",
@@ -260,7 +313,7 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
 
     expect(running.turnStatus).toBe("running");
     expect(running.activeTurnId).toBe("turn-1");
-    expect(completed.turnStatus).toBe("finished");
+    expect(completed.turnStatus).toBe("idle");
     expect(completed.activeTurnId).toBeNull();
     expect(completed.follow.running).toBe(false);
   });

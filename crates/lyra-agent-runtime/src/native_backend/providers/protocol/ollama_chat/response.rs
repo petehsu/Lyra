@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall},
+    native_backend::provider::{ModelReply, ModelToolCall, TurnStopSignal},
 };
 
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
@@ -34,7 +34,7 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: Vec::new(),
-        stop_signal: Default::default(),
+        stop_signal: TurnStopSignal::from_raw(body.get("done_reason").and_then(Value::as_str)),
     })
 }
 
@@ -108,5 +108,23 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+    }
+
+    #[test]
+    fn maps_done_reason_length_to_max_tokens() {
+        let reply = parse_response_body(
+            &json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "partial"
+                },
+                "done": true,
+                "done_reason": "length"
+            }),
+            &[],
+        )
+        .expect("reply");
+
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
     }
 }

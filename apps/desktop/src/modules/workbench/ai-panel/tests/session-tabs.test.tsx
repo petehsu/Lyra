@@ -219,7 +219,7 @@ describe("AI panel session tabs", () => {
     expect(result.current.activeTabId).toBe(draft?.tabId);
   });
 
-  test("updates background tab running and finished summaries from runtime events", async () => {
+  test("updates background tab running and idle summaries from runtime events", async () => {
     writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
       version: 1,
       tabs: [
@@ -229,7 +229,7 @@ describe("AI panel session tabs", () => {
       activeSessionId: "session-a"
     }));
     const { api, emit, readSession } = createDesktopApi({
-      "session-b": makeSnapshot("session-b", "Beta finished", "finished", {
+      "session-b": makeSnapshot("session-b", "Beta finished", "idle", {
         updatedAt: "2026-05-13T00:02:00.000Z"
       })
     });
@@ -262,7 +262,7 @@ describe("AI panel session tabs", () => {
       expect(result.current.tabs.find((tab) => tab.sessionId === "session-b"))
         .toMatchObject({
           title: "Beta finished",
-          lastKnownStatus: "finished",
+          lastKnownStatus: "idle",
           updatedAt: "2026-05-13T00:02:00.000Z"
         });
     });

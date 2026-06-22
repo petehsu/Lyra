@@ -609,9 +609,9 @@ const normalizeAddress = (value: unknown): string | null => {
   if (next === "about:blank") {
     return "about:blank";
   }
-  // Automatically prepend "http://" if a protocol/scheme is missing
+  // Keep this default scheme in sync with renderer workspace tab normalization.
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(next)) {
-    next = "http://" + next;
+    next = "https://" + next;
   }
   try {
     const parsed = new URL(next);

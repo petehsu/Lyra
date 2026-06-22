@@ -1,3 +1,4 @@
+@import "katex/dist/katex.min.css";
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
@@ -246,6 +247,73 @@ html[data-lyra-host="lyra"] .lyra-docs-standalone-controls {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.86rem;
   line-height: 1.5;
+}
+
+.lyra-docs-rich-document .lyra-agents-md-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-fd-muted) 70%, transparent);
+}
+
+.lyra-docs-rich-document .lyra-agents-md-code-block {
+  overflow: auto;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-fd-background) 82%, #000 18%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.lyra-docs-rich-document .lyra-agents-md-table-wrap,
+.lyra-docs-rich-document .lyra-markdown-mermaid {
+  overflow: auto;
+}
+
+.lyra-docs-rich-document .lyra-agents-md-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lyra-docs-rich-document .lyra-agents-md-table th,
+.lyra-docs-rich-document .lyra-agents-md-table td {
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 90%, transparent);
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+}
+
+.lyra-docs-rich-document .lyra-markdown-mermaid svg {
+  display: block;
+  min-width: 520px;
+  max-width: none;
+  height: auto;
+  margin: 0 auto;
+}
+
+.lyra-docs-rich-document .lyra-markdown-mermaid {
+  max-height: min(72vh, 720px);
+  margin: 0.9rem 0;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--color-fd-border) 80%, transparent);
+  border-radius: 10px;
+  background: var(--color-fd-card);
+  color: var(--color-fd-foreground);
+}
+
+.lyra-docs-rich-document .lyra-markdown-mermaid-rendered .lyra-markdown-mermaid-source {
+  display: none;
+}
+
+.lyra-docs-rich-document .lyra-markdown-mermaid-error .lyra-markdown-mermaid-source {
+  display: block;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, #dc2626 32%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #dc2626 8%, var(--color-fd-card) 92%);
+  color: #dc2626;
+  white-space: pre-wrap;
 }
 
 .lyra-docs-hl-comment { color: #6a9955; }

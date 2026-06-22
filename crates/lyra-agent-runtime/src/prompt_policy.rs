@@ -371,6 +371,16 @@ fn render_prompt_sections(
             ),
         },
         PromptSectionCandidate {
+            id: "P1.interactionContract",
+            layer: PromptLayer::P1,
+            mode_policy: PromptSectionModePolicy::Always,
+            include_full: true,
+            include_lean: true,
+            stable: true,
+            scene_module: None,
+            text: render_prompt_template("interaction_contract.md.j2", json!({})),
+        },
+        PromptSectionCandidate {
             id: "P1.compactContract",
             layer: PromptLayer::P1,
             mode_policy: PromptSectionModePolicy::Always,
@@ -831,6 +841,7 @@ mod tests {
         assert!(report.scene_modules.contains(&"computer".to_string()));
         assert!(!report.missed_module_recovery.enabled);
         assert!(report.section_hashes.contains_key("P0.kernel"));
+        assert!(report.section_hashes.contains_key("P1.interactionContract"));
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
         assert!(prompt.contains("U r Lyra"));
@@ -842,6 +853,9 @@ mod tests {
         assert!(prompt.contains("Member petehsu"));
         assert!(prompt.contains("nickname only"));
         assert!(prompt.contains("Members msg U on company net"));
+        assert!(prompt.contains("Interaction contract"));
+        assert!(prompt.contains("Plain assistant questions r final/non-blocking text"));
+        assert!(prompt.contains("lyra_clarification_ask shows panel"));
         assert!(prompt.contains("Compact operating contract"));
         assert!(prompt.contains("company computer w discoverable caps"));
         assert!(prompt.contains("Full stable contract"));
@@ -968,6 +982,8 @@ mod tests {
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
         assert!(report.prompt.contains("Compact operating contract"));
+        assert!(report.prompt.contains("Interaction contract"));
+        assert!(report.prompt.contains("lyra_clarification_ask"));
         assert!(report.prompt.contains("Current Lyra runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
         assert!(!report.prompt.contains("Full stable contract"));

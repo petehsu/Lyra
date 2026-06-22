@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::ModelReply,
+        provider::{ModelReply, TurnStopSignal},
         turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
     },
 };
@@ -26,6 +26,7 @@ use super::super::openai_common::{
 struct OllamaStreamState {
     content: String,
     tool_calls: HashMap<usize, StreamingToolCallAccumulator>,
+    stop_signal: TurnStopSignal,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -91,7 +92,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: Vec::new(),
-        stop_signal: Default::default(),
+        stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
@@ -171,6 +172,10 @@ fn map_stream_chunk(
             &state.tool_calls,
         );
     }
+    let signal = TurnStopSignal::from_raw(value.get("done_reason").and_then(Value::as_str));
+    if signal != TurnStopSignal::Unknown {
+        state.stop_signal = signal;
+    }
     Ok(())
 }
 
@@ -206,5 +211,27 @@ mod tests {
             reply.tool_calls[0].arguments["path"],
             "/tools/workbench/list_tabs"
         );
+    }
+
+    #[test]
+    fn maps_streaming_done_reason_length_to_max_tokens() {
+        let stream = [
+            r#"{"message":{"role":"assistant","content":"partial"},"done":false}"#,
+            r#"{"message":{"role":"assistant","content":""},"done":true,"done_reason":"length"}"#,
+        ]
+        .join("\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &Arc::new(AtomicBool::new(false)),
+            &[],
+            false,
+        )
+        .expect("reply");
+
+        assert_eq!(reply.content.as_deref(), Some("partial"));
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
     }
 }

@@ -229,14 +229,6 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
-      LYRA_CHANNELS.agentTurnRetry,
-      (_event, payload) =>
-        requestRuntime<AgentTurnSendResponse>(
-          "agent.turn.retry",
-          payload as AgentTurnSendRequest
-        )
-    ],
-    [
       LYRA_CHANNELS.agentMemorySnapshot,
       (_event, payload) =>
         requestRuntime<AgentMemorySnapshot>(

@@ -4,19 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "wasm:build": "tsx ../../scripts/wasm/build-render-wasm.ts",
-    "dev": "npm run wasm:build && next dev -p 5174",
-    "build": "npm run wasm:build && next build",
+    "dev": "next dev -p 5174",
+    "build": "next build",
     "start": "next start -p 5174",
     "preview": "next start -p 5174",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@lyra/markdown-render": "file:../../packages/markdown-render",
     "fumadocs-core": "16.7.7",
     "fumadocs-mdx": "14.2.11",
     "fumadocs-ui": "16.7.7",
+    "katex": "^0.16.45",
     "lucide-react": "^0.469.0",
+    "mermaid": "^11.15.0",
     "next": "16.2.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

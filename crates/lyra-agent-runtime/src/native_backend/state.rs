@@ -47,15 +47,9 @@ impl NativeRuntimeState {
             };
 
         let mut sessions = HashMap::new();
-        let mut render_enriched_sessions = false;
         if !reset_tool_sessions {
             for session_id in list_session_ids(&root).unwrap_or_default() {
                 if let Ok(Some(mut session)) = load_session(&root, &session_id) {
-                    if super::message_render::enrich_session_messages_render(&mut session.snapshot)
-                    {
-                        session.dirty = true;
-                        render_enriched_sessions = true;
-                    }
                     if resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty {
                         let _ = save_session(&root, &session);
                         session.dirty = false;
@@ -120,7 +114,7 @@ impl NativeRuntimeState {
             host_dispatcher: None,
         };
         let pruned_pending = loaded.prune_non_live_pending();
-        if pruned_pending || reset_tool_sessions || render_enriched_sessions {
+        if pruned_pending || reset_tool_sessions {
             let _ = loaded.save_state();
         }
         loaded

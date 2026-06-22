@@ -136,27 +136,10 @@ pub(crate) fn validate_thinking_replay(
     if !history_has_tool_calls {
         return Ok(());
     }
-    for message in messages {
-        if message.get("role").and_then(Value::as_str) != Some("assistant") {
-            continue;
-        }
-        let has_tool_calls = message
-            .get("tool_calls")
-            .and_then(Value::as_array)
-            .is_some_and(|tool_calls| !tool_calls.is_empty());
-        if !has_tool_calls {
-            continue;
-        }
-        let has_reasoning = message
-            .get("reasoning_content")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty());
-        if !has_reasoning {
-            return Err(AgentRuntimeError::Core(
-                "MiMo deep thinking requires reasoning_content on every historical assistant message with tool_calls; provider replay chain is incomplete".to_string(),
-            ));
-        }
-    }
+    // Older transcript entries and tool-failure recovery paths can lack
+    // provider-specific reasoning replay fields. Let the request continue; the
+    // provider response, if any, will be surfaced as a normal assistant error
+    // message instead of collapsing the whole turn state machine.
     Ok(())
 }
 
@@ -489,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_thinking_replay_requires_reasoning_on_tool_call_assistants() {
+    fn validate_thinking_replay_allows_missing_reasoning_on_tool_call_assistants() {
         let messages = vec![
             json!({
                 "role": "assistant",
@@ -503,13 +486,8 @@ mod tests {
             json!({ "role": "tool", "tool_call_id": "call-tabs", "content": "ok" }),
         ];
         let tools = vec![json!({ "type": "function", "function": { "name": "tool_fs_run" } })];
-        let error = validate_thinking_replay(&messages, "mimo-v2.5-pro", &tools)
-            .expect_err("missing reasoning should fail");
-        assert!(
-            error.to_string().contains(
-                "reasoning_content on every historical assistant message with tool_calls"
-            )
-        );
+        validate_thinking_replay(&messages, "mimo-v2.5-pro", &tools)
+            .expect("missing reasoning should be tolerated");
     }
 
     #[test]

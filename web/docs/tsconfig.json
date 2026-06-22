@@ -15,6 +15,7 @@
     "jsx": "react-jsx",
     "incremental": true,
     "paths": {
+      "@lyra/markdown-render": ["../../packages/markdown-render/src/index.ts"],
       "@/*": ["./*"],
       "collections/*": ["./.source/*"]
     },

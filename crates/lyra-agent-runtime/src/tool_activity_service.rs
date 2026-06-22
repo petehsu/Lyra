@@ -1888,7 +1888,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 None,
             ),
             capability(
-                "lyra-render",
+                "lyra-surface",
                 "render_surface",
                 "Create or update an inline Lyra Render Surface inside the AI timeline. Use this for temporary mini apps, dashboards, diagrams, interactive HTML/SVG, markdown reports, JSON inspectors, and tables without writing local files or opening an external browser.",
                 "state",

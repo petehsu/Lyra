@@ -2,8 +2,6 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub use lyra_render_core::render_agent_markdown;
-
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
@@ -100,6 +98,18 @@ pub fn render_agent_response_block(content: &str) -> String {
     format!("{DIM}╭─ assistant{RESET}\n{body}{DIM}╰─{RESET}\n")
 }
 
+pub fn render_agent_markdown(content: &str) -> String {
+    let mut rendered = String::new();
+    for line in content.lines() {
+        rendered.push_str(line);
+        rendered.push('\n');
+    }
+    if !content.ends_with('\n') && content.is_empty() {
+        rendered.push('\n');
+    }
+    rendered
+}
+
 pub fn render_control_menu_block(follow_enabled: bool) -> String {
     format!(
         "{DIM}╭─ controls\n│ /follow  {}\n╰─{RESET}\n",
@@ -193,25 +203,16 @@ mod tests {
     }
 
     #[test]
-    fn markdown_rendering_adds_terminal_structure() {
+    fn markdown_rendering_preserves_raw_markdown() {
         let rendered = render_agent_markdown(
             "# Title\n\n- one\n- `two`\n\n```sh\necho ok\n```\n\n[site](https://example.com)",
         );
         let plain = strip_ansi(&rendered);
         assert!(plain.contains("# Title"));
-        assert!(plain.contains("• one"));
+        assert!(plain.contains("- one"));
         assert!(plain.contains("`two`"));
-        assert!(plain.contains("╭─ sh"));
-        assert!(plain.contains("│ echo ok"));
-        assert!(plain.contains("site <https://example.com>"));
-    }
-
-    #[test]
-    fn markdown_rendering_repairs_unclosed_code_fence() {
-        let rendered = render_agent_markdown("```rust\nlet x = 1;");
-        let plain = strip_ansi(&rendered);
-        assert!(plain.contains("╭─ rust"));
-        assert!(plain.contains("│ let x = 1;"));
+        assert!(plain.contains("```sh"));
+        assert!(plain.contains("[site](https://example.com)"));
     }
 
     #[test]
@@ -227,7 +228,7 @@ mod tests {
         let rendered = render_agent_response_block("hello **world**");
         let plain = strip_ansi(&rendered);
         assert!(plain.starts_with("╭─ assistant\n"));
-        assert!(plain.contains("hello world"));
+        assert!(plain.contains("hello **world**"));
         assert!(plain.ends_with("╰─\n"));
     }
 

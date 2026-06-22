@@ -29,7 +29,7 @@ Anti-patterns:
 
 ## Rich document rendering
 
-Docs can render markdown through the same Rust `lyra-render-core` pipeline used by the desktop AI panel. The web build loads `lyra-render-wasm` in the browser for RaTeX math and merman diagrams. Tree-sitter highlighting remains native-only until the browser runtime can link the tree-sitter C runtime for `wasm32-unknown-unknown`.
+Docs and the desktop AI panel render markdown through the shared TypeScript `@lyra/markdown-render` package. It wraps upstream `markdown-it`, renders KaTeX only for completed content, and lazy-loads Mermaid diagrams in the browser when they become visible.
 
 <RenderShowcase />
 
@@ -48,4 +48,3 @@ Current key ADRs:
 
 1. `ADR-0003`: Workbench shell composition and tab-evolution readiness.
 2. `ADR-0004`: File editor foundation (Rust + Monaco).
-

@@ -237,6 +237,7 @@ pub(crate) fn build_runtime_context(
         "software": software,
         "memory": memory,
         "tools": if capabilities.supports_tool_calling { model_tool_names(false) } else { Vec::new() },
+        "interactionContract": interaction_contract_runtime_context(),
         "toolFilesystem": tool_filesystem_runtime_context("general", None, dispatcher),
         "network": network_runtime_context(),
         "sensitiveValues": {
@@ -252,6 +253,16 @@ pub(crate) fn build_runtime_context(
             "supportsStreaming": capabilities.supports_streaming,
             "contextWindow": capabilities.context_window,
         },
+    })
+}
+
+pub(crate) fn interaction_contract_runtime_context() -> Value {
+    json!({
+        "blockingMemberInput": "structured_interaction_only",
+        "clarificationTool": LYRA_CLARIFICATION_ASK_TOOL,
+        "plainAssistantQuestions": "non_blocking_final_text",
+        "sameTurnResume": true,
+        "policy": "If member input is required to continue, call the structured clarification tool. If safe assumption works, state it and continue."
     })
 }
 
@@ -502,8 +513,8 @@ pub(crate) fn build_system_prompt_report(
 }
 
 pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
-    let mut tools = tools::tool_fs::model_provider_tools();
-    tools.push(clarification_ask_model_tool());
+    let mut tools = vec![clarification_ask_model_tool()];
+    tools.extend(tools::tool_fs::model_provider_tools());
     tools.push(session_read_message_model_tool());
     tools
 }
@@ -511,17 +522,17 @@ pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
 fn clarification_ask_model_tool() -> Value {
     function_tool(
         LYRA_CLARIFICATION_ASK_TOOL,
-        "Ask the member one concise structured clarification question through Lyra's decision panel when progress genuinely depends on their input. Prefer reasonable assumptions and continue when they are safe.",
+        "Structured blocking member question through Lyra's decision panel. Use only when progress genuinely needs member decision/input. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
         json!({
             "type": "object",
             "properties": {
                 "question": {
                     "type": "string",
-                    "description": "The concise question to show in the decision panel."
+                    "description": "Concise question shown in the blocking decision panel."
                 },
                 "options": {
                     "type": "array",
-                    "description": "Optional choices. Use 2-4 objects when there are clear mutually exclusive options; omit or leave empty for free-form answers.",
+                    "description": "Optional choices. Use 2-4 objects for clear mutually exclusive decisions; omit or leave empty for free-form answers.",
                     "items": {
                         "type": "object",
                         "properties": {

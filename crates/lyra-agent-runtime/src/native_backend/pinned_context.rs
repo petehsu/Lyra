@@ -11,13 +11,8 @@ pub(crate) struct PinnedItem {
     pub message_ids: Vec<String>,
 }
 
-const ACTIVE_RUNTIME_TURN_STATES: &[&str] = &[
-    "calling_model",
-    "awaiting_tools",
-    "running",
-    "interrupted",
-    "failed_recoverable",
-];
+const ACTIVE_RUNTIME_TURN_STATES: &[&str] =
+    &["calling_model", "awaiting_tools", "running", "interrupted"];
 
 pub(crate) fn collect_pinned_items(
     session: &NativeSession,

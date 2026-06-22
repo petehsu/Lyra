@@ -123,15 +123,6 @@ const ZH_MESSAGES = {
   "lyra-agents-message.rollbackErrorTitle": "无法撤销",
   "lyra-agents-message.rollbackClose": "关闭",
 
-  "lyra-agents-turnFailure.generic": "这轮对话没有完成，你可以重新发送消息。",
-  "lyra-agents-turnFailure.emptyResponse": "模型没有返回有效内容，请再试一次或换个模型。",
-  "lyra-agents-turnFailure.timeout": "模型响应超时，请稍后再试。",
-  "lyra-agents-turnFailure.providerAuth": "模型服务认证失败，请检查 API 配置。",
-  "lyra-agents-turnFailure.contextLength": "对话上下文过长，请新建会话或缩短历史消息后重试。",
-  "lyra-agents-turnFailure.cancelled": "这轮对话已取消。",
-  "lyra-agents-turnFailure.retry": "重试本轮",
-  "lyra-agents-turnFailure.browserBlocked":
-    "页面上传或权限窗口阻塞了浏览器自动化，请手动关闭后重试。",
   "lyra-agents-message.imageAttachment": "图片附件",
   "lyra-agents-message.workspaceScreenshot": "工作区截图",
   "lyra-agents-message.windowScreenshot": "窗口截图",
@@ -276,15 +267,6 @@ const EN_MESSAGES: Messages = {
   "lyra-agents-message.rollbackErrorTitle": "Cannot undo",
   "lyra-agents-message.rollbackClose": "Close",
 
-  "lyra-agents-turnFailure.generic": "This turn did not complete. You can send your message again.",
-  "lyra-agents-turnFailure.emptyResponse": "The model returned no usable response. Try again or switch models.",
-  "lyra-agents-turnFailure.timeout": "The model timed out. Try again in a moment.",
-  "lyra-agents-turnFailure.providerAuth": "Model provider authentication failed. Check your API configuration.",
-  "lyra-agents-turnFailure.contextLength": "The conversation context is too long. Start a new session or shorten history.",
-  "lyra-agents-turnFailure.cancelled": "This turn was cancelled.",
-  "lyra-agents-turnFailure.retry": "Retry this turn",
-  "lyra-agents-turnFailure.browserBlocked":
-    "An upload or permission dialog is blocking browser automation. Close it and try again.",
   "lyra-agents-message.imageAttachment": "Image attachment",
   "lyra-agents-message.workspaceScreenshot": "Workspace screenshot",
   "lyra-agents-message.windowScreenshot": "Window screenshot",

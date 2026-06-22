@@ -6,7 +6,6 @@ import {
   shouldSkipMonacoTreeSitterHighlight,
   supportsMonacoTreeSitterHighlight
 } from "../monaco-tree-sitter-languages";
-import { byteOffsetToCharOffset } from "../monaco-tree-sitter-spans";
 import {
   scopeToHighlightKind,
   scopeToInlineClassName
@@ -46,16 +45,5 @@ describe("monaco tree-sitter highlight helpers", () => {
     expect(scopeToHighlightKind("function_item")).toBe("function");
     expect(scopeToInlineClassName("type_identifier")).toBe("lyra-monaco-ts-type");
     expect(scopeToInlineClassName("source")).toBe("lyra-monaco-ts-default");
-  });
-
-  test("converts UTF-8 byte offsets to JavaScript character offsets", () => {
-    const source = "let café = 1;\n";
-    const bytesBeforeE = new TextEncoder().encode("let caf").length;
-
-    expect(byteOffsetToCharOffset(source, 0)).toBe(0);
-    expect(byteOffsetToCharOffset(source, bytesBeforeE)).toBe("let caf".length);
-    expect(byteOffsetToCharOffset(source, new TextEncoder().encode(source).length)).toBe(
-      source.length
-    );
   });
 });

@@ -6,7 +6,7 @@ const RenderShowcaseClient = dynamic(
   () => import("./render-showcase").then((module) => module.RenderShowcase),
   {
     ssr: false,
-    loading: () => <div className="lyra-docs-render-loading">Loading render pipeline…</div>
+    loading: () => <div className="lyra-docs-render-loading">Loading renderer…</div>
   }
 );
 

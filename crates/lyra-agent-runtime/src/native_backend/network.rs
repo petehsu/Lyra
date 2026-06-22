@@ -11,8 +11,23 @@ const PROXY_ENV_VARS: &[&str] = &[
 
 const NO_PROXY_ENV_VARS: &[&str] = &["NO_PROXY", "no_proxy"];
 
+const PROVIDER_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const PROVIDER_NON_STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
+
 pub(crate) fn http_client_builder(timeout: Duration) -> reqwest::blocking::ClientBuilder {
     reqwest::blocking::Client::builder().timeout(timeout)
+}
+
+pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking::ClientBuilder {
+    let builder = reqwest::blocking::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT);
+    if streaming {
+        // SSE/code-generation turns can legitimately run for minutes. Do not set
+        // reqwest's whole-request timeout here: it includes the full response body
+        // and cuts long streams at a fixed wall-clock boundary.
+        builder
+    } else {
+        builder.timeout(PROVIDER_NON_STREAMING_TIMEOUT)
+    }
 }
 
 pub(crate) fn network_runtime_context() -> Value {

@@ -2762,7 +2762,7 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("keeps failed turn details visible after the session snapshot refreshes", async () => {
+  test("renders turn errors inline after the session snapshot refreshes", async () => {
     const { api, emit, setReadSnapshot } = createDesktopApi();
     const runningSnapshot: AgentSessionSnapshot = {
       ...snapshot,
@@ -2778,9 +2778,20 @@ describe("AiPanelSurface", () => {
       activeTurnId: "turn-failed",
       follow: { running: true, activity: "Thinking" }
     };
-    const failedSnapshot: AgentSessionSnapshot = {
+    const errorMessage = "provider request timed out";
+    const finishedSnapshot: AgentSessionSnapshot = {
       ...runningSnapshot,
-      turnStatus: "failed",
+      messages: [
+        ...runningSnapshot.messages,
+        {
+          id: "assistant-error",
+          role: "assistant",
+          text: errorMessage,
+          metadata: { isApiError: true },
+          createdAt: "2026-05-13T00:00:02.000Z"
+        }
+      ],
+      turnStatus: "idle",
       activeTurnId: null,
       follow: { running: false, activity: null }
     };
@@ -2788,19 +2799,26 @@ describe("AiPanelSurface", () => {
     renderPanel(api);
 
     expect(await screen.findByText("What can you do?")).toBeInTheDocument();
-    setReadSnapshot(failedSnapshot);
+    setReadSnapshot(finishedSnapshot);
     act(() => {
       emit({
-        kind: "turnFailed",
+        kind: "messageCommitted",
+        sessionId: "session-1",
+        message: finishedSnapshot.messages[1]!
+      });
+      emit({
+        kind: "turnFinished",
         sessionId: "session-1",
         turnId: "turn-failed",
-        message: "provider request timed out"
+        status: "finished"
       });
     });
 
     expect(screen.queryByText("The turn failed: provider request timed out")).not.toBeInTheDocument();
-    expect(await screen.findByText("The model timed out. Try again in a moment."))
-      .toBeInTheDocument();
+    expect(screen.queryByText("This turn did not complete. You can send your message again."))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Retry this turn")).not.toBeInTheDocument();
+    expect(await screen.findByText(errorMessage)).toBeInTheDocument();
   });
 
   test("renders Lyra Agent tool transcript as tool UI instead of user result bubbles", async () => {
@@ -2833,7 +2851,7 @@ describe("AiPanelSurface", () => {
           finishedAt: "2026-05-13T00:00:02.500Z"
         }
       ],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     renderPanel(api);
 
@@ -2912,7 +2930,7 @@ describe("AiPanelSurface", () => {
           finishedAt: "2026-05-13T00:00:04.500Z"
         }
       ],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     renderPanel(api);
 
@@ -2974,7 +2992,7 @@ describe("AiPanelSurface", () => {
           finishedAt: "2026-05-13T00:00:02.500Z"
         }
       ],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     renderPanel(api);
 
@@ -3023,7 +3041,7 @@ describe("AiPanelSurface", () => {
           finishedAt: "2026-05-13T00:00:03.500Z"
         }
       ],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     renderPanel(api);
 
@@ -3113,7 +3131,7 @@ describe("AiPanelSurface", () => {
         text: "",
         createdAt: "2026-05-13T00:00:01.000Z"
       }],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     act(() => {
       emit({
@@ -3167,7 +3185,7 @@ describe("AiPanelSurface", () => {
         text: "Recovered final response",
         createdAt: "2026-05-13T00:00:01.000Z"
       }],
-      turnStatus: "finished"
+      turnStatus: "idle"
     });
     act(() => {
       emit({

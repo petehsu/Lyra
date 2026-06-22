@@ -1,15 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { renderMarkdown } from "@lyra/markdown-render";
 
 import type {
   RenderSurfaceColumn,
   RenderSurfaceRow,
   ToolDetails as ToolDetailsType
 } from "../../core/types";
-import { useLyraDocument } from "../rich-text/use-lyra-document";
-import {
-  buildRenderSurfaceIframeSrcDoc,
-  renderDocumentToHtml
-} from "./render-surface-html";
+import { buildRenderSurfaceIframeSrcDoc } from "./render-surface-html";
 
 type RenderSurfaceDetails = Extract<ToolDetailsType, { type: "render" }>;
 
@@ -91,54 +88,18 @@ function RenderSurfaceMarkdownPreview({
 }: {
   readonly details: RenderSurfaceDetails;
 }) {
-  const { document, error, loading } = useLyraDocument(details.content, true);
-  const [fallbackSrcDoc, setFallbackSrcDoc] = useState<string | null>(null);
-
   const srcDoc = useMemo(() => {
-    if (document !== null) {
-      return buildRenderSurfaceIframeSrcDoc(
-        "markdown",
-        renderDocumentToHtml(document),
-        {
-          theme: details.theme,
-          interactive: false,
-          title: details.title,
-          surfaceId: details.surfaceId
-        }
-      );
-    }
-    return fallbackSrcDoc;
-  }, [details.content, details.surfaceId, details.theme, details.title, document, fallbackSrcDoc]);
-
-  useEffect(() => {
-    if (document !== null || loading) {
-      return;
-    }
-    setFallbackSrcDoc(
-      buildRenderSurfaceIframeSrcDoc("markdown", details.content, {
+    const rendered = renderMarkdown(details.content, {
+      mode: "final",
+      theme: details.theme === "auto" ? "system" : details.theme
+    });
+    return buildRenderSurfaceIframeSrcDoc("markdown", rendered.html, {
         theme: details.theme,
         interactive: false,
         title: details.title,
         surfaceId: details.surfaceId
-      })
-    );
-  }, [details.content, details.surfaceId, details.theme, details.title, document, loading]);
-
-  if (loading && srcDoc === null) {
-    return (
-      <div className="lyra-agents-render-surface-preview lyra-agents-render-surface-loading">
-        Rendering surface…
-      </div>
-    );
-  }
-
-  if (srcDoc === null) {
-    return (
-      <div className="lyra-agents-render-surface-preview lyra-agents-render-surface-error">
-        {error ?? "Unable to render markdown surface."}
-      </div>
-    );
-  }
+    });
+  }, [details.content, details.surfaceId, details.theme, details.title]);
 
   return (
     <RenderSurfaceIframe

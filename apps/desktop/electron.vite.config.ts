@@ -5,10 +5,18 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 const projectRoot = __dirname;
 const DEFAULT_RENDERER_PORT = 5173;
+const reactAlias = {
+  react: resolve(projectRoot, "node_modules/react"),
+  "react-dom": resolve(projectRoot, "node_modules/react-dom"),
+  "react/jsx-runtime": resolve(projectRoot, "node_modules/react/jsx-runtime.js"),
+  "react/jsx-dev-runtime": resolve(projectRoot, "node_modules/react/jsx-dev-runtime.js")
+};
 const sharedAliases = {
+  ...reactAlias,
   "@renderer": resolve(projectRoot, "src/renderer"),
   "@workbench": resolve(projectRoot, "src/modules/workbench"),
   "@lyra/browser-automation": resolve(projectRoot, "../../services/browser-automation/src/index.ts"),
+  "@lyra/markdown-render": resolve(projectRoot, "../../packages/markdown-render/src/index.ts"),
   "@lyra/plugin-sdk": resolve(projectRoot, "../../packages/plugin-sdk/src/index.ts")
 };
 
@@ -21,7 +29,8 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
-      alias: sharedAliases
+      alias: sharedAliases,
+      dedupe: ["react", "react-dom"]
     },
     build: {
       sourcemap: true,
@@ -40,7 +49,8 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
-      alias: sharedAliases
+      alias: sharedAliases,
+      dedupe: ["react", "react-dom"]
     },
     build: {
       sourcemap: true,
@@ -71,7 +81,8 @@ export default defineConfig({
       }
     },
     resolve: {
-      alias: sharedAliases
+      alias: sharedAliases,
+      dedupe: ["react", "react-dom"]
     },
     build: {
       target: "esnext",

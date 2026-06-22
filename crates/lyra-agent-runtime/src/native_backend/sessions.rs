@@ -138,8 +138,6 @@ pub(crate) fn new_session(
         "follow": { "running": false, "activity": Value::Null },
         "sessionResilience": {
             "blockedBrowser": Value::Null,
-            "lastInterruptReason": Value::Null,
-            "consecutiveFailedRecoverable": 0,
             "updatedAt": Value::Null
         },
         "taskMilestones": [],

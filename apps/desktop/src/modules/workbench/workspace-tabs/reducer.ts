@@ -1,4 +1,5 @@
 import {
+  areNavigationAddressesEquivalent,
   resolveReplacementTab,
   toNonEmptyTrimmed,
   toSafeAddress
@@ -607,10 +608,18 @@ export const reduceWorkspaceTabsState = (
             nextFaviconUrl === undefined || nextFaviconUrl.length === 0
               ? undefined
               : nextFaviconUrl;
+          const nextDisplayAddress = areNavigationAddressesEquivalent(
+            tab.displayAddress,
+            nextAddress
+          )
+            ? tab.displayAddress
+            : nextAddress;
+          const inputDirty = tab.inputValue !== tab.displayAddress;
+          const nextInputValue = inputDirty ? tab.inputValue : nextDisplayAddress;
           if (
             tab.title === nextTitle &&
-            tab.displayAddress === nextAddress &&
-            tab.inputValue === nextAddress &&
+            tab.displayAddress === nextDisplayAddress &&
+            tab.inputValue === nextInputValue &&
             tab.faviconUrl === nextFaviconValue &&
             browserPageRestoreStateEquals(tab.browserRestoreState, nextRestoreState)
           ) {
@@ -620,8 +629,8 @@ export const reduceWorkspaceTabsState = (
           return {
             ...tab,
             title: nextTitle,
-            displayAddress: nextAddress,
-            inputValue: nextAddress,
+            displayAddress: nextDisplayAddress,
+            inputValue: nextInputValue,
             ...(nextFaviconValue === undefined
               ? {}
               : { faviconUrl: nextFaviconValue }),

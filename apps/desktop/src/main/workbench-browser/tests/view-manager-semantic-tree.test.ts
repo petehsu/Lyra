@@ -525,6 +525,37 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(translated);
   });
 
+  test("does not reload user link navigation when stale topology echoes the old address", async () => {
+    const initial = "https://example.com/start";
+    const navigated = "https://example.com/next";
+    const mainFrame = createFrame({
+      id: 1,
+      url: initial,
+      html: "<!doctype html><title>Start</title><main>Start</main>"
+    });
+
+    const { manager, webContents } = createManager(mainFrame);
+    await Promise.resolve();
+    webContents.loadURL.mockClear();
+
+    mainFrame.url = navigated;
+    mainFrame.origin = originFromUrl(navigated);
+    webContents.emit("did-navigate", {}, navigated);
+
+    manager.syncTopology({
+      activeTabId: "tab-1",
+      pages: [{
+        tabId: "tab-1",
+        address: initial,
+        titleHint: "Start",
+        isActive: true
+      }]
+    });
+
+    expect(webContents.loadURL).not.toHaveBeenCalled();
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(navigated);
+  });
+
   test("does not reload Cloudflare challenge token variants from topology sync", async () => {
     const tokenA =
       "https://www.dmit.io/clientarea.php?__cf_chl_rt_tk=first-token";

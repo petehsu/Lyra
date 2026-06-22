@@ -23,6 +23,10 @@ pub(crate) fn max_protocol_leak_retry() -> u8 {
 }
 
 pub(crate) fn strip_internal_protocol_markers(text: &str) -> String {
+    strip_internal_protocol_markers_preserve_whitespace(text)
+}
+
+fn strip_internal_protocol_markers_preserve_whitespace(text: &str) -> String {
     let mut output = strip_incomplete_trailing_internal_marker(text);
     for marker in internal_protocol_markers() {
         while let Some(start) = find_ascii_case_insensitive(&output, marker, 0) {
@@ -30,10 +34,16 @@ pub(crate) fn strip_internal_protocol_markers(text: &str) -> String {
                 .find(']')
                 .map(|offset| start + offset + 1)
                 .unwrap_or(output.len());
-            output.replace_range(start..end, "");
+            let replace_start = output[..start]
+                .chars()
+                .next_back()
+                .filter(|ch| matches!(ch, ' ' | '\t'))
+                .map(|ch| start - ch.len_utf8())
+                .unwrap_or(start);
+            output.replace_range(replace_start..end, "");
         }
     }
-    collapse_visible_whitespace(&output)
+    output
 }
 
 fn strip_incomplete_trailing_internal_marker(text: &str) -> String {
@@ -60,6 +70,11 @@ pub(crate) fn sanitize_visible_assistant_text(text: &str) -> Option<String> {
     let sanitized = strip_internal_protocol_markers(text);
     let trimmed = sanitized.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+pub(crate) fn sanitize_truncated_assistant_text(text: &str) -> Option<String> {
+    let sanitized = strip_internal_protocol_markers_preserve_whitespace(text);
+    (!sanitized.trim().is_empty()).then_some(sanitized)
 }
 
 pub(crate) fn contains_leaked_internal_protocol_markers(text: &str) -> bool {
@@ -102,40 +117,6 @@ pub(crate) const TOOL_OUTPUT_ECHO_CORRECTIVE_PROMPT: &str = "The previous assist
 pub(crate) const ACTION_TASK_WITHOUT_TOOLS_CORRECTIVE_PROMPT: &str = "The user anchored this request to a Workbench browser page via <lyra-page-cite> metadata, but no browser tool ran this turn. Emit the required structured browser tool_call now instead of claiming the page action is done.";
 
 pub(crate) const TURN_FAILURE_BROWSER_BLOCKED: &str = "lyra_turn_failure:browser_blocked";
-pub(crate) const TURN_FAILURE_EMPTY_RESPONSE: &str = "lyra_turn_failure:empty_response";
-pub(crate) const TURN_FAILURE_TIMEOUT: &str = "lyra_turn_failure:timeout";
-pub(crate) const TURN_FAILURE_CONTEXT_LENGTH: &str = "lyra_turn_failure:context_length";
-pub(crate) const TURN_FAILURE_PROVIDER_AUTH: &str = "lyra_turn_failure:provider_auth";
-pub(crate) const TURN_FAILURE_CANCELLED: &str = "lyra_turn_failure:cancelled";
-pub(crate) const TURN_FAILURE_GENERIC: &str = "lyra_turn_failure:generic";
-
-pub(crate) fn classify_turn_failure(message: &str) -> String {
-    if message.starts_with("lyra_turn_failure:") {
-        return message.to_string();
-    }
-    if super::activity::is_empty_model_reply_error(&AgentRuntimeError::Core(message.to_string())) {
-        return TURN_FAILURE_EMPTY_RESPONSE.to_string();
-    }
-    if super::activity::is_context_length_error(message) {
-        return TURN_FAILURE_CONTEXT_LENGTH.to_string();
-    }
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("timed out") || lower.contains("timeout") {
-        return TURN_FAILURE_TIMEOUT.to_string();
-    }
-    if lower.contains("cancelled") || lower.contains("canceled") {
-        return TURN_FAILURE_CANCELLED.to_string();
-    }
-    if lower.contains("unauthorized")
-        || lower.contains("api key")
-        || lower.contains("authentication")
-        || lower.contains(" 401")
-        || lower.contains(" 403")
-    {
-        return TURN_FAILURE_PROVIDER_AUTH.to_string();
-    }
-    TURN_FAILURE_GENERIC.to_string()
-}
 
 pub(crate) fn no_tools_used_corrective_prompt(tools_available: bool) -> &'static str {
     if tools_available {
@@ -156,7 +137,64 @@ pub(crate) fn should_retry_missing_tool_call(
     let Some(content) = content.filter(|text| !text.trim().is_empty()) else {
         return false;
     };
-    contains_leaked_internal_protocol_markers(content)
+    contains_leaked_internal_protocol_markers(content) || looks_like_tool_action_preamble(content)
+}
+
+fn looks_like_tool_action_preamble(content: &str) -> bool {
+    let compact = collapse_visible_whitespace(content).to_ascii_lowercase();
+    if compact.chars().count() > 240 || compact.contains('\n') || compact.contains("```") {
+        return false;
+    }
+    const ENGLISH_STARTS: &[&str] = &[
+        "i'll ",
+        "i will ",
+        "i’m going to ",
+        "i'm going to ",
+        "let me ",
+    ];
+    const ENGLISH_VERBS: &[&str] = &[
+        "search", "look up", "check", "open", "read", "inspect", "run", "list", "browse", "fetch",
+        "click", "execute",
+    ];
+    if ENGLISH_STARTS
+        .iter()
+        .any(|prefix| compact.starts_with(prefix))
+        && ENGLISH_VERBS.iter().any(|verb| compact.contains(verb))
+    {
+        return true;
+    }
+
+    const CHINESE_STARTS: &[&str] = &[
+        "让我",
+        "我来",
+        "我去",
+        "我会",
+        "我将",
+        "我先",
+        "我帮你",
+        "我给你",
+    ];
+    const CHINESE_VERBS: &[&str] = &[
+        "搜索",
+        "查找",
+        "查询",
+        "检索",
+        "打开",
+        "读取",
+        "查看",
+        "检查",
+        "运行",
+        "执行",
+        "浏览",
+        "点击",
+        "列出",
+        "找一下",
+        "看一下",
+    ];
+    CHINESE_STARTS
+        .iter()
+        .any(|prefix| compact.starts_with(prefix))
+        && CHINESE_VERBS.iter().any(|verb| compact.contains(verb))
 }
 
 pub(crate) fn tool_activity_output_summary(output: &Value, max_chars: usize) -> String {
@@ -411,11 +449,20 @@ mod tests {
     }
 
     #[test]
-    fn preserves_markdown_newlines_while_collapsing_inline_whitespace() {
-        let markdown = "# 标题\n\n这是一段   带多余空格的文本。\n\n## 列表\n\n- 项 1\n- 项 2";
+    fn sanitize_truncated_assistant_text_preserves_segment_edges() {
+        assert_eq!(
+            sanitize_truncated_assistant_text(" Hello ").as_deref(),
+            Some(" Hello ")
+        );
+    }
+
+    #[test]
+    fn preserves_markdown_whitespace() {
+        let markdown =
+            "# 标题\n\n这是一段   带多余空格的文本。\n\n```python\n    return value\n```\n";
         assert_eq!(
             sanitize_visible_assistant_text(markdown).as_deref(),
-            Some("# 标题\n\n这是一段 带多余空格的文本。\n\n## 列表\n\n- 项 1\n- 项 2")
+            Some("# 标题\n\n这是一段   带多余空格的文本。\n\n```python\n    return value\n```")
         );
     }
 
@@ -435,8 +482,13 @@ mod tests {
             &[json!({"type": "function"})],
             true,
         ));
-        assert!(!should_retry_missing_tool_call(
+        assert!(should_retry_missing_tool_call(
             Some("让我搜索一下黑盒安全测试相关的开源项目。"),
+            &[json!({"type": "function"})],
+            true,
+        ));
+        assert!(!should_retry_missing_tool_call(
+            Some("你可以搜索一下黑盒安全测试相关的开源项目。"),
             &[json!({"type": "function"})],
             true,
         ));
@@ -480,26 +532,6 @@ mod tests {
         assert!(should_reject_browser_anchor_without_browser_tools(
             &messages, &tools, 0, true,
         ));
-    }
-
-    #[test]
-    fn classify_turn_failure_maps_runtime_errors_to_structured_codes() {
-        assert_eq!(
-            classify_turn_failure("provider returned no assistant text or tool call"),
-            TURN_FAILURE_EMPTY_RESPONSE
-        );
-        assert_eq!(
-            classify_turn_failure("context length exceeds maximum window"),
-            TURN_FAILURE_CONTEXT_LENGTH
-        );
-        assert_eq!(
-            classify_turn_failure(TURN_FAILURE_BROWSER_BLOCKED),
-            TURN_FAILURE_BROWSER_BLOCKED
-        );
-        assert_eq!(
-            classify_turn_failure("provider request timed out"),
-            TURN_FAILURE_TIMEOUT
-        );
     }
 
     #[test]

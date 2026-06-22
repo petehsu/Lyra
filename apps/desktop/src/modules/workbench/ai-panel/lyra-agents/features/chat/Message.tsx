@@ -6,7 +6,7 @@ import {
   type AgentRuntimeTurnState
 } from "../../../../../../shared/agent";
 import { writeClipboardText } from "../../../../../../shared/clipboard";
-import type { ChatMessage } from "../../core/types";
+import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
@@ -77,28 +77,396 @@ const usesServiceStatusDots = (activity: string | null | undefined): boolean =>
   activity === AGENT_FOLLOW_ACTIVITY_CONNECTING ||
   normalizeFollowActivity(activity) === "retrying_provider";
 
-// Equality check for the memoized agent message body. ChatMessage is a pure,
-// JSON-serializable DTO produced by deterministic view-model code (stable key
-// order), so a structural comparison via JSON.stringify is a sound content check.
-// This is purely an optimization: a false "not equal" only causes a normal
-// re-render, never a stale UI, because the body is a pure function of its props.
 type AgentMessageProps = {
   message: ChatMessage;
   showActivityIndicator: boolean;
   activityIndicatorMessage: ChatMessage | null;
+  isTurnRunning: boolean;
+  followActivity: string | null | undefined;
   highlightCitationTarget?: boolean;
   onContextMenu?: (event: MouseEvent<HTMLElement>, message: ChatMessage) => void;
   onCiteMessage?: () => void;
 };
 
-const agentMessagePropsAreEqual = (prev: AgentMessageProps, next: AgentMessageProps): boolean => {
-  if (prev.showActivityIndicator !== next.showActivityIndicator) return false;
-  if (prev.activityIndicatorMessage?.id !== next.activityIndicatorMessage?.id) return false;
-  if (JSON.stringify(prev.activityIndicatorMessage) !== JSON.stringify(next.activityIndicatorMessage)) {
+const rollbackEqual = (
+  left: ChatMessage["rollback"] | undefined,
+  right: ChatMessage["rollback"] | undefined
+): boolean => {
+  if (left === right) return true;
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return left === right;
+  }
+  return left.available === right.available &&
+    left.anchorId === right.anchorId &&
+    left.checkpointAt === right.checkpointAt &&
+    left.unavailableReason === right.unavailableReason;
+};
+
+const diffLinesEqual = (
+  left: readonly { kind: string; text: string }[],
+  right: readonly { kind: string; text: string }[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a?.kind !== b?.kind || a?.text !== b?.text) return false;
+  }
+  return true;
+};
+
+const diffHunksEqual = (
+  left: readonly { startLine: number; lines: readonly { kind: string; text: string }[] }[],
+  right: readonly { startLine: number; lines: readonly { kind: string; text: string }[] }[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a?.startLine !== b?.startLine) return false;
+    if (!diffLinesEqual(a?.lines ?? [], b?.lines ?? [])) return false;
+  }
+  return true;
+};
+
+const searchResultsEqual = (
+  left: readonly { file: string; line: number; text: string }[],
+  right: readonly { file: string; line: number; text: string }[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a?.file !== b?.file || a?.line !== b?.line || a?.text !== b?.text) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const webResultsEqual = (
+  left: readonly { title: string; url: string; snippet?: string }[] | undefined,
+  right: readonly { title: string; url: string; snippet?: string }[] | undefined
+): boolean => {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return left === right;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a?.title !== b?.title || a?.url !== b?.url || a?.snippet !== b?.snippet) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const stringArraysEqual = (
+  left: readonly string[],
+  right: readonly string[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+};
+
+const workbenchTabsEqual = (
+  left: readonly { title: string; tabId: string; kind: string; flags: readonly string[]; url?: string; excerpt?: string }[] | undefined,
+  right: readonly { title: string; tabId: string; kind: string; flags: readonly string[]; url?: string; excerpt?: string }[] | undefined
+): boolean => {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return left === right;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (
+      a?.title !== b?.title ||
+      a?.tabId !== b?.tabId ||
+      a?.kind !== b?.kind ||
+      a?.url !== b?.url ||
+      a?.excerpt !== b?.excerpt ||
+      a === undefined ||
+      b === undefined ||
+      !stringArraysEqual(a.flags, b.flags)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const unknownArrayEqual = (
+  left: readonly unknown[] | undefined,
+  right: readonly unknown[] | undefined
+): boolean => {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return left === right;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (!unknownValueEqual(left[index], right[index])) return false;
+  }
+  return true;
+};
+
+const unknownRecordEqual = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): boolean => {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+    if (!unknownValueEqual(left[key], right[key])) return false;
+  }
+  return true;
+};
+
+function unknownValueEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null) return left === right;
+  if (typeof left !== typeof right) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) &&
+      Array.isArray(right) &&
+      unknownArrayEqual(left, right);
+  }
+  if (typeof left === "object" && typeof right === "object") {
+    return unknownRecordEqual(
+      left as Record<string, unknown>,
+      right as Record<string, unknown>
+    );
+  }
+  return false;
+}
+
+const taskItemsEqual = (
+  left: readonly { title: string; status: string }[],
+  right: readonly { title: string; status: string }[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a?.title !== b?.title || a?.status !== b?.status) return false;
+  }
+  return true;
+};
+
+const toolDetailsEqual = (left: ToolDetails | undefined, right: ToolDetails | undefined): boolean => {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return left === right;
+  if (left.type !== right.type) return false;
+
+  switch (left.type) {
+    case "edit":
+      return right.type === "edit" &&
+        left.file === right.file &&
+        left.additions === right.additions &&
+        left.deletions === right.deletions &&
+        diffHunksEqual(left.hunks, right.hunks);
+    case "read":
+      return right.type === "read" &&
+        left.file === right.file &&
+        left.range === right.range &&
+        left.preview === right.preview;
+    case "search":
+      return right.type === "search" &&
+        left.query === right.query &&
+        searchResultsEqual(left.results, right.results);
+    case "shell":
+      return right.type === "shell" &&
+        left.command === right.command &&
+        left.output === right.output &&
+        left.exitCode === right.exitCode;
+    case "terminal":
+      return right.type === "terminal" &&
+        left.action === right.action &&
+        left.target === right.target &&
+        left.output === right.output &&
+        left.cursor === right.cursor &&
+        left.sessionId === right.sessionId &&
+        left.terminalTabId === right.terminalTabId &&
+        left.paneId === right.paneId &&
+        left.command === right.command &&
+        left.wrote === right.wrote &&
+        left.reason === right.reason &&
+        left.running === right.running &&
+        left.exitCode === right.exitCode &&
+        left.truncated === right.truncated;
+    case "web":
+      return right.type === "web" &&
+        left.url === right.url &&
+        left.summary === right.summary &&
+        left.screenshot === right.screenshot &&
+        left.query === right.query &&
+        left.title === right.title &&
+        left.fetchedBytes === right.fetchedBytes &&
+        webResultsEqual(left.results, right.results);
+    case "workbench":
+      return right.type === "workbench" &&
+        left.action === right.action &&
+        left.label === right.label &&
+        left.excerpt === right.excerpt &&
+        left.text === right.text &&
+        workbenchTabsEqual(left.tabs, right.tabs) &&
+        workbenchTabsEqual(left.tab === undefined ? undefined : [left.tab], right.tab === undefined ? undefined : [right.tab]);
+    case "lumen":
+      return right.type === "lumen" &&
+        left.action === right.action &&
+        left.targetMode === right.targetMode &&
+        left.text === right.text &&
+        left.screenshot === right.screenshot &&
+        left.peek.excerpt === right.peek.excerpt &&
+        stringArraysEqual(left.peek.chips, right.peek.chips) &&
+        unknownValueEqual(left.peek.thumbnail, right.peek.thumbnail) &&
+        unknownArrayEqual(left.targets, right.targets);
+    case "software":
+      return right.type === "software" &&
+        left.action === right.action &&
+        left.softwareId === right.softwareId &&
+        left.actionId === right.actionId &&
+        left.text === right.text &&
+        unknownArrayEqual(left.targets, right.targets);
+    case "render":
+      return right.type === "render" &&
+        left.surfaceId === right.surfaceId &&
+        left.title === right.title &&
+        left.format === right.format &&
+        left.operation === right.operation &&
+        left.content === right.content &&
+        left.summary === right.summary &&
+        left.height === right.height &&
+        left.interactive === right.interactive &&
+        left.theme === right.theme &&
+        unknownValueEqual(left.data, right.data) &&
+        unknownArrayEqual(left.columns, right.columns) &&
+        unknownArrayEqual(left.rows, right.rows) &&
+        unknownValueEqual(left.security, right.security);
+    case "task":
+      return right.type === "task" && taskItemsEqual(left.tasks, right.tasks);
+    case "text":
+      return right.type === "text" && left.body === right.body;
+    case "ask":
+      return right.type === "ask" &&
+        left.question === right.question &&
+        left.answer === right.answer;
+    default:
+      return false;
+  }
+};
+
+const toolCallsEqual = (
+  left: readonly ToolCall[],
+  right: readonly ToolCall[]
+): boolean => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (
+      a?.id !== b?.id ||
+      a?.kind !== b?.kind ||
+      a?.title !== b?.title ||
+      a?.status !== b?.status ||
+      a?.traceId !== b?.traceId ||
+      a?.failureReason !== b?.failureReason ||
+      !toolDetailsEqual(a?.details, b?.details) ||
+      !unknownArrayEqual(a?.trace, b?.trace) ||
+      !unknownArrayEqual(a?.artifactRefs, b?.artifactRefs) ||
+      !unknownArrayEqual(a?.artifactTargets, b?.artifactTargets) ||
+      !unknownArrayEqual(a?.artifactPreviews, b?.artifactPreviews) ||
+      !unknownArrayEqual(a?.changes, b?.changes)
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const toolGroupEqual = (left: ToolGroup, right: ToolGroup): boolean => {
+  if (left === right) return true;
+  return left.id === right.id &&
+    left.status === right.status &&
+    left.label === right.label &&
+    left.hint === right.hint &&
+    left.currentCallId === right.currentCallId &&
+    toolCallsEqual(left.calls, right.calls);
+};
+
+const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => {
+  if (left === right) return true;
+  if (left.type !== right.type || left.id !== right.id) return false;
+  switch (left.type) {
+    case "text":
+      return right.type === "text" &&
+        left.body === right.body;
+    case "image":
+      return right.type === "image" &&
+        left.image.id === right.image.id &&
+        left.image.mediaType === right.image.mediaType &&
+        left.image.data === right.image.data &&
+        left.image.label === right.image.label &&
+        left.image.source === right.image.source &&
+        left.image.width === right.image.width &&
+        left.image.height === right.image.height &&
+        left.image.workspaceTabId === right.image.workspaceTabId &&
+        left.image.workspaceTabTitle === right.image.workspaceTabTitle &&
+        left.image.workspaceTabPageKind === right.image.workspaceTabPageKind &&
+        left.image.workspaceTabAddress === right.image.workspaceTabAddress;
+    case "tools":
+      return right.type === "tools" && toolGroupEqual(left.group, right.group);
+    default:
+      return false;
+  }
+};
+
+const chatMessageEqual = (
+  left: ChatMessage | null,
+  right: ChatMessage | null
+): boolean => {
+  if (left === right) return true;
+  if (left === null || right === null) return left === right;
+  if (
+    left.id !== right.id ||
+    left.author !== right.author ||
+    left.isApiError !== right.isApiError ||
+    left.time !== right.time ||
+    left.blocks.length !== right.blocks.length ||
+    !rollbackEqual(left.rollback, right.rollback)
+  ) {
     return false;
   }
-  if (prev.message === next.message) return true;
-  return JSON.stringify(prev.message) === JSON.stringify(next.message);
+  for (let index = 0; index < left.blocks.length; index += 1) {
+    const a = left.blocks[index];
+    const b = right.blocks[index];
+    if (a === undefined || b === undefined || !messageBlockEqual(a, b)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// Agent streaming is the chat render hot path. Avoid JSON.stringify here:
+// it allocates and gets more expensive with every generated token.
+const agentMessagePropsAreEqual = (prev: AgentMessageProps, next: AgentMessageProps): boolean => {
+  if (prev.showActivityIndicator !== next.showActivityIndicator) return false;
+  if (prev.isTurnRunning !== next.isTurnRunning) return false;
+  if (prev.followActivity !== next.followActivity) return false;
+  if (prev.highlightCitationTarget !== next.highlightCitationTarget) return false;
+  if (prev.onContextMenu !== next.onContextMenu) return false;
+  if (prev.onCiteMessage !== next.onCiteMessage) return false;
+  return chatMessageEqual(prev.activityIndicatorMessage, next.activityIndicatorMessage) &&
+    chatMessageEqual(prev.message, next.message);
 };
 
 export const ServiceStatusDots = () => (
@@ -154,6 +522,7 @@ export function Message({
     previewRollback,
     rollbackMessage,
     isTurnRunning,
+    followActivity,
     scrollToMessage,
     navigateToPageCitation,
     openImageInWorkbench,
@@ -378,6 +747,8 @@ export function Message({
       message={message}
       showActivityIndicator={showActivityIndicator}
       activityIndicatorMessage={activityIndicatorMessage}
+      isTurnRunning={isTurnRunning}
+      followActivity={followActivity}
       {...(highlightCitationTarget ? { highlightCitationTarget } : {})}
       {...(onContextMenu === undefined ? {} : { onContextMenu })}
       {...(onCiteMessage === undefined ? {} : { onCiteMessage })}
@@ -389,17 +760,17 @@ export function Message({
 // every ChatMessage object on every token, so this body is memoized with a
 // content-based equality check. Unchanged earlier messages produce structurally
 // identical props each token and are skipped; only the actively-streaming message
-// (whose blocks change) re-renders. This is a pure render with no context
-// subscription, so the memo is not pierced by per-token context churn.
+// (whose blocks change) re-renders.
 const AgentMessage = memo(function AgentMessage({
   message,
   showActivityIndicator,
   activityIndicatorMessage,
+  isTurnRunning,
+  followActivity,
   highlightCitationTarget = false,
   onContextMenu,
   onCiteMessage
 }: AgentMessageProps) {
-  const { isTurnRunning, followActivity } = useData();
   const working = isAgentMessageWorking(message);
   const streamingTextActive = isTurnRunning || working;
   const activitySource = activityIndicatorMessage ?? message;
@@ -429,7 +800,7 @@ const AgentMessage = memo(function AgentMessage({
 
   return (
     <div
-      className="lyra-agents-message lyra-agents-message-agent"
+      className={`lyra-agents-message lyra-agents-message-agent${message.isApiError === true ? " lyra-agents-message-agent-error" : ""}`}
       data-message-id={message.id}
     >
       <div
@@ -457,7 +828,6 @@ const AgentMessage = memo(function AgentMessage({
                 >
                   <StreamingText
                     content={b.body}
-                    document={b.renderDocument ?? null}
                     streaming={shouldStream}
                   />
                 </div>

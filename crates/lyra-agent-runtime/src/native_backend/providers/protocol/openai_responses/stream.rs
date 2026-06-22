@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        provider::{ModelReply, ModelToolCall},
+        provider::{ModelReply, ModelToolCall, TurnStopSignal},
         turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
     },
 };
@@ -33,6 +33,7 @@ struct ResponsesStreamState {
     text: String,
     output_items: Vec<Value>,
     function_calls: HashMap<usize, FunctionCallDraft>,
+    stop_signal: TurnStopSignal,
 }
 
 pub(crate) fn parse_streaming_response<R: BufRead>(
@@ -113,7 +114,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
         tool_calls,
         ui_message_id: streamed_message_id.clone(),
         provider_replay_items: replay_items,
-        stop_signal: Default::default(),
+        stop_signal: state.stop_signal,
     };
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
@@ -195,6 +196,29 @@ fn map_stream_event(
             if let Some(output) = event.pointer("/response/output").and_then(Value::as_array) {
                 state.output_items = output.clone();
             }
+            if state.stop_signal == TurnStopSignal::Unknown {
+                state.stop_signal = TurnStopSignal::EndTurn;
+            }
+        }
+        Some("response.incomplete") => {
+            if let Some(output) = event.pointer("/response/output").and_then(Value::as_array) {
+                state.output_items = output.clone();
+            }
+            let signal = TurnStopSignal::from_raw(
+                event
+                    .pointer("/response/incomplete_details/reason")
+                    .and_then(Value::as_str),
+            );
+            if signal != TurnStopSignal::MaxTokens {
+                return Err(AgentRuntimeError::Core(format!(
+                    "provider response is incomplete: {}",
+                    event
+                        .pointer("/response/incomplete_details")
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                )));
+            }
+            state.stop_signal = signal;
         }
         Some("response.failed") => {
             return Err(AgentRuntimeError::Core(format!(
@@ -271,5 +295,50 @@ mod tests {
         assert_eq!(reply.tool_calls[0].id, "call-1");
         assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
         assert_eq!(reply.provider_replay_items[0]["type"], "function_call");
+    }
+
+    #[test]
+    fn maps_streaming_incomplete_max_output_tokens() {
+        let stream = [
+            r#"data: {"type":"response.output_text.delta","delta":"partial"}"#,
+            r#"data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}]}}"#,
+            "data: [DONE]",
+        ]
+        .join("\n\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &Arc::new(AtomicBool::new(false)),
+            &[],
+            false,
+        )
+        .expect("streaming incomplete reply");
+
+        assert_eq!(reply.content.as_deref(), Some("partial"));
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn rejects_streaming_incomplete_non_max_output_tokens_reason() {
+        let stream = [
+            r#"data: {"type":"response.output_text.delta","delta":"partial"}"#,
+            r#"data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}]}}"#,
+            "data: [DONE]",
+        ]
+        .join("\n\n");
+
+        let error = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            "",
+            "",
+            &Arc::new(AtomicBool::new(false)),
+            &[],
+            false,
+        )
+        .expect_err("non-token-limit incomplete response");
+
+        assert!(error.to_string().contains("content_filter"));
     }
 }

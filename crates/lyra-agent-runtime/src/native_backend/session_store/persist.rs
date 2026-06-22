@@ -81,10 +81,12 @@ pub(super) fn load_session(
     snapshot["workingDir"] = Value::String(meta.working_dir.clone());
     snapshot["projectBound"] = Value::Bool(meta.project_bound);
     snapshot["workingDirIsHome"] = Value::Bool(meta.working_dir_is_home);
-    snapshot["turnStatus"] = Value::String(meta.turn_status.clone());
+    let turn_status = normalize_persisted_turn_status(&meta.turn_status);
+    snapshot["turnStatus"] = Value::String(turn_status.clone());
     snapshot["activeTurnId"] = meta
         .active_turn_id
         .as_ref()
+        .filter(|_| turn_status == "running")
         .map(|value| Value::String(value.clone()))
         .unwrap_or(Value::Null);
     snapshot["updatedAt"] = Value::String(meta.updated_at_iso.clone());
@@ -144,15 +146,17 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
         .get("workingDirIsHome")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let turn_status = snapshot
-        .get("turnStatus")
-        .and_then(Value::as_str)
-        .unwrap_or("idle")
-        .to_string();
+    let turn_status = normalize_persisted_turn_status(
+        snapshot
+            .get("turnStatus")
+            .and_then(Value::as_str)
+            .unwrap_or("idle"),
+    );
     let active_turn_id = snapshot
         .get("activeTurnId")
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
+        .filter(|_| turn_status == "running")
         .map(str::to_string);
     let updated_at_iso = snapshot
         .get("updatedAt")
@@ -301,6 +305,14 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
     tx.commit()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     Ok(())
+}
+
+fn normalize_persisted_turn_status(status: &str) -> String {
+    match status {
+        "running" => "running".to_string(),
+        "cancelled" => "cancelled".to_string(),
+        _ => "idle".to_string(),
+    }
 }
 
 fn message_char_count(message: &Value) -> usize {

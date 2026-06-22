@@ -11,7 +11,6 @@ base64.workspace = true
 chrono = { workspace = true, features = ["clock", "serde"] }
 dirs.workspace = true
 lyra-agent-api.workspace = true
-lyra-render-core = { workspace = true }
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
 # Enable the real BPE tokenizer (o200k_base) so token estimates used for

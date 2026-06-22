@@ -43,7 +43,6 @@ pub(crate) fn assistant_message_with_id(id: String, text: String) -> Value {
         "createdAt": timestamp
     });
     super::pinned_context::stamp_message_timestamps(&mut message, Some(timestamp.as_str()));
-    super::message_render::enrich_assistant_message_render(&mut message, false);
     message
 }
 

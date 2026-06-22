@@ -258,7 +258,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   };
 
   const markRuntimeAddressChanged = (entry: BrowserPageEntry): void => {
-    entry.runtimeAddressUpdatedAt = Date.now();
+    entry.runtimeAddressUpdatedAt = Math.max(Date.now(), entry.lastTopologySyncAt + 1);
   };
 
   const updateStableAddress = (entry: BrowserPageEntry, address: string): void => {
@@ -450,6 +450,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
     const syncAddress = (url: string): void => {
       const address = normalizeAddress(url) ?? entry.requestedAddress;
+      markRuntimeAddressChanged(entry);
       host.updateRuntimeState(entry, {
         address,
         title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? address
@@ -754,6 +755,16 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         ) {
           // In-page navigation (e.g. translation overlays) updated runtime before tab model.
           host.updateRuntimeState(entry, { isActive: page.isActive });
+        } else if (
+          currentUrl !== null
+          && areNavigationAddressesEquivalent(currentUrl, page.address)
+        ) {
+          markRuntimeAddressChanged(entry);
+          host.updateRuntimeState(entry, {
+            address: currentUrl,
+            isActive: page.isActive,
+            title: entry.runtime.title.length > 0 ? entry.runtime.title : entry.titleHint ?? currentUrl
+          });
         } else {
           entry.requestedAddress = page.address;
           loadRequestedAddress(entry);
@@ -761,7 +772,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       } else {
         host.updateRuntimeState(entry, { isActive: page.isActive });
       }
-      entry.lastTopologySyncAt = Date.now();
+      entry.lastTopologySyncAt = Math.max(Date.now(), entry.runtimeAddressUpdatedAt);
     }
 
     host.applyLayout();

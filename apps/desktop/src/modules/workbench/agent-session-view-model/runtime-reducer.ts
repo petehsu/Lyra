@@ -1,10 +1,10 @@
 import type {
   AgentMessage,
   AgentMessageBlock,
-  AgentRenderDocument,
   AgentRuntimeEvent,
   AgentSessionSnapshot,
-  AgentToolActivity
+  AgentToolActivity,
+  AgentTurnStatus
 } from "../../../shared/agent";
 
 const messageRichness = (message: AgentMessage): number => {
@@ -34,13 +34,36 @@ const toolActivityRichness = (tool: AgentToolActivity): number => {
 const chooseRicherTool = (left: AgentToolActivity, right: AgentToolActivity): AgentToolActivity =>
   toolActivityRichness(left) >= toolActivityRichness(right) ? left : right;
 
+export const normalizeAgentTurnStatus = (status: unknown): AgentTurnStatus => {
+  if (status === "running") return "running";
+  if (status === "cancelled") return "cancelled";
+  return "idle";
+};
+
+export const normalizeAgentSessionSnapshot = (
+  snapshot: AgentSessionSnapshot
+): AgentSessionSnapshot => {
+  const turnStatus = normalizeAgentTurnStatus(snapshot.turnStatus);
+  const running = turnStatus === "running";
+  return {
+    ...snapshot,
+    turnStatus,
+    activeTurnId: running ? snapshot.activeTurnId ?? null : null,
+    follow: {
+      running: running ? snapshot.follow.running : false,
+      activity: running ? snapshot.follow.activity ?? null : null
+    }
+  };
+};
+
 export const mergeRunningSessionSnapshot = (
   current: AgentSessionSnapshot,
   incoming: AgentSessionSnapshot
 ): AgentSessionSnapshot => {
-  if (current.id !== incoming.id) return incoming;
+  const normalizedIncoming = normalizeAgentSessionSnapshot(incoming);
+  if (current.id !== normalizedIncoming.id) return normalizedIncoming;
 
-  const incomingById = new Map(incoming.messages.map((message) => [message.id, message]));
+  const incomingById = new Map(normalizedIncoming.messages.map((message) => [message.id, message]));
   const mergedMessages: AgentMessage[] = [];
   const seen = new Set<string>();
 
@@ -51,7 +74,7 @@ export const mergeRunningSessionSnapshot = (
     );
     seen.add(message.id);
   }
-  for (const message of incoming.messages) {
+  for (const message of normalizedIncoming.messages) {
     if (!seen.has(message.id)) {
       mergedMessages.push(message);
       seen.add(message.id);
@@ -59,7 +82,7 @@ export const mergeRunningSessionSnapshot = (
   }
 
   const toolsById = new Map(current.tools.map((tool) => [tool.id, tool]));
-  for (const tool of incoming.tools) {
+  for (const tool of normalizedIncoming.tools) {
     const existing = toolsById.get(tool.id);
     toolsById.set(
       tool.id,
@@ -68,7 +91,7 @@ export const mergeRunningSessionSnapshot = (
   }
 
   return {
-    ...incoming,
+    ...normalizedIncoming,
     messages: mergedMessages,
     tools: [...toolsById.values()]
   };
@@ -81,28 +104,6 @@ const upsertTool = (
   ...tools.filter((existing) => existing.id !== tool.id),
   tool
 ];
-
-const applyRenderToTextBlocks = (
-  blocks: readonly AgentMessageBlock[],
-  blockId: string | null | undefined,
-  renderDocument: AgentRenderDocument | undefined,
-  renderRevision: number | undefined
-): readonly AgentMessageBlock[] => {
-  if (renderDocument === undefined) {
-    return blocks;
-  }
-  const targetBlockId = blockId ?? "text-0";
-  return blocks.map((block) => {
-    if (block.type !== "text" || block.id !== targetBlockId) {
-      return block;
-    }
-    return {
-      ...block,
-      renderDocument,
-      ...(renderRevision === undefined ? {} : { renderRevision })
-    };
-  });
-};
 
 const appendTextDeltaToBlocks = (
   blocks: readonly AgentMessageBlock[] | undefined,
@@ -158,13 +159,15 @@ type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
   readonly tool_id?: string;
 };
 
+type AgentSnapshotMessage = AgentSessionSnapshot["messages"][number];
+
 const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   if (block.type !== "tool") return null;
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
 };
 
 const lastAssistantMessageId = (
-  messages: readonly AgentSessionSnapshot["messages"]
+  messages: AgentSessionSnapshot["messages"]
 ): string | null => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -193,15 +196,24 @@ const appendToolBlockToMessage = (
   ];
 };
 
+const upsertMessagePreservingOrder = (
+  messages: readonly AgentSnapshotMessage[],
+  message: AgentSnapshotMessage
+): readonly AgentSnapshotMessage[] => {
+  const existingIndex = messages.findIndex((existing) => existing.id === message.id);
+  if (existingIndex < 0) {
+    return [...messages, message];
+  }
+  return messages.map((existing, index) => index === existingIndex ? message : existing);
+};
+
 export const applyAgentRuntimeEventToSnapshot = (
   session: AgentSessionSnapshot,
   event: AgentRuntimeEvent
 ): AgentSessionSnapshot => {
   if (event.kind === "sessionSnapshot") {
     if (event.snapshot.id !== session.id) return session;
-    return session.turnStatus === "running"
-      ? mergeRunningSessionSnapshot(session, event.snapshot)
-      : event.snapshot;
+    return mergeRunningSessionSnapshot(session, event.snapshot);
   }
 
   if ("sessionId" in event && event.sessionId !== session.id) {
@@ -211,10 +223,7 @@ export const applyAgentRuntimeEventToSnapshot = (
   if (event.kind === "messageCommitted") {
     return {
       ...session,
-      messages: [
-        ...session.messages.filter((message) => message.id !== event.message.id),
-        event.message
-      ],
+      messages: upsertMessagePreservingOrder(session.messages, event.message),
       updatedAt: new Date().toISOString()
     };
   }
@@ -226,28 +235,17 @@ export const applyAgentRuntimeEventToSnapshot = (
         if (message.id !== event.messageId) {
           return message;
         }
-        const blocks = applyRenderToTextBlocks(
-          appendTextDeltaToBlocks(
-            message.blocks,
-            event.blockId,
-            event.delta,
-            event.replace,
-            message.text
-          ),
+        const blocks = appendTextDeltaToBlocks(
+          message.blocks,
           event.blockId,
-          event.renderDocument,
-          event.renderRevision
+          event.delta,
+          event.replace,
+          message.text
         );
         return {
           ...message,
           text: event.replace === true ? event.delta : `${message.text}${event.delta}`,
-          blocks,
-          ...(event.renderDocument === undefined
-            ? {}
-            : { renderDocument: event.renderDocument }),
-          ...(event.renderRevision === undefined
-            ? {}
-            : { renderRevision: event.renderRevision })
+          blocks
         };
       }),
       updatedAt: new Date().toISOString()
@@ -290,27 +288,20 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "turnStarted" || event.kind === "turnStateChanged") {
-    const terminalTurnStates = [
-      "completed",
-      "failed_terminal",
-      "cancelled_by_user",
-      "cancelled",
-      "interrupted"
-    ];
+    const state = event.state as string;
+    const terminalTurnStates = ["completed", "cancelled_by_user", "cancelled", "interrupted"];
     const cancelledTurnStates = ["cancelled_by_user", "cancelled", "interrupted"];
     return {
       ...session,
-      turnStatus: ["completed"].includes(event.state)
-        ? "finished"
-        : ["failed_recoverable", "failed_terminal"].includes(event.state)
-          ? "failed"
-          : cancelledTurnStates.includes(event.state)
+      turnStatus: state === "completed"
+        ? "idle"
+        : cancelledTurnStates.includes(state)
             ? "cancelled"
             : "running",
-      activeTurnId: terminalTurnStates.includes(event.state) ? null : event.turnId,
+      activeTurnId: terminalTurnStates.includes(state) ? null : event.turnId,
       follow: {
-        running: !terminalTurnStates.includes(event.state),
-        activity: event.state
+        running: !terminalTurnStates.includes(state),
+        activity: terminalTurnStates.includes(state) ? null : event.state
       },
       updatedAt: new Date().toISOString()
     };
@@ -346,10 +337,15 @@ export const applyAgentRuntimeEventToSnapshot = (
   }
 
   if (event.kind === "followStateChanged") {
+    const running = event.follow.running;
     return {
       ...session,
       follow: event.follow,
-      turnStatus: event.follow.running ? "running" : session.turnStatus,
+      turnStatus: running
+        ? "running"
+        : session.turnStatus === "cancelled"
+          ? "cancelled"
+          : "idle",
       updatedAt: new Date().toISOString()
     };
   }
@@ -357,7 +353,7 @@ export const applyAgentRuntimeEventToSnapshot = (
   if (event.kind === "turnFinished") {
     return {
       ...session,
-      turnStatus: event.status,
+      turnStatus: event.status === "cancelled" ? "cancelled" : "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
       updatedAt: new Date().toISOString()
@@ -367,7 +363,7 @@ export const applyAgentRuntimeEventToSnapshot = (
   if (event.kind === "turnCompleted") {
     return {
       ...session,
-      turnStatus: "finished",
+      turnStatus: "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
       updatedAt: new Date().toISOString()
@@ -377,7 +373,7 @@ export const applyAgentRuntimeEventToSnapshot = (
   if (event.kind === "turnFailed") {
     return {
       ...session,
-      turnStatus: "failed",
+      turnStatus: "idle",
       activeTurnId: null,
       follow: { running: false, activity: null },
       updatedAt: new Date().toISOString()

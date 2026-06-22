@@ -57,6 +57,22 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
     expect(messages).toEqual([]);
   });
 
+  test("marks assistant messages with API error metadata", () => {
+    const messages = agentSessionToChatMessages(baseSession({
+      messages: [{
+        id: "message-api-error",
+        role: "assistant",
+        text: "provider returned diagnostic detail",
+        createdAt: "2026-06-05T00:00:02.000Z",
+        metadata: { isApiError: true }
+      }]
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("message-api-error");
+    expect(messages[0]?.isApiError).toBe(true);
+  });
+
   test("uses target manifest title before meta or legacy tool titles", () => {
     const messages = agentSessionToChatMessages(baseSession({
       messages: [{
@@ -713,7 +729,7 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
 
   test("hides finished assistant shells that only contain protocol leak text", () => {
     const messages = agentSessionToChatMessages(baseSession({
-      turnStatus: "finished",
+      turnStatus: "idle",
       messages: [{
         id: "assistant-leak",
         role: "assistant",
@@ -732,7 +748,7 @@ describe("agentSessionToChatMessages Tool-FS projection", () => {
 
   test("hides legacy runtime fallback assistant bubbles from the transcript", () => {
     const messages = agentSessionToChatMessages(baseSession({
-      turnStatus: "finished",
+      turnStatus: "idle",
       messages: [{
         id: "assistant-fallback",
         role: "assistant",

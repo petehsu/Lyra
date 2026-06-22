@@ -380,6 +380,89 @@ fn native_backend_keeps_explicit_or_manual_session_titles() {
 }
 
 #[test]
+fn turn_failure_commits_api_error_message_and_releases_session() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Turn Error Message Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+
+    let failure_message = "provider returned diagnostic detail";
+    emit_assistant_error_message(&session_id, &turn_id, failure_message)
+        .expect("assistant error message");
+    finish_turn_with_metadata(
+        &session_id,
+        &turn_id,
+        "finished",
+        None,
+        Some(failure_message.to_string()),
+        None,
+        None,
+    );
+
+    let read = backend
+        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .expect("read session");
+    assert_eq!(read["turnStatus"], "idle");
+    assert_eq!(read["activeTurnId"], Value::Null);
+    let messages = read["messages"].as_array().expect("messages");
+    let error_message = messages
+        .iter()
+        .find(|message| {
+            message.get("role").and_then(Value::as_str) == Some("assistant")
+                && message.get("text").and_then(Value::as_str) == Some(failure_message)
+        })
+        .expect("api error message");
+    assert_eq!(
+        error_message.pointer("/metadata/isApiError"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(
+        error_message
+            .pointer("/blocks/0/text")
+            .and_then(Value::as_str),
+        Some(failure_message)
+    );
+    assert!(error_message.get("renderDocument").is_none());
+
+    let turn_state = state()
+        .lock()
+        .expect("state lock")
+        .sessions
+        .get(&session_id)
+        .expect("session")
+        .runtime_turns
+        .iter()
+        .find(|turn| turn.get("runtimeTurnId").and_then(Value::as_str) == Some(turn_id.as_str()))
+        .and_then(|turn| turn.get("state").and_then(Value::as_str))
+        .map(str::to_string);
+    assert_eq!(turn_state.as_deref(), Some("completed"));
+
+    let event_kinds = events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
+        .collect::<Vec<_>>();
+    assert!(event_kinds.contains(&"turnFinished".to_string()));
+    assert!(event_kinds.contains(&"turnCompleted".to_string()));
+    assert!(!event_kinds.contains(&"turnFailed".to_string()));
+    backend.clear_event_callback();
+}
+
+#[test]
 fn orphan_running_turn_reconciliation_cancels_without_live_worker() {
     let mut session = new_session(Some("Recover".to_string()), None, "normal");
     let session_id = session.id.clone();
@@ -1880,6 +1963,8 @@ fn model_request_injects_lyra_identity_and_tools() {
         .expect("system prompt");
     assert!(system_prompt.contains("U r Lyra"));
     assert!(system_prompt.contains("company computer w discoverable caps"));
+    assert!(system_prompt.contains("Interaction contract"));
+    assert!(system_prompt.contains("Plain assistant questions r final/non-blocking text"));
     let names = request
         .tools
         .iter()
@@ -1893,6 +1978,8 @@ fn model_request_injects_lyra_identity_and_tools() {
             .collect::<Vec<_>>()
     );
     assert!(system_prompt.contains("toolFilesystem"));
+    assert!(system_prompt.contains("\"interactionContract\""));
+    assert!(system_prompt.contains("\"clarificationTool\""));
     assert!(system_prompt.contains("pinnedHandles"));
     {
         let state = state().lock().expect("state lock");
@@ -2008,6 +2095,29 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
             .map(str::to_string)
             .collect::<Vec<_>>();
         assert_eq!(names, expected_provider_tool_names());
+        assert_eq!(
+            names.first().map(String::as_str),
+            Some(LYRA_CLARIFICATION_ASK_TOOL)
+        );
+        let clarification = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str)
+                    == Some(LYRA_CLARIFICATION_ASK_TOOL)
+            })
+            .expect("clarification tool");
+        let description = clarification
+            .pointer("/function/description")
+            .and_then(Value::as_str)
+            .expect("clarification description");
+        assert!(description.contains("decision panel"));
+        assert!(description.contains("Plain assistant text questions are non-blocking"));
+        assert!(
+            clarification
+                .pointer("/function/parameters/properties/question/description")
+                .and_then(Value::as_str)
+                .is_some_and(|description| description.contains("blocking decision panel"))
+        );
         assert!(tools.iter().all(|tool| {
             tool.pointer("/function/name")
                 .and_then(Value::as_str)

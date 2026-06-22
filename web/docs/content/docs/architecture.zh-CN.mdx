@@ -29,7 +29,7 @@ Lyra 模块默认结构：
 
 ## 富文档渲染
 
-文档站与桌面 AI 面板共用 Rust `lyra-render-core` 管线。Web 端通过 `lyra-render-wasm` 在浏览器中完成 RaTeX 数学与 merman 图表渲染。tree-sitter 高亮仍仅在原生端启用，待浏览器 wasm 运行时支持 tree-sitter C 依赖后再接入。
+文档站与桌面 AI 面板共用 TypeScript `@lyra/markdown-render` 包。它封装上游 `markdown-it`，只在完成态渲染 KaTeX，并在浏览器中按可见性懒加载 Mermaid 图表。
 
 <RenderShowcase />
 
@@ -48,4 +48,3 @@ Lyra 模块默认结构：
 
 1. `ADR-0003`：Workbench 壳层组合与标签演进准备。
 2. `ADR-0004`：File Editor（Rust + Monaco）基础能力冻结。
-

@@ -223,7 +223,6 @@ impl AgentRuntimeServices {
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" => {
                 self.turn_runner.send(payload)
             }
-            "agent.turn.retry" => self.turn_runner.retry(payload),
             "agent.turn.cancel" => self.turn_runner.cancel_from_payload(payload),
             "agent.memory.snapshot" => self.memory.snapshot_from_payload(payload),
             "agent.memory.audit" => self.memory.audit(payload),

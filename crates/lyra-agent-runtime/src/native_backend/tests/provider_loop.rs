@@ -11,6 +11,39 @@ fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
     String::from_utf8_lossy(&headers).to_ascii_lowercase()
 }
 
+fn wait_for_progress_guard_clarification(session_id: &str) -> String {
+    for _ in 0..6_000 {
+        if let Some(id) = state().lock().ok().and_then(|state| {
+            state
+                .pending_clarifications
+                .values()
+                .find(|request| request.session_id == session_id && request.answer.is_none())
+                .map(|request| request.id.clone())
+        }) {
+            return id;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("pending progress guard clarification not observed")
+}
+
+fn test_message_text(message: &Value) -> String {
+    match message.get("content") {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|part| {
+                part.get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| part.get("content").and_then(Value::as_str))
+            })
+            .collect::<Vec<_>>()
+            .join(""),
+        Some(value) => value.to_string(),
+        None => String::new(),
+    }
+}
+
 #[test]
 fn streaming_parser_emits_delta_and_collects_tool_call() {
     let backend = LyraAgentBackend;
@@ -69,14 +102,140 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
     );
     assert_eq!(reply.tool_calls[0].arguments["args"]["scope"], "all");
     assert!(reply.ui_message_id.is_some());
-    let event_kinds = events
+    let session_events = events
         .lock()
         .expect("events lock")
         .iter()
         .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let event_kinds = session_events
+        .iter()
         .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
         .collect::<Vec<_>>();
-    assert_eq!(&event_kinds[..2], ["messageCommitted", "messageDelta"]);
+    assert_eq!(
+        event_kinds,
+        [
+            "messageCommitted",
+            "messageDelta",
+            "messageDelta",
+            "messageCommitted"
+        ]
+    );
+    let delta_events = session_events
+        .iter()
+        .filter(|event| event["kind"].as_str() == Some("messageDelta"))
+        .collect::<Vec<_>>();
+    assert_eq!(delta_events.len(), 2);
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderDocument").is_none())
+    );
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderRevision").is_none())
+    );
+    let final_commit = session_events
+        .iter()
+        .rev()
+        .find(|event| event["kind"].as_str() == Some("messageCommitted"))
+        .expect("final message commit");
+    assert_eq!(final_commit["message"]["text"], "Hello");
+    assert!(final_commit["message"].get("renderDocument").is_none());
+    assert!(final_commit["message"].get("renderRevision").is_none());
+    backend.clear_event_callback();
+}
+
+#[test]
+fn streaming_parser_preserves_markdown_whitespace_in_committed_message() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Stream Markdown Whitespace Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = format!("turn-{}", Uuid::new_v4());
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+        session.runtime_turns.push(runtime_turn(
+            &turn_id,
+            &session_id,
+            "streaming_model",
+            None,
+            None,
+        ));
+        state
+            .active_cancellations
+            .insert(turn_id.clone(), cancellation.clone());
+    }
+
+    let chunks = [
+        "### ",
+        "1. 标题与列表\n\n",
+        "```python\n",
+        "    return value\n",
+        "```\n\n",
+        "### 流程图\n\n",
+        "```mermaid\n",
+        "graph TD\nA --> B\n",
+        "```\n",
+    ];
+    let expected = chunks.concat();
+    let expected_committed = expected.trim_end_matches('\n');
+    let mut stream = String::new();
+    for chunk in chunks {
+        stream.push_str("data: ");
+        stream.push_str(&json!({ "choices": [{ "delta": { "content": chunk } }] }).to_string());
+        stream.push_str("\n\n");
+    }
+    stream.push_str("data: [DONE]\n\n");
+
+    let reply = parse_streaming_response(
+        BufReader::new(stream.as_bytes()),
+        &session_id,
+        &turn_id,
+        &cancellation,
+        &model_tools(false),
+    )
+    .expect("streaming reply");
+
+    assert_eq!(reply.content.as_deref(), Some(expected_committed));
+    let session_events = events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let final_commit = session_events
+        .iter()
+        .rev()
+        .find(|event| event["kind"].as_str() == Some("messageCommitted"))
+        .expect("final message commit");
+    assert_eq!(
+        final_commit["message"]["text"].as_str(),
+        Some(expected.as_str())
+    );
+    assert_eq!(
+        final_commit["message"]["blocks"][0]["text"].as_str(),
+        Some(expected.as_str())
+    );
     backend.clear_event_callback();
 }
 
@@ -134,14 +293,52 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
     assert_eq!(reply.content.as_deref(), Some("Hello"));
     assert!(reply.tool_calls.is_empty());
     assert!(reply.ui_message_id.is_some());
-    let event_kinds = events
+    let session_events = events
         .lock()
         .expect("events lock")
         .iter()
         .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let event_kinds = session_events
+        .iter()
         .map(|event| event["kind"].as_str().unwrap_or_default().to_string())
         .collect::<Vec<_>>();
-    assert_eq!(&event_kinds[..2], ["messageCommitted", "messageDelta"]);
+    assert_eq!(
+        event_kinds,
+        [
+            "messageCommitted",
+            "messageDelta",
+            "messageDelta",
+            "messageCommitted"
+        ]
+    );
+    let delta_events = session_events
+        .iter()
+        .filter(|event| event["kind"].as_str() == Some("messageDelta"))
+        .collect::<Vec<_>>();
+    assert_eq!(delta_events.len(), 2);
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderDocument").is_none())
+    );
+    assert!(
+        delta_events
+            .iter()
+            .all(|event| event.get("renderRevision").is_none())
+    );
+    let final_commits = session_events
+        .iter()
+        .filter(|event| {
+            event["kind"].as_str() == Some("messageCommitted")
+                && event["message"]["text"].as_str() == Some("Hello")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(final_commits.len(), 1);
+    assert_eq!(final_commits[0]["message"]["text"], "Hello");
+    assert!(final_commits[0]["message"].get("renderDocument").is_none());
+    assert!(final_commits[0]["message"].get("renderRevision").is_none());
     backend.clear_event_callback();
 }
 
@@ -406,17 +603,17 @@ fn streaming_parser_rejects_reasoning_only_reply_for_retry() {
 }
 
 #[test]
-fn provider_transport_errors_are_retryable_without_api_key_misclassification() {
+fn provider_transport_errors_are_not_api_key_or_retryable_errors() {
     let transport = AgentRuntimeError::Core("request or response body error".to_string());
     assert!(is_provider_transport_error(&transport));
-    assert!(is_retryable_provider_error(&transport));
+    assert!(!is_retryable_provider_error(&transport));
     assert!(!is_provider_configuration_error(&transport));
 
     let sending = AgentRuntimeError::Core(
         "error sending request for url (https://example.test/v1/chat/completions)".to_string(),
     );
     assert!(is_provider_transport_error(&sending));
-    assert!(is_retryable_provider_error(&sending));
+    assert!(!is_retryable_provider_error(&sending));
 
     let auth = AgentRuntimeError::Core("provider request failed with status 401".to_string());
     assert!(is_provider_configuration_error(&auth));
@@ -443,7 +640,7 @@ fn macos_proxy_parser_reports_system_proxy_without_secret_values() {
 }
 
 #[test]
-fn streaming_transport_error_falls_back_to_non_streaming() {
+fn streaming_transport_error_does_not_replay_as_non_streaming() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -469,18 +666,6 @@ fn streaming_transport_error_falls_back_to_non_streaming() {
         )
         .expect("write truncated stream");
         drop(stream);
-
-        let (mut stream, _) = listener.accept().expect("accept fallback provider request");
-        let request_body = read_http_json_body(&mut stream);
-        assert_eq!(request_body["stream"], false);
-        let body = r#"{"choices":[{"message":{"role":"assistant","content":"Recovered after transport error."}}]}"#;
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        )
-        .expect("write fallback json");
     });
     let provider = NativeProviderProfile {
         id: "local".to_string(),
@@ -503,7 +688,7 @@ fn streaming_transport_error_falls_back_to_non_streaming() {
         }],
     };
 
-    let reply = call_model_once(
+    let error = call_model_once(
         &session_id,
         &turn_id,
         &provider,
@@ -513,12 +698,215 @@ fn streaming_transport_error_falls_back_to_non_streaming() {
         &model_capabilities(&provider, "test-model"),
         &Arc::new(AtomicBool::new(false)),
     )
-    .expect("provider reply");
+    .expect_err("truncated SSE stream should not be replayed as non-streaming");
+    let message = error.to_string();
 
-    assert_eq!(
-        reply.content.as_deref(),
-        Some("Recovered after transport error.")
+    assert!(message.contains("provider streaming transport failed"));
+    assert!(message.contains("non-streaming fallback was not attempted"));
+    server.join().expect("server join");
+}
+
+#[test]
+fn model_loop_continues_and_concatenates_max_tokens_text() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Max Tokens Continuation Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request.clone()).expect("send request");
+            let body = if index == 0 {
+                json!({
+                    "choices": [{
+                        "message": { "role": "assistant", "content": "Hello " },
+                        "finish_reason": "length"
+                    }]
+                })
+                .to_string()
+            } else {
+                json!({
+                    "choices": [{
+                        "message": { "role": "assistant", "content": "world" },
+                        "finish_reason": "stop"
+                    }]
+                })
+                .to_string()
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "write a long answer" })],
+        tools: Vec::new(),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
+    let second_messages = requests[1]["messages"].as_array().expect("messages");
+    assert!(
+        second_messages.iter().any(|message| {
+            message.get("role").and_then(Value::as_str) == Some("assistant")
+                && test_message_text(message) == "Hello "
+        }),
+        "second request missing truncated assistant segment: {}",
+        requests[1]
     );
+    assert!(
+        second_messages.iter().any(|message| {
+            message.get("role").and_then(Value::as_str) == Some("system")
+                && test_message_text(message).contains("Continue the same response")
+        }),
+        "second request missing continuation prompt: {}",
+        requests[1]
+    );
+    assert_eq!(result.final_text.as_deref(), Some("Hello world"));
+    assert!(!result.ui_text_committed);
+    server.join().expect("server join");
+}
+
+#[test]
+fn model_loop_marks_continuation_exhaustion() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Max Tokens Exhaustion Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let expected_continuation_retries = 4_u8;
+    let server = thread::spawn(move || {
+        for index in 0..=expected_continuation_retries {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send request");
+            let body = json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": format!("part-{index};")
+                    },
+                    "finish_reason": "length"
+                }]
+            })
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "write a very long answer" })],
+        tools: Vec::new(),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    let final_text = result.final_text.as_deref().expect("final text");
+    assert!(final_text.starts_with("part-0;part-1;part-2;part-3;part-4;"));
+    assert!(final_text.contains("Auto continuation limit reached"));
+    let metadata = result.session_metadata().expect("metadata");
+    assert_eq!(
+        metadata.pointer("/providerContinuation/continuationExhausted"),
+        Some(&Value::Bool(true))
+    );
+    assert!(!result.ui_text_committed);
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), expected_continuation_retries as usize + 1);
     server.join().expect("server join");
 }
 
@@ -1180,7 +1568,13 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             if index == 0 {
                 assert_eq!(request["model"], "claude-sonnet-4-6");
                 assert_eq!(request["stream"], false);
-                assert_eq!(request["tools"][0]["name"], "tool_fs_search");
+                assert!(
+                    request["tools"]
+                        .as_array()
+                        .expect("anthropic tools array")
+                        .iter()
+                        .any(|tool| tool["name"] == "tool_fs_search")
+                );
             } else {
                 let messages = request["messages"].as_array().expect("messages");
                 assert!(messages.iter().any(|message| {
@@ -1374,9 +1768,12 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["contents"][0]["role"], "user");
-                assert_eq!(
-                    request["tools"][0]["functionDeclarations"][0]["name"],
-                    "tool_fs_search"
+                assert!(
+                    request["tools"][0]["functionDeclarations"]
+                        .as_array()
+                        .expect("gemini functionDeclarations array")
+                        .iter()
+                        .any(|tool| tool["name"] == "tool_fs_search")
                 );
                 assert_eq!(
                     request["toolConfig"]["functionCallingConfig"]["mode"],
@@ -1526,9 +1923,12 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             request_tx.send(request.clone()).expect("send request");
             if index == 0 {
                 assert_eq!(request["messages"][0]["role"], "user");
-                assert_eq!(
-                    request["toolConfig"]["tools"][0]["toolSpec"]["name"],
-                    "tool_fs_search"
+                assert!(
+                    request["toolConfig"]["tools"]
+                        .as_array()
+                        .expect("bedrock toolConfig tools array")
+                        .iter()
+                        .any(|tool| tool["toolSpec"]["name"] == "tool_fs_search")
                 );
                 assert_eq!(request["toolConfig"]["toolChoice"]["auto"], json!({}));
             } else {
@@ -1690,6 +2090,114 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
     .expect("local fallback request should succeed");
 
     assert_eq!(reply.content.as_deref(), Some("Local fallback reply."));
+    server.join().expect("server join");
+}
+
+#[test]
+fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept local provider request");
+        let request = read_http_json_body(&mut stream);
+        assert_eq!(request["model"], "local-model");
+        assert_eq!(request["stream"], false);
+        let body = "<html><body><h1>503 Service Unavailable</h1><p>edge timeout</p></body></html>";
+        write!(
+            stream,
+            "HTTP/1.1 503 Service Unavailable\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write local error body");
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("local-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "local-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+
+    let error = call_model_once_non_streaming(
+        &provider,
+        "local-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+    )
+    .expect_err("HTML provider error body should be surfaced");
+    let message = error.to_string();
+
+    assert!(message.contains("provider request failed with status 503"));
+    assert!(message.contains("edge timeout"));
+    server.join().expect("server join");
+}
+
+#[test]
+fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept local provider request");
+        let request = read_http_json_body(&mut stream);
+        assert_eq!(request["model"], "local-model");
+        assert_eq!(request["stream"], false);
+        let body = "upstream returned an empty gateway page";
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write local non-json body");
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}/v1")),
+        default_model: Some("local-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "local-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+
+    let error = call_model_once_non_streaming(
+        &provider,
+        "local-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+    )
+    .expect_err("non-JSON provider success body should include decode context");
+    let message = error.to_string();
+
+    assert!(message.contains("provider response JSON decode failed"));
+    assert!(message.contains("status 200"));
+    assert!(message.contains("content-type text/plain"));
+    assert!(message.contains("upstream returned an empty gateway page"));
     server.join().expect("server join");
 }
 
@@ -2579,15 +3087,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             let request = read_http_json_body(&mut stream);
             request_tx.send(request).expect("send captured request");
             let body = if index < 5 {
-                let arguments = json!({
-                    "path": "/tools/memory/remember",
-                    "args": {
-                        "scope": "session",
-                        "category": "loop",
-                        "fact": "same evidence"
-                    }
-                })
-                .to_string();
+                let arguments = json!({ "messageId": "missing-message" }).to_string();
                 json!({
                     "choices": [{
                         "message": {
@@ -2597,7 +3097,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                                 "id": format!("repeat-{index}"),
                                 "type": "function",
                                 "function": {
-                                    "name": "tool_fs_run",
+                                    "name": LYRA_SESSION_READ_MESSAGE_TOOL,
                                     "arguments": arguments
                                 }
                             }]
@@ -2675,14 +3175,22 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
     let requests = request_rx.try_iter().collect::<Vec<_>>();
     assert_eq!(requests.len(), 6);
     assert!(requests[0].get("tools").is_some());
-    assert!(requests[5].get("tools").is_none());
+    assert_eq!(
+        model_tool_names(&requests[5]),
+        vec![LYRA_CLARIFICATION_ASK_TOOL.to_string()]
+    );
     let final_messages = requests[5]["messages"].as_array().expect("messages");
     assert!(final_messages.iter().any(|message| {
         message.get("role").and_then(Value::as_str) == Some("system")
             && message
                 .get("content")
                 .and_then(Value::as_str)
-                .is_some_and(|content| content.contains("dynamic progress guard"))
+                .is_some_and(|content| {
+                    content.contains("dynamic progress guard")
+                        && content.contains("lyra_clarification_ask")
+                        && content.contains("Plain assistant questions r non-blocking")
+                        && !content.contains("ask one precise clarification question")
+                })
     }));
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
@@ -2696,6 +3204,176 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
                 .is_some_and(|text| {
                     text.contains("Progress guard synthesized from repeated evidence.")
                 })
+    }));
+}
+
+#[test]
+fn model_loop_progress_guard_allows_structured_clarification_only() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Progress Guard Clarification Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let (request_tx, request_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        for index in 0..7 {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            request_tx.send(request).expect("send captured request");
+            let body = if index < 5 {
+                let arguments = json!({ "messageId": "missing-message" }).to_string();
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": format!("repeat-{index}"),
+                                "type": "function",
+                                "function": {
+                                    "name": LYRA_SESSION_READ_MESSAGE_TOOL,
+                                    "arguments": arguments
+                                }
+                            }]
+                        }
+                    }]
+                })
+                .to_string()
+            } else if index == 5 {
+                let arguments = json!({
+                    "question": "Which path should Lyra take?",
+                    "options": [{
+                        "label": "Ship",
+                        "description": "Use gathered evidence and finish."
+                    }],
+                    "allowCustomAnswer": true
+                })
+                .to_string();
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "clarify-progress-guard",
+                                "type": "function",
+                                "function": {
+                                    "name": LYRA_CLARIFICATION_ASK_TOOL,
+                                    "arguments": arguments
+                                }
+                            }]
+                        }
+                    }]
+                })
+                .to_string()
+            } else {
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "Used member decision: Ship."
+                        }
+                    }]
+                })
+                .to_string()
+            };
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "keep working" })],
+        tools: model_tools(false),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+    let loop_session_id = session_id.clone();
+    let loop_turn_id = turn_id.clone();
+    let handle = thread::spawn(move || {
+        run_model_loop(
+            &loop_session_id,
+            &loop_turn_id,
+            request,
+            &Arc::new(AtomicBool::new(false)),
+        )
+    });
+    let clarification_id = wait_for_progress_guard_clarification(&session_id);
+    backend
+        .call_agent_method(
+            "agent.clarification.respond",
+            json!({
+                "sessionId": session_id.clone(),
+                "clarificationId": clarification_id,
+                "answer": "Ship",
+                "selectedOption": "Ship"
+            }),
+        )
+        .expect("respond clarification");
+    let result = handle.join().expect("join model loop").expect("model loop");
+    assert_eq!(
+        result.final_text.as_deref(),
+        Some("Used member decision: Ship.")
+    );
+    finish_turn(&session_id, &turn_id, "finished", result.final_text, None);
+    server.join().expect("server join");
+    let requests = request_rx.try_iter().collect::<Vec<_>>();
+    assert_eq!(requests.len(), 7);
+    assert_eq!(
+        model_tool_names(&requests[5]),
+        vec![LYRA_CLARIFICATION_ASK_TOOL.to_string()]
+    );
+    assert!(requests[6].get("tools").is_none());
+    let final_messages = requests[6]["messages"].as_array().expect("messages");
+    assert!(final_messages.iter().any(|message| {
+        message.get("role").and_then(Value::as_str) == Some("tool")
+            && message
+                .get("content")
+                .and_then(Value::as_str)
+                .is_some_and(|content| content.contains("User answered clarification: Ship"))
+    }));
+    let read = backend
+        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .expect("read session");
+    assert!(read["tools"].as_array().expect("tools").iter().any(|tool| {
+        tool.get("name").and_then(Value::as_str) == Some("clarification")
+            && tool.get("status").and_then(Value::as_str) == Some("completed")
     }));
 }
 

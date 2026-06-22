@@ -7,7 +7,9 @@ import { formatMessage } from "./ai-panel/lyra-agents/core/i18n";
 
 export {
   applyAgentRuntimeEventToSnapshot,
-  mergeRunningSessionSnapshot
+  mergeRunningSessionSnapshot,
+  normalizeAgentSessionSnapshot,
+  normalizeAgentTurnStatus
 } from "./agent-session-view-model/runtime-reducer";
 export {
   agentSessionToChatMessages,

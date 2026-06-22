@@ -5,6 +5,10 @@ use sha2::{Digest, Sha256};
 const TEMPLATES: &[(&str, &str)] = &[
     ("kernel.md.j2", include_str!("prompts/kernel.md.j2")),
     (
+        "interaction_contract.md.j2",
+        include_str!("prompts/interaction_contract.md.j2"),
+    ),
+    (
         "compact_contract.md.j2",
         include_str!("prompts/compact_contract.md.j2"),
     ),

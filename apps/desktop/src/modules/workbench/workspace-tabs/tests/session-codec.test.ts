@@ -235,6 +235,135 @@ describe("workspace browser session codec", () => {
     });
   });
 
+  test("preserves edited browser address input during runtime page sync", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(config));
+
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/first",
+        "First page",
+        { tabId: "browser-tab-35" }
+      );
+    });
+
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/runtime",
+        title: "Runtime page"
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      inputValue: "https://example.com/runtime",
+      displayAddress: "https://example.com/runtime"
+    });
+
+    act(() => {
+      result.current.updateActiveInput("");
+    });
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/runtime",
+        title: "Runtime page updated",
+        restoreState: {
+          scrollY: 24,
+          capturedAt: 100
+        }
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      title: "Runtime page updated",
+      inputValue: "",
+      displayAddress: "https://example.com/runtime"
+    });
+
+    act(() => {
+      result.current.updateActiveInput("https://example.com/manual");
+    });
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/runtime-next",
+        title: "Runtime page next"
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      title: "Runtime page next",
+      inputValue: "https://example.com/manual",
+      displayAddress: "https://example.com/runtime-next"
+    });
+
+    act(() => {
+      result.current.updateActiveInput("example.com/runtime-next");
+    });
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/runtime-next",
+        title: "Runtime page next settled"
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      title: "Runtime page next settled",
+      inputValue: "example.com/runtime-next",
+      displayAddress: "https://example.com/runtime-next"
+    });
+  });
+
+  test("does not rewrite tab addresses for equivalent runtime navigation variants", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(config));
+
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/article",
+        "Article",
+        { tabId: "browser-tab-35" }
+      );
+    });
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/article#googtrans(en|zh-CN)",
+        title: "Article"
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      inputValue: "https://example.com/article",
+      displayAddress: "https://example.com/article"
+    });
+  });
+
+  test("updates tab addresses for real runtime navigation changes", () => {
+    const { result } = renderHook(() => useWorkspaceTabsModel(config));
+
+    act(() => {
+      result.current.openPageInNewTab(
+        "https://example.com/first",
+        "First page",
+        { tabId: "browser-tab-35" }
+      );
+    });
+    act(() => {
+      result.current.syncPageRuntimeState("browser-tab-35", {
+        address: "https://example.com/second",
+        title: "Second page"
+      });
+    });
+
+    expect(result.current.tabs[1]).toMatchObject({
+      id: "browser-tab-35",
+      title: "Second page",
+      inputValue: "https://example.com/second",
+      displayAddress: "https://example.com/second"
+    });
+  });
+
   test("opens selected web search engines as a split search group", () => {
     const { result } = renderHook(() => useWorkspaceTabsModel(config));
 

@@ -66,7 +66,6 @@ mod memory_stability_policy;
 mod memory_store;
 mod memory_sync;
 mod memory_token_checkpoint;
-mod message_render;
 mod network;
 pub mod page_citations;
 mod permission_policy;
@@ -126,7 +125,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.cli.follow.read" => read_cli_follow(payload),
             "agent.cli.follow.update" => update_cli_follow(payload),
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" => send_turn(payload),
-            "agent.turn.retry" => retry_turn(payload),
             "agent.turn.cancel" => cancel_turn(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),

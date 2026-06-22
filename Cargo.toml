@@ -28,9 +28,6 @@ members = [
   "crates/lyra-local-inference-core",
   "crates/lyra-performance-core",
   "crates/lyra-computer-use-core",
-  "crates/lyra-render-core",
-  "crates/lyra-render-napi",
-  "crates/lyra-render-wasm",
 ]
 resolver = "2"
 
@@ -60,8 +57,6 @@ lyra-tool-fs-core = { path = "crates/lyra-tool-fs-core" }
 lyra-local-search = { path = "crates/lyra-local-search" }
 lyra-search-core = { path = "crates/lyra-search-core" }
 lyra-performance-core = { path = "crates/lyra-performance-core" }
-lyra-render-core = { path = "crates/lyra-render-core" }
-lyra-render-napi = { path = "crates/lyra-render-napi" }
 
 # External
 age = "0.11.1"
@@ -306,11 +301,6 @@ opt-level = 0
 
 [patch.crates-io]
 portable-pty = { path = "third-party/rust/portable-pty" }
-merman = { path = "third-party/rust/merman" }
-ratex-layout = { path = "third-party/rust/ratex-layout" }
-ratex-parser = { path = "third-party/rust/ratex-parser" }
-ratex-svg = { path = "third-party/rust/ratex-svg" }
-ratex-types = { path = "third-party/rust/ratex-types" }
 # Uncomment to debug local changes.
 # ratatui = { path = "../../ratatui" }
 

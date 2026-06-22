@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
-    native_backend::provider::{ModelReply, ModelToolCall},
+    native_backend::provider::{ModelReply, ModelToolCall, TurnStopSignal},
 };
 
 use super::super::openai_common::{parse_tool_arguments, repair_tool_name, tool_name_set};
@@ -11,14 +11,6 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
     if let Some(error) = body.get("error") {
         return Err(AgentRuntimeError::Core(format!(
             "provider returned error: {error}"
-        )));
-    }
-    if body.get("status").and_then(Value::as_str) == Some("incomplete") {
-        return Err(AgentRuntimeError::Core(format!(
-            "provider response is incomplete: {}",
-            body.get("incomplete_details")
-                .cloned()
-                .unwrap_or(Value::Null)
         )));
     }
     if body.get("status").and_then(Value::as_str) == Some("failed") {
@@ -46,9 +38,18 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
     }
     let tool_calls = tool_calls_from_items(&output, tools);
     if content.as_ref().is_none_or(|value| value.trim().is_empty()) && tool_calls.is_empty() {
+        if body.get("status").and_then(Value::as_str) == Some("incomplete") {
+            return Err(incomplete_response_error(body));
+        }
         return Err(AgentRuntimeError::Core(
             "provider returned no assistant text or tool call".to_string(),
         ));
+    }
+    let stop_signal = stop_signal_from_response(body);
+    if body.get("status").and_then(Value::as_str) == Some("incomplete")
+        && stop_signal != TurnStopSignal::MaxTokens
+    {
+        return Err(incomplete_response_error(body));
     }
     Ok(ModelReply {
         content,
@@ -56,8 +57,32 @@ pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntime
         tool_calls,
         ui_message_id: None,
         provider_replay_items: output,
-        stop_signal: Default::default(),
+        stop_signal,
     })
+}
+
+fn incomplete_response_error(body: &Value) -> AgentRuntimeError {
+    AgentRuntimeError::Core(format!(
+        "provider response is incomplete: {}",
+        body.get("incomplete_details")
+            .cloned()
+            .unwrap_or(Value::Null)
+    ))
+}
+
+fn stop_signal_from_response(body: &Value) -> TurnStopSignal {
+    let incomplete_reason = body
+        .pointer("/incomplete_details/reason")
+        .and_then(Value::as_str);
+    let signal = TurnStopSignal::from_raw(incomplete_reason);
+    if signal != TurnStopSignal::Unknown {
+        return signal;
+    }
+    match body.get("status").and_then(Value::as_str) {
+        Some("completed") => TurnStopSignal::EndTurn,
+        Some("incomplete") => TurnStopSignal::Unknown,
+        _ => TurnStopSignal::Unknown,
+    }
 }
 
 pub(crate) fn output_text_from_items(items: &[Value]) -> Option<String> {
@@ -178,7 +203,27 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_response_is_an_error() {
+    fn incomplete_response_with_text_maps_max_output_tokens() {
+        let reply = parse_response_body(
+            &json!({
+                "status": "incomplete",
+                "incomplete_details": { "reason": "max_output_tokens" },
+                "output": [{
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "partial" }]
+                }]
+            }),
+            &[],
+        )
+        .expect("incomplete text response");
+
+        assert_eq!(reply.content.as_deref(), Some("partial"));
+        assert_eq!(reply.stop_signal, TurnStopSignal::MaxTokens);
+    }
+
+    #[test]
+    fn incomplete_response_without_text_is_an_error() {
         let error = parse_response_body(
             &json!({
                 "status": "incomplete",
@@ -186,8 +231,27 @@ mod tests {
             }),
             &[],
         )
-        .expect_err("incomplete response");
+        .expect_err("empty incomplete response");
 
         assert!(error.to_string().contains("max_output_tokens"));
+    }
+
+    #[test]
+    fn incomplete_response_with_non_max_output_tokens_reason_is_an_error() {
+        let error = parse_response_body(
+            &json!({
+                "status": "incomplete",
+                "incomplete_details": { "reason": "content_filter" },
+                "output": [{
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "output_text", "text": "partial" }]
+                }]
+            }),
+            &[],
+        )
+        .expect_err("non-token-limit incomplete response");
+
+        assert!(error.to_string().contains("content_filter"));
     }
 }

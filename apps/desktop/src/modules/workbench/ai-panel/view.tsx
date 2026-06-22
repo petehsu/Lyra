@@ -280,7 +280,11 @@ const AiPanelTabsHeader = ({
   activeSessionId,
   onActivateSessionTab,
   onCloseSessionTab,
-  onReorderSessionTabs
+  onReorderSessionTabs,
+  aiPanelSide,
+  onToggleAiPanelSide,
+  movePanelToLeftLabel,
+  movePanelToRightLabel
 }: {
   readonly desktopApi: AiPanelSurfaceProps["desktopApi"];
   readonly tabs: readonly AiPanelSessionTab[];
@@ -289,6 +293,10 @@ const AiPanelTabsHeader = ({
   readonly onActivateSessionTab?: (sessionId: string) => void;
   readonly onCloseSessionTab?: (sessionId: string) => void;
   readonly onReorderSessionTabs?: (sourceTabId: string, targetTabId: string) => void;
+  readonly aiPanelSide?: AiPanelSurfaceProps["aiPanelSide"];
+  readonly onToggleAiPanelSide?: () => void;
+  readonly movePanelToLeftLabel?: string;
+  readonly movePanelToRightLabel?: string;
 }) => {
   const { session, isTurnRunning } = useData();
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -545,7 +553,13 @@ const AiPanelTabsHeader = ({
           })}
         </div>
       </div>
-      <HeaderControls forceShowNewSessionButton />
+      <HeaderControls
+        forceShowNewSessionButton
+        {...(aiPanelSide === undefined ? {} : { aiPanelSide })}
+        {...(onToggleAiPanelSide === undefined ? {} : { onToggleAiPanelSide })}
+        {...(movePanelToLeftLabel === undefined ? {} : { movePanelToLeftLabel })}
+        {...(movePanelToRightLabel === undefined ? {} : { movePanelToRightLabel })}
+      />
     </header>
   );
 };
@@ -577,6 +591,10 @@ export const AiPanelSurface = ({
   openDialog,
   locale,
   title,
+  aiPanelSide,
+  onToggleAiPanelSide,
+  movePanelToLeftLabel,
+  movePanelToRightLabel,
   composerCitationSinkRef,
   onSetActiveBrowserTab,
   resolveActiveWorkspaceTab,
@@ -639,23 +657,6 @@ export const AiPanelSurface = ({
           {provider.error}
         </AppStatusMessage>
       )}
-      {provider.turnFailureMessage === null ? null : (
-        <AppStatusMessage className="lyra-ai-panel-turn-failure" role="status" tone="warning">
-          <div className="lyra-ai-panel-turn-failure-row">
-            <span>{provider.turnFailureMessage}</span>
-            <AppButton
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void provider.retryFailedTurn();
-              }}
-            >
-              {t("lyra-agents-turnFailure.retry")}
-            </AppButton>
-          </div>
-        </AppStatusMessage>
-      )}
       <div className="lyra-agents-host">
         <LyraAgentsApp
           data={provider.data}
@@ -669,6 +670,10 @@ export const AiPanelSurface = ({
               {...(onActivateSessionTab === undefined ? {} : { onActivateSessionTab })}
               {...(onCloseSessionTab === undefined ? {} : { onCloseSessionTab })}
               {...(onReorderSessionTabs === undefined ? {} : { onReorderSessionTabs })}
+              {...(aiPanelSide === undefined ? {} : { aiPanelSide })}
+              {...(onToggleAiPanelSide === undefined ? {} : { onToggleAiPanelSide })}
+              {...(movePanelToLeftLabel === undefined ? {} : { movePanelToLeftLabel })}
+              {...(movePanelToRightLabel === undefined ? {} : { movePanelToRightLabel })}
             />
           }
           {...(locale === undefined ? {} : { locale })}

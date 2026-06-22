@@ -53,11 +53,12 @@ const sanitizeStatus = (value: unknown): AgentTurnStatus | null => {
   if (
     value === "idle" ||
     value === "running" ||
-    value === "cancelled" ||
-    value === "finished" ||
-    value === "failed"
+    value === "cancelled"
   ) {
     return value;
+  }
+  if (value === "finished" || value === "failed") {
+    return "idle";
   }
   return null;
 };
@@ -214,26 +215,23 @@ const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
 const statusFromRuntimeEvent = (event: AgentRuntimeEvent): AgentTurnStatus | null => {
   if (event.kind === "sessionSnapshot") return event.snapshot.turnStatus;
   if (event.kind === "turnStarted" || event.kind === "turnRecovered") return "running";
-  if (event.kind === "turnFinished") return event.status;
-  if (event.kind === "turnCompleted") return "finished";
-  if (event.kind === "turnFailed") return "failed";
+  if (event.kind === "turnFinished") return event.status === "cancelled" ? "cancelled" : "idle";
+  if (event.kind === "turnCompleted") return "idle";
+  if (event.kind === "turnFailed") return "idle";
   if (event.kind === "turnInterrupted") return "cancelled";
   if (event.kind === "turnStateChanged") {
+    const state = event.state as string;
     if (
-      event.state === "completed" ||
-      event.state === "cancelled_by_user" ||
-      event.state === "cancelled" ||
-      event.state === "failed_recoverable" ||
-      event.state === "failed_terminal" ||
-      event.state === "interrupted"
+      state === "completed" ||
+      state === "cancelled_by_user" ||
+      state === "cancelled" ||
+      state === "interrupted"
     ) {
-      return event.state === "completed"
-        ? "finished"
-        : event.state === "cancelled_by_user" ||
-            event.state === "cancelled" ||
-            event.state === "interrupted"
+      return state === "cancelled_by_user" ||
+            state === "cancelled" ||
+            state === "interrupted"
           ? "cancelled"
-          : "failed";
+          : "idle";
     }
     return "running";
   }

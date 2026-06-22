@@ -16,22 +16,8 @@ const session: SessionMeta = {
   totalDeletions: 0
 };
 
-const sampleDocument = {
-  blocks: [
-    {
-      kind: "heading" as const,
-      level: 1,
-      children: [{ kind: "text" as const, value: "Title" }]
-    },
-    {
-      kind: "paragraph" as const,
-      children: [{ kind: "text" as const, value: "Body" }]
-    }
-  ]
-};
-
 describe("StreamingText", () => {
-  it("renders live LyraDocument while streaming when rich mode is enabled", () => {
+  it("renders streamdown live content while streaming when rich mode is enabled", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -42,14 +28,56 @@ describe("StreamingText", () => {
       <DataContextProvider value={data}>
         <StreamingText
           content={"# Title\n\nBody"}
-          document={sampleDocument}
           streaming
         />
       </DataContextProvider>
     );
 
     expect(container.querySelector(".lyra-agents-streaming-rich")).not.toBeNull();
-    expect(screen.getByRole("heading", { level: 1, name: "Title" })).toBeTruthy();
+    expect(container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Title" })).toBeTruthy();
+    expect(container.textContent).toContain("Body");
+  });
+
+  it("keeps math and mermaid as plain streaming content", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      aiRichRenderingEnabled: true
+    });
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <StreamingText
+          content={"$x^2$\n\n```mermaid\nflowchart LR\n  A-->B"}
+          streaming
+        />
+      </DataContextProvider>
+    );
+
+    expect(container.textContent).toContain("$x^2$");
+    expect(container.textContent).toContain("flowchart LR");
+    expect(container.querySelector(".katex")).toBeNull();
+    expect(container.querySelector(".lyra-markdown-mermaid")).toBeNull();
+  });
+
+  it("shows partial fenced code before the closing fence arrives", () => {
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      aiRichRenderingEnabled: true
+    });
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <StreamingText content={"Here\n```ts\nconst x = 1"} streaming />
+      </DataContextProvider>
+    );
+
+    const codeBlock = container.querySelector('[data-streamdown="code-block"]');
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock?.getAttribute("data-language")).toBe("ts");
+    expect(codeBlock?.textContent).toContain("const x = 1");
   });
 
   it("keeps plain typewriter output while streaming when rich mode is disabled", () => {
@@ -71,7 +99,7 @@ describe("StreamingText", () => {
     expect(screen.queryByText("Rendering…")).toBeNull();
   });
 
-  it("renders the same snapshot after streaming completes", () => {
+  it("renders markdown-it output after streaming completes", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -80,18 +108,23 @@ describe("StreamingText", () => {
 
     const view = render(
       <DataContextProvider value={data}>
-        <StreamingText content="Done" document={sampleDocument} streaming />
+        <StreamingText content={"# Done\n\nBody"} streaming />
       </DataContextProvider>
     );
 
+    expect(screen.getByRole("heading", { name: "Done" })).toBeTruthy();
     expect(screen.getByText("Body")).toBeTruthy();
+    expect(view.container.querySelector(".lyra-agents-streamdown")).not.toBeNull();
 
     view.rerender(
       <DataContextProvider value={data}>
-        <StreamingText content="Done" document={sampleDocument} streaming={false} />
+        <StreamingText content={"# Done\n\nBody"} streaming={false} />
       </DataContextProvider>
     );
 
+    expect(view.container.querySelector(".lyra-agents-streamdown")).toBeNull();
+    expect(view.container.querySelector(".lyra-agents-markdown-document")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Done" })).toBeTruthy();
     expect(screen.getByText("Body")).toBeTruthy();
     expect(screen.queryByText("Rendering…")).toBeNull();
   });
