@@ -218,7 +218,7 @@ fn description_for(
             "Use when the agent knows a file name pattern, extension, or glob and only needs matching paths. This is the fastest choice for path discovery."
         }
         ("filesystem", "write") => {
-            "Use when the agent must create or replace a whole workspace file."
+            "Use only when the agent must create or replace a small whole workspace file whose content safely fits in provider-native JSON args. For generated code, HTML, CSS, JS, or large content, emit a lyra-write-file fenced text block instead of this tool."
         }
         ("filesystem", "strict_edit") => {
             "Use when the agent must safely modify existing file text with an exact replacement after reading the current file."
@@ -391,7 +391,14 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "找文件",
                 ]
             }
-            ("filesystem", "write") => vec!["create file", "overwrite file", "写文件", "新建文件"],
+            ("filesystem", "write") => vec![
+                "small file write",
+                "create small file",
+                "overwrite small file",
+                "short text file",
+                "写小文件",
+                "新建小文件",
+            ],
             ("filesystem", "strict_edit") => {
                 vec![
                     "strict edit",
@@ -1143,7 +1150,14 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ("filesystem", "write") => object_schema(
             [
                 ("path", string("Workspace file path.")),
-                ("content", string("New file content.")),
+                (
+                    "content",
+                    json!({
+                        "type": "string",
+                        "maxLength": 12000,
+                        "description": "New file content for small files only. For generated code, HTML/CSS/JS, or larger content, do not pass content in JSON; emit a lyra-write-file fenced text block."
+                    }),
+                ),
                 ("overwrite", json!({ "type": "boolean", "default": false })),
             ],
             &["path", "content"],

@@ -1502,6 +1502,57 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
 }
 
 #[test]
+fn tool_fs_search_guides_generated_file_writes_to_text_protocol() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Generated File Write Search Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-fs-search-generated-html".to_string(),
+            name: "tool_fs_search".to_string(),
+            arguments: json!({
+                "query": "write file create html file",
+                "scene": "project-code",
+                "pageSize": 5
+            }),
+        },
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    let content = output["content"].as_str().expect("search content");
+    assert!(content.contains("lyra-write-file"));
+    let top_result = output["raw"]["results"]
+        .as_array()
+        .expect("search results")
+        .first()
+        .expect("top search result");
+    assert!(
+        top_result["runHint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("lyra-write-file"))
+    );
+    assert!(
+        top_result
+            .pointer("/miniSchema/parameters")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|parameter| parameter["name"] == "content" && parameter["maxLength"] == 12000)
+    );
+}
+
+#[test]
 fn tool_fs_inspect_populates_session_descriptor_cache_context() {
     let backend = LyraAgentBackend;
     let created = backend

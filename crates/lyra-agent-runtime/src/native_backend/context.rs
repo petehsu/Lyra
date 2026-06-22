@@ -335,7 +335,17 @@ pub(crate) fn tool_filesystem_runtime_context(
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
             "sceneBehavior": "Scene changes only reorder directories and pinned handles; every built-in tool remains discoverable under /tools.",
-            "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors."
+            "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors, except the explicit lyra-write-file fenced block transport for large generated file/code writes.",
+            "largeTextWriteProtocol": {
+                "useWhen": "Creating or replacing generated code, HTML, CSS, JS, or any file content too large or fragile for provider-native JSON tool-call arguments.",
+                "format": "```lyra-write-file path=\"relative/path\" overwrite=true\n<complete file content>\n```",
+                "rules": [
+                    "Do not wrap this block in a tool_fs_run call.",
+                    "Use one block per file.",
+                    "After Lyra writes the block locally, continue with validation or final answer; do not repeat the file content."
+                ],
+                "smallWriteFallback": "Use /tools/filesystem/write_file only for short non-code content that fits comfortably in native JSON args."
+            }
         }
     })
 }

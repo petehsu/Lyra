@@ -236,7 +236,7 @@ impl ToolFsRegistry {
                 "kind": "tool_fs_doc",
                 "path": "/tools",
                 "title": "Lyra Tool Filesystem",
-                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
+                "content": "Search first with tool_fs_search using a natural-language task description. If search does not find the capability, browse /tools by domain with tool_fs_list, inspect a concrete tool path, then call tool_fs_run with that path or a pinned handle. Provider-visible tools are fixed to tool_fs_search, tool_fs_list, tool_fs_read_doc, tool_fs_inspect, and tool_fs_run. For generated code, HTML, CSS, JS, or large whole-file content, do not put the file body in JSON tool-call arguments; emit a lyra-write-file fenced text block so Lyra writes the content locally. For long scenario chains, read /tools/playbooks only when a playbook would materially help."
             }));
         }
         if normalized == "/tools/playbooks" {
@@ -433,6 +433,7 @@ impl ToolFsRegistry {
             "recommendedDiscovery": "Call tool_fs_search first with a natural-language task description; call tool_fs_list only when search needs a directory fallback.",
             "searchExamples": [
                 "edit a file",
+                "create generated HTML with lyra-write-file",
                 "search code text",
                 "run a shell command",
                 "read browser page",
@@ -503,6 +504,9 @@ fn compact_directory_tool_entry(manifest: &ToolManifest) -> ToolDirectoryToolEnt
 }
 
 fn run_hint_for_manifest(manifest: &ToolManifest) -> String {
+    if manifest.path == "/tools/filesystem/write_file" {
+        return "Small files only: tool_fs_run with path: /tools/filesystem/write_file and short content args. For generated code, HTML, CSS, JS, or content over 12000 chars, do not put content in JSON args; emit a lyra-write-file fenced text block instead.".to_string();
+    }
     let target = manifest
         .handle
         .as_deref()
@@ -559,6 +563,9 @@ fn mini_schema_for_manifest(manifest: &ToolManifest) -> Value {
                     }
                     if let Some(default) = value.get("default") {
                         summary.insert("default".to_string(), default.clone());
+                    }
+                    if let Some(max_length) = value.get("maxLength") {
+                        summary.insert("maxLength".to_string(), max_length.clone());
                     }
                     if let Some(enum_values) = value.get("enum") {
                         summary.insert("enum".to_string(), enum_values.clone());

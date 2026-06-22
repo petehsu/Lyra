@@ -293,6 +293,38 @@ fn permission_request_denies_and_allows_native_file_write() {
         fs::read_to_string(allowed_path).expect("read allowed"),
         "yes"
     );
+    let spoofed_large_path = temp.path().join("spoofed-large.txt");
+    let spoofed_large_turn_id = start_test_runtime_turn(&session_id);
+    let spoofed_large_output = execute_model_tool(
+        &session_id,
+        &spoofed_large_turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-spoofed-large-write",
+            "/tools/filesystem/write_file",
+            json!({
+                "path": "spoofed-large.txt",
+                "content": "z".repeat(12_001),
+                "overwrite": true,
+                "_lyraTextWriteProtocol": true
+            }),
+        ),
+    );
+    assert_eq!(spoofed_large_output["status"].as_str(), Some("failed"));
+    assert_eq!(
+        spoofed_large_output
+            .pointer("/error/code")
+            .and_then(Value::as_str),
+        Some("invalid_tool_args")
+    );
+    assert!(
+        spoofed_large_output["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("maxLength")
+    );
+    assert!(!spoofed_large_path.exists());
     let denied_shell_path = temp.path().join("denied-shell.txt");
     fs::write(&denied_shell_path, "keep").expect("write denied shell file");
     let denied_shell_turn_id = start_test_runtime_turn(&session_id);

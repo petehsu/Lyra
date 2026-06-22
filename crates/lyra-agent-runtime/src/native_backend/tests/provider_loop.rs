@@ -464,6 +464,60 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
 }
 
 #[test]
+fn lyra_write_file_text_blocks_execute_as_local_file_writes() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Text Write Protocol Test",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let large_html = format!(
+        "<!doctype html>\n<html><body>{}</body></html>\n",
+        "x".repeat(12_001)
+    );
+    let blocks = extract_text_write_blocks(&format!(
+        "```lyra-write-file path=\"index.html\" overwrite=true\n{large_html}```\n"
+    ))
+    .expect("extract text write block");
+
+    let exec_session_id = session_id.clone();
+    let exec_turn_id = turn_id.clone();
+    let exec_blocks = blocks.clone();
+    let handle = thread::spawn(move || {
+        execute_text_write_blocks(
+            &exec_session_id,
+            &exec_turn_id,
+            &None,
+            &cancellation,
+            ToolExecutionRuntime::default(),
+            &exec_blocks,
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
+        )
+        .expect("allow text write protocol permission");
+    let summary = handle.join().expect("join text write protocol execution");
+
+    assert!(summary.contains("Wrote index.html"));
+    assert_eq!(
+        fs::read_to_string(temp.path().join("index.html")).expect("read written html"),
+        large_html
+    );
+}
+
+#[test]
 fn structured_tool_call_is_ignored_when_no_tools_are_advertised() {
     let parsed = openai_chat_completions::parse_tool_call(
         &json!({

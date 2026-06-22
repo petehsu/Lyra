@@ -19,12 +19,14 @@ pub(crate) fn execute_model_tool(
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ToolExecutionRuntime {
     pub(crate) supports_image_input: bool,
+    pub(crate) allow_large_text_file_write: bool,
 }
 
 impl ToolExecutionRuntime {
     pub(crate) fn from_model_capabilities(capabilities: &ModelCapabilityProfile) -> Self {
         Self {
             supports_image_input: capabilities.supports_image_input,
+            allow_large_text_file_write: false,
         }
     }
 }
@@ -33,6 +35,7 @@ impl Default for ToolExecutionRuntime {
     fn default() -> Self {
         Self {
             supports_image_input: false,
+            allow_large_text_file_write: false,
         }
     }
 }
@@ -273,6 +276,7 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     context.session_id,
                     context.turn_id,
                     context.cancellation,
+                    context.runtime,
                     context.tool_call_id,
                     tool_name,
                     display_name,

@@ -80,6 +80,7 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
             "content": "outside workspace write",
             "overwrite": true
         }),
+        false,
     )
     .expect("direct file tool can write outside workspace after approval layer is bypassed");
     assert_eq!(
@@ -87,6 +88,43 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
         "outside workspace write"
     );
     let _ = fs::remove_file(&outside_path);
+    let large_native_content = "x".repeat(12_001);
+    let large_native_write = tool_file_write(
+        &session_id,
+        &turn_id,
+        "tool-large-native-write",
+        &json!({
+            "path": "large-native-write.txt",
+            "content": large_native_content,
+            "overwrite": true,
+            "_lyraTextWriteProtocol": true
+        }),
+        false,
+    )
+    .expect_err("large native JSON write must be rejected even if it spoofs the internal marker");
+    assert_eq!(
+        large_native_write.code,
+        "content_too_large_for_native_tool_call"
+    );
+    let large_text_protocol_content = "y".repeat(12_001);
+    tool_file_write(
+        &session_id,
+        &turn_id,
+        "tool-large-text-protocol-write",
+        &json!({
+            "path": "large-text-protocol-write.txt",
+            "content": large_text_protocol_content,
+            "overwrite": true
+        }),
+        true,
+    )
+    .expect("text write protocol can write large generated content");
+    assert_eq!(
+        fs::read_to_string(temp.path().join("large-text-protocol-write.txt"))
+            .expect("read text protocol output")
+            .len(),
+        12_001
+    );
     let unread_edit = tool_file_edit(
         &session_id,
         &turn_id,

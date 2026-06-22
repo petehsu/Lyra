@@ -83,6 +83,35 @@ pub(crate) fn execute_native_tool_adapter_with_dispatcher(
     started_at: &str,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
+    execute_native_tool_adapter_with_runtime(
+        session_id,
+        turn_id,
+        cancellation,
+        tool_call_id,
+        tool_name,
+        display_name,
+        action,
+        arguments,
+        started_at,
+        dispatcher,
+        ToolExecutionRuntime::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_native_tool_adapter_with_runtime(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: Value,
+    started_at: &str,
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    runtime: ToolExecutionRuntime,
+) -> Value {
     let mut input = native_tool_input(action, arguments);
     let mut policy_decision = None;
     record_tool_activity(
@@ -248,6 +277,7 @@ pub(crate) fn execute_native_tool_adapter_with_dispatcher(
         &input,
         dispatcher,
         cancellation,
+        runtime,
     );
     let (status, output) = match result {
         Ok(success) => {
@@ -453,6 +483,7 @@ pub(crate) fn run_native_tool(
         input,
         None,
         &cancellation,
+        ToolExecutionRuntime::default(),
     )
 }
 
@@ -464,13 +495,20 @@ pub(crate) fn run_native_tool_with_dispatcher(
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
     cancellation: &Arc<AtomicBool>,
+    runtime: ToolExecutionRuntime,
 ) -> NativeToolResult {
     match tool_name {
         "artifact_read" => tool_artifact_read(session_id, turn_id, tool_call_id, input),
         "file_read" => tool_file_read(session_id, turn_id, tool_call_id, input),
         "file_list" => tool_file_list(session_id, input),
         "file_glob" => tool_file_glob(session_id, input),
-        "file_write" => tool_file_write(session_id, turn_id, tool_call_id, input),
+        "file_write" => tool_file_write(
+            session_id,
+            turn_id,
+            tool_call_id,
+            input,
+            runtime.allow_large_text_file_write,
+        ),
         "file_edit" => tool_file_edit(session_id, turn_id, tool_call_id, input),
         "file_strict_edit" => tool_file_strict_edit(session_id, turn_id, tool_call_id, input),
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),

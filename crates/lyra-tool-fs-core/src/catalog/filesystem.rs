@@ -39,7 +39,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "filesystem",
             "write",
             "Write file",
-            "Write a workspace file.",
+            "Write a small workspace file through JSON args. For generated code, HTML, CSS, JS, or large file content, use the lyra-write-file fenced text block transport instead.",
             None,
         ),
         super::s(

@@ -6,11 +6,13 @@ use std::{
 };
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS: usize = 12_000;
 
 pub(crate) fn execute_filesystem_tool_adapter(
     session_id: &str,
     turn_id: &str,
     cancellation: &Arc<AtomicBool>,
+    runtime: ToolExecutionRuntime,
     tool_call_id: &str,
     tool_name: &str,
     display_name: &str,
@@ -18,7 +20,7 @@ pub(crate) fn execute_filesystem_tool_adapter(
     arguments: Value,
     started_at: &str,
 ) -> Value {
-    execute_native_tool_adapter(
+    execute_native_tool_adapter_with_runtime(
         session_id,
         turn_id,
         cancellation,
@@ -28,6 +30,8 @@ pub(crate) fn execute_filesystem_tool_adapter(
         action,
         arguments,
         started_at,
+        None,
+        runtime,
     )
 }
 
@@ -538,6 +542,7 @@ pub(crate) fn tool_file_write(
     turn_id: &str,
     tool_call_id: &str,
     input: &Value,
+    allow_large_text_file_write: bool,
 ) -> NativeToolResult {
     let path = required_value_string(input, "path")?;
     let content = input
@@ -551,6 +556,17 @@ pub(crate) fn tool_file_write(
             )
         })?
         .to_string();
+    if content.chars().count() > MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS && !allow_large_text_file_write
+    {
+        return Err(NativeToolFailure::new(
+            "content_too_large_for_native_tool_call",
+            format!(
+                "write_file content is too large for provider-native JSON tool arguments: {} chars (limit {MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS})",
+                content.chars().count()
+            ),
+            "For generated code, HTML, or other large files, emit a lyra-write-file fenced text block so Lyra streams the content as assistant text and writes it locally.",
+        ));
+    }
     let overwrite = value_bool(input, "overwrite", false);
     let workspace_path = resolve_workspace_path(session_id, &path, true)?;
     if workspace_path.absolute.exists() && !overwrite {

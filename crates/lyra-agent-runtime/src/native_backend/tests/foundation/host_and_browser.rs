@@ -82,6 +82,7 @@ fn browser_visual_tools_receive_model_image_capability() {
         &Arc::new(AtomicBool::new(false)),
         ToolExecutionRuntime {
             supports_image_input: false,
+            ..ToolExecutionRuntime::default()
         },
         tool_fs_run_call(
             "tool-see-no-image",

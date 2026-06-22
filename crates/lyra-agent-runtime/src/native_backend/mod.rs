@@ -86,6 +86,7 @@ pub(crate) mod session_trim;
 mod sessions;
 mod state;
 mod streaming_preview_state;
+mod text_write_protocol;
 pub(crate) mod token_estimate;
 pub(crate) mod tool_protocol;
 mod tools;
@@ -105,8 +106,8 @@ use self::{
     network::*, page_citations::*, permission_policy::*, permissions::*, projections::*,
     prompt_cache::*, provider::*, provider_config::*, rollback::*, session_ledger::*,
     session_resilience::*, session_store::*, session_trim::*, sessions::*, state::*,
-    token_estimate::*, tool_protocol::*, tools::*, transcript_citations::*, turn_tool_telemetry::*,
-    turns::*, types::*,
+    text_write_protocol::*, token_estimate::*, tool_protocol::*, tools::*, transcript_citations::*,
+    turn_tool_telemetry::*, turns::*, types::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
