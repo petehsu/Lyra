@@ -17,10 +17,12 @@ export interface TodoItem {
 export function TodoBar({
   tasks,
   onPoke,
+  onOpenBoard,
   disabled = false,
 }: {
   tasks: TodoItem[];
   onPoke?: () => void;
+  onOpenBoard?: () => void | Promise<void>;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -36,6 +38,9 @@ export function TodoBar({
       : tasks.find((t) => t.status !== "done") ?? tasks[tasks.length - 1];
   if (currentTask === undefined) return null;
   const hasIncomplete = tasks.some((task) => task.status !== "done");
+  const currentNumber = currentIndex >= 0
+    ? currentIndex + 1
+    : Math.min(total, doneCount + (hasIncomplete ? 1 : 0));
 
   return (
     <div className={`lyra-agents-todo-pill ${open ? "open" : ""}`}>
@@ -43,12 +48,18 @@ export function TodoBar({
         <AppButton variant="ghost" size="sm"
           type="button"
           className="lyra-agents-todo-pill-toggle"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            if (onOpenBoard !== undefined) {
+              void onOpenBoard();
+              return;
+            }
+            setOpen((v) => !v);
+          }}
           aria-expanded={open}
         >
           <ListChecks size={14} strokeWidth={2} />
           <span className="lyra-agents-todo-pill-progress">
-            {doneCount}/{total}
+            {currentNumber}/{total}
           </span>
           <span className="lyra-agents-todo-pill-current lyra-agents-shimmer">{currentTask.title}</span>
         </AppButton>

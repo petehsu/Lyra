@@ -1,4 +1,5 @@
 use super::*;
+use std::path::Component;
 
 const DEFAULT_TOOL_RAW_CHARS: usize = 32_000;
 const BROWSER_MAP_TOOL_CONTENT_CHARS: usize = 8_000;
@@ -75,6 +76,14 @@ fn budgeted_tool_output_with_budget(
         };
     let (raw, raw_artifact_ref, raw_truncated_reason) =
         budgeted_raw_output(session_id, turn_id, tool_call_id, raw);
+    let activity_kind = raw
+        .get("activityKind")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let renderer_hint = raw
+        .get("rendererHint")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     json!({
         "content": content,
         "raw": raw,
@@ -84,6 +93,8 @@ fn budgeted_tool_output_with_budget(
         "truncatedReason": truncated_reason,
         "rawTruncatedReason": raw_truncated_reason,
         "recommendedNextAction": recommended_next_action,
+        "activityKind": activity_kind,
+        "rendererHint": renderer_hint,
     })
 }
 
@@ -109,7 +120,7 @@ fn budgeted_raw_output(
         &raw_text,
     );
     let policy_decision = raw.get("policyDecision").cloned();
-    let envelope = json!({
+    let mut envelope = json!({
         "kind": "tool_raw_ref",
         "retention": {
             "policy": "artifact_only_raw",
@@ -119,6 +130,7 @@ fn budgeted_raw_output(
         "artifactRef": artifact_ref.clone(),
         "policyDecision": policy_decision,
     });
+    preserve_raw_timeline_facts(&raw, &mut envelope);
     (
         envelope,
         artifact_ref,
@@ -126,6 +138,26 @@ fn budgeted_raw_output(
             "tool raw output exceeded {DEFAULT_TOOL_RAW_CHARS} characters"
         )),
     )
+}
+
+fn preserve_raw_timeline_facts(raw: &Value, envelope: &mut Value) {
+    let Some(object) = envelope.as_object_mut() else {
+        return;
+    };
+    for key in [
+        "activityKind",
+        "rendererHint",
+        "changedFiles",
+        "diffArtifactRef",
+        "beforeRef",
+        "afterRef",
+        "artifactRefs",
+        "policyDecision",
+    ] {
+        if let Some(value) = raw.get(key) {
+            object.insert(key.to_string(), value.clone());
+        }
+    }
 }
 
 pub(crate) fn tool_failure_output(
@@ -279,7 +311,7 @@ fn resolve_session_absolute_path(
     let candidate = if candidate.is_absolute() {
         candidate
     } else {
-        root.join(candidate)
+        root.join(normalize_workspace_relative_path(&root, &candidate))
     };
     let absolute = if candidate.exists() {
         candidate.canonicalize().map_err(|error| {
@@ -290,28 +322,7 @@ fn resolve_session_absolute_path(
             )
         })?
     } else if allow_missing_leaf {
-        let parent = candidate.parent().ok_or_else(|| {
-            NativeToolFailure::new(
-                "bad_request",
-                "path has no parent directory",
-                "Retry with a file path that has a parent directory.",
-            )
-        })?;
-        let parent = parent.canonicalize().map_err(|error| {
-            NativeToolFailure::new(
-                "path_unavailable",
-                format!("failed to canonicalize parent directory: {error}"),
-                "Create the parent directory first or choose an existing parent.",
-            )
-        })?;
-        let file_name = candidate.file_name().ok_or_else(|| {
-            NativeToolFailure::new(
-                "bad_request",
-                "path has no file name",
-                "Retry with a file path that includes a file name.",
-            )
-        })?;
-        parent.join(file_name)
+        resolve_missing_candidate_path(&candidate)?
     } else {
         return Err(NativeToolFailure::new(
             "path_not_found",
@@ -320,6 +331,75 @@ fn resolve_session_absolute_path(
         ));
     };
     Ok((root, absolute))
+}
+
+fn normalize_workspace_relative_path(root: &Path, path: &Path) -> PathBuf {
+    let mut components = path.components();
+    let Some(Component::Normal(first)) = components.next() else {
+        return path.to_path_buf();
+    };
+    let Some(root_name) = root.file_name() else {
+        return path.to_path_buf();
+    };
+    if first != root_name {
+        return path.to_path_buf();
+    }
+    let rest = components.collect::<PathBuf>();
+    if rest.as_os_str().is_empty() {
+        path.to_path_buf()
+    } else {
+        rest
+    }
+}
+
+fn resolve_missing_candidate_path(candidate: &Path) -> Result<PathBuf, NativeToolFailure> {
+    let mut ancestor = candidate;
+    while !ancestor.exists() {
+        ancestor = ancestor.parent().ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_request",
+                "path has no existing ancestor",
+                "Retry with a path whose drive or root directory exists.",
+            )
+        })?;
+    }
+    let suffix = candidate.strip_prefix(ancestor).map_err(|error| {
+        NativeToolFailure::new(
+            "path_unavailable",
+            format!("failed to resolve missing path suffix: {error}"),
+            "Retry with a normal filesystem path.",
+        )
+    })?;
+    let mut absolute = ancestor.canonicalize().map_err(|error| {
+        NativeToolFailure::new(
+            "path_unavailable",
+            format!("failed to canonicalize path ancestor: {error}"),
+            "Retry with a path whose existing ancestor is readable.",
+        )
+    })?;
+    for component in suffix.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                return Err(NativeToolFailure::new(
+                    "bad_request",
+                    "missing path suffix unexpectedly contains an absolute prefix",
+                    "Retry with a normal filesystem path.",
+                ));
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !absolute.pop() {
+                    return Err(NativeToolFailure::new(
+                        "path_unavailable",
+                        "path escapes above the filesystem root",
+                        "Retry with a normal filesystem path.",
+                    ));
+                }
+            }
+            Component::Normal(value) => absolute.push(value),
+        }
+    }
+    Ok(absolute)
 }
 
 pub(crate) fn path_escapes_session_workspace(

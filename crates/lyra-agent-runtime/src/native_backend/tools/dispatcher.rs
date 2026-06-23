@@ -19,14 +19,12 @@ pub(crate) fn execute_model_tool(
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ToolExecutionRuntime {
     pub(crate) supports_image_input: bool,
-    pub(crate) allow_large_text_file_write: bool,
 }
 
 impl ToolExecutionRuntime {
     pub(crate) fn from_model_capabilities(capabilities: &ModelCapabilityProfile) -> Self {
         Self {
             supports_image_input: capabilities.supports_image_input,
-            allow_large_text_file_write: false,
         }
     }
 }
@@ -35,7 +33,6 @@ impl Default for ToolExecutionRuntime {
     fn default() -> Self {
         Self {
             supports_image_input: false,
-            allow_large_text_file_write: false,
         }
     }
 }
@@ -73,6 +70,177 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    if call.name == PLAN_BEGIN_MODEL_TOOL {
+        return execute_plan_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            PLAN_BEGIN_MODEL_TOOL,
+            "begin",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == PLAN_WRITE_MODEL_TOOL {
+        return execute_plan_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            PLAN_WRITE_MODEL_TOOL,
+            "write",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == PLAN_FINALIZE_MODEL_TOOL {
+        return execute_plan_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            PLAN_FINALIZE_MODEL_TOOL,
+            "finalize",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == PLAN_REVISE_MODEL_TOOL {
+        return execute_plan_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            PLAN_REVISE_MODEL_TOOL,
+            "revise",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == TODO_WRITE_MODEL_TOOL {
+        return execute_todo_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "todo_write",
+            "todo",
+            "write",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == TODO_UPDATE_MODEL_TOOL {
+        return execute_todo_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "todo_update",
+            "todo",
+            "update",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == TODO_FINISH_MODEL_TOOL {
+        return execute_todo_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "todo_finish",
+            "todo",
+            "finish",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if let Some(output) = plan_gate_model_tool(
+        session_id,
+        turn_id,
+        &call.id,
+        &call.name,
+        call.arguments.clone(),
+        &started_at,
+    ) {
+        return output;
+    }
+    if call.name == APPLY_PATCH_MODEL_TOOL {
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "apply_patch",
+            "file",
+            "apply_patch",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == WRITE_FILE_MODEL_TOOL {
+        // write_file → native file.write. The model-facing schema already uses
+        // {path, content, overwrite}, matching tool_file_write.
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "file_write",
+            "file",
+            "write",
+            call.arguments,
+            &started_at,
+        );
+    }
+    if call.name == EDIT_FILE_MODEL_TOOL {
+        // edit_file → native file.multiedit. Maps the public old_text/new_text/
+        // replace_all edit shape onto the internal oldString/newString/replaceAll
+        // multiedit contract. Same call.id flows through so the preview activity
+        // and the real execution render as a single tool card.
+        return execute_filesystem_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            runtime,
+            &call.id,
+            "file_multiedit",
+            "file",
+            "multiedit",
+            edit_file_arguments(call.arguments),
+            &started_at,
+        );
+    }
+    if call.name == EXEC_COMMAND_MODEL_TOOL {
+        return execute_shell_tool_adapter(
+            session_id,
+            turn_id,
+            cancellation,
+            &call.id,
+            "shell_run",
+            "shell",
+            "run",
+            exec_command_arguments(call.arguments),
+            &started_at,
+        );
+    }
+    if call.name == WRITE_STDIN_MODEL_TOOL {
+        return execute_terminal_tool_adapter(
+            session_id,
+            turn_id,
+            dispatcher,
+            cancellation,
+            &call.id,
+            "terminal.write",
+            "write",
+            write_stdin_arguments(call.arguments),
+            &started_at,
+        );
+    }
     if tool_fs::is_tool_fs_model_tool(&call.name) {
         return tool_fs::execute_tool_fs_model_tool(
             session_id,
@@ -87,7 +255,7 @@ pub(crate) fn execute_model_tool_with_runtime(
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
-        "Use tool_fs_search first, then tool_fs_list as a fallback, tool_fs_inspect for schemas, and tool_fs_run to execute Lyra tools.",
+        "For code work use exec_command for inspection/validation and apply_patch for edits. For non-code domains use tool_fs_search, tool_fs_list, tool_fs_inspect, and tool_fs_run.",
         None,
     );
     record_tool_activity(
@@ -108,6 +276,63 @@ pub(crate) fn execute_model_tool_with_runtime(
     output
 }
 
+/// Translate the public `edit_file` arguments ({path, edits:[{old_text,
+/// new_text, replace_all}]}) into the internal multiedit shape
+/// ({path, edits:[{oldString, newString, replaceAll}]}).
+fn edit_file_arguments(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    if let Some(Value::Array(edits)) = input.remove("edits") {
+        let mapped = edits
+            .into_iter()
+            .map(|edit| {
+                let mut object = edit.as_object().cloned().unwrap_or_default();
+                if let Some(old) = object.remove("old_text") {
+                    object.entry("oldString".to_string()).or_insert(old);
+                }
+                if let Some(new) = object.remove("new_text") {
+                    object.entry("newString".to_string()).or_insert(new);
+                }
+                if let Some(all) = object.remove("replace_all") {
+                    object.entry("replaceAll".to_string()).or_insert(all);
+                }
+                Value::Object(object)
+            })
+            .collect();
+        input.insert("edits".to_string(), Value::Array(mapped));
+    }
+    Value::Object(input)
+}
+
+fn exec_command_arguments(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    if let Some(cmd) = input.remove("cmd") {
+        input.entry("command".to_string()).or_insert(cmd);
+    }
+    if let Some(workdir) = input.remove("workdir") {
+        input.entry("cwd".to_string()).or_insert(workdir);
+    }
+    if let Some(timeout_ms) = input.remove("timeout_ms") {
+        input.entry("timeoutMs".to_string()).or_insert(timeout_ms);
+    }
+    if let Some(max_output_tokens) = input.remove("max_output_tokens")
+        && let Some(tokens) = max_output_tokens.as_u64()
+    {
+        let bytes = tokens.saturating_mul(4).min(1_000_000);
+        input
+            .entry("maxOutputBytes".to_string())
+            .or_insert(Value::Number(serde_json::Number::from(bytes)));
+    }
+    Value::Object(input)
+}
+
+fn write_stdin_arguments(arguments: Value) -> Value {
+    let mut input = arguments.as_object().cloned().unwrap_or_default();
+    if let Some(chars) = input.remove("chars") {
+        input.entry("data".to_string()).or_insert(chars);
+    }
+    Value::Object(input)
+}
+
 pub(crate) struct ToolFsTargetExecution<'a> {
     pub(crate) session_id: &'a str,
     pub(crate) turn_id: &'a str,
@@ -116,7 +341,6 @@ pub(crate) struct ToolFsTargetExecution<'a> {
     pub(crate) runtime: ToolExecutionRuntime,
     pub(crate) tool_call_id: &'a str,
     pub(crate) manifest: &'a lyra_tool_fs_core::ToolManifest,
-    pub(crate) operation: &'a lyra_tool_fs_core::ToolOperationEnvelope,
     pub(crate) arguments: Value,
 }
 
@@ -153,17 +377,6 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
         );
         return output;
     };
-    if matches!(target, tool_fs::RuntimeToolTarget::Git) {
-        return execute_git_tool_fs_tool(
-            context.session_id,
-            context.turn_id,
-            context.tool_call_id,
-            manifest,
-            context.operation,
-            context.arguments,
-            &started_at,
-        );
-    }
     match &target {
         tool_fs::RuntimeToolTarget::HostAdapter {
             host_method,
@@ -398,30 +611,7 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 &started_at,
             );
         }
-        tool_fs::RuntimeToolTarget::Git => {}
     }
-    let output = tool_failure_output(
-        "tool_not_found",
-        &format!("No Tool-FS runtime adapter completed {}", manifest.path),
-        "Use tool_fs_list or tool_fs_inspect to choose a supported Tool-FS target.",
-        Some(json!({ "toolPath": manifest.path })),
-    );
-    record_tool_activity(
-        context.session_id,
-        context.turn_id,
-        tool_activity(
-            context.tool_call_id,
-            &manifest.domain,
-            &manifest.title,
-            "failed",
-            context.arguments,
-            Some(output.clone()),
-            &started_at,
-            Some(now()),
-        ),
-        "toolFinished",
-    );
-    output
 }
 
 fn execute_session_read_message_model_tool(

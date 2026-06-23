@@ -247,6 +247,36 @@ function unknownValueEqual(left: unknown, right: unknown): boolean {
   return false;
 }
 
+const resolveFinalSummaryBlockId = (message: ChatMessage): string | null => {
+  if (message.isApiError === true || isAgentMessageWorking(message)) return null;
+  const lastBlock = message.blocks.at(-1);
+  if (lastBlock?.type !== "text" || lastBlock.body.trim().length === 0) return null;
+  const precedingBlocks = message.blocks.slice(0, -1);
+  if (!precedingBlocks.some((block) => block.type === "tools")) return null;
+  return lastBlock.id;
+};
+
+const formatProcessDuration = (durationMs: number | undefined): string | null => {
+  if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return null;
+  }
+  const seconds = Math.max(1, Math.round(durationMs / 1000));
+  if (seconds < 60) {
+    return formatMessage("lyra-agents-message.durationSeconds", { count: seconds });
+  }
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) {
+    return formatMessage("lyra-agents-message.durationMinutes", { count: minutes });
+  }
+  const hours = Math.max(1, Math.round(minutes / 60));
+  if (hours < 24) {
+    return formatMessage("lyra-agents-message.durationHours", { count: hours });
+  }
+  return formatMessage("lyra-agents-message.durationDays", {
+    count: Math.max(1, Math.round(hours / 24))
+  });
+};
+
 const taskItemsEqual = (
   left: readonly { title: string; status: string }[],
   right: readonly { title: string; status: string }[]
@@ -441,6 +471,7 @@ const chatMessageEqual = (
     left.author !== right.author ||
     left.isApiError !== right.isApiError ||
     left.time !== right.time ||
+    left.workDurationMs !== right.workDurationMs ||
     left.blocks.length !== right.blocks.length ||
     !rollbackEqual(left.rollback, right.rollback)
   ) {
@@ -776,6 +807,17 @@ const AgentMessage = memo(function AgentMessage({
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = message.blocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
+  const finalSummaryBlockId = !isTurnRunning
+    ? resolveFinalSummaryBlockId(message)
+    : null;
+  const preSummaryBlocks = finalSummaryBlockId === null
+    ? []
+    : message.blocks.filter((block) => block.id !== finalSummaryBlockId);
+  const [preSummaryOpen, setPreSummaryOpen] = useState(false);
+  const processDuration = formatProcessDuration(message.workDurationMs);
+  const processFoldLabel = processDuration === null
+    ? t("lyra-agents-message.processFold")
+    : formatMessage("lyra-agents-message.processWorked", { duration: processDuration });
   const isEmptyPendingAgent = isEmptyPendingAgentMessage(message);
   const hasTextBlocks = textBlocks.some((b) => b.body.trim().length > 0);
   const hasImages = message.blocks.some((b) => b.type === "image");
@@ -798,6 +840,80 @@ const AgentMessage = memo(function AgentMessage({
     return null;
   }
 
+  const renderAgentBlock = (b: MessageBlock) => {
+    if (b.type === "text") {
+      // Only stream text that is actively being written (trailing text
+      // block). Avoid re-animating earlier narration when a new tool
+      // round starts. NOTE: we intentionally do NOT require the last
+      // block overall to be text — when a tool block lands after the
+      // current sentence (`[text, tool]`), the last *text* block is
+      // still being streamed and must keep updating, otherwise it freezes
+      // until the tool finishes.
+      const isLastText = b.id === lastTextId;
+      const isStreamingHost = showActivityIndicator && streamingTextActive;
+      const shouldStream = isStreamingHost && isLastText;
+      return (
+        <div
+          key={b.id}
+          className="lyra-agents-message-text-block"
+          data-message-block-id={b.id}
+        >
+          <StreamingText
+            content={b.body}
+            streaming={shouldStream}
+          />
+        </div>
+      );
+    }
+    if (b.type === "image") {
+      const src = imagePreviewSource(b.image);
+      return (
+        <figure key={b.id} className="lyra-agents-message-image lyra-agents-message-image-agent">
+          <ClickableImage
+            src={src}
+            image={b.image}
+            alt={b.image.label ?? t("lyra-agents-message.imageAttachment")}
+          />
+          {b.image.label !== undefined && b.image.label !== null ? (
+            <figcaption>{b.image.label}</figcaption>
+          ) : null}
+        </figure>
+      );
+    }
+    return <ToolGroupBlock key={b.id} group={b.group} />;
+  };
+
+  const renderedBlocks = finalSummaryBlockId === null
+    ? message.blocks.map(renderAgentBlock)
+    : (
+        <>
+          <div className={`lyra-agents-message-process-fold ${preSummaryOpen ? "open" : ""}`}>
+            <AppButton
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="lyra-agents-message-process-fold-head"
+              onClick={() => setPreSummaryOpen((open) => !open)}
+              aria-expanded={preSummaryOpen}
+            >
+              <span className="lyra-agents-message-process-fold-line" aria-hidden="true" />
+              <span className="lyra-agents-message-process-fold-label">{processFoldLabel}</span>
+              <span className="lyra-agents-message-process-fold-line" aria-hidden="true" />
+            </AppButton>
+            <div className="lyra-agents-collapse" data-open={preSummaryOpen}>
+              <div className="lyra-agents-collapse-inner">
+                <div className="lyra-agents-message-process-fold-body">
+                  {preSummaryBlocks.map(renderAgentBlock)}
+                </div>
+              </div>
+            </div>
+          </div>
+          {message.blocks
+            .filter((block) => block.id === finalSummaryBlockId)
+            .map(renderAgentBlock)}
+        </>
+      );
+
   return (
     <div
       className={`lyra-agents-message lyra-agents-message-agent${message.isApiError === true ? " lyra-agents-message-agent-error" : ""}`}
@@ -807,50 +923,7 @@ const AgentMessage = memo(function AgentMessage({
         className={`lyra-agents-message-body${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}`}
         onContextMenu={(event) => onContextMenu?.(event, message)}
       >
-        {isEmptyPendingAgent ? null : (
-          message.blocks.map((b) => {
-            if (b.type === "text") {
-              // Only stream text that is actively being written (trailing text
-              // block). Avoid re-animating earlier narration when a new tool
-              // round starts. NOTE: we intentionally do NOT require the last
-              // block overall to be text — when a tool block lands after the
-              // current sentence (`[text, tool]`), the last *text* block is
-              // still being streamed and must keep updating, otherwise it freezes
-              // until the tool finishes.
-              const isLastText = b.id === lastTextId;
-              const isStreamingHost = showActivityIndicator && streamingTextActive;
-              const shouldStream = isStreamingHost && isLastText;
-              return (
-                <div
-                  key={b.id}
-                  className="lyra-agents-message-text-block"
-                  data-message-block-id={b.id}
-                >
-                  <StreamingText
-                    content={b.body}
-                    streaming={shouldStream}
-                  />
-                </div>
-              );
-            }
-            if (b.type === "image") {
-              const src = imagePreviewSource(b.image);
-              return (
-                <figure key={b.id} className="lyra-agents-message-image lyra-agents-message-image-agent">
-                  <ClickableImage
-                    src={src}
-                    image={b.image}
-                    alt={b.image.label ?? t("lyra-agents-message.imageAttachment")}
-                  />
-                  {b.image.label !== undefined && b.image.label !== null ? (
-                    <figcaption>{b.image.label}</figcaption>
-                  ) : null}
-                </figure>
-              );
-            }
-            return <ToolGroupBlock key={b.id} group={b.group} />;
-          })
-        )}
+        {isEmptyPendingAgent ? null : renderedBlocks}
         {showRespondingStatus ? (
           <span className="lyra-agents-message-time lyra-agents-message-time-agent" aria-label={t("lyra-agents-message.agentResponding")}>
             {messageActivityIndicator(activitySource, followActivity)}

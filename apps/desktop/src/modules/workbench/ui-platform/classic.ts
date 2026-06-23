@@ -10,6 +10,7 @@ import { FileEditorSurface } from "../file-editor";
 import { FileManagerSurface } from "../file-manager";
 import { ImageViewerSurface } from "../image-viewer";
 import { AgentProjectTreeSurface } from "../agent-project-tree";
+import { AgentPlanBoardSurface } from "../agent-plan-board";
 import { AgentGitSurface } from "../agent-git";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
 import { NotificationCenterSurface } from "../notifications";
@@ -62,6 +63,7 @@ export const CLASSIC_WORKBENCH_UI_PACK = {
       fileEditor: FileEditorSurface,
       imageViewer: ImageViewerSurface,
       agentProjectTree: AgentProjectTreeSurface,
+      agentPlanBoard: AgentPlanBoardSurface,
       agentGit: AgentGitSurface,
       notificationCenter: NotificationCenterSurface,
       agentSessionHistory: AgentSessionHistorySurface,

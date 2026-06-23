@@ -23,87 +23,77 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    ensure_test_local_search_index_ready(temp.path());
+    let legacy_read = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-legacy-read",
+            "/tools/filesystem/read_file",
+            json!({ "path": "README.md", "startLine": 1, "endLine": 1 }),
+        ),
+    );
+    assert_eq!(
+        legacy_read.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
     let read = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-read",
-            "/tools/filesystem/read_file",
-            json!({ "path": "README.md", "startLine": 1, "endLine": 1 }),
-        ),
+        ModelToolCall {
+            id: "tool-read".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "sed -n '1p' README.md" }),
+        },
     );
     assert!(read["content"].as_str().unwrap().contains("needle in docs"));
-    assert_eq!(read["schemaVersion"].as_u64(), Some(1));
-    assert_eq!(read["status"].as_str(), Some("completed"));
-    assert_eq!(read["runtimeTurnId"].as_str(), Some(turn_id.as_str()));
-    assert_eq!(
-        read["toolPath"].as_str(),
-        Some("/tools/filesystem/read_file")
-    );
-    assert_eq!(read["manifestTitle"].as_str(), Some("Read file"));
-    assert!(read["traceId"].as_str().is_some());
-    assert!(
-        read["trace"]
-            .as_array()
-            .is_some_and(|trace| trace.iter().any(|record| record["phase"] == "validated"))
-    );
-    let glob = execute_model_tool(
-        &session_id,
-        &turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-glob",
-            "/tools/filesystem/glob",
-            json!({ "pattern": "**/*.rs" }),
-        ),
-    );
-    assert!(glob["content"].as_str().unwrap().contains("src/main.rs"));
+    assert_eq!(read["raw"]["exitCode"].as_i64(), Some(0));
+    assert_eq!(read["activityKind"].as_str(), Some("shell"));
+    assert!(read["raw"]["stdoutRef"].is_object());
     let search = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-search",
-            "/tools/code/search_project",
-            json!({ "query": "needle" }),
-        ),
+        ModelToolCall {
+            id: "tool-search".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "rg -n needle" }),
+        },
     );
     assert!(search["content"].as_str().unwrap().contains("README.md"));
-    let symbol = execute_model_tool(
+    let files = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-symbol",
-            "/tools/code/search_symbol",
-            json!({ "query": "main" }),
-        ),
+        ModelToolCall {
+            id: "tool-files".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "rg --files -g '*.rs'" }),
+        },
     );
-    assert!(symbol["content"].as_str().unwrap().contains("src/main.rs"));
+    assert!(files["content"].as_str().unwrap().contains("src/main.rs"));
     let shell = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-shell",
-            "/tools/shell/run_command",
-            json!({ "command": "printf hello", "cwd": "." }),
-        ),
+        ModelToolCall {
+            id: "tool-shell".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf hello" }),
+        },
     );
     assert!(shell["content"].as_str().unwrap().contains("hello"));
     assert_eq!(shell["raw"]["exitCode"].as_i64(), Some(0));
-    assert_eq!(shell["status"].as_str(), Some("completed"));
     assert_eq!(shell["activityKind"].as_str(), Some("shell"));
-    assert!(shell["stdoutRef"].is_object());
+    assert!(shell["raw"]["stdoutRef"].is_object());
     assert_eq!(
-        shell.pointer("/stdoutRef/kind").and_then(Value::as_str),
+        shell.pointer("/raw/stdoutRef/kind").and_then(Value::as_str),
         Some("stdout")
     );
     assert_eq!(
@@ -112,18 +102,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .and_then(Value::as_str),
         Some("auto_approved")
     );
-    assert!(
-        shell["artifactRefs"]
-            .as_array()
-            .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact["id"].is_string()))
-    );
-    assert!(
-        shell["changes"]
-            .as_array()
-            .is_some_and(|changes| changes.iter().any(|change| {
-                change["kind"] == "process" && change["detail"]["stdoutRef"].is_object()
-            }))
-    );
+    assert!(shell["raw"]["stdoutRef"]["id"].as_str().is_some());
     let rendered = execute_model_tool(
         &session_id,
         &turn_id,
@@ -215,44 +194,20 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .contains("verify native tool surface")
     );
     let outside_turn_id = start_test_runtime_turn(&session_id);
-    let outside_session_id = session_id.clone();
-    let outside_cancellation = cancellation.clone();
-    let outside_handle = thread::spawn(move || {
-        execute_model_tool(
-            &outside_session_id,
-            &outside_turn_id,
-            &None,
-            &outside_cancellation,
-            tool_fs_run_call(
-                "tool-outside",
-                "/tools/filesystem/read_file",
-                json!({ "path": "/etc/passwd" }),
-            ),
-        )
-    });
-    let permission_id = wait_for_pending_permission(&session_id);
-    let pending = state()
-        .lock()
-        .expect("state lock")
-        .pending_permissions
-        .get(&permission_id)
-        .cloned()
-        .expect("pending permission");
-    assert_eq!(pending.risk, "workspace_escape");
-    backend
-        .call_agent_method(
-            "agent.permission.respond",
-            json!({
-                "sessionId": session_id.clone(),
-                "permissionId": permission_id,
-                "allowed": false
-            }),
-        )
-        .expect("deny outside read");
-    let outside = outside_handle.join().expect("join outside read");
+    let outside = execute_model_tool(
+        &session_id,
+        &outside_turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "tool-outside",
+            "/tools/filesystem/read_file",
+            json!({ "path": "/etc/passwd" }),
+        ),
+    );
     assert_eq!(
         outside.pointer("/error/code").and_then(Value::as_str),
-        Some("permission_denied")
+        Some("tool_not_found")
     );
     let agent_root = state()
         .lock()
@@ -273,7 +228,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &cancellation,
         tool_fs_run_call(
             "tool-lumen-artifact",
-            "/tools/filesystem/read_file",
+            "/tools/runtime/artifact_read",
             json!({ "path": lumen_path.display().to_string() }),
         ),
     );
@@ -315,7 +270,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &cancellation,
         tool_fs_run_call(
             "tool-terminal-artifact",
-            "/tools/filesystem/read_file",
+            "/tools/runtime/artifact_read",
             json!({ "path": terminal_output_path.display().to_string() }),
         ),
     );

@@ -79,7 +79,7 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
     );
 }
 #[test]
-fn permission_request_denies_and_allows_outside_workspace_read() {
+fn removed_file_read_tool_fs_does_not_request_outside_workspace_permission() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -89,70 +89,28 @@ fn permission_request_denies_and_allows_outside_workspace_read() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    let denied_turn_id = start_test_runtime_turn(&session_id);
-    let denied_session_id = session_id.clone();
-    let denied_handle = thread::spawn(move || {
-        execute_model_tool(
-            &denied_session_id,
-            &denied_turn_id,
-            &None,
-            &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-outside-denied",
-                "/tools/filesystem/read_file",
-                json!({ "path": "/etc/passwd" }),
-            ),
-        )
-    });
-    let permission_id = wait_for_pending_permission(&session_id);
-    let pending = state()
-        .lock()
-        .expect("state lock")
-        .pending_permissions
-        .get(&permission_id)
-        .cloned()
-        .expect("pending permission");
-    assert_eq!(pending.risk, "workspace_escape");
-    backend
-        .call_agent_method(
-            "agent.permission.respond",
-            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": false }),
-        )
-        .expect("deny outside read");
-    let denied_output = denied_handle.join().expect("join denied outside read");
+    let turn_id = start_test_runtime_turn(&session_id);
+    let denied_output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        tool_fs_run_call(
+            "tool-outside-denied",
+            "/tools/filesystem/read_file",
+            json!({ "path": "/etc/passwd" }),
+        ),
+    );
     assert_eq!(
         denied_output.pointer("/error/code").and_then(Value::as_str),
-        Some("permission_denied")
+        Some("tool_not_found")
     );
-
-    let allowed_turn_id = start_test_runtime_turn(&session_id);
-    let allowed_session_id = session_id.clone();
-    let allowed_handle = thread::spawn(move || {
-        execute_model_tool(
-            &allowed_session_id,
-            &allowed_turn_id,
-            &None,
-            &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-outside-allowed",
-                "/tools/filesystem/read_file",
-                json!({ "path": "/etc/passwd", "maxBytes": 64 }),
-            ),
-        )
-    });
-    let permission_id = wait_for_pending_permission(&session_id);
-    backend
-        .call_agent_method(
-            "agent.permission.respond",
-            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
-        )
-        .expect("allow outside read");
-    let allowed_output = allowed_handle.join().expect("join allowed outside read");
-    assert_eq!(allowed_output["status"].as_str(), Some("completed"));
     assert!(
-        allowed_output["content"]
-            .as_str()
-            .is_some_and(|content| !content.trim().is_empty())
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_permissions
+            .is_empty()
     );
 }
 
@@ -171,21 +129,18 @@ fn permission_request_denies_and_allows_native_file_write() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let denied_turn_id = start_test_runtime_turn(&session_id);
     let denied_session_id = session_id.clone();
+    let denied_patch = "*** Begin Patch\n*** Add File: denied.txt\n+nope\n*** End Patch\n";
     let denied_handle = thread::spawn(move || {
         execute_model_tool(
             &denied_session_id,
             &denied_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-denied",
-                "/tools/filesystem/write_file",
-                json!({
-                    "path": "denied.txt",
-                    "content": "nope",
-                    "overwrite": true
-                }),
-            ),
+            ModelToolCall {
+                id: "tool-denied".to_string(),
+                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                arguments: json!({ "patch": denied_patch }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -199,16 +154,6 @@ fn permission_request_denies_and_allows_native_file_write() {
     assert_eq!(
         denied_output.pointer("/error/code").and_then(Value::as_str),
         Some("permission_denied")
-    );
-    assert_eq!(denied_output["schemaVersion"].as_u64(), Some(1));
-    assert_eq!(denied_output["status"].as_str(), Some("failed"));
-    assert_eq!(
-        denied_output["notRunReason"].as_str(),
-        Some("permission_denied")
-    );
-    assert_eq!(
-        denied_output["toolPath"].as_str(),
-        Some("/tools/filesystem/write_file")
     );
     assert_eq!(
         denied_output
@@ -224,21 +169,18 @@ fn permission_request_denies_and_allows_native_file_write() {
     assert!(!denied_path.exists());
     let allowed_turn_id = start_test_runtime_turn(&session_id);
     let allowed_session_id = session_id.clone();
+    let allowed_patch = "*** Begin Patch\n*** Add File: allowed.txt\n+yes\n*** End Patch\n";
     let allowed_handle = thread::spawn(move || {
         execute_model_tool(
             &allowed_session_id,
             &allowed_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-allowed",
-                "/tools/filesystem/write_file",
-                json!({
-                    "path": "allowed.txt",
-                    "content": "yes",
-                    "overwrite": true
-                }),
-            ),
+            ModelToolCall {
+                id: "tool-allowed".to_string(),
+                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                arguments: json!({ "patch": allowed_patch }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -255,12 +197,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             .unwrap()
             .contains("allowed.txt")
     );
-    assert_eq!(allowed_output["schemaVersion"].as_u64(), Some(1));
-    assert_eq!(allowed_output["status"].as_str(), Some("completed"));
-    assert_eq!(
-        allowed_output["toolPath"].as_str(),
-        Some("/tools/filesystem/write_file")
-    );
+    assert_eq!(allowed_output["activityKind"].as_str(), Some("edit"));
     assert_eq!(
         allowed_output
             .pointer("/raw/policyDecision/mode")
@@ -274,16 +211,15 @@ fn permission_request_denies_and_allows_native_file_write() {
         Some("approved")
     );
     assert!(
-        allowed_output["artifactRefs"]
-            .as_array()
-            .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact["id"].is_string()))
+        allowed_output["raw"]["diffArtifactRef"]["id"]
+            .as_str()
+            .is_some()
     );
     assert!(
-        allowed_output["changes"]
+        allowed_output["raw"]["changedFiles"]
             .as_array()
             .is_some_and(|changes| changes.iter().any(|change| {
-                change["kind"] == "file"
-                    && change["path"] == "allowed.txt"
+                change["path"] == "allowed.txt"
                     && change["beforeRef"]["id"].is_string()
                     && change["afterRef"]["id"].is_string()
                     && change["diffRef"]["id"].is_string()
@@ -291,7 +227,7 @@ fn permission_request_denies_and_allows_native_file_write() {
     );
     assert_eq!(
         fs::read_to_string(allowed_path).expect("read allowed"),
-        "yes"
+        "yes\n"
     );
     let spoofed_large_path = temp.path().join("spoofed-large.txt");
     let spoofed_large_turn_id = start_test_runtime_turn(&session_id);
@@ -306,23 +242,15 @@ fn permission_request_denies_and_allows_native_file_write() {
             json!({
                 "path": "spoofed-large.txt",
                 "content": "z".repeat(12_001),
-                "overwrite": true,
-                "_lyraTextWriteProtocol": true
+                "overwrite": true
             }),
         ),
     );
-    assert_eq!(spoofed_large_output["status"].as_str(), Some("failed"));
     assert_eq!(
         spoofed_large_output
             .pointer("/error/code")
             .and_then(Value::as_str),
-        Some("invalid_tool_args")
-    );
-    assert!(
-        spoofed_large_output["content"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("maxLength")
+        Some("tool_not_found")
     );
     assert!(!spoofed_large_path.exists());
     let denied_shell_path = temp.path().join("denied-shell.txt");
@@ -335,14 +263,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &denied_shell_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-shell-denied",
-                "/tools/shell/run_command",
-                json!({
-                    "command": "rm denied-shell.txt",
-                    "cwd": "."
-                }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-denied".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm denied-shell.txt" }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -370,14 +295,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &allowed_shell_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-shell-allowed",
-                "/tools/shell/run_command",
-                json!({
-                    "command": "rm allowed-shell.txt",
-                    "cwd": "."
-                }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-allowed".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm allowed-shell.txt" }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -417,14 +339,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &unbound_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            tool_fs_run_call(
-                "tool-shell-unbound-denied",
-                "/tools/shell/run_command",
-                json!({
-                    "command": "rm unbound-shell.txt",
-                    "cwd": unbound_cwd
-                }),
-            ),
+            ModelToolCall {
+                id: "tool-shell-unbound-denied".to_string(),
+                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+                arguments: json!({ "cmd": "rm unbound-shell.txt", "workdir": unbound_cwd }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&unbound_session_id);
@@ -450,7 +369,6 @@ fn permission_request_denies_and_allows_native_file_write() {
 fn tool_fs_permission_modes_gate_before_adapter_execution() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
-    fs::write(temp.path().join("readable.txt"), "hello").expect("write readable");
     let created = backend
         .call_agent_method(
             "agent.session.create",
@@ -466,9 +384,9 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
         &None,
         &Arc::new(AtomicBool::new(false)),
         tool_fs_run_call_with_permission_mode(
-            "tool-read-only-read",
-            "/tools/filesystem/read_file",
-            json!({ "path": "readable.txt" }),
+            "tool-read-only-memory",
+            "/tools/memory/search",
+            json!({ "query": "hello" }),
             "read_only",
         ),
     );
@@ -496,8 +414,10 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
     );
     assert_eq!(read_only_output["status"].as_str(), Some("failed"));
     assert_eq!(
-        read_only_output["notRunReason"].as_str(),
-        Some("permission_denied")
+        read_only_output
+            .pointer("/error/code")
+            .and_then(Value::as_str),
+        Some("tool_not_found")
     );
     assert!(!denied_path.exists());
 
@@ -508,9 +428,9 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
         &None,
         &Arc::new(AtomicBool::new(false)),
         tool_fs_run_call_with_permission_mode(
-            "tool-deny-read",
-            "/tools/filesystem/read_file",
-            json!({ "path": "readable.txt" }),
+            "tool-deny-memory",
+            "/tools/memory/search",
+            json!({ "query": "hello" }),
             "deny",
         ),
     );
@@ -520,7 +440,6 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
         Some("permission_denied")
     );
 
-    let full_access_path = temp.path().join("full-access.txt");
     let full_access_turn_id = start_test_runtime_turn(&session_id);
     let full_access_output = execute_model_tool(
         &session_id,
@@ -528,22 +447,18 @@ fn tool_fs_permission_modes_gate_before_adapter_execution() {
         &None,
         &Arc::new(AtomicBool::new(false)),
         tool_fs_run_call_with_permission_mode(
-            "tool-full-access-write",
-            "/tools/filesystem/write_file",
-            json!({ "path": "full-access.txt", "content": "yes", "overwrite": true }),
+            "tool-full-access-memory",
+            "/tools/memory/search",
+            json!({ "query": "hello" }),
             "full_access",
         ),
     );
     assert_eq!(full_access_output["status"].as_str(), Some("completed"));
     assert_eq!(
         full_access_output
-            .pointer("/raw/policyDecision/mode")
+            .pointer("/toolOperation/permissionMode")
             .and_then(Value::as_str),
         Some("full_access")
-    );
-    assert_eq!(
-        fs::read_to_string(full_access_path).expect("read full access file"),
-        "yes"
     );
     assert!(
         state()

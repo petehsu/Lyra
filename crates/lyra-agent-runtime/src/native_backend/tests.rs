@@ -51,6 +51,18 @@ fn model_tool_names(request: &Value) -> Vec<String> {
 fn expected_provider_tool_names() -> Vec<String> {
     vec![
         LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+        PLAN_BEGIN_MODEL_TOOL.to_string(),
+        PLAN_WRITE_MODEL_TOOL.to_string(),
+        PLAN_FINALIZE_MODEL_TOOL.to_string(),
+        PLAN_REVISE_MODEL_TOOL.to_string(),
+        TODO_WRITE_MODEL_TOOL.to_string(),
+        TODO_UPDATE_MODEL_TOOL.to_string(),
+        TODO_FINISH_MODEL_TOOL.to_string(),
+        EDIT_FILE_MODEL_TOOL.to_string(),
+        WRITE_FILE_MODEL_TOOL.to_string(),
+        APPLY_PATCH_MODEL_TOOL.to_string(),
+        EXEC_COMMAND_MODEL_TOOL.to_string(),
+        WRITE_STDIN_MODEL_TOOL.to_string(),
         "tool_fs_search".to_string(),
         "tool_fs_list".to_string(),
         "tool_fs_read_doc".to_string(),

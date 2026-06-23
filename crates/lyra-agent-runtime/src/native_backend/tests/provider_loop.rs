@@ -407,7 +407,7 @@ fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
             r#"I will run this:
 
 ```json
-{"path":"/tools/shell/run_command","args":{"command":"pwd"}}
+{"path":"/tools/web/search","args":{"query":"Lyra"}}
 ```
 "#
             .to_string(),
@@ -464,14 +464,14 @@ fn textual_provider_visible_function_call_is_rejected_even_without_advertised_to
 }
 
 #[test]
-fn lyra_write_file_text_blocks_execute_as_local_file_writes() {
+fn direct_apply_patch_writes_large_generated_file() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
         .call_agent_method(
             "agent.session.create",
             json!({
-                "title": "Text Write Protocol Test",
+                "title": "Direct Apply Patch Test",
                 "workingDir": temp.path().display().to_string()
             }),
         )
@@ -483,22 +483,26 @@ fn lyra_write_file_text_blocks_execute_as_local_file_writes() {
         "<!doctype html>\n<html><body>{}</body></html>\n",
         "x".repeat(12_001)
     );
-    let blocks = extract_text_write_blocks(&format!(
-        "```lyra-write-file path=\"index.html\" overwrite=true\n{large_html}```\n"
-    ))
-    .expect("extract text write block");
+    let patch_body = large_html
+        .lines()
+        .map(|line| format!("+{line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let patch = format!("*** Begin Patch\n*** Add File: index.html\n{patch_body}\n*** End Patch\n");
 
     let exec_session_id = session_id.clone();
     let exec_turn_id = turn_id.clone();
-    let exec_blocks = blocks.clone();
     let handle = thread::spawn(move || {
-        execute_text_write_blocks(
+        execute_model_tool(
             &exec_session_id,
             &exec_turn_id,
             &None,
             &cancellation,
-            ToolExecutionRuntime::default(),
-            &exec_blocks,
+            ModelToolCall {
+                id: "tool-direct-apply-patch".to_string(),
+                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                arguments: json!({ "patch": patch }),
+            },
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -507,10 +511,11 @@ fn lyra_write_file_text_blocks_execute_as_local_file_writes() {
             "agent.permission.respond",
             json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
         )
-        .expect("allow text write protocol permission");
-    let summary = handle.join().expect("join text write protocol execution");
+        .expect("allow apply_patch permission");
+    let output = handle.join().expect("join apply_patch execution");
 
-    assert!(summary.contains("Wrote index.html"));
+    assert_eq!(output["activityKind"], "edit");
+    assert_eq!(output["raw"]["changedFiles"][0]["path"], "index.html");
     assert_eq!(
         fs::read_to_string(temp.path().join("index.html")).expect("read written html"),
         large_html

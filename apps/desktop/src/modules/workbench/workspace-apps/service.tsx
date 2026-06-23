@@ -29,6 +29,11 @@ import {
   type AgentProjectTreeAppId
 } from "../agent-project-tree";
 import {
+  renderAgentPlanBoardAppIcon,
+  type AgentPlanBoardAppIconKey,
+  type AgentPlanBoardAppId
+} from "../agent-plan-board";
+import {
   renderAgentGitAppIcon,
   type AgentGitAppIconKey,
   type AgentGitAppId
@@ -51,6 +56,8 @@ const renderers: Record<WorkbenchAppId, (iconKey: WorkspaceAppIconKey) => ReactN
   "image-viewer": (iconKey) => renderImageViewerAppIcon(iconKey as ImageViewerAppIconKey),
   "agent-project-tree": (iconKey) =>
     renderAgentProjectTreeAppIcon(iconKey as AgentProjectTreeAppIconKey),
+  "agent-plan-board": (iconKey) =>
+    renderAgentPlanBoardAppIcon(iconKey as AgentPlanBoardAppIconKey),
   "agent-git": (iconKey) =>
     renderAgentGitAppIcon(iconKey as AgentGitAppIconKey),
   "agent-session-history": (iconKey) =>
@@ -88,6 +95,11 @@ export const isAgentProjectTreeAppId = (
   value: WorkbenchAppId
 ): value is AgentProjectTreeAppId =>
   value === "agent-project-tree";
+
+export const isAgentPlanBoardAppId = (
+  value: WorkbenchAppId
+): value is AgentPlanBoardAppId =>
+  value === "agent-plan-board";
 
 export const isAgentGitAppId = (
   value: WorkbenchAppId

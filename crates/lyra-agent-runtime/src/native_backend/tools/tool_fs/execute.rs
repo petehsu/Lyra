@@ -359,42 +359,6 @@ pub(super) fn execute_tool_fs_read_only(
     output
 }
 
-fn strip_text_write_protocol_marker(args: &mut Value) {
-    if let Some(object) = args.as_object_mut() {
-        object.remove("_lyraTextWriteProtocol");
-    }
-}
-
-fn mark_as_text_write_protocol(args: &mut Value) {
-    if let Some(object) = args.as_object_mut() {
-        object.insert("_lyraTextWriteProtocol".to_string(), Value::Bool(true));
-    }
-}
-
-fn prepare_text_write_validation_args(
-    operation_envelope: &mut ToolOperationEnvelope,
-    runtime: ToolExecutionRuntime,
-) -> Option<Value> {
-    if !runtime.allow_large_text_file_write
-        || operation_envelope.path.as_deref() != Some("/tools/filesystem/write_file")
-    {
-        return None;
-    }
-    let content = operation_envelope
-        .args
-        .get("content")
-        .and_then(Value::as_str)?;
-    if content.chars().count() <= 12_000 {
-        return None;
-    }
-    let validation_content = content.chars().take(12_000).collect::<String>();
-    let original = operation_envelope.args.clone();
-    if let Some(object) = operation_envelope.args.as_object_mut() {
-        object.insert("content".to_string(), Value::String(validation_content));
-    }
-    Some(original)
-}
-
 pub(super) fn execute_tool_fs_run(
     session_id: &str,
     turn_id: &str,
@@ -408,7 +372,6 @@ pub(super) fn execute_tool_fs_run(
         runtime_registry_for_tool_fs_call(TOOL_FS_RUN, &call.arguments, dispatcher.as_ref());
     let mut operation_envelope =
         run_operation_envelope(session_id, turn_id, &call.arguments, cancellation);
-    strip_text_write_protocol_marker(&mut operation_envelope.args);
     let mut trace = Vec::new();
     push_trace(
         &mut trace,
@@ -423,12 +386,7 @@ pub(super) fn execute_tool_fs_run(
             "timeoutMs": operation_envelope.timeout_ms,
         }),
     );
-    let text_write_original_args =
-        prepare_text_write_validation_args(&mut operation_envelope, runtime);
     let validation_result = operation_envelope.validate(&registry);
-    if let Some(original_args) = text_write_original_args {
-        operation_envelope.args = original_args;
-    }
     let manifest = match validation_result {
         Ok(Some(manifest)) => manifest,
         Ok(None) => {
@@ -570,9 +528,6 @@ pub(super) fn execute_tool_fs_run(
             "permissionMode": operation_envelope.permission_mode,
         }),
     );
-    if runtime.allow_large_text_file_write && manifest.path == "/tools/filesystem/write_file" {
-        mark_as_text_write_protocol(&mut operation_envelope.args);
-    }
     let policy_decision = match policy_mode_gate(&manifest, &operation_envelope.permission_mode) {
         Ok(decision) => decision,
         Err(failure) => {
@@ -661,7 +616,6 @@ pub(super) fn execute_tool_fs_run(
             runtime,
             tool_call_id: &call.id,
             manifest: &manifest,
-            operation: &operation_envelope,
             arguments: args.clone(),
         }),
         policy_decision.clone(),

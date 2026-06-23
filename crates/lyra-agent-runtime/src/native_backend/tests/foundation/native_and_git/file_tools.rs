@@ -20,49 +20,45 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let listed = execute_model_tool(
+    let legacy_list = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
         tool_fs_run_call(
-            "tool-list",
+            "tool-legacy-list",
             "/tools/filesystem/list_files",
             json!({ "path": ".", "recursive": true }),
         ),
     );
-    assert!(listed["content"].as_str().unwrap().contains("src/main.rs"));
-    let missing = execute_model_tool(
-        &session_id,
-        &turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-missing-file",
-            "/tools/filesystem/read_file",
-            json!({ "path": "missing.txt" }),
-        ),
-    );
     assert_eq!(
-        missing.pointer("/error/code").and_then(Value::as_str),
-        Some("path_not_found")
+        legacy_list.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
     );
-    let large = execute_model_tool(
+    let listed =
+        tool_file_list(&session_id, &json!({ "path": ".", "recursive": true })).expect("list");
+    assert!(listed.content.contains("src/main.rs"));
+    let missing = tool_file_read(
         &session_id,
         &turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-large-read",
-            "/tools/filesystem/read_file",
-            json!({ "path": "large.txt", "maxBytes": 8 }),
-        ),
-    );
-    assert_eq!(large["raw"]["truncated"], true);
-    assert!(large["raw"]["artifactRef"].is_object());
+        "tool-missing-file",
+        &json!({ "path": "missing.txt" }),
+    )
+    .expect_err("missing file");
+    assert_eq!(missing.code, "path_not_found");
+    let large = tool_file_read(
+        &session_id,
+        &turn_id,
+        "tool-large-read",
+        &json!({ "path": "large.txt", "maxBytes": 8 }),
+    )
+    .expect("large read");
+    assert_eq!(large.raw["truncated"], true);
+    assert!(large.raw["artifactRef"].is_object());
     assert_eq!(
         large
-            .pointer("/raw/artifactRef/kind")
+            .raw
+            .pointer("/artifactRef/kind")
             .and_then(Value::as_str),
         Some("raw_data")
     );
@@ -80,7 +76,6 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
             "content": "outside workspace write",
             "overwrite": true
         }),
-        false,
     )
     .expect("direct file tool can write outside workspace after approval layer is bypassed");
     assert_eq!(
@@ -88,42 +83,85 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
         "outside workspace write"
     );
     let _ = fs::remove_file(&outside_path);
-    let large_native_content = "x".repeat(12_001);
-    let large_native_write = tool_file_write(
+    // write_file no longer caps content size: large generated files (HTML, CSS,
+    // bundles) must write in a single call rather than being forced through
+    // apply_patch. Exercise a >1MB payload to confirm there is no hidden limit.
+    let large_native_content = "x".repeat(1_200_000);
+    tool_file_write(
         &session_id,
         &turn_id,
         "tool-large-native-write",
         &json!({
             "path": "large-native-write.txt",
             "content": large_native_content,
-            "overwrite": true,
-            "_lyraTextWriteProtocol": true
+            "overwrite": true
         }),
-        false,
     )
-    .expect_err("large native JSON write must be rejected even if it spoofs the internal marker");
+    .expect("large write_file content is written in a single call");
     assert_eq!(
-        large_native_write.code,
-        "content_too_large_for_native_tool_call"
+        fs::read_to_string(temp.path().join("large-native-write.txt"))
+            .expect("read large file")
+            .len(),
+        1_200_000
     );
-    let large_text_protocol_content = "y".repeat(12_001);
+    let nested_write = tool_file_write(
+        &session_id,
+        &turn_id,
+        "tool-nested-write",
+        &json!({
+            "path": "css/components/styles.css",
+            "content": "body { color: red; }\n",
+            "overwrite": true
+        }),
+    )
+    .expect("write_file creates missing parent directories");
+    assert_eq!(
+        nested_write
+            .raw
+            .pointer("/changedFiles/0/additions")
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+    assert_eq!(
+        nested_write
+            .raw
+            .pointer("/changedFiles/0/deletions")
+            .and_then(Value::as_u64),
+        Some(0)
+    );
+    assert_eq!(
+        fs::read_to_string(temp.path().join("css/components/styles.css"))
+            .expect("read nested write"),
+        "body { color: red; }\n"
+    );
+    let root_name = temp
+        .path()
+        .file_name()
+        .expect("temp name")
+        .to_string_lossy();
     tool_file_write(
         &session_id,
         &turn_id,
-        "tool-large-text-protocol-write",
+        "tool-duplicated-root-write",
         &json!({
-            "path": "large-text-protocol-write.txt",
-            "content": large_text_protocol_content,
+            "path": format!("{root_name}/column-site/index.html"),
+            "content": "<!doctype html>\n",
             "overwrite": true
         }),
-        true,
     )
-    .expect("text write protocol can write large generated content");
+    .expect("write_file strips duplicated workspace root path component");
     assert_eq!(
-        fs::read_to_string(temp.path().join("large-text-protocol-write.txt"))
-            .expect("read text protocol output")
-            .len(),
-        12_001
+        fs::read_to_string(temp.path().join("column-site/index.html"))
+            .expect("read normalized duplicated-root write"),
+        "<!doctype html>\n"
+    );
+    assert!(
+        !temp
+            .path()
+            .join(root_name.as_ref())
+            .join("column-site/index.html")
+            .exists(),
+        "duplicated workspace root folder must not be created"
     );
     let unread_edit = tool_file_edit(
         &session_id,

@@ -91,6 +91,8 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
       return <AppWindow {...props} />;
     case "thought":
       return <Clock3 {...props} />;
+    case "plan":
+      return <BookText {...props} />;
     case "task":
       return <ListChecks {...props} />;
     case "create":
@@ -219,6 +221,7 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   if (call.kind === "search") return <Search {...props} />;
   if (call.kind === "shell") return <SquareTerminal {...props} />;
   if (call.kind === "thought") return <Clock3 {...props} />;
+  if (call.kind === "plan") return <BookText {...props} />;
   if (call.kind === "create") return <FilePlus {...props} />;
   if (call.kind === "render") return <PanelsTopLeft {...props} />;
   if (call.kind === "task") return <ListChecks {...props} />;

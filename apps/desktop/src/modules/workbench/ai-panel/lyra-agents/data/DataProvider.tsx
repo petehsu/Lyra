@@ -14,6 +14,9 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type {
   AgentPageCitation,
+  AgentProjectTodoSnapshot,
+  AgentPlanReviewRespondAction,
+  AgentPlanSnapshot,
   AgentRollbackPreviewResponse,
   AgentTranscriptCitation
 } from "../../../../../shared/agent";
@@ -70,6 +73,9 @@ export interface DataProviderValue {
   /** Global todo list aggregated from all task tool calls in the session. */
   todos: TodoItem[];
 
+  /** Project-scoped todo list associated with the approved Agent plan. */
+  projectTodo: AgentProjectTodoSnapshot | null;
+
   /** Files modified in the current work session. */
   diffFiles: DiffFileEntry[];
 
@@ -78,6 +84,9 @@ export interface DataProviderValue {
 
   /** Pending permission requests from the agent. */
   permissions: PermissionRequest[];
+
+  /** Pending Agent-authored plan awaiting user review. */
+  planReview: AgentPlanSnapshot | null;
 
   /** Lyra Agent-backed model and provider controls rendered in the lyra-agents-composer toolbar. */
   modelControls?: ComposerModelControls | null;
@@ -108,6 +117,15 @@ export interface DataProviderValue {
 
   /** Reveal a local path in the Workbench without assuming it is an editable file. */
   revealPathInWorkbench(filePath: string): Promise<void>;
+
+  /** Open or focus the rich plan review surface for the pending plan. */
+  openPlanReview(plan: AgentPlanSnapshot): Promise<void>;
+
+  /** Open or focus the plan/todo workspace surface for the active project todo. */
+  openProjectTodo(): Promise<void>;
+
+  /** Approve, reject, or request revision for the active plan. */
+  respondPlanReview(action: AgentPlanReviewRespondAction, feedback?: string | null): Promise<void>;
 
   /** Open the live Workbench terminal pane for a terminal session when it exists. */
   openTerminalLiveSession(request: {

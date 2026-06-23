@@ -88,4 +88,96 @@ describe("agentSessionToChatMessages", () => {
     expect(toolBlock?.group.calls[0]?.details?.type).toBe("edit");
     expect(toolBlock?.group.calls[0]?.details?.hunks.length).toBeGreaterThan(0);
   });
+
+  it("renders a single card when the same tool id is both linked and running", () => {
+    // The streaming preview and the final execution share one tool_call_id. If the
+    // message already links the tool block AND it is still reported as running, the
+    // merge must dedup by id so the diff card never appears twice.
+    const messages = agentSessionToChatMessages(session({
+      messages: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "HTML 搞定，现在写 CSS。",
+          blocks: [
+            { type: "text", id: "text-1", text: "HTML 搞定，现在写 CSS。" },
+            { type: "tool", id: "tool-block-1", toolId: "call_css" }
+          ],
+          createdAt: "2026-06-20T00:00:00.000Z"
+        }
+      ],
+      tools: [{
+        id: "call_css",
+        name: "write_file",
+        label: "Write file",
+        status: "running",
+        activityKind: "edit",
+        rendererHint: "edit",
+        input: { path: "styles.css", content: ".nav { position: fixed; }\n" },
+        output: {
+          raw: {
+            diff: [
+              "--- styles.css",
+              "+++ styles.css",
+              "@@ -0,0 +1 @@",
+              "+.nav { position: fixed; }"
+            ].join("\n"),
+            preview: true
+          }
+        },
+        startedAt: "2026-06-20T00:00:01.000Z"
+      }]
+    }));
+
+    const toolBlocks = messages.flatMap((message) =>
+      message.blocks.filter((block) => block.type === "tools")
+    );
+    const cssCalls = toolBlocks.flatMap((block) =>
+      block.type === "tools" ? block.group.calls.filter((call) => call.id === "call_css") : []
+    );
+    expect(cssCalls).toHaveLength(1);
+  });
+
+  it("carries real assistant work duration from message and tool timestamps", () => {
+    const messages = agentSessionToChatMessages(session({
+      turnStatus: "idle",
+      follow: { running: false, activity: null },
+      messages: [
+        {
+          id: "assistant-narration",
+          role: "assistant",
+          text: "我先检查项目。",
+          blocks: [{ type: "text", id: "text-1", text: "我先检查项目。" }],
+          createdAt: "2026-06-20T00:00:00.000Z"
+        },
+        {
+          id: "assistant-tool",
+          role: "assistant",
+          text: "",
+          blocks: [{ type: "tool", id: "tool-block-1", toolId: "call_search" }],
+          createdAt: "2026-06-20T00:00:01.000Z"
+        },
+        {
+          id: "assistant-summary",
+          role: "assistant",
+          text: "已完成。",
+          blocks: [{ type: "text", id: "text-2", text: "已完成。" }],
+          createdAt: "2026-06-20T00:00:05.000Z"
+        }
+      ],
+      tools: [{
+        id: "call_search",
+        name: "search",
+        label: "Search",
+        status: "completed",
+        input: { query: "Agent" },
+        output: { content: "done" },
+        startedAt: "2026-06-20T00:00:02.000Z",
+        finishedAt: "2026-06-20T00:00:04.000Z"
+      }]
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.workDurationMs).toBe(5_000);
+  });
 });

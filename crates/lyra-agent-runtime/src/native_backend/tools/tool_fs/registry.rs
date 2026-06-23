@@ -3,32 +3,16 @@ use super::*;
 pub(crate) struct RuntimeToolManifestProvider {
     manifests: Vec<ToolManifest>,
     sources: Vec<Value>,
-    local_code_search_available: bool,
 }
 
 impl RuntimeToolManifestProvider {
     fn from_runtime(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Self {
-        let local_code_search_available = local_code_search_tools_available();
-        let builtin_registry = ToolFsRegistry::with_builtin_filter_and_providers(
-            |manifest| {
-                local_code_search_available || !is_local_code_search_tool_path(&manifest.path)
-            },
-            &[],
-        );
-        let builtin_diagnostics = if local_code_search_available {
-            Vec::new()
-        } else {
-            local_code_search_unavailable_diagnostics()
-        };
+        let builtin_registry = ToolFsRegistry::builtin();
         let mut sources = vec![runtime_manifest_source(
             "core_builtin",
             "static",
             &[
-                "filesystem",
-                "code",
-                "shell",
                 "terminal",
-                "git",
                 "workbench",
                 "browser",
                 "web",
@@ -42,7 +26,7 @@ impl RuntimeToolManifestProvider {
                 "runtime",
             ],
             builtin_registry.manifests().len(),
-            builtin_diagnostics,
+            Vec::new(),
         )];
         for (name, domains) in [
             ("terminal_action_specs", &["terminal"][..]),
@@ -88,7 +72,6 @@ impl RuntimeToolManifestProvider {
         Self {
             manifests: software_manifests,
             sources,
-            local_code_search_available,
         }
     }
 
@@ -96,8 +79,8 @@ impl RuntimeToolManifestProvider {
         Value::Array(self.sources.clone())
     }
 
-    fn include_builtin_manifest(&self, manifest: &ToolManifest) -> bool {
-        self.local_code_search_available || !is_local_code_search_tool_path(&manifest.path)
+    fn include_builtin_manifest(&self, _manifest: &ToolManifest) -> bool {
+        true
     }
 }
 

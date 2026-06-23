@@ -2,11 +2,11 @@ use super::*;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    path::Component,
     time::SystemTime,
 };
 
 const MAX_ARTIFACT_READ_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS: usize = 12_000;
 
 pub(crate) fn execute_filesystem_tool_adapter(
     session_id: &str,
@@ -542,7 +542,6 @@ pub(crate) fn tool_file_write(
     turn_id: &str,
     tool_call_id: &str,
     input: &Value,
-    allow_large_text_file_write: bool,
 ) -> NativeToolResult {
     let path = required_value_string(input, "path")?;
     let content = input
@@ -556,17 +555,6 @@ pub(crate) fn tool_file_write(
             )
         })?
         .to_string();
-    if content.chars().count() > MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS && !allow_large_text_file_write
-    {
-        return Err(NativeToolFailure::new(
-            "content_too_large_for_native_tool_call",
-            format!(
-                "write_file content is too large for provider-native JSON tool arguments: {} chars (limit {MAX_NATIVE_TOOL_WRITE_CONTENT_CHARS})",
-                content.chars().count()
-            ),
-            "For generated code, HTML, or other large files, emit a lyra-write-file fenced text block so Lyra streams the content as assistant text and writes it locally.",
-        ));
-    }
     let overwrite = value_bool(input, "overwrite", false);
     let workspace_path = resolve_workspace_path(session_id, &path, true)?;
     if workspace_path.absolute.exists() && !overwrite {
@@ -609,6 +597,7 @@ pub(crate) fn tool_file_write(
         )
     })?;
     let diff = diff_text(&workspace_path.relative, &old, &content);
+    let (additions, deletions) = diff_line_stats(&diff);
     let diff_artifact_ref = write_diff_artifact(session_id, turn_id, tool_call_id, &diff);
     let before_ref = write_file_snapshot_artifact(
         session_id,
@@ -633,6 +622,8 @@ pub(crate) fn tool_file_write(
                 "path": workspace_path.relative,
                 "operation": if before_exists { "write" } else { "add" },
                 "bytes": content.len(),
+                "additions": additions,
+                "deletions": deletions,
                 "beforeExists": before_exists,
                 "afterExists": true,
                 "beforeRef": before_ref,
@@ -641,6 +632,10 @@ pub(crate) fn tool_file_write(
             }],
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
+            // Render as a colored diff edit card (icon + path + +/- stats), not a
+            // raw text blob. The activity layer lifts these hints to the top level.
+            "activityKind": "edit",
+            "rendererHint": "edit",
         }),
         recommended_next_action: Some(
             "Run the relevant validation command for the changed file.".to_string(),
@@ -715,7 +710,7 @@ pub(crate) fn tool_file_strict_edit(
             "Retry with a UTF-8 text file.",
         )
     })?;
-    let updated = apply_exact_replacement(&old, &old_string, &new_string, replace_all)?;
+    let updated = apply_fuzzy_replacement(&old, &old_string, &new_string, replace_all)?;
     let preview_diff = diff_text(&workspace_path.relative, &old, &updated);
     emit_running_mutation_diff(
         session_id,
@@ -752,12 +747,15 @@ pub(crate) fn tool_file_strict_edit(
         "after",
         &updated,
     );
+    let (additions, deletions) = diff_line_stats(&diff);
     Ok(NativeToolSuccess {
         content: format!("Strict edited {}\n{}", workspace_path.relative, diff),
         raw: json!({
             "changedFiles": [{
                 "path": workspace_path.relative,
                 "operation": "strict_edit",
+                "additions": additions,
+                "deletions": deletions,
                 "beforeExists": true,
                 "afterExists": true,
                 "beforeRef": before_ref,
@@ -766,6 +764,8 @@ pub(crate) fn tool_file_strict_edit(
             }],
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
+            "activityKind": "edit",
+            "rendererHint": "edit",
         }),
         recommended_next_action: Some(
             "Review git_diff and run the relevant validation command.".to_string(),
@@ -806,6 +806,113 @@ pub(crate) fn apply_exact_replacement(
     } else {
         original.replacen(old_string, new_string, 1)
     })
+}
+
+/// Leading whitespace (indentation) of a single line.
+fn leading_whitespace(line: &str) -> &str {
+    &line[..line.len() - line.trim_start().len()]
+}
+
+/// Reindent the replacement lines so the block lands at the matched block's
+/// indentation. We replace the old block's first-line indentation with the
+/// target indentation on every line, preserving each line's *relative* depth.
+fn reindent_replacement(
+    new_lines: &[&str],
+    old_first_indent: &str,
+    base_indent: &str,
+) -> Vec<String> {
+    new_lines
+        .iter()
+        .map(|line| {
+            if line.trim().is_empty() {
+                return String::new();
+            }
+            let body = line
+                .strip_prefix(old_first_indent)
+                .unwrap_or_else(|| line.trim_start());
+            format!("{base_indent}{body}")
+        })
+        .collect()
+}
+
+/// Exact replacement first; on `edit_not_found`, fall back to a whitespace-
+/// tolerant line-based match. The fuzzy pass ignores per-line leading/trailing
+/// whitespace differences and reindents the replacement to the matched block.
+///
+/// Safety: the fuzzy pass NEVER silently picks one of several candidates — more
+/// than one whitespace-insensitive match without `replaceAll` is reported as
+/// `edit_not_unique`, exactly like the exact path. Only whitespace is tolerated;
+/// no token-level or similarity fuzzing, so it cannot drift to the wrong code.
+pub(crate) fn apply_fuzzy_replacement(
+    original: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> Result<String, NativeToolFailure> {
+    match apply_exact_replacement(original, old_string, new_string, replace_all) {
+        Ok(updated) => return Ok(updated),
+        // Only an outright miss is eligible for the fuzzy fallback. Empty input
+        // and genuine ambiguity (edit_not_unique) must surface unchanged.
+        Err(failure) if failure.code == "edit_not_found" => {}
+        Err(failure) => return Err(failure),
+    }
+
+    let original_lines: Vec<&str> = original.split('\n').collect();
+    let old_lines: Vec<&str> = old_string.split('\n').collect();
+    let old_trimmed: Vec<&str> = old_lines.iter().map(|line| line.trim()).collect();
+    let window = old_trimmed.len();
+    if window == 0 || old_trimmed.iter().all(|line| line.is_empty()) {
+        return Err(NativeToolFailure::new(
+            "edit_not_found",
+            "oldString was not found in the target file",
+            "Read the current file contents and retry with an exact oldString.",
+        ));
+    }
+
+    let mut match_starts = Vec::new();
+    if window <= original_lines.len() {
+        for start in 0..=(original_lines.len() - window) {
+            if (0..window)
+                .all(|offset| original_lines[start + offset].trim() == old_trimmed[offset])
+            {
+                match_starts.push(start);
+            }
+        }
+    }
+    if match_starts.is_empty() {
+        return Err(NativeToolFailure::new(
+            "edit_not_found",
+            "oldString was not found in the target file (even ignoring whitespace)",
+            "Read the current file contents and retry with an exact oldString.",
+        ));
+    }
+    if match_starts.len() > 1 && !replace_all {
+        return Err(NativeToolFailure::new(
+            "edit_not_unique",
+            format!(
+                "oldString matched {} times ignoring whitespace",
+                match_starts.len()
+            ),
+            "Use a more specific oldString or set replaceAll=true.",
+        ));
+    }
+
+    let new_lines: Vec<&str> = new_string.split('\n').collect();
+    let old_first_indent = leading_whitespace(old_lines[0]);
+    let mut result_lines: Vec<String> =
+        original_lines.iter().map(|line| line.to_string()).collect();
+    let targets: Vec<usize> = if replace_all {
+        match_starts.clone()
+    } else {
+        vec![match_starts[0]]
+    };
+    // Splice from the bottom up so earlier indices stay valid.
+    for &start in targets.iter().rev() {
+        let base_indent = leading_whitespace(original_lines[start]);
+        let reindented = reindent_replacement(&new_lines, old_first_indent, base_indent);
+        result_lines.splice(start..start + window, reindented);
+    }
+    Ok(result_lines.join("\n"))
 }
 
 fn record_file_read_state(
@@ -885,7 +992,7 @@ fn validate_file_read_state(
             NativeToolFailure::new(
                 "must_read_first",
                 format!("file must be read before strict editing: {relative_path}"),
-                "Call /tools/filesystem/read_file or read_range for this file, then retry strict_edit.",
+                "Inspect the file with exec_command (for example sed or cat) and use apply_patch for edits.",
             )
         })?;
     if let Some(expected) = expected_read_version
@@ -974,7 +1081,7 @@ pub(crate) fn tool_file_multiedit(
                 let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
                 (workspace_path.relative.clone(), old.clone(), old)
             });
-        entry.2 = apply_exact_replacement(&entry.2, &old_string, &new_string, replace_all)?;
+        entry.2 = apply_fuzzy_replacement(&entry.2, &old_string, &new_string, replace_all)?;
     }
     let mut diffs = Vec::new();
     let mut changed_files = Vec::new();
@@ -1002,10 +1109,13 @@ pub(crate) fn tool_file_multiedit(
             )
         })?;
         let diff = diff_text(&relative, &old, &updated);
+        let (additions, deletions) = diff_line_stats(&diff);
         diffs.push(diff.clone());
         changed_files.push(json!({
             "path": relative,
             "operation": "multiedit",
+            "additions": additions,
+            "deletions": deletions,
             "beforeExists": true,
             "afterExists": true,
             "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", &old),
@@ -1021,6 +1131,8 @@ pub(crate) fn tool_file_multiedit(
             "changedFiles": changed_files,
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
+            "activityKind": "edit",
+            "rendererHint": "edit",
         }),
         recommended_next_action: Some(
             "Review the diff and run the relevant validation command.".to_string(),
@@ -1031,10 +1143,34 @@ pub(crate) fn tool_file_multiedit(
 pub(crate) fn diff_text(path: &str, old: &str, new: &str) -> String {
     let patch = diffy::create_patch(old, new).to_string();
     if patch.trim().is_empty() {
-        format!("No textual diff for {path}.")
-    } else {
-        format!("--- {path}\n+++ {path}\n{patch}")
+        return format!("No textual diff for {path}.");
     }
+    // diffy emits its own `--- original` / `+++ modified` header lines. Drop them
+    // and substitute path-based headers so the unified diff has a single, correct
+    // file header instead of a doubled `--- path / +++ path / --- original /
+    // +++ modified` block.
+    let body = patch
+        .split_inclusive('\n')
+        .skip_while(|line| {
+            let trimmed = line.trim_end();
+            trimmed.starts_with("--- ") || trimmed.starts_with("+++ ")
+        })
+        .collect::<String>();
+    format!("--- {path}\n+++ {path}\n{body}")
+}
+
+pub(crate) fn diff_line_stats(diff: &str) -> (usize, usize) {
+    diff.lines()
+        .filter(|line| !line.starts_with("+++") && !line.starts_with("---"))
+        .fold((0, 0), |(additions, deletions), line| {
+            if line.starts_with('+') {
+                (additions + 1, deletions)
+            } else if line.starts_with('-') {
+                (additions, deletions + 1)
+            } else {
+                (additions, deletions)
+            }
+        })
 }
 
 pub(crate) fn path_qualifies_for_lyra_artifact_access(
@@ -1338,20 +1474,55 @@ enum StagedPatchOperation {
     },
 }
 
+#[derive(Clone, Debug)]
+enum CodexPatchOperation {
+    Add {
+        path: String,
+        content: String,
+    },
+    Update {
+        path: String,
+        new_path: Option<String>,
+        hunks: Vec<Vec<CodexPatchLine>>,
+    },
+    Delete {
+        path: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum CodexPatchLine {
+    Context(String),
+    Remove(String),
+    Add(String),
+}
+
 pub(crate) fn tool_apply_patch(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
     input: &Value,
 ) -> NativeToolResult {
+    let staged = if let Some(patch) = input.get("patch").and_then(Value::as_str) {
+        stage_codex_patch(session_id, patch)?
+    } else {
+        stage_structured_patch(session_id, input)?
+    };
+    execute_staged_patch(session_id, turn_id, tool_call_id, input, staged)
+}
+
+fn stage_structured_patch(
+    session_id: &str,
+    input: &Value,
+) -> Result<Vec<StagedPatchOperation>, NativeToolFailure> {
     let operations = input
         .get("operations")
         .and_then(Value::as_array)
         .ok_or_else(|| {
             NativeToolFailure::new(
                 "bad_request",
-                "operations array is required",
-                "Retry with structured add, update, delete, or move operations.",
+                "patch string or operations array is required",
+                "Retry with a Codex patch string using the provider-visible apply_patch tool.",
             )
         })?;
     let mut staged = Vec::new();
@@ -1361,7 +1532,7 @@ pub(crate) fn tool_apply_patch(
         let path = required_value_string(operation, "path")?;
         match op.as_str() {
             "add" => {
-                let workspace_path = resolve_workspace_path(session_id, &path, true)?;
+                let workspace_path = resolve_new_patch_path(session_id, &path)?;
                 if workspace_path.absolute.exists() {
                     return Err(NativeToolFailure::new(
                         "file_exists",
@@ -1393,7 +1564,7 @@ pub(crate) fn tool_apply_patch(
                 });
             }
             "update" => {
-                let workspace_path = resolve_workspace_path(session_id, &path, false)?;
+                let workspace_path = resolve_existing_patch_path(session_id, &path)?;
                 let old_bytes = fs::read(&workspace_path.absolute).map_err(|error| {
                     NativeToolFailure::new(
                         "read_failed",
@@ -1445,7 +1616,7 @@ pub(crate) fn tool_apply_patch(
                                 "Retry with oldString and newString.",
                             )
                         })?;
-                    apply_exact_replacement(
+                    apply_fuzzy_replacement(
                         &old,
                         &old_string,
                         new_string,
@@ -1483,7 +1654,7 @@ pub(crate) fn tool_apply_patch(
                 });
             }
             "delete" => {
-                let workspace_path = resolve_workspace_path(session_id, &path, false)?;
+                let workspace_path = resolve_existing_patch_path(session_id, &path)?;
                 let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
                     NativeToolFailure::new(
                         "read_failed",
@@ -1508,9 +1679,9 @@ pub(crate) fn tool_apply_patch(
                 });
             }
             "move" => {
-                let workspace_path = resolve_workspace_path(session_id, &path, false)?;
+                let workspace_path = resolve_existing_patch_path(session_id, &path)?;
                 let new_path = required_value_string(operation, "newPath")?;
-                let next_workspace_path = resolve_workspace_path(session_id, &new_path, true)?;
+                let next_workspace_path = resolve_new_patch_path(session_id, &new_path)?;
                 if next_workspace_path.absolute.exists() {
                     return Err(NativeToolFailure::new(
                         "file_exists",
@@ -1554,6 +1725,177 @@ pub(crate) fn tool_apply_patch(
             }
         }
     }
+    Ok(staged)
+}
+
+fn stage_codex_patch(
+    session_id: &str,
+    patch: &str,
+) -> Result<Vec<StagedPatchOperation>, NativeToolFailure> {
+    let operations = parse_codex_patch(patch)?;
+    let mut staged = Vec::new();
+    let mut touched = HashSet::new();
+    for operation in operations {
+        match operation {
+            CodexPatchOperation::Add { path, content } => {
+                let workspace_path = resolve_new_patch_path(session_id, &path)?;
+                if workspace_path.absolute.exists() {
+                    return Err(NativeToolFailure::new(
+                        "file_exists",
+                        format!("cannot add existing file: {}", workspace_path.relative),
+                        "Use an update hunk for existing files.",
+                    ));
+                }
+                touch_patch_path(
+                    &mut touched,
+                    &workspace_path.absolute,
+                    &workspace_path.relative,
+                )?;
+                staged.push(StagedPatchOperation::Write {
+                    absolute: workspace_path.absolute,
+                    relative: workspace_path.relative,
+                    before: None,
+                    after: content,
+                    operation: "add",
+                });
+            }
+            CodexPatchOperation::Delete { path } => {
+                let workspace_path = resolve_existing_patch_path(session_id, &path)?;
+                let old = fs::read_to_string(&workspace_path.absolute).map_err(|error| {
+                    NativeToolFailure::new(
+                        "read_failed",
+                        format!("failed to read file before delete: {error}"),
+                        "Retry with a readable UTF-8 workspace file.",
+                    )
+                })?;
+                touch_patch_path(
+                    &mut touched,
+                    &workspace_path.absolute,
+                    &workspace_path.relative,
+                )?;
+                staged.push(StagedPatchOperation::Delete {
+                    absolute: workspace_path.absolute,
+                    relative: workspace_path.relative,
+                    before: old,
+                });
+            }
+            CodexPatchOperation::Update {
+                path,
+                new_path,
+                hunks,
+            } => {
+                let workspace_path = resolve_existing_patch_path(session_id, &path)?;
+                let old_bytes = fs::read(&workspace_path.absolute).map_err(|error| {
+                    NativeToolFailure::new(
+                        "read_failed",
+                        format!("failed to read file before patch: {error}"),
+                        "Retry with a readable UTF-8 workspace file.",
+                    )
+                })?;
+                if old_bytes.contains(&0) {
+                    return Err(NativeToolFailure::new(
+                        "encoding_unsupported",
+                        "apply_patch update only supports text files",
+                        "Use a text source file or a binary-aware tool.",
+                    ));
+                }
+                let old = String::from_utf8(old_bytes).map_err(|error| {
+                    NativeToolFailure::new(
+                        "encoding_unsupported",
+                        format!("file is not valid UTF-8: {error}"),
+                        "Retry with a UTF-8 text file.",
+                    )
+                })?;
+                let updated = if hunks.is_empty() {
+                    old.clone()
+                } else {
+                    apply_codex_update_hunks(&old, &hunks)?
+                };
+                if let Some(new_path) = new_path {
+                    let next_workspace_path = resolve_new_patch_path(session_id, &new_path)?;
+                    if next_workspace_path.absolute.exists() {
+                        return Err(NativeToolFailure::new(
+                            "file_exists",
+                            format!(
+                                "move target already exists: {}",
+                                next_workspace_path.relative
+                            ),
+                            "Choose a new target path or update the existing file explicitly.",
+                        ));
+                    }
+                    touch_patch_path(
+                        &mut touched,
+                        &workspace_path.absolute,
+                        &workspace_path.relative,
+                    )?;
+                    touch_patch_path(
+                        &mut touched,
+                        &next_workspace_path.absolute,
+                        &next_workspace_path.relative,
+                    )?;
+                    if updated == old {
+                        staged.push(StagedPatchOperation::Move {
+                            from_absolute: workspace_path.absolute,
+                            from_relative: workspace_path.relative,
+                            to_absolute: next_workspace_path.absolute,
+                            to_relative: next_workspace_path.relative,
+                            content: old,
+                        });
+                    } else {
+                        staged.push(StagedPatchOperation::Delete {
+                            absolute: workspace_path.absolute,
+                            relative: workspace_path.relative,
+                            before: old,
+                        });
+                        staged.push(StagedPatchOperation::Write {
+                            absolute: next_workspace_path.absolute,
+                            relative: next_workspace_path.relative,
+                            before: None,
+                            after: updated,
+                            operation: "move_update",
+                        });
+                    }
+                } else {
+                    if hunks.is_empty() {
+                        return Err(NativeToolFailure::new(
+                            "empty_patch",
+                            format!("update hunk for {} has no changes", workspace_path.relative),
+                            "Retry with at least one context, removal, or addition line.",
+                        ));
+                    }
+                    touch_patch_path(
+                        &mut touched,
+                        &workspace_path.absolute,
+                        &workspace_path.relative,
+                    )?;
+                    staged.push(StagedPatchOperation::Write {
+                        absolute: workspace_path.absolute,
+                        relative: workspace_path.relative,
+                        before: Some(old),
+                        after: updated,
+                        operation: "update",
+                    });
+                }
+            }
+        }
+    }
+    if staged.is_empty() {
+        return Err(NativeToolFailure::new(
+            "empty_patch",
+            "patch did not contain any file operations",
+            "Retry with at least one Add File, Update File, Delete File, or Move to operation.",
+        ));
+    }
+    Ok(staged)
+}
+
+fn execute_staged_patch(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    input: &Value,
+    staged: Vec<StagedPatchOperation>,
+) -> NativeToolResult {
     let mut changed_files = Vec::new();
     let mut diffs = Vec::new();
     let mut applied = Vec::new();
@@ -1617,14 +1959,14 @@ pub(crate) fn tool_apply_patch(
                 operation,
                 ..
             } => {
-                diffs.push(diff_text(
-                    &relative,
-                    before.as_deref().unwrap_or(""),
-                    &after,
-                ));
+                let diff = diff_text(&relative, before.as_deref().unwrap_or(""), &after);
+                let (additions, deletions) = diff_line_stats(&diff);
+                diffs.push(diff);
                 changed_files.push(json!({
                     "path": relative,
                     "operation": operation,
+                    "additions": additions,
+                    "deletions": deletions,
                     "beforeExists": before.is_some(),
                     "afterExists": true,
                     "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", before.as_deref().unwrap_or("")),
@@ -1634,10 +1976,14 @@ pub(crate) fn tool_apply_patch(
             StagedPatchOperation::Delete {
                 relative, before, ..
             } => {
-                diffs.push(diff_text(&relative, &before, ""));
+                let diff = diff_text(&relative, &before, "");
+                let (additions, deletions) = diff_line_stats(&diff);
+                diffs.push(diff);
                 changed_files.push(json!({
                     "path": relative,
                     "operation": "delete",
+                    "additions": additions,
+                    "deletions": deletions,
                     "beforeExists": true,
                     "afterExists": false,
                     "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &relative, "before", &before),
@@ -1654,6 +2000,8 @@ pub(crate) fn tool_apply_patch(
                     "path": from_relative,
                     "newPath": to_relative,
                     "operation": "move",
+                    "additions": 0,
+                    "deletions": 0,
                     "beforeExists": true,
                     "afterExists": true,
                     "beforeRef": write_file_snapshot_artifact(session_id, turn_id, tool_call_id, &from_relative, "before", &content),
@@ -1675,11 +2023,299 @@ pub(crate) fn tool_apply_patch(
             "changedFiles": changed_files,
             "diff": diff,
             "diffArtifactRef": diff_artifact_ref,
+            "activityKind": "edit",
+            "rendererHint": "edit",
         }),
         recommended_next_action: Some(
             "Review changed files and run the relevant validation command.".to_string(),
         ),
     })
+}
+
+fn touch_patch_path(
+    touched: &mut HashSet<PathBuf>,
+    absolute: &Path,
+    relative: &str,
+) -> Result<(), NativeToolFailure> {
+    if !touched.insert(absolute.to_path_buf()) {
+        return Err(NativeToolFailure::new(
+            "conflicting_patch",
+            format!("patch touches the same path more than once: {relative}"),
+            "Combine edits for the same path into one update operation.",
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_existing_patch_path(
+    session_id: &str,
+    path: &str,
+) -> Result<WorkspacePath, NativeToolFailure> {
+    reject_workspace_escape(resolve_workspace_path(session_id, path, false)?)
+}
+
+fn resolve_new_patch_path(
+    session_id: &str,
+    path: &str,
+) -> Result<WorkspacePath, NativeToolFailure> {
+    reject_workspace_escape(resolve_missing_ok_workspace_path(session_id, path)?)
+}
+
+fn reject_workspace_escape(path: WorkspacePath) -> Result<WorkspacePath, NativeToolFailure> {
+    if path.outside_workspace {
+        return Err(NativeToolFailure::new(
+            "permission_denied",
+            format!("patch path is outside the workspace: {}", path.relative),
+            "Retry with a workspace-relative path inside the bound project.",
+        ));
+    }
+    Ok(path)
+}
+
+pub(crate) fn resolve_missing_ok_workspace_path(
+    session_id: &str,
+    raw_path: &str,
+) -> Result<WorkspacePath, NativeToolFailure> {
+    resolve_workspace_path(session_id, raw_path, true)
+}
+
+fn parse_codex_patch(patch: &str) -> Result<Vec<CodexPatchOperation>, NativeToolFailure> {
+    let normalized = patch.replace("\r\n", "\n").replace('\r', "\n");
+    let lines = normalized.lines().collect::<Vec<_>>();
+    let begin = lines
+        .iter()
+        .position(|line| line.trim() == "*** Begin Patch")
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_patch",
+                "patch is missing *** Begin Patch",
+                "Retry with a complete Codex patch.",
+            )
+        })?;
+    let end = lines
+        .iter()
+        .rposition(|line| line.trim() == "*** End Patch")
+        .ok_or_else(|| {
+            NativeToolFailure::new(
+                "bad_patch",
+                "patch is missing *** End Patch",
+                "Retry with a complete Codex patch.",
+            )
+        })?;
+    if end <= begin {
+        return Err(NativeToolFailure::new(
+            "bad_patch",
+            "patch end appears before patch begin",
+            "Retry with a complete Codex patch.",
+        ));
+    }
+    let mut i = begin + 1;
+    let mut operations = Vec::new();
+    while i < end {
+        let line = lines[i];
+        if line.trim().is_empty() {
+            i += 1;
+            continue;
+        }
+        if let Some(path) = line.strip_prefix("*** Add File: ") {
+            i += 1;
+            let mut content_lines = Vec::new();
+            while i < end && !is_codex_file_header(lines[i]) {
+                // Accept both the Lyra-extended form (each line prefixed with '+')
+                // and the standard Codex form (bare add-file lines). Models emit
+                // the bare form by default; rejecting it forced a wasted retry on
+                // every new file. A line that is exactly "+" is an empty added line.
+                let content = lines[i].strip_prefix('+').unwrap_or(lines[i]);
+                content_lines.push(content.to_string());
+                i += 1;
+            }
+            operations.push(CodexPatchOperation::Add {
+                path: clean_codex_patch_path(path)?,
+                content: codex_lines_to_text(&content_lines),
+            });
+            continue;
+        }
+        if let Some(path) = line.strip_prefix("*** Delete File: ") {
+            operations.push(CodexPatchOperation::Delete {
+                path: clean_codex_patch_path(path)?,
+            });
+            i += 1;
+            continue;
+        }
+        if let Some(path) = line.strip_prefix("*** Update File: ") {
+            i += 1;
+            let mut new_path = None;
+            if i < end
+                && let Some(target) = lines[i].strip_prefix("*** Move to: ")
+            {
+                new_path = Some(clean_codex_patch_path(target)?);
+                i += 1;
+            }
+            let mut hunks = Vec::<Vec<CodexPatchLine>>::new();
+            let mut current_hunk = Vec::<CodexPatchLine>::new();
+            while i < end && !is_codex_file_header(lines[i]) {
+                let hunk_line = lines[i];
+                if hunk_line == "@@" || hunk_line.starts_with("@@ ") {
+                    if !current_hunk.is_empty() {
+                        hunks.push(std::mem::take(&mut current_hunk));
+                    }
+                    i += 1;
+                    continue;
+                }
+                let mut chars = hunk_line.chars();
+                let Some(prefix) = chars.next() else {
+                    return Err(NativeToolFailure::new(
+                        "bad_patch",
+                        "empty update line is invalid; use a leading space for blank context lines",
+                        "Retry with update lines prefixed by space, '+', or '-'.",
+                    ));
+                };
+                let text = chars.as_str().to_string();
+                match prefix {
+                    ' ' => current_hunk.push(CodexPatchLine::Context(text)),
+                    '-' => current_hunk.push(CodexPatchLine::Remove(text)),
+                    '+' => current_hunk.push(CodexPatchLine::Add(text)),
+                    _ => {
+                        return Err(NativeToolFailure::new(
+                            "bad_patch",
+                            format!("update line must start with space, '+', or '-': {hunk_line}"),
+                            "Retry with Codex update hunk syntax.",
+                        ));
+                    }
+                }
+                i += 1;
+            }
+            if !current_hunk.is_empty() {
+                hunks.push(current_hunk);
+            }
+            operations.push(CodexPatchOperation::Update {
+                path: clean_codex_patch_path(path)?,
+                new_path,
+                hunks,
+            });
+            continue;
+        }
+        return Err(NativeToolFailure::new(
+            "bad_patch",
+            format!("unrecognized patch header: {line}"),
+            "Retry with Add File, Update File, Delete File, or Move to headers.",
+        ));
+    }
+    Ok(operations)
+}
+
+fn is_codex_file_header(line: &str) -> bool {
+    line.starts_with("*** Add File: ")
+        || line.starts_with("*** Update File: ")
+        || line.starts_with("*** Delete File: ")
+        || line.trim() == "*** End Patch"
+}
+
+fn clean_codex_patch_path(path: &str) -> Result<String, NativeToolFailure> {
+    let path = path.trim();
+    if path.is_empty() || path.contains('\0') {
+        return Err(NativeToolFailure::new(
+            "bad_patch",
+            "patch path is empty or invalid",
+            "Retry with a valid workspace-relative path.",
+        ));
+    }
+    let path_buf = PathBuf::from(path);
+    if !path_buf.is_absolute()
+        && Path::new(path).components().any(|component| {
+            matches!(
+                component,
+                Component::Prefix(_) | Component::ParentDir | Component::RootDir
+            )
+        })
+    {
+        return Err(NativeToolFailure::new(
+            "bad_patch",
+            format!("patch path must not contain parent directory components: {path}"),
+            "Retry with a normalized workspace-relative path.",
+        ));
+    }
+    Ok(path.to_string())
+}
+
+fn apply_codex_update_hunks(
+    old: &str,
+    hunks: &[Vec<CodexPatchLine>],
+) -> Result<String, NativeToolFailure> {
+    let mut updated = old.to_string();
+    for hunk in hunks {
+        let mut old_lines = Vec::new();
+        let mut new_lines = Vec::new();
+        for line in hunk {
+            match line {
+                CodexPatchLine::Context(text) => {
+                    old_lines.push(text.clone());
+                    new_lines.push(text.clone());
+                }
+                CodexPatchLine::Remove(text) => old_lines.push(text.clone()),
+                CodexPatchLine::Add(text) => new_lines.push(text.clone()),
+            }
+        }
+        let old_block = codex_lines_to_text(&old_lines);
+        let new_block = codex_lines_to_text(&new_lines);
+        updated = replace_codex_hunk_once(&updated, &old_block, &new_block)?;
+    }
+    Ok(updated)
+}
+
+fn replace_codex_hunk_once(
+    current: &str,
+    old_block: &str,
+    new_block: &str,
+) -> Result<String, NativeToolFailure> {
+    if old_block.is_empty() {
+        if current.is_empty() {
+            return Ok(new_block.to_string());
+        }
+        return Err(NativeToolFailure::new(
+            "patch_context_missing",
+            "update hunk has no removable or context lines",
+            "Retry with enough context lines to anchor the insertion.",
+        ));
+    }
+    for (old_candidate, new_candidate) in codex_block_variants(old_block, new_block) {
+        let count = current.matches(&old_candidate).count();
+        if count == 1 {
+            return Ok(current.replacen(&old_candidate, &new_candidate, 1));
+        }
+        if count > 1 {
+            return Err(NativeToolFailure::new(
+                "patch_context_ambiguous",
+                "update hunk context matches more than once",
+                "Retry with more surrounding context in the patch.",
+            ));
+        }
+    }
+    Err(NativeToolFailure::new(
+        "patch_context_missing",
+        "update hunk context was not found in the target file",
+        "Inspect the current file with exec_command and retry with an up-to-date patch.",
+    ))
+}
+
+fn codex_lines_to_text(lines: &[String]) -> String {
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", lines.join("\n"))
+    }
+}
+
+fn codex_block_variants(old_block: &str, new_block: &str) -> Vec<(String, String)> {
+    let mut variants = vec![(old_block.to_string(), new_block.to_string())];
+    if let Some(old_without_newline) = old_block.strip_suffix('\n') {
+        let new_without_newline = new_block.strip_suffix('\n').unwrap_or(new_block);
+        variants.push((
+            old_without_newline.to_string(),
+            new_without_newline.to_string(),
+        ));
+    }
+    variants
 }
 
 fn apply_staged_patch_operation(operation: &StagedPatchOperation) -> Result<(), NativeToolFailure> {
@@ -1769,6 +2405,79 @@ fn rollback_staged_patch_operations(applied: &[StagedPatchOperation]) {
             } => {
                 let _ = fs::rename(to_absolute, from_absolute);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod fuzzy_and_patch_tests {
+    use super::*;
+
+    #[test]
+    fn fuzzy_falls_back_to_exact_when_present() {
+        let original = "let a = 1;\nlet b = 2;\n";
+        let updated = apply_fuzzy_replacement(original, "let b = 2;", "let b = 3;", false)
+            .expect("exact hit");
+        assert_eq!(updated, "let a = 1;\nlet b = 3;\n");
+    }
+
+    #[test]
+    fn fuzzy_tolerates_indentation_and_reindents_replacement() {
+        // File indents the block with 4 spaces; model sent it with none.
+        let original = "fn main() {\n    let x = 1;\n}\n";
+        let updated = apply_fuzzy_replacement(original, "let x = 1;", "let x = 42;", false)
+            .expect("whitespace-insensitive hit");
+        // Replacement must land at the matched block's indentation.
+        assert_eq!(updated, "fn main() {\n    let x = 42;\n}\n");
+    }
+
+    #[test]
+    fn fuzzy_multiline_block_keeps_relative_indent() {
+        let original = "class C:\n    def f(self):\n        return 1\n";
+        // Model omits the method body's leading whitespace entirely.
+        let old = "def f(self):\n    return 1";
+        let new = "def f(self):\n    return 2";
+        let updated = apply_fuzzy_replacement(original, old, new, false).expect("block hit");
+        assert_eq!(updated, "class C:\n    def f(self):\n        return 2\n");
+    }
+
+    #[test]
+    fn fuzzy_rejects_multiple_whitespace_matches_without_replace_all() {
+        let original = "    log()\n    log()\n";
+        let failure = apply_fuzzy_replacement(original, "log()", "trace()", false)
+            .expect_err("ambiguous fuzzy match must fail, never pick the first");
+        assert_eq!(failure.code, "edit_not_unique");
+    }
+
+    #[test]
+    fn fuzzy_reports_not_found_when_absent() {
+        let failure =
+            apply_fuzzy_replacement("alpha\n", "beta", "gamma", false).expect_err("missing target");
+        assert_eq!(failure.code, "edit_not_found");
+    }
+
+    #[test]
+    fn codex_add_file_accepts_bare_and_plus_prefixed_lines() {
+        // Standard Codex form (bare add-file lines) — used to fail before B3.
+        let bare = "*** Begin Patch\n*** Add File: a.txt\nhello\nworld\n*** End Patch";
+        let ops = parse_codex_patch(bare).expect("bare add-file lines accepted");
+        match &ops[0] {
+            CodexPatchOperation::Add { path, content } => {
+                assert_eq!(path, "a.txt");
+                assert_eq!(content, "hello\nworld\n");
+            }
+            other => panic!("expected Add, got {other:?}"),
+        }
+
+        // Lyra-extended form ('+'-prefixed) must keep working too.
+        let plus = "*** Begin Patch\n*** Add File: b.txt\n+hello\n+world\n*** End Patch";
+        let ops = parse_codex_patch(plus).expect("plus-prefixed add-file lines accepted");
+        match &ops[0] {
+            CodexPatchOperation::Add { path, content } => {
+                assert_eq!(path, "b.txt");
+                assert_eq!(content, "hello\nworld\n");
+            }
+            other => panic!("expected Add, got {other:?}"),
         }
     }
 }

@@ -36,7 +36,7 @@ import {
 import { Composer } from "./Composer";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { ProjectDirChip } from "./ProjectDirChip";
-import { DecisionPanel, PermissionPanel } from "../panels";
+import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { AppButton } from "@renderer/ui/components";
 import {
   CHAT_INNER_PADDING_TOP_PX,
@@ -87,6 +87,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     messageWindow,
     decisions,
     permissions,
+    planReview,
     sendMessage,
     loadEarlierMessages,
     syncMessageWindowBudget,
@@ -100,6 +101,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     submitDecisions,
     approvePermission,
     denyPermission,
+    openPlanReview,
+    respondPlanReview,
     modelControls,
     permissionModeControls,
     locationControls,
@@ -153,6 +156,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const [isLayoutResizing, setIsLayoutResizing] = useState(false);
 
   const hasPendingClarification = showDecisions && decisions.length > 0;
+  const pendingPlanReview = planReview !== null && planReview.phase === "reviewing" ? planReview : null;
   const activityIndicatorMessageId = resolveAgentActivityHostMessageId(messages, isTurnRunning);
   const activityIndicatorMessage =
     activityIndicatorMessageId === null
@@ -741,6 +745,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           />
         )}
 
+        <PlanReviewPanel
+          plan={pendingPlanReview}
+          onReview={openPlanReview}
+          onRespond={respondPlanReview}
+        />
+
         <Composer
           onSend={sendMessage}
           onCaptureWorkspaceScreenshot={captureWorkspaceScreenshot}
@@ -777,7 +787,11 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             void navigateToPageCitation(citation);
           }}
           disabledReason={
-            hasPendingClarification ? t("lyra-agents-composer.answerClarificationFirst") : undefined
+            hasPendingClarification
+              ? t("lyra-agents-composer.answerClarificationFirst")
+              : pendingPlanReview !== null
+                ? t("lyra-agents-composer.reviewPlanFirst")
+                : undefined
           }
         />
 

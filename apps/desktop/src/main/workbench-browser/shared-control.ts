@@ -125,6 +125,12 @@ export const transitionSharedControlForAgentAction = (
   };
 };
 
+// Passive gestures (moving the mouse over the page, scrolling to read) are
+// observation, not an intent to take control. They must NOT interrupt the agent
+// — only a deliberate click or keystroke counts as the user grabbing the wheel.
+const PASSIVE_SHARED_CONTROL_INPUTS: ReadonlySet<SharedControlInputType> =
+  new Set(["mouse_move", "wheel"]);
+
 export const transitionSharedControlForUserInput = (
   current: SharedControlSnapshot,
   request: {
@@ -136,6 +142,7 @@ export const transitionSharedControlForUserInput = (
   const at = request.at ?? Date.now();
   if (
     request.synthetic
+    || PASSIVE_SHARED_CONTROL_INPUTS.has(request.inputType)
     || current.state === "idle"
     || current.state === "user_interrupted"
     || current.state === "awaiting_user_decision"

@@ -73,6 +73,21 @@ pub(crate) fn tool_shell_run(
         )
         .with_detail(json!({ "command": command, "commandKind": command_kind })));
     }
+    if shell_command_invokes_apply_patch(&command) {
+        let patch = extract_apply_patch_payload_from_shell_command(&command).ok_or_else(|| {
+            NativeToolFailure::new(
+                "apply_patch_shell_transport_invalid",
+                "shell command appears to invoke apply_patch, but Lyra could not extract a Codex patch payload",
+                "Call the provider-visible apply_patch tool directly with a complete patch argument.",
+            )
+        })?;
+        return tool_apply_patch(
+            session_id,
+            turn_id,
+            tool_call_id,
+            &json!({ "patch": patch, "source": "shell_apply_patch_intercept" }),
+        );
+    }
     let cwd = resolve_shell_cwd(
         session_id,
         value_string(input, "cwd").or_else(|| value_string(input, "workingDir")),
@@ -221,6 +236,8 @@ pub(crate) fn tool_shell_run(
             "processGroupSignal": process_group_signal,
             "stdoutRef": stdout_ref.flatten(),
             "stderrRef": stderr_ref.flatten(),
+            "activityKind": "shell",
+            "rendererHint": "shell",
         }),
         recommended_next_action: if timed_out {
             Some(
@@ -494,6 +511,7 @@ pub(crate) fn shell_command_requires_permission(command: &str) -> bool {
         "yarn install",
         "bun install",
         "cargo install",
+        "apply_patch",
     ];
     if dangerous_patterns
         .iter()
@@ -504,6 +522,26 @@ pub(crate) fn shell_command_requires_permission(command: &str) -> bool {
     shlex::split(command)
         .filter(|tokens| !tokens.is_empty())
         .is_some_and(|tokens| command_requires_permission(&tokens))
+}
+
+fn shell_command_invokes_apply_patch(command: &str) -> bool {
+    shlex::split(command)
+        .and_then(|tokens| tokens.first().cloned())
+        .map(|first| {
+            Path::new(&first)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or(first.as_str())
+                == "apply_patch"
+        })
+        .unwrap_or_else(|| command.trim_start().starts_with("apply_patch"))
+}
+
+fn extract_apply_patch_payload_from_shell_command(command: &str) -> Option<String> {
+    let begin = command.find("*** Begin Patch")?;
+    let end = command.find("*** End Patch")?;
+    let end = end + "*** End Patch".len();
+    command.get(begin..end).map(str::to_string)
 }
 
 pub(crate) fn classify_shell_command(command: &str) -> &'static str {

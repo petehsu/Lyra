@@ -1473,7 +1473,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "file_write",
         "file_edit",
         "file_multiedit",
-        "apply_patch",
         "shell_run",
         "terminal_list",
         "terminal_create",
@@ -1512,11 +1511,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
     for domain in [
-        "filesystem",
-        "code",
-        "shell",
         "terminal",
-        "git",
         "workbench",
         "browser",
         "browser_ax",

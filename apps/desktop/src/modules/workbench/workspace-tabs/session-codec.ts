@@ -15,6 +15,7 @@ const VALID_WORKSPACE_APP_IDS = new Set([
   "file-editor",
   "image-viewer",
   "agent-project-tree",
+  "agent-plan-board",
   "agent-git",
 
   "agent-session-history",

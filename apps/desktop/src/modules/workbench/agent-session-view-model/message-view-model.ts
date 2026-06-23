@@ -123,6 +123,40 @@ const timelineTimeMs = (value: string | undefined, fallback: number): number => 
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+const realTimeMs = (value: string | undefined): number | null => {
+  if (value === undefined) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const realToolEndTimeMs = (tool: AgentToolActivity): number | null =>
+  realTimeMs(tool.finishedAt) ?? realTimeMs(tool.startedAt);
+
+const realWorkRangeForMessage = (
+  message: AgentSessionSnapshot["messages"][number],
+  toolsById: ReadonlyMap<string, AgentToolActivity>
+): { readonly startMs: number; readonly endMs: number } | null => {
+  const times: number[] = [];
+  const messageTime = realTimeMs(message.createdAt);
+  if (messageTime !== null) {
+    times.push(messageTime);
+  }
+  for (const block of message.blocks ?? []) {
+    const toolId = toolIdForBlock(block);
+    const tool = toolId === null ? undefined : toolsById.get(toolId);
+    if (tool === undefined) continue;
+    const startedAt = realTimeMs(tool.startedAt);
+    const finishedAt = realToolEndTimeMs(tool);
+    if (startedAt !== null) times.push(startedAt);
+    if (finishedAt !== null) times.push(finishedAt);
+  }
+  if (times.length === 0) return null;
+  return {
+    startMs: Math.min(...times),
+    endMs: Math.max(...times)
+  };
+};
+
 const latestToolActivities = (
   tools: readonly AgentToolActivity[]
 ): AgentToolActivity[] => {
@@ -165,7 +199,16 @@ const mergeToolBlocks = (
   left: Extract<MessageBlock, { type: "tools" }>,
   right: Extract<MessageBlock, { type: "tools" }>
 ): Extract<MessageBlock, { type: "tools" }> => {
-  const combinedCalls = [...left.group.calls, ...right.group.calls];
+  // Deduplicate by call id so a single tool can never render as two cards. A
+  // streaming-preview activity and its final execution share the same
+  // tool_call_id; without this they would both survive the concat and the diff
+  // card would appear twice (once above the assistant text, once below). The
+  // later occurrence wins so the final result replaces the running preview.
+  const callsById = new Map<string, (typeof left.group.calls)[number]>();
+  for (const call of [...left.group.calls, ...right.group.calls]) {
+    callsById.set(call.id, call);
+  }
+  const combinedCalls = [...callsById.values()];
   const running = combinedCalls.find((call) => call.status === "running");
   return {
     ...left,
@@ -362,10 +405,21 @@ export const agentSessionToChatMessages = (
           toolsById
         )
       };
+      const workRange = author === "agent"
+        ? realWorkRangeForMessage(message, toolsById)
+        : null;
+      const workDurationMs =
+        workRange !== null && workRange.endMs > workRange.startMs
+          ? workRange.endMs - workRange.startMs
+          : undefined;
       const item = {
-        message: chatMessage,
+        message: workDurationMs === undefined
+          ? chatMessage
+          : { ...chatMessage, workDurationMs },
         atMs: timelineTimeMs(message.createdAt, originalIndex),
-        sequence: originalIndex
+        sequence: originalIndex,
+        workStartMs: workRange?.startMs ?? null,
+        workEndMs: workRange?.endMs ?? null
       };
       return item.message.blocks.length > 0 ? [item] : [];
     });
@@ -394,10 +448,12 @@ export const agentSessionToChatMessages = (
     });
   }
 
-  const finalMessages: ChatMessage[] = [];
-  for (const msg of messages) {
-    if (finalMessages.length > 0) {
-      const prev = finalMessages[finalMessages.length - 1];
+  const finalItems: typeof timedMessages = [];
+  for (const item of timedMessages) {
+    const msg = item.message;
+    if (finalItems.length > 0) {
+      const prevItem = finalItems[finalItems.length - 1];
+      const prev = prevItem?.message;
       if (
         prev !== undefined &&
         prev.author === msg.author &&
@@ -416,17 +472,38 @@ export const agentSessionToChatMessages = (
 
         const prevRollback = prev.rollback ?? undefined;
         const nextRollback = msg.rollback ?? prevRollback;
-        finalMessages[finalMessages.length - 1] = {
-          ...prev,
-          blocks: nextBlocks,
-          ...(nextRollback === undefined ? {} : { rollback: nextRollback })
+        const workStartMs = prevItem.workStartMs === null
+          ? item.workStartMs
+          : item.workStartMs === null
+            ? prevItem.workStartMs
+            : Math.min(prevItem.workStartMs, item.workStartMs);
+        const workEndMs = prevItem.workEndMs === null
+          ? item.workEndMs
+          : item.workEndMs === null
+            ? prevItem.workEndMs
+            : Math.max(prevItem.workEndMs, item.workEndMs);
+        const workDurationMs =
+          workStartMs !== null && workEndMs !== null && workEndMs > workStartMs
+            ? workEndMs - workStartMs
+            : undefined;
+        finalItems[finalItems.length - 1] = {
+          ...prevItem,
+          message: {
+            ...prev,
+            blocks: nextBlocks,
+            ...(workDurationMs === undefined ? {} : { workDurationMs }),
+            ...(nextRollback === undefined ? {} : { rollback: nextRollback })
+          },
+          workStartMs,
+          workEndMs
         };
         continue;
       }
     }
-    finalMessages.push(msg);
+    finalItems.push(item);
   }
 
+  const finalMessages = finalItems.map((item) => item.message);
   return attachEphemeralRunningTools(session, finalMessages);
 };
 

@@ -25,6 +25,590 @@ fn native_backend_creates_and_reads_session() {
 }
 
 #[test]
+fn plan_mode_lifecycle_reaches_reviewing_phase() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Mode Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+    let started_at = now();
+
+    let begin = execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-begin",
+        PLAN_BEGIN_MODEL_TOOL,
+        "begin",
+        json!({
+            "title": "Implement plan mode",
+            "reason": "Large cross-cutting feature",
+            "scope": "Runtime first"
+        }),
+        &started_at,
+    );
+    assert_eq!(begin["raw"]["phase"], PLAN_PHASE_PLANNING);
+
+    let write = execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-write",
+        PLAN_WRITE_MODEL_TOOL,
+        "write",
+        json!({
+            "markdownDelta": "# Plan\n\n- Build runtime support\n",
+            "replace": false
+        }),
+        &started_at,
+    );
+    assert_eq!(write["raw"]["activityKind"], "plan");
+    assert!(
+        write["raw"]["diff"]
+            .as_str()
+            .is_some_and(|diff| diff.contains("+# Plan"))
+    );
+
+    let finalized = execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-finalize",
+        PLAN_FINALIZE_MODEL_TOOL,
+        "finalize",
+        json!({ "summary": "Runtime plan is ready for review." }),
+        &started_at,
+    );
+    assert_eq!(finalized["raw"]["phase"], PLAN_PHASE_REVIEWING);
+
+    let (phase, review_status, project_key) = {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        (
+            session.snapshot["plan"]["phase"].clone(),
+            session.snapshot["plan"]["review"]["status"].clone(),
+            session.snapshot["plan"]["projectKey"]
+                .as_str()
+                .map(str::to_string),
+        )
+    };
+    assert_eq!(phase, PLAN_PHASE_REVIEWING);
+    assert_eq!(review_status, "pending");
+    let project_key = project_key.expect("project key");
+    let root = {
+        let state = state().lock().expect("state lock");
+        state.root.clone()
+    };
+    assert!(project_plan_db_path(&root, &project_key).exists());
+}
+
+#[test]
+fn project_plan_store_lists_reads_revises_and_deletes_plan() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let working_dir = project.path().display().to_string();
+    let mut session = new_session(
+        Some("Project Plan Store Test".to_string()),
+        Some(working_dir.clone()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+    let started_at = now();
+
+    execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-begin-store",
+        PLAN_BEGIN_MODEL_TOOL,
+        "begin",
+        json!({
+            "title": "Stored plan",
+            "reason": "Project visible plan",
+            "scope": "Store API"
+        }),
+        &started_at,
+    );
+    execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-write-store",
+        PLAN_WRITE_MODEL_TOOL,
+        "write",
+        json!({
+            "markdownDelta": "# Stored plan\n\n- Build project list\n",
+            "replace": false
+        }),
+        &started_at,
+    );
+    execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-finalize-store",
+        PLAN_FINALIZE_MODEL_TOOL,
+        "finalize",
+        json!({ "summary": "Ready" }),
+        &started_at,
+    );
+    let (plan_id, version_id) = {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        (
+            session.snapshot["plan"]["activePlanId"]
+                .as_str()
+                .expect("plan id")
+                .to_string(),
+            session.snapshot["plan"]["activeVersionId"]
+                .as_str()
+                .expect("version id")
+                .to_string(),
+        )
+    };
+
+    let listed = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.list",
+            json!({
+                "workingDir": working_dir
+            }),
+        )
+        .expect("list project plans");
+    assert_eq!(listed["plans"][0]["planId"], plan_id);
+
+    let read = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.read",
+            json!({
+                "workingDir": working_dir,
+                "planId": plan_id
+            }),
+        )
+        .expect("read project plan");
+    assert_eq!(read["currentVersion"]["versionId"], version_id);
+    assert_eq!(read["currentVersion"]["source"], "agent");
+
+    let revised = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.revise",
+            json!({
+                "sessionId": session_id,
+                "planId": plan_id,
+                "baseVersionId": version_id,
+                "markdown": "# Stored plan\n\n- Build project list\n- Add review edits\n",
+                "source": "user_edit",
+                "annotations": [{
+                    "id": "annotation-1",
+                    "lineId": "line-3",
+                    "line": 3,
+                    "kind": "comment",
+                    "text": "Please keep this visible."
+                }],
+                "summary": "User edited the plan"
+            }),
+        )
+        .expect("revise project plan");
+    assert_eq!(revised["plan"]["review"]["status"], "changed");
+    assert_eq!(revised["plan"]["phase"], PLAN_PHASE_REVIEWING);
+    let revised_version_id = revised["plan"]["activeVersionId"]
+        .as_str()
+        .expect("revised version id")
+        .to_string();
+    assert_ne!(revised_version_id, version_id);
+
+    let reread = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.read",
+            json!({
+                "sessionId": session_id,
+                "planId": plan_id
+            }),
+        )
+        .expect("reread project plan");
+    assert_eq!(reread["currentVersion"]["versionId"], revised_version_id);
+    assert_eq!(reread["currentVersion"]["source"], "user_edit");
+    assert_eq!(
+        reread["currentVersion"]["parentVersionId"]
+            .as_str()
+            .expect("parent version id"),
+        version_id
+    );
+
+    let deleted = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.delete",
+            json!({
+                "sessionId": session_id,
+                "planId": plan_id
+            }),
+        )
+        .expect("delete project plan");
+    assert_eq!(deleted["deleted"], true);
+}
+
+#[test]
+fn plan_mode_blocks_file_mutation_before_approval_and_todo() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Gate Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Blocked mutation",
+        "phase": PLAN_PHASE_PLANNING,
+        "markdown": "# Plan\n",
+        "annotations": [],
+        "review": { "status": "none", "summary": Value::Null }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+
+    let output = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-blocked-write".to_string(),
+            name: WRITE_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "path": "index.html",
+                "content": "<!doctype html>",
+                "overwrite": true
+            }),
+        },
+    );
+
+    assert_eq!(output["error"]["code"], "plan_required_before_execution");
+    assert!(!project.path().join("index.html").exists());
+}
+
+#[test]
+fn plan_mode_blocks_mutation_without_in_progress_todo() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Todo Gate Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Todo gate",
+        "phase": PLAN_PHASE_EXECUTING_TODO,
+        "markdown": "# Plan\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    session.snapshot["projectTodo"] = json!({
+        "todoListId": format!("todo-list-{}", Uuid::new_v4()),
+        "planId": session.snapshot["plan"]["activePlanId"].clone(),
+        "versionId": session.snapshot["plan"]["activeVersionId"].clone(),
+        "status": "running",
+        "currentIndex": 0,
+        "todos": [
+            { "id": "runtime", "content": "Implement runtime support", "status": "pending" }
+        ],
+        "summary": Value::Null
+    });
+    session.snapshot["todos"] = session.snapshot["projectTodo"]["todos"].clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+
+    let output = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-blocked-without-active-todo".to_string(),
+            name: WRITE_FILE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "path": "index.html",
+                "content": "<!doctype html>",
+                "overwrite": true
+            }),
+        },
+    );
+
+    assert_eq!(
+        output["error"]["code"],
+        "todo_in_progress_required_before_execution"
+    );
+    assert!(!project.path().join("index.html").exists());
+}
+
+#[test]
+fn plan_review_approve_sets_todo_required_phase() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Approval Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Approve plan",
+        "phase": PLAN_PHASE_REVIEWING,
+        "markdown": "# Plan\n\n- Build runtime support\n",
+        "annotations": [],
+        "review": { "status": "pending", "summary": "Ready" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+
+    let reviewed = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.review.respond",
+            json!({
+                "sessionId": session_id,
+                "action": "approve",
+                "feedback": "Ship it"
+            }),
+        )
+        .expect("approve plan");
+
+    assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_TODO_REQUIRED);
+    assert_eq!(reviewed["plan"]["review"]["status"], "approved");
+}
+
+#[test]
+fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let plan_id = format!("plan-{}", Uuid::new_v4());
+    let version_id = format!("plan-version-{}", Uuid::new_v4());
+    let mut session = new_session(
+        Some("Project Todo Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": plan_id,
+        "activeVersionId": version_id,
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Approved plan",
+        "phase": PLAN_PHASE_TODO_REQUIRED,
+        "markdown": "# Plan\n\n- Build runtime support\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+
+    let output = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-write".to_string(),
+            name: TODO_WRITE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "todos": [
+                    { "id": "runtime", "content": "Implement runtime support", "status": "in_progress" },
+                    { "id": "ui", "content": "Implement UI support", "status": "pending" }
+                ]
+            }),
+        },
+    );
+
+    assert_eq!(
+        output["raw"]["projectTodo"]["status"]
+            .as_str()
+            .expect("project todo status"),
+        "running"
+    );
+    assert_eq!(
+        output["raw"]["projectTodo"]["todos"]
+            .as_array()
+            .expect("project todo items")
+            .len(),
+        2
+    );
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_EXECUTING_TODO);
+    assert_eq!(session.snapshot["projectTodo"]["currentIndex"], 0);
+}
+
+#[test]
+fn todo_update_and_finish_update_project_todo() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Project Todo Update Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Executing plan",
+        "phase": PLAN_PHASE_EXECUTING_TODO,
+        "markdown": "# Plan\n\n- Build runtime support\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    session.snapshot["projectTodo"] = json!({
+        "todoListId": format!("todo-list-{}", Uuid::new_v4()),
+        "planId": session.snapshot["plan"]["activePlanId"].clone(),
+        "versionId": session.snapshot["plan"]["activeVersionId"].clone(),
+        "status": "running",
+        "currentIndex": 0,
+        "todos": [
+            { "id": "runtime", "content": "Implement runtime support", "status": "in_progress", "priority": "normal", "blockedBy": [], "assignedTo": Value::Null },
+            { "id": "ui", "content": "Implement UI support", "status": "pending", "priority": "normal", "blockedBy": [], "assignedTo": Value::Null }
+        ],
+        "summary": Value::Null
+    });
+    session.snapshot["todos"] = session.snapshot["projectTodo"]["todos"].clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+
+    let updated = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-update".to_string(),
+            name: TODO_UPDATE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "id": "runtime",
+                "status": "completed",
+                "summary": "Runtime done"
+            }),
+        },
+    );
+    assert_eq!(updated["raw"]["projectTodo"]["currentIndex"], 1);
+
+    let finished = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-todo-finish".to_string(),
+            name: TODO_FINISH_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "status": "completed",
+                "summary": "All planned work is complete"
+            }),
+        },
+    );
+
+    assert_eq!(finished["raw"]["projectTodo"]["status"], "completed");
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_COMPLETED);
+}
+
+#[test]
 fn session_read_falls_back_to_disk_when_state_lock_is_busy() {
     let mut session = new_session(
         Some(format!("Lock Busy Read {}", Uuid::new_v4())),
@@ -157,6 +741,55 @@ fn cancel_turn_signals_session_runtime_when_state_lock_is_busy() {
 }
 
 #[test]
+fn native_file_write_activity_uses_filesystem_edit_manifest() {
+    let activity = tool_activity(
+        "tool-file-write",
+        "file",
+        "Wrote file",
+        "completed",
+        json!({ "action": "write", "path": "index.html" }),
+        Some(json!({
+            "content": "Wrote index.html",
+            "raw": {
+                "changedFiles": [{
+                    "path": "index.html",
+                    "operation": "write",
+                    "additions": 1,
+                    "deletions": 0
+                }],
+                "diff": "--- index.html\n+++ index.html\n@@ -0,0 +1 @@\n+hello\n"
+            }
+        })),
+        "2026-06-05T00:00:00.000Z",
+        Some("2026-06-05T00:00:00.010Z".to_string()),
+    );
+
+    assert_eq!(activity["domain"].as_str(), Some("filesystem"));
+    assert_eq!(
+        activity["toolPath"].as_str(),
+        Some("/tools/filesystem/write_file")
+    );
+    assert_eq!(activity["activityKind"].as_str(), Some("edit"));
+    assert_eq!(activity["rendererHint"].as_str(), Some("edit"));
+    assert_eq!(
+        activity.pointer("/changes/0/path").and_then(Value::as_str),
+        Some("index.html")
+    );
+    assert_eq!(
+        activity
+            .pointer("/changes/0/operation")
+            .and_then(Value::as_str),
+        Some("write")
+    );
+    assert_eq!(
+        activity
+            .pointer("/changes/0/detail/additions")
+            .and_then(Value::as_u64),
+        Some(1)
+    );
+}
+
+#[test]
 fn tool_activity_projects_trace_records_for_rebuild() {
     let activity = tool_activity(
         "tool-1",
@@ -274,6 +907,387 @@ fn tool_activity_persists_tool_record_with_message_block() {
             .flatten()
             .any(|block| block.get("toolId").and_then(Value::as_str)
                 == Some("call-persisted-tool"))
+    );
+
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+}
+
+#[test]
+fn tool_progress_does_not_reanchor_existing_tool_block_to_later_message() {
+    let mut session = new_session(
+        Some(format!("Tool Stable Anchor {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-tool-anchor-{}", Uuid::new_v4());
+    let first_message_id = format!("message-tool-anchor-first-{}", Uuid::new_v4());
+    let second_message_id = format!("message-tool-anchor-second-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "waiting_for_tool" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "waiting_for_tool",
+        None,
+        None,
+    ));
+    push_array(
+        &mut session.snapshot,
+        "messages",
+        assistant_message_with_id(first_message_id.clone(), "Preparing file.".to_string()),
+    );
+
+    let root = {
+        let mut state = state().lock().expect("state lock");
+        let root = state.root.clone();
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        root
+    };
+    crate::native_backend::turns::set_active_ui_message_id(
+        &session_id,
+        &turn_id,
+        &first_message_id,
+    );
+
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "call-stable-anchor-tool",
+            "write_file",
+            "Write file",
+            "running",
+            json!({ "path": "index.html" }),
+            Some(json!({
+                "raw": {
+                    "diff": "--- index.html\n+++ index.html\n@@ -0,0 +1 @@\n+<html>",
+                    "preview": true
+                }
+            })),
+            &now(),
+            None,
+        ),
+        "toolStarted",
+    );
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "call-stable-anchor-tool",
+            "write_file",
+            "Write file",
+            "running",
+            json!({ "path": "index.html" }),
+            None,
+            &now(),
+            None,
+        ),
+        "toolStarted",
+    );
+    let after_duplicate_start = load_session(&root, &session_id)
+        .expect("load session after duplicate start")
+        .expect("persisted session after duplicate start");
+    let preview_tool = after_duplicate_start
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|tool| tool.get("id").and_then(Value::as_str) == Some("call-stable-anchor-tool"))
+        .expect("preview tool");
+    assert!(
+        preview_tool
+            .pointer("/output/raw/diff")
+            .and_then(Value::as_str)
+            .is_some_and(|diff| diff.contains("+<html>"))
+    );
+
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            assistant_message_with_id(
+                second_message_id.clone(),
+                "Directory is empty, creating the file.".to_string(),
+            ),
+        );
+        session.dirty = true;
+        state.save_state().expect("save state");
+    }
+    crate::native_backend::turns::set_active_ui_message_id(
+        &session_id,
+        &turn_id,
+        &second_message_id,
+    );
+
+    record_tool_progress(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "call-stable-anchor-tool",
+            "write_file",
+            "Write file",
+            "running",
+            json!({ "path": "index.html" }),
+            Some(json!({
+                "raw": {
+                    "diff": "--- index.html\n+++ index.html\n@@ -0,0 +1,2 @@\n+<html>\n+<body>",
+                    "preview": true
+                }
+            })),
+            &now(),
+            None,
+        ),
+    );
+
+    let persisted = load_session(&root, &session_id)
+        .expect("load session")
+        .expect("persisted session");
+    let messages = persisted
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .expect("messages");
+    let first_message = messages
+        .iter()
+        .find(|message| {
+            message.get("id").and_then(Value::as_str) == Some(first_message_id.as_str())
+        })
+        .expect("first message");
+    let second_message = messages
+        .iter()
+        .find(|message| {
+            message.get("id").and_then(Value::as_str) == Some(second_message_id.as_str())
+        })
+        .expect("second message");
+    let first_tool_count = first_message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|block| {
+            block.get("toolId").and_then(Value::as_str) == Some("call-stable-anchor-tool")
+        })
+        .count();
+    let second_tool_count = second_message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|block| {
+            block.get("toolId").and_then(Value::as_str) == Some("call-stable-anchor-tool")
+        })
+        .count();
+    assert_eq!(first_tool_count, 1);
+    assert_eq!(second_tool_count, 0);
+    let tool = persisted
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|tool| tool.get("id").and_then(Value::as_str) == Some("call-stable-anchor-tool"))
+        .expect("tool");
+    assert!(
+        tool.pointer("/output/raw/diff")
+            .and_then(Value::as_str)
+            .is_some_and(|diff| diff.contains("+<body>"))
+    );
+
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+}
+
+#[test]
+fn running_tool_without_active_anchor_reuses_message_for_later_assistant_text() {
+    let mut session = new_session(
+        Some(format!("Tool Anchor Before Text {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-tool-before-text-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "waiting_for_tool" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "waiting_for_tool",
+        None,
+        None,
+    ));
+
+    let root = {
+        let mut state = state().lock().expect("state lock");
+        let root = state.root.clone();
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        root
+    };
+
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "call-before-text-tool",
+            "write_file",
+            "Write file",
+            "running",
+            json!({ "path": "index.html" }),
+            Some(json!({
+                "raw": {
+                    "diff": "--- index.html\n+++ index.html\n@@ -0,0 +1 @@\n+<html>",
+                    "preview": true
+                }
+            })),
+            &now(),
+            None,
+        ),
+        "toolStarted",
+    );
+
+    let mut reply = ModelReply {
+        content: Some("开始写代码。".to_string()),
+        reasoning_content: None,
+        tool_calls: vec![ModelToolCall {
+            id: "call-before-text-tool".to_string(),
+            name: "write_file".to_string(),
+            arguments: json!({ "path": "index.html" }),
+        }],
+        ui_message_id: None,
+        provider_replay_items: Vec::new(),
+        stop_signal: TurnStopSignal::ToolUse,
+    };
+    assert!(
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            &session_id,
+            &turn_id,
+            &mut reply,
+            &None,
+        )
+    );
+
+    let persisted = load_session(&root, &session_id)
+        .expect("load session")
+        .expect("persisted session");
+    let messages = persisted
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .expect("messages");
+    assert_eq!(messages.len(), 1);
+    let blocks = messages[0]
+        .get("blocks")
+        .and_then(Value::as_array)
+        .expect("blocks");
+    assert_eq!(blocks[0].get("type").and_then(Value::as_str), Some("text"));
+    assert_eq!(
+        blocks[0].get("text").and_then(Value::as_str),
+        Some("开始写代码。")
+    );
+    assert_eq!(blocks[1].get("type").and_then(Value::as_str), Some("tool"));
+    assert_eq!(
+        blocks[1].get("toolId").and_then(Value::as_str),
+        Some("call-before-text-tool")
+    );
+    assert_eq!(
+        reply.ui_message_id.as_deref(),
+        messages[0].get("id").and_then(Value::as_str)
+    );
+
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+}
+
+#[test]
+fn running_tool_after_cleared_anchor_starts_a_new_message() {
+    let mut session = new_session(
+        Some(format!("Tool New Anchor {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-tool-new-anchor-{}", Uuid::new_v4());
+    let previous_message_id = format!("message-tool-previous-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "waiting_for_tool" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "waiting_for_tool",
+        None,
+        None,
+    ));
+    let mut previous_message =
+        assistant_message_with_id(previous_message_id.clone(), "上一轮。".to_string());
+    previous_message["blocks"] = json!([
+        { "type": "text", "id": "text-0", "text": "上一轮。" },
+        { "type": "tool", "id": "tool-previous-tool", "toolId": "previous-tool" }
+    ]);
+    push_array(&mut session.snapshot, "messages", previous_message);
+
+    let root = {
+        let mut state = state().lock().expect("state lock");
+        let root = state.root.clone();
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+        root
+    };
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+
+    record_tool_activity(
+        &session_id,
+        &turn_id,
+        tool_activity(
+            "new-tool",
+            "write_file",
+            "Write file",
+            "running",
+            json!({ "path": "next.html" }),
+            Some(json!({
+                "raw": {
+                    "diff": "--- next.html\n+++ next.html\n@@ -0,0 +1 @@\n+<html>",
+                    "preview": true
+                }
+            })),
+            &now(),
+            None,
+        ),
+        "toolStarted",
+    );
+
+    let persisted = load_session(&root, &session_id)
+        .expect("load session")
+        .expect("persisted session");
+    let messages = persisted
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .expect("messages");
+    assert_eq!(messages.len(), 2);
+    assert!(
+        messages[0]
+            .get("blocks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .all(|block| block.get("toolId").and_then(Value::as_str) != Some("new-tool"))
+    );
+    assert!(
+        messages[1]
+            .get("blocks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|block| block.get("toolId").and_then(Value::as_str) == Some("new-tool"))
     );
 
     crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
@@ -1084,7 +2098,7 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let output = execute_model_tool(
+    let legacy_list = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
@@ -1095,9 +2109,13 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
             json!({ "path": "." }),
         ),
     );
-    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(legacy_list["status"].as_str(), Some("failed"));
+    assert_eq!(
+        legacy_list.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
     assert_ne!(
-        output.pointer("/error/code").and_then(Value::as_str),
+        legacy_list.pointer("/error/code").and_then(Value::as_str),
         Some("workspace_unbound")
     );
 
@@ -1106,13 +2124,12 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         &turn_id,
         &None,
         &cancellation,
-        tool_fs_run_call(
-            "tool-shell-unbound",
-            "/tools/shell/run_command",
-            json!({ "command": "printf shell-ok" }),
-        ),
+        ModelToolCall {
+            id: "tool-shell-unbound".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf shell-ok" }),
+        },
     );
-    assert_eq!(shell["status"].as_str(), Some("completed"));
     assert_eq!(shell["raw"]["success"].as_bool(), Some(true));
     assert_eq!(shell["raw"]["stdout"].as_str(), Some("shell-ok"));
     assert_ne!(
@@ -1182,23 +2199,10 @@ fn tool_fs_run_always_returns_tool_result_envelope_for_adapter_outputs() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let cancellation = Arc::new(AtomicBool::new(false));
-    for (index, (path, args, expected_domain, expected_operation)) in [
-        (
-            "/tools/filesystem/read_file",
-            json!({ "path": "note.txt" }),
-            "filesystem",
-            "read",
-        ),
-        (
-            "/tools/shell/run_command",
-            json!({ "command": "printf adapter-envelope", "cwd": "." }),
-            "shell",
-            "run",
-        ),
-        ("/tools/memory/search", json!({}), "memory", "search"),
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, (path, args, expected_domain, expected_operation)) in
+        [("/tools/memory/search", json!({}), "memory", "search")]
+            .into_iter()
+            .enumerate()
     {
         let turn_id = start_test_runtime_turn(&session_id);
         let output = execute_model_tool(
@@ -1277,11 +2281,26 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
             arguments: json!({ "path": "/tools/filesystem/read_file" }),
         },
     );
-    assert_eq!(inspect["raw"]["path"], "/tools/filesystem/read_file");
-    assert_eq!(inspect["raw"]["handle"], "read_file");
-    assert!(inspect["raw"]["inputSchema"].is_object());
-    let legacy_field = ["legacy", "Name"].join("");
-    assert!(inspect["raw"].get(&legacy_field).is_none());
+    assert_eq!(
+        inspect.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
+
+    let legacy_run = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        tool_fs_run_call(
+            "run-legacy-read-file",
+            "/tools/filesystem/read_file",
+            json!({ "path": "README.md" }),
+        ),
+    );
+    assert_eq!(
+        legacy_run.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
 
     let invalid_args = execute_model_tool(
         &session_id,
@@ -1292,7 +2311,7 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
             id: "invalid-tool-fs-args".to_string(),
             name: "tool_fs_run".to_string(),
             arguments: json!({
-                "path": "/tools/filesystem/read_file",
+                "path": "/tools/memory/search",
                 "args": []
             }),
         },
@@ -1318,8 +2337,8 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
             id: "inactive-turn-tool-fs-run".to_string(),
             name: "tool_fs_run".to_string(),
             arguments: json!({
-                "path": "/tools/filesystem/read_file",
-                "args": { "path": "README.md" }
+                "path": "/tools/memory/search",
+                "args": {}
             }),
         },
     );
@@ -1436,8 +2455,8 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
             id: "tool-fs-search-command".to_string(),
             name: "tool_fs_search".to_string(),
             arguments: json!({
-                "query": "执行测试命令 run shell command",
-                "scene": "project-code",
+                "query": "打开网页 navigate browser",
+                "scene": "browser",
                 "pageSize": 8
             }),
         },
@@ -1454,7 +2473,7 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
             .as_array()
             .expect("search results")
             .iter()
-            .any(|result| result["path"] == "/tools/shell/run_command")
+            .any(|result| result["path"] == "/tools/browser/navigate")
     );
     let top_result = output["raw"]["results"]
         .as_array()
@@ -1502,7 +2521,7 @@ fn tool_fs_search_is_provider_visible_and_returns_ranked_results() {
 }
 
 #[test]
-fn tool_fs_search_guides_generated_file_writes_to_text_protocol() {
+fn tool_fs_search_does_not_guide_generated_file_writes_to_removed_code_tools() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -1531,25 +2550,15 @@ fn tool_fs_search_guides_generated_file_writes_to_text_protocol() {
 
     assert_eq!(output["status"].as_str(), Some("completed"));
     let content = output["content"].as_str().expect("search content");
-    assert!(content.contains("lyra-write-file"));
-    let top_result = output["raw"]["results"]
-        .as_array()
-        .expect("search results")
-        .first()
-        .expect("top search result");
-    assert!(
-        top_result["runHint"]
-            .as_str()
-            .is_some_and(|hint| hint.contains("lyra-write-file"))
-    );
-    assert!(
-        top_result
-            .pointer("/miniSchema/parameters")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .any(|parameter| parameter["name"] == "content" && parameter["maxLength"] == 12000)
-    );
+    assert!(!content.contains("lyra-write-file"));
+    let results = output["raw"]["results"].as_array().expect("search results");
+    assert!(results.iter().all(|result| {
+        let path = result["path"].as_str().unwrap_or_default();
+        !path.starts_with("/tools/filesystem/")
+            && !path.starts_with("/tools/code/")
+            && !path.starts_with("/tools/shell/")
+            && !path.starts_with("/tools/git/")
+    }));
 }
 
 #[test]
@@ -1661,9 +2670,9 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         &None,
         &cancellation,
         tool_fs_run_call(
-            "tool-cache-read-success",
-            "/tools/filesystem/read_file",
-            json!({ "path": "note.txt" }),
+            "tool-cache-memory-success",
+            "/tools/memory/search",
+            json!({ "query": "cached tool note" }),
         ),
     );
     assert_eq!(success["ok"].as_bool(), Some(true));
@@ -1671,12 +2680,12 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         let state = state().lock().expect("state lock");
         let entry = state
             .tool_usage_cache
-            .get("/tools/filesystem/read_file")
+            .get("/tools/memory/search")
             .expect("usage cache entry");
         assert_eq!(entry.successes, 1);
         assert_eq!(entry.failures, 0);
         assert_eq!(entry.consecutive_failures, 0);
-        assert_eq!(entry.handle.as_deref(), Some("read_file"));
+        assert_eq!(entry.handle.as_deref(), Some("memory_search"));
     }
 
     let context = tool_filesystem_runtime_context("project-code", None, None);
@@ -1685,8 +2694,15 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
             .as_array()
             .expect("cached handles")
             .iter()
-            .any(|handle| handle["path"] == "/tools/filesystem/read_file"
+            .any(|handle| handle["path"] == "/tools/memory/search"
                 && handle["source"] == "toolUsageCache")
+    );
+    assert!(
+        context["cachedHandles"]
+            .as_array()
+            .expect("cached handles")
+            .iter()
+            .all(|handle| handle["path"] != "/tools/filesystem/read_file")
     );
 
     let failed = execute_model_tool(
@@ -1695,9 +2711,9 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         &None,
         &cancellation,
         tool_fs_run_call(
-            "tool-cache-read-failed",
-            "/tools/filesystem/read_file",
-            json!({ "path": "missing.txt" }),
+            "tool-cache-memory-failed",
+            "/tools/memory/update",
+            json!({}),
         ),
     );
     assert_eq!(failed["ok"].as_bool(), Some(false));
@@ -1711,16 +2727,16 @@ fn tool_usage_cache_records_success_failure_and_context_handles() {
         let state = state().lock().expect("state lock");
         let entry = state
             .tool_usage_cache
-            .get("/tools/filesystem/read_file")
+            .get("/tools/memory/update")
             .expect("usage cache entry");
-        assert_eq!(entry.successes, 1);
+        assert_eq!(entry.successes, 0);
         assert_eq!(entry.failures, 1);
         assert_eq!(entry.consecutive_failures, 1);
         assert!(
             state
                 .suppressed_tool_usage_by_turn
                 .get(&turn_id)
-                .is_some_and(|paths| paths.contains("/tools/filesystem/read_file"))
+                .is_some_and(|paths| paths.contains("/tools/memory/update"))
         );
     }
 }
@@ -2175,6 +3191,11 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                 .is_some_and(|name| {
                     name.starts_with("tool_fs_")
                         || name == LYRA_CLARIFICATION_ASK_TOOL
+                        || name == EDIT_FILE_MODEL_TOOL
+                        || name == WRITE_FILE_MODEL_TOOL
+                        || name == APPLY_PATCH_MODEL_TOOL
+                        || name == EXEC_COMMAND_MODEL_TOOL
+                        || name == WRITE_STDIN_MODEL_TOOL
                         || name == LYRA_SESSION_READ_MESSAGE_TOOL
                 })
         }));
@@ -2227,10 +3248,17 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
         .as_u64()
         .expect("static tool count");
     let context = tool_filesystem_runtime_context("automation", None, Some(&dispatcher));
-    assert_eq!(
-        context["policy"]["providerVisibleTools"],
-        json!(expected_provider_tool_names())
-    );
+    let mut actual_provider_tools = context["policy"]["providerVisibleTools"]
+        .as_array()
+        .expect("provider-visible tools")
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    actual_provider_tools.sort();
+    let mut expected_provider_tools = expected_provider_tool_names();
+    expected_provider_tools.sort();
+    assert_eq!(actual_provider_tools, expected_provider_tools);
     assert!(
         context["rootSummary"]["toolCount"]
             .as_u64()

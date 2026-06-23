@@ -7,12 +7,17 @@ use serde_json::{Value, json};
 #[test]
 fn operation_envelope_validator_checks_runtime_and_args() {
     let registry = ToolFsRegistry::default();
+    assert!(
+        registry
+            .inspect_path("/tools/filesystem/read_file")
+            .is_err()
+    );
     let manifest = registry
-        .inspect_path("/tools/filesystem/read_file")
+        .inspect_path("/tools/web/search")
         .expect("manifest");
     let mut envelope = new_operation_envelope(
         &manifest,
-        json!({ "path": "README.md" }),
+        json!({ "query": "Lyra docs" }),
         None,
         ToolOperationContext {
             session_id: "session-1".to_string(),
@@ -27,7 +32,7 @@ fn operation_envelope_validator_checks_runtime_and_args() {
             .expect("validated")
             .unwrap()
             .path,
-        "/tools/filesystem/read_file"
+        "/tools/web/search"
     );
 
     let mut missing_turn = envelope.clone();
@@ -69,7 +74,7 @@ fn operation_envelope_validator_checks_runtime_and_args() {
     );
 
     let mut wrong_type = envelope.clone();
-    wrong_type.args = json!({ "path": 42 });
+    wrong_type.args = json!({ "query": 42 });
     let wrong_type_error = wrong_type.validate(&registry).unwrap_err();
     assert_eq!(wrong_type_error.code, "invalid_tool_args");
     assert_eq!(
@@ -78,11 +83,11 @@ fn operation_envelope_validator_checks_runtime_and_args() {
             .as_ref()
             .and_then(|detail| detail.pointer("/schemaError/field"))
             .and_then(Value::as_str),
-        Some("path")
+        Some("query")
     );
 
     let mut mismatched_handle = envelope.clone();
-    mismatched_handle.tool_handle = Some("find_files".to_string());
+    mismatched_handle.tool_handle = Some("web_fetch".to_string());
     assert_eq!(
         mismatched_handle.validate(&registry).unwrap_err().code,
         "ambiguous_tool_target"
@@ -276,7 +281,7 @@ fn result_trace_and_change_records_expose_document_fields() {
         "trace-1",
         "op-1",
         "turn-1",
-        Some("/tools/filesystem/write_file".to_string()),
+        Some("/tools/web/search".to_string()),
         "completed",
         "completed",
         None,
@@ -292,9 +297,9 @@ fn result_trace_and_change_records_expose_document_fields() {
         ok: true,
         content: "ok".to_string(),
         raw: json!({ "ok": true }),
-        tool_path: "/tools/filesystem/write_file".to_string(),
-        domain: "filesystem".to_string(),
-        operation: "write".to_string(),
+        tool_path: "/tools/web/search".to_string(),
+        domain: "web".to_string(),
+        operation: "search".to_string(),
         artifacts: vec![json!({ "id": "artifact-diff" })],
         artifact_refs: vec![json!({ "id": "artifact-diff" })],
         projection_ref: None,

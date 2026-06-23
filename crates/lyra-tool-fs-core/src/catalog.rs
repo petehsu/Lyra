@@ -218,7 +218,7 @@ fn description_for(
             "Use when the agent knows a file name pattern, extension, or glob and only needs matching paths. This is the fastest choice for path discovery."
         }
         ("filesystem", "write") => {
-            "Use only when the agent must create or replace a small whole workspace file whose content safely fits in provider-native JSON args. For generated code, HTML, CSS, JS, or large content, emit a lyra-write-file fenced text block instead of this tool."
+            "Deprecated for provider-visible code work. Use the direct apply_patch tool for file changes."
         }
         ("filesystem", "strict_edit") => {
             "Use when the agent must safely modify existing file text with an exact replacement after reading the current file."
@@ -1121,7 +1121,12 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("filesystem", "read") if path.ends_with("/read_range") => object_schema(
             [
-                ("path", string("Workspace file path.")),
+                (
+                    "path",
+                    string(
+                        "Path relative to the bound workspace root; do not prefix the workspace folder name itself.",
+                    ),
+                ),
                 ("startLine", json!({ "type": "integer", "minimum": 1 })),
                 ("endLine", json!({ "type": "integer", "minimum": 1 })),
             ],
@@ -1155,7 +1160,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({
                         "type": "string",
                         "maxLength": 12000,
-                        "description": "New file content for small files only. For generated code, HTML/CSS/JS, or larger content, do not pass content in JSON; emit a lyra-write-file fenced text block."
+                        "description": "Deprecated file content field. Use the direct apply_patch tool for provider-visible code changes."
                     }),
                 ),
                 ("overwrite", json!({ "type": "boolean", "default": false })),
@@ -2394,8 +2399,8 @@ Lyra browser / Lumen (interactive pages)
 - Visual last resort → /tools/browser/see then /tools/browser/vact
 - Verify completion → /tools/browser/judge_task
 
-Project / code / shell
-- Repo survey or code change → code search/grep → read_file → strict_edit/apply_patch → shell run → git diff
+Project / code
+- Repo survey or code change → use direct exec_command for rg/sed/cat/git/tests and direct apply_patch for every file mutation.
 
 Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
 }

@@ -1125,6 +1125,83 @@
   gap: var(--lyra-unit-6);
 }
 
+.lyra-agents-message-process-fold {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-14);
+  position: relative;
+}
+
+.lyra-agents-message-process-fold-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-10);
+  align-self: stretch;
+  width: calc(100% - var(--lyra-unit-24));
+  margin-inline: var(--lyra-unit-12);
+  padding: var(--lyra-unit-4) 0;
+  color: var(--lyra-text-secondary);
+  font: inherit;
+}
+
+.lyra-agents-message-process-fold-head.lyra-ui-button {
+  height: auto;
+  min-height: 0;
+  padding-inline: 0;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.lyra-agents-message-process-fold-head.lyra-ui-button:hover:not(:disabled),
+.lyra-agents-message-process-fold-head.lyra-ui-button:active:not(:disabled) {
+  color: var(--lyra-text-primary);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.lyra-agents-message-process-fold-head.lyra-ui-button:focus-visible {
+  box-shadow: none;
+  outline: var(--lyra-stroke-strong) solid var(--lyra-app-focus);
+  outline-offset: var(--lyra-space-2);
+}
+
+.lyra-agents-message-process-fold-line {
+  height: var(--lyra-unit-1);
+  flex: 1 1 var(--lyra-unit-80);
+  min-width: var(--lyra-unit-32);
+  border-radius: var(--lyra-radius-pill);
+  background: color-mix(in srgb, var(--lyra-app-border) 68%, transparent);
+  transition: background 140ms ease;
+}
+
+.lyra-agents-message-process-fold-head:hover .lyra-agents-message-process-fold-line {
+  background: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+}
+
+.lyra-agents-message-process-fold-label {
+  flex: 0 0 auto;
+  font-size: var(--lyra-unit-12);
+  color: var(--lyra-text-muted);
+  white-space: nowrap;
+  transition: color 140ms ease;
+}
+
+.lyra-agents-message-process-fold-head:hover .lyra-agents-message-process-fold-label {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agents-message-process-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-14);
+}
+
 .lyra-agents-message-text {
   margin: 0;
   white-space: pre-wrap;
@@ -1747,7 +1824,11 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: shimmer-sweep 3s linear infinite;
+  /* Hint the compositor to promote only the cheap background-position change,
+     and slow the sweep slightly so weak GPUs (e.g. hackintosh) spend fewer
+     repaints per second while the motion still reads as a gentle drift. */
+  will-change: background-position;
+  animation: shimmer-sweep 4s linear infinite;
 }
 
 /* -------- Collapse container --------
@@ -1786,15 +1867,10 @@
   from {
     opacity: 0;
     transform: translateX(calc(var(--lyra-unit-8) * -1));
-    filter: blur(var(--lyra-unit-1));
-  }
-  60% {
-    filter: blur(0);
   }
   to {
     opacity: 1;
     transform: translateX(0);
-    filter: blur(0);
   }
 }
 
@@ -2909,19 +2985,10 @@
   from {
     opacity: 0;
     transform: translateY(0.7em);
-    filter: blur(var(--lyra-unit-4)) brightness(1.6);
-    text-shadow: 0 0 var(--lyra-unit-8) currentColor;
-  }
-  60% {
-    opacity: 1;
-    filter: blur(var(--lyra-unit-0-5)) brightness(1.3);
-    text-shadow: 0 0 var(--lyra-unit-6) currentColor;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0) brightness(1);
-    text-shadow: none;
   }
 }
 
@@ -2929,13 +2996,10 @@
   from {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0) brightness(1);
   }
   to {
     opacity: 0;
     transform: translateY(-0.7em);
-    filter: blur(var(--lyra-unit-4)) brightness(1.5);
-    text-shadow: 0 0 var(--lyra-unit-8) currentColor;
   }
 }
 
@@ -2944,19 +3008,10 @@
   from {
     opacity: 0;
     transform: translateY(-0.7em);
-    filter: blur(var(--lyra-unit-4)) brightness(1.6);
-    text-shadow: 0 0 var(--lyra-unit-8) currentColor;
-  }
-  60% {
-    opacity: 1;
-    filter: blur(var(--lyra-unit-0-5)) brightness(1.3);
-    text-shadow: 0 0 var(--lyra-unit-6) currentColor;
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0) brightness(1);
-    text-shadow: none;
   }
 }
 
@@ -2964,13 +3019,10 @@
   from {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0) brightness(1);
   }
   to {
     opacity: 0;
     transform: translateY(0.7em);
-    filter: blur(var(--lyra-unit-4)) brightness(1.5);
-    text-shadow: 0 0 var(--lyra-unit-8) currentColor;
   }
 }
 
@@ -3503,6 +3555,310 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* -------- Agent Plan Board -------- */
+
+.lyra-agent-plan-board {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--lyra-text-primary);
+  background: var(--lyra-app-surface-bg);
+}
+
+.lyra-agent-plan-board-titlebar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+  min-width: 0;
+}
+
+.lyra-agent-plan-board-titlebar-meta {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-agent-plan-board-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lyra-unit-16);
+  padding: var(--lyra-unit-24) var(--lyra-unit-28) var(--lyra-unit-16);
+  border-bottom: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 50%, transparent);
+}
+
+.lyra-agent-plan-board-eyebrow {
+  margin: 0 0 var(--lyra-unit-6);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-12);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lyra-agent-plan-board-header h1 {
+  margin: 0;
+  font-size: var(--lyra-unit-22);
+  line-height: 1.2;
+}
+
+.lyra-agent-plan-board-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--lyra-unit-6);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agent-plan-board-meta span {
+  padding: var(--lyra-unit-4) var(--lyra-unit-8);
+  border-radius: var(--lyra-unit-999);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 64%, transparent);
+}
+
+.lyra-agent-plan-board-main {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--lyra-unit-16);
+  padding: var(--lyra-unit-18) var(--lyra-unit-28) var(--lyra-unit-28);
+  overflow: hidden;
+}
+
+.lyra-agent-plan-board-main.has-todo {
+  grid-template-columns: minmax(var(--lyra-unit-260), 0.38fr) minmax(0, 1fr);
+}
+
+.lyra-agent-plan-board-todo,
+.lyra-agent-plan-board-plan {
+  min-height: 0;
+  overflow: auto;
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
+  border-radius: var(--lyra-unit-14);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 88%, var(--lyra-app-surface-bg) 12%);
+}
+
+.lyra-agent-plan-board-todo h2,
+.lyra-agent-plan-board-plan h2 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--lyra-unit-12) var(--lyra-unit-14);
+  font-size: var(--lyra-unit-13);
+  background: inherit;
+  border-bottom: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
+}
+
+.lyra-agent-plan-board-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-12);
+}
+
+.lyra-agent-plan-board-todo-item {
+  display: grid;
+  grid-template-columns: var(--lyra-unit-24) var(--lyra-unit-18) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-10);
+  border-radius: var(--lyra-unit-10);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 42%, transparent);
+}
+
+.lyra-agent-plan-board-todo-item.is-current,
+.lyra-agent-plan-board-todo-item.is-running {
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-accent) 12%, var(--lyra-app-row-hover-bg) 36%);
+}
+
+.lyra-agent-plan-board-todo-item.is-done {
+  color: color-mix(in srgb, var(--lyra-status-success) 76%, var(--lyra-text-secondary));
+}
+
+.lyra-agent-plan-board-todo-item.is-failed {
+  color: color-mix(in srgb, var(--lyra-status-error) 76%, var(--lyra-text-secondary));
+}
+
+.lyra-agent-plan-board-todo-index,
+.lyra-agent-plan-board-todo-status {
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+}
+
+.lyra-agent-plan-board-todo-icon {
+  display: inline-flex;
+  color: currentColor;
+}
+
+.lyra-agent-plan-board-todo-content {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.lyra-agent-plan-board-markdown {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--lyra-unit-20) var(--lyra-unit-24) var(--lyra-unit-36);
+  line-height: 1.65;
+}
+
+.lyra-agent-plan-board-markdown h2,
+.lyra-agent-plan-board-markdown h3,
+.lyra-agent-plan-board-markdown h4,
+.lyra-agent-plan-board-markdown h5 {
+  margin: var(--lyra-unit-20) 0 var(--lyra-unit-8);
+  line-height: 1.25;
+}
+
+.lyra-agent-plan-board-markdown p {
+  margin: var(--lyra-unit-8) 0;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agent-plan-board-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--lyra-unit-10);
+  align-items: start;
+  margin: var(--lyra-unit-4) 0;
+  padding: var(--lyra-unit-2) var(--lyra-unit-4);
+  border-radius: var(--lyra-unit-8);
+}
+
+.lyra-agent-plan-board-line:hover,
+.lyra-agent-plan-board-line:focus-within {
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 52%, transparent);
+}
+
+.lyra-agent-plan-board-line-content {
+  min-width: 0;
+}
+
+.lyra-agent-plan-board-line-actions {
+  display: inline-flex;
+  gap: var(--lyra-unit-4);
+  opacity: 0;
+  transform: translateY(var(--lyra-unit-2));
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.lyra-agent-plan-board-line:hover .lyra-agent-plan-board-line-actions,
+.lyra-agent-plan-board-line:focus-within .lyra-agent-plan-board-line-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.lyra-agent-plan-board-line-action,
+.lyra-agent-plan-board-line-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-4);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 58%, transparent);
+  border-radius: var(--lyra-unit-999);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 90%, transparent);
+  cursor: pointer;
+}
+
+.lyra-agent-plan-board-line-action {
+  min-height: var(--lyra-unit-26);
+  padding: 0 var(--lyra-unit-8);
+  font-size: var(--lyra-unit-11);
+  white-space: nowrap;
+}
+
+.lyra-agent-plan-board-line-icon-btn {
+  width: var(--lyra-unit-26);
+  height: var(--lyra-unit-26);
+  padding: 0;
+}
+
+.lyra-agent-plan-board-line-action:hover,
+.lyra-agent-plan-board-line-icon-btn:hover {
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-accent) 38%, var(--lyra-app-border));
+}
+
+.lyra-agent-plan-board-line-action:disabled,
+.lyra-agent-plan-board-line-icon-btn:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.lyra-agent-plan-board-line-editor {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-6);
+  margin: var(--lyra-unit-4) 0;
+}
+
+.lyra-agent-plan-board-line-input {
+  min-width: 0;
+  flex: 1;
+  height: var(--lyra-unit-30);
+  padding: 0 var(--lyra-unit-10);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-accent) 42%, var(--lyra-app-border));
+  border-radius: var(--lyra-unit-8);
+  color: var(--lyra-text-primary);
+  background: var(--lyra-app-surface-bg);
+  outline: none;
+}
+
+.lyra-agent-plan-board-line-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-5);
+  margin: var(--lyra-unit-5) 0 var(--lyra-unit-2);
+}
+
+.lyra-agent-plan-board-line-note {
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--lyra-unit-5) var(--lyra-unit-8);
+  border-radius: var(--lyra-unit-8);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-unit-12);
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 62%, transparent);
+  border-left: var(--lyra-unit-2) solid color-mix(in srgb, var(--lyra-accent) 54%, transparent);
+}
+
+.lyra-agent-plan-board-line-note.is-edit {
+  border-left-color: color-mix(in srgb, var(--lyra-status-success) 58%, var(--lyra-accent));
+}
+
+.lyra-agent-plan-board-list-row {
+  display: grid;
+  grid-template-columns: var(--lyra-unit-24) minmax(0, 1fr);
+  gap: var(--lyra-unit-4);
+  margin: var(--lyra-unit-6) 0;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agent-plan-board-list-marker {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agent-plan-board-markdown pre {
+  overflow: auto;
+  padding: var(--lyra-unit-12);
+  border-radius: var(--lyra-unit-10);
+  background: color-mix(in srgb, var(--lyra-app-surface-bg) 88%, black 12%);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
+}
+
+.lyra-agent-plan-board-empty {
+  margin: 0;
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-12);
 }
 
 /* -------- Rich text (markdown) -------- */
@@ -4109,6 +4465,45 @@
   font-size: var(--lyra-unit-12);
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.lyra-agents-plan-review-panel {
+  gap: var(--lyra-unit-8);
+  padding-bottom: var(--lyra-unit-10);
+}
+
+.lyra-agents-plan-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--lyra-unit-6);
+}
+
+.lyra-agents-plan-review-btn {
+  min-height: var(--lyra-unit-28);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-5);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 52%, transparent);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 36%, transparent);
+  border-radius: var(--lyra-unit-8);
+}
+
+.lyra-agents-plan-review-btn:hover:not(:disabled) {
+  color: var(--lyra-text-primary);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 82%, transparent);
+}
+
+.lyra-agents-plan-review-btn-approve {
+  color: var(--lyra-status-success);
+  border-color: color-mix(in srgb, var(--lyra-status-success) 42%, transparent);
+  background: color-mix(in srgb, var(--lyra-status-success) 10%, transparent);
+}
+
+.lyra-agents-plan-review-btn-reject:hover:not(:disabled) {
+  color: var(--lyra-status-error);
+  border-color: color-mix(in srgb, var(--lyra-status-error) 36%, transparent);
 }
 
 .lyra-agents-permission-panel .lyra-agents-decision-question {

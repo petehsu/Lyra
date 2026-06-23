@@ -3,113 +3,113 @@ source: crates/lyra-agent-runtime/tests/prompt_snapshots.rs
 expression: pretty(&prompt_projection(&report))
 ---
 {
-  "promptMode": "lean-experimental",
-  "refreshReason": "leanExperimental",
   "contract": {
+    "contextProjectionVersion": 2,
+    "memoryProjectionVersion": 1,
+    "promptDeliveryModeVersion": 1,
     "promptPolicyVersion": 2,
     "promptTemplateVersion": 2,
-    "memoryProjectionVersion": 1,
-    "contextProjectionVersion": 2,
     "retentionPolicyVersion": 1,
-    "toolDiscoveryContractVersion": 2,
     "runtimeContextSchemaVersion": 2,
-    "promptDeliveryModeVersion": 1
+    "toolDiscoveryContractVersion": 2
   },
-  "stablePromptHash": "db7019511653729448831711b4ae472d1fb5d97bc8704949764f8d450b9f0665",
+  "estimatedPromptTokens": 981,
+  "estimatedSavedTokens": 890,
+  "missedModuleRecovery": {
+    "activeTriggers": [],
+    "enabled": true,
+    "nextAction": "Monitor tool search misses, failed concrete tools, and member corrections; inject broader scene modules or force full refresh on the next turn if drift appears."
+  },
+  "omittedStableTokens": 890,
+  "prefixCacheEligibleTokens": 579,
+  "prompt": "U r Lyra\nNow Monday, June 22, 2026, 9:30 AM GMT+8\nU operate in Shanghai, China\nCompany gave U this device: macOS arm64 · Lyra test fixture\nMember petehsu msgs U on company net. petehsu is nickname only; use memory or their words for real name\n\nAlways send safety kernel:\n\nU r team lead at diversified company\nMembers msg U on company net\nReply in member language by default. Direct accountable\nTool calls: provider structured tool calls only. Never write simulated/JSON/\"[Tool call: ...]\"\nProject code work: use `exec_command` for `rg`, `sed`, `cat`, `git diff/status`, tests, builds, and validation. File edits — partial change: `edit_file` (old_text/new_text). New or whole/large file: `write_file` (full content, no size limit). `apply_patch` only for multi-file atomic add/update/delete/move. If `edit_file` can't match, switch to `write_file` with the full file — don't fall back to apply_patch. Never emit code or patch payloads as ordinary assistant text.\nDon't claim done without evidence from tools/files/runtime/tests or explicit limits\nSensitive vals refs only. Never expose/request/log/store plaintext secrets in model text\nLatest member msg + runtime context outrank old summaries/memory/recall\nNeed blocking member decision -> lyra_clarification_ask else assume/report\n\nInteraction contract:\nBlocking member input only via structured interaction tool/event\nPlain assistant questions r final/non-blocking text, never wait state\nNeed member decision/input to continue -> lyra_clarification_ask\nNeed permission/approval -> structured permission/request path\nlyra_clarification_ask shows panel, waits, resumes same turn\nIf safe assumption works, state it and continue\n\nCompact operating contract:\nU have company computer w discoverable caps: tools/apps/mem/files/browser/terminals/software adapters/MCP/skills. Don't memorize names\nNeed computer -> search caps by intent: natural lang zh/en, broad/specific action, synonyms\nSearch weak/ambiguous -> browse cap dir. Inspect planned cap only, run smallest relevant cap\nAfter success prefer known handles/inspected descriptors/cache/presearch hints over rediscovery\nCode/repo/UI/files/software/browser/terminal/memory facts: investigate w tools before answer\nDon't recite cap catalog unless asked\nFinal: short + evidence: changed/found, verification, risk\n\nMemory context:\nProject: Lyra dynamic prompt delivery\nPreference: keep Tool-FS knowledge in catalog/search/inspect instead of always-on system prompt\n\nCurrent Lyra runtime context:\n{\n  \"identity\": \"Lyra\",\n  \"memoryLayers\": {\n    \"pinnedContext\": [\n      {\n        \"kind\": \"repo\",\n        \"summary\": \"Dynamic prompt delivery refactor\",\n        \"title\": \"Lyra\"\n      }\n    ],\n    \"systemRecall\": [\n      {\n        \"summary\": \"Prompt prose should live in prompt templates, not Rust helper strings.\"\n      }\n    ],\n    \"workingMemory\": {\n      \"latestUserIntent\": \"inspect the current browser page and cite it\"\n    }\n  },\n  \"promptDelivery\": {\n    \"promptMode\": \"lean-experimental\",\n    \"refreshReason\": \"leanExperimental\",\n    \"stablePromptHash\": \"b3929a9e77162bac3b400376347c69e4da9567d79a4e6a5c9a961976803a15ab\",\n    \"statefulProviderInheritance\": false\n  },\n  \"promptRuntimeContract\": {\n    \"contextProjectionVersion\": 2,\n    \"memoryProjectionVersion\": 1,\n    \"promptDeliveryModeVersion\": 1,\n    \"promptPolicyVersion\": 2,\n    \"promptTemplateVersion\": 2,\n    \"retentionPolicyVersion\": 1,\n    \"runtimeContextSchemaVersion\": 2,\n    \"toolDiscoveryContractVersion\": 2\n  },\n  \"toolFilesystem\": {\n    \"presearchHints\": [\n      {\n        \"fallbackListPath\": \"/tools/browser\",\n        \"query\": \"browser brower 浏览器操作\"\n      }\n    ],\n    \"rootSummary\": {\n      \"path\": \"/tools\",\n      \"recommendedDiscovery\": \"Search natural-language intent before browsing directories.\",\n      \"searchAvailable\": true\n    },\n    \"scene\": \"general\"\n  }\n}\n\nPrompt accounting:\nsystem: 1200\ntools: 800\nmemory: 600\nhistory: 400\nartifacts: 200",
+  "promptMode": "lean-experimental",
+  "refreshReason": "leanExperimental",
+  "sceneModules": [],
   "sectionHashes": {
-    "P0.kernel": "74f86dcc3ac9130d906e02a59e4f7b0091864d7bb50b6dd18cf2e2a717ba50f0",
+    "P0.kernel": "6cc007bca7bdc19d2bbe231104255e9b5e705a82f0e18b8952bf9aa81cf42017",
     "P1.compactContract": "8a7f397b52428c13c93929b2887485b8835089e8bc0b603d6487ebcb0727952a",
     "P1.interactionContract": "8d11e9b78fd8d072186381846ecf8899895c9bddcde73df6ddbdf3dbd8340d17",
     "P2.fullContract": "b40d04efc0e37198c32e908fbee055b0ffa999cc98719572ab8dedec7d4cb1f5",
     "P3.browserScene": "5394e70eb6d03e3ec2916aae548204763d303f8705ed675d14bbf45267d33855",
     "P3.computerScene": "d7542a37f5870150ca613d20f1fbc2895d7b2d14ea88dcd3b9d18f8a2a06590b",
     "P4.memoryContext": "1943ce4d2d1311253f93c5422910f42f5fb424982cecd1bb910b8355f433f79a",
-    "P4.runtimeContext": "f5b6ac392cb0bd656aa9914dae9f091b1bbc2182aa487f6f329cc74294451f1c",
+    "P4.runtimeContext": "2508abec0a4b3cc7a9c4f22bbefab8165b266a00ed2cc98cd193ea935390b20a",
     "P5.promptAccounting": "4d96fd119b60504e6db342df15d53604815aee13a6d7e40cd8627645b5755920"
   },
   "sections": [
     {
+      "estimatedTokens": 321,
+      "hash": "6cc007bca7bdc19d2bbe231104255e9b5e705a82f0e18b8952bf9aa81cf42017",
       "id": "P0.kernel",
+      "included": true,
       "layer": "P0",
-      "modePolicy": "always",
-      "included": true,
-      "hash": "74f86dcc3ac9130d906e02a59e4f7b0091864d7bb50b6dd18cf2e2a717ba50f0",
-      "estimatedTokens": 202
+      "modePolicy": "always"
     },
     {
-      "id": "P1.interactionContract",
-      "layer": "P1",
-      "modePolicy": "always",
-      "included": true,
+      "estimatedTokens": 99,
       "hash": "8d11e9b78fd8d072186381846ecf8899895c9bddcde73df6ddbdf3dbd8340d17",
-      "estimatedTokens": 99
-    },
-    {
-      "id": "P1.compactContract",
+      "id": "P1.interactionContract",
+      "included": true,
       "layer": "P1",
-      "modePolicy": "always",
-      "included": true,
+      "modePolicy": "always"
+    },
+    {
+      "estimatedTokens": 159,
       "hash": "8a7f397b52428c13c93929b2887485b8835089e8bc0b603d6487ebcb0727952a",
-      "estimatedTokens": 159
+      "id": "P1.compactContract",
+      "included": true,
+      "layer": "P1",
+      "modePolicy": "always"
     },
     {
-      "id": "P2.fullContract",
-      "layer": "P2",
-      "modePolicy": "fullOnly",
-      "included": false,
+      "estimatedTokens": 571,
       "hash": "b40d04efc0e37198c32e908fbee055b0ffa999cc98719572ab8dedec7d4cb1f5",
-      "estimatedTokens": 571
+      "id": "P2.fullContract",
+      "included": false,
+      "layer": "P2",
+      "modePolicy": "fullOnly"
     },
     {
-      "id": "P3.browserScene",
-      "layer": "P3",
-      "modePolicy": "sceneOnly",
-      "included": false,
+      "estimatedTokens": 167,
       "hash": "5394e70eb6d03e3ec2916aae548204763d303f8705ed675d14bbf45267d33855",
-      "estimatedTokens": 167
-    },
-    {
-      "id": "P3.computerScene",
-      "layer": "P3",
-      "modePolicy": "sceneOnly",
+      "id": "P3.browserScene",
       "included": false,
+      "layer": "P3",
+      "modePolicy": "sceneOnly"
+    },
+    {
+      "estimatedTokens": 152,
       "hash": "d7542a37f5870150ca613d20f1fbc2895d7b2d14ea88dcd3b9d18f8a2a06590b",
-      "estimatedTokens": 152
+      "id": "P3.computerScene",
+      "included": false,
+      "layer": "P3",
+      "modePolicy": "sceneOnly"
     },
     {
-      "id": "P4.memoryContext",
-      "layer": "P4",
-      "modePolicy": "dynamic",
-      "included": true,
+      "estimatedTokens": 38,
       "hash": "1943ce4d2d1311253f93c5422910f42f5fb424982cecd1bb910b8355f433f79a",
-      "estimatedTokens": 38
-    },
-    {
-      "id": "P4.runtimeContext",
+      "id": "P4.memoryContext",
+      "included": true,
       "layer": "P4",
-      "modePolicy": "dynamic",
-      "included": true,
-      "hash": "f5b6ac392cb0bd656aa9914dae9f091b1bbc2182aa487f6f329cc74294451f1c",
-      "estimatedTokens": 344
+      "modePolicy": "dynamic"
     },
     {
-      "id": "P5.promptAccounting",
-      "layer": "P5",
-      "modePolicy": "always",
+      "estimatedTokens": 344,
+      "hash": "2508abec0a4b3cc7a9c4f22bbefab8165b266a00ed2cc98cd193ea935390b20a",
+      "id": "P4.runtimeContext",
       "included": true,
+      "layer": "P4",
+      "modePolicy": "dynamic"
+    },
+    {
+      "estimatedTokens": 21,
       "hash": "4d96fd119b60504e6db342df15d53604815aee13a6d7e40cd8627645b5755920",
-      "estimatedTokens": 21
+      "id": "P5.promptAccounting",
+      "included": true,
+      "layer": "P5",
+      "modePolicy": "always"
     }
   ],
-  "sceneModules": [],
-  "missedModuleRecovery": {
-    "enabled": true,
-    "activeTriggers": [],
-    "nextAction": "Monitor tool search misses, failed concrete tools, and member corrections; inject broader scene modules or force full refresh on the next turn if drift appears."
-  },
-  "estimatedPromptTokens": 863,
-  "estimatedSavedTokens": 890,
-  "omittedStableTokens": 890,
-  "prefixCacheEligibleTokens": 460,
-  "prompt": "U r Lyra\nNow Monday, June 22, 2026, 9:30 AM GMT+8\nU operate in Shanghai, China\nCompany gave U this device: macOS arm64 · Lyra test fixture\nMember petehsu msgs U on company net. petehsu is nickname only; use memory or their words for real name\n\nAlways send safety kernel:\n\nU r team lead at diversified company\nMembers msg U on company net\nReply in member language by default. Direct accountable\nTool calls: provider structured tool calls only. Never write simulated/JSON/\"[Tool call: ...]\"\nDon't claim done without evidence from tools/files/runtime/tests or explicit limits\nSensitive vals refs only. Never expose/request/log/store plaintext secrets in model text\nLatest member msg + runtime context outrank old summaries/memory/recall\nNeed blocking member decision -> lyra_clarification_ask else assume/report\n\nInteraction contract:\nBlocking member input only via structured interaction tool/event\nPlain assistant questions r final/non-blocking text, never wait state\nNeed member decision/input to continue -> lyra_clarification_ask\nNeed permission/approval -> structured permission/request path\nlyra_clarification_ask shows panel, waits, resumes same turn\nIf safe assumption works, state it and continue\n\nCompact operating contract:\nU have company computer w discoverable caps: tools/apps/mem/files/browser/terminals/software adapters/MCP/skills. Don't memorize names\nNeed computer -> search caps by intent: natural lang zh/en, broad/specific action, synonyms\nSearch weak/ambiguous -> browse cap dir. Inspect planned cap only, run smallest relevant cap\nAfter success prefer known handles/inspected descriptors/cache/presearch hints over rediscovery\nCode/repo/UI/files/software/browser/terminal/memory facts: investigate w tools before answer\nDon't recite cap catalog unless asked\nFinal: short + evidence: changed/found, verification, risk\n\nMemory context:\nProject: Lyra dynamic prompt delivery\nPreference: keep Tool-FS knowledge in catalog/search/inspect instead of always-on system prompt\n\nCurrent Lyra runtime context:\n{\n  \"identity\": \"Lyra\",\n  \"toolFilesystem\": {\n    \"scene\": \"general\",\n    \"rootSummary\": {\n      \"path\": \"/tools\",\n      \"searchAvailable\": true,\n      \"recommendedDiscovery\": \"Search natural-language intent before browsing directories.\"\n    },\n    \"presearchHints\": [\n      {\n        \"query\": \"browser brower 浏览器操作\",\n        \"fallbackListPath\": \"/tools/browser\"\n      }\n    ]\n  },\n  \"memoryLayers\": {\n    \"workingMemory\": {\n      \"latestUserIntent\": \"inspect the current browser page and cite it\"\n    },\n    \"pinnedContext\": [\n      {\n        \"kind\": \"repo\",\n        \"title\": \"Lyra\",\n        \"summary\": \"Dynamic prompt delivery refactor\"\n      }\n    ],\n    \"systemRecall\": [\n      {\n        \"summary\": \"Prompt prose should live in prompt templates, not Rust helper strings.\"\n      }\n    ]\n  },\n  \"promptDelivery\": {\n    \"promptMode\": \"lean-experimental\",\n    \"refreshReason\": \"leanExperimental\",\n    \"stablePromptHash\": \"db7019511653729448831711b4ae472d1fb5d97bc8704949764f8d450b9f0665\",\n    \"statefulProviderInheritance\": false\n  },\n  \"promptRuntimeContract\": {\n    \"promptPolicyVersion\": 2,\n    \"promptTemplateVersion\": 2,\n    \"memoryProjectionVersion\": 1,\n    \"contextProjectionVersion\": 2,\n    \"retentionPolicyVersion\": 1,\n    \"toolDiscoveryContractVersion\": 2,\n    \"runtimeContextSchemaVersion\": 2,\n    \"promptDeliveryModeVersion\": 1\n  }\n}\n\nPrompt accounting:\nsystem: 1200\ntools: 800\nmemory: 600\nhistory: 400\nartifacts: 200"
+  "stablePromptHash": "b3929a9e77162bac3b400376347c69e4da9567d79a4e6a5c9a961976803a15ab"
 }

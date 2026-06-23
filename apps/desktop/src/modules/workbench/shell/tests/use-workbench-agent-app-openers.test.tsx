@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import type { AgentPlanBoardModel } from "../../agent-plan-board";
 import type { AgentProjectTreeModel } from "../../agent-project-tree";
 import type { WorkspaceTabsModel } from "../../workspace-tabs";
 import { useWorkbenchAgentAppOpeners } from "../use-workbench-agent-app-openers";
@@ -23,10 +24,18 @@ const createProjectTreeModel = (): AgentProjectTreeModel => ({
   updateRoot: vi.fn(),
 });
 
+const createPlanBoardModel = (): AgentPlanBoardModel => ({
+  getState: vi.fn(() => null),
+  ensureInstance: vi.fn(),
+  revisePlan: vi.fn().mockResolvedValue(undefined),
+  syncTabInstances: vi.fn(),
+});
+
 describe("useWorkbenchAgentAppOpeners", () => {
   test("opens file paths in the bound project tree editor even when requested as reveal", async () => {
     const tabsModel = createTabsModel();
     const agentProjectTreeModel = createProjectTreeModel();
+    const agentPlanBoardModel = createPlanBoardModel();
     const desktopApi = {
       files: {
         statFile: vi.fn().mockResolvedValue({
@@ -44,6 +53,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
         desktopApi,
         tabsModel,
         agentProjectTreeModel,
+        agentPlanBoardModel,
       })
     );
 
@@ -67,6 +77,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
   test("reveals directory paths in the bound project tree", async () => {
     const tabsModel = createTabsModel();
     const agentProjectTreeModel = createProjectTreeModel();
+    const agentPlanBoardModel = createPlanBoardModel();
     const desktopApi = {
       files: {
         statFile: vi.fn().mockResolvedValue({
@@ -84,6 +95,7 @@ describe("useWorkbenchAgentAppOpeners", () => {
         desktopApi,
         tabsModel,
         agentProjectTreeModel,
+        agentPlanBoardModel,
       })
     );
 

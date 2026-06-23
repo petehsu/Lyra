@@ -33,6 +33,7 @@ struct ResponsesStreamState {
     text: String,
     output_items: Vec<Value>,
     function_calls: HashMap<usize, FunctionCallDraft>,
+    function_call_indices: HashMap<String, usize>,
     stop_signal: TurnStopSignal,
 }
 
@@ -164,10 +165,7 @@ fn map_stream_event(
             }
         }
         Some("response.function_call_arguments.delta") => {
-            let index = event
-                .get("output_index")
-                .and_then(Value::as_u64)
-                .unwrap_or(0) as usize;
+            let index = function_call_index_for_event(event, state);
             let draft = state.function_calls.entry(index).or_default();
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
                 draft.arguments.push_str(delta);
@@ -255,11 +253,33 @@ fn capture_function_call_draft(event: &Value, item: &Value, state: &mut Response
         .and_then(Value::as_str)
         .map(str::to_string);
     draft.name = item.get("name").and_then(Value::as_str).map(str::to_string);
+    for key in [draft.id.as_deref(), draft.call_id.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+    {
+        state.function_call_indices.insert(key.to_string(), index);
+    }
     if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
         && !arguments.is_empty()
     {
         draft.arguments.push_str(arguments);
     }
+}
+
+fn function_call_index_for_event(event: &Value, state: &ResponsesStreamState) -> usize {
+    if let Some(index) = event.get("output_index").and_then(Value::as_u64) {
+        return index as usize;
+    }
+    for key in ["item_id", "call_id"] {
+        let Some(value) = event.get(key).and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some(index) = state.function_call_indices.get(value) {
+            return *index;
+        }
+    }
+    0
 }
 
 #[cfg(test)]
@@ -275,8 +295,8 @@ mod tests {
         let stream = [
             r#"data: {"type":"response.output_text.delta","delta":"Plan."}"#,
             r#"data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool_fs_run","arguments":""}}"#,
-            r#"data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"path\":\"/tools/filesystem/list_files\",\"args\":{}}" }"#,
-            r#"data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool_fs_run","arguments":"{\"path\":\"/tools/filesystem/list_files\",\"args\":{}}"}}"#,
+            r#"data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}" }"#,
+            r#"data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"tool_fs_run","arguments":"{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}"}}"#,
             "data: [DONE]",
         ]
         .join("\n\n");
@@ -295,6 +315,116 @@ mod tests {
         assert_eq!(reply.tool_calls[0].id, "call-1");
         assert_eq!(reply.tool_calls[0].name, "tool_fs_run");
         assert_eq!(reply.provider_replay_items[0]["type"], "function_call");
+    }
+
+    #[test]
+    fn streams_write_file_arguments_into_running_edit_activity() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let mut session = crate::native_backend::sessions::new_session(
+            Some(format!("Streaming preview {}", uuid::Uuid::new_v4())),
+            Some(workspace.path().display().to_string()),
+            "normal",
+        );
+        let session_id = session.id.clone();
+        let turn_id = format!("turn-streaming-preview-{}", uuid::Uuid::new_v4());
+        session.snapshot["turnStatus"] = Value::String("running".to_string());
+        session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+        session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
+        session
+            .runtime_turns
+            .push(crate::native_backend::projections::runtime_turn(
+                &turn_id,
+                &session_id,
+                "calling_model",
+                None,
+                None,
+            ));
+        {
+            let mut state = crate::native_backend::state::state()
+                .lock()
+                .expect("state lock");
+            session.dirty = true;
+            state.sessions.insert(session_id.clone(), session);
+            state.save_state().expect("save state");
+        }
+
+        let arguments = r#"{"path":"index.html","content":"<!DOCTYPE html>\n<html>"}"#;
+        let stream = [
+            format!(
+                "data: {}",
+                json!({
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-write",
+                        "name": "write_file",
+                        "arguments": ""
+                    }
+                })
+            ),
+            format!(
+                "data: {}",
+                json!({
+                    "type": "response.function_call_arguments.delta",
+                    "item_id": "fc-1",
+                    "delta": arguments
+                })
+            ),
+            format!(
+                "data: {}",
+                json!({
+                    "type": "response.output_item.done",
+                    "output_index": 0,
+                    "item": {
+                        "type": "function_call",
+                        "id": "fc-1",
+                        "call_id": "call-write",
+                        "name": "write_file",
+                        "arguments": arguments
+                    }
+                })
+            ),
+            "data: [DONE]".to_string(),
+        ]
+        .join("\n\n");
+
+        let reply = parse_streaming_response(
+            std::io::Cursor::new(stream),
+            &session_id,
+            &turn_id,
+            &Arc::new(AtomicBool::new(false)),
+            &[json!({ "type": "function", "function": { "name": "write_file" } })],
+            false,
+        )
+        .expect("streaming write_file reply");
+
+        assert_eq!(reply.tool_calls[0].id, "call-write");
+        let state = crate::native_backend::state::state()
+            .lock()
+            .expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        let tool = session
+            .snapshot
+            .get("tools")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|tool| tool.get("id").and_then(Value::as_str) == Some("call-write"))
+            .expect("streaming preview tool");
+        assert_eq!(tool["status"].as_str(), Some("running"));
+        assert_eq!(tool["activityKind"].as_str(), Some("edit"));
+        assert_eq!(
+            tool.pointer("/output/raw/changedFiles/0/path")
+                .and_then(Value::as_str),
+            Some("index.html")
+        );
+        assert!(
+            tool.pointer("/output/raw/diff")
+                .and_then(Value::as_str)
+                .is_some_and(|diff| diff.contains("<!DOCTYPE html>"))
+        );
     }
 
     #[test]

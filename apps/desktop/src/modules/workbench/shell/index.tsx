@@ -38,6 +38,7 @@ import {
 import { usePageDragCitationBridge } from "./use-page-drag-citation-bridge";
 import { readBrowserHistoryEntries } from "../browser-history/service";
 import { useWorkbenchAiSessionTabs } from "../ai-panel/session-tabs";
+import { useAgentPlanBoardModel } from "../agent-plan-board";
 import type { BrowserSettingsCategoryFocusRequest } from "../browser-tabs/settings-surface";
 import {
   type AgentSessionHistoryBrowserPreviewPage,
@@ -273,6 +274,10 @@ resolvedThemeId,
     fileManagerLabels: labels.fileManager,
     tabsModel
   });
+  const agentPlanBoardModel = useAgentPlanBoardModel({
+    desktopApi,
+    onMetaChange: tabsModel.updateAppTabMeta
+  });
   const openSettingsSectionFromCapability = useCallback((categoryId: BrowserSettingsCategoryFocusRequest["categoryId"]): void => {
     setSettingsFocusRequest((current) => ({
       categoryId,
@@ -423,11 +428,13 @@ resolvedThemeId,
   const {
     onOpenAgentProjectTree,
     onOpenAgentGit,
+    onOpenAgentPlanBoard,
     onRevealAgentProjectPath,
   } = useWorkbenchAgentAppOpeners({
     desktopApi,
     tabsModel,
     agentProjectTreeModel,
+    agentPlanBoardModel,
   });
   useAgentEditFollow({
     desktopApi,
@@ -478,6 +485,7 @@ resolvedThemeId,
     },
     onRequestProjectBind: requestProjectBind,
     onOpenProjectTree: onOpenAgentProjectTree,
+    onOpenPlanBoard: onOpenAgentPlanBoard,
     onRevealProjectPath: onRevealAgentProjectPath,
     onOpenModelSettings: onOpenAgentModelSettings,
     onOpenUrlInWorkbench: onOpenAgentUrlInWorkbench,
@@ -681,6 +689,7 @@ resolvedThemeId,
     fileEditorModel,
     imageViewerModel,
     agentProjectTreeModel,
+    agentPlanBoardModel,
     activeEditorReviewIndex,
     editorReviewItems,
     resolveActiveEditorWorkItem,

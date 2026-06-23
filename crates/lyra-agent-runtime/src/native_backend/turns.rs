@@ -874,6 +874,7 @@ pub(crate) fn commit_visible_assistant_reply(
         .as_ref()
         .filter(|message_id| !message_id.is_empty())
         .cloned()
+        .or_else(|| active_ui_message_id(session_id, turn_id))
         .or_else(|| emit_assistant_message_placeholder(session_id, turn_id));
     let Some(message_id) = message_id else {
         return false;
@@ -920,6 +921,7 @@ pub(crate) fn emit_assistant_message_placeholder(
         }
         Err(_) => return None,
     };
+    set_active_ui_message_id(session_id, turn_id, &message_id);
     emit_with_callback(
         &callback,
         json!({

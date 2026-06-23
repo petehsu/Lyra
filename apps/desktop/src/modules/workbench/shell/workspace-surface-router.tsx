@@ -22,6 +22,10 @@ import type {
   AgentProjectTreeLabels,
   AgentProjectTreeModel
 } from "../agent-project-tree";
+import type {
+  AgentPlanBoardLabels,
+  AgentPlanBoardModel
+} from "../agent-plan-board";
 import type { AgentGitLabels } from "../agent-git";
 import { SoftwareStoreSurface, type SoftwareStoreSurfaceProps } from "../software-store";
 import type { WorkbenchSplitThreePaneLayout } from "../preferences";
@@ -100,6 +104,8 @@ export type WorkspaceSurfaceRouterProps = {
   readonly imageViewerLabels: ImageViewerLabels;
   readonly agentProjectTreeModel: AgentProjectTreeModel;
   readonly agentProjectTreeLabels: AgentProjectTreeLabels;
+  readonly agentPlanBoardModel: AgentPlanBoardModel;
+  readonly agentPlanBoardLabels: AgentPlanBoardLabels;
   readonly agentGitLabels: AgentGitLabels;
   readonly onOpenAgentGit: (request: {
     readonly sessionId: string;
@@ -196,6 +202,10 @@ const renderSurfaceModel = (
     }
     case "agentProjectTree": {
       const Adapter = surfaceAdapters.agentProjectTree;
+      return <Adapter {...model.props} />;
+    }
+    case "agentPlanBoard": {
+      const Adapter = surfaceAdapters.agentPlanBoard;
       return <Adapter {...model.props} />;
     }
     case "agentGit": {

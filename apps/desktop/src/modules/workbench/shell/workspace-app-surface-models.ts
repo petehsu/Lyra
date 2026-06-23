@@ -3,6 +3,7 @@ import {
   isFileManagerAppId,
   isImageViewerAppId,
   isAgentGitAppId,
+  isAgentPlanBoardAppId,
   isAgentProjectTreeAppId,
   isAgentSessionHistoryAppId,
   isLoginManagerAppId,
@@ -158,6 +159,23 @@ export const createAppSurfaceRenderModel = (
         fileEditorLabels: context.fileEditorLabels,
         themeSignature: context.resolvedThemeId,
         onOpenGitPanel: context.onOpenAgentGit
+      }
+    };
+  }
+
+  if (isAgentPlanBoardAppId(tab.appId) && tab.appInstanceId !== undefined) {
+    const appInstanceId = tab.appInstanceId;
+    const state = context.agentPlanBoardModel.getState(appInstanceId);
+    if (state === null) {
+      return { kind: "empty" };
+    }
+    return {
+      kind: "agentPlanBoard",
+      props: {
+        labels: context.agentPlanBoardLabels,
+        state,
+        onRevisePlan: (request) =>
+          context.agentPlanBoardModel.revisePlan(appInstanceId, request)
       }
     };
   }

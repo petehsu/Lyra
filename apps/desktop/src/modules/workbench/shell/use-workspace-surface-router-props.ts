@@ -12,6 +12,7 @@ import {
   type AgentSessionHistorySurfaceProps
 } from "../agent-session-history";
 import type { AgentProjectTreeModel } from "../agent-project-tree";
+import type { AgentPlanBoardModel } from "../agent-plan-board";
 import type { WorkbenchPreferencesModel } from "../preferences";
 import type { SoftwareCapabilitiesRegistryModel } from "../software-capabilities";
 import type { TerminalDockModel } from "../terminal-dock/types";
@@ -43,6 +44,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly fileEditorModel: FileEditorModel;
   readonly imageViewerModel: ImageViewerModel;
   readonly agentProjectTreeModel: AgentProjectTreeModel;
+  readonly agentPlanBoardModel: AgentPlanBoardModel;
   readonly activeEditorReviewIndex: number;
   readonly editorReviewItems: readonly FileEditorChangeReviewItem[];
   readonly resolveActiveEditorWorkItem: (filePath: string) => FileEditorChangeReviewItem | undefined;
@@ -101,6 +103,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   fileEditorModel,
   imageViewerModel,
   agentProjectTreeModel,
+  agentPlanBoardModel,
   activeEditorReviewIndex,
   editorReviewItems,
   resolveActiveEditorWorkItem,
@@ -149,6 +152,8 @@ export const useWorkspaceSurfaceRouterProps = ({
     imageViewerLabels: labels.imageViewer,
     agentProjectTreeModel,
     agentProjectTreeLabels: labels.agentProjectTree,
+    agentPlanBoardModel,
+    agentPlanBoardLabels: labels.agentPlanBoard,
     agentGitLabels: labels.agentGit,
     onOpenAgentGit,
     fileEditorReview: {

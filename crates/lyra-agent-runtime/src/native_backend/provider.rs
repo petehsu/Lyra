@@ -712,63 +712,6 @@ pub(crate) fn run_model_loop(
             {
                 let _ = remove_assistant_message(session_id, message_id);
             }
-            if !continuation_exhausted {
-                let text_write_blocks =
-                    extract_text_write_blocks(&final_text).map_err(|error| {
-                        AgentRuntimeError::Core(format!(
-                            "assistant emitted malformed lyra-write-file block: {error}"
-                        ))
-                    })?;
-                if !text_write_blocks.is_empty() {
-                    if let Some(message_id) =
-                        reply.ui_message_id.as_ref().filter(|id| !id.is_empty())
-                    {
-                        let _ = remove_assistant_message(session_id, message_id);
-                    } else {
-                        clear_failed_assistant_draft(session_id, turn_id);
-                    }
-                    emit_turn_state(
-                        session_id,
-                        turn_id,
-                        "waiting_for_tool",
-                        "text_write_started",
-                    );
-                    let text_write_summary = execute_text_write_blocks(
-                        session_id,
-                        turn_id,
-                        &request.host_dispatcher,
-                        cancellation,
-                        ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
-                        &text_write_blocks,
-                    );
-                    let text_write_assistant = json!({
-                        "role": "assistant",
-                        "content": format!(
-                            "[Lyra executed {} lyra-write-file text block(s) locally; file content omitted from provider replay.]",
-                            text_write_blocks.len()
-                        ),
-                    });
-                    messages.push(text_write_assistant.clone());
-                    provider_transcript.push(text_write_assistant);
-                    messages.push(json!({
-                        "role": "system",
-                        "content": format!(
-                            "Lyra executed assistant lyra-write-file text block(s) locally.\n{text_write_summary}\nContinue the same task from these file changes. Do not repeat the file content or emit the same lyra-write-file block again; inspect or validate the changed files when appropriate, then provide the final answer."
-                        ),
-                    }));
-                    emit_turn_state(
-                        session_id,
-                        turn_id,
-                        if request.capabilities.supports_streaming {
-                            "streaming_model"
-                        } else {
-                            "calling_model"
-                        },
-                        "text_write_results_ready",
-                    );
-                    continue;
-                }
-            }
             let mut final_assistant = json!({
                 "role": "assistant",
                 "content": final_text,
@@ -932,6 +875,7 @@ pub(crate) fn run_model_loop(
             }
         }
         if !tool_calls.is_empty() {
+            crate::native_backend::turns::clear_active_ui_message_id(session_id, turn_id);
             emit_turn_state(
                 session_id,
                 turn_id,

@@ -316,9 +316,9 @@ pub(crate) fn tool_filesystem_runtime_context(
         "presearchHints": Value::Array(Vec::new()),
         "presearchPolicy": {
             "source": "latestUserMessage",
-            "useWhen": "Use presearchHints only when the user is asking the agent to perform an action that clearly needs tools.",
-            "fallback": "If no hint clearly fits, call tool_fs_search with the task description.",
-            "priority": "Prefer inspectedDescriptors first, then presearchHints, then cachedHandles, then manual tool_fs_search."
+            "useWhen": "Use presearchHints only for non-code tool domains. For project code work, use exec_command for discovery/validation and apply_patch for edits.",
+            "fallback": "If no non-code hint clearly fits, call tool_fs_search with the task description.",
+            "priority": "For code, prefer direct Codex-style tools. For browser/workbench/memory/design/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
@@ -330,22 +330,13 @@ pub(crate) fn tool_filesystem_runtime_context(
         "policy": {
             "providerVisibleTools": model_tool_names(false),
             "directLegacyToolNames": "disabled",
-            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
+            "codeToolContract": "For project code work: inspect/read/search with exec_command using rg, sed, cat, git diff/status, and tests; modify files only with apply_patch. Do not search Tool-FS for code, filesystem, or edit tools.",
+            "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles for non-code domains when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
-            "sceneBehavior": "Scene changes only reorder directories and pinned handles; every built-in tool remains discoverable under /tools.",
-            "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors, except the explicit lyra-write-file fenced block transport for large generated file/code writes.",
-            "largeTextWriteProtocol": {
-                "useWhen": "Creating or replacing generated code, HTML, CSS, JS, or any file content too large or fragile for provider-native JSON tool-call arguments.",
-                "format": "```lyra-write-file path=\"relative/path\" overwrite=true\n<complete file content>\n```",
-                "rules": [
-                    "Do not wrap this block in a tool_fs_run call.",
-                    "Use one block per file.",
-                    "After Lyra writes the block locally, continue with validation or final answer; do not repeat the file content."
-                ],
-                "smallWriteFallback": "Use /tools/filesystem/write_file only for short non-code content that fits comfortably in native JSON args."
-            }
+            "sceneBehavior": "Scene changes reorder non-code directories and pinned handles; code/filesystem edit/search/read tools are intentionally not discoverable under Tool-FS.",
+            "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors. Never emit code or patch payloads as assistant text when a tool should be used."
         }
     })
 }
@@ -524,9 +515,222 @@ pub(crate) fn build_system_prompt_report(
 
 pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
     let mut tools = vec![clarification_ask_model_tool()];
+    tools.extend(plan_model_tools());
+    tools.extend(todo_model_tools());
+    tools.extend(codex_code_model_tools());
     tools.extend(tools::tool_fs::model_provider_tools());
     tools.push(session_read_message_model_tool());
     tools
+}
+
+fn plan_model_tools() -> Vec<Value> {
+    vec![
+        function_tool(
+            tools::PLAN_BEGIN_MODEL_TOOL,
+            "Enter Lyra Plan Mode for complex, multi-step, risky, or design-heavy work before making changes. Creates a draft plan and starts the planning state.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Short human-readable title for the plan." },
+                    "reason": { "type": "string", "description": "Why this request needs planning instead of direct execution." },
+                    "scope": { "type": "string", "description": "The planned scope and boundaries." }
+                },
+                "required": ["title", "reason", "scope"]
+            }),
+        ),
+        function_tool(
+            tools::PLAN_WRITE_MODEL_TOOL,
+            "Write or update the draft plan Markdown. Do not put the full plan in assistant text; use this tool so the UI can render the plan as a tool activity and live workspace preview.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
+                    "markdownDelta": { "type": "string", "description": "Markdown to append, or full replacement when replace=true." },
+                    "replace": { "type": "boolean", "description": "Replace the current draft markdown instead of appending. Default false." }
+                },
+                "required": ["markdownDelta"]
+            }),
+        ),
+        function_tool(
+            tools::PLAN_FINALIZE_MODEL_TOOL,
+            "Finalize the draft plan and request user review. After this, stop executing and wait for approve, reject, or revision feedback.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
+                    "summary": { "type": "string", "description": "Short summary shown in the review panel." }
+                },
+                "required": ["summary"]
+            }),
+        ),
+        function_tool(
+            tools::PLAN_REVISE_MODEL_TOOL,
+            "Apply user edits, annotations, or temporary plan-chat feedback to the current plan draft before writing a revised plan.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "planId": { "type": "string", "description": "Optional active plan id. Defaults to the current draft plan." },
+                    "markdown": { "type": "string", "description": "Optional full revised Markdown." },
+                    "annotations": {
+                        "type": "array",
+                        "description": "Optional line/block annotations from user feedback.",
+                        "items": { "type": "object" }
+                    }
+                }
+            }),
+        ),
+    ]
+}
+
+fn todo_model_tools() -> Vec<Value> {
+    vec![
+        function_tool(
+            tools::TODO_WRITE_MODEL_TOOL,
+            "After the user approves a plan, write the complete executable todo list before any mutation tools. The list must cover the approved plan end-to-end.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string" },
+                                "content": { "type": "string" },
+                                "title": { "type": "string" },
+                                "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
+                                "priority": { "type": "string" },
+                                "blockedBy": { "type": "array", "items": { "type": "string" } }
+                            },
+                            "required": ["content"]
+                        }
+                    }
+                },
+                "required": ["todos"]
+            }),
+        ),
+        function_tool(
+            tools::TODO_UPDATE_MODEL_TOOL,
+            "Update todo execution status as work proceeds. Mark exactly one active task in_progress before mutating files or external state.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Todo id to update." },
+                    "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
+                    "content": { "type": "string", "description": "Optional updated todo text." },
+                    "summary": { "type": "string", "description": "Optional short progress note." }
+                },
+                "required": ["id", "status"]
+            }),
+        ),
+        function_tool(
+            tools::TODO_FINISH_MODEL_TOOL,
+            "Finish the approved todo list after all planned work is complete, or mark it failed/cancelled with a summary if completion is impossible.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string", "enum": ["completed", "failed", "cancelled"] },
+                    "summary": { "type": "string" }
+                },
+                "required": ["status", "summary"]
+            }),
+        ),
+    ]
+}
+
+fn codex_code_model_tools() -> Vec<Value> {
+    vec![
+        function_tool(
+            tools::EDIT_FILE_MODEL_TOOL,
+            "Make targeted edits to an existing file. Preferred tool for modifying code: send only the regions you change as old_text/new_text pairs, never the whole file. old_text is matched against the current file (whitespace/indentation differences are tolerated and the replacement is reindented to match); it must be unique unless replace_all is set. Apply several edits to the same file in one call via the edits array.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Workspace-relative path of the file to edit."
+                    },
+                    "edits": {
+                        "type": "array",
+                        "description": "Ordered edits applied to the file. Each later edit sees the result of the earlier ones.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old_text": { "type": "string", "description": "Exact text to find in the current file (a few surrounding lines for uniqueness)." },
+                                "new_text": { "type": "string", "description": "Replacement text." },
+                                "replace_all": { "type": "boolean", "description": "Replace every occurrence instead of requiring a unique match. Default false." }
+                            },
+                            "required": ["old_text", "new_text"]
+                        }
+                    }
+                },
+                "required": ["path", "edits"]
+            }),
+        ),
+        function_tool(
+            tools::WRITE_FILE_MODEL_TOOL,
+            "Create a new file, or overwrite a file in full, with its complete contents. Use this for brand-new files and for large generated artifacts (HTML, CSS, bundles) — there is no size limit, so send the whole file in one call rather than a patch. To change part of an existing file, prefer edit_file. Set overwrite=true to replace an existing file.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to the bound workspace root. Do not prefix the workspace folder name itself: if the root is /Users/me/project, use src/a.ts, not project/src/a.ts. Parent directories are created as needed."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full contents of the file."
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "Allow replacing an existing file. Default false (creating a new file)."
+                    }
+                },
+                "required": ["path", "content"]
+            }),
+        ),
+        function_tool(
+            tools::APPLY_PATCH_MODEL_TOOL,
+            "Fallback file mutation tool using Codex patch grammar. Prefer edit_file for partial changes and write_file for new/whole files; reach for apply_patch only when you need to add, update, delete, and move several files in one atomic patch. Do not emit patch text in assistant messages.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "patch": {
+                        "type": "string",
+                        "description": "Complete patch text using the Codex grammar: *** Begin Patch, one or more Add/Update/Delete File hunks, then *** End Patch. Paths must be relative to the bound workspace root and must not include the workspace folder name itself; absolute paths inside the workspace are normalized."
+                    }
+                },
+                "required": ["patch"]
+            }),
+        ),
+        function_tool(
+            tools::EXEC_COMMAND_MODEL_TOOL,
+            "Run a bounded shell command for repo inspection, reading files, git diff/status, tests, builds, or validation. Use rg/sed/cat/git through this tool for code discovery; do not use it to modify files.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "cmd": { "type": "string", "description": "Shell command to run." },
+                    "workdir": { "type": "string", "description": "Optional working directory. Defaults to the bound workspace root." },
+                    "timeout_ms": { "type": "integer", "minimum": 1, "description": "Optional timeout in milliseconds." },
+                    "max_output_tokens": { "type": "integer", "minimum": 1, "description": "Optional approximate output budget; Lyra maps it to a byte cap." }
+                },
+                "required": ["cmd"]
+            }),
+        ),
+        function_tool(
+            tools::WRITE_STDIN_MODEL_TOOL,
+            "Write text to an existing Lyra terminal session. Use only when continuing an already-open persistent terminal session; one-shot commands should use exec_command.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string", "description": "Existing Lyra terminal session id." },
+                    "chars": { "type": "string", "description": "Text to send to the terminal." },
+                    "appendNewline": { "type": "boolean", "default": false }
+                },
+                "required": ["sessionId", "chars"]
+            }),
+        ),
+    ]
 }
 
 fn clarification_ask_model_tool() -> Value {
@@ -629,7 +833,20 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 }
 
 pub(crate) fn model_tool_names(_design_research_required: bool) -> Vec<String> {
-    let mut names = tools::tool_fs::model_tool_names();
+    let mut names = Vec::new();
+    names.push(tools::PLAN_BEGIN_MODEL_TOOL.to_string());
+    names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());
+    names.push(tools::PLAN_FINALIZE_MODEL_TOOL.to_string());
+    names.push(tools::PLAN_REVISE_MODEL_TOOL.to_string());
+    names.push(tools::TODO_WRITE_MODEL_TOOL.to_string());
+    names.push(tools::TODO_UPDATE_MODEL_TOOL.to_string());
+    names.push(tools::TODO_FINISH_MODEL_TOOL.to_string());
+    names.push(tools::EDIT_FILE_MODEL_TOOL.to_string());
+    names.push(tools::WRITE_FILE_MODEL_TOOL.to_string());
+    names.push(tools::APPLY_PATCH_MODEL_TOOL.to_string());
+    names.push(tools::EXEC_COMMAND_MODEL_TOOL.to_string());
+    names.push(tools::WRITE_STDIN_MODEL_TOOL.to_string());
+    names.extend(tools::tool_fs::model_tool_names());
     names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names

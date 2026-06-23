@@ -20,6 +20,7 @@ export type SurfacePropsByKind = {
   readonly fileEditor: ComponentProps<WorkbenchSurfaceAdapters["fileEditor"]>;
   readonly imageViewer: ComponentProps<WorkbenchSurfaceAdapters["imageViewer"]>;
   readonly agentProjectTree: ComponentProps<WorkbenchSurfaceAdapters["agentProjectTree"]>;
+  readonly agentPlanBoard: ComponentProps<WorkbenchSurfaceAdapters["agentPlanBoard"]>;
   readonly agentGit: ComponentProps<WorkbenchSurfaceAdapters["agentGit"]>;
   readonly notificationCenter: ComponentProps<WorkbenchSurfaceAdapters["notificationCenter"]>;
   readonly agentSessionHistory: ComponentProps<WorkbenchSurfaceAdapters["agentSessionHistory"]>;

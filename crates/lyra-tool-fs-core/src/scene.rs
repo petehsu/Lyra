@@ -117,42 +117,21 @@ fn signal_kind_matches<const N: usize>(signals: &ToolSceneSignals, needles: [&st
 
 pub(crate) fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {
     match scene {
-        ToolScene::ProjectCode => vec!["filesystem", "code", "shell", "git", "terminal"],
-        ToolScene::Git => vec!["git", "filesystem", "code", "shell", "terminal"],
-        ToolScene::Terminal => vec!["terminal", "shell", "filesystem", "code", "git"],
-        ToolScene::Browser => vec!["browser", "workbench", "web", "filesystem", "code"],
-        ToolScene::Workbench => vec!["workbench", "browser", "filesystem", "todo"],
-        ToolScene::Design => vec!["design", "filesystem", "code", "browser", "web"],
-        ToolScene::Automation => vec!["todo", "shell", "terminal", "software", "workbench"],
-        ToolScene::General => vec!["workbench", "browser", "memory", "todo", "filesystem"],
+        ToolScene::ProjectCode => vec!["terminal", "todo", "workbench"],
+        ToolScene::Git => vec!["terminal", "todo", "workbench"],
+        ToolScene::Terminal => vec!["terminal", "todo", "workbench"],
+        ToolScene::Browser => vec!["browser", "workbench", "web"],
+        ToolScene::Workbench => vec!["workbench", "browser", "todo"],
+        ToolScene::Design => vec!["design", "browser", "web", "workbench"],
+        ToolScene::Automation => vec!["todo", "terminal", "software", "workbench"],
+        ToolScene::General => vec!["workbench", "browser", "memory", "todo"],
     }
 }
 
 pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
     match scene {
-        ToolScene::ProjectCode => vec![
-            "find_files",
-            "search_code",
-            "read_file",
-            "read_range",
-            "strict_edit",
-            "apply_patch",
-            "run_command",
-            "git_status",
-            "git_diff",
-            "todo_write",
-        ],
-        ToolScene::Git => vec![
-            "search_code",
-            "read_file",
-            "read_range",
-            "strict_edit",
-            "apply_patch",
-            "run_command",
-            "git_status",
-            "git_diff",
-            "git_log",
-        ],
+        ToolScene::ProjectCode => vec!["todo_write", "terminal_list", "terminal_read"],
+        ToolScene::Git => vec!["terminal_list", "terminal_read", "todo_write"],
         ToolScene::Terminal => vec![
             "terminal_list",
             "terminal_read",

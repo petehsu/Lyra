@@ -100,25 +100,36 @@ pub(crate) fn tool_activity(
         .and_then(|value| value.get("manifestTitle"))
         .and_then(Value::as_str)
         .map(str::to_string)
-        .or_else(|| manifest.as_ref().map(|manifest| manifest.title.clone()));
+        .or_else(|| manifest.as_ref().map(|manifest| manifest.title.clone()))
+        .or_else(|| inferred_activity_title(tool_path.as_deref(), action));
     let activity_kind = output_ref
-        .and_then(|value| value.get("activityKind"))
+        .and_then(|value| {
+            value
+                .get("activityKind")
+                .or_else(|| value.pointer("/raw/activityKind"))
+        })
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| {
             manifest
                 .as_ref()
                 .map(|manifest| manifest.activity_kind.clone())
-        });
+        })
+        .or_else(|| inferred_activity_kind(tool_path.as_deref(), action));
     let renderer_hint = output_ref
-        .and_then(|value| value.get("rendererHint"))
+        .and_then(|value| {
+            value
+                .get("rendererHint")
+                .or_else(|| value.pointer("/raw/rendererHint"))
+        })
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| {
             manifest
                 .as_ref()
                 .map(|manifest| manifest.renderer_hint.clone())
-        });
+        })
+        .or_else(|| inferred_renderer_hint(tool_path.as_deref(), action));
     let trace_id = output_ref
         .and_then(|value| value.get("traceId"))
         .and_then(Value::as_str)
@@ -167,6 +178,52 @@ pub(crate) fn tool_activity(
     })
 }
 
+fn inferred_activity_title(tool_path: Option<&str>, action: &str) -> Option<String> {
+    match (tool_path, action) {
+        (Some(path), _) if path.starts_with("/tools/filesystem/") => Some(
+            match action {
+                "read" => "Read file",
+                "list" => "Listed files",
+                "glob" => "Found files",
+                "write" => "Wrote file",
+                "edit" | "strict_edit" | "multiedit" | "apply_patch" => "Edited file",
+                _ => return None,
+            }
+            .to_string(),
+        ),
+        _ => None,
+    }
+}
+
+fn inferred_activity_kind(tool_path: Option<&str>, action: &str) -> Option<String> {
+    match (tool_path, action) {
+        (Some(path), "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
+            if path.starts_with("/tools/filesystem/") =>
+        {
+            Some("edit".to_string())
+        }
+        (Some(path), "read") if path.starts_with("/tools/filesystem/") => Some("read".to_string()),
+        (Some(path), "list" | "glob") if path.starts_with("/tools/filesystem/") => {
+            Some("search".to_string())
+        }
+        _ => None,
+    }
+}
+
+fn inferred_renderer_hint(tool_path: Option<&str>, action: &str) -> Option<String> {
+    inferred_activity_kind(tool_path, action)
+}
+
+fn filesystem_operation_from_tool_path(path: &str) -> Option<&'static str> {
+    match path {
+        "/tools/filesystem/write_file" => Some("write"),
+        "/tools/filesystem/edit_file" => Some("edit"),
+        "/tools/filesystem/multi_edit" => Some("multiedit"),
+        "/tools/filesystem/apply_patch" => Some("apply_patch"),
+        _ => None,
+    }
+}
+
 fn activity_artifact_refs(output: &Value) -> Value {
     let mut refs = Vec::new();
     for source in [Some(output), output.get("raw")] {
@@ -208,9 +265,17 @@ fn activity_changes(
     manifest: Option<&lyra_tool_fs_core::ToolManifest>,
     output: &Value,
 ) -> Value {
-    let Some(manifest) = manifest else {
+    let manifest_domain = manifest
+        .map(|manifest| manifest.domain.as_str())
+        .or_else(|| tool_path.and_then(|path| path.trim_start_matches("/tools/").split('/').next()))
+        .unwrap_or_default();
+    let manifest_operation = manifest
+        .map(|manifest| manifest.operation.as_str())
+        .or_else(|| tool_path.and_then(filesystem_operation_from_tool_path))
+        .unwrap_or_default();
+    if manifest_domain != "filesystem" {
         return Value::Array(Vec::new());
-    };
+    }
     let changed_files = output
         .pointer("/raw/changedFiles")
         .and_then(Value::as_array)
@@ -230,7 +295,7 @@ fn activity_changes(
                 let operation = file
                     .get("operation")
                     .and_then(Value::as_str)
-                    .unwrap_or(&manifest.operation)
+                    .unwrap_or(manifest_operation)
                     .to_string();
                 let path = file.get("path").and_then(Value::as_str).map(str::to_string);
                 json!({
@@ -274,7 +339,7 @@ pub(crate) fn record_tool_activity(session_id: &str, turn_id: &str, tool: Value,
             );
         }
     }
-    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
+    let ui_message_id = tool_ui_message_id(session_id, turn_id, &tool);
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
@@ -355,6 +420,20 @@ fn append_tool_block_to_message(
         .snapshot
         .get_mut("messages")
         .and_then(Value::as_array_mut)?;
+    let linked_elsewhere = messages.iter().any(|message| {
+        message
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| {
+                blocks.iter().any(|block| {
+                    block.get("type").and_then(Value::as_str) == Some("tool")
+                        && block.get("toolId").and_then(Value::as_str) == Some(tool_id)
+                })
+            })
+    });
+    if linked_elsewhere {
+        return None;
+    }
     let message = messages
         .iter_mut()
         .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))?;
@@ -378,7 +457,7 @@ fn append_tool_block_to_message(
 }
 
 pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value) {
-    let ui_message_id = crate::native_backend::turns::active_ui_message_id(session_id, turn_id);
+    let ui_message_id = tool_ui_message_id(session_id, turn_id, &tool);
     let (callback, committed_message) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
@@ -425,6 +504,18 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
     );
 }
 
+fn tool_ui_message_id(session_id: &str, turn_id: &str, tool: &Value) -> Option<String> {
+    crate::native_backend::turns::active_ui_message_id(session_id, turn_id).or_else(|| {
+        (tool.get("status").and_then(Value::as_str) == Some("running"))
+            .then(|| {
+                crate::native_backend::turns::emit_assistant_message_placeholder(
+                    session_id, turn_id,
+                )
+            })
+            .flatten()
+    })
+}
+
 pub(crate) fn tool_started_at_for_call(session_id: &str, tool_call_id: &str) -> String {
     if let Ok(state) = state().lock() {
         if let Some(session) = state.sessions.get(session_id) {
@@ -454,10 +545,75 @@ pub(crate) fn upsert_tool(snapshot: &mut Value, tool: Value) {
         .iter_mut()
         .find(|existing| existing.get("id").and_then(Value::as_str) == Some(id))
     {
-        *existing = tool;
+        *existing = merge_tool_activity(existing, tool);
     } else {
         tools.push(tool);
     }
+}
+
+fn tool_output_richness(tool: &Value) -> usize {
+    let output = tool.get("output").unwrap_or(&Value::Null);
+    let raw = output.get("raw").unwrap_or(&Value::Null);
+    let diff = raw
+        .get("diff")
+        .and_then(Value::as_str)
+        .map(str::len)
+        .unwrap_or(0);
+    let content = output
+        .get("content")
+        .and_then(Value::as_str)
+        .map(str::len)
+        .unwrap_or(0)
+        .min(5_000);
+    let preview = if raw.get("preview").and_then(Value::as_bool) == Some(true) {
+        10_000
+    } else {
+        0
+    };
+    preview + diff.saturating_mul(100) + content
+}
+
+fn terminal_tool_status(status: Option<&str>) -> bool {
+    matches!(
+        status,
+        Some("completed" | "failed" | "cancelled" | "uncertain")
+    )
+}
+
+fn merge_tool_activity(existing: &Value, incoming: Value) -> Value {
+    let existing_status = existing.get("status").and_then(Value::as_str);
+    let incoming_status = incoming.get("status").and_then(Value::as_str);
+    if terminal_tool_status(existing_status) && incoming_status == Some("running") {
+        return existing.clone();
+    }
+
+    let mut merged = existing.clone();
+    if let (Some(target), Some(source)) = (merged.as_object_mut(), incoming.as_object()) {
+        for (key, value) in source {
+            target.insert(key.clone(), value.clone());
+        }
+    } else {
+        merged = incoming.clone();
+    }
+
+    let incoming_output_richness = tool_output_richness(&incoming);
+    if !(incoming_status != Some("running") && incoming_output_richness > 0)
+        && tool_output_richness(existing) > incoming_output_richness
+        && let Some(output) = existing.get("output")
+    {
+        merged["output"] = output.clone();
+    }
+    if let Some(started_at) = existing.get("startedAt").and_then(Value::as_str)
+        && !started_at.is_empty()
+    {
+        merged["startedAt"] = Value::String(started_at.to_string());
+    }
+    if incoming.get("finishedAt").is_none()
+        && let Some(finished_at) = existing.get("finishedAt")
+    {
+        merged["finishedAt"] = finished_at.clone();
+    }
+    merged
 }
 
 pub(crate) fn tool_runtime_turn_id(tool: &Value) -> Option<&str> {

@@ -20,6 +20,14 @@ import {
   type AgentPermissionPolicySetModeRequest,
   type AgentPermissionPolicySnapshot,
   type AgentPermissionRespondRequest,
+  type AgentPlanReviseRequest,
+  type AgentProjectPlanDeleteRequest,
+  type AgentProjectPlanDeleteResponse,
+  type AgentProjectPlanListRequest,
+  type AgentProjectPlanListResponse,
+  type AgentProjectPlanReadRequest,
+  type AgentProjectPlanReadResponse,
+  type AgentPlanReviewRespondRequest,
   type AgentMessageResolveRequest,
   type AgentMessageResolveResponse,
   type AgentRollbackPreviewResponse,
@@ -1502,6 +1510,31 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(LYRA_CHANNELS.agentClarificationRespond, request) as Promise<unknown>,
     respondPermission: (request: AgentPermissionRespondRequest) =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentPermissionRespond, request) as Promise<unknown>,
+    listProjectPlans: (request: AgentProjectPlanListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPlanList,
+        request
+      ) as Promise<AgentProjectPlanListResponse>,
+    readProjectPlan: (request: AgentProjectPlanReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPlanRead,
+        request
+      ) as Promise<AgentProjectPlanReadResponse>,
+    deleteProjectPlan: (request: AgentProjectPlanDeleteRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPlanDelete,
+        request
+      ) as Promise<AgentProjectPlanDeleteResponse>,
+    revisePlan: (request: AgentPlanReviseRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPlanRevise,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    respondPlanReview: (request: AgentPlanReviewRespondRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentPlanReviewRespond,
+        request
+      ) as Promise<AgentSessionSnapshot>,
     readPermissionPolicy: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentPermissionPolicyRead

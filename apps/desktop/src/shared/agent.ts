@@ -99,6 +99,151 @@ export type AgentTodoItem = {
   readonly assignedTo?: string | null;
 };
 
+export type AgentPlanPhase =
+  | "none"
+  | "planning"
+  | "reviewing"
+  | "todo_required"
+  | "executing_todo"
+  | "completed"
+  | "rejected";
+
+export type AgentPlanReviewStatus = "none" | "pending" | "approved" | "rejected" | "changed";
+
+export type AgentPlanAnnotation = {
+  readonly id: string;
+  readonly lineId?: string | null;
+  readonly line?: number | null;
+  readonly kind: "comment" | "edit";
+  readonly text: string;
+  readonly createdAt?: string | null;
+  readonly updatedAt?: string | null;
+};
+
+export type AgentPlanReviewSnapshot = {
+  readonly status: AgentPlanReviewStatus;
+  readonly summary?: string | null;
+};
+
+export type AgentPlanSnapshot = {
+  readonly activePlanId: string;
+  readonly activeVersionId: string;
+  readonly projectKey?: string | null;
+  readonly title: string;
+  readonly phase: AgentPlanPhase;
+  readonly markdown: string;
+  readonly annotations: readonly AgentPlanAnnotation[];
+  readonly review: AgentPlanReviewSnapshot;
+  readonly reason?: string | null;
+  readonly scope?: string | null;
+};
+
+export type AgentProjectTodoStatus =
+  | "none"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AgentProjectTodoSnapshot = {
+  readonly todoListId: string;
+  readonly planId: string;
+  readonly versionId: string;
+  readonly status: AgentProjectTodoStatus;
+  readonly currentIndex: number;
+  readonly todos: readonly AgentTodoItem[];
+  readonly summary?: string | null;
+};
+
+export type AgentPlanReviewRespondAction = "approve" | "reject" | "request_revision";
+
+export type AgentPlanReviewRespondRequest = {
+  readonly sessionId: string;
+  readonly action: AgentPlanReviewRespondAction;
+  readonly feedback?: string | null;
+};
+
+export type AgentProjectPlanSummary = {
+  readonly planId: string;
+  readonly title: string;
+  readonly status: string;
+  readonly currentVersionId?: string | null;
+  readonly sessionId?: string | null;
+  readonly createdAtIso: string;
+  readonly updatedAtIso: string;
+  readonly todoStatus?: string | null;
+};
+
+export type AgentProjectPlanRecord = {
+  readonly planId: string;
+  readonly projectKey: string;
+  readonly sessionId?: string | null;
+  readonly title: string;
+  readonly status: string;
+  readonly currentVersionId?: string | null;
+  readonly createdAtIso: string;
+  readonly updatedAtIso: string;
+};
+
+export type AgentPlanVersionSnapshot = {
+  readonly versionId: string;
+  readonly parentVersionId?: string | null;
+  readonly source: string;
+  readonly markdown: string;
+  readonly annotations: readonly AgentPlanAnnotation[];
+  readonly createdAtIso: string;
+};
+
+export type AgentProjectPlanListRequest = {
+  readonly workingDir?: string | null;
+  readonly sessionId?: string | null;
+};
+
+export type AgentProjectPlanListResponse = {
+  readonly projectKey: string;
+  readonly workingDir: string;
+  readonly plans: readonly AgentProjectPlanSummary[];
+};
+
+export type AgentProjectPlanReadRequest = {
+  readonly planId: string;
+  readonly workingDir?: string | null;
+  readonly sessionId?: string | null;
+};
+
+export type AgentProjectPlanReadResponse = {
+  readonly projectKey: string;
+  readonly workingDir: string;
+  readonly plan: AgentProjectPlanRecord;
+  readonly versions: readonly AgentPlanVersionSnapshot[];
+  readonly currentVersion: AgentPlanVersionSnapshot | null;
+  readonly projectTodo: AgentProjectTodoSnapshot | null;
+};
+
+export type AgentProjectPlanDeleteRequest = {
+  readonly planId: string;
+  readonly workingDir?: string | null;
+  readonly sessionId?: string | null;
+};
+
+export type AgentProjectPlanDeleteResponse = {
+  readonly projectKey: string;
+  readonly workingDir: string;
+  readonly planId: string;
+  readonly deleted: boolean;
+};
+
+export type AgentPlanReviseRequest = {
+  readonly sessionId: string;
+  readonly planId?: string | null;
+  readonly baseVersionId?: string | null;
+  readonly markdown: string;
+  readonly source: "user_edit" | "temp_chat" | "revision";
+  readonly annotations?: readonly AgentPlanAnnotation[];
+  readonly summary?: string | null;
+};
+
 export type AgentFollowState = {
   readonly running: boolean;
   readonly activity?: string | null;
@@ -139,6 +284,8 @@ export type AgentSessionSnapshot = {
   readonly messages: readonly AgentMessage[];
   readonly tools: readonly AgentToolActivity[];
   readonly todos: readonly AgentTodoItem[];
+  readonly plan?: AgentPlanSnapshot | null;
+  readonly projectTodo?: AgentProjectTodoSnapshot | null;
   readonly turnStatus: AgentTurnStatus;
   readonly activeTurnId?: string | null;
   readonly follow: AgentFollowState;
@@ -782,6 +929,22 @@ export type AgentRuntimeEvent =
       readonly todos: readonly AgentTodoItem[];
     }
   | {
+      readonly kind: "planUpdated" | "planReviewRequested";
+      readonly sessionId: string;
+      readonly plan: AgentPlanSnapshot;
+    }
+  | {
+      readonly kind: "planReviewResolved";
+      readonly sessionId: string;
+      readonly planId?: string | null;
+      readonly resolution: string;
+    }
+  | {
+      readonly kind: "projectTodoUpdated";
+      readonly sessionId: string;
+      readonly todo: AgentProjectTodoSnapshot;
+    }
+  | {
       readonly kind: "clarificationRequested";
       readonly sessionId: string;
       readonly clarificationId: string;
@@ -1178,6 +1341,17 @@ export type AgentApi = {
     request: AgentClarificationRespondRequest
   ) => Promise<unknown>;
   readonly respondPermission: (request: AgentPermissionRespondRequest) => Promise<unknown>;
+  readonly listProjectPlans: (
+    request: AgentProjectPlanListRequest
+  ) => Promise<AgentProjectPlanListResponse>;
+  readonly readProjectPlan: (
+    request: AgentProjectPlanReadRequest
+  ) => Promise<AgentProjectPlanReadResponse>;
+  readonly deleteProjectPlan: (
+    request: AgentProjectPlanDeleteRequest
+  ) => Promise<AgentProjectPlanDeleteResponse>;
+  readonly revisePlan: (request: AgentPlanReviseRequest) => Promise<AgentSessionSnapshot>;
+  readonly respondPlanReview: (request: AgentPlanReviewRespondRequest) => Promise<AgentSessionSnapshot>;
   readonly readPermissionPolicy: () => Promise<AgentPermissionPolicySnapshot>;
   readonly setPermissionPolicyMode: (
     request: AgentPermissionPolicySetModeRequest

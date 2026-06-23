@@ -14,6 +14,9 @@ import {
   type AgentFileCitation,
   type AgentPageCitation,
   type AgentPermissionPolicySnapshot,
+  type AgentPlanReviewRespondAction,
+  type AgentPlanSnapshot,
+  type AgentProjectTodoSnapshot,
   type AgentRuntimeEvent,
   type AgentSessionCreateRequest,
   type AgentSessionSnapshot,
@@ -383,6 +386,11 @@ type LyraAgentDataProviderCallbacks = {
     readonly sessionId: string;
     readonly workingDir: string;
   }) => Promise<void> | void) | undefined;
+  readonly onOpenPlanBoard?: ((request: {
+    readonly sessionId: string;
+    readonly plan: AgentPlanSnapshot;
+    readonly projectTodo?: AgentProjectTodoSnapshot | null;
+  }) => Promise<void> | void) | undefined;
   readonly onRevealProjectPath?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -437,6 +445,7 @@ export const useLyraAgentDataProvider = (
     onRequestProjectBind,
     onUpdateDraftWorkingDir,
     onOpenProjectTree,
+    onOpenPlanBoard,
     onRevealProjectPath,
     onOpenModelSettings,
     onOpenUrlInWorkbench,
@@ -1254,6 +1263,37 @@ export const useLyraAgentDataProvider = (
     setPendingPermissions((items) => items.filter((item) => item.id !== id));
   }, [desktopApi, state.session]);
 
+  const openPlanReview = useCallback(async (plan: AgentPlanSnapshot): Promise<void> => {
+    if (state.session === null) return;
+    await onOpenPlanBoard?.({
+      sessionId: state.session.id,
+      plan,
+      projectTodo: state.session.projectTodo ?? null
+    });
+  }, [onOpenPlanBoard, state.session]);
+
+  const openProjectTodo = useCallback(async (): Promise<void> => {
+    if (state.session?.plan === null || state.session?.plan === undefined) return;
+    await onOpenPlanBoard?.({
+      sessionId: state.session.id,
+      plan: state.session.plan,
+      projectTodo: state.session.projectTodo ?? null
+    });
+  }, [onOpenPlanBoard, state.session]);
+
+  const respondPlanReview = useCallback(async (
+    action: AgentPlanReviewRespondAction,
+    feedback?: string | null
+  ): Promise<void> => {
+    if (desktopApi?.agent === undefined || state.session === null) return;
+    const snapshot = await desktopApi.agent.respondPlanReview({
+      sessionId: state.session.id,
+      action,
+      feedback: feedback ?? null
+    });
+    dispatch({ type: "snapshot", snapshot });
+  }, [desktopApi, state.session]);
+
   const currentSessionId = resolvedSessionId;
 
   const switchModel = useCallback(async (modelId: string): Promise<void> => {
@@ -1746,9 +1786,11 @@ export const useLyraAgentDataProvider = (
         canLoadEarlier: visibleMessageCount < totalMessageCount
       },
       todos: agentSessionToTodos(state.session),
+      projectTodo: state.session?.projectTodo ?? null,
       diffFiles: [] satisfies DiffFileEntry[],
       decisions: pendingClarifications.slice(0, 1),
       permissions: pendingPermissions,
+      planReview: state.session?.plan?.phase === "reviewing" ? state.session.plan : null,
       modelControls,
       permissionModeControls,
       locationControls: locationControls ?? null,
@@ -1759,6 +1801,9 @@ export const useLyraAgentDataProvider = (
       openUrlInWorkbench,
       openFileInWorkbench,
       revealPathInWorkbench,
+      openPlanReview,
+      openProjectTodo,
+      respondPlanReview,
       openTerminalLiveSession,
       openImageInWorkbench,
       canOpenImageInWorkbench,
@@ -1826,7 +1871,10 @@ export const useLyraAgentDataProvider = (
     openModelSettings,
     openUrlInWorkbench,
     openFileInWorkbench,
+    openPlanReview,
+    openProjectTodo,
     revealPathInWorkbench,
+    respondPlanReview,
     openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,

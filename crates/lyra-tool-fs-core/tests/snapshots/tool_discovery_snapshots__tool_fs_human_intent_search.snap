@@ -1,5 +1,6 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
+assertion_line: 97
 expression: pretty(&snapshot)
 ---
 {
@@ -118,7 +119,7 @@ expression: pretty(&snapshot)
         "title": "Locate browser page section"
       }
     ],
-    "total": 41
+    "total": 40
   },
   "code": {
     "domain": null,
@@ -128,9 +129,95 @@ expression: pretty(&snapshot)
     "scene": "project-code",
     "topResults": [
       {
-        "domain": "filesystem",
-        "handle": "apply_patch",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; code-edit intent boost",
+        "domain": "memory",
+        "handle": null,
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "matchedFields": [
+          "path",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags"
+        ],
+        "miniSchemaParameterNames": [],
+        "miniSchemaRequired": [],
+        "operation": "apply_candidate",
+        "path": "/tools/memory/apply_candidate",
+        "runHint": "tool_fs_run with path: /tools/memory/apply_candidate; operation: apply_candidate; provide args matching miniSchema.",
+        "score": 30.94,
+        "summary": "Apply a memory candidate.",
+        "title": "Apply memory candidate"
+      },
+      {
+        "domain": "web",
+        "handle": "web_batch",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "urls",
+          "allowPrivateNetwork",
+          "engine",
+          "jobId",
+          "maxCharsPerUrl",
+          "mode",
+          "preset",
+          "queryFocus"
+        ],
+        "miniSchemaRequired": [
+          "urls"
+        ],
+        "operation": "batch",
+        "path": "/tools/web/batch",
+        "runHint": "tool_fs_run with toolHandle: web_batch; operation: batch; provide args matching miniSchema.",
+        "score": 13.75,
+        "summary": "Fetch multiple URLs synchronously or as a background job with session progress events.",
+        "title": "Batch fetch URLs"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_list",
+        "matchReason": "description fuzzy match",
+        "matchedFields": [
+          "description"
+        ],
+        "miniSchemaParameterNames": [
+          "input",
+          "sessionId",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "list",
+        "path": "/tools/terminal/list",
+        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
+        "score": 11.24,
+        "summary": "List terminal sessions",
+        "title": "List terminal sessions"
+      }
+    ],
+    "total": 125
+  },
+  "git": {
+    "domain": null,
+    "fallbackListPath": "/tools/computer",
+    "query": "查看 git diff 代码变更",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
+    "scene": "git",
+    "topResults": [
+      {
+        "domain": "computer",
+        "handle": "computer_diff",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match",
         "matchedFields": [
           "path",
           "handle",
@@ -143,162 +230,66 @@ expression: pretty(&snapshot)
           "schema"
         ],
         "miniSchemaParameterNames": [
-          "operations",
-          "patch"
+          "baselineSnapshotId",
+          "maxNodes",
+          "osRef",
+          "strategy"
         ],
         "miniSchemaRequired": [],
-        "operation": "apply_patch",
-        "path": "/tools/filesystem/apply_patch",
-        "runHint": "tool_fs_run with toolHandle: apply_patch; operation: apply_patch; provide args matching miniSchema.",
-        "score": 114.9,
-        "summary": "Apply structured workspace patch operations.",
-        "title": "Apply patch"
-      },
-      {
-        "domain": "filesystem",
-        "handle": null,
-        "matchReason": "aliases fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match; code-edit intent boost",
-        "matchedFields": [
-          "aliases",
-          "summary",
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "edits",
-          "path"
-        ],
-        "miniSchemaRequired": [
-          "edits",
-          "path"
-        ],
-        "operation": "multiedit",
-        "path": "/tools/filesystem/multi_edit",
-        "runHint": "tool_fs_run with path: /tools/filesystem/multi_edit; operation: multiedit; provide args matching miniSchema.",
-        "score": 48.93,
-        "summary": "Apply multiple exact replacements.",
-        "title": "Multi-edit file"
-      },
-      {
-        "domain": "filesystem",
-        "handle": "strict_edit",
-        "matchReason": "aliases fuzzy match; description fuzzy match; schema fuzzy match; code-edit intent boost",
-        "matchedFields": [
-          "aliases",
-          "description",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "newString",
-          "oldString",
-          "path",
-          "expectedReadVersion",
-          "replaceAll"
-        ],
-        "miniSchemaRequired": [
-          "newString",
-          "oldString",
-          "path"
-        ],
-        "operation": "strict_edit",
-        "path": "/tools/filesystem/strict_edit",
-        "runHint": "tool_fs_run with toolHandle: strict_edit; operation: strict_edit; provide args matching miniSchema.",
-        "score": 48.51,
-        "summary": "Replace exact text in a file after verifying the file was read and has not changed.",
-        "title": "Strict edit"
-      }
-    ],
-    "total": 149
-  },
-  "git": {
-    "domain": null,
-    "fallbackListPath": "/tools/git",
-    "query": "查看 git diff 代码变更",
-    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
-    "scene": "git",
-    "topResults": [
-      {
-        "domain": "git",
-        "handle": "git_diff",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases token match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; git-diff intent boost",
-        "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags"
-        ],
-        "miniSchemaParameterNames": [
-          "path",
-          "scope",
-          "workingDir"
-        ],
-        "miniSchemaRequired": [
-          "path"
-        ],
         "operation": "diff",
-        "path": "/tools/git/diff",
-        "runHint": "tool_fs_run with toolHandle: git_diff; operation: diff; provide args matching miniSchema.",
-        "score": 128.0,
-        "summary": "Read Git diff for a changed file.",
-        "title": "Git diff"
+        "path": "/tools/computer/diff",
+        "runHint": "tool_fs_run with toolHandle: computer_diff; operation: diff; provide args matching miniSchema.",
+        "score": 37.13,
+        "summary": "Re-read a desktop node by osRef, or compute the observation diff (added/removed/changed) against an earlier computer.map snapshot.",
+        "title": "Diff computer accessibility state"
       },
       {
-        "domain": "git",
-        "handle": "git_status",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "domain": "runtime",
+        "handle": "artifact_read",
+        "matchReason": "aliases fuzzy match; examples fuzzy match",
         "matchedFields": [
-          "path",
-          "handle",
-          "title",
           "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags"
+          "examples"
         ],
         "miniSchemaParameterNames": [
-          "workingDir"
+          "artifactId",
+          "path"
         ],
         "miniSchemaRequired": [],
-        "operation": "status",
-        "path": "/tools/git/status",
-        "runHint": "tool_fs_run with toolHandle: git_status; operation: status; provide args matching miniSchema.",
-        "score": 55.69,
-        "summary": "Read Git repository status.",
-        "title": "Git status"
+        "operation": "read",
+        "path": "/tools/runtime/artifact_read",
+        "runHint": "tool_fs_run with toolHandle: artifact_read; operation: read; provide args matching miniSchema.",
+        "score": 6.5,
+        "summary": "Read a Lyra-owned artifact.",
+        "title": "Read artifact"
       },
       {
-        "domain": "git",
-        "handle": "git_log",
-        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
+        "domain": "computer",
+        "handle": null,
+        "matchReason": "summary fuzzy match; description fuzzy match",
         "matchedFields": [
-          "path",
-          "handle",
-          "title",
-          "aliases",
-          "examples",
           "summary",
-          "description",
-          "tags"
+          "description"
         ],
         "miniSchemaParameterNames": [
-          "limit",
-          "workingDir"
+          "osRef",
+          "action",
+          "mode",
+          "sensitiveValueRef",
+          "text"
         ],
-        "miniSchemaRequired": [],
-        "operation": "log",
-        "path": "/tools/git/log",
-        "runHint": "tool_fs_run with toolHandle: git_log; operation: log; provide args matching miniSchema.",
-        "score": 48.14,
-        "summary": "Read recent Git commits.",
-        "title": "Git log"
+        "miniSchemaRequired": [
+          "osRef"
+        ],
+        "operation": "act",
+        "path": "/tools/computer/act",
+        "runHint": "tool_fs_run with path: /tools/computer/act; operation: act; provide args matching miniSchema.",
+        "score": 6.41,
+        "summary": "Press, focus, set text, toggle, or select a desktop node by osRef; returns a before/after diff for verification.",
+        "title": "Act on computer node"
       }
     ],
-    "total": 36
+    "total": 23
   },
   "terminal": {
     "domain": null,
@@ -307,39 +298,6 @@ expression: pretty(&snapshot)
     "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "terminal",
     "topResults": [
-      {
-        "domain": "shell",
-        "handle": "run_command",
-        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; terminal-shell intent boost",
-        "matchedFields": [
-          "path",
-          "title",
-          "aliases",
-          "examples",
-          "summary",
-          "description",
-          "tags",
-          "schema"
-        ],
-        "miniSchemaParameterNames": [
-          "command",
-          "cwd",
-          "description",
-          "maxOutputBytes",
-          "runInBackground",
-          "timeoutMs",
-          "workingDir"
-        ],
-        "miniSchemaRequired": [
-          "command"
-        ],
-        "operation": "run",
-        "path": "/tools/shell/run_command",
-        "runHint": "tool_fs_run with toolHandle: run_command; operation: run; provide args matching miniSchema.",
-        "score": 100.19,
-        "summary": "Run a bounded non-interactive shell command in a local cwd. Defaults to the bound project root, or the user home directory when the session is unbound. Prefer this for one-shot checks like git config, pwd, tests, or file inspection when no persistent terminal is needed.",
-        "title": "Run one-shot shell command"
-      },
       {
         "domain": "terminal",
         "handle": "terminal_run",
@@ -398,8 +356,36 @@ expression: pretty(&snapshot)
         "score": 75.85,
         "summary": "List terminal sessions",
         "title": "List terminal sessions"
+      },
+      {
+        "domain": "terminal",
+        "handle": "terminal_read",
+        "matchReason": "path fuzzy match; handle fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match; schema fuzzy match; interactive-terminal intent boost",
+        "matchedFields": [
+          "path",
+          "handle",
+          "title",
+          "aliases",
+          "examples",
+          "summary",
+          "description",
+          "tags",
+          "schema"
+        ],
+        "miniSchemaParameterNames": [
+          "input",
+          "sessionId",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "read",
+        "path": "/tools/terminal/read",
+        "runHint": "tool_fs_run with toolHandle: terminal_read; operation: read; provide args matching miniSchema.",
+        "score": 75.85,
+        "summary": "Read terminal output",
+        "title": "Read terminal output"
       }
     ],
-    "total": 48
+    "total": 39
   }
 }

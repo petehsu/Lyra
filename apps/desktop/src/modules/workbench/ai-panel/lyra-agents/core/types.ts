@@ -22,6 +22,7 @@ export type ToolKind =
   | "web"
   | "workbench"
   | "thought"
+  | "plan"
   | "task"
   | "create"
   | "render";
@@ -362,6 +363,8 @@ export interface ChatMessage {
   inlineImages?: readonly AgentImageAttachment[];
   /** Inline file attachments referenced by ⟦file:id⟧ markers in message text. */
   fileAttachments?: readonly AgentFileAttachment[];
+  /** Real elapsed work duration for the assistant process folded before the final summary. */
+  workDurationMs?: number;
   time?: string;
   rollback?: {
     available: boolean;

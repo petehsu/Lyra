@@ -71,6 +71,8 @@ pub mod page_citations;
 mod permission_policy;
 mod permissions;
 mod pinned_context;
+mod plan_actions;
+mod plan_store;
 mod projections;
 mod prompt_cache;
 mod provider;
@@ -86,7 +88,6 @@ pub(crate) mod session_trim;
 mod sessions;
 mod state;
 mod streaming_preview_state;
-mod text_write_protocol;
 pub(crate) mod token_estimate;
 pub(crate) mod tool_protocol;
 mod tools;
@@ -103,10 +104,10 @@ use self::{
     inline_images::*, memory::*, memory_audit_export::*, memory_autonomy::*,
     memory_derived_fields::*, memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
     memory_retrieval_policy::*, memory_store::*, memory_sync::*, memory_token_checkpoint::*,
-    network::*, page_citations::*, permission_policy::*, permissions::*, projections::*,
-    prompt_cache::*, provider::*, provider_config::*, rollback::*, session_ledger::*,
-    session_resilience::*, session_store::*, session_trim::*, sessions::*, state::*,
-    text_write_protocol::*, token_estimate::*, tool_protocol::*, tools::*, transcript_citations::*,
+    network::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
+    plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
+    session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
+    state::*, token_estimate::*, tool_protocol::*, tools::*, transcript_citations::*,
     turn_tool_telemetry::*, turns::*, types::*,
 };
 
@@ -127,6 +128,11 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.cli.follow.update" => update_cli_follow(payload),
             "agent.turn.send" | "agent.turn.start" | "agent.turn.resume" => send_turn(payload),
             "agent.turn.cancel" => cancel_turn(payload),
+            "agent.plan.list" => project_plan_list(payload),
+            "agent.plan.read" => project_plan_read(payload),
+            "agent.plan.delete" => project_plan_delete(payload),
+            "agent.plan.revise" => project_plan_revise(payload),
+            "agent.plan.review.respond" => plan_review_respond(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),

@@ -502,13 +502,7 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "file_read" => tool_file_read(session_id, turn_id, tool_call_id, input),
         "file_list" => tool_file_list(session_id, input),
         "file_glob" => tool_file_glob(session_id, input),
-        "file_write" => tool_file_write(
-            session_id,
-            turn_id,
-            tool_call_id,
-            input,
-            runtime.allow_large_text_file_write,
-        ),
+        "file_write" => tool_file_write(session_id, turn_id, tool_call_id, input),
         "file_edit" => tool_file_edit(session_id, turn_id, tool_call_id, input),
         "file_strict_edit" => tool_file_strict_edit(session_id, turn_id, tool_call_id, input),
         "file_multiedit" => tool_file_multiedit(session_id, turn_id, tool_call_id, input),
@@ -553,6 +547,8 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "render_surface" => tool_render_surface(turn_id, tool_call_id, input),
         "todo_read" => tool_todo_read(session_id),
         "todo_write" => tool_todo_write(session_id, turn_id, input),
+        "todo_update" => tool_todo_update(session_id, turn_id, input),
+        "todo_finish" => tool_todo_finish(session_id, turn_id, input),
         _ => Err(NativeToolFailure::new(
             "tool_not_found",
             format!("Unknown Lyra native tool: {tool_name}"),

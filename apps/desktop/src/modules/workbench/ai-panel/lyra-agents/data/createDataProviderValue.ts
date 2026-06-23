@@ -13,6 +13,9 @@ import { t } from "../core/i18n";
 import type {
   AgentFileCitation,
   AgentPageCitation,
+  AgentProjectTodoSnapshot,
+  AgentPlanReviewRespondAction,
+  AgentPlanSnapshot,
   AgentRollbackPreviewResponse,
   AgentTranscriptCitation
 } from "../../../../../shared/agent";
@@ -34,9 +37,11 @@ export interface CreateDataProviderValueInput {
   messages: ChatMessage[];
   messageWindow?: MessageWindowState;
   todos?: TodoItem[];
+  projectTodo?: AgentProjectTodoSnapshot | null;
   diffFiles?: DiffFileEntry[];
   decisions?: DecisionQuestion[];
   permissions?: PermissionRequest[];
+  planReview?: AgentPlanSnapshot | null;
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
   locationControls?: WorkbenchLocationControls | null;
@@ -47,6 +52,12 @@ export interface CreateDataProviderValueInput {
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
+  openPlanReview?: (plan: AgentPlanSnapshot) => Promise<void>;
+  openProjectTodo?: () => Promise<void>;
+  respondPlanReview?: (
+    action: AgentPlanReviewRespondAction,
+    feedback?: string | null
+  ) => Promise<void>;
   openTerminalLiveSession?: (request: {
     readonly sessionId?: string | null;
     readonly terminalTabId?: string | null;
@@ -122,9 +133,11 @@ export function createDataProviderValue({
     canLoadEarlier: false
   },
   todos = [],
+  projectTodo = null,
   diffFiles = [],
   decisions = [],
   permissions = [],
+  planReview = null,
   modelControls = null,
   permissionModeControls = null,
   locationControls = null,
@@ -135,6 +148,9 @@ export function createDataProviderValue({
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
   revealPathInWorkbench = () => resolved,
+  openPlanReview = () => resolved,
+  openProjectTodo = () => resolved,
+  respondPlanReview = () => resolved,
   openTerminalLiveSession = () => resolved,
   openImageInWorkbench = () => resolved,
   canOpenImageInWorkbench = () => false,
@@ -196,9 +212,11 @@ export function createDataProviderValue({
     messages,
     messageWindow,
     todos,
+    projectTodo,
     diffFiles,
     decisions,
     permissions,
+    planReview,
     modelControls,
     permissionModeControls,
     locationControls,
@@ -209,6 +227,9 @@ export function createDataProviderValue({
     openUrlInWorkbench,
     openFileInWorkbench,
     revealPathInWorkbench,
+    openPlanReview,
+    openProjectTodo,
+    respondPlanReview,
     openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,

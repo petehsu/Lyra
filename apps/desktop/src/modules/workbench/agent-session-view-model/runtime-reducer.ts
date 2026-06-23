@@ -21,18 +21,46 @@ const asRecord = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const toolActivityRichness = (tool: AgentToolActivity): number => {
+const toolOutputRichness = (tool: AgentToolActivity): number => {
   const output = asRecord(tool.output);
   const raw = asRecord(output.raw);
   const diff = typeof raw.diff === "string" ? raw.diff.length : 0;
   const content = typeof output.content === "string" ? output.content.length : 0;
-  const running = tool.status === "running" ? 1_000_000 : 0;
   const preview = raw.preview === true ? 10_000 : 0;
-  return running + preview + diff * 100 + Math.min(content, 5_000);
+  const changedFiles = Array.isArray(raw.changedFiles) ? raw.changedFiles.length : 0;
+  const diffArtifact = asRecord(raw.diffArtifactRef);
+  const artifactFacts = changedFiles > 0 || Object.keys(diffArtifact).length > 0 ? 20_000 : 0;
+  return preview + artifactFacts + diff * 100 + Math.min(content, 5_000);
 };
 
-const chooseRicherTool = (left: AgentToolActivity, right: AgentToolActivity): AgentToolActivity =>
-  toolActivityRichness(left) >= toolActivityRichness(right) ? left : right;
+const isTerminalToolStatus = (status: AgentToolActivity["status"]): boolean =>
+  status !== "running";
+
+const mergeToolActivity = (
+  existing: AgentToolActivity,
+  incoming: AgentToolActivity
+): AgentToolActivity => {
+  if (isTerminalToolStatus(existing.status) && incoming.status === "running") {
+    return existing;
+  }
+  const incomingOutputRichness = toolOutputRichness(incoming);
+  const richerOutputSource =
+    incoming.status !== "running" && incomingOutputRichness > 0
+      ? incoming
+      : toolOutputRichness(existing) > incomingOutputRichness
+        ? existing
+        : incoming;
+  const output = richerOutputSource.output ?? incoming.output ?? existing.output;
+  return {
+    ...existing,
+    ...incoming,
+    ...(output === undefined ? {} : { output }),
+    startedAt: existing.startedAt || incoming.startedAt,
+    ...(incoming.finishedAt === undefined && existing.finishedAt !== undefined
+      ? { finishedAt: existing.finishedAt }
+      : {})
+  };
+};
 
 export const normalizeAgentTurnStatus = (status: unknown): AgentTurnStatus => {
   if (status === "running") return "running";
@@ -47,6 +75,7 @@ export const normalizeAgentSessionSnapshot = (
   const running = turnStatus === "running";
   return {
     ...snapshot,
+    todos: snapshot.projectTodo?.todos ?? snapshot.todos,
     turnStatus,
     activeTurnId: running ? snapshot.activeTurnId ?? null : null,
     follow: {
@@ -86,7 +115,7 @@ export const mergeRunningSessionSnapshot = (
     const existing = toolsById.get(tool.id);
     toolsById.set(
       tool.id,
-      existing === undefined ? tool : chooseRicherTool(existing, tool)
+      existing === undefined ? tool : mergeToolActivity(existing, tool)
     );
   }
 
@@ -100,10 +129,14 @@ export const mergeRunningSessionSnapshot = (
 const upsertTool = (
   tools: readonly AgentToolActivity[],
   tool: AgentToolActivity
-): readonly AgentToolActivity[] => [
-  ...tools.filter((existing) => existing.id !== tool.id),
-  tool
-];
+): readonly AgentToolActivity[] => {
+  const existing = tools.find((candidate) => candidate.id === tool.id);
+  const nextTool = existing === undefined ? tool : mergeToolActivity(existing, tool);
+  return [
+    ...tools.filter((candidate) => candidate.id !== tool.id),
+    nextTool
+  ];
+};
 
 const appendTextDeltaToBlocks = (
   blocks: readonly AgentMessageBlock[] | undefined,
@@ -196,6 +229,38 @@ const appendToolBlockToMessage = (
   ];
 };
 
+const messageHasToolBlock = (
+  message: AgentSnapshotMessage,
+  toolId: string
+): boolean =>
+  (message.blocks ?? []).some((block) =>
+    block.type === "tool" && toolIdForBlock(block) === toolId
+  );
+
+const toolLinkedMessageId = (
+  messages: readonly AgentSnapshotMessage[],
+  toolId: string
+): string | null =>
+  messages.find((message) => messageHasToolBlock(message, toolId))?.id ?? null;
+
+const ensureToolBlockLinkedToMessage = (
+  messages: readonly AgentSnapshotMessage[],
+  messageId: string | null,
+  toolId: string
+): readonly AgentSnapshotMessage[] => {
+  if (messageId === null || toolLinkedMessageId(messages, toolId) !== null) {
+    return messages;
+  }
+  return messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          blocks: appendToolBlockToMessage(message.blocks, toolId)
+        }
+      : message
+  );
+};
+
 const upsertMessagePreservingOrder = (
   messages: readonly AgentSnapshotMessage[],
   message: AgentSnapshotMessage
@@ -256,16 +321,11 @@ export const applyAgentRuntimeEventToSnapshot = (
     const targetMessageId = event.messageId ?? lastAssistantMessageId(session.messages);
     return {
       ...session,
-      messages: targetMessageId === null
-        ? session.messages
-        : session.messages.map((message) =>
-            message.id === targetMessageId
-              ? {
-                  ...message,
-                  blocks: appendToolBlockToMessage(message.blocks, event.tool.id)
-                }
-              : message
-          ),
+      messages: ensureToolBlockLinkedToMessage(
+        session.messages,
+        targetMessageId,
+        event.tool.id
+      ),
       tools: upsertTool(session.tools, event.tool),
       updatedAt: new Date().toISOString()
     };
@@ -313,16 +373,11 @@ export const applyAgentRuntimeEventToSnapshot = (
       : null;
     return {
       ...session,
-      messages: targetMessageId === null || targetMessageId === undefined
-        ? session.messages
-        : session.messages.map((message) =>
-            message.id === targetMessageId
-              ? {
-                  ...message,
-                  blocks: appendToolBlockToMessage(message.blocks, event.tool.id)
-                }
-              : message
-          ),
+      messages: ensureToolBlockLinkedToMessage(
+        session.messages,
+        targetMessageId,
+        event.tool.id
+      ),
       tools: upsertTool(session.tools, event.tool),
       updatedAt: new Date().toISOString()
     };
@@ -332,6 +387,30 @@ export const applyAgentRuntimeEventToSnapshot = (
     return {
       ...session,
       todos: event.todos,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "planUpdated" || event.kind === "planReviewRequested") {
+    return {
+      ...session,
+      plan: event.plan,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "planReviewResolved") {
+    return {
+      ...session,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  if (event.kind === "projectTodoUpdated") {
+    return {
+      ...session,
+      projectTodo: event.todo,
+      todos: event.todo.todos,
       updatedAt: new Date().toISOString()
     };
   }

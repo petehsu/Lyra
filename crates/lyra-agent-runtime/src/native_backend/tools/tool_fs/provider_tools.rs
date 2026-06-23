@@ -12,13 +12,13 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem with a natural-language task description. Prefer this before listing /tools; use results to inspect and run concrete tool paths or handles.",
+            "Search Lyra Tool Filesystem for non-code domains such as browser, workbench, memory, design, software, hardware, web, todo, terminal, skills, or mcp. For project code work, use exec_command and apply_patch directly instead of Tool-FS.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as edit a file, search code, show git diff, read browser page, or run tests." },
+                    "query": { "type": "string", "description": "Natural-language non-code task or capability to find, such as read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
                     "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "design", "automation"] },
-                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as filesystem, code, shell, git, browser, web, memory, todo, software, skills, or mcp." },
+                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, design, hardware, skills, or mcp." },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
                 },
@@ -61,7 +61,7 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
         ),
         function_tool(
             TOOL_FS_RUN,
-            "Run one Lyra Tool Filesystem target. Provide path or pinned toolHandle plus args matching the inspected inputSchema.",
+            "Run one non-code Lyra Tool Filesystem target. Provide path or pinned toolHandle plus args matching the inspected inputSchema. Do not use Tool-FS for project file reads, code search, shell checks, git, or file edits.",
             json!({
                 "type": "object",
                 "properties": {

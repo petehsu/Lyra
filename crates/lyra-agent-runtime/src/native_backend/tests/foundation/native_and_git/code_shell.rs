@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn pinned_handle_code_task_chain_runs_core_code_tools() {
+fn codex_direct_tool_chain_runs_core_code_tools() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let root = temp.path();
@@ -43,30 +43,35 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    ensure_test_local_search_index_ready(&root);
-    let handle_call = |id: &str, tool_handle: &str, args: Value| ModelToolCall {
-        id: id.to_string(),
-        name: "tool_fs_run".to_string(),
-        arguments: json!({
-            "toolHandle": tool_handle,
-            "args": args,
-        }),
-    };
+    let legacy_handle = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ModelToolCall {
+            id: "tool-legacy-handle-read".to_string(),
+            name: "tool_fs_run".to_string(),
+            arguments: json!({
+                "toolHandle": "read_file",
+                "args": { "path": "src/lib.rs" },
+            }),
+        },
+    );
+    assert_eq!(
+        legacy_handle.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
 
     let read = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        handle_call(
-            "tool-handle-read",
-            "read_file",
-            json!({ "path": "src/lib.rs" }),
-        ),
-    );
-    assert_eq!(
-        read["toolPath"].as_str(),
-        Some("/tools/filesystem/read_file")
+        ModelToolCall {
+            id: "tool-read-source".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "sed -n '1,80p' src/lib.rs" }),
+        },
     );
     assert!(
         read["content"]
@@ -79,13 +84,12 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        handle_call(
-            "tool-handle-search",
-            "search_code",
-            json!({ "query": "greeting", "path": "src", "limit": 10 }),
-        ),
+        ModelToolCall {
+            id: "tool-rg-search".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "rg -n greeting src" }),
+        },
     );
-    assert_eq!(search["toolPath"].as_str(), Some("/tools/code/search_code"));
     assert!(
         search["content"]
             .as_str()
@@ -95,6 +99,7 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
     let patch_session_id = session_id.clone();
     let patch_turn_id = turn_id.clone();
     let patch_cancellation = cancellation.clone();
+    let patch_text = "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-pub fn greeting() -> &'static str { \"hello\" }\n+pub fn greeting() -> &'static str { \"hello lyra\" }\n*** End Patch\n";
     let patch_handle = thread::spawn(move || {
         execute_model_tool(
             &patch_session_id,
@@ -102,19 +107,9 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
             &None,
             &patch_cancellation,
             ModelToolCall {
-                id: "tool-handle-patch".to_string(),
-                name: "tool_fs_run".to_string(),
-                arguments: json!({
-                    "toolHandle": "apply_patch",
-                    "args": {
-                        "operations": [{
-                            "op": "update",
-                            "path": "src/lib.rs",
-                            "oldString": "\"hello\"",
-                            "newString": "\"hello lyra\""
-                        }]
-                    }
-                }),
+                id: "tool-direct-patch".to_string(),
+                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                arguments: json!({ "patch": patch_text }),
             },
         )
     });
@@ -126,12 +121,9 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
         )
         .expect("allow patch permission");
     let patch = patch_handle.join().expect("join patch");
-    assert_eq!(
-        patch["toolPath"].as_str(),
-        Some("/tools/filesystem/apply_patch")
-    );
+    assert_eq!(patch["activityKind"].as_str(), Some("edit"));
     assert!(
-        patch["changes"]
+        patch["raw"]["changedFiles"]
             .as_array()
             .is_some_and(|changes| !changes.is_empty())
     );
@@ -146,13 +138,12 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        handle_call(
-            "tool-handle-shell",
-            "run_command",
-            json!({ "command": "printf pinned", "workingDir": "." }),
-        ),
+        ModelToolCall {
+            id: "tool-direct-shell".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "printf pinned" }),
+        },
     );
-    assert_eq!(shell["toolPath"].as_str(), Some("/tools/shell/run_command"));
     assert!(
         shell["content"]
             .as_str()
@@ -164,14 +155,17 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        handle_call("tool-handle-git-status", "git_status", json!({})),
+        ModelToolCall {
+            id: "tool-git-status".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "git status --short" }),
+        },
     );
-    assert_eq!(status["toolPath"].as_str(), Some("/tools/git/status"));
     assert!(
         status
-            .pointer("/raw/summary/changed")
-            .and_then(Value::as_u64)
-            .is_some_and(|changed| changed >= 1)
+            .pointer("/raw/stdout")
+            .and_then(Value::as_str)
+            .is_some_and(|text| text.contains("src/lib.rs"))
     );
 
     let diff = execute_model_tool(
@@ -179,15 +173,14 @@ fn pinned_handle_code_task_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        handle_call(
-            "tool-handle-git-diff",
-            "git_diff",
-            json!({ "path": "src/lib.rs" }),
-        ),
+        ModelToolCall {
+            id: "tool-git-diff".to_string(),
+            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
+            arguments: json!({ "cmd": "git diff -- src/lib.rs" }),
+        },
     );
-    assert_eq!(diff["toolPath"].as_str(), Some("/tools/git/diff"));
     assert!(
-        diff.pointer("/raw/diff")
+        diff.pointer("/raw/stdout")
             .and_then(Value::as_str)
             .is_some_and(|text| text.contains("hello lyra"))
     );
@@ -431,10 +424,27 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         "turn-budget",
         "tool-budget-raw",
         "short content".to_string(),
-        json!({ "markdown": "raw evidence ".repeat(4_000), "ok": true }),
+        json!({
+            "markdown": "raw evidence ".repeat(4_000),
+            "ok": true,
+            "activityKind": "edit",
+            "rendererHint": "edit",
+            "changedFiles": [{ "path": "index.html", "operation": "write" }],
+            "diffArtifactRef": { "artifactId": "diff-1", "kind": "diff" }
+        }),
         None,
     );
     assert_eq!(budgeted_raw["raw"]["kind"], "tool_raw_ref");
     assert!(budgeted_raw["rawArtifactRef"].is_object());
     assert!(budgeted_raw["raw"]["artifactRef"].is_object());
+    assert_eq!(budgeted_raw["activityKind"], "edit");
+    assert_eq!(budgeted_raw["rendererHint"], "edit");
+    assert_eq!(
+        budgeted_raw["raw"]["changedFiles"][0]["path"].as_str(),
+        Some("index.html")
+    );
+    assert_eq!(
+        budgeted_raw["raw"]["diffArtifactRef"]["artifactId"].as_str(),
+        Some("diff-1")
+    );
 }

@@ -183,7 +183,7 @@ mod tests {
                     "type": "function_call",
                     "call_id": "call-1",
                     "name": "tool_fs_run",
-                    "arguments": "{\"path\":\"/tools/filesystem/list_files\",\"args\":{}}"
+                    "arguments": "{\"path\":\"/tools/web/search\",\"args\":{\"query\":\"Lyra\"}}"
                 }
             ]
         });

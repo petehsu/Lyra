@@ -601,6 +601,22 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         selectFileTitle: t("agentProjectTree.selectFileTitle"),
         selectFileDescription: t("agentProjectTree.selectFileDescription")
       },
+      agentPlanBoard: {
+        title: t("agentPlanBoard.title"),
+        plan: t("agentPlanBoard.plan"),
+        todo: t("agentPlanBoard.todo"),
+        noTodo: t("agentPlanBoard.noTodo"),
+        status: t("agentPlanBoard.status"),
+        phase: t("agentPlanBoard.phase"),
+        version: t("agentPlanBoard.version"),
+        currentStep: t("agentPlanBoard.currentStep"),
+        editLine: t("agentPlanBoard.editLine"),
+        commentLine: t("agentPlanBoard.commentLine"),
+        save: t("agentPlanBoard.save"),
+        cancel: t("agentPlanBoard.cancel"),
+        commentPlaceholder: t("agentPlanBoard.commentPlaceholder"),
+        editPlaceholder: t("agentPlanBoard.editPlaceholder")
+      },
       agentGit: {
         title: t("agentGit.title"),
         open: t("agentGit.open"),

@@ -11,20 +11,26 @@ fn registry_lists_root_and_pages_domain_tools() {
         .list("/tools", 0, 80, ToolScene::General)
         .expect("root");
     assert_eq!(root.path, "/tools");
+    assert!(root.directories.iter().any(|entry| entry.name == "web"));
     assert!(
         root.directories
             .iter()
-            .any(|entry| entry.name == "filesystem")
+            .any(|entry| entry.name == "terminal")
     );
-    assert!(root.directories.iter().any(|entry| entry.name == "git"));
+    assert!(
+        !root
+            .directories
+            .iter()
+            .any(|entry| matches!(entry.name.as_str(), "filesystem" | "code" | "shell" | "git"))
+    );
 
-    let files = registry
-        .list("/tools/filesystem", 0, 2, ToolScene::ProjectCode)
-        .expect("filesystem");
-    assert_eq!(files.page_size, 2);
-    assert_eq!(files.tools.len(), 2);
-    assert!(files.has_more);
-    let listed_json = serde_json::to_value(&files.tools[0]).expect("listed tool json");
+    let web = registry
+        .list("/tools/web", 0, 2, ToolScene::ProjectCode)
+        .expect("web");
+    assert_eq!(web.page_size, 2);
+    assert_eq!(web.tools.len(), 2);
+    assert!(web.has_more);
+    let listed_json = serde_json::to_value(&web.tools[0]).expect("listed tool json");
     assert!(listed_json.get("path").is_some());
     assert!(listed_json.get("handle").is_some());
     assert!(listed_json.get("title").is_some());
@@ -40,22 +46,22 @@ fn registry_lists_root_and_pages_domain_tools() {
     assert!(listed_json.get("examples").is_none());
     assert!(listed_json.get("aliases").is_none());
 
-    let files_page_2 = registry
-        .list("/tools/filesystem", 1, 2, ToolScene::ProjectCode)
-        .expect("filesystem page 2");
-    assert_eq!(files_page_2.page, 1);
-    assert_eq!(files_page_2.page_size, 2);
-    assert_ne!(files.tools[0].path, files_page_2.tools[0].path);
+    let web_page_2 = registry
+        .list("/tools/web", 1, 2, ToolScene::ProjectCode)
+        .expect("web page 2");
+    assert_eq!(web_page_2.page, 1);
+    assert_eq!(web_page_2.page_size, 2);
+    assert_ne!(web.tools[0].path, web_page_2.tools[0].path);
 
-    let git_tools = registry
-        .list("/tools/git", 0, 20, ToolScene::Git)
-        .expect("git tools");
+    let terminal_tools = registry
+        .list("/tools/terminal", 0, 20, ToolScene::Git)
+        .expect("terminal tools");
     assert_eq!(
-        git_tools
+        terminal_tools
             .tools
             .first()
             .and_then(|tool| tool.handle.as_deref()),
-        Some("git_status")
+        Some("terminal_list")
     );
 }
 
@@ -79,29 +85,31 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
             .is_some_and(|content| content.contains("Lyra Tool-FS scenario decision tree"))
     );
 
-    let domain_doc = registry.read_doc("/tools/git").expect("git doc");
-    assert_eq!(domain_doc["path"], "/tools/git");
+    let domain_doc = registry.read_doc("/tools/web").expect("web doc");
+    assert_eq!(domain_doc["path"], "/tools/web");
     assert!(
         domain_doc["content"]
             .as_str()
-            .is_some_and(|content| content.contains("Git"))
+            .is_some_and(|content| content.contains("web"))
     );
+    assert!(registry.read_doc("/tools/git").is_err());
 
-    let tool_doc = registry
-        .read_doc("/tools/shell/run_command")
-        .expect("tool doc");
-    assert_eq!(tool_doc["path"], "/tools/shell/run_command");
-    assert_eq!(tool_doc["title"], "Run one-shot shell command");
+    let tool_doc = registry.read_doc("/tools/web/search").expect("tool doc");
+    assert_eq!(tool_doc["path"], "/tools/web/search");
+    assert_eq!(tool_doc["title"], "Web search");
     assert!(
         tool_doc["content"]
             .as_str()
-            .is_some_and(|content| content.contains("bounded non-interactive shell command"))
+            .is_some_and(|content| content.contains("current web search"))
     );
 
-    let by_path = registry
-        .inspect_path("/tools/filesystem/read_file")
-        .expect("path");
-    assert_eq!(by_path.handle.as_deref(), Some("read_file"));
+    assert!(
+        registry
+            .inspect_path("/tools/filesystem/read_file")
+            .is_err()
+    );
+    let by_path = registry.inspect_path("/tools/web/search").expect("path");
+    assert_eq!(by_path.handle.as_deref(), Some("web_search"));
     assert_eq!(by_path.input_schema["type"], "object");
     let inspected_json = serde_json::to_value(&by_path).expect("inspect json");
     assert!(inspected_json.get("inputSchema").is_some());
@@ -109,15 +117,15 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
     assert!(inspected_json.get("examples").is_some());
     assert!(inspected_json.get("aliases").is_some());
 
-    let by_handle = registry.inspect_handle("run_command").expect("handle");
-    assert_eq!(by_handle.path, "/tools/shell/run_command");
+    let by_handle = registry.inspect_handle("web_search").expect("handle");
+    assert_eq!(by_handle.path, "/tools/web/search");
 }
 
 #[test]
 fn manifest_projection_does_not_expose_legacy_name() {
     let registry = ToolFsRegistry::default();
     let manifest = registry
-        .inspect_path("/tools/filesystem/read_file")
+        .inspect_path("/tools/web/search")
         .expect("manifest");
     let json = serde_json::to_value(manifest).expect("manifest json");
     let legacy_field = ["legacy", "Name"].join("");
@@ -232,11 +240,10 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     assert!(
         edit.results
             .iter()
-            .any(|result| result.path == "/tools/filesystem/apply_patch")
-            || edit
-                .results
-                .iter()
-                .any(|result| result.path == "/tools/filesystem/edit_file")
+            .all(|result| !result.path.starts_with("/tools/filesystem/")
+                && !result.path.starts_with("/tools/code/")
+                && !result.path.starts_with("/tools/git/")
+                && !result.path.starts_with("/tools/shell/"))
     );
 
     let command = registry
@@ -246,15 +253,18 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
         command
             .results
             .iter()
-            .any(|result| result.path == "/tools/shell/run_command")
+            .all(|result| !result.path.starts_with("/tools/shell/")
+                && !result.path.starts_with("/tools/filesystem/")
+                && !result.path.starts_with("/tools/code/"))
     );
 
     let git = registry
         .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)
         .expect("git search");
-    assert_eq!(
-        git.results.first().map(|result| result.path.as_str()),
-        Some("/tools/git/diff")
+    assert!(
+        git.results
+            .iter()
+            .all(|result| !result.path.starts_with("/tools/git/"))
     );
 
     let browser = registry
@@ -426,12 +436,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("code search");
-    assert!(code.results.iter().all(|result| result.domain == "code"));
-    assert!(
-        code.results
-            .iter()
-            .any(|result| result.path == "/tools/code/search_code")
-    );
+    assert!(code.results.is_empty());
 
     let grep = registry
         .search(
@@ -442,11 +447,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("grep search");
-    assert!(
-        grep.results
-            .iter()
-            .any(|result| result.path == "/tools/code/grep_text")
-    );
+    assert!(grep.results.is_empty());
 
     let symbol = registry
         .search(
@@ -457,12 +458,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("symbol search");
-    assert!(
-        symbol
-            .results
-            .iter()
-            .any(|result| result.path == "/tools/code/search_symbol")
-    );
+    assert!(symbol.results.is_empty());
 }
 
 #[test]
@@ -492,14 +488,13 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
         .expect("terminal shell search");
     assert_eq!(
         terminal.results.first().map(|result| result.path.as_str()),
-        Some("/tools/shell/run_command")
+        Some("/tools/terminal/run")
     );
-    assert!(
-        terminal
-            .results
-            .first()
-            .is_some_and(|result| result.match_reason.contains("terminal-shell intent boost"))
-    );
+    assert!(terminal.results.first().is_some_and(|result| {
+        result
+            .match_reason
+            .contains("interactive-terminal intent boost")
+    }));
 
     let edit = registry
         .search(
@@ -510,13 +505,8 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("code edit search");
-    assert!(edit.results.iter().any(|result| {
-        matches!(
-            result.path.as_str(),
-            "/tools/filesystem/apply_patch"
-                | "/tools/filesystem/strict_edit"
-                | "/tools/filesystem/edit_file"
-        )
+    assert!(edit.results.iter().all(|result| {
+        !result.path.starts_with("/tools/filesystem/") && !result.path.starts_with("/tools/code/")
     }));
 
     let file_search = registry
@@ -528,22 +518,18 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("file/code search");
-    assert!(file_search.results.iter().any(|result| {
-        matches!(
-            result.path.as_str(),
-            "/tools/code/grep_text"
-                | "/tools/code/search_code"
-                | "/tools/filesystem/read_file"
-                | "/tools/filesystem/glob"
-        )
+    assert!(file_search.results.iter().all(|result| {
+        !result.path.starts_with("/tools/filesystem/") && !result.path.starts_with("/tools/code/")
     }));
 
     let git_diff = registry
         .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)
         .expect("git diff search");
-    assert_eq!(
-        git_diff.results.first().map(|result| result.path.as_str()),
-        Some("/tools/git/diff")
+    assert!(
+        git_diff
+            .results
+            .iter()
+            .all(|result| !result.path.starts_with("/tools/git/"))
     );
 
     let computer = registry
@@ -570,14 +556,14 @@ fn registry_search_returns_fallback_for_unknown_query() {
         )
         .expect("search response");
     assert!(response.results.is_empty());
-    assert_eq!(response.fallback_list_path, "/tools/filesystem");
+    assert_eq!(response.fallback_list_path, "/tools/workbench");
     assert!(response.recommended_next_action.contains("tool_fs_list"));
 }
 
 #[test]
 fn registry_startup_validation_rejects_invalid_manifests() {
     let duplicate_path = TestManifestProvider {
-        manifests: vec![test_manifest("/tools/filesystem/read_file", None)],
+        manifests: vec![test_manifest("/tools/web/search", None)],
     };
     assert_eq!(
         ToolFsRegistry::try_with_providers(&[&duplicate_path])
@@ -587,7 +573,7 @@ fn registry_startup_validation_rejects_invalid_manifests() {
     );
 
     let duplicate_handle = TestManifestProvider {
-        manifests: vec![test_manifest("/tools/test/read", Some("read_file"))],
+        manifests: vec![test_manifest("/tools/test/read", Some("web_search"))],
     };
     assert_eq!(
         ToolFsRegistry::try_with_providers(&[&duplicate_handle])
@@ -628,24 +614,24 @@ fn run_input_validation_is_structured() {
     );
     assert_eq!(
         registry
-            .resolve_run_input(&json!({ "toolHandle": "read_file", "args": [] }))
+            .resolve_run_input(&json!({ "toolHandle": "web_search", "args": [] }))
             .unwrap_err()
             .code,
         "invalid_tool_args"
     );
     let resolved = registry
         .resolve_run_input(&json!({
-            "toolHandle": "read_file",
-            "args": { "path": "README.md" }
+            "toolHandle": "web_search",
+            "args": { "query": "Lyra" }
         }))
         .expect("resolved");
-    assert_eq!(resolved.manifest.path, "/tools/filesystem/read_file");
+    assert_eq!(resolved.manifest.path, "/tools/web/search");
     assert_eq!(
         registry
             .resolve_run_input(&json!({
-                "path": "/tools/filesystem/read_file",
-                "toolHandle": "find_files",
-                "args": { "path": "README.md" }
+                "path": "/tools/web/search",
+                "toolHandle": "web_fetch",
+                "args": { "query": "Lyra" }
             }))
             .unwrap_err()
             .code,

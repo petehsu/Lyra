@@ -136,10 +136,9 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
   );
 }
 
-const editFileBasename = (filePath: string): string => {
+const editFileLabel = (filePath: string): string => {
   const normalized = filePath.replace(/\\/g, "/");
-  const leaf = normalized.slice(normalized.lastIndexOf("/") + 1);
-  return leaf.length > 0 ? leaf : filePath;
+  return normalized.length > 0 ? normalized : filePath;
 };
 
 function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }) {
@@ -249,7 +248,7 @@ function ToolCallHeadLabel({
             openEditFile(event);
           }}
         >
-          {editFileBasename(editFile)}
+          {editFileLabel(editFile)}
         </span>
       ) : null}
     </span>

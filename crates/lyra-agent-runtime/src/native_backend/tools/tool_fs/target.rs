@@ -32,7 +32,6 @@ pub(crate) enum RuntimeToolTarget {
         software_id: String,
         action_id: String,
     },
-    Git,
 }
 
 pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<RuntimeToolTarget> {
@@ -65,7 +64,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
     let design = |tool_name, action| RuntimeToolTarget::DesignAdapter { tool_name, action };
     let skill = |tool_name, action| RuntimeToolTarget::SkillAdapter { tool_name, action };
     let mcp = |tool_name, action| RuntimeToolTarget::McpAdapter { tool_name, action };
-    let git = RuntimeToolTarget::Git;
     Some(match manifest.path.as_str() {
         "/tools/runtime/artifact_read" => native("artifact_read", "artifact", "read"),
         "/tools/memory/search" => memory("memory_search", "search"),
@@ -180,23 +178,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/computer/diff" => host("lyraComputer.diff", "lyra_computer", "diff"),
         "/tools/computer/explain" => host("lyraComputer.explain", "lyra_computer", "explain"),
         "/tools/computer/see" => host("lyraComputer.see", "lyra_computer", "see"),
-        "/tools/filesystem/list_files" => native("file_list", "file", "list"),
-        "/tools/filesystem/read_file" | "/tools/filesystem/read_range" => {
-            native("file_read", "file", "read")
-        }
-        "/tools/filesystem/glob" => native("file_glob", "file", "glob"),
-        "/tools/filesystem/write_file" => native("file_write", "file", "write"),
-        "/tools/filesystem/edit_file" => native("file_edit", "file", "edit"),
-        "/tools/filesystem/strict_edit" => native("file_strict_edit", "file", "strict_edit"),
-        "/tools/filesystem/multi_edit" => native("file_multiedit", "file", "multiedit"),
-        "/tools/filesystem/apply_patch" => native("apply_patch", "file", "apply_patch"),
-        "/tools/code/search_project" => native("project_search", "search", "project"),
-        "/tools/code/search_code" => native("code_search_text", "code", "search_text"),
-        "/tools/code/grep_text" => native("code_grep_text", "code", "grep_text"),
-        "/tools/code/search_symbol" => native("code_search_symbol", "code", "search_symbol"),
-        "/tools/code/graph_expand" => native("code_graph_expand", "code", "graph_expand"),
-        "/tools/code/lsp_query" => native("lsp_query", "lsp", "query"),
-        "/tools/shell/run_command" => native("shell_run", "shell", "run"),
         "/tools/hardware/list" => native("hardware_list", "hardware", "list"),
         "/tools/hardware/inspect" => native("hardware_inspect", "hardware", "inspect"),
         "/tools/hardware/capabilities" => {
@@ -222,8 +203,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         }
         "/tools/hardware/invoke" => native("hardware_invoke", "hardware", "invoke"),
         "/tools/hardware/run_action" => native("hardware_run_action", "hardware", "run_action"),
-        "/tools/git/status" | "/tools/git/diff" | "/tools/git/stage" | "/tools/git/unstage"
-        | "/tools/git/discard" | "/tools/git/log" | "/tools/git/show" | "/tools/git/branch" => git,
         "/tools/network/status" => native("network_status", "network", "status"),
         "/tools/web/search" => native("web_search", "web", "search"),
         "/tools/web/research" => native("web_research", "web", "research"),
@@ -257,9 +236,6 @@ pub(super) fn validate_runtime_target_availability(
     target: &RuntimeToolTarget,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Result<(), NativeToolFailure> {
-    if is_local_code_search_tool_path(&manifest.path) && !local_code_search_tools_available() {
-        return Err(local_code_search_unavailable_failure(&manifest.path));
-    }
     if matches!(
         target,
         RuntimeToolTarget::HostAdapter { .. } | RuntimeToolTarget::SoftwareCapability { .. }
@@ -376,29 +352,34 @@ pub(super) fn validate_runtime_turn_for_operation(
     Ok(())
 }
 
+fn native_file_activity_path(action: &str) -> Option<&'static str> {
+    match action {
+        "read" => Some("/tools/filesystem/read_file"),
+        "list" => Some("/tools/filesystem/list_files"),
+        "glob" => Some("/tools/filesystem/glob"),
+        "write" => Some("/tools/filesystem/write_file"),
+        "edit" | "strict_edit" => Some("/tools/filesystem/edit_file"),
+        "multiedit" => Some("/tools/filesystem/multi_edit"),
+        "apply_patch" => Some("/tools/filesystem/apply_patch"),
+        _ => None,
+    }
+}
+
 pub(crate) fn path_for_activity(name: &str, action: &str) -> Option<String> {
+    if name == "file" {
+        return native_file_activity_path(action).map(str::to_string);
+    }
     let registry = runtime_registry();
+    let activity_domain = name;
     registry
         .manifests()
         .iter()
         .find(|manifest| {
-            if manifest.domain == name && manifest.operation == action {
+            if manifest.domain == activity_domain && manifest.operation == action {
                 return true;
             }
             if name == "lyra_lumen" && manifest.domain == "browser" && manifest.operation == action
             {
-                return true;
-            }
-            if name == "file" && manifest.domain == "filesystem" && manifest.operation == action {
-                return true;
-            }
-            if name == "search" && manifest.path == "/tools/code/search_project" {
-                return true;
-            }
-            if name == "code" && manifest.domain == "code" && manifest.operation == action {
-                return true;
-            }
-            if name == "lsp" && manifest.path == "/tools/code/lsp_query" && action == "query" {
                 return true;
             }
             if name == "artifact" && manifest.path == "/tools/runtime/artifact_read" {

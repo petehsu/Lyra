@@ -17,6 +17,14 @@ import type {
   AgentPermissionPolicySetModeRequest,
   AgentPermissionPolicySnapshot,
   AgentPermissionRespondRequest,
+  AgentPlanReviseRequest,
+  AgentProjectPlanDeleteRequest,
+  AgentProjectPlanDeleteResponse,
+  AgentProjectPlanListRequest,
+  AgentProjectPlanListResponse,
+  AgentProjectPlanReadRequest,
+  AgentProjectPlanReadResponse,
+  AgentPlanReviewRespondRequest,
   AgentMessageResolveRequest,
   AgentMessageResolveResponse,
   AgentRollbackPreviewResponse,
@@ -330,6 +338,46 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentGitMutationResponse>(
           "agent.git.discard",
           payload as AgentGitFileRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPlanList,
+      (_event, payload) =>
+        requestRuntime<AgentProjectPlanListResponse>(
+          "agent.plan.list",
+          (payload as AgentProjectPlanListRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPlanRead,
+      (_event, payload) =>
+        requestRuntime<AgentProjectPlanReadResponse>(
+          "agent.plan.read",
+          payload as AgentProjectPlanReadRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPlanDelete,
+      (_event, payload) =>
+        requestRuntime<AgentProjectPlanDeleteResponse>(
+          "agent.plan.delete",
+          payload as AgentProjectPlanDeleteRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPlanRevise,
+      (_event, payload) =>
+        requestRuntime<AgentSessionSnapshot>(
+          "agent.plan.revise",
+          payload as AgentPlanReviseRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentPlanReviewRespond,
+      (_event, payload) =>
+        requestRuntime<AgentSessionSnapshot>(
+          "agent.plan.review.respond",
+          payload as AgentPlanReviewRespondRequest
         )
     ],
     [

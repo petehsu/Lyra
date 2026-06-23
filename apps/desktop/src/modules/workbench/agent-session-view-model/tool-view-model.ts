@@ -43,7 +43,19 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   const action = (toolFsOperation(tool) ?? "").toLowerCase();
   const domain = (toolFsDomain(tool) ?? "").toLowerCase();
   const toolPath = (toolFsPath(tool) ?? "").toLowerCase();
+  const toolName = normalizedToolName(tool);
   const legacyFamily = legacyToolFamily(tool);
+  if (
+    domain === "plan" ||
+    toolPath.startsWith("/tools/plan/") ||
+    ["plan_begin", "plan_write", "plan_finalize", "plan_revise"].includes(toolName)
+  ) return "plan";
+  if (toolName === "apply_patch" || toolName === "edit_file" || toolName === "write_file") return "edit";
+  if (toolName === "file" && ["write", "edit", "strict_edit", "multiedit", "apply_patch"].includes(action)) return "edit";
+  if (toolName === "file" && ["glob", "list"].includes(action)) return "search";
+  if (toolName === "file" && action === "read") return "read";
+  if (toolName === "exec_command") return "shell";
+  if (toolName === "write_stdin") return "terminal";
   if (domain === "render" || toolPath.startsWith("/tools/render/") || legacyFamily === "render") return "render";
   if (domain === "workbench" || toolPath.startsWith("/tools/workbench/") || legacyFamily === "workbench") return "workbench";
   if (domain === "terminal" || toolPath.startsWith("/tools/terminal/") || legacyFamily === "terminal") return "terminal";
@@ -88,6 +100,8 @@ export const toolKindFromHint = (hint: string | null | undefined): ToolCall["kin
       return "workbench";
     case "render":
       return "render";
+    case "plan":
+      return "plan";
     case "task":
     case "todo":
       return "task";
@@ -100,7 +114,13 @@ export const toToolDetails = (
   tool: AgentToolActivity,
   kind: ToolCall["kind"]
 ): ToolDetails => {
-  if (!isToolFsActivity(tool)) {
+  const isDirectCodexTool =
+    tool.name === "apply_patch"
+    || tool.name === "edit_file"
+    || tool.name === "write_file"
+    || tool.name === "exec_command"
+    || tool.name === "write_stdin";
+  if (!isToolFsActivity(tool) && !isDirectCodexTool) {
     return {
       type: "text",
       body: toolOutputText(tool)
@@ -136,6 +156,14 @@ export const toToolDetails = (
   }
   if (kind === "render") {
     return toRenderDetails(tool, output, rawOutputRecord);
+  }
+  if (kind === "plan") {
+    return {
+      type: "text",
+      body: stringField(rawOutputRecord, "markdown")
+        ?? stringField(rawOutputRecord, "diff")
+        ?? output
+    };
   }
   if (kind === "read") {
     const file =
@@ -246,13 +274,20 @@ export const toolPathTitle = (tool: AgentToolActivity): string | null => {
 };
 
 export const genericToolTitle = (tool: AgentToolActivity): string => {
+  const toolName = normalizedToolName(tool);
+  if (toolKind(tool) === "plan") {
+    if (toolName === "plan_begin") return "Starting plan";
+    if (toolName === "plan_write") return "Writing plan";
+    if (toolName === "plan_finalize") return "Finalizing plan";
+    if (toolName === "plan_revise") return "Revising plan";
+    return "Planning";
+  }
   const metaTitle = toolFsMetaTitle(tool);
   if (metaTitle !== null) return metaTitle;
   const label = tool.label.trim();
   if (label.length > 0 && !["Ran", "Run tool", "Used Lyra tool"].includes(label)) return label;
   const pathTitle = toolPathTitle(tool);
   if (pathTitle !== null) return pathTitle;
-  const toolName = normalizedToolName(tool);
   if (legacyToolFamily(tool) === "shell" && toolName.length > 0) {
     return toolName;
   }

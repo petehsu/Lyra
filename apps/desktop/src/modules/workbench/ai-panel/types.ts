@@ -2,7 +2,9 @@ import type { MutableRefObject } from "react";
 
 import type {
   AgentSessionCreateRequest,
-  AgentSessionSnapshot
+  AgentSessionSnapshot,
+  AgentPlanSnapshot,
+  AgentProjectTodoSnapshot
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
@@ -37,6 +39,11 @@ export type AiPanelSurfaceProps = {
   readonly onOpenProjectTree?: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
+  }) => Promise<void> | void;
+  readonly onOpenPlanBoard?: (request: {
+    readonly sessionId: string;
+    readonly plan: AgentPlanSnapshot;
+    readonly projectTodo?: AgentProjectTodoSnapshot | null;
   }) => Promise<void> | void;
   readonly onRevealProjectPath?: (request: {
     readonly sessionId: string;

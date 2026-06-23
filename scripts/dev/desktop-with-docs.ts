@@ -31,10 +31,15 @@ type NextDevLock = {
   readonly appUrl?: string;
 };
 
+type PortProcessInfo = {
+  readonly pid: number;
+  readonly command: string;
+};
+
 const repoRoot = path.resolve(__dirname, "../..");
 const docsRoot = path.join(repoRoot, "web/docs");
 const docsPort = 5174;
-const rendererDevPort = 5173;
+const defaultRendererDevPort = 5173;
 const docsHealthPath = "/docs";
 const docsDevLockPath = path.join(docsRoot, ".next", "dev", "lock");
 const docsNextBin = path.join(
@@ -64,6 +69,11 @@ const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+const parsePositivePort = (value: string | undefined): number | null => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : null;
+};
 
 const probeDocsServer = async (port: number): Promise<boolean> =>
   new Promise<boolean>((resolve) => {
@@ -95,7 +105,7 @@ const probeDocsServer = async (port: number): Promise<boolean> =>
     request.once("error", () => finish(false));
   });
 
-const isPortAvailable = async (port: number): Promise<boolean> =>
+const isPortAvailable = async (port: number, host = "127.0.0.1"): Promise<boolean> =>
   new Promise<boolean>((resolve) => {
     const server = net.createServer();
     let settled = false;
@@ -110,7 +120,7 @@ const isPortAvailable = async (port: number): Promise<boolean> =>
     server.once("listening", () => {
       server.close(() => finish(true));
     });
-    server.listen(port);
+    server.listen(port, host);
     server.unref();
   });
 
@@ -170,6 +180,64 @@ const parentPid = async (pid: number): Promise<number | null> => {
   });
 };
 
+const commandLineForPid = async (pid: number): Promise<string> => {
+  if (process.platform === "win32") {
+    return "";
+  }
+  return new Promise<string>((resolve) => {
+    const child = spawn("ps", ["-o", "command=", "-p", String(pid)], {
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+    child.once("error", () => resolve(""));
+    child.once("exit", () => resolve(output.trim()));
+  });
+};
+
+const listenerPidsForPort = async (port: number): Promise<readonly number[]> => {
+  if (process.platform === "win32") {
+    return [];
+  }
+  return new Promise<readonly number[]>((resolve) => {
+    const child = spawn("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+    child.once("error", () => resolve([]));
+    child.once("exit", () => {
+      const pids = output
+        .split(/\s+/)
+        .map((part) => Number.parseInt(part, 10))
+        .filter((pid) => Number.isFinite(pid) && pid > 0);
+      resolve([...new Set(pids)]);
+    });
+  });
+};
+
+const listenerProcessInfoForPort = async (port: number): Promise<readonly PortProcessInfo[]> => {
+  const pids = await listenerPidsForPort(port);
+  return Promise.all(
+    pids.map(async (pid) => ({
+      pid,
+      command: await commandLineForPid(pid)
+    }))
+  );
+};
+
+const isLyraRendererDevProcess = (info: PortProcessInfo): boolean =>
+  info.command.includes("electron-vite")
+  && (
+    info.command.includes(repoRoot)
+    || info.command.includes(`apps${path.sep}desktop`)
+    || info.command.includes("apps/desktop")
+  );
+
 const terminateProcess = async (pid: number): Promise<void> => {
   if (!processExists(pid)) {
     return;
@@ -196,6 +264,72 @@ const terminateProcess = async (pid: number): Promise<void> => {
       }
     }
   }
+};
+
+const releaseStaleRendererPort = async (port: number): Promise<boolean> => {
+  if (await isPortAvailable(port)) {
+    return true;
+  }
+
+  const listeners = await listenerProcessInfoForPort(port);
+  const staleLyraListeners = listeners.filter(isLyraRendererDevProcess);
+  if (staleLyraListeners.length === 0) {
+    return false;
+  }
+
+  safeWrite(
+    process.stdout,
+    `[desktop] found existing Lyra renderer dev server ${staleLyraListeners
+      .map((listener) => `pid ${listener.pid}`)
+      .join(", ")} on port ${port}; stopping stale desktop renderer\n`
+  );
+
+  const parents = await Promise.all(staleLyraListeners.map((listener) => parentPid(listener.pid)));
+  const targets = [
+    ...new Set(
+      [
+        ...parents.filter((pid): pid is number => pid !== null),
+        ...staleLyraListeners.map((listener) => listener.pid)
+      ].filter((pid) => pid !== process.pid)
+    )
+  ];
+  for (const pid of targets) {
+    await terminateProcess(pid);
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await isPortAvailable(port)) {
+      return true;
+    }
+    await sleep(100);
+  }
+  if (await isPortAvailable(port)) {
+    return true;
+  }
+  throw new Error(`renderer dev port ${port} is still occupied after stopping stale Lyra renderer`);
+};
+
+const resolveRendererPort = async (): Promise<number> => {
+  const requested = parsePositivePort(process.env.LYRA_RENDERER_PORT) ?? defaultRendererDevPort;
+  if (await releaseStaleRendererPort(requested)) {
+    return requested;
+  }
+  if (process.env.LYRA_RENDERER_PORT !== undefined) {
+    const listeners = await listenerProcessInfoForPort(requested);
+    const owner = listeners.length > 0
+      ? listeners.map((listener) => `pid ${listener.pid}: ${listener.command}`).join("; ")
+      : "unknown process";
+    throw new Error(`renderer dev port ${requested} is occupied by ${owner}`);
+  }
+  for (let candidate = requested + 1; candidate <= requested + 25; candidate += 1) {
+    if (await isPortAvailable(candidate)) {
+      safeWrite(
+        process.stdout,
+        `[desktop] renderer port ${requested} is occupied by another process; starting renderer on ${candidate}\n`
+      );
+      return candidate;
+    }
+  }
+  throw new Error(`no available renderer dev port found near ${requested}`);
 };
 
 const cleanupUnhealthyDocsLock = async (): Promise<DocsDevServer | null> => {
@@ -386,9 +520,10 @@ const main = async (): Promise<void> => {
   if (docsServer.processInfo !== null) {
     processes.push(docsServer.processInfo);
   }
+  const rendererPort = await resolveRendererPort();
   const desktopEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    LYRA_RENDERER_PORT: String(rendererDevPort),
+    LYRA_RENDERER_PORT: String(rendererPort),
     VITE_LYRA_DOCS_ENTRY_ADDRESS: docsServer.entryAddress
   };
   delete desktopEnv.ELECTRON_RUN_AS_NODE;

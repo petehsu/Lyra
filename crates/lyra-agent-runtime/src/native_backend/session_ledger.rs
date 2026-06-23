@@ -318,17 +318,34 @@ fn message_previews(session: &NativeSession) -> Vec<Value> {
 }
 
 fn message_text(message: &Value) -> String {
-    if let Some(text) = message.get("text").and_then(Value::as_str) {
-        return text.to_string();
+    // Prefer reconstructing from blocks: a tool-only assistant message carries an
+    // empty top-level `text` but real `tool` blocks, so an early return on `text`
+    // would record it as a fully empty ledger entry (charCount 0, empty hash).
+    // Tool blocks have no text field, so they get a placeholder — mirrors
+    // transcript_citations::extract_message_text.
+    if let Some(blocks) = message.get("blocks").and_then(Value::as_array) {
+        let mut parts = Vec::new();
+        for block in blocks {
+            match block.get("type").and_then(Value::as_str) {
+                Some("tool") => parts.push("[tool activity]".to_string()),
+                _ => {
+                    if let Some(text) = block.get("text").and_then(Value::as_str)
+                        && !text.is_empty()
+                    {
+                        parts.push(text.to_string());
+                    }
+                }
+            }
+        }
+        if !parts.is_empty() {
+            return parts.join("\n");
+        }
     }
     message
-        .get("blocks")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|block| block.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn redacted_text_value(text: &str) -> Value {

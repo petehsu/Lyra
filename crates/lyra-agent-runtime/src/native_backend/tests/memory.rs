@@ -1233,10 +1233,13 @@ fn model_request_includes_system_recall_without_llm_lookup() {
             "createdAt": now()
         }),
     );
+    let root = {
+        let state = state().lock().expect("state lock");
+        state.root.clone()
+    };
+    index_session_messages_for_recall(&root, &old_session).expect("index old session");
     {
         let mut state = state().lock().expect("state lock");
-        let root = state.root.clone();
-        index_session_messages_for_recall(&root, &old_session).expect("index old session");
         let session = state.sessions.get_mut(&session_id).expect("session");
         push_array(
             &mut session.snapshot,

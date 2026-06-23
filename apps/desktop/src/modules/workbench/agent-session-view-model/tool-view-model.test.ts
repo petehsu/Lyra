@@ -204,11 +204,10 @@ describe("agent tool family projection", () => {
     });
   });
 
-  test("projects filesystem write output into edit diff details", () => {
+  test("projects direct apply_patch output into edit diff details", () => {
     const call = toToolCall(tool({
-      toolPath: "/tools/filesystem/write_file",
-      domain: "filesystem",
-      operation: "write",
+      name: "apply_patch",
+      label: "Apply patch",
       rendererHint: "edit",
       status: "running",
       output: {
@@ -233,7 +232,119 @@ describe("agent tool family projection", () => {
       additions: 2,
       deletions: 1
     });
+
     if (call.details?.type !== "edit") return;
     expect(call.details.hunks[0]?.lines.some((line) => line.kind === "add")).toBe(true);
+  });
+
+  test("projects plan tools into plan cards", () => {
+    const call = toToolCall(tool({
+      id: "plan-tool-1",
+      name: "plan_write",
+      label: "Writing plan",
+      activityKind: "plan",
+      rendererHint: "plan",
+      input: { action: "write" },
+      output: {
+        raw: {
+          markdown: "# Plan\n\n- Build runtime support",
+          phase: "planning"
+        }
+      }
+    }));
+
+    expect(call.kind).toBe("plan");
+    expect(call.title).toBe("Writing plan");
+    expect(call.details).toEqual({
+      type: "text",
+      body: "# Plan\n\n- Build runtime support"
+    });
+  });
+
+  test("projects native file write content diff into edit details", () => {
+    const call = toToolCall(tool({
+      name: "file",
+      label: "Wrote file",
+      operation: "write",
+      output: {
+        content: [
+          "Wrote 测试/column-site/index.html",
+          "--- 测试/column-site/index.html",
+          "+++ 测试/column-site/index.html",
+          "@@ -0,0 +1 @@",
+          "+<!DOCTYPE html>"
+        ].join("\n")
+      }
+    }));
+
+    expect(call.kind).toBe("edit");
+    expect(call.details).toMatchObject({
+      type: "edit",
+      file: "测试/column-site/index.html",
+      additions: 1,
+      deletions: 0
+    });
+  });
+
+  test("projects write_file output into edit diff details", () => {
+    const call = toToolCall(tool({
+      name: "write_file",
+      label: "Write file",
+      status: "completed",
+      output: {
+        raw: {
+          changedFiles: [{ path: "index.html" }],
+          diff: ["--- index.html", "+++ index.html", "@@ -0,0 +1 @@", "+<!DOCTYPE html>"].join("\n")
+        }
+      }
+    }));
+    expect(call.kind).toBe("edit");
+    expect(call.details?.type).toBe("edit");
+  });
+
+  test("uses structured edit stats when final diff is artifacted", () => {
+    const call = toToolCall(tool({
+      name: "write_file",
+      label: "Write file",
+      status: "completed",
+      output: {
+        raw: {
+          kind: "tool_raw_ref",
+          changedFiles: [{
+            path: "column-site/index.html",
+            additions: 715,
+            deletions: 0
+          }],
+          diffArtifactRef: { artifactId: "diff-1" }
+        }
+      }
+    }));
+
+    expect(call.kind).toBe("edit");
+    expect(call.details).toMatchObject({
+      type: "edit",
+      file: "column-site/index.html",
+      additions: 715,
+      deletions: 0
+    });
+  });
+
+  test("classifies a streaming edit_file preview activity as an edit", () => {
+    // Preview activities arrive under /tools/runtime/edit_file with no domain.
+    const call = toToolCall(tool({
+      name: "edit_file",
+      label: "Edit file",
+      status: "running",
+      input: { path: "/tools/runtime/edit_file", args: { path: "a.ts" } },
+      output: {
+        raw: {
+          changedFiles: [{ path: "a.ts" }],
+          diff: ["--- a.ts", "+++ a.ts", "@@ -1 +1 @@", "-let x = 1;", "+let x = 2;"].join("\n"),
+          preview: true
+        }
+      }
+    }));
+    expect(call.kind).toBe("edit");
+    expect(call.details?.type).toBe("edit");
   });
 });
