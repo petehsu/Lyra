@@ -320,7 +320,24 @@ fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let (callback, snapshot, (plan, diff)) = update_session_plan(session_id, |session, root| {
-        let mut plan = current_plan(session)?;
+        let mut plan = current_plan(session).unwrap_or_else(|_| {
+            let scope_info = plan_scope_from_session(session);
+            json!({
+                "activePlanId": format!("plan-{}", Uuid::new_v4()),
+                "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+                "projectKey": scope_info.project_key,
+                "title": "Plan",
+                "phase": PLAN_PHASE_PLANNING,
+                "markdown": "",
+                "annotations": [],
+                "review": {
+                    "status": "none",
+                    "summary": Value::Null
+                },
+                "reason": "Agent started writing a plan without an explicit plan_begin call.",
+                "scope": Value::Null,
+            })
+        });
         let old = plan
             .get("markdown")
             .and_then(Value::as_str)

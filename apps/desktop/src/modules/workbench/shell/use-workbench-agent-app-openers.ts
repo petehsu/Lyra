@@ -7,6 +7,7 @@ import {
 } from "../agent-project-tree";
 import {
   createAgentPlanBoardAppRequest,
+  createAgentPlanBoardManagerAppRequest,
   type AgentPlanBoardModel
 } from "../agent-plan-board";
 import { createAgentGitAppRequest } from "../agent-git";
@@ -43,6 +44,11 @@ type OpenAgentPlanBoardRequest = {
   readonly sessionId: string;
   readonly plan: AgentPlanSnapshot;
   readonly projectTodo?: AgentProjectTodoSnapshot | null;
+};
+
+type OpenAgentProjectPlanManagerRequest = {
+  readonly sessionId: string;
+  readonly workingDir: string;
 };
 
 const resolvePathKind = async (
@@ -177,10 +183,37 @@ export const useWorkbenchAgentAppOpeners = ({
     tabsModel.openAppTab(nextApp);
   }, [agentPlanBoardModel, tabsModel]);
 
+  const onOpenAgentProjectPlanManager = useCallback((request: OpenAgentProjectPlanManagerRequest): void => {
+    const sessionId = request.sessionId.trim();
+    const workingDir = request.workingDir.trim();
+    if (sessionId.length === 0 || workingDir.length === 0) {
+      return;
+    }
+    const nextApp = createAgentPlanBoardManagerAppRequest(sessionId, workingDir, "Plans and Todos");
+    agentPlanBoardModel.ensureManagerInstance(nextApp.appInstanceId, {
+      agentSessionId: sessionId,
+      workingDir,
+      title: nextApp.title
+    });
+    const existingTab = tabsModel.tabs.find(
+      (tab) =>
+        tab.pageKind === "app" &&
+        tab.appId === nextApp.appId &&
+        tab.appInstanceId === nextApp.appInstanceId
+    );
+    if (existingTab !== undefined) {
+      tabsModel.updateAppTabMeta(nextApp);
+      tabsModel.setActiveTab(existingTab.id);
+      return;
+    }
+    tabsModel.openAppTab(nextApp);
+  }, [agentPlanBoardModel, tabsModel]);
+
   return {
     onOpenAgentProjectTree,
     onOpenAgentGit,
     onOpenAgentPlanBoard,
+    onOpenAgentProjectPlanManager,
     onRevealAgentProjectPath,
   };
 };

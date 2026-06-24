@@ -3861,6 +3861,184 @@
   font-size: var(--lyra-unit-12);
 }
 
+.lyra-agent-plan-board-error {
+  margin: var(--lyra-unit-12) var(--lyra-unit-28) 0;
+  padding: var(--lyra-unit-9) var(--lyra-unit-12);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-status-error) 42%, var(--lyra-app-border));
+  border-radius: var(--lyra-unit-8);
+  color: color-mix(in srgb, var(--lyra-status-error) 78%, var(--lyra-text-primary));
+  background: color-mix(in srgb, var(--lyra-status-error) 8%, var(--lyra-app-surface-bg));
+  font-size: var(--lyra-unit-12);
+}
+
+.lyra-agent-plan-board-manager {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(var(--lyra-unit-260), 0.34fr) minmax(0, 1fr);
+  gap: var(--lyra-unit-16);
+  padding: var(--lyra-unit-18) var(--lyra-unit-28) var(--lyra-unit-28);
+  overflow: hidden;
+}
+
+.lyra-agent-plan-board-manager-sidebar,
+.lyra-agent-plan-board-manager-detail {
+  min-height: 0;
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
+  border-radius: var(--lyra-unit-14);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 88%, var(--lyra-app-surface-bg) 12%);
+  overflow: hidden;
+}
+
+.lyra-agent-plan-board-manager-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.lyra-agent-plan-board-manager-detail {
+  overflow: auto;
+}
+
+.lyra-agent-plan-board-manager-detail > .lyra-agent-plan-board-empty {
+  padding: var(--lyra-unit-20);
+}
+
+.lyra-agent-plan-board-manager-detail-inner {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.lyra-agent-plan-board-manager-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-12) var(--lyra-unit-14);
+  border-bottom: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
+}
+
+.lyra-agent-plan-board-manager-toolbar h2 {
+  margin: 0;
+  font-size: var(--lyra-unit-13);
+  line-height: 1.2;
+}
+
+.lyra-agent-plan-board-manager-list {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-12);
+  overflow: auto;
+}
+
+.lyra-agent-plan-board-manager-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--lyra-unit-28);
+  gap: var(--lyra-unit-6);
+  align-items: stretch;
+}
+
+.lyra-agent-plan-board-manager-open {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--lyra-unit-4);
+  padding: var(--lyra-unit-10);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 42%, transparent);
+  border-radius: var(--lyra-unit-8);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 38%, transparent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lyra-agent-plan-board-manager-item.is-selected .lyra-agent-plan-board-manager-open,
+.lyra-agent-plan-board-manager-open:hover {
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-accent) 34%, var(--lyra-app-border));
+  background: color-mix(in srgb, var(--lyra-accent) 10%, var(--lyra-app-row-hover-bg) 34%);
+}
+
+.lyra-agent-plan-board-manager-open:disabled,
+.lyra-agent-plan-board-manager-delete:disabled,
+.lyra-agent-plan-board-manager-icon-btn:disabled,
+.lyra-agent-plan-board-manager-back:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.lyra-agent-plan-board-manager-title {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-unit-13);
+  line-height: 1.25;
+}
+
+.lyra-agent-plan-board-manager-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+  line-height: 1.25;
+}
+
+.lyra-agent-plan-board-manager-delete,
+.lyra-agent-plan-board-manager-icon-btn,
+.lyra-agent-plan-board-manager-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
+  color: var(--lyra-text-secondary);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 88%, transparent);
+  cursor: pointer;
+}
+
+.lyra-agent-plan-board-manager-delete,
+.lyra-agent-plan-board-manager-icon-btn {
+  width: var(--lyra-unit-28);
+  height: var(--lyra-unit-28);
+  padding: 0;
+  border-radius: var(--lyra-unit-999);
+}
+
+.lyra-agent-plan-board-manager-delete {
+  align-self: start;
+}
+
+.lyra-agent-plan-board-manager-delete:hover,
+.lyra-agent-plan-board-manager-icon-btn:hover,
+.lyra-agent-plan-board-manager-back:hover {
+  color: var(--lyra-text-primary);
+  border-color: color-mix(in srgb, var(--lyra-accent) 36%, var(--lyra-app-border));
+}
+
+.lyra-agent-plan-board-manager-back {
+  align-self: flex-start;
+  gap: var(--lyra-unit-6);
+  margin: var(--lyra-unit-12) var(--lyra-unit-16) 0;
+  min-height: var(--lyra-unit-30);
+  padding: 0 var(--lyra-unit-10);
+  border-radius: var(--lyra-unit-999);
+  font-size: var(--lyra-unit-12);
+}
+
+@media (max-width: 900px) {
+  .lyra-agent-plan-board-manager,
+  .lyra-agent-plan-board-main.has-todo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* -------- Rich text (markdown) -------- */
 
 .lyra-agents-plain-text {
@@ -7233,7 +7411,8 @@
 }
 
 .lyra-agents-project-dir-chip,
-.lyra-agents-project-location-chip {
+.lyra-agents-project-location-chip,
+.lyra-agents-project-plan-chip {
   flex: 0 1 auto;
   min-width: 0;
   display: inline-flex;
@@ -7254,19 +7433,22 @@
 }
 
 .lyra-agents-project-dir-chip:hover,
-.lyra-agents-project-location-chip:hover {
+.lyra-agents-project-location-chip:hover,
+.lyra-agents-project-plan-chip:hover {
   background: var(--lyra-app-row-hover-bg);
   color: var(--lyra-text-primary);
 }
 
 .lyra-agents-project-dir-chip:disabled,
-.lyra-agents-project-location-chip:disabled {
+.lyra-agents-project-location-chip:disabled,
+.lyra-agents-project-plan-chip:disabled {
   cursor: default;
   opacity: 0.72;
 }
 
 .lyra-agents-project-dir-chip:disabled:hover,
-.lyra-agents-project-location-chip:disabled:hover {
+.lyra-agents-project-location-chip:disabled:hover,
+.lyra-agents-project-plan-chip:disabled:hover {
   background: transparent;
   color: var(--lyra-text-muted);
 }
@@ -7280,7 +7462,8 @@
 }
 
 .lyra-agents-project-dir-chip-label,
-.lyra-agents-project-location-chip span {
+.lyra-agents-project-location-chip span,
+.lyra-agents-project-plan-chip span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7312,6 +7495,7 @@
 }
 
 .lyra-agents-project-dir-chip svg,
-.lyra-agents-project-location-chip svg {
+.lyra-agents-project-location-chip svg,
+.lyra-agents-project-plan-chip svg {
   flex: 0 0 auto;
 }

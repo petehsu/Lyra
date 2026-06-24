@@ -617,8 +617,10 @@ fn todo_model_tools() -> Vec<Value> {
                 "properties": {
                     "id": { "type": "string", "description": "Todo id to update." },
                     "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "failed", "skipped", "cancelled"] },
-                    "content": { "type": "string", "description": "Optional updated todo text." },
-                    "summary": { "type": "string", "description": "Optional short progress note." }
+                    "note": { "type": "string", "description": "Optional progress note for this todo." },
+                    "evidence": { "type": "string", "description": "Optional concise evidence or verification result." },
+                    "failureReason": { "type": "string", "description": "Required when marking failed or skipped if applicable." },
+                    "summary": { "type": "string", "description": "Deprecated alias for note." }
                 },
                 "required": ["id", "status"]
             }),

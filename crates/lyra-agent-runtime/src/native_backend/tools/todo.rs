@@ -64,6 +64,13 @@ pub(crate) fn tool_todo_write(session_id: &str, turn_id: &str, input: &Value) ->
         .enumerate()
         .map(|(index, todo)| normalize_todo_item(index, todo))
         .collect::<Result<Vec<_>, _>>()?;
+    if todos.is_empty() {
+        return Err(NativeToolFailure::new(
+            "empty_todo_list",
+            "todo_write requires a complete non-empty todo list.",
+            "Retry with every ordered step needed to complete the approved plan.",
+        ));
+    }
     let (callback, snapshot, project_todo) = {
         let mut state = state().lock().map_err(|_| {
             NativeToolFailure::new(
@@ -197,12 +204,18 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
         })?
         .to_string();
     let status = normalize_todo_status(input.get("status").and_then(Value::as_str).unwrap_or(""));
-    let content = input
-        .get("content")
+    let note = input
+        .get("note")
+        .or_else(|| input.get("summary"))
         .and_then(Value::as_str)
         .map(str::to_string);
-    let summary = input
-        .get("summary")
+    let evidence = input
+        .get("evidence")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let failure_reason = input
+        .get("failureReason")
+        .or_else(|| input.get("failure_reason"))
         .and_then(Value::as_str)
         .map(str::to_string);
     update_project_todo(session_id, turn_id, |todos| {
@@ -220,8 +233,14 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
             found = true;
             if let Some(object) = todo.as_object_mut() {
                 object.insert("status".to_string(), Value::String(status.clone()));
-                if let Some(content) = content.clone() {
-                    object.insert("content".to_string(), Value::String(content));
+                if let Some(note) = note.clone() {
+                    object.insert("note".to_string(), Value::String(note));
+                }
+                if let Some(evidence) = evidence.clone() {
+                    object.insert("evidence".to_string(), Value::String(evidence));
+                }
+                if let Some(failure_reason) = failure_reason.clone() {
+                    object.insert("failureReason".to_string(), Value::String(failure_reason));
                 }
             }
         }
@@ -232,7 +251,7 @@ pub(crate) fn tool_todo_update(session_id: &str, turn_id: &str, input: &Value) -
                 "Retry with an id from the current todo list.",
             ));
         }
-        Ok((todo_list_status(todos), summary))
+        Ok((todo_list_status(todos), note))
     })
 }
 

@@ -29,6 +29,7 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
     readonly workingDir: string;
   }) => Promise<void> | void;
   readonly onOpenPlanBoard: NonNullable<AiPanelSurfaceProps["onOpenPlanBoard"]>;
+  readonly onOpenProjectPlanManager: NonNullable<AiPanelSurfaceProps["onOpenProjectPlanManager"]>;
   readonly onRevealProjectPath: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -69,6 +70,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onRequestProjectBind,
   onOpenProjectTree,
   onOpenPlanBoard,
+  onOpenProjectPlanManager,
   onRevealProjectPath,
   onOpenModelSettings,
   onOpenUrlInWorkbench,
@@ -96,6 +98,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onRequestProjectBind,
       onOpenProjectTree,
       onOpenPlanBoard,
+      onOpenProjectPlanManager,
       onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,
@@ -120,6 +123,7 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onRequestProjectBind,
       onOpenProjectTree,
       onOpenPlanBoard,
+      onOpenProjectPlanManager,
       onRevealProjectPath,
       onOpenModelSettings,
       onOpenUrlInWorkbench,

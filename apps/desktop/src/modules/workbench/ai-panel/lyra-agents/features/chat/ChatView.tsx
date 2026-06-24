@@ -15,7 +15,7 @@ import {
   useState,
   type MouseEvent
 } from "react";
-import { ArrowDown, CornerUpLeft, Copy, Link2, MapPin, Undo2 } from "lucide-react";
+import { ArrowDown, BookText, CornerUpLeft, Copy, Link2, MapPin, Undo2 } from "lucide-react";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import type { ChatMessage } from "../../core/types";
@@ -114,6 +114,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     session,
     bindProject,
     openProjectTree,
+    openProjectPlanManager,
     addCitationToComposer,
     pendingCitation,
     pendingCitationNonce,
@@ -805,6 +806,19 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             onChooseProject={bindProject}
             onOpenProjectTree={openProjectTree}
           />
+          {session.projectBound && !session.workingDirIsHome ? (
+            <AppButton
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="lyra-agents-project-plan-chip"
+              aria-label={t("header.openProjectPlanManager")}
+              title={t("header.openProjectPlanManager")}
+              onClick={() => { void openProjectPlanManager(); }}
+            >
+              <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
+            </AppButton>
+          ) : null}
           {locationControls !== null && locationControls !== undefined ? (
             <AppButton
               variant="ghost"

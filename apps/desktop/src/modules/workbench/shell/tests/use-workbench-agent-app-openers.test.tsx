@@ -27,6 +27,10 @@ const createProjectTreeModel = (): AgentProjectTreeModel => ({
 const createPlanBoardModel = (): AgentPlanBoardModel => ({
   getState: vi.fn(() => null),
   ensureInstance: vi.fn(),
+  ensureManagerInstance: vi.fn(),
+  refreshManager: vi.fn().mockResolvedValue(undefined),
+  openManagedPlan: vi.fn().mockResolvedValue(undefined),
+  deleteManagedPlan: vi.fn().mockResolvedValue(undefined),
   revisePlan: vi.fn().mockResolvedValue(undefined),
   syncTabInstances: vi.fn(),
 });
@@ -113,5 +117,41 @@ describe("useWorkbenchAgentAppOpeners", () => {
       "/project/src"
     );
     expect(agentProjectTreeModel.openFile).not.toHaveBeenCalled();
+  });
+
+  test("opens the project plan manager in its own workspace app instance", () => {
+    const tabsModel = createTabsModel();
+    const agentProjectTreeModel = createProjectTreeModel();
+    const agentPlanBoardModel = createPlanBoardModel();
+
+    const { result } = renderHook(() =>
+      useWorkbenchAgentAppOpeners({
+        desktopApi: null,
+        tabsModel,
+        agentProjectTreeModel,
+        agentPlanBoardModel,
+      })
+    );
+
+    act(() => {
+      result.current.onOpenAgentProjectPlanManager({
+        sessionId: "session-1",
+        workingDir: "/project",
+      });
+    });
+
+    expect(agentPlanBoardModel.ensureManagerInstance).toHaveBeenCalledWith(
+      "agent-plan-board-manager-session-1-project",
+      {
+        agentSessionId: "session-1",
+        workingDir: "/project",
+        title: "Plans and Todos",
+      }
+    );
+    expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
+      appId: "agent-plan-board",
+      appInstanceId: "agent-plan-board-manager-session-1-project",
+      title: "Plans and Todos",
+    }));
   });
 });

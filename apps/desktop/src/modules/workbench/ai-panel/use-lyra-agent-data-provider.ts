@@ -391,6 +391,10 @@ type LyraAgentDataProviderCallbacks = {
     readonly plan: AgentPlanSnapshot;
     readonly projectTodo?: AgentProjectTodoSnapshot | null;
   }) => Promise<void> | void) | undefined;
+  readonly onOpenProjectPlanManager?: ((request: {
+    readonly sessionId: string;
+    readonly workingDir: string;
+  }) => Promise<void> | void) | undefined;
   readonly onRevealProjectPath?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
@@ -446,6 +450,7 @@ export const useLyraAgentDataProvider = (
     onUpdateDraftWorkingDir,
     onOpenProjectTree,
     onOpenPlanBoard,
+    onOpenProjectPlanManager,
     onRevealProjectPath,
     onOpenModelSettings,
     onOpenUrlInWorkbench,
@@ -1281,6 +1286,27 @@ export const useLyraAgentDataProvider = (
     });
   }, [onOpenPlanBoard, state.session]);
 
+  const openProjectPlanManager = useCallback(async (): Promise<void> => {
+    if (
+      state.session?.projectBound !== true ||
+      state.session.workingDirIsHome === true ||
+      typeof state.session.workingDir !== "string" ||
+      state.session.workingDir.trim().length === 0
+    ) {
+      return;
+    }
+    await onOpenProjectPlanManager?.({
+      sessionId: state.session.id,
+      workingDir: state.session.workingDir
+    });
+  }, [
+    onOpenProjectPlanManager,
+    state.session?.id,
+    state.session?.projectBound,
+    state.session?.workingDir,
+    state.session?.workingDirIsHome
+  ]);
+
   const respondPlanReview = useCallback(async (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null
@@ -1803,6 +1829,7 @@ export const useLyraAgentDataProvider = (
       revealPathInWorkbench,
       openPlanReview,
       openProjectTodo,
+      openProjectPlanManager,
       respondPlanReview,
       openTerminalLiveSession,
       openImageInWorkbench,
@@ -1873,6 +1900,7 @@ export const useLyraAgentDataProvider = (
     openFileInWorkbench,
     openPlanReview,
     openProjectTodo,
+    openProjectPlanManager,
     revealPathInWorkbench,
     respondPlanReview,
     openTerminalLiveSession,

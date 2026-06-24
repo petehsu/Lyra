@@ -1,5 +1,6 @@
 import type {
   AgentPlanAnnotation,
+  AgentProjectPlanSummary,
   AgentPlanSnapshot,
   AgentProjectTodoSnapshot
 } from "../../../shared/agent";
@@ -18,19 +19,45 @@ export type AgentPlanBoardLabels = {
   readonly currentStep: string;
   readonly editLine: string;
   readonly commentLine: string;
+  readonly manager: string;
+  readonly openPlan: string;
+  readonly deletePlan: string;
+  readonly noPlans: string;
+  readonly updated: string;
+  readonly loading: string;
+  readonly refresh: string;
   readonly save: string;
   readonly cancel: string;
   readonly commentPlaceholder: string;
   readonly editPlaceholder: string;
 };
 
-export type AgentPlanBoardAppState = {
+export type AgentPlanBoardDetailState = {
+  readonly mode: "detail";
   readonly instanceId: string;
   readonly agentSessionId: string;
   readonly title: string;
   readonly plan: AgentPlanSnapshot;
   readonly projectTodo: AgentProjectTodoSnapshot | null;
 };
+
+export type AgentPlanBoardManagerState = {
+  readonly mode: "manager";
+  readonly instanceId: string;
+  readonly agentSessionId: string;
+  readonly workingDir: string;
+  readonly title: string;
+  readonly projectKey: string | null;
+  readonly plans: readonly AgentProjectPlanSummary[];
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly selectedPlan: AgentPlanSnapshot | null;
+  readonly selectedProjectTodo: AgentProjectTodoSnapshot | null;
+};
+
+export type AgentPlanBoardAppState =
+  | AgentPlanBoardDetailState
+  | AgentPlanBoardManagerState;
 
 export type AgentPlanBoardRevisionRequest = {
   readonly markdown: string;
@@ -50,6 +77,17 @@ export type AgentPlanBoardModel = {
       readonly projectTodo?: AgentProjectTodoSnapshot | null;
     }
   ) => void;
+  readonly ensureManagerInstance: (
+    instanceId: string,
+    options: {
+      readonly agentSessionId: string;
+      readonly workingDir: string;
+      readonly title?: string;
+    }
+  ) => void;
+  readonly refreshManager: (instanceId: string) => Promise<void>;
+  readonly openManagedPlan: (instanceId: string, planId: string) => Promise<void>;
+  readonly deleteManagedPlan: (instanceId: string, planId: string) => Promise<void>;
   readonly revisePlan: (
     instanceId: string,
     request: AgentPlanBoardRevisionRequest
@@ -60,5 +98,8 @@ export type AgentPlanBoardModel = {
 export type AgentPlanBoardSurfaceProps = {
   readonly labels: AgentPlanBoardLabels;
   readonly state: AgentPlanBoardAppState;
+  readonly onOpenManagedPlan?: (planId: string) => Promise<void>;
+  readonly onDeleteManagedPlan?: (planId: string) => Promise<void>;
+  readonly onRefreshManager?: () => Promise<void>;
   readonly onRevisePlan?: (request: AgentPlanBoardRevisionRequest) => Promise<void>;
 };

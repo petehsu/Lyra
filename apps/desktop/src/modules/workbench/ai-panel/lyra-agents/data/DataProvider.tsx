@@ -124,6 +124,9 @@ export interface DataProviderValue {
   /** Open or focus the plan/todo workspace surface for the active project todo. */
   openProjectTodo(): Promise<void>;
 
+  /** Open or focus the project-scoped Plan/Todo manager. */
+  openProjectPlanManager(): Promise<void>;
+
   /** Approve, reject, or request revision for the active plan. */
   respondPlanReview(action: AgentPlanReviewRespondAction, feedback?: string | null): Promise<void>;
 

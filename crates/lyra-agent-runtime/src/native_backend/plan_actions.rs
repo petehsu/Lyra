@@ -137,7 +137,12 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
         .or_else(|| string_opt(&payload, "resolution"))
         .ok_or_else(|| AgentRuntimeError::Core("action is required".to_string()))?;
     let feedback = string_opt(&payload, "feedback");
-    let (callback, snapshot, plan, resolution) = {
+    let should_continue = payload
+        .get("continue")
+        .or_else(|| payload.get("resume"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let (callback, snapshot, plan, resolution, continuation) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -152,21 +157,31 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             .filter(|value| value.is_object())
             .cloned()
             .ok_or_else(|| AgentRuntimeError::Core("no active plan to review".to_string()))?;
-        let resolution = match action.as_str() {
+        let (resolution, continuation) = match action.as_str() {
             "approve" | "approved" => {
                 plan["phase"] = Value::String(PLAN_PHASE_TODO_REQUIRED.to_string());
                 plan["review"] = json!({ "status": "approved", "summary": feedback });
-                "approved"
+                (
+                    "approved",
+                    Some(PlanReviewContinuation::Approved {
+                        feedback: feedback.clone(),
+                    }),
+                )
             }
             "reject" | "rejected" => {
                 plan["phase"] = Value::String(PLAN_PHASE_REJECTED.to_string());
                 plan["review"] = json!({ "status": "rejected", "summary": feedback });
-                "rejected"
+                ("rejected", None)
             }
             "request_revision" | "revise" | "revision" => {
                 plan["phase"] = Value::String(PLAN_PHASE_PLANNING.to_string());
                 plan["review"] = json!({ "status": "changed", "summary": feedback });
-                "revise"
+                (
+                    "revise",
+                    Some(PlanReviewContinuation::Revision {
+                        feedback: feedback.clone(),
+                    }),
+                )
             }
             other => {
                 return Err(AgentRuntimeError::Core(format!(
@@ -181,7 +196,13 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;
-        (callback, snapshot, plan, resolution.to_string())
+        (
+            callback,
+            snapshot,
+            plan,
+            resolution.to_string(),
+            continuation,
+        )
     };
     emit_with_callback(
         &callback,
@@ -207,7 +228,74 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             "snapshot": snapshot,
         }),
     );
-    Ok(snapshot)
+    let mut response_snapshot = snapshot;
+    if should_continue && let Some(continuation) = continuation {
+        resume_plan_review_continuation(&session_id, &response_snapshot, continuation)?;
+        response_snapshot = current_session_snapshot(&session_id)?;
+    }
+    Ok(response_snapshot)
+}
+
+#[derive(Clone, Debug)]
+enum PlanReviewContinuation {
+    Approved { feedback: Option<String> },
+    Revision { feedback: Option<String> },
+}
+
+fn resume_plan_review_continuation(
+    session_id: &str,
+    snapshot: &Value,
+    continuation: PlanReviewContinuation,
+) -> AgentRuntimeResult<Value> {
+    let plan = snapshot
+        .get("plan")
+        .filter(|value| value.is_object())
+        .ok_or_else(|| AgentRuntimeError::Core("approved plan snapshot is missing".to_string()))?;
+    let plan_id = plan
+        .get("activePlanId")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown-plan");
+    let version_id = plan
+        .get("activeVersionId")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown-version");
+    let title = plan.get("title").and_then(Value::as_str).unwrap_or("Plan");
+    let markdown = plan
+        .get("markdown")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let annotations = plan
+        .get("annotations")
+        .filter(|value| value.is_array())
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    let instruction = match continuation {
+        PlanReviewContinuation::Approved { feedback } => format!(
+            "Runtime continuation: the user approved Plan {plan_id}/{version_id} ({title}). Before executing anything, call todo_write with a complete ordered todo list derived from the approved plan. Do not call mutation tools until todo_write succeeds.\n\nApproved plan markdown:\n{markdown}\n\nUser approval note: {}",
+            feedback.unwrap_or_else(|| "none".to_string())
+        ),
+        PlanReviewContinuation::Revision { feedback } => format!(
+            "Runtime continuation: the user edited or annotated Plan {plan_id}/{version_id} ({title}). Rewrite or improve the plan using plan_write, then call plan_finalize again. Do not execute the task yet.\n\nCurrent plan markdown:\n{markdown}\n\nCurrent annotations:\n{}\n\nUser feedback: {}",
+            serde_json::to_string_pretty(&annotations).unwrap_or_else(|_| "[]".to_string()),
+            feedback.unwrap_or_else(|| "none".to_string())
+        ),
+    };
+    send_turn(json!({
+        "sessionId": session_id,
+        "text": instruction,
+        "uiHidden": true
+    }))
+}
+
+fn current_session_snapshot(session_id: &str) -> AgentRuntimeResult<Value> {
+    let state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    state
+        .sessions
+        .get(session_id)
+        .map(|session| session.snapshot.clone())
+        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))
 }
 
 fn resolve_working_dir(state: &NativeRuntimeState, payload: &Value) -> AgentRuntimeResult<String> {

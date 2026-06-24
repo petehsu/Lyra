@@ -437,13 +437,66 @@ fn plan_review_approve_sets_todo_required_phase() {
             json!({
                 "sessionId": session_id,
                 "action": "approve",
-                "feedback": "Ship it"
+                "feedback": "Ship it",
+                "continue": false
             }),
         )
         .expect("approve plan");
 
     assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_TODO_REQUIRED);
     assert_eq!(reviewed["plan"]["review"]["status"], "approved");
+}
+
+#[test]
+fn plan_write_without_begin_creates_draft_plan() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Implicit Plan Draft Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+    let started_at = now();
+
+    let written = execute_plan_tool_adapter(
+        &session_id,
+        &turn_id,
+        &cancellation,
+        "tool-plan-write-implicit",
+        PLAN_WRITE_MODEL_TOOL,
+        "write",
+        json!({
+            "markdownDelta": "# Implicit Plan\n\n- Draft from first write\n"
+        }),
+        &started_at,
+    );
+
+    assert_eq!(written["raw"]["activityKind"], "plan");
+    assert_eq!(written["raw"]["phase"], PLAN_PHASE_PLANNING);
+    assert!(
+        written["raw"]["planId"]
+            .as_str()
+            .is_some_and(|plan_id| plan_id.starts_with("plan-"))
+    );
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    assert_eq!(session.snapshot["plan"]["title"], "Plan");
+    assert_eq!(session.snapshot["plan"]["phase"], PLAN_PHASE_PLANNING);
 }
 
 #[test]
@@ -521,6 +574,61 @@ fn todo_write_after_plan_approval_creates_project_todo_and_executes_phase() {
 }
 
 #[test]
+fn todo_write_rejects_empty_project_todo_list() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let plan_id = format!("plan-{}", Uuid::new_v4());
+    let version_id = format!("plan-version-{}", Uuid::new_v4());
+    let mut session = new_session(
+        Some("Empty Project Todo Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": plan_id,
+        "activeVersionId": version_id,
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Approved plan",
+        "phase": PLAN_PHASE_TODO_REQUIRED,
+        "markdown": "# Plan\n\n- Build runtime support\n",
+        "annotations": [],
+        "review": { "status": "approved", "summary": "Approved" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = {
+        let state = state().lock().expect("state lock");
+        state
+            .active_cancellations
+            .get(&turn_id)
+            .expect("active cancellation")
+            .clone()
+    };
+
+    let output = execute_model_tool_with_runtime(
+        &session_id,
+        &turn_id,
+        &None,
+        &cancellation,
+        ToolExecutionRuntime::default(),
+        ModelToolCall {
+            id: "tool-empty-todo-write".to_string(),
+            name: TODO_WRITE_MODEL_TOOL.to_string(),
+            arguments: json!({
+                "todos": []
+            }),
+        },
+    );
+
+    assert_eq!(output["error"]["code"], "empty_todo_list");
+}
+
+#[test]
 fn todo_update_and_finish_update_project_todo() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
@@ -580,11 +688,25 @@ fn todo_update_and_finish_update_project_todo() {
             arguments: json!({
                 "id": "runtime",
                 "status": "completed",
-                "summary": "Runtime done"
+                "summary": "Runtime done",
+                "content": "This should not mutate todo content.",
+                "evidence": "cargo test passed"
             }),
         },
     );
     assert_eq!(updated["raw"]["projectTodo"]["currentIndex"], 1);
+    assert_eq!(
+        updated["raw"]["projectTodo"]["todos"][0]["content"],
+        "Implement runtime support"
+    );
+    assert_eq!(
+        updated["raw"]["projectTodo"]["todos"][0]["note"],
+        "Runtime done"
+    );
+    assert_eq!(
+        updated["raw"]["projectTodo"]["todos"][0]["evidence"],
+        "cargo test passed"
+    );
 
     let finished = execute_model_tool_with_runtime(
         &session_id,

@@ -54,6 +54,7 @@ export interface CreateDataProviderValueInput {
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
   openPlanReview?: (plan: AgentPlanSnapshot) => Promise<void>;
   openProjectTodo?: () => Promise<void>;
+  openProjectPlanManager?: () => Promise<void>;
   respondPlanReview?: (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null
@@ -150,6 +151,7 @@ export function createDataProviderValue({
   revealPathInWorkbench = () => resolved,
   openPlanReview = () => resolved,
   openProjectTodo = () => resolved,
+  openProjectPlanManager = () => resolved,
   respondPlanReview = () => resolved,
   openTerminalLiveSession = () => resolved,
   openImageInWorkbench = () => resolved,
@@ -229,6 +231,7 @@ export function createDataProviderValue({
     revealPathInWorkbench,
     openPlanReview,
     openProjectTodo,
+    openProjectPlanManager,
     respondPlanReview,
     openTerminalLiveSession,
     openImageInWorkbench,

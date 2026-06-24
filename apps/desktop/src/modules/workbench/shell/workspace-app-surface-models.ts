@@ -174,6 +174,12 @@ export const createAppSurfaceRenderModel = (
       props: {
         labels: context.agentPlanBoardLabels,
         state,
+        onOpenManagedPlan: (planId) =>
+          context.agentPlanBoardModel.openManagedPlan(appInstanceId, planId),
+        onDeleteManagedPlan: (planId) =>
+          context.agentPlanBoardModel.deleteManagedPlan(appInstanceId, planId),
+        onRefreshManager: () =>
+          context.agentPlanBoardModel.refreshManager(appInstanceId),
         onRevisePlan: (request) =>
           context.agentPlanBoardModel.revisePlan(appInstanceId, request)
       }
