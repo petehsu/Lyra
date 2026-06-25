@@ -13,6 +13,32 @@ const NO_PROXY_ENV_VARS: &[&str] = &["NO_PROXY", "no_proxy"];
 
 const PROVIDER_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const PROVIDER_NON_STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
+/// Per-operation idle timeout applied to every streaming read. A provider that
+/// keeps the TCP connection open but stops sending bytes (a transient route
+/// hiccup, e.g. the mimo token-plan lines) would otherwise block
+/// `reader.lines()` forever — no error, no cancellation, no retry, the agent
+/// just hangs. In `reqwest::blocking`, `.timeout()` is a *per read/write
+/// operation* budget (not a whole-request deadline): each `read()` on the
+/// streaming body gets a fresh window of this length. So a 90s value lets long
+/// generations run indefinitely (each arriving chunk resets the clock) while
+/// guaranteeing a stalled stream surfaces a timeout within 90s. That timeout is
+/// classified as `ProviderTransportKind::Timeout` (see
+/// `classify_reqwest_transport`), which the streaming safe-retry /
+/// non-streaming fallback in `call_model_once_inner` recovers from.
+const PROVIDER_STREAMING_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Resolve the streaming per-operation idle timeout, honoring a
+/// `LYRA_PROVIDER_STREAMING_IDLE_TIMEOUT_MS` override (milliseconds). Tests use a
+/// small override so the idle-timeout recovery paths can be exercised without
+/// waiting the full production budget.
+fn streaming_idle_timeout() -> Duration {
+    if let Ok(raw) = std::env::var("LYRA_PROVIDER_STREAMING_IDLE_TIMEOUT_MS") {
+        if let Ok(ms) = raw.trim().parse::<u64>() {
+            return Duration::from_millis(ms);
+        }
+    }
+    PROVIDER_STREAMING_IDLE_TIMEOUT
+}
 
 pub(crate) fn http_client_builder(timeout: Duration) -> reqwest::blocking::ClientBuilder {
     reqwest::blocking::Client::builder().timeout(timeout)
@@ -21,10 +47,13 @@ pub(crate) fn http_client_builder(timeout: Duration) -> reqwest::blocking::Clien
 pub(crate) fn provider_http_client_builder(streaming: bool) -> reqwest::blocking::ClientBuilder {
     let builder = reqwest::blocking::Client::builder().connect_timeout(PROVIDER_CONNECT_TIMEOUT);
     if streaming {
-        // SSE/code-generation turns can legitimately run for minutes. Do not set
-        // reqwest's whole-request timeout here: it includes the full response body
-        // and cuts long streams at a fixed wall-clock boundary.
-        builder
+        // Per-operation idle timeout for streaming reads (see
+        // PROVIDER_STREAMING_IDLE_TIMEOUT). This is NOT a whole-request
+        // deadline: reqwest::blocking applies it per read(), so a long-lived
+        // stream that keeps delivering chunks is never cut off, while a stalled
+        // connection is bounded and surfaces a transport Timeout that the
+        // caller can safely retry / fall back from.
+        builder.timeout(streaming_idle_timeout())
     } else {
         builder.timeout(PROVIDER_NON_STREAMING_TIMEOUT)
     }

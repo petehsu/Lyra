@@ -19,7 +19,6 @@ export type SettingsFieldId =
   | "preventSleep"
   | "theme"
   | "uiStyle"
-  | "forceWebPageTheming"
   | "splitTriggerMode"
   | "splitThreePaneLayout"
   | "splitOverflowPolicy"
@@ -89,7 +88,6 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "aiStopBehaviorLabel"
   | "preventSleepLabel"
   | "jsReplLabel"
-  | "forceWebPageThemingLabel"
   | "searchCategoryLabel"
   | "searchWebEnginesLabel"
   | "searchSearxngEndpointLabel"
@@ -126,7 +124,6 @@ export const createWorkbenchSettingsSchema = (
     createField("preventSleep", "general", props.preventSleepLabel, "boolean-choice"),
     createField("theme", "appearance", props.themeLabel, "choice"),
     createField("uiStyle", "appearance", props.uiStyleLabel, "choice", props.uiStyleOptions.length > 1),
-    createField("forceWebPageTheming", "appearance", props.forceWebPageThemingLabel, "boolean-choice"),
     createField("splitTriggerMode", "workspace", props.splitTriggerModeLabel, "choice"),
     createField("splitThreePaneLayout", "workspace", props.splitThreePaneLayoutLabel, "choice"),
     createField("splitOverflowPolicy", "workspace", props.splitOverflowPolicyLabel, "choice"),

@@ -663,20 +663,42 @@ fn streaming_parser_rejects_reasoning_only_reply_for_retry() {
 
 #[test]
 fn provider_transport_errors_are_not_api_key_or_retryable_errors() {
-    let transport = AgentRuntimeError::Core("request or response body error".to_string());
+    let transport = AgentRuntimeError::ProviderTransport {
+        kind: crate::ProviderTransportKind::Other,
+        detail: "request or response body error".to_string(),
+    };
     assert!(is_provider_transport_error(&transport));
     assert!(!is_retryable_provider_error(&transport));
     assert!(!is_provider_configuration_error(&transport));
 
-    let sending = AgentRuntimeError::Core(
-        "error sending request for url (https://example.test/v1/chat/completions)".to_string(),
-    );
+    let sending = AgentRuntimeError::ProviderTransport {
+        kind: crate::ProviderTransportKind::Connect,
+        detail: "error sending request for url (https://example.test/v1/chat/completions)"
+            .to_string(),
+    };
     assert!(is_provider_transport_error(&sending));
     assert!(!is_retryable_provider_error(&sending));
 
     let auth = AgentRuntimeError::Core("provider request failed with status 401".to_string());
     assert!(is_provider_configuration_error(&auth));
     assert!(!is_provider_transport_error(&auth));
+}
+
+#[test]
+fn streamed_body_decode_failure_is_classified_as_transport_not_retryable() {
+    // Regression: a mid-stream SSE read that fails (reqwest's "error decoding
+    // response body" family) used to flatten into a `Core(String)` and leak to the
+    // user as the assistant reply. It is now captured at the IO boundary as a typed
+    // `ProviderTransport { StreamInterrupted }`, classified by variant — not by
+    // matching message text — as transport, non-retryable, and non-config.
+    let interrupted = AgentRuntimeError::ProviderTransport {
+        kind: crate::ProviderTransportKind::StreamInterrupted,
+        detail: "provider streaming response body read failed: error decoding response body"
+            .to_string(),
+    };
+    assert!(is_provider_transport_error(&interrupted));
+    assert!(!is_retryable_provider_error(&interrupted));
+    assert!(!is_provider_configuration_error(&interrupted));
 }
 
 #[test]
@@ -763,6 +785,415 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
     assert!(message.contains("provider streaming transport failed"));
     assert!(message.contains("non-streaming fallback was not attempted"));
     server.join().expect("server join");
+}
+
+#[test]
+fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
+    // A transport failure that strikes before the first committed increment
+    // (here: the provider closes the connection immediately after the 200
+    // headers, before any SSE delta) must be safely replayed instead of
+    // failing the turn. The second attempt returns a normal stream.
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Stream Safe Retry Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let attempts_for_server = attempts.clone();
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+    let server = thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept streaming provider request");
+            let _ = read_http_json_body(&mut stream);
+            let n = attempts_for_server.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                // Send a 200 with a non-committing SSE chunk (empty choices —
+                // map_provider_stream_chunk returns without committing), then a
+                // content-length longer than the body so the body read fails
+                // mid-stream. Nothing was committed, so replaying is safe.
+                let body = "data: {\"choices\":[]}\n\n";
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len() + 4096,
+                    body
+                )
+                .expect("write truncated non-committing stream");
+                drop(stream);
+            } else {
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Recovered.\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+                    "data: [DONE]\n\n",
+                );
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write recovered stream");
+            }
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            enabled: true,
+        }],
+    };
+
+    let reply = call_model_once(
+        &session_id,
+        &turn_id,
+        &provider,
+        "test-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+        &model_capabilities(&provider, "test-model"),
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap_or_else(|error| {
+        let captured = events
+            .lock()
+            .expect("events lock")
+            .iter()
+            .filter(|event| {
+                event.get("kind").and_then(Value::as_str) == Some("providerProtocolEvent")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        panic!("safe retry should recover the turn: {error}\nattempts={}\nevents={captured:#?}",
+            attempts.load(Ordering::SeqCst));
+    });
+
+    assert_eq!(reply.content.as_deref(), Some("Recovered."));
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    server.join().expect("server join");
+    backend.clear_event_callback();
+}
+
+#[test]
+fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
+    // Streaming fails on every attempt (server truncates a non-committing SSE
+    // chunk), so safe-retry exhausts and the turn falls back to a single
+    // non-streaming request that succeeds. Asserts: reply is the non-streaming
+    // content, and a `stream:false` request was actually issued.
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Stream Fallback Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let requests_for_server = requests.clone();
+    let server = thread::spawn(move || {
+        // MAX_STREAM_TRANSPORT_RETRIES=2 ⇒ up to 3 streaming attempts, then 1
+        // non-streaming fallback. Accept a few streaming conns then one non-streaming.
+        for index in 0..=3 {
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            requests_for_server.lock().expect("requests").push(request.clone());
+            if index < 3 {
+                // Streaming attempt: non-committing chunk + truncated body ⇒ transport error.
+                let body = "data: {\"choices\":[]}\n\n";
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len() + 4096,
+                    body
+                )
+                .expect("write truncated stream");
+                drop(stream);
+            } else {
+                // Non-streaming fallback: full JSON response.
+                let body = json!({
+                    "choices": [{
+                        "message": { "role": "assistant", "content": "Non-streamed recovery." },
+                        "finish_reason": "stop"
+                    }]
+                })
+                .to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write non-streaming fallback");
+            }
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            enabled: true,
+        }],
+    };
+
+    let reply = call_model_once(
+        &session_id,
+        &turn_id,
+        &provider,
+        "test-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+        &model_capabilities(&provider, "test-model"),
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("fallback should recover the turn via non-streaming");
+
+    assert_eq!(reply.content.as_deref(), Some("Non-streamed recovery."));
+    let captured = requests.lock().expect("requests").clone();
+    // The last request must be the non-streaming fallback (stream == false).
+    let last = captured.last().expect("at least one request");
+    assert_eq!(last["stream"], json!(false), "expected non-streaming fallback request, got {last}");
+    server.join().expect("server join");
+    backend.clear_event_callback();
+}
+
+#[test]
+fn committed_stream_does_not_fall_back_to_non_streaming() {
+    // Streaming commits a partial assistant delta ("partial") then truncates. Since
+    // something was committed, the turn must NOT fall back to non-streaming (that
+    // would re-emit the full text and duplicate the committed delta). It fails with
+    // the transport error, and crucially no non-streaming request is issued.
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Committed No-Fallback Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let requests = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let requests_for_server = requests.clone();
+    let server = thread::spawn(move || {
+        // Only streaming attempts are expected; no non-streaming fallback.
+        for _ in 0..3 {
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept provider request");
+            let request = read_http_json_body(&mut stream);
+            requests_for_server.lock().expect("requests").push(request);
+            // Commit a partial delta, then truncate (content-length > body).
+            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len() + 4096,
+                body
+            )
+            .expect("write truncated committed stream");
+            drop(stream);
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            enabled: true,
+        }],
+    };
+
+    let error = call_model_once(
+        &session_id,
+        &turn_id,
+        &provider,
+        "test-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+        &model_capabilities(&provider, "test-model"),
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect_err("committed stream must fail, not fall back");
+    let message = error.to_string();
+    assert!(
+        message.contains("provider streaming transport failed"),
+        "expected transport-failure message, got: {message}"
+    );
+    // No non-streaming request should have been issued: every captured request
+    // is a streaming one.
+    let captured = requests.lock().expect("requests").clone();
+    assert!(
+        captured.iter().all(|r| r["stream"] == json!(true)),
+        "committed stream must not trigger a non-streaming fallback request: {captured:?}"
+    );
+    server.join().expect("server join");
+    backend.clear_event_callback();
+}
+
+#[test]
+fn running_tool_marked_failed_on_transport_failure() {
+    // When a streaming turn that had a running tool fails irrecoverably (committed
+    // partial state), the tool is finalized as `failed` rather than left `running`
+    // — so the next round reports "[Tool failed.]" instead of "[Tool did not
+    // finish; omitting output from provider context.]".
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tool Finalize On Transport Fail Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    // Seed a running tool for this turn so the finalizer has something to close.
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        let tools = session
+            .snapshot
+            .get("tools")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut tools = tools;
+        tools.push(json!({
+            "id": "tool-running-1",
+            "name": "write_file",
+            "status": "running",
+            "input": { "toolOperation": { "runtimeTurnId": turn_id } },
+        }));
+        session.snapshot["tools"] = Value::Array(tools);
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener
+                .accept()
+                .expect("accept provider request");
+            let _ = read_http_json_body(&mut stream);
+            // Commit a partial delta then truncate → irrecoverable (committed) failure.
+            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len() + 4096,
+                body
+            )
+            .expect("write truncated stream");
+            drop(stream);
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: false,
+            supports_streaming: true,
+            enabled: true,
+        }],
+    };
+
+    let _ = call_model_once(
+        &session_id,
+        &turn_id,
+        &provider,
+        "test-model",
+        &[json!({ "role": "user", "content": "hello" })],
+        &[],
+        &model_capabilities(&provider, "test-model"),
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect_err("expected transport failure");
+    server.join().expect("server join");
+
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    let tools = session
+        .snapshot
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("tools array");
+    let tool = tools
+        .iter()
+        .find(|t| t["id"] == "tool-running-1")
+        .expect("seeded tool present");
+    assert_eq!(
+        tool["status"].as_str(),
+        Some("failed"),
+        "running tool must be finalized as failed on transport failure, got {tool}"
+    );
+    backend.clear_event_callback();
 }
 
 #[test]

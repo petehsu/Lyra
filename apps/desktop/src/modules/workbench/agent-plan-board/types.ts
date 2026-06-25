@@ -4,9 +4,18 @@ import type {
   AgentPlanSnapshot,
   AgentProjectTodoSnapshot
 } from "../../../shared/agent";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { GlobalDialogModel } from "../global-dialog";
 
 export type AgentPlanBoardAppId = "agent-plan-board";
 export type AgentPlanBoardAppIconKey = "agent-plan-board-default";
+
+/**
+ * Which half of a plan/todo board is in focus. "both" keeps the combined
+ * list+detail view (e.g. the header "Plans and Todos" entry); "plan" and
+ * "todo" open a focused interface that shows only that side of the detail.
+ */
+export type AgentPlanBoardView = "plan" | "todo" | "both";
 
 export type AgentPlanBoardLabels = {
   readonly title: string;
@@ -22,7 +31,12 @@ export type AgentPlanBoardLabels = {
   readonly manager: string;
   readonly openPlan: string;
   readonly deletePlan: string;
+  readonly deleteConfirmTitle: string;
+  readonly deleteConfirmDescription: string;
+  readonly deleteConfirmAction: string;
   readonly noPlans: string;
+  readonly resumePlan: string;
+  readonly setAsideBadge: string;
   readonly updated: string;
   readonly loading: string;
   readonly refresh: string;
@@ -30,6 +44,15 @@ export type AgentPlanBoardLabels = {
   readonly cancel: string;
   readonly commentPlaceholder: string;
   readonly editPlaceholder: string;
+  readonly tempChatTitle: string;
+  readonly tempChatOpen: string;
+  readonly tempChatPlaceholder: string;
+  readonly tempChatSend: string;
+  readonly tempChatClose: string;
+  readonly tempChatApplyToPlan: string;
+  readonly tempChatApplied: string;
+  readonly tempChatExplainOnly: string;
+  readonly tempChatBusy: string;
 };
 
 export type AgentPlanBoardDetailState = {
@@ -47,6 +70,7 @@ export type AgentPlanBoardManagerState = {
   readonly agentSessionId: string;
   readonly workingDir: string;
   readonly title: string;
+  readonly view: AgentPlanBoardView;
   readonly projectKey: string | null;
   readonly plans: readonly AgentProjectPlanSummary[];
   readonly loading: boolean;
@@ -83,6 +107,7 @@ export type AgentPlanBoardModel = {
       readonly agentSessionId: string;
       readonly workingDir: string;
       readonly title?: string;
+      readonly view?: AgentPlanBoardView;
     }
   ) => void;
   readonly refreshManager: (instanceId: string) => Promise<void>;
@@ -98,8 +123,10 @@ export type AgentPlanBoardModel = {
 export type AgentPlanBoardSurfaceProps = {
   readonly labels: AgentPlanBoardLabels;
   readonly state: AgentPlanBoardAppState;
+  readonly desktopApi: LyraDesktopApi | null;
   readonly onOpenManagedPlan?: (planId: string) => Promise<void>;
   readonly onDeleteManagedPlan?: (planId: string) => Promise<void>;
   readonly onRefreshManager?: () => Promise<void>;
   readonly onRevisePlan?: (request: AgentPlanBoardRevisionRequest) => Promise<void>;
+  readonly openDialog?: GlobalDialogModel["openDialog"];
 };

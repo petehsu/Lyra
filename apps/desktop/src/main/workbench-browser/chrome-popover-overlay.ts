@@ -6,7 +6,7 @@ import type {
   WorkbenchBrowserSecurityLevel,
   WorkbenchBrowserWebThemeSnapshot
 } from "../../shared/workbench-browser";
-import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../shared/web-theme";
+import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../shared/workbench-browser";
 
 export const LYRA_BROWSER_CHROME_POPOVER_DOCUMENT_TITLE = "Lyra Browser Chrome Popover";
 

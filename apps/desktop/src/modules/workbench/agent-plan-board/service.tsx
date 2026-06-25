@@ -10,7 +10,8 @@ import type {
 import type { WorkspaceAppTabMetaRequest, WorkspaceAppTabOpenRequest } from "../workspace-tabs";
 import type {
   AgentPlanBoardAppState,
-  AgentPlanBoardModel
+  AgentPlanBoardModel,
+  AgentPlanBoardView
 } from "./types";
 
 export const AGENT_PLAN_BOARD_APP_ID = "agent-plan-board" as const;
@@ -30,9 +31,10 @@ export const createAgentPlanBoardInstanceId = (agentSessionId: string): string =
 
 export const createAgentPlanBoardManagerInstanceId = (
   agentSessionId: string,
-  workingDir: string
+  workingDir: string,
+  view: AgentPlanBoardView = "both"
 ): string =>
-  `agent-plan-board-manager-${normalizeInstanceToken(`${agentSessionId}-${workingDir}`)}`;
+  `agent-plan-board-manager-${normalizeInstanceToken(`${agentSessionId}-${workingDir}-${view}`)}`;
 
 export const createAgentPlanBoardAppRequest = (
   agentSessionId: string,
@@ -48,10 +50,11 @@ export const createAgentPlanBoardAppRequest = (
 export const createAgentPlanBoardManagerAppRequest = (
   agentSessionId: string,
   workingDir: string,
-  title: string
+  title: string,
+  view: AgentPlanBoardView = "both"
 ): WorkspaceAppTabOpenRequest => ({
   appId: AGENT_PLAN_BOARD_APP_ID,
-  appInstanceId: createAgentPlanBoardManagerInstanceId(agentSessionId, workingDir),
+  appInstanceId: createAgentPlanBoardManagerInstanceId(agentSessionId, workingDir, view),
   title,
   iconKey: AGENT_PLAN_BOARD_ICON_KEY,
   fileSessionId: agentSessionId
@@ -69,7 +72,7 @@ const PLAN_PHASES = new Set<string>([
   "todo_required",
   "executing_todo",
   "completed",
-  "rejected"
+  "set_aside"
 ]);
 
 const normalizePlanPhase = (value: string | null | undefined): AgentPlanPhase =>
@@ -77,7 +80,7 @@ const normalizePlanPhase = (value: string | null | undefined): AgentPlanPhase =>
 
 const reviewStatusForPhase = (phase: AgentPlanPhase): AgentPlanReviewStatus => {
   if (phase === "reviewing") return "pending";
-  if (phase === "rejected") return "rejected";
+  if (phase === "set_aside") return "set_aside";
   if (phase === "todo_required" || phase === "executing_todo" || phase === "completed") {
     return "approved";
   }
@@ -216,6 +219,7 @@ export const useAgentPlanBoardModel = ({
       agentSessionId: options.agentSessionId,
       workingDir: options.workingDir,
       title,
+      view: options.view ?? (current?.mode === "manager" ? current.view : "both"),
       projectKey: current?.mode === "manager" ? current.projectKey : null,
       plans: current?.mode === "manager" ? current.plans : [],
       loading: current?.mode === "manager" ? current.loading : true,

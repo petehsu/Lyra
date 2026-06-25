@@ -7,7 +7,7 @@ import {
   ToolCallIcon,
 } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { RenderSurfaceCard, ToolDetails } from "./ToolDetails";
+import { ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
 import { t } from "../../core/i18n";
 import { AppButton } from "@renderer/ui/components";
@@ -17,10 +17,6 @@ import {
   editDiffCounts,
   shouldShowEditDiffStats
 } from "./InlineDiffStats";
-
-type RenderToolCall = ToolCall & {
-  readonly details: Extract<NonNullable<ToolCall["details"]>, { type: "render" }>;
-};
 
 /**
  * Level 1 head has three faces keyed by the group status and per-call errors:
@@ -43,9 +39,6 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
     isRunning && group.currentCallId
       ? group.calls.find((c) => c.id === group.currentCallId)
       : undefined;
-  const renderCalls = group.calls.filter((call): call is RenderToolCall =>
-    call.details?.type === "render"
-  );
 
   const mode = isRunning ? "running" : hasError ? "error" : "done";
   const currentEditStats = editDiffCounts(currentCall?.details);
@@ -100,14 +93,6 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
         ) : null}
       </AppButton>
 
-      {renderCalls.length > 0 ? (
-        <div className="lyra-agents-tool-group-render-surfaces">
-          {renderCalls.map((call) => (
-            <RenderSurfaceCard key={call.id} details={call.details} />
-          ))}
-        </div>
-      ) : null}
-
       {open && !anchorVisible && (
         <AppButton variant="ghost" size="sm"
           type="button"
@@ -146,7 +131,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   const [open, setOpen] = useState(isLiveEdit);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
-  const hasDetails = !!call.details && call.details.type !== "render";
+  const hasDetails = !!call.details;
   const editFile = call.details?.type === "edit" ? call.details.file : undefined;
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
@@ -203,7 +188,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
                 {groupOpen && open && editFile !== undefined ? (
                   <EditFilePathRow filePath={editFile} />
                 ) : null}
-                {groupOpen && open && call.details && call.details.type !== "render" ? (
+                {groupOpen && open && call.details ? (
                   <ToolDetails details={call.details} running={call.status === "running"} />
                 ) : null}
               </div>

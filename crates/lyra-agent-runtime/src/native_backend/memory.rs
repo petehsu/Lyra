@@ -470,8 +470,6 @@ fn is_high_value_tool(name: &str, action: &str) -> bool {
             | "todo"
             | "software"
             | "software_invoke_capability"
-            | "render"
-            | "render_surface"
             | "file_write"
             | "file_edit"
             | "file_multiedit"

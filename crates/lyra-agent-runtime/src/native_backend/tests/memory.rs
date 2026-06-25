@@ -772,6 +772,7 @@ fn memory_candidate_events_record_to_session_ledger() {
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        ephemeral: false,
     };
     save_session(temp.path(), &session).expect("save session");
 

@@ -531,17 +531,6 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                     context.arguments,
                     &started_at,
                 ),
-                "render" => execute_render_tool_adapter(
-                    context.session_id,
-                    context.turn_id,
-                    context.cancellation,
-                    context.tool_call_id,
-                    tool_name,
-                    display_name,
-                    action,
-                    context.arguments,
-                    &started_at,
-                ),
                 "todo" => execute_todo_tool_adapter(
                     context.session_id,
                     context.turn_id,

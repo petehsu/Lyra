@@ -11,6 +11,12 @@ use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
 const REPEATED_TOOL_ROUND_SOFT_OCCURRENCES: usize = 3;
 const REPEATED_TOOL_ROUND_HARD_OCCURRENCES: usize = 5;
 const MAX_CONTINUATION_RETRIES: u8 = 4;
+/// How many times a streaming turn is replayed after a transport failure that
+/// struck before any increment was committed to the session (e.g. the provider
+/// dropped the connection before the first usable SSE event). Replay is only
+/// attempted when the route's parser confirms nothing was committed; a
+/// mid-stream failure after a committed delta is never replayed.
+const MAX_STREAM_TRANSPORT_RETRIES: u8 = 2;
 const MAX_MODEL_LOOP_STEPS: u32 = 60;
 const MAX_PROVIDER_IMAGE_TOOL_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_TOKENS_CONTINUATION_PROMPT: &str = "Previous response was cut off by output token limit, not finished. Continue the same response exactly where it stopped. Do not repeat, restart, apologize, or re-introduce. Output only continuation.";
@@ -93,6 +99,13 @@ pub(crate) struct ProviderStreamState {
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
+    /// True once this stream has committed any increment to session state — a
+    /// visible assistant delta (`append_assistant_delta`) or a streaming
+    /// tool-call preview (`maybe_emit_streaming_diff_previews_from_accumulators`).
+    /// A transport failure before this point is safe to retry (replaying the
+    /// turn duplicates nothing); a failure after it is not, because the
+    /// partial assistant text / tool activity is already in the timeline.
+    pub(crate) committed_any: bool,
     /// Strips inline `<think>…</think>` reasoning from OpenAI-compatible content
     /// deltas so it never leaks into the visible message; routed to
     /// `reasoning_content` instead. Stateful across deltas (handles tags split
@@ -1220,22 +1233,53 @@ pub(crate) fn is_retryable_provider_error(error: &AgentRuntimeError) -> bool {
         || message.contains("timed out")
 }
 
+/// Classify a `reqwest::Error` into a transport category using reqwest's typed
+/// predicates — never its message text — so the category stays correct across
+/// reqwest versions and wording changes.
+fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTransportKind {
+    if error.is_timeout() {
+        ProviderTransportKind::Timeout
+    } else if error.is_connect() {
+        ProviderTransportKind::Connect
+    } else if error.is_decode() || error.is_body() {
+        ProviderTransportKind::StreamInterrupted
+    } else {
+        ProviderTransportKind::Other
+    }
+}
+
+/// Build a typed transport error from a failed request. A `reqwest` send/read
+/// failure is always a transport failure (HTTP error *responses* never fail
+/// these calls — they are inspected via the status code instead).
+fn reqwest_transport_error(error: reqwest::Error) -> AgentRuntimeError {
+    AgentRuntimeError::ProviderTransport {
+        kind: classify_reqwest_transport(&error),
+        detail: error.to_string(),
+    }
+}
+
+/// Classify a failure that occurs while reading lines from the streamed SSE
+/// response body. Such a read fails mid-stream when the provider drops the
+/// connection or the body transfer/decoding is interrupted; reqwest surfaces it
+/// as an I/O error wrapping a `reqwest::Error`. Recover the typed reqwest
+/// category when present; otherwise a body read failure is by construction a
+/// stream interruption.
+fn streaming_body_read_error(error: std::io::Error) -> AgentRuntimeError {
+    let kind = error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<reqwest::Error>())
+        .map(classify_reqwest_transport)
+        .unwrap_or(ProviderTransportKind::StreamInterrupted);
+    AgentRuntimeError::ProviderTransport {
+        kind,
+        detail: format!("provider streaming response body read failed: {error}"),
+    }
+}
+
+/// A provider transport failure is identified by the typed error variant, not by
+/// matching on the error's message text.
 pub(crate) fn is_provider_transport_error(error: &AgentRuntimeError) -> bool {
-    let message = error.to_string().to_lowercase();
-    message.contains("request or response body error")
-        || message.contains("error sending request")
-        || message.contains("failed to read response body")
-        || message.contains("response body error")
-        || message.contains("body error")
-        || message.contains("connection closed before message completed")
-        || message.contains("unexpected eof")
-        || message.contains("incomplete message")
-        || message.contains("stream error")
-        || message.contains("broken pipe")
-        || message.contains("connection reset")
-        || message.contains("connection refused")
-        || message.contains("dns error")
-        || message.contains("operation timed out")
+    matches!(error, AgentRuntimeError::ProviderTransport { .. })
 }
 
 pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool {
@@ -1328,14 +1372,15 @@ fn read_provider_json_body(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    let body_text = response.text().map_err(|error| {
-        AgentRuntimeError::Core(format!(
+    let body_text = response.text().map_err(|error| AgentRuntimeError::ProviderTransport {
+        kind: classify_reqwest_transport(&error),
+        detail: format!(
             "failed to read provider response body for route `{}`: status {}, content-type {}, error: {}",
             provider.route_id,
             status.as_u16(),
             content_type,
             error
-        ))
+        ),
     })?;
     if !status.is_success() {
         return Err(provider_response_error_text(provider, status, &body_text));
@@ -1365,36 +1410,123 @@ fn call_model_once_inner(
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
     if capabilities.supports_streaming {
-        match call_model_once_streaming_inner(
-            session_id,
-            turn_id,
-            provider,
-            model,
-            messages,
-            tools,
-            cancellation,
-            commit_assistant_text,
-        ) {
-            Ok(reply) => return Ok(reply),
-            Err(error) if is_empty_model_reply_error(&error) => {}
-            Err(error) if is_provider_transport_error(&error) => {
-                emit_provider_protocol_event(
-                    session_id,
-                    turn_id,
-                    json!({
-                        "type": "stream_transport_error",
-                        "routeId": provider.route_id,
-                        "streaming": true,
-                        "fallbackAttempted": false,
-                        "message": error.to_string(),
-                    }),
-                );
-                return Err(AgentRuntimeError::Core(format!(
-                    "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
-                    provider.route_id, error
-                )));
+        let mut stream_transport_retries: u8 = 0;
+        let mut stream_fallback_attempted = false;
+        let mut last_stream_transport_error: Option<AgentRuntimeError> = None;
+        loop {
+            let mut committed_any: Option<bool> = None;
+            match call_model_once_streaming_inner(
+                session_id,
+                turn_id,
+                provider,
+                model,
+                messages,
+                tools,
+                cancellation,
+                commit_assistant_text,
+                &mut committed_any,
+            ) {
+                Ok(reply) => return Ok(reply),
+                Err(error) if is_empty_model_reply_error(&error) => break,
+                Err(error) if is_provider_transport_error(&error) => {
+                    // Safe to replay the whole streaming turn only when the
+                    // route's parser confirms nothing was committed before the
+                    // failure (`Some(false)`). `None` means the parser doesn't
+                    // report commit state (dedicated protocols) and `Some(true)`
+                    // means a partial assistant/tool delta already landed — both
+                    // stay conservative: no replay, fail the turn (the original
+                    // behavior), because replaying would duplicate or corrupt
+                    // the committed timeline.
+                    let safe_to_retry = committed_any == Some(false)
+                        && stream_transport_retries < MAX_STREAM_TRANSPORT_RETRIES;
+                    // Non-streaming fallback (Claude Code pattern): when the
+                    // streaming turn failed and nothing was committed, retry the
+                    // SAME turn non-streaming once. Non-streaming has no partial
+                    // SSE state to corrupt, so it is safe as long as the stream
+                    // didn't already commit an increment — `committed_any ==
+                    // Some(true)` must never fall back (the non-streaming reply
+                    // would re-emit the full assistant text, duplicating the
+                    // committed delta).
+                    let can_fallback = !stream_fallback_attempted
+                        && committed_any != Some(true);
+                    emit_provider_protocol_event(
+                        session_id,
+                        turn_id,
+                        json!({
+                            "type": "stream_transport_error",
+                            "routeId": provider.route_id,
+                            "streaming": true,
+                            "fallbackAttempted": !safe_to_retry && can_fallback,
+                            "safeRetryAttempted": safe_to_retry,
+                            "committedBefore": committed_any == Some(true),
+                            "message": error.to_string(),
+                        }),
+                    );
+                    if safe_to_retry {
+                        stream_transport_retries += 1;
+                        emit_provider_retry(
+                            session_id,
+                            turn_id,
+                            "stream_transport_safe_retry",
+                            stream_transport_retries,
+                            "streaming transport failed before any committed increment; replaying the turn",
+                        );
+                        sleep_before_provider_retry(stream_transport_retries, cancellation)?;
+                        continue;
+                    }
+                    if can_fallback {
+                        stream_fallback_attempted = true;
+                        last_stream_transport_error = Some(error);
+                        emit_provider_retry(
+                            session_id,
+                            turn_id,
+                            "stream_transport_fallback_to_non_streaming",
+                            1,
+                            "streaming transport failed; retrying the turn non-streaming",
+                        );
+                        sleep_before_provider_retry(MAX_STREAM_TRANSPORT_RETRIES, cancellation)?;
+                        break; // fall through to the non-streaming path below
+                    }
+                    // Committed partial state — cannot replay or fall back.
+                    // Finalize any tool left running so the next round doesn't
+                    // see "[Tool did not finish ...]" for this aborted attempt.
+                    let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
+                    eprintln!("[DEBUG committed path] finish_done={} committed_any={:?}", _finish_ok, committed_any);
+                    return Err(AgentRuntimeError::Core(format!(
+                        "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
+                        provider.route_id, error
+                    )));
+                }
+                Err(error) => return Err(error),
             }
-            Err(error) => return Err(error),
+        }
+        // Reached only via `break` (empty-reply or non-streaming fallback). For
+        // the fallback case we must surface the original streaming transport
+        // error if the non-streaming attempt also fails, instead of masking it.
+        if stream_fallback_attempted {
+            let mut reply = match call_model_once_non_streaming(provider, model, messages, tools) {
+                Ok(reply) => reply,
+                Err(non_streaming_error) => {
+                    // Before failing the turn, finalize any tool left running by
+                    // the aborted streaming attempt so it isn't reported to the
+                    // next round as "[Tool did not finish ...]".
+                    finish_running_tools_for_failed_turn(session_id, turn_id);
+                    let streaming_error = last_stream_transport_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_default();
+                    return Err(AgentRuntimeError::Core(format!(
+                        "provider streaming transport failed for route `{}` and non-streaming fallback also failed; streaming error: {}; non-streaming error: {}",
+                        provider.route_id, streaming_error, non_streaming_error
+                    )));
+                }
+            };
+            normalize_model_reply_protocol(&mut reply, tools)?;
+            if commit_assistant_text {
+                crate::native_backend::turns::commit_visible_assistant_reply(
+                    session_id, turn_id, &mut reply, &None,
+                );
+            }
+            return Ok(reply);
         }
     }
     let mut reply = call_model_once_non_streaming(provider, model, messages, tools)?;
@@ -1407,6 +1539,33 @@ fn call_model_once_inner(
     Ok(reply)
 }
 
+/// Finalize any tool still in `running` status for this turn as `failed`, so a
+/// transport-aborted streaming attempt doesn't leak into the next round as
+/// "[Tool did not finish; omitting output from provider context.]" — the
+/// tool is reported as a clean failure instead. Best-effort: a state-lock
+/// failure is swallowed because the caller is already on an error path.
+/// Returns `true` if the state lock was acquired (regardless of whether any
+/// tool was actually finalized).
+fn finish_running_tools_for_failed_turn(session_id: &str, turn_id: &str) -> bool {
+    let mut state = match crate::native_backend::state::state().lock() {
+        Ok(state) => state,
+        Err(_) => return false,
+    };
+    let Some(session) = state.sessions.get_mut(session_id) else {
+        return true;
+    };
+    crate::native_backend::activity::finish_running_tools_for_turn(
+        session,
+        turn_id,
+        "failed",
+        json!({
+            "error": "provider streaming transport failed before this tool could finish",
+            "reason": "transport_failure",
+        }),
+    );
+    true
+}
+
 pub(crate) fn call_model_once_non_streaming(
     provider: &NativeProviderProfile,
     model: &str,
@@ -1416,7 +1575,7 @@ pub(crate) fn call_model_once_non_streaming(
     if route_uses_openai_responses(provider)? {
         let response = build_openai_responses_request(provider, model, messages, tools, false)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = openai_responses::parse_response_body(&body, tools)?;
@@ -1426,7 +1585,7 @@ pub(crate) fn call_model_once_non_streaming(
     if route_uses_anthropic_messages(provider)? {
         let response = build_anthropic_messages_request(provider, model, messages, tools, false)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = anthropic_messages::parse_response_body(&body, tools)?;
@@ -1437,7 +1596,7 @@ pub(crate) fn call_model_once_non_streaming(
         let response =
             build_gemini_generate_content_request(provider, model, messages, tools, false)?
                 .send()
-                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = gemini_generate_content::parse_response_body(&body, tools)?;
@@ -1447,7 +1606,7 @@ pub(crate) fn call_model_once_non_streaming(
     if route_uses_aws_bedrock_converse(provider)? {
         let response = build_aws_bedrock_converse_request(provider, model, messages, tools)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = aws_bedrock_converse::parse_response_body(&body, tools)?;
@@ -1457,7 +1616,7 @@ pub(crate) fn call_model_once_non_streaming(
     if route_uses_ollama_chat(provider)? {
         let response = build_ollama_chat_request(provider, model, messages, tools, false)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         let body = read_provider_json_body(provider, status, response)?;
         let mut reply = ollama_chat::parse_response_body(&body, tools)?;
@@ -1466,7 +1625,7 @@ pub(crate) fn call_model_once_non_streaming(
     }
     let response = build_openai_compatible_request(provider, model, messages, tools, false)?
         .send()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        .map_err(reqwest_transport_error)?;
     let status = response.status();
     let body = read_provider_json_body(provider, status, response)?;
     let message = body.pointer("/choices/0/message").ok_or_else(|| {
@@ -1537,6 +1696,7 @@ pub(crate) fn call_model_once_streaming(
     tools: &[Value],
     cancellation: &Arc<AtomicBool>,
 ) -> AgentRuntimeResult<ModelReply> {
+    let mut committed_any: Option<bool> = None;
     call_model_once_streaming_inner(
         session_id,
         turn_id,
@@ -1546,6 +1706,7 @@ pub(crate) fn call_model_once_streaming(
         tools,
         cancellation,
         true,
+        &mut committed_any,
     )
 }
 
@@ -1558,11 +1719,18 @@ fn call_model_once_streaming_inner(
     tools: &[Value],
     cancellation: &Arc<AtomicBool>,
     commit_assistant_text: bool,
+    committed_any: &mut Option<bool>,
 ) -> AgentRuntimeResult<ModelReply> {
+    // Dedicated protocol parsers (responses/anthropic/gemini/ollama) don't
+    // report per-stream commit state yet, so `committed_any` stays `None` for
+    // them — the caller treats that as "not safe to replay" and fails the turn
+    // (the existing conservative behavior). Only the OpenAI-compatible path
+    // tracks commits and can opt in to safe transport retry.
+    *committed_any = None;
     if route_uses_openai_responses(provider)? {
         let response = build_openai_responses_request(provider, model, messages, tools, true)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response
@@ -1584,7 +1752,7 @@ fn call_model_once_streaming_inner(
     if route_uses_anthropic_messages(provider)? {
         let response = build_anthropic_messages_request(provider, model, messages, tools, true)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response
@@ -1607,7 +1775,7 @@ fn call_model_once_streaming_inner(
         let response =
             build_gemini_generate_content_request(provider, model, messages, tools, true)?
                 .send()
-                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response
@@ -1635,7 +1803,7 @@ fn call_model_once_streaming_inner(
     if route_uses_ollama_chat(provider)? {
         let response = build_ollama_chat_request(provider, model, messages, tools, true)?
             .send()
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
             let body = response
@@ -1654,9 +1822,14 @@ fn call_model_once_streaming_inner(
         normalize_model_reply_protocol(&mut reply, tools)?;
         return Ok(reply);
     }
+    // OpenAI-compatible path: track whether any increment was committed so the
+    // caller can safely replay the turn if the transport fails before the first
+    // committed delta. A pre-stream `.send()` failure leaves this at Some(false)
+    // (set just below), which is the safe-to-retry case.
+    *committed_any = Some(false);
     let response = build_openai_compatible_request(provider, model, messages, tools, true)?
         .send()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        .map_err(reqwest_transport_error)?;
     let status = response.status();
     if !status.is_success() {
         let body = response
@@ -1664,14 +1837,18 @@ fn call_model_once_streaming_inner(
             .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
         return Err(provider_response_error_text(provider, status, &body));
     }
-    parse_streaming_response_with_commit(
+    let mut stream_committed = false;
+    let result = parse_streaming_response_with_commit(
         BufReader::new(response),
         session_id,
         turn_id,
         cancellation,
         tools,
         commit_assistant_text,
-    )
+        &mut stream_committed,
+    );
+    *committed_any = Some(stream_committed);
+    result
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -1682,7 +1859,16 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     cancellation: &Arc<AtomicBool>,
     tools: &[Value],
 ) -> AgentRuntimeResult<ModelReply> {
-    parse_streaming_response_with_commit(reader, session_id, turn_id, cancellation, tools, true)
+    let mut committed_any = false;
+    parse_streaming_response_with_commit(
+        reader,
+        session_id,
+        turn_id,
+        cancellation,
+        tools,
+        true,
+        &mut committed_any,
+    )
 }
 
 fn build_openai_compatible_request(
@@ -1878,6 +2064,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     cancellation: &Arc<AtomicBool>,
     tools: &[Value],
     commit_assistant_text: bool,
+    committed_any: &mut bool,
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
@@ -1886,9 +2073,18 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+            *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
         }
-        let line = line.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        // A stall here (provider keeps the socket open but stops sending) is
+        // bounded by the client's per-operation idle timeout configured in
+        // `provider_http_client_builder`; it surfaces as a `reqwest::Error` whose
+        // `is_timeout()` is true, classified below into a typed transport Timeout
+        // that the caller's safe-retry / non-streaming fallback can recover from.
+        let line = line.map_err(|error| {
+            *committed_any = state.committed_any;
+            streaming_body_read_error(error)
+        })?;
         let Some(event) = openai_chat::parse_sse_line(&line)? else {
             continue;
         };
@@ -1896,19 +2092,27 @@ fn parse_streaming_response_with_commit<R: BufRead>(
             break;
         };
         if let Some(error) = value.get("error") {
+            *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Core(format!(
                 "provider streaming error: {error}"
             )));
         }
-        map_provider_stream_chunk(
+        if let Err(error) = map_provider_stream_chunk(
             &value,
             &mut state,
             &mut ui_message_id,
             buffer_assistant_text,
             session_id,
             turn_id,
-        )?;
+        ) {
+            *committed_any = state.committed_any;
+            return Err(error);
+        }
     }
+    // From here on every remaining failure (finalize/normalize/commit) happens
+    // after all streaming increments have been applied, so the committed flag is
+    // final for the rest of the function.
+    *committed_any = state.committed_any;
 
     // Flush any held-back partial tag the scrubber kept across the final delta.
     // If it turned out not to be a real tag it surfaces as visible text; trailing
@@ -1929,6 +2133,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
                 .clone();
             if !message_id.is_empty() {
                 append_assistant_delta(session_id, turn_id, &message_id, &flushed.visible)?;
+                state.committed_any = true;
             }
         }
         state.content.push_str(&flushed.visible);
@@ -2035,6 +2240,7 @@ pub(crate) fn map_provider_stream_chunk(
                     .clone();
                 if !message_id.is_empty() {
                     append_assistant_delta(session_id, turn_id, &message_id, &scrubbed.visible)?;
+                    state.committed_any = true;
                 }
             }
             state.content.push_str(&scrubbed.visible);
@@ -2069,6 +2275,10 @@ pub(crate) fn map_provider_stream_chunk(
             turn_id,
             &state.tool_calls,
         );
+        // A streaming tool-call preview mutates session state (records a
+        // preview activity), so a later transport failure is no longer safely
+        // retryable.
+        state.committed_any = true;
     }
     Ok(())
 }

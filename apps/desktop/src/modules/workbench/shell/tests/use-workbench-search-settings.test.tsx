@@ -14,7 +14,6 @@ const preferences: WorkbenchPreferences = {
   aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
-  forceWebPageThemingEnabled: true,
   searchWebEngineIds: ["bing"],
   searchSearxngEndpoint: "https://search.example.com/search?q={searchTerms}",
   searchResultsSourceFilter: "all",

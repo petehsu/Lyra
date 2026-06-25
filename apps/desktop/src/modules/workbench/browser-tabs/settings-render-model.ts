@@ -385,21 +385,6 @@ const createSectionControl = (
           })
         ]
       });
-    case "forceWebPageTheming":
-      return createSettingsSection({
-        id: sectionId,
-        label: props.forceWebPageThemingLabel,
-        controls: [
-          createBooleanChoiceControl({
-            label: props.forceWebPageThemingLabel,
-            value: props.forceWebPageThemingValue,
-            description: props.forceWebPageThemingDescription,
-            enabledLabel: props.forceWebPageThemingEnabledLabel,
-            disabledLabel: props.forceWebPageThemingDisabledLabel,
-            onChange: props.onForceWebPageThemingChange
-          })
-        ]
-      });
     case "splitTriggerMode":
       return createSettingsSection({
         id: sectionId,

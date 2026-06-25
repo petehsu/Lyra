@@ -27,6 +27,8 @@ import {
   type AgentProjectPlanListResponse,
   type AgentProjectPlanReadRequest,
   type AgentProjectPlanReadResponse,
+  type AgentProjectTodoReadRequest,
+  type AgentProjectTodoReadResponse,
   type AgentPlanReviewRespondRequest,
   type AgentMessageResolveRequest,
   type AgentMessageResolveResponse,
@@ -37,6 +39,7 @@ import {
   type AgentSessionArchiveRequest,
   type AgentSessionBindProjectRequest,
   type AgentSessionCreateRequest,
+  type AgentTemporarySessionCreateRequest,
   type AgentSessionDeleteRequest,
   type AgentSessionDeleteResponse,
   type AgentSessionReadRequest,
@@ -231,7 +234,6 @@ import {
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserLayoutSnapshot,
   type WorkbenchBrowserNavigateRequest,
-  type WorkbenchBrowserWebThemeSnapshot,
   type WorkbenchBrowserNavigateResult,
   type WorkbenchObservationQueryRequest,
   type WorkbenchObservationQueryResult,
@@ -1139,11 +1141,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.workbenchBrowserSetModalOcclusion,
         request
       ) as Promise<void>,
-    applyWebTheme: (snapshot: WorkbenchBrowserWebThemeSnapshot) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
-        snapshot
-      ) as Promise<void>,
     capturePage: (request?: WorkbenchVisualCaptureRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.workbenchBrowserCapturePage,
@@ -1381,6 +1378,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionCreate,
         request ?? {}
       ) as Promise<AgentSessionSnapshot>,
+    createTemporarySession: (request: AgentTemporarySessionCreateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSessionCreateTemporary,
+        request
+      ) as Promise<AgentSessionSnapshot>,
     readSession: (request?: AgentSessionReadRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionRead,
@@ -1535,6 +1537,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentPlanReviewRespond,
         request
       ) as Promise<AgentSessionSnapshot>,
+    readProjectTodo: (request: AgentProjectTodoReadRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTodoReadProject,
+        request
+      ) as Promise<AgentProjectTodoReadResponse>,
     readPermissionPolicy: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentPermissionPolicyRead

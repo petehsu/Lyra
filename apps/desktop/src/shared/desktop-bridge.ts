@@ -92,7 +92,6 @@ import type {
   WorkbenchBrowserSetElementPickerModeRequest,
   WorkbenchBrowserStorageStateRequest,
   WorkbenchBrowserTopologySnapshot,
-  WorkbenchBrowserWebThemeSnapshot,
   PageDragCitationPayload
 } from "./workbench-browser";
 import type {
@@ -173,6 +172,8 @@ export type {
   AgentProjectPlanSummary,
   AgentProjectTodoSnapshot,
   AgentProjectTodoStatus,
+  AgentProjectTodoReadRequest,
+  AgentProjectTodoReadResponse,
   AgentRollbackPreviewResponse,
   AgentRollbackRequest,
   AgentRollbackRestoreResponse,
@@ -181,6 +182,7 @@ export type {
   AgentSessionArchiveRequest,
   AgentSessionBindProjectRequest,
   AgentSessionCreateRequest,
+  AgentTemporarySessionCreateRequest,
   AgentSessionDeleteRequest,
   AgentSessionDeleteResponse,
   AgentSessionReadRequest,
@@ -541,7 +543,6 @@ export const LYRA_CHANNELS = {
 
   workbenchBrowserSetElementPickerMode: "lyra:workbench-browser/set-element-picker-mode",
   workbenchBrowserSetModalOcclusion: "lyra:workbench-browser/set-modal-occlusion",
-  workbenchBrowserApplyWebTheme: "lyra:workbench-browser/apply-web-theme",
   workbenchBrowserCapturePage: "lyra:workbench-browser/capture-page",
   workbenchBrowserCaptureWindow: "lyra:workbench-browser/capture-window",
   workbenchBrowserExecutePageContextAction: "lyra:workbench-browser/execute-page-context-action",
@@ -603,6 +604,7 @@ export const LYRA_CHANNELS = {
   terminalCloseSession: "lyra:terminal/close-session",
   terminalEvent: "lyra:terminal/event",
   agentSessionCreate: "lyra:agent/session/create",
+  agentSessionCreateTemporary: "lyra:agent/session/create-temporary",
   agentSessionRead: "lyra:agent/session/read",
   agentSessionList: "lyra:agent/session/list",
   agentSessionSave: "lyra:agent/session/save",
@@ -636,6 +638,7 @@ export const LYRA_CHANNELS = {
   agentPlanDelete: "lyra:agent/plan/delete",
   agentPlanRevise: "lyra:agent/plan/revise",
   agentPlanReviewRespond: "lyra:agent/plan/review/respond",
+  agentTodoReadProject: "lyra:agent/todo/read-project",
   agentClarificationRespond: "lyra:agent/clarification/respond",
   agentPermissionRespond: "lyra:agent/permission/respond",
   agentPermissionPolicyRead: "lyra:agent/permission-policy/read",
@@ -2411,9 +2414,6 @@ export type WorkbenchBrowserApi = {
   ) => Promise<void>;
   readonly setModalOcclusion?: (
     request: { readonly active: boolean }
-  ) => Promise<void>;
-  readonly applyWebTheme: (
-    snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly capturePage: (
     request?: WorkbenchVisualCaptureRequest

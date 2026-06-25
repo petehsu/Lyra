@@ -31,7 +31,6 @@ mod native_helpers;
 mod page_snapshot;
 mod permission_policy;
 mod plan;
-mod render;
 mod search;
 mod shell;
 mod skill_adapter;
@@ -50,7 +49,7 @@ pub(crate) use self::{
     artifact::*, artifacts::*, browser_adapter::*, browser_concurrency::*, browser_interact::*,
     clarification_adapter::*, design_adapter::*, dispatcher::*, file::*, hardware::*,
     host_executor::*, mcp_adapter::*, memory_adapter::*, native_executor::*, native_helpers::*,
-    page_snapshot::*, permission_policy::*, plan::*, render::*, search::*, shell::*,
+    page_snapshot::*, permission_policy::*, plan::*, search::*, shell::*,
     skill_adapter::*, software_adapter::*, streaming_diff_preview::*, terminal::*, timeouts::*,
     todo::*, user_action::*, web::*, web_jobs::*, workbench_adapter::*,
 };

@@ -103,43 +103,6 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         Some("auto_approved")
     );
     assert!(shell["raw"]["stdoutRef"]["id"].as_str().is_some());
-    let rendered = execute_model_tool(
-        &session_id,
-        &turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-render",
-            "/tools/render/surface",
-            json!({
-                "surfaceId": "test-dashboard",
-                "title": "Test Dashboard",
-                "kind": "html",
-                "content": "<section><h1>Inline dashboard</h1><button data-lyra-action=\"refresh\">Refresh</button></section>",
-                "height": 260,
-                "summary": "A render surface produced by the native tool dispatch path."
-            }),
-        ),
-    );
-    assert!(
-        rendered["content"]
-            .as_str()
-            .unwrap()
-            .contains("Test Dashboard")
-    );
-    assert_eq!(rendered["raw"]["kind"].as_str(), Some("render_surface"));
-    assert_eq!(
-        rendered["raw"]["surfaceId"].as_str(),
-        Some("test-dashboard")
-    );
-    assert_eq!(rendered["raw"]["format"].as_str(), Some("html"));
-    assert_eq!(rendered["raw"]["height"].as_u64(), Some(260));
-    assert_eq!(
-        rendered
-            .pointer("/raw/security/node")
-            .and_then(Value::as_bool),
-        Some(false)
-    );
     let todos = execute_model_tool(
         &session_id,
         &turn_id,

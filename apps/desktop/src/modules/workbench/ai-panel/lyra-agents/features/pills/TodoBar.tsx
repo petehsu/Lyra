@@ -1,7 +1,5 @@
-import { useState, type CSSProperties } from "react";
-import { ListChecks, Play } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { t } from "../../core/i18n";
-import { AppButton } from "@renderer/ui/components";
 
 export interface TodoItem {
   id: string;
@@ -10,96 +8,48 @@ export interface TodoItem {
 }
 
 /**
- * Floating Todo pill that expands in-place using CSS grid animation.
- * Collapsed: icon + "3/12" + current task name (lyra-agents-shimmer).
- * Expanded: same pill morphs taller to show the full scrollable list.
+ * Fact-driven floating todo capsule, anchored top-left above the composer.
+ *
+ * It is purely a status + shortcut affordance: it shows `icon current|total`
+ * (the current step number and the total) and opens the todo board on click.
+ * Once every todo is done there is nothing left to track, so the capsule hides
+ * itself — visibility is driven by the facts (incomplete work remaining), not
+ * by a manual close. It is likewise hidden when there are no todos at all.
  */
 export function TodoBar({
   tasks,
-  onPoke,
   onOpenBoard,
-  disabled = false,
 }: {
   tasks: TodoItem[];
-  onPoke?: () => void;
   onOpenBoard?: () => void | Promise<void>;
-  disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-
-  if (tasks.length === 0) return null;
-
-  const doneCount = tasks.filter((t) => t.status === "done").length;
   const total = tasks.length;
-  const currentIndex = tasks.findIndex((t) => t.status === "running");
-  const currentTask =
-    currentIndex >= 0
-      ? tasks[currentIndex]
-      : tasks.find((t) => t.status !== "done") ?? tasks[tasks.length - 1];
-  if (currentTask === undefined) return null;
-  const hasIncomplete = tasks.some((task) => task.status !== "done");
-  const currentNumber = currentIndex >= 0
-    ? currentIndex + 1
-    : Math.min(total, doneCount + (hasIncomplete ? 1 : 0));
+  const doneCount = tasks.filter((task) => task.status === "done").length;
+  const hasIncomplete = doneCount < total;
+  if (total === 0 || !hasIncomplete) return null;
+
+  // Current step = the running task if one is active, otherwise the first
+  // not-yet-done task (done count + 1), clamped to the total.
+  const runningIndex = tasks.findIndex((task) => task.status === "running");
+  const currentNumber = runningIndex >= 0 ? runningIndex + 1 : Math.min(total, doneCount + 1);
+
+  const label = t("lyra-agents-composer.openTodoBoard");
 
   return (
-    <div className={`lyra-agents-todo-pill ${open ? "open" : ""}`}>
-      <div className="lyra-agents-todo-pill-head">
-        <AppButton variant="ghost" size="sm"
-          type="button"
-          className="lyra-agents-todo-pill-toggle"
-          onClick={() => {
-            if (onOpenBoard !== undefined) {
-              void onOpenBoard();
-              return;
-            }
-            setOpen((v) => !v);
-          }}
-          aria-expanded={open}
-        >
-          <ListChecks size={14} strokeWidth={2} />
-          <span className="lyra-agents-todo-pill-progress">
-            {currentNumber}/{total}
-          </span>
-          <span className="lyra-agents-todo-pill-current lyra-agents-shimmer">{currentTask.title}</span>
-        </AppButton>
-        <AppButton variant="ghost" size="sm"
-          type="button"
-          className="lyra-agents-todo-pill-poke"
-          disabled={disabled || !hasIncomplete || onPoke === undefined}
-          title={t("lyra-agents-composer.poke")}
-          aria-label={t("lyra-agents-composer.poke")}
-          onClick={() => onPoke?.()}
-        >
-          <Play size={12} strokeWidth={2.2} />
-        </AppButton>
-      </div>
-
-      <div className="lyra-agents-todo-pill-collapse" data-open={open}>
-        <div className="lyra-agents-todo-pill-collapse-inner">
-          <div className="lyra-agents-todo-pill-body">
-            <ul className="lyra-agents-todo-pill-list">
-              {tasks.map((t, i) => {
-                const isCurrent = t.status === "running";
-                const isPending = t.status === "pending";
-                const isDone = t.status === "done";
-                return (
-                  <li
-                    key={t.id}
-                    className={`lyra-agents-todo-pill-item ${isDone ? "done" : ""} ${isCurrent ? "current" : ""} ${isPending ? "pending" : ""}`}
-                    style={{ "--stagger-index": i } as CSSProperties}
-                  >
-                    <span className="lyra-agents-todo-pill-index">{i + 1}</span>
-                    <span className={`lyra-agents-todo-pill-title ${isCurrent ? "lyra-agents-shimmer" : ""}`}>
-                      {t.title}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
+    <button
+      type="button"
+      className="lyra-agents-todo-capsule"
+      onClick={() => { void onOpenBoard?.(); }}
+      disabled={onOpenBoard === undefined}
+      title={label}
+      aria-label={label}
+    >
+      <ListChecks size={13} strokeWidth={2.2} />
+      <span className="lyra-agents-todo-capsule-progress">
+        {currentNumber}
+        <span className="lyra-agents-todo-capsule-sep">|</span>
+        {total}
+      </span>
+    </button>
   );
 }

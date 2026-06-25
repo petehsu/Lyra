@@ -1,5 +1,5 @@
-import { Copy, Link2, Undo2 } from "lucide-react";
-import { memo, useState, type MouseEvent } from "react";
+import { ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "lucide-react";
+import { memo, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
   type AgentRollbackPreviewResponse,
@@ -366,21 +366,6 @@ const toolDetailsEqual = (left: ToolDetails | undefined, right: ToolDetails | un
         left.actionId === right.actionId &&
         left.text === right.text &&
         unknownArrayEqual(left.targets, right.targets);
-    case "render":
-      return right.type === "render" &&
-        left.surfaceId === right.surfaceId &&
-        left.title === right.title &&
-        left.format === right.format &&
-        left.operation === right.operation &&
-        left.content === right.content &&
-        left.summary === right.summary &&
-        left.height === right.height &&
-        left.interactive === right.interactive &&
-        left.theme === right.theme &&
-        unknownValueEqual(left.data, right.data) &&
-        unknownArrayEqual(left.columns, right.columns) &&
-        unknownArrayEqual(left.rows, right.rows) &&
-        unknownValueEqual(left.security, right.security);
     case "task":
       return right.type === "task" && taskItemsEqual(left.tasks, right.tasks);
     case "text":
@@ -563,6 +548,31 @@ export function Message({
   const [rollbackPreview, setRollbackPreview] = useState<AgentRollbackPreviewResponse | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [userBubbleExpanded, setUserBubbleExpanded] = useState(false);
+  const [userBubbleOverflowing, setUserBubbleOverflowing] = useState(false);
+  const userBubbleRef = useRef<HTMLDivElement>(null);
+  // Signature of the user message's text so overflow is re-measured only when
+  // the rendered content changes (user messages are immutable once sent).
+  // ponytail: does not re-measure on live panel-width changes — acceptable
+  // because the bubble content never reflows after send.
+  const userTextSignature =
+    message.author === "user"
+      ? message.blocks.map((b) => (b.type === "text" ? b.body : b.type)).join("\u0001")
+      : "";
+  useLayoutEffect(() => {
+    if (message.author !== "user") return;
+    const el = userBubbleRef.current;
+    if (el === null) return;
+    const cs = getComputedStyle(el);
+    const fontSize = parseFloat(cs.fontSize) || 14;
+    const lineHeight = cs.lineHeight.endsWith("px")
+      ? parseFloat(cs.lineHeight)
+      : fontSize * 1.5;
+    // ~10 lines of text plus the bubble's vertical padding (8px each side).
+    // scrollHeight reports full content height even while max-height clips it.
+    const collapsedMax = lineHeight * 10 + 16;
+    setUserBubbleOverflowing(el.scrollHeight > collapsedMax + lineHeight * 0.5);
+  }, [message.author, userTextSignature]);
 
   const handleCopy = () => {
     const text = message.blocks
@@ -626,7 +636,8 @@ export function Message({
       >
         <div className="lyra-agents-message-content-user">
           <div
-            className={`lyra-agents-message-bubble${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}`}
+            ref={userBubbleRef}
+            className={`lyra-agents-message-bubble${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}${userBubbleOverflowing && !userBubbleExpanded ? " lyra-agents-message-bubble-collapsed" : ""}`}
             onContextMenu={(event) => onContextMenu?.(event, message)}
           >
             {message.blocks.map((b) => {
@@ -692,7 +703,7 @@ export function Message({
               return null;
             })}
           </div>
-          {message.time && (
+          {(message.time || userBubbleOverflowing) && (
             <span className="lyra-agents-message-time lyra-agents-message-time-user">
               <span className="lyra-agents-time-text">{message.time}</span>
               <span className="lyra-agents-time-actions">
@@ -718,6 +729,18 @@ export function Message({
                     title={canRollback ? t("lyra-agents-message.rollbackTitle") : unavailableRollbackReason}
                   >
                     <Undo2 size={12} strokeWidth={2} />
+                  </span>
+                ) : null}
+                {userBubbleOverflowing ? (
+                  <span
+                    className="lyra-agents-time-copy"
+                    onClick={() => setUserBubbleExpanded((open) => !open)}
+                    role="button"
+                    aria-expanded={userBubbleExpanded}
+                    aria-label={userBubbleExpanded ? t("lyra-agents-message.collapse") : t("lyra-agents-message.expand")}
+                    title={userBubbleExpanded ? t("lyra-agents-message.collapse") : t("lyra-agents-message.expand")}
+                  >
+                    {userBubbleExpanded ? <ChevronUp size={12} strokeWidth={2} /> : <ChevronDown size={12} strokeWidth={2} />}
                   </span>
                 ) : null}
               </span>

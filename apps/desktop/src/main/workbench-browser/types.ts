@@ -23,8 +23,7 @@ import type {
   WorkbenchLumenStaleTarget,
   WorkbenchLumenTargetExplanation,
   WorkbenchLumenTargetRef,
-  WorkbenchBrowserTopologySnapshot,
-  WorkbenchBrowserWebThemeSnapshot
+  WorkbenchBrowserTopologySnapshot
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabExtractTextResult,
@@ -1055,9 +1054,6 @@ export type WorkbenchBrowserViewManager = {
   ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
-  ) => Promise<void>;
-  readonly applyWebTheme: (
-    snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly readActiveTabId: () => string | null;
   readonly resolvePageDragContextFromWebContents: (

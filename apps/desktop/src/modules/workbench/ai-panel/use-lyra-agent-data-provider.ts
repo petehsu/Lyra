@@ -394,6 +394,7 @@ type LyraAgentDataProviderCallbacks = {
   readonly onOpenProjectPlanManager?: ((request: {
     readonly sessionId: string;
     readonly workingDir: string;
+    readonly view?: "plan" | "todo" | "both";
   }) => Promise<void> | void) | undefined;
   readonly onRevealProjectPath?: ((request: {
     readonly sessionId: string;
@@ -1286,7 +1287,9 @@ export const useLyraAgentDataProvider = (
     });
   }, [onOpenPlanBoard, state.session]);
 
-  const openProjectPlanManager = useCallback(async (): Promise<void> => {
+  const openProjectPlanManager = useCallback(async (
+    view: "plan" | "todo" | "both" = "both"
+  ): Promise<void> => {
     if (
       state.session?.projectBound !== true ||
       state.session.workingDirIsHome === true ||
@@ -1297,7 +1300,8 @@ export const useLyraAgentDataProvider = (
     }
     await onOpenProjectPlanManager?.({
       sessionId: state.session.id,
-      workingDir: state.session.workingDir
+      workingDir: state.session.workingDir,
+      view
     });
   }, [
     onOpenProjectPlanManager,
@@ -1786,9 +1790,19 @@ export const useLyraAgentDataProvider = (
     const chatMessages = agentSessionToChatMessages(state.session, {
       messageLimitFromEnd: visibleMessageLimit
     });
+    const turnRunning = state.session?.follow.running ?? state.loading;
+    const lastChatMessage = chatMessages.at(-1);
+    // While a turn is running but the agent has not yet emitted its own message
+    // (the "connecting" window before the first token), append an empty pending
+    // agent placeholder so the activity indicator renders directly below the
+    // latest user message. Without it the indicator either vanishes (the very
+    // first message of a session) or attaches to the previous agent message
+    // above the user's new message (subsequent messages).
     const messages: ChatMessage[] =
-      state.loading && chatMessages.length === 0
+      turnRunning &&
+      (lastChatMessage === undefined || lastChatMessage.author === "user")
         ? [
+            ...chatMessages,
             {
               id: "lyra-agent-connecting",
               author: "agent",
@@ -1875,7 +1889,7 @@ export const useLyraAgentDataProvider = (
       approvePermission,
       denyPermission,
       isMock: false,
-      isTurnRunning: state.session?.follow.running ?? state.loading,
+      isTurnRunning: turnRunning,
       followActivity:
         state.session?.follow.activity ??
         (state.loading ? AGENT_FOLLOW_ACTIVITY_CONNECTING : null)

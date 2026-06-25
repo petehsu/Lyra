@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { renderMarkdown } from "@lyra/markdown-render";
 import {
   Check,
   CheckCircle2,
@@ -7,6 +8,7 @@ import {
   MessageSquare,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Trash2,
   X,
   XCircle
@@ -20,39 +22,29 @@ import type {
   AgentTodoItem
 } from "../../../shared/agent";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import type { AgentPlanBoardSurfaceProps } from "./types";
+import { PlanTempChat } from "./temp-chat";
+import type { AgentPlanBoardSurfaceProps, AgentPlanBoardView } from "./types";
+import {
+  editableLineId,
+  parseMarkdownBlocks,
+  replaceMarkdownLine,
+  type EditableMarkdownBlock
+} from "./markdown-blocks";
 
-type MarkdownBlock =
-  | {
-      readonly kind: "heading";
-      readonly level: number;
-      readonly text: string;
-      readonly key: string;
-      readonly lineIndex: number;
-      readonly prefix: string;
-    }
-  | {
-      readonly kind: "list";
-      readonly text: string;
-      readonly taskState: "todo" | "done" | null;
-      readonly key: string;
-      readonly lineIndex: number;
-      readonly prefix: string;
-    }
-  | {
-      readonly kind: "code";
-      readonly text: string;
-      readonly key: string;
-    }
-  | {
-      readonly kind: "paragraph";
-      readonly text: string;
-      readonly key: string;
-      readonly lineIndex: number;
-      readonly prefix: string;
-    };
+const stripWrappingParagraph = (html: string): string => {
+  const match = html.match(/^\s*<p>([\s\S]*?)<\/p>\s*$/u);
+  return match !== null ? (match[1] ?? "") : html;
+};
 
-type EditableMarkdownBlock = Extract<MarkdownBlock, { readonly lineIndex: number }>;
+// Inline-level rich rendering for single-line blocks (headings, list items,
+// paragraphs) — bold/italic/links/inline-code/math render instead of showing
+// raw markdown. Output is DOMPurify-sanitized by the renderer.
+const renderInlineHtml = (text: string): string =>
+  stripWrappingParagraph(renderMarkdown(text, { mode: "final" }).html);
+
+// Block-level rich rendering for multi-line constructs (tables, blockquotes).
+const renderBlockHtml = (source: string): string =>
+  renderMarkdown(source, { mode: "final" }).html;
 
 const statusClassName = (status: string): string => {
   const normalized = status.toLowerCase();
@@ -71,22 +63,6 @@ const TodoStatusIcon = ({ status }: { readonly status: string }) => {
   return <HelpCircle size={14} />;
 };
 
-const editableLineId = (lineIndex: number): string => `line-${lineIndex + 1}`;
-
-const splitMarkdownLines = (markdown: string): string[] =>
-  markdown.replace(/\r\n?/gu, "\n").split("\n");
-
-const replaceMarkdownLine = (
-  markdown: string,
-  block: EditableMarkdownBlock,
-  text: string
-): string => {
-  const lines = splitMarkdownLines(markdown);
-  const nextText = text.trim();
-  lines[block.lineIndex] = block.prefix.length > 0 ? `${block.prefix}${nextText}` : nextText;
-  return lines.join("\n");
-};
-
 const normalizeAnnotation = (
   block: EditableMarkdownBlock,
   text: string,
@@ -99,93 +75,6 @@ const normalizeAnnotation = (
   text: text.trim(),
   createdAt: new Date().toISOString()
 });
-
-const parseMarkdownBlocks = (markdown: string): MarkdownBlock[] => {
-  const lines = splitMarkdownLines(markdown);
-  const blocks: MarkdownBlock[] = [];
-  let codeLines: string[] = [];
-  let codeStart = -1;
-  let inCode = false;
-
-  const flushCode = (index: number): void => {
-    if (codeLines.length === 0) return;
-    blocks.push({
-      kind: "code",
-      text: codeLines.join("\n"),
-      key: `code-${codeStart}-${index}`
-    });
-    codeLines = [];
-    codeStart = -1;
-  };
-
-  lines.forEach((line, index) => {
-    if (line.trim().startsWith("```")) {
-      if (inCode) {
-        flushCode(index);
-        inCode = false;
-      } else {
-        inCode = true;
-        codeStart = index;
-      }
-      return;
-    }
-    if (inCode) {
-      codeLines.push(line);
-      return;
-    }
-
-    const trimmed = line.trim();
-    if (trimmed.length === 0) return;
-    const heading = line.match(/^(\s*#{1,4}\s+)(.+)$/u);
-    if (heading !== null) {
-      const prefix = heading[1] ?? "";
-      blocks.push({
-        kind: "heading",
-        level: prefix.trim().length,
-        text: (heading[2] ?? "").trim(),
-        key: `heading-${index}`,
-        lineIndex: index,
-        prefix
-      });
-      return;
-    }
-    const task = line.match(/^(\s*[-*]\s+\[( |x|X)\]\s+)(.+)$/u);
-    if (task !== null) {
-      blocks.push({
-        kind: "list",
-        taskState: (task[2] ?? "").toLowerCase() === "x" ? "done" : "todo",
-        text: (task[3] ?? "").trim(),
-        key: `task-${index}`,
-        lineIndex: index,
-        prefix: task[1] ?? ""
-      });
-      return;
-    }
-    const list = line.match(/^(\s*(?:[-*]|\d+\.)\s+)(.+)$/u);
-    if (list !== null) {
-      blocks.push({
-        kind: "list",
-        taskState: null,
-        text: (list[2] ?? "").trim(),
-        key: `list-${index}`,
-        lineIndex: index,
-        prefix: list[1] ?? ""
-      });
-      return;
-    }
-    const paragraph = line.match(/^(\s*)(.+)$/u);
-    blocks.push({
-      kind: "paragraph",
-      text: (paragraph?.[2] ?? trimmed).trim(),
-      key: `paragraph-${index}`,
-      lineIndex: index,
-      prefix: paragraph?.[1] ?? ""
-    });
-  });
-
-  flushCode(lines.length);
-  return blocks;
-};
 
 const annotationsForBlock = (
   annotations: readonly AgentPlanAnnotation[],
@@ -286,22 +175,38 @@ const MarkdownPreview = ({
         <div className="lyra-agent-plan-board-line-content">
           {isEditing || isCommenting ? (
             <div className="lyra-agent-plan-board-line-editor">
-              <input
-                autoFocus
-                className="lyra-agent-plan-board-line-input"
-                placeholder={isEditing ? labels.editPlaceholder : labels.commentPlaceholder}
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    cancel();
-                  }
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void (isEditing ? saveEdit(block) : saveComment(block));
-                  }
-                }}
-              />
+              {isEditing && block.kind === "rich" ? (
+                <textarea
+                  autoFocus
+                  rows={Math.min(Math.max(draft.split("\n").length, 2), 12)}
+                  className="lyra-agent-plan-board-line-input lyra-agent-plan-board-line-textarea"
+                  placeholder={labels.editPlaceholder}
+                  value={draft}
+                  onChange={(event) => setDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      cancel();
+                    }
+                  }}
+                />
+              ) : (
+                <input
+                  autoFocus
+                  className="lyra-agent-plan-board-line-input"
+                  placeholder={isEditing ? labels.editPlaceholder : labels.commentPlaceholder}
+                  value={draft}
+                  onChange={(event) => setDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      cancel();
+                    }
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void (isEditing ? saveEdit(block) : saveComment(block));
+                    }
+                  }}
+                />
+              )}
               <button
                 className="lyra-agent-plan-board-line-icon-btn"
                 type="button"
@@ -360,7 +265,10 @@ const MarkdownPreview = ({
       {blocks.map((block) => {
         if (block.kind === "heading") {
           const Heading = `h${Math.min(block.level + 1, 5)}` as keyof JSX.IntrinsicElements;
-          return renderEditableShell(block, <Heading>{block.text}</Heading>);
+          return renderEditableShell(
+            block,
+            <Heading dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
+          );
         }
         if (block.kind === "list") {
           return renderEditableShell(
@@ -369,14 +277,26 @@ const MarkdownPreview = ({
               <span className="lyra-agent-plan-board-list-marker">
                 {block.taskState === "done" ? "✓" : block.taskState === "todo" ? "□" : "•"}
               </span>
-              <span>{block.text}</span>
+              <span dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
             </div>
+          );
+        }
+        if (block.kind === "rich") {
+          return renderEditableShell(
+            block,
+            <div
+              className="lyra-agent-plan-board-rich lyra-agents-md"
+              dangerouslySetInnerHTML={{ __html: renderBlockHtml(block.text) }}
+            />
           );
         }
         if (block.kind === "code") {
           return <pre key={block.key}>{block.text}</pre>;
         }
-        return renderEditableShell(block, <p>{block.text}</p>);
+        return renderEditableShell(
+          block,
+          <p dangerouslySetInnerHTML={{ __html: renderInlineHtml(block.text) }} />
+        );
       })}
     </div>
   );
@@ -419,15 +339,32 @@ const PlanTodoDetail = ({
   labels,
   plan,
   todo,
-  onRevisePlan
+  view = "both",
+  onRevisePlan,
+  onResumePlan
 }: {
   readonly labels: AgentPlanBoardSurfaceProps["labels"];
   readonly plan: AgentPlanSnapshot;
   readonly todo: AgentProjectTodoSnapshot | null;
+  readonly view?: AgentPlanBoardView;
   readonly onRevisePlan?: AgentPlanBoardSurfaceProps["onRevisePlan"];
+  readonly onResumePlan?: () => Promise<void>;
 }) => {
+  const showTodo = view !== "plan" && todo !== null;
+  const showPlan = view !== "todo";
   const current = todo === null ? 0 : Math.min(todo.currentIndex + 1, todo.todos.length);
   const total = todo?.todos.length ?? 0;
+  const isSetAside = plan.phase === "set_aside";
+  const [resuming, setResuming] = useState(false);
+  const handleResume = async (): Promise<void> => {
+    if (onResumePlan === undefined || resuming) return;
+    setResuming(true);
+    try {
+      await onResumePlan();
+    } finally {
+      setResuming(false);
+    }
+  };
   return (
     <>
       <header className="lyra-agent-plan-board-header">
@@ -436,28 +373,47 @@ const PlanTodoDetail = ({
           <h1>{plan.title}</h1>
         </div>
         <div className="lyra-agent-plan-board-meta">
+          {isSetAside ? (
+            <span className="lyra-agent-plan-board-badge is-set-aside">{labels.setAsideBadge}</span>
+          ) : null}
           <span>{labels.phase}: {plan.phase}</span>
           <span>{labels.version}: {plan.activeVersionId}</span>
-          {todo !== null ? <span>{labels.currentStep}: {current}/{total}</span> : null}
+          {showTodo ? <span>{labels.currentStep}: {current}/{total}</span> : null}
+          {isSetAside && onResumePlan !== undefined ? (
+            <button
+              type="button"
+              className="lyra-agent-plan-board-resume-btn"
+              disabled={resuming}
+              onClick={() => { void handleResume(); }}
+            >
+              <RotateCcw size={13} />
+              {labels.resumePlan}
+            </button>
+          ) : null}
         </div>
       </header>
 
-      <main className={todo === null ? "lyra-agent-plan-board-main" : "lyra-agent-plan-board-main has-todo"}>
-        {todo !== null ? (
+      <main className={showTodo && showPlan ? "lyra-agent-plan-board-main has-todo" : "lyra-agent-plan-board-main"}>
+        {showTodo ? (
           <aside className="lyra-agent-plan-board-todo">
             <h2>{labels.todo}</h2>
             <TodoList todos={todo.todos} currentIndex={todo.currentIndex} labels={labels} />
           </aside>
         ) : null}
-        <section className="lyra-agent-plan-board-plan">
-          <h2>{labels.plan}</h2>
-          <MarkdownPreview
-            labels={labels}
-            markdown={plan.markdown}
-            annotations={plan.annotations}
-            onRevise={onRevisePlan}
-          />
-        </section>
+        {showPlan ? (
+          <section className="lyra-agent-plan-board-plan">
+            <h2>{labels.plan}</h2>
+            <MarkdownPreview
+              labels={labels}
+              markdown={plan.markdown}
+              annotations={plan.annotations}
+              onRevise={onRevisePlan}
+            />
+          </section>
+        ) : null}
+        {!showTodo && !showPlan ? (
+          <p className="lyra-agent-plan-board-empty">{labels.noTodo}</p>
+        ) : null}
       </main>
     </>
   );
@@ -553,12 +509,68 @@ const PlanManagerList = ({
 export const AgentPlanBoardSurface = ({
   labels,
   state,
+  desktopApi,
   onOpenManagedPlan,
   onDeleteManagedPlan,
   onRefreshManager,
-  onRevisePlan
+  onRevisePlan,
+  openDialog
 }: AgentPlanBoardSurfaceProps) => {
   const plan = state.mode === "detail" ? state.plan : state.selectedPlan;
+  // Deleting a managed plan is destructive and irreversible, so route it through
+  // the global confirmation dialog. Without a dialog host we fall back to the raw
+  // delete so the action still works (e.g. in tests).
+  const confirmDeleteManagedPlan = useMemo(() => {
+    if (onDeleteManagedPlan === undefined) return undefined;
+    if (openDialog === undefined) return onDeleteManagedPlan;
+    const plans = state.mode === "manager" ? state.plans : [];
+    return (planId: string): Promise<void> =>
+      new Promise<void>((resolve) => {
+        const target = plans.find((entry) => entry.planId === planId);
+        openDialog({
+          title: labels.deleteConfirmTitle,
+          description: labels.deleteConfirmDescription,
+          source: {
+            title: labels.title,
+            subtitle: target?.title ?? labels.manager,
+            iconLabel: "AI",
+            iconTone: "danger"
+          },
+          actions: [
+            { id: "cancel", label: labels.cancel, onSelect: () => resolve() },
+            {
+              id: "delete",
+              label: labels.deleteConfirmAction,
+              tone: "danger",
+              onSelect: () => {
+                void onDeleteManagedPlan(planId).finally(() => resolve());
+              }
+            }
+          ]
+        });
+      });
+  }, [
+    onDeleteManagedPlan,
+    openDialog,
+    state,
+    labels.deleteConfirmTitle,
+    labels.deleteConfirmDescription,
+    labels.deleteConfirmAction,
+    labels.title,
+    labels.manager,
+    labels.cancel
+  ]);
+  const resumePlan = useMemo(() => {
+    const agent = desktopApi?.agent;
+    if (agent?.respondPlanReview === undefined) return undefined;
+    const sessionId = state.agentSessionId;
+    return async (): Promise<void> => {
+      await agent.respondPlanReview({ sessionId, action: "resume" });
+      // Manager view reads from the persisted store, so refresh it explicitly;
+      // the detail view updates from runtime session-snapshot events.
+      if (state.mode === "manager") await onRefreshManager?.();
+    };
+  }, [desktopApi, state.agentSessionId, state.mode, onRefreshManager]);
   const titlebarContent = useMemo(() => (
     <div className="lyra-agent-plan-board-titlebar">
       <span>{state.title}</span>
@@ -610,7 +622,7 @@ export const AgentPlanBoardSurface = ({
               selectedPlanId={selectedPlan?.activePlanId ?? null}
               loading={state.loading}
               onOpenPlan={onOpenManagedPlan}
-              onDeletePlan={onDeleteManagedPlan}
+              onDeletePlan={confirmDeleteManagedPlan}
             />
           </aside>
           <section className="lyra-agent-plan-board-manager-detail">
@@ -631,12 +643,23 @@ export const AgentPlanBoardSurface = ({
                   labels={labels}
                   plan={selectedPlan}
                   todo={state.selectedProjectTodo}
+                  view={state.view}
                   onRevisePlan={onRevisePlan}
+                  onResumePlan={resumePlan}
                 />
               </div>
             )}
           </section>
         </main>
+        {selectedPlan === null || state.view === "todo" ? null : (
+          <PlanTempChat
+            labels={labels}
+            parentSessionId={state.agentSessionId}
+            plan={selectedPlan}
+            desktopApi={desktopApi}
+            onApplyRevision={onRevisePlan}
+          />
+        )}
       </div>
     );
   }
@@ -648,6 +671,14 @@ export const AgentPlanBoardSurface = ({
         plan={state.plan}
         todo={state.projectTodo}
         onRevisePlan={onRevisePlan}
+        onResumePlan={resumePlan}
+      />
+      <PlanTempChat
+        labels={labels}
+        parentSessionId={state.agentSessionId}
+        plan={state.plan}
+        desktopApi={desktopApi}
+        onApplyRevision={onRevisePlan}
       />
     </div>
   );

@@ -37,6 +37,19 @@ pub(crate) fn project_plan_delete(payload: Value) -> AgentRuntimeResult<Value> {
     delete_project_plan(&root, &working_dir, &plan_id)
 }
 
+pub(crate) fn project_todo_read_for_project(payload: Value) -> AgentRuntimeResult<Value> {
+    let plan_id = string_opt(&payload, "planId")
+        .ok_or_else(|| AgentRuntimeError::Core("planId is required".to_string()))?;
+    let (root, working_dir) = {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let working_dir = resolve_working_dir(&state, &payload)?;
+        (state.root.clone(), working_dir)
+    };
+    read_project_todo(&root, &working_dir, &plan_id)
+}
+
 pub(crate) fn project_plan_revise(payload: Value) -> AgentRuntimeResult<Value> {
     let session_id = string_opt(&payload, "sessionId")
         .ok_or_else(|| AgentRuntimeError::Core("sessionId is required".to_string()))?;
@@ -168,10 +181,21 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
                     }),
                 )
             }
-            "reject" | "rejected" => {
-                plan["phase"] = Value::String(PLAN_PHASE_REJECTED.to_string());
-                plan["review"] = json!({ "status": "rejected", "summary": feedback });
-                ("rejected", None)
+            "reject" | "rejected" | "set_aside" | "set-aside" | "defer" => {
+                // Non-destructive: set the plan aside (deferred) instead of
+                // killing it. The plan stays in the session snapshot and the
+                // persisted project plan store, so the user can resume it later
+                // from the plan board. The current turn stops here.
+                plan["phase"] = Value::String(PLAN_PHASE_SET_ASIDE.to_string());
+                plan["review"] = json!({ "status": "set_aside", "summary": feedback });
+                ("set_aside", None)
+            }
+            "resume" | "reopen" | "reactivate" => {
+                // Bring a set-aside plan back into review so the user can
+                // approve, revise, or set it aside again.
+                plan["phase"] = Value::String(PLAN_PHASE_REVIEWING.to_string());
+                plan["review"] = json!({ "status": "pending", "summary": feedback });
+                ("resumed", None)
             }
             "request_revision" | "revise" | "revision" => {
                 plan["phase"] = Value::String(PLAN_PHASE_PLANNING.to_string());

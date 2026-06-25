@@ -54,7 +54,7 @@ export interface CreateDataProviderValueInput {
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
   openPlanReview?: (plan: AgentPlanSnapshot) => Promise<void>;
   openProjectTodo?: () => Promise<void>;
-  openProjectPlanManager?: () => Promise<void>;
+  openProjectPlanManager?: (view?: "plan" | "todo" | "both") => Promise<void>;
   respondPlanReview?: (
     action: AgentPlanReviewRespondAction,
     feedback?: string | null

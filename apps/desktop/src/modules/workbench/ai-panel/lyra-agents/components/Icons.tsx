@@ -2,7 +2,6 @@ import {
   Bot,
   ChevronRight,
   BookText,
-  FileCode2,
   FileText,
   FilePlus,
   FileDiff,
@@ -23,11 +22,9 @@ import {
   XCircle,
   Loader2,
   File,
-  PanelsTopLeft,
   Terminal,
   Hammer,
   FolderOpen,
-  LayoutGrid,
   Camera,
   Crosshair,
   Eye,
@@ -97,8 +94,6 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
       return <ListChecks {...props} />;
     case "create":
       return <FilePlus {...props} />;
-    case "render":
-      return <PanelsTopLeft {...props} />;
   }
 };
 
@@ -197,13 +192,6 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
     if (action.includes("install") || action.includes("package")) return <PackageOpen {...props} />;
     return <Store {...props} />;
   }
-  if (details?.type === "render") {
-    if (details.format === "html" || details.format === "svg" || details.format === "json") {
-      return <FileCode2 {...props} />;
-    }
-    if (details.format === "table") return <LayoutGrid {...props} />;
-    return <PanelsTopLeft {...props} />;
-  }
   if (details?.type === "task") return <ListChecks {...props} />;
   if (details?.type === "ask") return <HelpCircle {...props} />;
   if (details?.type === "text") return <Bot {...props} />;
@@ -223,7 +211,6 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   if (call.kind === "thought") return <Clock3 {...props} />;
   if (call.kind === "plan") return <BookText {...props} />;
   if (call.kind === "create") return <FilePlus {...props} />;
-  if (call.kind === "render") return <PanelsTopLeft {...props} />;
   if (call.kind === "task") return <ListChecks {...props} />;
   if (call.kind === "workbench") return <AppWindow {...props} />;
   if (call.kind === "web") {

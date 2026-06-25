@@ -406,6 +406,7 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: HashMap::new(),
             dirty: true,
+            ephemeral: false,
         }
     }
 

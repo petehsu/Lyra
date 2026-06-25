@@ -15,7 +15,7 @@ import {
   useState,
   type MouseEvent
 } from "react";
-import { ArrowDown, BookText, CornerUpLeft, Copy, Link2, MapPin, Undo2 } from "lucide-react";
+import { ArrowDown, BookText, CornerUpLeft, Copy, Link2, ListChecks, MapPin, Undo2 } from "lucide-react";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import type { ChatMessage } from "../../core/types";
@@ -36,6 +36,7 @@ import {
 import { Composer } from "./Composer";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { ProjectDirChip } from "./ProjectDirChip";
+import { TodoBar } from "../pills/TodoBar";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { AppButton } from "@renderer/ui/components";
 import {
@@ -115,6 +116,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     bindProject,
     openProjectTree,
     openProjectPlanManager,
+    openProjectTodo,
+    todos,
     addCitationToComposer,
     pendingCitation,
     pendingCitationNonce,
@@ -131,6 +134,23 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     rollbackMessage,
   } = useData();
   const contextMenu = useContextMenuModel();
+
+  // The composer "Plan"/"Todos" buttons and the floating todo capsule open the
+  // project plan/todo manager (which has the left list + right detail) when the
+  // session is project-bound; otherwise they fall back to the single-plan board.
+  const canManagePlans =
+    session.projectBound === true &&
+    session.workingDirIsHome !== true &&
+    typeof session.workingDir === "string" &&
+    session.workingDir.trim().length > 0;
+  const openPlanBoard = useCallback(
+    (): Promise<void> => (canManagePlans ? openProjectPlanManager("plan") : openProjectTodo()),
+    [canManagePlans, openProjectPlanManager, openProjectTodo]
+  );
+  const openTodoBoard = useCallback(
+    (): Promise<void> => (canManagePlans ? openProjectPlanManager("todo") : openProjectTodo()),
+    [canManagePlans, openProjectPlanManager, openProjectTodo]
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -711,20 +731,25 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       </div>
 
       <div className="lyra-agents-composer-wrap">
-        <AppButton variant="ghost" size="sm"
-          type="button"
-          className={`lyra-agents-scroll-to-bottom ${isAtBottom ? "out" : "in"}`}
-          onClick={scrollToBottom}
-          aria-label={t("scroll.toBottom")}
-          aria-hidden={isAtBottom}
-        >
-          <svg className="lyra-agents-scroll-circle" viewBox="0 0 34 34">
-            <circle cx="17" cy="17" r="16" />
-          </svg>
-          <span className="lyra-agents-scroll-arrow">
-            <ArrowDown size={15} strokeWidth={2.2} />
-          </span>
-        </AppButton>
+        <div className="lyra-agents-composer-toprow">
+          <AppButton variant="ghost" size="sm"
+            type="button"
+            className={`lyra-agents-scroll-to-bottom ${isAtBottom ? "out" : "in"}`}
+            onClick={scrollToBottom}
+            aria-label={t("scroll.toBottom")}
+            aria-hidden={isAtBottom}
+          >
+            <svg className="lyra-agents-scroll-circle" viewBox="0 0 34 34">
+              <circle cx="17" cy="17" r="16" />
+            </svg>
+            <span className="lyra-agents-scroll-arrow">
+              <ArrowDown size={15} strokeWidth={2.2} />
+            </span>
+          </AppButton>
+          <div className="lyra-agents-composer-todo-slot">
+            <TodoBar tasks={todos} onOpenBoard={openTodoBoard} />
+          </div>
+        </div>
 
         {showPermission && permissions.length > 0 && (
           <PermissionPanel
@@ -807,17 +832,32 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             onOpenProjectTree={openProjectTree}
           />
           {session.projectBound && !session.workingDirIsHome ? (
-            <AppButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="lyra-agents-project-plan-chip"
-              aria-label={t("header.openProjectPlanManager")}
-              title={t("header.openProjectPlanManager")}
-              onClick={() => { void openProjectPlanManager(); }}
-            >
-              <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
-            </AppButton>
+            <>
+              <AppButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="lyra-agents-project-plan-chip"
+                aria-label={t("lyra-agents-composer.openPlan")}
+                title={t("lyra-agents-composer.openPlan")}
+                onClick={() => { void openPlanBoard(); }}
+              >
+                <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
+                <span>{t("lyra-agents-composer.openPlan")}</span>
+              </AppButton>
+              <AppButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="lyra-agents-project-todo-chip"
+                aria-label={t("lyra-agents-composer.openTodo")}
+                title={t("lyra-agents-composer.openTodo")}
+                onClick={() => { void openTodoBoard(); }}
+              >
+                <ListChecks size={13} strokeWidth={2.1} aria-hidden="true" />
+                <span>{t("lyra-agents-composer.openTodo")}</span>
+              </AppButton>
+            </>
           ) : null}
           {locationControls !== null && locationControls !== undefined ? (
             <AppButton

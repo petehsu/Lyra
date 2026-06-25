@@ -18,7 +18,6 @@ mod hardware;
 mod mcp;
 mod memory;
 mod network;
-mod render;
 mod runtime;
 mod shell;
 mod skills;
@@ -156,7 +155,6 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(hardware::manifests());
     entries.extend(network::manifests());
     entries.extend(web::manifests());
-    entries.extend(render::manifests());
     entries.extend(todo::manifests());
     entries.extend(design::manifests());
     entries.extend(skills::manifests());
@@ -1053,7 +1051,6 @@ fn output_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "read") => "text",
         ("browser", "see") | ("computer", "see") => "artifact",
-        ("render", _) => "render",
         _ => "json",
     }
 }
@@ -1069,7 +1066,6 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("browser", _) | ("browser_ax", _) | ("web", _) => "web",
         ("computer", _) => "computer",
         ("workbench", _) => "workbench",
-        ("render", _) => "render",
         ("todo", _) => "task",
         ("git", _) => "git",
         _ => "task",
@@ -2430,7 +2426,6 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "web" => {
             "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads."
         }
-        "render" => "Create inline render surfaces in the chat timeline.",
         "todo" => "Read and update Lyra task todos.",
         "design" => "Use Lyra design reference tools.",
         "skills" => "List, inspect, activate, and deactivate Lyra skills.",

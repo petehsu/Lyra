@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::tool_activity_service::ToolActivityService;
 use crate::{
     AgentRuntimeBackend, AgentRuntimeError, AgentRuntimeResult, EventCallback,
-    HostCapabilityDispatcher,
+    HostCapabilityDispatcher, ProviderTransportKind,
     context_builder::{ContextBuilder, ProviderContextOptions},
     design_tools,
     prompt_policy::{self, PersonaContext, PromptAccounting, PromptPolicyInput},
@@ -133,6 +133,8 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.plan.delete" => project_plan_delete(payload),
             "agent.plan.revise" => project_plan_revise(payload),
             "agent.plan.review.respond" => plan_review_respond(payload),
+            "agent.todo.read-project" => project_todo_read_for_project(payload),
+            "agent.session.createTemporary" => create_temporary_session(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),

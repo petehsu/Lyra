@@ -10,7 +10,7 @@ pub(crate) const PLAN_PHASE_REVIEWING: &str = "reviewing";
 pub(crate) const PLAN_PHASE_TODO_REQUIRED: &str = "todo_required";
 pub(crate) const PLAN_PHASE_EXECUTING_TODO: &str = "executing_todo";
 pub(crate) const PLAN_PHASE_COMPLETED: &str = "completed";
-pub(crate) const PLAN_PHASE_REJECTED: &str = "rejected";
+pub(crate) const PLAN_PHASE_SET_ASIDE: &str = "set_aside";
 
 #[derive(Clone, Debug)]
 pub(crate) struct PlanSessionScope {
@@ -489,6 +489,30 @@ pub(crate) fn delete_project_plan(
         "workingDir": working_dir,
         "planId": plan_id,
         "deleted": deleted > 0,
+    }))
+}
+
+pub(crate) fn read_project_todo(
+    root: &Path,
+    working_dir: &str,
+    plan_id: &str,
+) -> AgentRuntimeResult<Value> {
+    let project_key = project_key_for_working_dir(working_dir)?;
+    if !project_plan_db_path(root, &project_key).exists() {
+        return Ok(json!({
+            "projectKey": project_key,
+            "workingDir": working_dir,
+            "planId": plan_id,
+            "todo": Value::Null,
+        }));
+    }
+    let conn = open_project_plan_store(root, &project_key)?;
+    let todo = read_latest_project_todo(&conn, plan_id)?;
+    Ok(json!({
+        "projectKey": project_key,
+        "workingDir": working_dir,
+        "planId": plan_id,
+        "todo": todo,
     }))
 }
 

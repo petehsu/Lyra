@@ -24,6 +24,8 @@ import type {
   AgentProjectPlanListResponse,
   AgentProjectPlanReadRequest,
   AgentProjectPlanReadResponse,
+  AgentProjectTodoReadRequest,
+  AgentProjectTodoReadResponse,
   AgentPlanReviewRespondRequest,
   AgentMessageResolveRequest,
   AgentMessageResolveResponse,
@@ -33,6 +35,7 @@ import type {
   AgentSessionArchiveRequest,
   AgentSessionBindProjectRequest,
   AgentSessionCreateRequest,
+  AgentTemporarySessionCreateRequest,
   AgentSessionDeleteRequest,
   AgentSessionDeleteResponse,
   AgentSessionReadRequest,
@@ -104,6 +107,14 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentSessionSnapshot>(
           "agent.session.create",
           (payload as AgentSessionCreateRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSessionCreateTemporary,
+      (_event, payload) =>
+        requestRuntime<AgentSessionSnapshot>(
+          "agent.session.createTemporary",
+          payload as AgentTemporarySessionCreateRequest
         )
     ],
     [
@@ -378,6 +389,14 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentSessionSnapshot>(
           "agent.plan.review.respond",
           payload as AgentPlanReviewRespondRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentTodoReadProject,
+      (_event, payload) =>
+        requestRuntime<AgentProjectTodoReadResponse>(
+          "agent.todo.read-project",
+          payload as AgentProjectTodoReadRequest
         )
     ],
     [

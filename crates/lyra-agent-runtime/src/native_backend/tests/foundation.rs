@@ -25,6 +25,104 @@ fn native_backend_creates_and_reads_session() {
 }
 
 #[test]
+fn temporary_session_is_ephemeral_seeded_and_hidden() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let backend = LyraAgentBackend;
+    let parent = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Parent", "workingDir": project.path().display().to_string() }),
+        )
+        .expect("create parent session");
+    let parent_session_id = parent["id"].as_str().expect("parent id").to_string();
+
+    // Seed an active plan on the parent so the temp session has plan context to embed.
+    let mut session = new_session(
+        Some("Parent".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    session.snapshot["plan"] = json!({
+        "activePlanId": "plan-temp-1",
+        "activeVersionId": "plan-temp-1",
+        "title": "Plan Mode Test",
+        "markdown": "# Plan\n\n- step 1\n- step 2\n",
+        "annotations": [],
+        "phase": PLAN_PHASE_REVIEWING,
+        "review": { "status": "pending", "summary": null }
+    });
+    let parent_id = session.id.clone();
+    {
+        let mut state = state().lock().expect("state lock");
+        state.sessions.insert(parent_id.clone(), session);
+        state.active_session_id = Some(parent_id.clone());
+        state.save_state().expect("save state");
+    }
+
+    let temp = backend
+        .call_agent_method(
+            "agent.session.createTemporary",
+            json!({ "parentSessionId": parent_session_id }),
+        )
+        .expect("create temporary session");
+    assert_eq!(temp["sessionKind"], "temporary");
+    assert_eq!(temp["ephemeral"], true);
+    assert_eq!(temp["parentSessionId"], parent_session_id);
+    // The seed message embeds the plan markdown.
+    let messages = temp["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["role"], "user");
+    assert!(
+        messages[0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("# Plan") && text.contains("step 1"))
+    );
+    let temp_session_id = temp["id"].as_str().expect("temp id").to_string();
+
+    // The active session must remain the parent, not the temp session.
+    {
+        let state = state().lock().expect("state lock");
+        assert_eq!(state.active_session_id.as_deref(), Some(parent_id.as_str()));
+        assert!(state
+            .sessions
+            .get(&temp_session_id)
+            .map(|session| session.ephemeral)
+            .unwrap_or(false));
+    }
+
+    // Ephemeral sessions never appear in the session list.
+    let listed = backend
+        .call_agent_method("agent.session.list", json!({}))
+        .expect("list sessions");
+    let listed_ids = listed["sessions"]
+        .as_array()
+        .expect("sessions array")
+        .iter()
+        .filter_map(|value| value["sessionId"].as_str().or(value["id"].as_str()))
+        .collect::<Vec<_>>();
+    assert!(!listed_ids.contains(&temp_session_id.as_str()));
+
+    // Deleting the temp session removes it from memory (best-effort, no disk file).
+    let deleted = backend
+        .call_agent_method(
+            "agent.session.delete",
+            json!({ "sessionId": temp_session_id }),
+        )
+        .expect("delete temp session");
+    assert_eq!(deleted["deleted"], true);
+    {
+        let state = state().lock().expect("state lock");
+        assert!(!state.sessions.contains_key(&temp_session_id));
+    }
+
+    // Cleanup parent.
+    let _ = backend.call_agent_method(
+        "agent.session.delete",
+        json!({ "sessionId": parent_id }),
+    );
+}
+
+#[test]
 fn plan_mode_lifecycle_reaches_reviewing_phase() {
     let project = tempfile::tempdir().expect("project tempdir");
     let mut session = new_session(
@@ -445,6 +543,61 @@ fn plan_review_approve_sets_todo_required_phase() {
 
     assert_eq!(reviewed["plan"]["phase"], PLAN_PHASE_TODO_REQUIRED);
     assert_eq!(reviewed["plan"]["review"]["status"], "approved");
+}
+
+#[test]
+fn plan_review_set_aside_is_non_terminal_and_resumable() {
+    let project = tempfile::tempdir().expect("project tempdir");
+    let mut session = new_session(
+        Some("Plan Set Aside Test".to_string()),
+        Some(project.path().display().to_string()),
+        "normal",
+    );
+    let session_id = session.id.clone();
+    session.snapshot["plan"] = json!({
+        "activePlanId": format!("plan-{}", Uuid::new_v4()),
+        "activeVersionId": format!("plan-version-{}", Uuid::new_v4()),
+        "projectKey": project_key_for_working_dir(&project.path().display().to_string()).expect("project key"),
+        "title": "Set aside plan",
+        "phase": PLAN_PHASE_REVIEWING,
+        "markdown": "# Plan\n\n- Build runtime support\n",
+        "annotations": [],
+        "review": { "status": "pending", "summary": "Ready" }
+    });
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+
+    let set_aside = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.review.respond",
+            json!({
+                "sessionId": session_id,
+                "action": "set_aside",
+                "feedback": "Later",
+                "continue": false
+            }),
+        )
+        .expect("set plan aside");
+    assert_eq!(set_aside["plan"]["phase"], PLAN_PHASE_SET_ASIDE);
+    assert_eq!(set_aside["plan"]["review"]["status"], "set_aside");
+
+    // The plan must remain resumable: bringing it back returns it to review.
+    let resumed = LyraAgentBackend
+        .call_agent_method(
+            "agent.plan.review.respond",
+            json!({
+                "sessionId": session_id,
+                "action": "resume",
+                "continue": false
+            }),
+        )
+        .expect("resume plan");
+    assert_eq!(resumed["plan"]["phase"], PLAN_PHASE_REVIEWING);
+    assert_eq!(resumed["plan"]["review"]["status"], "pending");
 }
 
 #[test]

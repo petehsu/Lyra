@@ -1,0 +1,347 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CornerUpLeft, MessageSquare, X } from "lucide-react";
+import { renderMarkdown } from "@lyra/markdown-render";
+
+import type {
+  AgentMessage,
+  AgentPlanAnnotation,
+  AgentPlanSnapshot,
+  AgentRuntimeEvent
+} from "../../../shared/agent";
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { AgentPlanBoardLabels, AgentPlanBoardRevisionRequest } from "./types";
+
+type TempChatMessage = {
+  readonly id: string;
+  readonly role: "assistant" | "user" | "note";
+  readonly text: string;
+};
+
+type PlanTempChatProps = {
+  readonly labels: AgentPlanBoardLabels;
+  readonly parentSessionId: string;
+  readonly plan: AgentPlanSnapshot;
+  readonly desktopApi: LyraDesktopApi | null;
+  readonly onApplyRevision?: ((request: AgentPlanBoardRevisionRequest) => Promise<void>) | undefined;
+};
+
+/**
+ * Temporary plan-chat capsule mounted at the bottom-right of the Plan Board.
+ *
+ * It runs an isolated ephemeral agent session seeded with the parent session's
+ * plan/todo context. The temp agent can explain or propose plan changes; it must
+ * not execute the task. Messages live only in this capsule's local state and the
+ * ephemeral session — they never enter the main transcript, are never persisted,
+ * and are destroyed when the capsule closes.
+ *
+ * Applying a change is a deliberate user action: the temp agent emits a revised
+ * plan inside a ```plan fenced block; the user clicks "Apply to plan" to call the
+ * existing revisePlan IPC with source="temp_chat" on the PARENT session. That sets
+ * the parent plan's review.status to "changed" and flips the main review button to
+ * "根据反馈重写".
+ */
+const extractPlanBlock = (text: string): string | null => {
+  const match = text.match(/```plan\s*\n([\s\S]*?)```/u);
+  return match === null ? null : (match[1] ?? "").trim();
+};
+
+const messageText = (message: AgentMessage | undefined): string => {
+  if (message === undefined) return "";
+  if (typeof message.text === "string" && message.text.length > 0) return message.text;
+  const blocks = message.blocks;
+  if (Array.isArray(blocks)) {
+    return blocks
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("");
+  }
+  return "";
+};
+
+// Reuse the AI panel's markdown engine + classes so temp-chat replies get the
+// same rich rendering (code blocks, lists, tables, inline code, links).
+const TempChatMarkdown = ({ text }: { readonly text: string }) => {
+  const html = useMemo(() => renderMarkdown(text, { mode: "final" }).html, [text]);
+  return (
+    <div
+      className="lyra-agents-rich-text lyra-agents-markdown-document"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
+
+export const PlanTempChat = ({
+  labels,
+  parentSessionId,
+  plan,
+  desktopApi,
+  onApplyRevision
+}: PlanTempChatProps) => {
+  const [open, setOpen] = useState(false);
+  const [tempSessionId, setTempSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<readonly TempChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Accumulated assistant text per messageId, reconstructed from streaming deltas.
+  const assistantBufferRef = useRef<Map<string, string>>(new Map());
+  // Last plan markdown auto-applied to the parent plan, to avoid re-applying the
+  // same proposal on re-render.
+  const appliedPlanRef = useRef<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const pendingPlanAnnotations: readonly AgentPlanAnnotation[] = useMemo(
+    () => plan.annotations ?? [],
+    [plan.annotations]
+  );
+
+  const flushAssistantMessage = useCallback((messageId: string) => {
+    const buffer = assistantBufferRef.current.get(messageId);
+    if (buffer === undefined || buffer.length === 0) return;
+    setMessages((prev) => {
+      if (prev.some((message) => message.id === messageId)) return prev;
+      return [...prev, { id: messageId, role: "assistant", text: buffer }];
+    });
+    assistantBufferRef.current.delete(messageId);
+  }, []);
+
+  // Subscribe to runtime events scoped to the temp session. The main session-view-model
+  // is keyed to the parent session, so these events never reach the main transcript.
+  useEffect(() => {
+    if (!open || tempSessionId === null || desktopApi === null) return;
+    const agent = desktopApi.agent;
+    if (agent === undefined) return;
+    const unsubscribe = agent.onEvent((event: AgentRuntimeEvent) => {
+      if (!("sessionId" in event) || event.sessionId !== tempSessionId) return;
+      switch (event.kind) {
+        case "messageCommitted": {
+          if (event.message.role === "user") {
+            setMessages((prev) =>
+              prev.some((message) => message.id === event.message.id)
+                ? prev
+                : [...prev, { id: event.message.id, role: "user", text: messageText(event.message) }]
+            );
+          } else {
+            flushAssistantMessage(event.message.id);
+          }
+          break;
+        }
+        case "messageDelta": {
+          if (event.replace === true) {
+            assistantBufferRef.current.set(event.messageId, event.delta);
+          } else {
+            const current = assistantBufferRef.current.get(event.messageId) ?? "";
+            assistantBufferRef.current.set(event.messageId, current + event.delta);
+          }
+          setMessages((prev) => {
+            const buffered = assistantBufferRef.current.get(event.messageId) ?? "";
+            const existing = prev.find((message) => message.id === event.messageId);
+            if (existing === undefined) {
+              return [...prev, { id: event.messageId, role: "assistant", text: buffered }];
+            }
+            return prev.map((message) =>
+              message.id === event.messageId ? { ...message, text: buffered } : message
+            );
+          });
+          break;
+        }
+        case "turnCompleted": {
+          setBusy(false);
+          break;
+        }
+        default:
+          break;
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [open, tempSessionId, desktopApi, flushAssistantMessage]);
+
+  // Auto-scroll the message list on new content.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node !== null) {
+      node.scrollTop = node.scrollHeight;
+    }
+  }, [messages, busy]);
+
+  // Ensure an ephemeral temp session exists before the first send.
+  const ensureTempSession = useCallback(async (): Promise<string | null> => {
+    if (tempSessionId !== null) return tempSessionId;
+    const agent = desktopApi?.agent;
+    if (agent === undefined) {
+      setError("Desktop bridge unavailable");
+      return null;
+    }
+    try {
+      const snapshot = await agent.createTemporarySession({ parentSessionId });
+      const id = snapshot.id;
+      setTempSessionId(id);
+      return id;
+    } catch (next) {
+      setError(next instanceof Error ? next.message : "Failed to start plan chat");
+      return null;
+    }
+  }, [tempSessionId, desktopApi, parentSessionId]);
+
+  const handleSend = useCallback(async () => {
+    const text = draft.trim();
+    if (text.length === 0 || busy) return;
+    setError(null);
+    const sessionId = await ensureTempSession();
+    const agent = desktopApi?.agent;
+    if (sessionId === null || agent === undefined) return;
+    setBusy(true);
+    setDraft("");
+    try {
+      await agent.sendTurn({ sessionId, text });
+    } catch (next) {
+      setBusy(false);
+      setError(next instanceof Error ? next.message : "Failed to send message");
+    }
+  }, [draft, busy, ensureTempSession, desktopApi]);
+
+  // Discard the ephemeral session on close so its messages are destroyed.
+  const handleClose = useCallback(async () => {
+    setOpen(false);
+    const agent = desktopApi?.agent;
+    if (tempSessionId !== null && agent !== undefined) {
+      try {
+        await agent.deleteSession({ sessionId: tempSessionId });
+      } catch {
+        // Best-effort cleanup; the session is in-memory and will die with the process.
+      }
+    }
+    setTempSessionId(null);
+    setMessages([]);
+    setDraft("");
+    setBusy(false);
+    setError(null);
+    assistantBufferRef.current.clear();
+    appliedPlanRef.current = null;
+  }, [tempSessionId, desktopApi]);
+
+  const lastAssistant = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message !== undefined && message.role === "assistant") return message;
+    }
+    return null;
+  }, [messages]);
+
+  const proposedPlan = useMemo(
+    () => (lastAssistant === null ? null : extractPlanBlock(lastAssistant.text)),
+    [lastAssistant]
+  );
+
+  // Auto-apply: when the temp agent proposes a revised plan (a fenced ```plan
+  // block) and the turn has settled, apply it to the PARENT plan as a new
+  // temp_chat version. This is non-destructive — it only creates a version and
+  // flips the main review button to "根据反馈重写"; the user still drives the
+  // final approve/revise. Deduped by content so a render never re-applies.
+  useEffect(() => {
+    if (proposedPlan === null || onApplyRevision === undefined || busy) return;
+    if (appliedPlanRef.current === proposedPlan) return;
+    appliedPlanRef.current = proposedPlan;
+    void (async () => {
+      try {
+        await onApplyRevision({
+          markdown: proposedPlan,
+          annotations: pendingPlanAnnotations,
+          source: "temp_chat",
+          summary: labels.tempChatApplyToPlan
+        });
+        setMessages((prev) => [
+          ...prev,
+          { id: `note-${Date.now()}`, role: "note", text: labels.tempChatApplied }
+        ]);
+      } catch (next) {
+        // Keep appliedPlanRef set to this proposal so a failed apply does not
+        // re-fire on every render (which would storm the runtime). A new
+        // proposal (different content) still retries; the user can also resend.
+        setError(next instanceof Error ? next.message : "Failed to apply plan revision");
+      }
+    })();
+  }, [
+    proposedPlan,
+    busy,
+    onApplyRevision,
+    pendingPlanAnnotations,
+    labels.tempChatApplyToPlan,
+    labels.tempChatApplied
+  ]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="lyra-agent-plan-board-temp-chat-trigger"
+        title={labels.tempChatOpen}
+        aria-label={labels.tempChatOpen}
+        onClick={() => { setOpen(true); }}
+      >
+        <MessageSquare size={16} />
+      </button>
+    );
+  }
+
+  return (
+    <div className="lyra-agent-plan-board-temp-chat" data-open={open}>
+      <div className="lyra-agent-plan-board-temp-chat-head">
+        <span className="lyra-agent-plan-board-temp-chat-title">{labels.tempChatTitle}</span>
+        <button
+          type="button"
+          className="lyra-agent-plan-board-temp-chat-close"
+          title={labels.tempChatClose}
+          aria-label={labels.tempChatClose}
+          onClick={() => { void handleClose(); }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div className="lyra-agent-plan-board-temp-chat-body" ref={scrollRef}>
+        {messages.length === 0 ? (
+          <p className="lyra-agent-plan-board-temp-chat-empty">{labels.tempChatExplainOnly}</p>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`lyra-agent-plan-board-temp-chat-message is-${message.role}`}
+          >
+            {message.role === "note" ? message.text : <TempChatMarkdown text={message.text} />}
+          </div>
+        ))}
+        {busy ? <div className="lyra-agent-plan-board-temp-chat-busy">{labels.tempChatBusy}</div> : null}
+        {error !== null ? (
+          <div className="lyra-agent-plan-board-temp-chat-error">{error}</div>
+        ) : null}
+      </div>
+      <div className="lyra-agent-plan-board-temp-chat-input">
+        <input
+          className="lyra-agent-plan-board-temp-chat-text"
+          placeholder={labels.tempChatPlaceholder}
+          value={draft}
+          disabled={busy}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void handleSend();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="lyra-agent-plan-board-temp-chat-send"
+          disabled={draft.trim().length === 0 || busy}
+          title={labels.tempChatSend}
+          aria-label={labels.tempChatSend}
+          onClick={() => { void handleSend(); }}
+        >
+          <CornerUpLeft size={14} />
+        </button>
+      </div>
+    </div>
+  );
+};

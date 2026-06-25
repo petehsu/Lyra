@@ -32,7 +32,7 @@ describe("PlanReviewPanel", () => {
     expect(screen.getByText("实现规划模式")).toBeTruthy();
     expect(screen.getByText("计划已生成")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Review/u })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Reject/u })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Set aside/u })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Approve plan/u })).toBeTruthy();
   });
 
@@ -49,11 +49,11 @@ describe("PlanReviewPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Review/u }));
-    fireEvent.click(screen.getByRole("button", { name: /Reject/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Set aside/u }));
     fireEvent.click(screen.getByRole("button", { name: /Approve plan/u }));
 
     expect(onReview).toHaveBeenCalledWith(plan);
-    expect(onRespond).toHaveBeenNthCalledWith(1, "reject");
+    expect(onRespond).toHaveBeenNthCalledWith(1, "set_aside");
     expect(onRespond).toHaveBeenNthCalledWith(2, "approve");
   });
 

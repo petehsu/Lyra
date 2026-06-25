@@ -520,7 +520,6 @@ const createDesktopApi = (): {
         truncated: false
       }),
       setElementPickerMode: async () => undefined,
-      applyWebTheme: async () => undefined,
       capturePage: async () => ({
         tabId: "browser-tab-test",
         mimeType: "image/png" as const,

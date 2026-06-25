@@ -215,6 +215,14 @@ impl AgentRuntimeServices {
             "agent.session.archive" => self.session.archive_from_payload(payload),
             "agent.session.delete" => self.session.delete_from_payload(payload),
             "agent.session.bindProject" => self.session.bind_project_from_payload(payload),
+            "agent.session.createTemporary" => self.backend.call(method, payload),
+
+            "agent.plan.list"
+            | "agent.plan.read"
+            | "agent.plan.delete"
+            | "agent.plan.revise"
+            | "agent.plan.review.respond"
+            | "agent.todo.read-project" => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
@@ -281,10 +289,47 @@ impl AgentRuntimeServices {
     }
 }
 
+/// Structured category of a provider transport failure.
+///
+/// The category is derived at the source from the typed HTTP/IO error
+/// (reqwest's `is_timeout`/`is_connect`/`is_decode`/`is_body` predicates), never
+/// by matching on the error's message text. Downstream classification (retry,
+/// fallback, surfacing) pattern-matches on this type instead of re-parsing a
+/// string, so it stays correct across reqwest versions and wording changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderTransportKind {
+    /// The connection could not be established (DNS, TCP, or TLS handshake).
+    Connect,
+    /// The request or response exceeded its time budget.
+    Timeout,
+    /// The connection dropped or the response body failed to transfer/decode
+    /// mid-flight, including an SSE stream that ended before completion. This is
+    /// reqwest's "error decoding response body" / "connection closed" family.
+    StreamInterrupted,
+    /// A transport failure that doesn't fit the categories above.
+    Other,
+}
+
+impl std::fmt::Display for ProviderTransportKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ProviderTransportKind::Connect => "connect",
+            ProviderTransportKind::Timeout => "timeout",
+            ProviderTransportKind::StreamInterrupted => "stream interrupted",
+            ProviderTransportKind::Other => "transport",
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AgentRuntimeError {
     #[error("agent core failed: {0}")]
     Core(String),
+    #[error("provider transport failed ({kind}): {detail}")]
+    ProviderTransport {
+        kind: ProviderTransportKind,
+        detail: String,
+    },
     #[error("agent runtime backend is not registered for method: {0}")]
     BackendUnavailable(String),
     #[error("agent runtime serialization failed: {0}")]
@@ -382,8 +427,29 @@ mod tests {
     }
 
     #[test]
-    fn runtime_services_route_provider_catalog_requests_through_provider_service() {
-        let services = AgentRuntimeServices::default();
+    fn runtime_services_route_plan_mode_requests_to_backend() {
+        // Regression: handle_agent_request must forward the plan-mode method
+        // group to the backend. They were previously unrouted and surfaced as
+        // "unknown agent runtime method: agent.plan.revise" to the desktop.
+        let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
+        for method in [
+            "agent.plan.list",
+            "agent.plan.read",
+            "agent.plan.delete",
+            "agent.plan.revise",
+            "agent.plan.review.respond",
+            "agent.todo.read-project",
+            "agent.session.createTemporary",
+        ] {
+            let routed = services
+                .handle_agent_request(method, json!({}))
+                .unwrap_or_else(|error| panic!("{method} should be routed: {error:?}"));
+            assert_eq!(routed["method"], method);
+        }
+    }
+
+    #[test]
+    fn runtime_services_route_provider_catalog_requests_through_provider_service() {        let services = AgentRuntimeServices::default();
         let catalog = services
             .handle_agent_request("agent.provider.catalog.read", json!({}))
             .expect("provider catalog request should be routed");

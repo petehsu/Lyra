@@ -87,7 +87,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly aiRichRenderingEnabled?: unknown;
       readonly aiStopBehavior?: unknown;
       readonly preventSleepEnabled?: unknown;
-	      readonly forceWebPageThemingEnabled?: unknown;
 	      readonly searchWebEngineIds?: unknown;
 	      readonly searchSearxngEndpoint?: unknown;
 	      readonly searchResultsSourceFilter?: unknown;
@@ -128,9 +127,6 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       preventSleepEnabled: isBoolean(parsed.preventSleepEnabled)
         ? parsed.preventSleepEnabled
         : defaults.preventSleepEnabled,
-      forceWebPageThemingEnabled: isBoolean(parsed.forceWebPageThemingEnabled)
-        ? parsed.forceWebPageThemingEnabled
-        : defaults.forceWebPageThemingEnabled,
       searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
 	      ...(normalizedSearxngEndpoint === undefined
 	        ? {}
@@ -234,12 +230,6 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         preventSleepEnabled
-      }));
-    },
-    setForceWebPageThemingEnabled: (forceWebPageThemingEnabled) => {
-      commit((current) => ({
-        ...current,
-        forceWebPageThemingEnabled
       }));
     },
     setSearchWebEngineIds: (searchWebEngineIds) => {

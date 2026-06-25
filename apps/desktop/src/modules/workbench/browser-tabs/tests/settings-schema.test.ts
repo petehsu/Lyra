@@ -24,7 +24,6 @@ const createSchemaInput = (
   aiStopBehaviorLabel: "Stop behavior",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
-  forceWebPageThemingLabel: "Web page theming",
   searchCategoryLabel: "Search",
   searchWebEnginesLabel: "Web engines",
   searchSearxngEndpointLabel: "SearXNG endpoint",

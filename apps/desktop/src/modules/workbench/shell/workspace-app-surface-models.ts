@@ -174,6 +174,7 @@ export const createAppSurfaceRenderModel = (
       props: {
         labels: context.agentPlanBoardLabels,
         state,
+        desktopApi: context.desktopApi,
         onOpenManagedPlan: (planId) =>
           context.agentPlanBoardModel.openManagedPlan(appInstanceId, planId),
         onDeleteManagedPlan: (planId) =>
@@ -181,7 +182,8 @@ export const createAppSurfaceRenderModel = (
         onRefreshManager: () =>
           context.agentPlanBoardModel.refreshManager(appInstanceId),
         onRevisePlan: (request) =>
-          context.agentPlanBoardModel.revisePlan(appInstanceId, request)
+          context.agentPlanBoardModel.revisePlan(appInstanceId, request),
+        openDialog: context.agentSessionHistory.openDialog
       }
     };
   }

@@ -34,7 +34,6 @@ import {
   workbenchActionLabel
 } from "./tool-parsing/workbench-software";
 import { toTerminalDetails } from "./tool-parsing/terminal";
-import { toRenderDetails } from "./tool-parsing/render";
 import { toEditDetails } from "./tool-parsing/edit";
 
 export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
@@ -56,7 +55,6 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   if (toolName === "file" && action === "read") return "read";
   if (toolName === "exec_command") return "shell";
   if (toolName === "write_stdin") return "terminal";
-  if (domain === "render" || toolPath.startsWith("/tools/render/") || legacyFamily === "render") return "render";
   if (domain === "workbench" || toolPath.startsWith("/tools/workbench/") || legacyFamily === "workbench") return "workbench";
   if (domain === "terminal" || toolPath.startsWith("/tools/terminal/") || legacyFamily === "terminal") return "terminal";
   if (
@@ -98,8 +96,6 @@ export const toolKindFromHint = (hint: string | null | undefined): ToolCall["kin
       return "web";
     case "workbench":
       return "workbench";
-    case "render":
-      return "render";
     case "plan":
       return "plan";
     case "task":
@@ -153,9 +149,6 @@ export const toToolDetails = (
   }
   if (isTerminalTool(tool)) {
     return toTerminalDetails(tool, output, rawOutputRecord);
-  }
-  if (kind === "render") {
-    return toRenderDetails(tool, output, rawOutputRecord);
   }
   if (kind === "plan") {
     return {
@@ -322,8 +315,7 @@ export const toToolCall = (tool: AgentToolActivity): ToolCall => {
       ? softwareTitle(tool)
       : isTerminalTool(tool)
         ? tool.label
-      : kind === "render"
-        ? stringField(asRecord(asRecord(tool.output).raw), "title") ?? "Rendered surface"
+
     : kind === "workbench"
       ? workbenchActionLabel(stringField(toolInputRecord(tool), "action") ?? "workbench")
       : genericToolTitle(tool));

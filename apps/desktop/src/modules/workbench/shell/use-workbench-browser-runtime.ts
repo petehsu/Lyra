@@ -7,12 +7,6 @@ import type {
   WorkbenchBrowserPageRuntimeState
 } from "../../../shared/desktop-bridge";
 import { browserPageRestoreStateEquals } from "../../../shared/workbench-browser";
-import {
-  areWebThemeSnapshotsEquivalent,
-  buildWebThemeSnapshot,
-  DEFAULT_WEB_THEME_SNAPSHOT
-} from "../../../shared/web-theme";
-import type { WorkbenchThemeVars } from "../theme";
 import type {
   WorkspaceTabsModel,
   WorkspaceVisibleLayout
@@ -63,8 +57,6 @@ type UseWorkbenchBrowserRuntimeParams = {
   readonly activePageTabId: string;
   readonly visibleWorkspaceLayout: WorkspaceVisibleLayout;
   readonly embeddedBrowserPages?: readonly EmbeddedBrowserPageDescriptor[];
-  readonly themeVars: WorkbenchThemeVars;
-  readonly forceWebPageThemingEnabled: boolean;
   readonly onBrowserHistoryChange?: () => void;
 };
 
@@ -187,8 +179,6 @@ export const useWorkbenchBrowserRuntime = ({
   activePageTabId,
   visibleWorkspaceLayout,
   embeddedBrowserPages = EMPTY_EMBEDDED_BROWSER_PAGES,
-  themeVars,
-  forceWebPageThemingEnabled,
   onBrowserHistoryChange
 }: UseWorkbenchBrowserRuntimeParams): WorkbenchBrowserRuntimeModel => {
   const [pageNavigationState, setPageNavigationState] =
@@ -271,25 +261,6 @@ export const useWorkbenchBrowserRuntime = ({
       pages: [...tabPages, ...embeddedPages]
     });
   }, [activeBrowserTabId, desktopApi, embeddedBrowserPages, tabsModel.tabs]);
-
-  const webThemeSnapshotRef = useRef(DEFAULT_WEB_THEME_SNAPSHOT);
-  useEffect(() => {
-    if (desktopApi === null) {
-      return;
-    }
-
-    const nextSnapshot = buildWebThemeSnapshot({
-      vars: themeVars,
-      enabled: forceWebPageThemingEnabled,
-      previousRevision: webThemeSnapshotRef.current.revision
-    });
-    if (areWebThemeSnapshotsEquivalent(webThemeSnapshotRef.current, nextSnapshot)) {
-      return;
-    }
-
-    webThemeSnapshotRef.current = nextSnapshot;
-    void desktopApi.workbenchBrowser.applyWebTheme(nextSnapshot);
-  }, [desktopApi, forceWebPageThemingEnabled, themeVars]);
 
   useEffect(() => {
     if (desktopApi === null) {

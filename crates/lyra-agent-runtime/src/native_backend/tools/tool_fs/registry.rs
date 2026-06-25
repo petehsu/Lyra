@@ -16,7 +16,6 @@ impl RuntimeToolManifestProvider {
                 "workbench",
                 "browser",
                 "web",
-                "render",
                 "todo",
                 "memory",
                 "design",

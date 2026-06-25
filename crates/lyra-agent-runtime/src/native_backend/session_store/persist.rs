@@ -113,6 +113,7 @@ pub(super) fn load_session(
         rollback_checkpoints,
         file_read_state,
         dirty: false,
+        ephemeral: false,
     }))
 }
 

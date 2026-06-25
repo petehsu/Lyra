@@ -74,6 +74,7 @@ fn pinned_todo_surfaces_in_context_window_plan() {
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        ephemeral: false,
     };
     save_session(&root, &session).expect("save");
 

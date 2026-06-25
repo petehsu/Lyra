@@ -92,10 +92,24 @@ export const useAgentEditFollow = ({
   const previewSyncRef = useRef<Map<string, { readonly content: string; readonly at: number }>>(
     new Map()
   );
+  // Disk-original baseline per editor instance. The Rust side computes every
+  // streaming diff against the on-disk file (new file ⇒ old ""), so the only
+  // correct base to reconstruct against is that disk snapshot — never the live
+  // editor buffer, which already holds our previous preview. Reconstructing
+  // against the grown buffer re-prepended each full-content hunk every ~32ms
+  // and snowballed the preview to tens of thousands of lines.
+  const diskBaselineRef = useRef<Map<string, string>>(new Map());
+  // Tracks editor instances that have already received a non-null streaming
+  // preview this session. Once set, the editor content is ours, so we freeze
+  // the disk baseline and stop re-capturing from state (which would otherwise
+  // snapshot our own preview as the "disk" baseline).
+  const previewAppliedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     followedEditsRef.current.clear();
     previewSyncRef.current.clear();
+    diskBaselineRef.current.clear();
+    previewAppliedRef.current.clear();
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -160,7 +174,20 @@ export const useAgentEditFollow = ({
       tool: AgentToolActivity
     ): void => {
       const state = fileEditorModel.getState(editorInstanceId);
-      const before = state?.content ?? "";
+      // Re-capture the disk baseline from a genuine hydration (readFile result)
+      // as long as we have not yet applied a streaming preview for this
+      // instance. Once a preview is applied, the editor content is ours, so we
+      // freeze the baseline to stop the streaming diff (always computed against
+      // disk) from being re-applied onto the already-mutated buffer.
+      if (
+        !previewAppliedRef.current.has(editorInstanceId)
+        && state !== null
+        && state.isHydrated
+        && state.content === state.lastSavedContent
+      ) {
+        diskBaselineRef.current.set(editorInstanceId, state.lastSavedContent);
+      }
+      const before = diskBaselineRef.current.get(editorInstanceId) ?? "";
       const preview = previewContentFromEditTool(tool, before);
       if (preview === null) {
         if (tool.status === "running" && state !== null && !state.isHydrated) {
@@ -185,6 +212,10 @@ export const useAgentEditFollow = ({
         markHydrated: true,
         readOnly: tool.status === "running"
       });
+      // The editor buffer now holds our preview; freeze the disk baseline so
+      // subsequent streaming frames keep reconstructing against disk (not the
+      // grown buffer).
+      previewAppliedRef.current.add(editorInstanceId);
       const line = firstEditHunkLine(tool);
       if (line !== undefined) {
         fileEditorModel.revealLocation(editorInstanceId, { line });
@@ -211,6 +242,10 @@ export const useAgentEditFollow = ({
         if (followed === undefined) {
           return;
         }
+        // The real write has landed; reopen from disk and reset the per-instance
+        // preview bookkeeping so a later edit re-captures a fresh disk baseline.
+        diskBaselineRef.current.delete(followed.editorInstanceId);
+        previewAppliedRef.current.delete(followed.editorInstanceId);
         void fileEditorModel.openFile(followed.editorInstanceId, followed.filePath).catch(() => undefined);
         if (location !== undefined) {
           fileEditorModel.revealLocation(followed.editorInstanceId, location);

@@ -69,42 +69,49 @@ fn extract_json_string_field(haystack: &str, key: &str) -> Option<String> {
 }
 
 fn read_json_string_at(input: &str, mut pos: usize) -> String {
+    // Accumulate raw bytes and decode as UTF-8 at the end. A multi-byte UTF-8
+    // sequence (e.g. 记 = E8 AE B0) is pushed one byte at a time into `out` and
+    // reassembled by `from_utf8_lossy`; the previous `byte as char` decoded each
+    // byte as Latin-1, splitting 记 into è ® ° (the è®°å¿æ¶æ mojibake seen in
+    // streaming previews). Escapes are decoded to their UTF-8 encoding so a
+    // `中` surrogate/code point also round-trips correctly.
     let bytes = input.as_bytes();
-    let mut out = String::new();
+    let mut out: Vec<u8> = Vec::new();
     while pos < bytes.len() {
         match bytes[pos] {
             b'"' => break,
             b'\\' if pos + 1 < bytes.len() => {
                 pos += 1;
                 match bytes[pos] {
-                    b'"' => out.push('"'),
-                    b'\\' => out.push('\\'),
-                    b'n' => out.push('\n'),
-                    b'r' => out.push('\r'),
-                    b't' => out.push('\t'),
-                    b'/' => out.push('/'),
-                    b'b' => out.push('\x08'),
-                    b'f' => out.push('\x12'),
+                    b'"' => out.push(b'"'),
+                    b'\\' => out.push(b'\\'),
+                    b'n' => out.push(b'\n'),
+                    b'r' => out.push(b'\r'),
+                    b't' => out.push(b'\t'),
+                    b'/' => out.push(b'/'),
+                    b'b' => out.push(0x08),
+                    b'f' => out.push(0x0c),
                     b'u' if pos + 4 < bytes.len() => {
                         let hex = &input[pos + 1..pos + 5];
                         if let Ok(code) = u32::from_str_radix(hex, 16)
                             && let Some(ch) = char::from_u32(code)
                         {
-                            out.push(ch);
+                            let mut buf = [0u8; 4];
+                            out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
                         }
                         pos += 4;
                     }
-                    other => out.push(other as char),
+                    other => out.push(other),
                 }
                 pos += 1;
             }
             byte => {
-                out.push(byte as char);
+                out.push(byte);
                 pos += 1;
             }
         }
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn parse_direct_apply_patch_preview_input(partial_arguments: &str) -> Option<MutationPreviewInput> {
@@ -764,6 +771,22 @@ mod tests {
                 .and_then(Value::as_str),
             Some("index.html")
         );
+    }
+
+    #[test]
+    fn read_json_string_preserves_multibyte_utf8() {
+        // Streaming (unterminated) JSON whose content is mid-flight CJK bytes.
+        // The byte-level scanner used to decode each byte as Latin-1, splitting
+        // 记忆架构 into è®°å¿æ¶æ. It must now round-trip UTF-8 intact.
+        let partial = r#"{"path":"记忆架构.md","content":"正在写记忆架构"#;
+        match parse_write_file_preview_input(partial).expect("write preview") {
+            MutationPreviewInput::Write { path, content } => {
+                assert_eq!(path, "记忆架构.md");
+                assert!(content.contains("正在写记忆架构"));
+                assert!(!content.contains('è'));
+            }
+            other => panic!("expected Write, got {other:?}"),
+        }
     }
 
     #[test]

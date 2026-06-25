@@ -1488,7 +1488,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "lsp_query",
         "web_search",
         "web_fetch",
-        "render_surface",
         "todo_read",
         "todo_write",
     ] {
@@ -1517,7 +1516,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "browser_ax",
         "software",
         "web",
-        "render",
         "todo",
         "memory",
         "design",

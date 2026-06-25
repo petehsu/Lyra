@@ -48,6 +48,7 @@ export type AiPanelSurfaceProps = {
   readonly onOpenProjectPlanManager?: (request: {
     readonly sessionId: string;
     readonly workingDir: string;
+    readonly view?: "plan" | "todo" | "both";
   }) => Promise<void> | void;
   readonly onRevealProjectPath?: (request: {
     readonly sessionId: string;

@@ -34,7 +34,6 @@ export type WorkbenchPreferences = {
   readonly aiRichRenderingEnabled: boolean;
   readonly aiStopBehavior: WorkbenchAiStopBehavior;
   readonly preventSleepEnabled: boolean;
-  readonly forceWebPageThemingEnabled: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpoint?: string;
   readonly searchResultsSourceFilter: WorkbenchSearchResultsSourceFilter;
@@ -55,7 +54,6 @@ export type WorkbenchPreferencesModel = {
   readonly setAiRichRenderingEnabled: (enabled: boolean) => void;
   readonly setAiStopBehavior: (value: WorkbenchAiStopBehavior) => void;
   readonly setPreventSleepEnabled: (enabled: boolean) => void;
-  readonly setForceWebPageThemingEnabled: (enabled: boolean) => void;
   readonly setSearchWebEngineIds: (value: readonly string[]) => void;
   readonly setSearchSearxngEndpoint: (value?: string) => void;
   readonly setSearchResultsSourceFilter: (value: WorkbenchSearchResultsSourceFilter) => void;

@@ -734,7 +734,6 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("lsp", "query") => "Queried LSP",
         ("web", "search") => "Searched web",
         ("web", "fetch") => "Fetched web page",
-        ("render", "surface") => "Rendered surface",
         ("todo", "read") => "Read todos",
         ("todo", "write") => "Updated todos",
         ("clarification", "ask") => "Asked for clarification",

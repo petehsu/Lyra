@@ -125,9 +125,9 @@ export interface DataProviderValue {
   openProjectTodo(): Promise<void>;
 
   /** Open or focus the project-scoped Plan/Todo manager. */
-  openProjectPlanManager(): Promise<void>;
+  openProjectPlanManager(view?: "plan" | "todo" | "both"): Promise<void>;
 
-  /** Approve, reject, or request revision for the active plan. */
+  /** Approve, set aside, resume, or request revision for the active plan. */
   respondPlanReview(action: AgentPlanReviewRespondAction, feedback?: string | null): Promise<void>;
 
   /** Open the live Workbench terminal pane for a terminal session when it exists. */

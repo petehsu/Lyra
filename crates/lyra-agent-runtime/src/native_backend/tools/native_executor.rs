@@ -544,7 +544,6 @@ pub(crate) fn run_native_tool_with_dispatcher(
             input,
             dispatcher,
         ),
-        "render_surface" => tool_render_surface(turn_id, tool_call_id, input),
         "todo_read" => tool_todo_read(session_id),
         "todo_write" => tool_todo_write(session_id, turn_id, input),
         "todo_update" => tool_todo_update(session_id, turn_id, input),

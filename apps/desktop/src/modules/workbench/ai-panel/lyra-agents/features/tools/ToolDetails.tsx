@@ -13,7 +13,6 @@ import {
   ClickableImage
 } from "../rich-text/ActionTargets";
 import { TerminalToolCard } from "./TerminalToolCard";
-import { RenderSurfacePreview } from "./RenderSurfacePreview";
 import { AppButton } from "@renderer/ui/components";
 import { VirtualizedDiffView } from "./VirtualizedDiffView";
 
@@ -47,8 +46,6 @@ export function ToolDetails({
       return <LumenCard details={details} />;
     case "software":
       return <SoftwareCard details={details} />;
-    case "render":
-      return <RenderSurfaceCard details={details} />;
     case "task":
       return <TaskCard details={details} />;
     case "text":
@@ -85,24 +82,6 @@ function LumenCard({
           {details.text}
         </pre>
       )}
-    </div>
-  );
-}
-
-export function RenderSurfaceCard({
-  details,
-}: {
-  details: Extract<ToolDetailsType, { type: "render" }>;
-}) {
-  return (
-    <div className="lyra-agents-render-surface">
-      <div className="lyra-agents-render-surface-title">{details.title}</div>
-      {details.summary ? (
-        <p className="lyra-agents-render-surface-summary">
-          <ActionText text={details.summary} />
-        </p>
-      ) : null}
-      <RenderSurfacePreview details={details} />
     </div>
   );
 }

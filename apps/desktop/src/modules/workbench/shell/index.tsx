@@ -213,9 +213,6 @@ resolvedThemeId,
     activePageTabId,
     visibleWorkspaceLayout,
     embeddedBrowserPages,
-    themeVars,
-    forceWebPageThemingEnabled:
-      preferencesModel.preferences.forceWebPageThemingEnabled,
     onBrowserHistoryChange: refreshBrowserHistoryEntries
   });
   const beginBrowserLayoutAnimationSync = useBrowserLayoutAnimationSync({

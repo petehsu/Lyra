@@ -350,7 +350,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     aiStopBehaviorValue: preferences.aiStopBehavior,
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
-    forceWebPageThemingValue: preferences.forceWebPageThemingEnabled,
     searchWebEngineIds: preferences.searchWebEngineIds,
     searchSearxngEndpointValue: preferences.searchSearxngEndpoint ?? "",
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
@@ -402,7 +401,6 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onAiStopBehaviorChange: preferencesModel.setAiStopBehavior,
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
-    onForceWebPageThemingChange: preferencesModel.setForceWebPageThemingEnabled,
     onSearchWebEnginesChange: preferencesModel.setSearchWebEngineIds,
     onSearchSearxngEndpointChange: (value: string) => {
       preferencesModel.setSearchSearxngEndpoint(value);

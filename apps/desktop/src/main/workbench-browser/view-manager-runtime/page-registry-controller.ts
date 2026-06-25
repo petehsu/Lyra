@@ -160,8 +160,6 @@ type PageRegistryHost = {
     targetMode: "live" | "isolated",
     reason?: "navigation" | "frameReload"
   ) => void;
-  readonly webThemeAttach: (tabId: string, webContents: WebContents) => void;
-  readonly webThemeDetach: (tabId: string) => void;
   readonly hideChromePopover: (entry: BrowserPageEntry) => void;
   readonly hideTransientChromePopover: (entry: BrowserPageEntry) => void;
   readonly handleElementPickerPageClosed: (tabId: string) => void;
@@ -230,7 +228,6 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     host.disposeDebuggerSession(entry.tabId, "isolated");
     host.invalidateBrowserAgentTargets(entry.tabId, "live", "navigation");
     host.invalidateBrowserAgentTargets(entry.tabId, "isolated", "navigation");
-    host.webThemeDetach(entry.tabId);
     host.handleElementPickerPageClosed(entry.tabId);
     host.detachEntryView(entry);
     entry.disposeListeners();
@@ -255,6 +252,30 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   const isNavigationAbortError = (error: unknown): boolean => {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes("ERR_ABORTED") || message.includes("(-3)");
+  };
+
+  // Transient connection-noise net_error codes emitted by Chromium while
+  // restored tabs fan out and race the real web: modern pages open dozens of
+  // TLS sockets at once and servers routinely close idle/preconnect sockets
+  // mid-handshake. These fire in clusters at startup/reload and are not Lyra
+  // bugs. -3 (ERR_ABORTED) is already silenced above; the codes below are the
+  // same class of background churn. We keep a low-severity diagnostic trail
+  // (so a genuinely unreachable site is still debuggable) but do NOT surface
+  // them as a recovery failure or browser-health event, which would pollute
+  // the health UI with transient external-network noise.
+  const isTransientConnectionNoise = (errorCode: number): boolean => {
+    switch (errorCode) {
+      case -3: // ERR_ABORTED (navigation superseded/cancelled)
+      case -100: // ERR_CONNECTION_CLOSED
+      case -101: // ERR_CONNECTION_RESET
+      case -102: // ERR_CONNECTION_REFUSED
+      case -103: // ERR_CONNECTION_FAILED
+      case -104: // ERR_CONNECTION_ABORTED
+      case -107: // ERR_SSL_PROTOCOL_ERROR (mid-handshake reset)
+        return true;
+      default:
+        return false;
+    }
   };
 
   const markRuntimeAddressChanged = (entry: BrowserPageEntry): void => {
@@ -428,21 +449,31 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       if (errorCode === -3) {
         return;
       }
-      host.onBrowserHealthNavigationFailed?.(
-        entry.tabId,
-        `${errorDescription || "Page load failed"} (${errorCode})`
-      );
+      const message = `${errorDescription || "Page load failed"} (${errorCode})`;
+      if (isTransientConnectionNoise(errorCode)) {
+        // Keep a debug trail but don't flag health/recovery for transient
+        // external connection noise (see isTransientConnectionNoise).
+        host.recordPageDiagnostic(entry.tabId, {
+          source: "navigation",
+          severity: "warning",
+          message,
+          ...(typeof validatedUrl === "string" && validatedUrl.length > 0 ? { url: validatedUrl } : {})
+        });
+        host.updateRuntimeState(entry, { isLoading: false });
+        return;
+      }
+      host.onBrowserHealthNavigationFailed?.(entry.tabId, message);
       host.recordPageDiagnostic(entry.tabId, {
         source: "navigation",
         severity: "error",
-        message: `${errorDescription || "Page load failed"} (${errorCode})`,
+        message,
         ...(typeof validatedUrl === "string" && validatedUrl.length > 0 ? { url: validatedUrl } : {})
       });
       host.updateRuntimeState(entry, {
         isLoading: false,
         recoveryFailure: {
           reason: "navigation_failed",
-          message: `${errorDescription || "Page load failed"} (${errorCode})`,
+          message,
           at: Date.now()
         }
       });
@@ -633,8 +664,8 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       entries.delete(entry.tabId);
     });
 
-    host.webThemeAttach(entry.tabId, webContents);
     loadRequestedAddress(entry);
+
     host.syncPerformanceRuntimeState(entry.runtime, entry);
     host.publishEvent({
       kind: "page-runtime-state",

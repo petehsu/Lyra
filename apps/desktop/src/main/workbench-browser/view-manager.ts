@@ -13,8 +13,7 @@ import type {
   WorkbenchBrowserClearSiteDataResult,
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserStorageStateRequest,
-  WorkbenchLumenFollowAudit,
-  WorkbenchBrowserWebThemeSnapshot
+  WorkbenchLumenFollowAudit
 } from "../../shared/desktop-bridge";
 import {
   WORKBENCH_BROWSER_ISOLATED_PROFILE_PARTITION,
@@ -24,7 +23,6 @@ import {
 } from "../../shared/workbench-browser";
 import type { LyraPerformanceResourceScheduler } from "../performance";
 import { createWorkbenchBrowserElementPickerController } from "./element-picker/controller";
-import { createWebThemeInjector } from "./web-theme";
 import type {
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentTargetMode,
@@ -80,14 +78,6 @@ export const createWorkbenchBrowserViewManager = ({
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
 }): WorkbenchBrowserViewManager => {
-  const webThemeInjector = createWebThemeInjector({
-    onStageFallback: ({ tabId, stage, cause }) => {
-      console.warn(
-        `[lyra-browser] web-theme stage=${stage} tab=${tabId} fallback engaged:`,
-        cause
-      );
-    }
-  });
   const liveElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION);
 
@@ -196,12 +186,6 @@ export const createWorkbenchBrowserViewManager = ({
     disposeDebuggerSession,
     invalidateBrowserAgentTargets: (tabId, targetMode, reason) =>
       invalidateBrowserAgentTargets(tabId, targetMode, reason),
-    webThemeAttach: (tabId, webContents) => {
-      webThemeInjector.attach(tabId, webContents);
-    },
-    webThemeDetach: (tabId) => {
-      webThemeInjector.detach(tabId);
-    },
     hideChromePopover: (entry) => chromePopoverRuntime.hideChromePopover(entry),
     hideTransientChromePopover: (entry) => chromePopoverRuntime.hideTransientChromePopover(entry),
     handleElementPickerPageClosed: (tabId) => elementPickerController.handlePageClosed(tabId),
@@ -423,7 +407,6 @@ export const createWorkbenchBrowserViewManager = ({
     overlayView: layoutController.overlayView,
     entries,
     publishEvent,
-    webThemeInjector,
     findLayout,
     requireEntry: pageRegistry.requireEntry,
     getActiveOrFocusedTabId,
@@ -657,7 +640,6 @@ export const createWorkbenchBrowserViewManager = ({
     dispose: () => {
       void elementPickerController.dispose();
       cdpDiagnostics.dispose();
-      webThemeInjector.dispose();
       restoreTombstoneController.dispose();
       browserSessionRuntime.dispose();
       pageRegistry.dispose();
@@ -666,10 +648,6 @@ export const createWorkbenchBrowserViewManager = ({
       agentController.dispose();
       chromePopoverRuntime.dispose();
       layoutController.dispose();
-    },
-    applyWebTheme: async (snapshot: WorkbenchBrowserWebThemeSnapshot) => {
-      await webThemeInjector.updateSnapshot(snapshot);
-      await chromePopoverRuntime.reapplyActivePopovers();
     },
     syncTopology: pageRegistry.syncTopology,
     syncLayout: pageRegistry.syncLayout,

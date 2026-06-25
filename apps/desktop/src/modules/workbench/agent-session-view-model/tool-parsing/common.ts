@@ -343,7 +343,6 @@ export const toolOutputText = (tool: AgentToolActivity): string => {
 
 export type LegacyToolFamily =
   | "browser"
-  | "render"
   | "software"
   | "terminal"
   | "web"
@@ -379,9 +378,6 @@ export const legacyToolFamily = (
       return null;
     }
     return "browser";
-  }
-  if (toolName === "render_surface" || toolNameHasPrefix(toolName, "render")) {
-    return "render";
   }
   if (toolNameHasPrefix(toolName, "software")) {
     return "software";

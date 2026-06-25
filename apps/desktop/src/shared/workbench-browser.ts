@@ -382,6 +382,30 @@ export type WorkbenchBrowserWebThemeSnapshot = {
   readonly revision: number;
 };
 
+/** Static dark palette used to color Lyra's own browser chrome popovers. */
+export const DEFAULT_WEB_THEME_PALETTE: WorkbenchBrowserWebThemePalette = {
+  bgApp: "#1a1b20",
+  bgSurface: "#24262d",
+  bgEditor: "#1e2026",
+  textPrimary: "#e6e7eb",
+  textSecondary: "#b7bac3",
+  textMuted: "#8b8f9b",
+  textAccent: "#7aa7ff",
+  lineDefault: "#353842",
+  lineFocused: "#7aa7ff",
+  statusSuccess: "#87c07a",
+  statusWarning: "#dcba7a",
+  statusError: "#e47878"
+} as const;
+
+/** Default snapshot consumed by the browser chrome popover overlay. */
+export const DEFAULT_WEB_THEME_SNAPSHOT: WorkbenchBrowserWebThemeSnapshot = {
+  enabled: false,
+  isDark: true,
+  palette: DEFAULT_WEB_THEME_PALETTE,
+  revision: 0
+} as const;
+
 export type WorkbenchBrowserTopologySnapshot = {
   readonly activeTabId: string | null;
   readonly pages: readonly WorkbenchBrowserPageSpec[];

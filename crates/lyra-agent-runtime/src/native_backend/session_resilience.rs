@@ -292,6 +292,7 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: std::collections::HashMap::new(),
             dirty: false,
+            ephemeral: false,
         }
     }
 

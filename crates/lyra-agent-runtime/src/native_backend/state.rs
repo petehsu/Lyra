@@ -150,6 +150,7 @@ impl NativeRuntimeState {
         let session_ids = self
             .sessions
             .values()
+            .filter(|session| !session.ephemeral)
             .filter(|session| session.dirty || !session_db_path(&self.root, &session.id).exists())
             .map(|session| session.id.clone())
             .collect::<Vec<_>>();

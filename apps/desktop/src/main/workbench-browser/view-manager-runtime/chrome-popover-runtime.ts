@@ -5,9 +5,9 @@ import type {
   WorkbenchBrowserCertificateInfo,
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserSecurityLevel,
-  WorkbenchBrowserSecurityLocale,
-  WorkbenchBrowserWebThemeSnapshot
+  WorkbenchBrowserSecurityLocale
 } from "../../../shared/desktop-bridge";
+import { DEFAULT_WEB_THEME_SNAPSHOT } from "../../../shared/workbench-browser";
 import {
   buildBrowserChromePopoverDocument,
   resolveBrowserChromePopoverHeight,
@@ -18,15 +18,10 @@ import type { WorkbenchBrowserDebuggerSession, WorkbenchBrowserPublishEvent } fr
 import { normalizeString, toBounds } from "./normalizers";
 import type { BrowserAgentPageTarget, BrowserPageEntry, BrowserPageFindTarget } from "./types";
 
-type ChromePopoverThemeRuntime = {
-  readonly readCurrentSnapshot: () => WorkbenchBrowserWebThemeSnapshot;
-};
-
 export const createChromePopoverRuntime = ({
   overlayView,
   entries,
   publishEvent,
-  webThemeInjector,
   findLayout,
   requireEntry,
   getActiveOrFocusedTabId,
@@ -37,7 +32,6 @@ export const createChromePopoverRuntime = ({
   readonly overlayView: View;
   readonly entries: Map<string, BrowserPageEntry>;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
-  readonly webThemeInjector: ChromePopoverThemeRuntime;
   readonly findLayout: (tabId: string) => BrowserPageEntry["layout"];
   readonly requireEntry: (tabId: string) => BrowserPageEntry;
   readonly getActiveOrFocusedTabId: () => string | null;
@@ -523,7 +517,7 @@ const setChromePopover = async (
     ...(popoverRequest.security === undefined ? {} : { security: popoverRequest.security }),
     ...(popoverRequest.find === undefined ? {} : { find: popoverRequest.find }),
     ...(popoverRequest.omnibox === undefined ? {} : { omnibox: popoverRequest.omnibox }),
-    theme: webThemeInjector.readCurrentSnapshot()
+    theme: DEFAULT_WEB_THEME_SNAPSHOT
   });
   await view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
   activeChromePopovers.set(tabId, popoverRequest);

@@ -72,7 +72,7 @@ describe("agent tool family projection", () => {
     });
   });
 
-  test("projects Terminal screen and Render table details", () => {
+  test("projects Terminal screen details", () => {
     const terminal = toToolCall(tool({
       toolPath: "/tools/terminal/read",
       domain: "terminal",
@@ -86,29 +86,11 @@ describe("agent tool family projection", () => {
         }
       }
     }));
-    const render = toToolCall(tool({
-      toolPath: "/tools/render/create",
-      domain: "render",
-      operation: "create",
-      input: {
-        kind: "table",
-        title: "Results",
-        columns: ["name"],
-        rows: [{ name: "Lyra" }]
-      },
-      output: { raw: { format: "table", surfaceId: "surface-1" } }
-    }));
 
     expect(terminal.details).toMatchObject({
       type: "terminal",
       target: "ui",
       running: true
-    });
-    expect(render.details).toMatchObject({
-      type: "render",
-      format: "table",
-      surfaceId: "surface-1",
-      title: "Results"
     });
   });
 

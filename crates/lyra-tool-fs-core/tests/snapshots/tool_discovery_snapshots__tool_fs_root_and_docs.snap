@@ -1,6 +1,5 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
-assertion_line: 61
 expression: pretty(&snapshot)
 ---
 {
@@ -17,7 +16,7 @@ expression: pretty(&snapshot)
     "title": "Lyra Tool Filesystem"
   },
   "rootSummary": {
-    "domainCount": 17,
+    "domainCount": 16,
     "domains": [
       "terminal",
       "todo",
@@ -31,7 +30,6 @@ expression: pretty(&snapshot)
       "mcp",
       "memory",
       "network",
-      "render",
       "runtime",
       "skills",
       "software",
@@ -49,6 +47,6 @@ expression: pretty(&snapshot)
       "update the todo list",
       "search project memory"
     ],
-    "toolCount": 125
+    "toolCount": 124
   }
 }

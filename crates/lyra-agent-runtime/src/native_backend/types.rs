@@ -115,6 +115,12 @@ pub(crate) struct NativeSession {
     pub(crate) file_read_state: HashMap<String, FileReadStateEntry>,
     #[serde(default, skip)]
     pub(crate) dirty: bool,
+    /// Ephemeral sessions back the temporary plan-chat capsule: they are seeded
+    /// with plan context, never persisted to disk, never shown in the session
+    /// list, and are discarded when the capsule closes. They must never become
+    /// the active session.
+    #[serde(default, skip)]
+    pub(crate) ephemeral: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

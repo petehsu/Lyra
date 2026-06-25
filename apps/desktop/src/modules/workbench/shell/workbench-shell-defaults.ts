@@ -15,7 +15,6 @@ export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
-  forceWebPageThemingEnabled: true,
   searchWebEngineIds: WORKBENCH_CONFIG.browser.searchEngines.map((engine) => engine.id),
   searchResultsSourceFilter: "all",
   omniboxNonBrowserSubmitTarget: "new_tab",

@@ -157,7 +157,157 @@ pub(crate) fn new_session(
         rollback_checkpoints: Vec::new(),
         file_read_state: HashMap::new(),
         dirty: true,
+        ephemeral: false,
     }
+}
+
+/// Build an ephemeral session seeded with the parent session's active plan and
+/// todo context. Ephemeral sessions back the temporary plan-chat capsule: they
+/// are never persisted, never listed, never active, and discarded on close.
+/// `seeding` is the initial user/system message that embeds the plan context
+/// and the temp-chat role instructions.
+fn new_ephemeral_session(
+    working_dir: Option<String>,
+    parent_session_id: &str,
+    seeding: Value,
+) -> NativeSession {
+    let id = format!("session-{}", Uuid::new_v4());
+    let created_at = now();
+    let requested_dir = working_dir
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let working_dir_is_home = requested_dir.is_none();
+    let working_dir = requested_dir.unwrap_or_else(home_working_dir);
+    let project_bound = !working_dir.trim().is_empty();
+    let snapshot = json!({
+        "id": id,
+        "title": "Plan chat",
+        "sessionKind": "temporary",
+        "workingDir": working_dir,
+        "projectBound": project_bound,
+        "workingDirIsHome": working_dir_is_home,
+        "parentSessionId": parent_session_id,
+        "ephemeral": true,
+        "messages": [seeding],
+        "tools": [],
+        "todos": [],
+        "turnStatus": "idle",
+        "activeTurnId": Value::Null,
+        "follow": { "running": false, "activity": Value::Null },
+        "sessionResilience": {
+            "blockedBrowser": Value::Null,
+            "updatedAt": Value::Null
+        },
+        "taskMilestones": [],
+        "updatedAt": created_at,
+        "memory": Value::Null
+    });
+    NativeSession {
+        id,
+        snapshot,
+        created_at,
+        saved: false,
+        save_label: None,
+        archived: false,
+        custom_title: None,
+        short_name: None,
+        runtime_turns: Vec::new(),
+        rollback_checkpoints: Vec::new(),
+        file_read_state: HashMap::new(),
+        dirty: false,
+        ephemeral: true,
+    }
+}
+
+/// Build the seed message for a temporary plan-chat session. It embeds the
+/// parent session's active plan markdown, annotations, title, and todo so the
+/// temp agent can discuss/explain/propose changes without re-reading state, and
+/// constrains it to discussion only (no execution tools).
+fn temp_chat_seed_message(plan: &Value, todo: &Value) -> Value {
+    let title = plan.get("title").and_then(Value::as_str).unwrap_or("");
+    let markdown = plan
+        .get("markdown")
+        .and_then(Value::as_str)
+        .unwrap_or("(empty plan)");
+    let annotations = plan
+        .get("annotations")
+        .filter(|value| value.is_array())
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    let todo_json = if todo.is_null() {
+        "(no todo list yet)".to_string()
+    } else {
+        serde_json::to_string_pretty(todo).unwrap_or_else(|_| "(todo)".to_string())
+    };
+    let body = format!(
+        "You are a temporary plan-discussion assistant. The user is reviewing the plan below \
+inside the Lyra Plan Board and wants to discuss it before deciding.\n\n\
+Rules:\n\
+- Explain, answer questions, and propose improvements to the plan.\n\
+- Do NOT execute the task. Do NOT call execution tools (apply_patch, edit_file, write_file, \
+exec_command mutations, browser/terminal mutations).\n\
+- Keep replies concise and grounded in the plan text.\n\
+- If the user wants a change applied to the plan, emit the revised plan Markdown in a fenced \
+```plan block so the UI can offer \"apply to plan\".\n\n\
+Plan title: {title}\n\n\
+Plan Markdown:\n\
+```plan\n{markdown}\n```\n\n\
+Annotations:\n{annotations}\n\n\
+Current todo:\n{todo_json}"
+    );
+    json!({
+        "messageId": format!("msg-{}", Uuid::new_v4()),
+        "role": "user",
+        "kind": "note",
+        "text": body,
+        "createdAt": now(),
+        "uiHidden": false
+    })
+}
+
+/// `agent.session.createTemporary` — create an ephemeral, plan-chat session
+/// seeded with the parent session's active plan/todo. Returns the new session
+/// snapshot. The session is not persisted, not listed, and not made active.
+pub(crate) fn create_temporary_session(payload: Value) -> AgentRuntimeResult<Value> {
+    let parent_session_id = string_opt(&payload, "parentSessionId")
+        .ok_or_else(|| AgentRuntimeError::Core("parentSessionId is required".to_string()))?;
+    let (session, callback) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let parent = state
+            .sessions
+            .get(&parent_session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {parent_session_id}")))?;
+        let working_dir = parent
+            .snapshot
+            .get("workingDir")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let plan = parent
+            .snapshot
+            .get("plan")
+            .filter(|value| value.is_object())
+            .cloned()
+            .unwrap_or_else(|| json!({ "title": "", "markdown": "" }));
+        let todo = parent
+            .snapshot
+            .get("projectTodo")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let seed = temp_chat_seed_message(&plan, &todo);
+        let session = new_ephemeral_session(working_dir, &parent_session_id, seed);
+        let snapshot = session.snapshot.clone();
+        // Insert but deliberately do NOT set active_session_id and do NOT
+        // save_state — ephemeral sessions are in-memory only.
+        state.sessions.insert(session.id.clone(), session);
+        (snapshot, state.event_callback.clone())
+    };
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "sessionSnapshot", "snapshot": session.clone() }),
+    );
+    Ok(session)
 }
 
 // Resolve the user's home directory across platforms, falling back to the
@@ -297,7 +447,7 @@ pub(crate) fn list_sessions(payload: Value) -> AgentRuntimeResult<Value> {
             state
                 .sessions
                 .values()
-                .filter(|session| !is_deleted(&session.snapshot))
+                .filter(|session| !is_deleted(&session.snapshot) && !session.ephemeral)
                 .map(session_summary)
                 .collect::<Vec<_>>()
         }

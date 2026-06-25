@@ -611,6 +611,7 @@ fn session_for_memory_event(root: &Path, session_id: &str) -> NativeSession {
                 rollback_checkpoints: Vec::new(),
                 file_read_state: HashMap::new(),
                 dirty: false,
+                ephemeral: false,
             }
         })
 }
@@ -722,6 +723,7 @@ mod tests {
             rollback_checkpoints: Vec::new(),
             file_read_state: HashMap::new(),
             dirty: true,
+            ephemeral: false,
         }
     }
 

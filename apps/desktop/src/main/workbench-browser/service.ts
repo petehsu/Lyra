@@ -17,8 +17,7 @@ import {
   type WorkbenchBrowserSearchInPageResult,
   type WorkbenchBrowserSetElementPickerModeRequest,
   type WorkbenchBrowserStorageStateRequest,
-  type WorkbenchBrowserTopologySnapshot,
-  type WorkbenchBrowserWebThemeSnapshot
+  type WorkbenchBrowserTopologySnapshot
 } from "../../shared/desktop-bridge";
 import type {
   WorkbenchTabExtractTextResult,
@@ -126,9 +125,6 @@ export type WorkbenchBrowserIpcBridge = {
   ) => Promise<void>;
   readonly setElementPickerMode: (
     request: WorkbenchBrowserSetElementPickerModeRequest
-  ) => Promise<void>;
-  readonly applyWebTheme: (
-    snapshot: WorkbenchBrowserWebThemeSnapshot
   ) => Promise<void>;
   readonly readActiveTabId: () => string | null;
   readonly listFrames: (tabId: string) => readonly WorkbenchBrowserFrameDescriptor[];
@@ -468,12 +464,6 @@ export const createWorkbenchBrowserIpcBridge = ({
     }
   );
   ipcMain.handle(
-    LYRA_CHANNELS.workbenchBrowserApplyWebTheme,
-    async (_event, request: unknown) => {
-      await manager.applyWebTheme(request as WorkbenchBrowserWebThemeSnapshot);
-    }
-  );
-  ipcMain.handle(
     LYRA_CHANNELS.workbenchBrowserCapturePage,
     async (_event, request: { readonly tabId?: unknown } | undefined) => {
       const tabId = typeof request?.tabId === "string" ? request.tabId : manager.readActiveTabId();
@@ -587,7 +577,6 @@ export const createWorkbenchBrowserIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetChromePopover);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetElementPickerMode);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserSetModalOcclusion);
-      ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserApplyWebTheme);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCapturePage);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserCaptureWindow);
       ipcMain.removeHandler(LYRA_CHANNELS.workbenchBrowserExecutePageContextAction);
@@ -612,7 +601,6 @@ export const createWorkbenchBrowserIpcBridge = ({
     searchInPage: manager.searchInPage,
     setChromePopover: manager.setChromePopover,
     setElementPickerMode: manager.setElementPickerMode,
-    applyWebTheme: manager.applyWebTheme,
     readActiveTabId: manager.readActiveTabId,
     listFrames: manager.listFrames,
     probeFrameDom: manager.probeFrameDom,

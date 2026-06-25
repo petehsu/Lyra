@@ -16,5 +16,6 @@ export type {
   AgentPlanBoardLabels,
   AgentPlanBoardManagerState,
   AgentPlanBoardModel,
-  AgentPlanBoardSurfaceProps
+  AgentPlanBoardSurfaceProps,
+  AgentPlanBoardView
 } from "./types";

@@ -8,7 +8,8 @@ import {
 import {
   createAgentPlanBoardAppRequest,
   createAgentPlanBoardManagerAppRequest,
-  type AgentPlanBoardModel
+  type AgentPlanBoardModel,
+  type AgentPlanBoardView
 } from "../agent-plan-board";
 import { createAgentGitAppRequest } from "../agent-git";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
@@ -49,6 +50,7 @@ type OpenAgentPlanBoardRequest = {
 type OpenAgentProjectPlanManagerRequest = {
   readonly sessionId: string;
   readonly workingDir: string;
+  readonly view?: AgentPlanBoardView;
 };
 
 const resolvePathKind = async (
@@ -189,11 +191,14 @@ export const useWorkbenchAgentAppOpeners = ({
     if (sessionId.length === 0 || workingDir.length === 0) {
       return;
     }
-    const nextApp = createAgentPlanBoardManagerAppRequest(sessionId, workingDir, "Plans and Todos");
+    const view = request.view ?? "both";
+    const title = view === "plan" ? "Plans" : view === "todo" ? "Todos" : "Plans and Todos";
+    const nextApp = createAgentPlanBoardManagerAppRequest(sessionId, workingDir, title, view);
     agentPlanBoardModel.ensureManagerInstance(nextApp.appInstanceId, {
       agentSessionId: sessionId,
       workingDir,
-      title: nextApp.title
+      title: nextApp.title,
+      view
     });
     const existingTab = tabsModel.tabs.find(
       (tab) =>

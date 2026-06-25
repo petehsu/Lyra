@@ -1,4 +1,4 @@
-import { BookText, Eye, X, Check } from "lucide-react";
+import { BookText, Eye, Archive, Check } from "lucide-react";
 import type {
   AgentPlanReviewRespondAction,
   AgentPlanSnapshot
@@ -49,11 +49,11 @@ export function PlanReviewPanel({
           variant="ghost"
           size="sm"
           type="button"
-          className="lyra-agents-plan-review-btn lyra-agents-plan-review-btn-reject"
-          onClick={() => { void onRespond("reject"); }}
+          className="lyra-agents-plan-review-btn lyra-agents-plan-review-btn-set-aside"
+          onClick={() => { void onRespond("set_aside"); }}
         >
-          <X size={13} strokeWidth={2.1} />
-          {t("planReview.reject")}
+          <Archive size={13} strokeWidth={2.1} />
+          {t("planReview.setAside")}
         </AppButton>
         <AppButton
           variant="ghost"

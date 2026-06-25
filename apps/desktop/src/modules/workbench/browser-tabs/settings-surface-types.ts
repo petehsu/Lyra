@@ -82,10 +82,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly jsReplDescription: string;
   readonly jsReplEnabledLabel: string;
   readonly jsReplDisabledLabel: string;
-  readonly forceWebPageThemingLabel: string;
-  readonly forceWebPageThemingDescription: string;
-  readonly forceWebPageThemingEnabledLabel: string;
-  readonly forceWebPageThemingDisabledLabel: string;
   readonly searchCategoryLabel: string;
   readonly searchWebEnginesLabel: string;
   readonly searchSearxngEndpointLabel: string;
@@ -135,7 +131,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
-  readonly forceWebPageThemingValue: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpointValue: string;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
@@ -172,7 +167,6 @@ export type BrowserSettingsSurfaceProps = {
   readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
-  readonly onForceWebPageThemingChange: (value: boolean) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
   readonly onSearchSearxngEndpointChange: (value: string) => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;

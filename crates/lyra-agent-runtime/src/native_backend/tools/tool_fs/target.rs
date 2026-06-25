@@ -209,7 +209,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/web/map" => native("web_map", "web", "map"),
         "/tools/web/batch" => native("web_batch", "web", "batch"),
         "/tools/web/fetch" => native("web_fetch", "web", "fetch"),
-        "/tools/render/surface" => native("render_surface", "render", "surface"),
         "/tools/todo/read" => native("todo_read", "todo", "read"),
         "/tools/todo/write" => native("todo_write", "todo", "write"),
         "/tools/design/search_styles" => design("lyra_design_search_styles", "search_styles"),

@@ -105,6 +105,7 @@ fn memory_projection_splits_shared_and_frozen_facts() {
         save_label: None,
         archived: false,
         dirty: false,
+        ephemeral: false,
         snapshot: json!({
             "title": "Projection",
             "messages": [],

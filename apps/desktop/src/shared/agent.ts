@@ -106,9 +106,9 @@ export type AgentPlanPhase =
   | "todo_required"
   | "executing_todo"
   | "completed"
-  | "rejected";
+  | "set_aside";
 
-export type AgentPlanReviewStatus = "none" | "pending" | "approved" | "rejected" | "changed";
+export type AgentPlanReviewStatus = "none" | "pending" | "approved" | "set_aside" | "changed";
 
 export type AgentPlanAnnotation = {
   readonly id: string;
@@ -156,7 +156,11 @@ export type AgentProjectTodoSnapshot = {
   readonly summary?: string | null;
 };
 
-export type AgentPlanReviewRespondAction = "approve" | "reject" | "request_revision";
+export type AgentPlanReviewRespondAction =
+  | "approve"
+  | "set_aside"
+  | "request_revision"
+  | "resume";
 
 export type AgentPlanReviewRespondRequest = {
   readonly sessionId: string;
@@ -219,6 +223,19 @@ export type AgentProjectPlanReadResponse = {
   readonly versions: readonly AgentPlanVersionSnapshot[];
   readonly currentVersion: AgentPlanVersionSnapshot | null;
   readonly projectTodo: AgentProjectTodoSnapshot | null;
+};
+
+export type AgentProjectTodoReadRequest = {
+  readonly planId: string;
+  readonly workingDir?: string | null;
+  readonly sessionId?: string | null;
+};
+
+export type AgentProjectTodoReadResponse = {
+  readonly projectKey: string;
+  readonly workingDir: string;
+  readonly planId: string;
+  readonly todo: AgentProjectTodoSnapshot | null;
 };
 
 export type AgentProjectPlanDeleteRequest = {
@@ -473,6 +490,10 @@ export type AgentMemorySharedUpdateRequest = {
 export type AgentSessionCreateRequest = {
   readonly title?: string;
   readonly workingDir?: string | null;
+};
+
+export type AgentTemporarySessionCreateRequest = {
+  readonly parentSessionId: string;
 };
 
 export type AgentSessionReadRequest = {
@@ -1290,6 +1311,9 @@ export type AgentRolesUpdateRequest = {
 
 export type AgentApi = {
   readonly createSession: (request?: AgentSessionCreateRequest) => Promise<AgentSessionSnapshot>;
+  readonly createTemporarySession: (
+    request: AgentTemporarySessionCreateRequest
+  ) => Promise<AgentSessionSnapshot>;
   readonly readSession: (request?: AgentSessionReadRequest) => Promise<AgentSessionSnapshot>;
   readonly listSessions: (
     request?: AgentSessionListRequest
@@ -1352,6 +1376,9 @@ export type AgentApi = {
   ) => Promise<AgentProjectPlanDeleteResponse>;
   readonly revisePlan: (request: AgentPlanReviseRequest) => Promise<AgentSessionSnapshot>;
   readonly respondPlanReview: (request: AgentPlanReviewRespondRequest) => Promise<AgentSessionSnapshot>;
+  readonly readProjectTodo: (
+    request: AgentProjectTodoReadRequest
+  ) => Promise<AgentProjectTodoReadResponse>;
   readonly readPermissionPolicy: () => Promise<AgentPermissionPolicySnapshot>;
   readonly setPermissionPolicyMode: (
     request: AgentPermissionPolicySetModeRequest
