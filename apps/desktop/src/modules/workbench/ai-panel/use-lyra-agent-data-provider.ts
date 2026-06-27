@@ -423,6 +423,9 @@ type LyraAgentDataProviderCallbacks = {
   readonly onPickFileFromFileManager?: (() => Promise<string | null>) | undefined;
   readonly listWorkspaceTabs?: (() => readonly WorkspaceTab[]) | undefined;
   readonly listTerminalTabs?: (() => readonly TerminalDockTab[]) | undefined;
+  readonly getTerminalTabPanes?: ((tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[]) | undefined;
+  readonly onCloseTerminalTab?: ((tabId: string) => void) | undefined;
+  readonly onFocusTerminalTabInDock?: ((tabId: string) => void) | undefined;
   readonly locationControls?: WorkbenchLocationControls | undefined;
   readonly aiRichRenderingEnabled?: boolean | undefined;
 };
@@ -466,6 +469,9 @@ export const useLyraAgentDataProvider = (
     onPickFileFromFileManager,
     listWorkspaceTabs,
     listTerminalTabs,
+    getTerminalTabPanes,
+    onCloseTerminalTab,
+    onFocusTerminalTabInDock,
     locationControls,
     aiRichRenderingEnabled = true
   } = callbacks;
@@ -1426,6 +1432,12 @@ export const useLyraAgentDataProvider = (
     state.session?.workingDir
   ]);
 
+  const openInFileManager = useCallback(async (path: string): Promise<void> => {
+    const trimmed = path.trim();
+    if (trimmed.length === 0) return;
+    await onRevealPathInWorkbench?.(trimmed);
+  }, [onRevealPathInWorkbench]);
+
   const openTerminalLiveSession = useCallback(async (request: {
     readonly sessionId?: string | null;
     readonly terminalTabId?: string | null;
@@ -1841,6 +1853,7 @@ export const useLyraAgentDataProvider = (
       openUrlInWorkbench,
       openFileInWorkbench,
       revealPathInWorkbench,
+      openInFileManager,
       openPlanReview,
       openProjectTodo,
       openProjectPlanManager,
@@ -1871,6 +1884,9 @@ export const useLyraAgentDataProvider = (
       pickFileFromFileManager,
       workspaceTabs: workspaceTabsForComposer,
       terminalTabs: terminalTabsForComposer,
+      getTerminalTabPanes,
+      closeTerminalTab: onCloseTerminalTab,
+      focusTerminalTabInDock: onFocusTerminalTabInDock,
       cancelTurn: cancel,
       previewRollback,
       rollbackMessage,
@@ -1904,6 +1920,9 @@ export const useLyraAgentDataProvider = (
     pickFileFromFileManager,
     workspaceTabsForComposer,
     terminalTabsForComposer,
+    getTerminalTabPanes,
+    onCloseTerminalTab,
+    onFocusTerminalTabInDock,
     createSession,
     desktopApi,
     denyPermission,
@@ -1916,6 +1935,7 @@ export const useLyraAgentDataProvider = (
     openProjectTodo,
     openProjectPlanManager,
     revealPathInWorkbench,
+    openInFileManager,
     respondPlanReview,
     openTerminalLiveSession,
     openImageInWorkbench,

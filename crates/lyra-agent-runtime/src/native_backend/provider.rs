@@ -369,7 +369,7 @@ pub(crate) fn run_model_loop(
                         json!({
                             "role": "system",
                             "content": format!(
-                                "Structured input downgrade report: {}",
+                                "Structured input downgrade report: {}\nThis input was dropped before reaching U, not lost for good. Judge if it's worth recovering through Lyra — browser can open an online AI/tool that views or processes what U can't here. Decide, don't silently skip.",
                                 serde_json::to_string(&downgrades)
                                     .unwrap_or_else(|_| "[]".to_string())
                             ),
@@ -795,99 +795,131 @@ pub(crate) fn run_model_loop(
         let mut provider_tool_results = Vec::new();
         let mut browser_tool_calls = Vec::new();
         let mut browser_tool_outputs = Vec::new();
-        for call in &tool_calls {
+        if !tool_calls.is_empty() {
             if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
                 return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
             }
-            if progress_guard.browser_automation_paused
-                && tool_protocol::is_browser_tool_name(&call.name)
-            {
-                let skipped = json!({
-                    "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
-                    "raw": {
-                        "ok": false,
-                        "status": "blocked",
-                        "browserBlocked": true,
-                        "skipped": true,
-                        "reason": "browser_automation_paused",
-                    }
-                });
-                provider_tool_results.push(
-                    skipped
-                        .get("content")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string(),
-                );
+            emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
+            let runtime = ToolExecutionRuntime::from_model_capabilities(&request.capabilities);
+            let dispatcher = &request.host_dispatcher;
+            let browser_paused = progress_guard.browser_automation_paused;
+            // ponytail: All tools parallel by default — model decides what to batch.
+            // Single call skips thread::scope overhead.  New tools inherit parallel
+            // capability automatically; no per-tool opt-in needed.
+            let outputs: Vec<Value> = if tool_calls.len() > 1 {
+                std::thread::scope(|s| {
+                    tool_calls
+                        .iter()
+                        .map(|call| {
+                            let call = call.clone();
+                            s.spawn(move || {
+                                if browser_paused
+                                    && tool_protocol::is_browser_tool_name(&call.name)
+                                {
+                                    return json!({
+                                        "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                                        "raw": {
+                                            "ok": false,
+                                            "status": "blocked",
+                                            "browserBlocked": true,
+                                            "skipped": true,
+                                            "reason": "browser_automation_paused",
+                                        }
+                                    });
+                                }
+                                execute_model_tool_with_runtime(
+                                    session_id,
+                                    turn_id,
+                                    dispatcher,
+                                    cancellation,
+                                    runtime,
+                                    call,
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .map(|h| h.join().expect("tool thread panicked"))
+                        .collect()
+                })
+            } else {
+                tool_calls
+                    .iter()
+                    .map(|call| {
+                        if browser_paused && tool_protocol::is_browser_tool_name(&call.name) {
+                            return json!({
+                                "content": "Browser automation is paused because an upload or permission dialog is blocking the page. Close the dialog, then retry.",
+                                "raw": {
+                                    "ok": false,
+                                    "status": "blocked",
+                                    "browserBlocked": true,
+                                    "skipped": true,
+                                    "reason": "browser_automation_paused",
+                                }
+                            });
+                        }
+                        execute_model_tool_with_runtime(
+                            session_id,
+                            turn_id,
+                            dispatcher,
+                            cancellation,
+                            runtime,
+                            call.clone(),
+                        )
+                    })
+                    .collect()
+            };
+            for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
+                let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
+                provider_tool_results.push(content.clone());
+                if tool_protocol::is_browser_tool_name(&call.name) {
+                    progress_guard.browser_tools_used_this_turn = progress_guard
+                        .browser_tools_used_this_turn
+                        .saturating_add(1);
+                }
+                if let Some(parsed) =
+                    browser_loop_detector::parse_browser_tool_call(&call.name, &call.arguments)
+                {
+                    browser_tool_calls.push(parsed);
+                    browser_tool_outputs.push(output.clone());
+                }
+                if tool_protocol::is_browser_tool_blocked_output(&output) {
+                    progress_guard.browser_automation_paused = true;
+                }
+                if let Some(evidence_ref) = evidence_ref {
+                    emit_context_trimmed(
+                        session_id,
+                        json!({
+                            "reason": "tool_output_truncated_for_provider",
+                            "evidenceRef": evidence_ref,
+                        }),
+                    );
+                }
                 let mut tool_message = json!({
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": skipped["content"],
-                });
-                messages.push(tool_message.clone());
-                provider_transcript.push(tool_message);
-                continue;
-            }
-            emit_turn_state(session_id, turn_id, "waiting_for_tool", "tool_call_started");
-            let output = execute_model_tool_with_runtime(
-                session_id,
-                turn_id,
-                &request.host_dispatcher,
-                cancellation,
-                ToolExecutionRuntime::from_model_capabilities(&request.capabilities),
-                call.clone(),
-            );
-            let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
-            provider_tool_results.push(content.clone());
-            if tool_protocol::is_browser_tool_name(&call.name) {
-                progress_guard.browser_tools_used_this_turn = progress_guard
-                    .browser_tools_used_this_turn
-                    .saturating_add(1);
-            }
-            if let Some(parsed) =
-                browser_loop_detector::parse_browser_tool_call(&call.name, &call.arguments)
-            {
-                browser_tool_calls.push(parsed);
-                browser_tool_outputs.push(output.clone());
-            }
-            if tool_protocol::is_browser_tool_blocked_output(&output) {
-                progress_guard.browser_automation_paused = true;
-            }
-            if let Some(evidence_ref) = evidence_ref {
-                emit_context_trimmed(
-                    session_id,
-                    json!({
-                        "reason": "tool_output_truncated_for_provider",
-                        "evidenceRef": evidence_ref,
-                    }),
-                );
-            }
-            let mut tool_message = json!({
-                "role": "tool",
-                "tool_call_id": call.id,
-                "content": content,
-            });
-            if !provider_replay_items.is_empty() {
-                tool_message["openaiResponsesShadow"] = Value::Bool(true);
-                let output_item =
-                    openai_responses::function_call_output_item(&call.id, content.clone());
-                provider_replay_items.push(output_item.clone());
-                messages.push(output_item);
-            }
-            messages.push(tool_message.clone());
-            provider_transcript.push(tool_message);
-            if let Some(content) =
-                provider_image_message_from_tool_output(&output, &request.capabilities)
-            {
-                let user_message = json!({
-                    "role": "user",
                     "content": content,
                 });
-                messages.push(user_message.clone());
-                provider_transcript.push(user_message);
+                if !provider_replay_items.is_empty() {
+                    tool_message["openaiResponsesShadow"] = Value::Bool(true);
+                    let output_item =
+                        openai_responses::function_call_output_item(&call.id, content.clone());
+                    provider_replay_items.push(output_item.clone());
+                    messages.push(output_item);
+                }
+                messages.push(tool_message.clone());
+                provider_transcript.push(tool_message);
+                if let Some(content) =
+                    provider_image_message_from_tool_output(&output, &request.capabilities)
+                {
+                    let user_message = json!({
+                        "role": "user",
+                        "content": content,
+                    });
+                    messages.push(user_message.clone());
+                    provider_transcript.push(user_message);
+                }
             }
-        }
-        if !tool_calls.is_empty() {
             crate::native_backend::turns::clear_active_ui_message_id(session_id, turn_id);
             emit_turn_state(
                 session_id,
@@ -2123,6 +2155,9 @@ fn parse_streaming_response_with_commit<R: BufRead>(
             .reasoning_chars
             .saturating_add(flushed.reasoning.chars().count());
         state.reasoning_content.push_str(&flushed.reasoning);
+        crate::native_backend::turns::append_reasoning_delta(
+            &flushed.reasoning, &mut ui_message_id, session_id, turn_id,
+        )?;
     }
     if !flushed.visible.is_empty() {
         if !buffer_assistant_text {
@@ -2223,6 +2258,9 @@ pub(crate) fn map_provider_stream_chunk(
                 .reasoning_chars
                 .saturating_add(scrubbed.reasoning.chars().count());
             state.reasoning_content.push_str(&scrubbed.reasoning);
+            crate::native_backend::turns::append_reasoning_delta(
+                &scrubbed.reasoning, ui_message_id, session_id, turn_id,
+            )?;
         }
         if !scrubbed.visible.is_empty() {
             let candidate = format!("{}{}", state.content, scrubbed.visible);
@@ -2251,6 +2289,9 @@ pub(crate) fn map_provider_stream_chunk(
             .reasoning_chars
             .saturating_add(reasoning.chars().count());
         state.reasoning_content.push_str(&reasoning);
+        crate::native_backend::turns::append_reasoning_delta(
+            &reasoning, ui_message_id, session_id, turn_id,
+        )?;
     }
     if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
         for chunk in chunks {

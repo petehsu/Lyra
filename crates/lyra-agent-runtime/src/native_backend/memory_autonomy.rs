@@ -1,67 +1,5 @@
 use super::*;
 
-pub(crate) fn run_post_turn_memory_extraction(
-    root: &Path,
-    session_id: &str,
-    turn_id: &str,
-    user_text: &str,
-    assistant_text: Option<&str>,
-) -> AgentRuntimeResult<Value> {
-    let mut created = Vec::new();
-    let extraction = run_memory_agent_extraction(session_id, turn_id, user_text, assistant_text);
-    let mutations = match extraction {
-        Ok(mutations) => mutations,
-        Err(error) => {
-            return Ok(json!({
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "agent": "memory",
-                "skipped": true,
-                "reason": error.to_string(),
-                "candidates": [],
-            }));
-        }
-    };
-    for mutation in mutations {
-        created.push(process_extracted_candidate(
-            root, session_id, turn_id, mutation,
-        )?);
-    }
-    Ok(json!({
-        "sessionId": session_id,
-        "turnId": turn_id,
-        "agent": "memory",
-        "candidates": created,
-    }))
-}
-
-const MEMORY_AGENT_SYSTEM_PROMPT: &str = r#"You are Lyra's background memory maintenance agent.
-
-You are not the main chat agent. You never use tools and never answer the user. Your only job is to inspect the just-finished turn and return compact JSON describing durable memory candidates.
-
-Decide semantically whether the conversation contains useful long-term facts. Do not rely on fixed trigger phrases. Capture facts that would help future assistance, including identity, stable preferences, project decisions, working style, recurring constraints, user-owned contact details, and important project facts. Ignore transient task details, one-off commands, jokes, uncertain guesses, secrets, passwords, API keys, access tokens, and raw credentials.
-
-Return only a JSON object:
-{
-  "candidates": [
-    {
-      "fact": "short durable fact",
-      "category": "user_profile|preference|project|instruction|goal|other",
-      "scope": "global|project",
-      "confidence": 0.0,
-      "sensitivity": "low|personal|sensitive",
-      "sourceType": "user_declaration|memory_agent_inference",
-      "requiresConfirmation": true,
-      "content": {"kind":"brief_type","text":"fact or structured value"},
-      "expiresAt": null
-    }
-  ]
-}
-
-Use requiresConfirmation=true for personal contact details, addresses, account identifiers, inferred facts, and anything the user did not explicitly ask Lyra to remember. Use sourceType=user_declaration only when the user clearly stated the fact. Keep at most 6 candidates.
-
-For tool/file/decision events, prefer durable project facts and execution evidence. Mark execution evidence with valueClass=execution_evidence only when the event payload contains concrete verifiable output."#;
-
 const MEMORY_AGENT_EVENT_PROMPT: &str = r#"You are Lyra's background memory maintenance agent.
 
 Inspect the verified runtime event and return compact JSON describing durable memory candidates only when the event contains reusable facts. Ignore transient command output, secrets, and one-off task chatter.
@@ -85,39 +23,6 @@ Return only:
 }
 
 Keep at most 3 candidates per event."#;
-
-pub(crate) fn run_memory_agent_extraction(
-    session_id: &str,
-    turn_id: &str,
-    user_text: &str,
-    assistant_text: Option<&str>,
-) -> AgentRuntimeResult<Vec<MemoryCandidateMutation>> {
-    if user_text.trim().is_empty() && assistant_text.is_none_or(|text| text.trim().is_empty()) {
-        return Ok(Vec::new());
-    }
-    let (provider, model) = memory_agent_provider_and_model()?;
-    let messages = vec![
-        json!({
-            "role": "system",
-            "content": MEMORY_AGENT_SYSTEM_PROMPT,
-        }),
-        json!({
-            "role": "user",
-            "content": json!({
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "userMessage": user_text,
-                "assistantMessage": assistant_text.unwrap_or_default(),
-            }).to_string(),
-        }),
-    ];
-    let reply = call_model_once_non_streaming(&provider, &model, &messages, &[])?;
-    let content = reply
-        .content
-        .as_deref()
-        .ok_or_else(|| AgentRuntimeError::Core("memory agent returned no content".to_string()))?;
-    parse_memory_agent_candidates(session_id, turn_id, None, content)
-}
 
 pub(crate) fn run_memory_agent_extraction_for_event(
     session_id: &str,
@@ -149,7 +54,7 @@ pub(crate) fn run_memory_agent_extraction_for_event(
     parse_memory_agent_candidates(session_id, turn_id, Some(event_type), content)
 }
 
-fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfile, String)> {
+pub(crate) fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfile, String)> {
     let state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -181,7 +86,7 @@ fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfil
     Ok((provider, model))
 }
 
-fn parse_memory_agent_candidates(
+pub(crate) fn parse_memory_agent_candidates(
     session_id: &str,
     turn_id: &str,
     event_type: Option<&str>,
@@ -204,7 +109,7 @@ fn parse_memory_agent_candidates(
         .collect())
 }
 
-fn parse_memory_agent_json(content: &str) -> AgentRuntimeResult<Value> {
+pub(crate) fn parse_memory_agent_json(content: &str) -> AgentRuntimeResult<Value> {
     if let Ok(value) = serde_json::from_str::<Value>(content.trim()) {
         return Ok(value);
     }
@@ -224,7 +129,7 @@ fn parse_memory_agent_json(content: &str) -> AgentRuntimeResult<Value> {
     })
 }
 
-fn memory_candidate_from_agent_json(
+pub(crate) fn memory_candidate_from_agent_json(
     candidate: &Value,
     source_ref: Option<String>,
     event_type: Option<&str>,

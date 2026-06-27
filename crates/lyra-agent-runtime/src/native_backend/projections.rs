@@ -152,7 +152,6 @@ pub(crate) fn config_json(config: &NativeConfig) -> Value {
             "defaultModel": config.default_model,
         },
         "providers": providers,
-        "roles": config.roles,
         "options": {
             "reasoningEffort": config.reasoning_effort,
             "serviceTier": config.service_tier,
@@ -163,7 +162,6 @@ pub(crate) fn config_json(config: &NativeConfig) -> Value {
             "leanExperimental": config.prompt_delivery_mode.as_deref() == Some("lean-experimental"),
             "openaiResponsesStatefulPromptContract": config.openai_responses_stateful_prompt_contract,
         },
-        "notifications": config.notifications,
         "proactive": {
             "enabled": config.proactive_enabled,
             "disabledTriggers": config.proactive_disabled_triggers,

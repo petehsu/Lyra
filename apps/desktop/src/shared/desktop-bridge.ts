@@ -153,6 +153,9 @@ export type {
   AgentMessageResolveRequest,
   AgentMessageResolveResponse,
   AgentPermissionRespondRequest,
+  AgentPrivateTerminalCloseRequest,
+  AgentPrivateTerminalListRequest,
+  AgentPrivateTerminalSnapshot,
   AgentPlanAnnotation,
   AgentPlanPhase,
   AgentPlanReviseRequest,
@@ -207,7 +210,6 @@ export type {
   AgentAccountRequest,
   AgentAccountSnapshot,
   AgentAccountsSnapshot,
-  AgentRolesUpdateRequest,
   AgentActionRunRequest,
   AgentFeedbackRunRequest,
   AgentLoginProviderSnapshot,
@@ -235,7 +237,9 @@ export type {
   AgentRegisteredCommand,
   AgentSessionSummary,
   AgentSessionListRequest,
-  AgentSessionListResponse
+  AgentSessionListResponse,
+  AgentProtocolContract,
+  EXPECTED_PROTOCOL_VERSION
 } from "./agent";
 export type {
   ImageViewerCloseSessionRequest,
@@ -463,6 +467,9 @@ export const LYRA_CHANNELS = {
   readAppMeta: "lyra:shell/app/meta",
   readAppMetaSync: "lyra:shell/app/meta-sync",
   openExternal: "lyra:shell/open-external",
+  detectEditors: "lyra:shell/detect-editors",
+  openInEditor: "lyra:shell/open-in-editor",
+  revealInFolder: "lyra:shell/reveal-in-folder",
   identityReadUserIcon: "lyra:identity/read-user-icon",
   identityResolveProject: "lyra:identity/resolve-project",
   systemNotificationsReadStatus: "lyra:system-notifications/read-status",
@@ -613,6 +620,8 @@ export const LYRA_CHANNELS = {
   agentSessionArchive: "lyra:agent/session/archive",
   agentSessionDelete: "lyra:agent/session/delete",
   agentSessionBindProject: "lyra:agent/session/bind-project",
+  agentTerminalListPrivate: "lyra:agent/terminal/list-private",
+  agentTerminalClosePrivate: "lyra:agent/terminal/close-private",
   agentImageAttachmentMaterialize: "lyra:agent/image-attachment/materialize",
   agentBrowserFollowRead: "lyra:agent/browser-follow/read",
   agentBrowserFollowUpdate: "lyra:agent/browser-follow/update",
@@ -653,7 +662,6 @@ export const LYRA_CHANNELS = {
   agentModelDelete: "lyra:agent/models/delete",
   agentModelRefresh: "lyra:agent/models/refresh",
   agentProviderOptionsUpdate: "lyra:agent/provider/options/update",
-  agentRolesUpdate: "lyra:agent/roles/update",
   agentImproveRun: "lyra:agent/action/improve",
   agentRefactorRun: "lyra:agent/action/refactor",
   agentPokeTrigger: "lyra:agent/action/poke",
@@ -667,6 +675,7 @@ export const LYRA_CHANNELS = {
   agentAccountsSwitch: "lyra:agent/accounts/switch",
   agentAccountsRemove: "lyra:agent/accounts/remove",
   agentEvent: "lyra:agent/event",
+  agentProtocolContract: "lyra:agent/protocol/contract",
   workbenchObservationQuery: "lyra:workbench-observation/query",
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   softwareCapabilitiesQuery: "lyra:software-capabilities/query",
@@ -2690,12 +2699,18 @@ export type UiuxPacksApi = {
   readonly resolveRuntime: (request: UiuxResolveRuntimeRequest) => Promise<UiuxPackRuntime | null>;
 };
 
+export type DetectedEditor = { id: string; label: string; icon?: string };
+export type OpenInEditorRequest = { editorId: string; path: string };
+
 export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
   readonly shellEvents: ShellEventsApi;
   readonly screenshotPreview: ScreenshotPreviewApi;
   readonly openExternal: (url: string) => Promise<boolean>;
+  readonly detectEditors: () => Promise<DetectedEditor[]>;
+  readonly openInEditor: (request: OpenInEditorRequest) => Promise<boolean>;
+  readonly revealInFolder: (path: string) => Promise<boolean>;
   readonly identity?: IdentityApi;
   readonly systemNotifications?: SystemNotificationsApi;
   readonly linuxCompat: LinuxCompatApi;

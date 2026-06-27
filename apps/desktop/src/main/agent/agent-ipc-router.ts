@@ -60,7 +60,6 @@ import type {
   AgentConfigSnapshot,
   AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
-  AgentRolesUpdateRequest,
   AgentLoginProviderCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
@@ -74,7 +73,8 @@ import type {
   AgentPokeResponse,
   AgentSessionSummary,
   AgentSessionListRequest,
-  AgentSessionListResponse
+  AgentSessionListResponse,
+  AgentProtocolContract
 } from "../../shared/agent";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { materializeImageAttachment } from "./artifact-materializer";
@@ -92,13 +92,24 @@ export const createAgentIpcRouter = ({
   storageRoot,
   browserFollowMode,
   getBrowserBridge,
-  closePrivateTerminalsForSession
+  closePrivateTerminalsForSession,
+  listPrivateTerminalsForSession,
+  closePrivateTerminalSession
 }: {
   readonly requestRuntime: RequestRuntime;
   readonly storageRoot: string;
   readonly browserFollowMode: AgentBrowserFollowModeController;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly closePrivateTerminalsForSession: (agentSessionId: string) => Promise<void>;
+  readonly listPrivateTerminalsForSession: (agentSessionId: string) => readonly {
+    readonly sessionId: string;
+    readonly title: string;
+    readonly cwd?: string;
+    readonly mode: "shell" | "command";
+    readonly command?: string;
+    readonly createdAt: string;
+  }[];
+  readonly closePrivateTerminalSession: (agentSessionId: string, terminalSessionId: string) => Promise<void>;
 }): { readonly dispose: () => void } => {
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload?: unknown) => unknown]> = [
     [
@@ -184,6 +195,20 @@ export const createAgentIpcRouter = ({
           "agent.session.bindProject",
           payload as AgentSessionBindProjectRequest
         )
+    ],
+    [
+      LYRA_CHANNELS.agentTerminalListPrivate,
+      (_event, payload) => {
+        const request = payload as { sessionId: string };
+        return listPrivateTerminalsForSession(request.sessionId);
+      }
+    ],
+    [
+      LYRA_CHANNELS.agentTerminalClosePrivate,
+      async (_event, payload) => {
+        const request = payload as { sessionId: string; terminalSessionId: string };
+        await closePrivateTerminalSession(request.sessionId, request.terminalSessionId);
+      }
     ],
     [
       LYRA_CHANNELS.agentImageAttachmentMaterialize,
@@ -504,14 +529,6 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
-      LYRA_CHANNELS.agentRolesUpdate,
-      (_event, payload) =>
-        requestRuntime<AgentConfigSnapshot>(
-          "agent.roles.update",
-          payload as AgentRolesUpdateRequest
-        )
-    ],
-    [
       LYRA_CHANNELS.agentImproveRun,
       (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
@@ -598,6 +615,11 @@ export const createAgentIpcRouter = ({
           "agent.accounts.remove",
           payload as AgentAccountRequest
         )
+    ],
+    [
+      LYRA_CHANNELS.agentProtocolContract,
+      () =>
+        requestRuntime<AgentProtocolContract>("agent.protocol.contract")
     ],
   ];
 

@@ -11,10 +11,6 @@ pub(crate) enum RuntimeToolTarget {
         display_name: &'static str,
         action: &'static str,
     },
-    DesignAdapter {
-        tool_name: &'static str,
-        action: &'static str,
-    },
     SkillAdapter {
         tool_name: &'static str,
         action: &'static str,
@@ -61,7 +57,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         display_name,
         action,
     };
-    let design = |tool_name, action| RuntimeToolTarget::DesignAdapter { tool_name, action };
     let skill = |tool_name, action| RuntimeToolTarget::SkillAdapter { tool_name, action };
     let mcp = |tool_name, action| RuntimeToolTarget::McpAdapter { tool_name, action };
     Some(match manifest.path.as_str() {
@@ -79,6 +74,9 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/memory/reject_candidate" => memory("memory_reject_candidate", "reject_candidate"),
         "/tools/memory/explain_injection" => {
             memory("memory_explain_injection", "explain_injection")
+        }
+        "/tools/memory/read_compressed_context" => {
+            memory("memory_read_compressed_context", "read_compressed_context")
         }
         "/tools/clarification/ask" => RuntimeToolTarget::Clarification,
         "/tools/workbench/list_tabs" => host("workbench.listTabs", "workbench", "list_tabs"),
@@ -211,10 +209,6 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/web/fetch" => native("web_fetch", "web", "fetch"),
         "/tools/todo/read" => native("todo_read", "todo", "read"),
         "/tools/todo/write" => native("todo_write", "todo", "write"),
-        "/tools/design/search_styles" => design("lyra_design_search_styles", "search_styles"),
-        "/tools/design/get_style_details" => {
-            design("lyra_design_get_style_details", "get_style_details")
-        }
         "/tools/skills/list" => skill("skill_list", "list"),
         "/tools/skills/inspect" => skill("skill_inspect", "inspect"),
         "/tools/skills/activate" => skill("skill_activate", "activate"),
@@ -382,10 +376,6 @@ pub(crate) fn path_for_activity(name: &str, action: &str) -> Option<String> {
                 return true;
             }
             if name == "artifact" && manifest.path == "/tools/runtime/artifact_read" {
-                return true;
-            }
-            if name == "lyra_design" && manifest.domain == "design" && manifest.operation == action
-            {
                 return true;
             }
             false

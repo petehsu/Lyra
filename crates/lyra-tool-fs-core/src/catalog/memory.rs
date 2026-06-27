@@ -82,5 +82,13 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Explain injected memories.",
             None,
         ),
+        super::s(
+            "/tools/memory/read_compressed_context",
+            "memory",
+            "read_compressed_context",
+            "Read compressed context",
+            "Read original messages archived from a compressed-context-block.",
+            None,
+        ),
     ]
 }

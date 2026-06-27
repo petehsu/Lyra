@@ -56,6 +56,9 @@ type UseWorkbenchSidebarAiSurfacePropsParams = {
   readonly onPickFileFromFileManager?: () => Promise<string | null>;
   readonly listWorkspaceTabs?: () => readonly import("../workspace-tabs/types").WorkspaceTab[];
   readonly listTerminalTabs?: () => readonly import("../terminal-dock/types").TerminalDockTab[];
+  readonly getTerminalTabPanes?: (tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[];
+  readonly onCloseTerminalTab?: (tabId: string) => void;
+  readonly onFocusTerminalTabInDock?: (tabId: string) => void;
   readonly locationControls?: WorkbenchLocationControls;
   readonly openDialog?: GlobalDialogModel["openDialog"];
   readonly t: (key: I18nKey) => string;
@@ -81,6 +84,9 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
   onPickFileFromFileManager,
   listWorkspaceTabs,
   listTerminalTabs,
+  getTerminalTabPanes,
+  onCloseTerminalTab,
+  onFocusTerminalTabInDock,
   locationControls,
   openDialog,
   t
@@ -109,6 +115,9 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       ...(onPickFileFromFileManager === undefined ? {} : { onPickFileFromFileManager }),
       ...(listWorkspaceTabs === undefined ? {} : { listWorkspaceTabs }),
       ...(listTerminalTabs === undefined ? {} : { listTerminalTabs }),
+      ...(getTerminalTabPanes === undefined ? {} : { getTerminalTabPanes }),
+      ...(onCloseTerminalTab === undefined ? {} : { onCloseTerminalTab }),
+      ...(onFocusTerminalTabInDock === undefined ? {} : { onFocusTerminalTabInDock }),
       ...(locationControls === undefined ? {} : { locationControls }),
       ...(openDialog === undefined ? {} : { openDialog }),
       movePanelToLeftLabel: t("ai.movePanelToLeft"),
@@ -134,6 +143,9 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onPickFileFromFileManager,
       listWorkspaceTabs,
       listTerminalTabs,
+      getTerminalTabPanes,
+      onCloseTerminalTab,
+      onFocusTerminalTabInDock,
       locationControls,
       openDialog,
       preferences.locale,

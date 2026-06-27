@@ -87,6 +87,9 @@ export type AiPanelSurfaceProps = {
   readonly onPickFileFromFileManager?: () => Promise<string | null>;
   readonly listWorkspaceTabs?: () => readonly import("../workspace-tabs/types").WorkspaceTab[];
   readonly listTerminalTabs?: () => readonly import("../terminal-dock/types").TerminalDockTab[];
+  readonly getTerminalTabPanes?: (tabId: string) => readonly import("../terminal-dock/types").TerminalDockPane[];
+  readonly onCloseTerminalTab?: (tabId: string) => void;
+  readonly onFocusTerminalTabInDock?: (tabId: string) => void;
   readonly locationControls?: WorkbenchLocationControls;
 };
 

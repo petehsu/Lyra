@@ -204,7 +204,7 @@ expression: pretty(&snapshot)
         "title": "List terminal sessions"
       }
     ],
-    "total": 124
+    "total": 123
   },
   "git": {
     "domain": null,
@@ -288,7 +288,7 @@ expression: pretty(&snapshot)
         "title": "Act on computer node"
       }
     ],
-    "total": 23
+    "total": 25
   },
   "terminal": {
     "domain": null,
@@ -385,6 +385,6 @@ expression: pretty(&snapshot)
         "title": "Read terminal output"
       }
     ],
-    "total": 39
+    "total": 40
   }
 }

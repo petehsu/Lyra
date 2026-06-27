@@ -7,7 +7,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "web",
             "search",
             "Web search",
-            "Search the web.",
+            "Search the web — GitHub, docs, community discussions, error solutions, API references. Use before writing code to find how others solved similar problems.",
             Some("web_search"),
         ),
         super::s(

@@ -255,6 +255,10 @@ const chatBlocksForAgentMessage = (
         : [];
     }
     return [
+      ...(message.reasoningContent?.trim()
+        ? [{ type: "thinking" as const, id: `${message.id}-thinking`, body: message.reasoningContent,
+          status: message.reasoningStatus === "thinking" ? "running" : "done" }]
+        : []),
       {
         type: "text",
         id: `${message.id}-text`,
@@ -328,6 +332,10 @@ const chatBlocksForAgentMessage = (
   }
   flushTools();
 
+  if (message.reasoningContent?.trim()) {
+    chatBlocks.unshift({ type: "thinking", id: `${message.id}-thinking`, body: message.reasoningContent,
+      status: message.reasoningStatus === "thinking" ? "running" : "done" });
+  }
   if (chatBlocks.length > 0) return chatBlocks;
   if (
     message.role === "assistant" &&
@@ -343,6 +351,10 @@ const chatBlocksForAgentMessage = (
       : [];
   }
   return [
+    ...(message.reasoningContent?.trim()
+      ? [{ type: "thinking" as const, id: `${message.id}-thinking`, body: message.reasoningContent,
+        status: message.reasoningStatus === "thinking" ? "running" : "done" }]
+      : []),
     {
       type: "text",
       id: `${message.id}-text`,

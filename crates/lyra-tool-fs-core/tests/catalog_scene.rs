@@ -73,12 +73,6 @@ fn scene_package_uses_state_signals() {
     assert_eq!(infer_scene(&signals), ToolScene::Automation);
 
     let signals = ToolSceneSignals {
-        active_skills: vec!["lyra-design-research".to_string()],
-        ..ToolSceneSignals::default()
-    };
-    assert_eq!(infer_scene(&signals), ToolScene::Design);
-
-    let signals = ToolSceneSignals {
         active_tab_kind: Some("workbench".to_string()),
         ..ToolSceneSignals::default()
     };

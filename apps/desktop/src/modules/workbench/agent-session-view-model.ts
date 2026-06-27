@@ -33,7 +33,8 @@ export const agentSessionToSessionMeta = (
     projectBound,
     workingDirIsHome,
     totalAdditions: 0,
-    totalDeletions: 0
+    totalDeletions: 0,
+    tokenEstimate: session?.tokenEstimate ?? null
   };
 };
 

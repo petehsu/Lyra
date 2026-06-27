@@ -34,8 +34,10 @@ import {
   resolveAgentActivityHostMessageId
 } from "./Message";
 import { Composer } from "./Composer";
+import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { ProjectDirChip } from "./ProjectDirChip";
+import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
 import { TodoBar } from "../pills/TodoBar";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { AppButton } from "@renderer/ui/components";
@@ -97,6 +99,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     pickFileFromFileManager,
     workspaceTabs,
     terminalTabs,
+    getTerminalTabPanes,
+    closeTerminalTab,
+    focusTerminalTabInDock,
+    openTerminalLiveSession,
     openImageInWorkbench,
     canOpenImageInWorkbench,
     submitDecisions,
@@ -115,10 +121,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     session,
     bindProject,
     openProjectTree,
+    openInFileManager,
     openProjectPlanManager,
     openProjectTodo,
     todos,
     addCitationToComposer,
+    addPageCitationToComposer,
     pendingCitation,
     pendingCitationNonce,
     pendingImages,
@@ -830,6 +838,20 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             canOpenProjectTree={session.projectBound && !session.workingDirIsHome}
             onChooseProject={bindProject}
             onOpenProjectTree={openProjectTree}
+            onOpenInFileManager={openInFileManager}
+          />
+          <BackgroundTerminalButton
+            terminalTabs={terminalTabs}
+            getTerminalTabPanes={getTerminalTabPanes}
+            session={session}
+            workspaceTabs={workspaceTabs}
+            onCiteTerminal={addPageCitationToComposer}
+            onCloseTerminalTab={closeTerminalTab}
+            onFocusTerminalTabInDock={focusTerminalTabInDock}
+            onOpenTerminalInWorkspace={(request) => {
+              void openTerminalLiveSession(request);
+            }}
+            desktopApi={desktopApi}
           />
           {session.projectBound && !session.workingDirIsHome ? (
             <>
@@ -878,6 +900,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               ) : null}
             </AppButton>
           ) : null}
+          <ContextRing />
         </div>
       </div>
     </>

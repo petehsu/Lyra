@@ -236,7 +236,7 @@ pub(crate) fn build_runtime_context(
         },
         "software": software,
         "memory": memory,
-        "tools": if capabilities.supports_tool_calling { model_tool_names(false) } else { Vec::new() },
+        "tools": if capabilities.supports_tool_calling { model_tool_names() } else { Vec::new() },
         "interactionContract": interaction_contract_runtime_context(),
         "toolFilesystem": tool_filesystem_runtime_context("general", None, dispatcher),
         "network": network_runtime_context(),
@@ -269,7 +269,6 @@ pub(crate) fn interaction_contract_runtime_context() -> Value {
 pub(crate) fn infer_tool_filesystem_scene(
     session_kind: Option<&str>,
     working_dir: Option<&str>,
-    design_research_required: bool,
     active_skills: &HashSet<String>,
     workbench: &Value,
 ) -> String {
@@ -291,7 +290,6 @@ pub(crate) fn infer_tool_filesystem_scene(
         terminal_active: workbench_terminal_active(workbench),
         browser_active: workbench_browser_active(workbench),
         editor_active: false,
-        design_active: design_research_required,
         software_active: false,
         active_skills: active_skills.iter().cloned().collect(),
         ..lyra_tool_fs_core::ToolSceneSignals::default()
@@ -318,7 +316,7 @@ pub(crate) fn tool_filesystem_runtime_context(
             "source": "latestUserMessage",
             "useWhen": "Use presearchHints only for non-code tool domains. For project code work, use exec_command for discovery/validation and apply_patch for edits.",
             "fallback": "If no non-code hint clearly fits, call tool_fs_search with the task description.",
-            "priority": "For code, prefer direct Codex-style tools. For browser/workbench/memory/design/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
+            "priority": "For code, prefer direct Codex-style tools. For browser/workbench/memory/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
@@ -328,7 +326,7 @@ pub(crate) fn tool_filesystem_runtime_context(
             "useWhen": "Read only when a long scenario chain would materially help after search/list/inspect are not enough."
         },
         "policy": {
-            "providerVisibleTools": model_tool_names(false),
+            "providerVisibleTools": model_tool_names(),
             "directLegacyToolNames": "disabled",
             "codeToolContract": "For project code work: inspect/read/search with exec_command using rg, sed, cat, git diff/status, and tests; modify files only with apply_patch. Do not search Tool-FS for code, filesystem, or edit tools.",
             "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles for non-code domains when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
@@ -450,7 +448,6 @@ pub(crate) fn build_system_prompt(
     runtime_context: &Value,
     persona: &PersonaContext,
     active_skill_prompt: &str,
-    design_research_required: bool,
     memory_prompt: &str,
 ) -> String {
     build_system_prompt_report(
@@ -458,7 +455,6 @@ pub(crate) fn build_system_prompt(
         "",
         persona,
         active_skill_prompt,
-        design_research_required,
         memory_prompt,
         None,
         None,
@@ -477,7 +473,6 @@ pub(crate) fn build_system_prompt_report(
     latest_user_text: &str,
     persona: &PersonaContext,
     active_skill_prompt: &str,
-    design_research_required: bool,
     memory_prompt: &str,
     previous_runtime_contract: Option<Value>,
     previous_prompt_hash: Option<String>,
@@ -494,7 +489,6 @@ pub(crate) fn build_system_prompt_report(
         persona: persona.clone(),
         active_skill_prompt: active_skill_prompt.to_string(),
         memory_prompt: memory_prompt.to_string(),
-        design_research_required,
         accounting: PromptAccounting {
             system_budget: 1200,
             tools_budget: 800,
@@ -513,7 +507,7 @@ pub(crate) fn build_system_prompt_report(
     })
 }
 
-pub(crate) fn model_tools(_design_research_required: bool) -> Vec<Value> {
+pub(crate) fn model_tools() -> Vec<Value> {
     let mut tools = vec![clarification_ask_model_tool()];
     tools.extend(plan_model_tools());
     tools.extend(todo_model_tools());
@@ -527,7 +521,7 @@ fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
-            "Enter Lyra Plan Mode for complex, multi-step, risky, or design-heavy work before making changes. Creates a draft plan and starts the planning state.",
+            "Enter Lyra Plan Mode for complex, multi-step, risky, or architecture work before making changes. Creates a draft plan and starts the planning state.",
             json!({
                 "type": "object",
                 "properties": {
@@ -650,7 +644,7 @@ fn codex_code_model_tools() -> Vec<Value> {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Workspace-relative path of the file to edit."
+                        "description": "Workspace-relative path of the file to edit. A leading ~/ is expanded to the user home directory; other tilde variants (~user, ~+, ~-) are rejected."
                     },
                     "edits": {
                         "type": "array",
@@ -677,7 +671,7 @@ fn codex_code_model_tools() -> Vec<Value> {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path relative to the bound workspace root. Do not prefix the workspace folder name itself: if the root is /Users/me/project, use src/a.ts, not project/src/a.ts. Parent directories are created as needed."
+                        "description": "Path relative to the bound workspace root. Do not prefix the workspace folder name itself: if the root is /Users/me/project, use src/a.ts, not project/src/a.ts. Parent directories are created as needed. A leading ~/ is expanded to the user home directory; other tilde variants (~user, ~+, ~-) are rejected."
                     },
                     "content": {
                         "type": "string",
@@ -699,7 +693,7 @@ fn codex_code_model_tools() -> Vec<Value> {
                 "properties": {
                     "patch": {
                         "type": "string",
-                        "description": "Complete patch text using the Codex grammar: *** Begin Patch, one or more Add/Update/Delete File hunks, then *** End Patch. Paths must be relative to the bound workspace root and must not include the workspace folder name itself; absolute paths inside the workspace are normalized."
+                        "description": "Complete patch text using the Codex grammar: *** Begin Patch, one or more Add/Update/Delete File hunks, then *** End Patch. Paths must be relative to the bound workspace root and must not include the workspace folder name itself; absolute paths inside the workspace are normalized. A leading ~/ in a path is expanded to the user home directory; other tilde variants (~user, ~+, ~-) are rejected."
                     }
                 },
                 "required": ["patch"]
@@ -834,7 +828,7 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
     schema
 }
 
-pub(crate) fn model_tool_names(_design_research_required: bool) -> Vec<String> {
+pub(crate) fn model_tool_names() -> Vec<String> {
     let mut names = Vec::new();
     names.push(tools::PLAN_BEGIN_MODEL_TOOL.to_string());
     names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());

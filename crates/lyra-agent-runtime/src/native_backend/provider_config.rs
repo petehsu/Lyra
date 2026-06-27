@@ -56,19 +56,6 @@ pub(crate) fn update_config(payload: Value) -> AgentRuntimeResult<Value> {
             .map(str::to_string)
             .collect();
     }
-    for (key, value) in payload.as_object().into_iter().flatten() {
-        if key.starts_with("email")
-            || key.starts_with("telegram")
-            || key.starts_with("discord")
-            || key.starts_with("ntfy")
-            || key == "desktopNotifications"
-        {
-            state
-                .config
-                .notifications
-                .insert(key.clone(), value.clone());
-        }
-    }
     state.save_state()?;
     drop(state);
     read_config()
@@ -467,20 +454,6 @@ fn save_refreshed_models(
     state.save_state()?;
     drop(state);
     list_models(payload)
-}
-
-pub(crate) fn update_roles(payload: Value) -> AgentRuntimeResult<Value> {
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    for (key, value) in payload.as_object().into_iter().flatten() {
-        if let Some(text) = value.as_str() {
-            state.config.roles.insert(key.clone(), text.to_string());
-        }
-    }
-    state.save_state()?;
-    drop(state);
-    read_config()
 }
 
 pub(crate) fn list_accounts() -> AgentRuntimeResult<Value> {

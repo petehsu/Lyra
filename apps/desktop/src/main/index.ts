@@ -11,9 +11,10 @@ import {
   protocol,
   shell
 } from "electron";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { hostname, userInfo } from "node:os";
+import { hostname, userInfo, platform, homedir } from "node:os";
+import { exec, execSync } from "node:child_process";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -79,7 +80,9 @@ import {
   type LinuxCompatRestartResponse,
   type LinuxCompatUpdateConfigRequest,
   type LinuxCompatUpdateConfigResponse,
-  type WindowStatePayload
+  type WindowStatePayload,
+  type DetectedEditor,
+  type OpenInEditorRequest
 } from "../shared/desktop-bridge";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -1226,6 +1229,99 @@ const registerIpcHandlers = async (): Promise<void> => {
       await shell.openExternal(url);
       return true;
     } catch (_error) {
+      return false;
+    }
+  });
+
+  const KNOWN_EDITORS: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly bundle?: string;
+    readonly cmd?: string;
+  }> = [
+    { id: "vscode", label: "VS Code", bundle: "Visual Studio Code.app", cmd: "code" },
+    { id: "vscode-insiders", label: "VS Code Insiders", bundle: "VS Code - Insiders.app", cmd: "code-insiders" },
+    { id: "cursor", label: "Cursor", bundle: "Cursor.app", cmd: "cursor" },
+    { id: "windsurf", label: "Windsurf", bundle: "Windsurf.app", cmd: "windsurf" },
+    { id: "zed", label: "Zed", bundle: "Zed.app", cmd: "zed" },
+    { id: "sublime", label: "Sublime Text", bundle: "Sublime Text.app", cmd: "subl" },
+    { id: "xcode", label: "Xcode", bundle: "Xcode.app" },
+    { id: "nova", label: "Nova", bundle: "Nova.app" },
+    { id: "webstorm", label: "WebStorm", bundle: "WebStorm.app", cmd: "webstorm" },
+    { id: "intellij", label: "IntelliJ IDEA", bundle: "IntelliJ IDEA.app", cmd: "idea" },
+    { id: "goland", label: "GoLand", bundle: "GoLand.app", cmd: "goland" },
+    { id: "pycharm", label: "PyCharm", bundle: "PyCharm.app", cmd: "pycharm" },
+    { id: "phpstorm", label: "PhpStorm", bundle: "PhpStorm.app", cmd: "phpstorm" },
+    { id: "android-studio", label: "Android Studio", bundle: "Android Studio.app", cmd: "studio" },
+    { id: "coderunner", label: "CodeRunner", bundle: "CodeRunner.app" },
+  ];
+
+  ipcMain.handle(LYRA_CHANNELS.detectEditors, async (): Promise<DetectedEditor[]> => {
+    const plat = platform();
+    const found = new Map<string, DetectedEditor>();
+    const macAppDirs = plat === "darwin" ? ["/Applications", join(homedir(), "Applications")] : [];
+
+    for (const ed of KNOWN_EDITORS) {
+      if (found.has(ed.id)) continue;
+      let detected = false;
+
+      if (plat === "darwin" && ed.bundle) {
+        for (const dir of macAppDirs) {
+          const appPath = join(dir, ed.bundle);
+          if (existsSync(appPath)) {
+            let icon: string | undefined;
+            try {
+              const img = await app.getFileIcon(appPath, { size: "small" });
+              icon = img.toDataURL();
+            } catch { /* icon unavailable */ }
+            found.set(ed.id, icon !== undefined ? { id: ed.id, label: ed.label, icon } : { id: ed.id, label: ed.label });
+            detected = true;
+            break;
+          }
+        }
+      }
+      if (detected) continue;
+
+      if (ed.cmd) {
+        try {
+          execSync(plat === "win32" ? `where ${ed.cmd}` : `which ${ed.cmd}`, { stdio: "ignore" });
+          found.set(ed.id, { id: ed.id, label: ed.label });
+        } catch { /* not found */ }
+      }
+    }
+
+    return [...found.values()];
+  });
+
+  ipcMain.handle(LYRA_CHANNELS.openInEditor, async (_event, request: OpenInEditorRequest): Promise<boolean> => {
+    if (!request || typeof request.editorId !== "string" || typeof request.path !== "string") {
+      return false;
+    }
+    const ed = KNOWN_EDITORS.find((e) => e.id === request.editorId);
+    if (ed === undefined) return false;
+    const plat = platform();
+    try {
+      if (plat === "darwin" && ed.bundle) {
+        exec(`open -a "${ed.bundle.replace(/\.app$/u, "")}" "${request.path}"`);
+      } else if (ed.cmd) {
+        exec(`${ed.cmd} "${request.path}"`);
+      } else {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.handle(LYRA_CHANNELS.revealInFolder, async (_event, path: string): Promise<boolean> => {
+    if (typeof path !== "string" || path.length === 0) {
+      return false;
+    }
+    try {
+      const error = await shell.openPath(path);
+      return error.length === 0;
+    } catch {
       return false;
     }
   });

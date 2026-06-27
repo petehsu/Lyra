@@ -451,10 +451,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
     let user_correction_detected = detect_user_correction(&latest_user_text);
-    let design_research_required = design_tools::is_design_task(&latest_user_text)
-        || active_skills.contains("lyra-design-research");
     let tools = if capabilities.supports_tool_calling {
-        model_tools(design_research_required)
+        model_tools()
     } else {
         Vec::new()
     };
@@ -492,7 +490,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let tool_scene = infer_tool_filesystem_scene(
         session_kind.as_deref(),
         working_dir.as_deref(),
-        design_research_required,
         &active_skills,
         &runtime_context["workbench"],
     );
@@ -527,17 +524,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     });
     runtime_context["activeSkills"] = json!(active_skills.iter().cloned().collect::<Vec<_>>());
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
-        model_tool_names(design_research_required)
+        model_tool_names()
     } else {
         Vec::new()
-    });
-    runtime_context["design"] = json!({
-        "researchRequired": design_research_required,
-        "discovery": if design_research_required {
-            "Design work: first discover/use design ref caps through Tool-FS search/inspect/run"
-        } else {
-            "No design ref discovery needed for latest msg"
-        },
     });
     let persona_context = read_host_persona_context(host_dispatcher.as_ref());
     let prompt_report = build_system_prompt_report(
@@ -545,7 +534,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &latest_user_text,
         &persona_context,
         &active_skill_prompt(&active_skills),
-        design_research_required,
         &combined_memory_prompt(
             &memory_records,
             &system_recall_records,
@@ -609,12 +597,14 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     }
     let mut messages = context.messages;
     if !context.input_downgrades.is_empty() {
+        // ponytail: 把既有降级信号出声化——降级不是终点而是决策点，
+        // 引导模型评估能否用 Lyra 的浏览器/在线 AI 等路径把被省略的输入补回，而非直接放弃。
         messages.insert(
             1,
             json!({
                 "role": "system",
                 "content": format!(
-                    "Structured input downgrade report: {}",
+                    "Structured input downgrade report: {}\nThis input was dropped before reaching U, not lost for good. Judge if it's worth recovering through Lyra — browser can open an online AI/tool that views or processes what U can't here. Decide, don't silently skip.",
                     serde_json::to_string(&context.input_downgrades).unwrap_or_else(|_| "[]".to_string())
                 ),
             }),
@@ -676,12 +666,8 @@ fn first_user_message_exists(session: &NativeSession) -> bool {
         })
 }
 
-pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
-    let mut prompts = Vec::new();
-    if active_skills.contains("lyra-design-research") {
-        prompts.push("Skill lyra-design-research: Design/UI work: call Lyra design ref tools first, then include concise Design Research Summary before proposal/UI edit");
-    }
-    prompts.join("\n")
+pub(crate) fn active_skill_prompt(_active_skills: &HashSet<String>) -> String {
+    String::new()
 }
 
 fn openai_responses_stateful_prompt_contract_enabled(configured: bool) -> bool {
@@ -856,6 +842,7 @@ pub(crate) fn commit_visible_assistant_reply(
             .filter(|message_id| !message_id.is_empty())
         {
             reply.ui_message_id = Some(message_id.clone());
+            stamp_reasoning_content(session_id, message_id, reply.reasoning_content.as_deref());
             commit_assistant_message(session_id, turn_id, message_id);
             return true;
         }
@@ -865,6 +852,9 @@ pub(crate) fn commit_visible_assistant_reply(
             .filter(|content| !content.trim().is_empty())
         {
             reply.ui_message_id = emit_assistant_text(session_id, turn_id, content);
+            if let Some(ref id) = reply.ui_message_id {
+                stamp_reasoning_content(session_id, id, reply.reasoning_content.as_deref());
+            }
             return reply.ui_message_id.is_some();
         }
         return false;
@@ -897,8 +887,24 @@ pub(crate) fn commit_visible_assistant_reply(
         commit_assistant_message(session_id, turn_id, &message_id);
     }
     set_active_ui_message_id(session_id, turn_id, &message_id);
+    stamp_reasoning_content(session_id, &message_id, reply.reasoning_content.as_deref());
     reply.ui_message_id = Some(message_id);
     true
+}
+
+/// Stamp `reasoningContent` onto a UI assistant message and mark status as done.
+fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option<&str>) {
+    let Some(reasoning) = reasoning.filter(|r| !r.trim().is_empty()) else {
+        return;
+    };
+    let Ok(mut state) = state().lock() else { return };
+    let Some(session) = state.sessions.get_mut(session_id) else { return };
+    let Some(messages) = session.snapshot.get_mut("messages").and_then(Value::as_array_mut) else { return };
+    let Some(message) = messages.iter_mut().rev().find(|m| m.get("id").and_then(Value::as_str) == Some(message_id)) else { return };
+    message["reasoningContent"] = json!(reasoning);
+    message["reasoningStatus"] = json!("done");
+    touch_session(session);
+    let _ = state.save_state();
 }
 
 pub(crate) fn emit_assistant_message_placeholder(
@@ -988,6 +994,81 @@ pub(crate) fn append_assistant_delta(
         "delta": delta,
     });
     emit_with_callback(&callback, event);
+    Ok(())
+}
+
+pub(crate) fn append_assistant_reasoning_delta(
+    session_id: &str,
+    turn_id: &str,
+    message_id: &str,
+    delta: &str,
+) -> AgentRuntimeResult<()> {
+    let callback = match state().lock() {
+        Ok(mut state) => {
+            let callback = state.event_callback.clone();
+            let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+                AgentRuntimeError::Core(format!("session not found: {session_id}"))
+            })?;
+            if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
+                return Err(AgentRuntimeError::Core("turn no longer active".to_string()));
+            }
+            let messages = session
+                .snapshot
+                .get_mut("messages")
+                .and_then(Value::as_array_mut)
+                .ok_or_else(|| {
+                    AgentRuntimeError::Core("session messages are invalid".to_string())
+                })?;
+            let message = messages
+                .iter_mut()
+                .rev()
+                .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id))
+                .ok_or_else(|| {
+                    AgentRuntimeError::Core(format!("message not found: {message_id}"))
+                })?;
+            let existing = message
+                .get("reasoningContent")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            message["reasoningContent"] = json!(format!("{existing}{delta}"));
+            message["reasoningStatus"] = json!("thinking");
+            touch_session(session);
+            callback
+        }
+        Err(_) => {
+            return Err(AgentRuntimeError::Core(
+                "agent runtime state lock failed".to_string(),
+            ));
+        }
+    };
+    let event = json!({
+        "kind": "messageReasoningDelta",
+        "sessionId": session_id,
+        "messageId": message_id,
+        "delta": delta,
+    });
+    emit_with_callback(&callback, event);
+    Ok(())
+}
+
+/// Stream a reasoning delta to the UI, creating a placeholder message if needed.
+pub(crate) fn append_reasoning_delta(
+    delta: &str,
+    ui_message_id: &mut Option<String>,
+    session_id: &str,
+    turn_id: &str,
+) -> AgentRuntimeResult<()> {
+    if delta.is_empty() {
+        return Ok(());
+    }
+    let message_id = ui_message_id
+        .get_or_insert_with(|| {
+            emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
+        })
+        .clone();
+    if !message_id.is_empty() {
+        append_assistant_reasoning_delta(session_id, turn_id, &message_id, delta)?;
+    }
     Ok(())
 }
 
@@ -1247,8 +1328,7 @@ pub(crate) fn finish_turn_with_metadata(
     _failure_kind: Option<String>,
 ) {
     let failure_for_ledger = failure.clone();
-    let mut extraction_job: Option<(PathBuf, String, String, String, Option<String>, Vec<Value>)> =
-        None;
+    let mut compress_check_job: Option<(PathBuf, String, String)> = None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
     let mut trim_job: Option<(PathBuf, String)> = None;
     let mut ledger_turn: Option<(PathBuf, NativeSession, String, String, Option<String>)> = None;
@@ -1270,17 +1350,9 @@ pub(crate) fn finish_turn_with_metadata(
             let streamed_message_id = streamed_message_id
                 .or_else(|| super::session_runtime::active_ui_message_id(session_id, turn_id));
             super::session_runtime::clear_active_ui_message_id(session_id, turn_id);
+            let in_flight = state.active_compressions.contains(session_id);
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
-                    let latest_user = latest_user_text(
-                        &session
-                            .snapshot
-                            .get("messages")
-                            .and_then(Value::as_array)
-                            .cloned()
-                            .unwrap_or_default(),
-                    );
-                    let assistant_for_extraction = assistant_text.clone();
                     if let Some(text) = assistant_text.filter(|text| !text.trim().is_empty()) {
                         let message = assistant_message_with_metadata(text, metadata.clone());
                         push_array(&mut session.snapshot, "messages", message.clone());
@@ -1340,14 +1412,39 @@ pub(crate) fn finish_turn_with_metadata(
                             .and_then(Value::as_array)
                             .cloned()
                             .unwrap_or_default();
-                        extraction_job = Some((
-                            root.clone(),
-                            session_id.to_string(),
-                            turn_id.to_string(),
-                            latest_user,
-                            assistant_for_extraction,
-                            session_messages,
-                        ));
+                        let total_tokens =
+                            crate::native_backend::token_estimate::estimate_messages_tokens(
+                                &session_messages,
+                            );
+                        let baseline = session
+                            .snapshot
+                            .pointer("/memoryCompression/compressedTokenBaseline")
+                            .and_then(Value::as_u64)
+                            .map(|v| v as usize)
+                            .unwrap_or(0);
+                        let compressed_up_to = session
+                            .snapshot
+                            .pointer("/memoryCompression/compressedUpToMessageOrdinal")
+                            .and_then(Value::as_u64)
+                            .map(|v| v as usize)
+                            .unwrap_or(0);
+                        let has_uncompressed = session_messages
+                            .iter()
+                            .skip(compressed_up_to)
+                            .any(|msg| {
+                                matches!(
+                                    msg.get("role").and_then(Value::as_str),
+                                    Some("user") | Some("assistant")
+                                )
+                            });
+                        if total_tokens.saturating_sub(baseline)
+                            >= super::memory_compress::EXTRACT_COMPRESS_THRESHOLD
+                            && has_uncompressed
+                            && !in_flight
+                        {
+                            compress_check_job =
+                                Some((root.clone(), session_id.to_string(), turn_id.to_string()));
+                        }
                         trim_job = Some((root.clone(), session_id.to_string()));
                     }
                     ledger_turn = Some((
@@ -1398,17 +1495,8 @@ pub(crate) fn finish_turn_with_metadata(
     if let Some((root, session, turn_id, status, failure)) = ledger_turn {
         let _ = record_turn_finished(&root, &session, &turn_id, &status, failure.as_deref());
     }
-    if let Some((root, session_id, turn_id, user_text, assistant_text, session_messages)) =
-        extraction_job
-    {
-        spawn_post_turn_memory_extraction(
-            root.clone(),
-            session_id.clone(),
-            turn_id.clone(),
-            user_text,
-            assistant_text,
-        );
-        maybe_emit_token_checkpoint_trigger(&root, &session_id, &turn_id, &session_messages);
+    if let Some((root, session_id, turn_id)) = compress_check_job {
+        super::memory_compress::spawn_extract_and_compress(root, session_id, turn_id);
     }
     if let Some((root, session_id)) = trim_job {
         spawn_post_turn_session_trim(root, session_id);

@@ -1518,7 +1518,6 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "web",
         "todo",
         "memory",
-        "design",
         "skills",
         "mcp",
     ] {

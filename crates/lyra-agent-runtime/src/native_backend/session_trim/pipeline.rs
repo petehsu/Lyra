@@ -210,6 +210,11 @@ pub(crate) fn spawn_post_turn_session_trim(root: PathBuf, session_id: String) {
                 let state = state().lock().map_err(|_| {
                     AgentRuntimeError::Core("agent runtime state lock failed".to_string())
                 })?;
+                if state.active_compressions.contains(&session_id) {
+                    // ponytail: 压缩进行中，跳过本轮 trim，避免两个线程并发写 session 互相覆盖。
+                    // 压缩完成后下轮 turn 结束若 trim 条件仍满足会自然恢复。
+                    return Ok(());
+                }
                 let Some(session) = state.sessions.get(&session_id).cloned() else {
                     return Ok(());
                 };

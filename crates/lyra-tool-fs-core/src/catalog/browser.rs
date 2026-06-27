@@ -15,7 +15,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "map",
             "Map browser page",
-            "Map actionable browser elements.",
+            "Map actionable elements on any web page — understand how real interfaces are structured before building your own.",
             Some("browser_map"),
         ),
         super::s(
@@ -31,7 +31,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "read",
             "Read browser page",
-            "Read text from a browser page.",
+            "Read text from any browser page — examine real websites, documentation, reference implementations, community discussions.",
             Some("browser_read"),
         ),
         super::s(
@@ -55,7 +55,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "see",
             "See browser page",
-            "Capture a visual browser snapshot.",
+            "Capture a visual snapshot of any web page — inspect real product UIs, design references, live demos.",
             None,
         ),
         super::s(
@@ -151,7 +151,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "navigate",
             "Navigate browser",
-            "Navigate a browser page.",
+            "Open any URL — GitHub repos, documentation sites, real products, online AI services, free online tools, design galleries. Entire internet accessible.",
             None,
         ),
         super::s(

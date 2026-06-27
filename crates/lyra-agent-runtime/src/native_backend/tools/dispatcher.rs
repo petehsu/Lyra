@@ -567,17 +567,6 @@ pub(crate) fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -> Valu
                 ),
             };
         }
-        tool_fs::RuntimeToolTarget::DesignAdapter { tool_name, action } => {
-            return execute_design_tool_adapter(
-                context.session_id,
-                context.turn_id,
-                context.tool_call_id,
-                tool_name,
-                action,
-                context.arguments,
-                &started_at,
-            );
-        }
         tool_fs::RuntimeToolTarget::SkillAdapter { tool_name, action } => {
             return execute_skill_tool_adapter(
                 context.session_id,

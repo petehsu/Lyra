@@ -11,7 +11,6 @@ mod browser_ax;
 mod clarification;
 mod code;
 mod computer;
-mod design;
 mod filesystem;
 mod git;
 mod hardware;
@@ -156,7 +155,6 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(network::manifests());
     entries.extend(web::manifests());
     entries.extend(todo::manifests());
-    entries.extend(design::manifests());
     entries.extend(skills::manifests());
     entries.extend(mcp::manifests());
     entries.extend(terminal::manifests());
@@ -346,9 +344,6 @@ fn description_for(
         }
         ("todo", "read") => "Use when the agent needs current task checklist or progress state.",
         ("todo", "write") => "Use when the agent needs to update the active task checklist.",
-        ("design", _) => {
-            "Use when the agent needs Lyra design references, visual style guidance, or UI implementation patterns."
-        }
         ("software", _) => {
             "Use when the agent needs to inspect or invoke installed Lyra software adapter capabilities."
         }
@@ -797,7 +792,6 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             ],
             ("todo", "read") => vec!["read todo", "task list", "待办", "任务列表"],
             ("todo", "write") => vec!["update todo", "checklist", "更新待办", "计划"],
-            ("design", _) => vec!["design reference", "UI style", "设计参考", "界面风格"],
             ("software", _) => vec!["app capability", "software adapter", "应用能力"],
             ("skills", _) => vec!["skill", "plugin skill", "技能"],
             ("mcp", _) => vec!["mcp", "external tool", "外部工具"],
@@ -982,7 +976,6 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
             "todo" => vec!["task", "plan", "checklist"],
-            "design" => vec!["ui", "style", "reference"],
             "software" => vec!["adapter", "app", "capability"],
             "skills" => vec!["skill", "activation", "instructions"],
             "mcp" => vec!["server", "external", "tool"],
@@ -2427,7 +2420,6 @@ pub fn domain_summary(domain: &str) -> &'static str {
             "Fetch and search web resources. Use map→selective fetch/batch for multi-page sites; fetch/research for single pages or search-backed reads."
         }
         "todo" => "Read and update Lyra task todos.",
-        "design" => "Use Lyra design reference tools.",
         "skills" => "List, inspect, activate, and deactivate Lyra skills.",
         "mcp" => "Discover and manage MCP servers and MCP tools.",
         _ => "Lyra tool directory.",

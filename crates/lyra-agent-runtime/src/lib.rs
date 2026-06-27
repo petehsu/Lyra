@@ -1,8 +1,9 @@
+pub mod agent_event;
 pub mod archive_service;
 pub mod browser_service;
 pub mod clarification_service;
 pub mod context_builder;
-pub mod design_tools;
+
 pub mod event_bus;
 pub mod event_mapper;
 pub mod follow_service;
@@ -10,6 +11,7 @@ pub mod git_runtime;
 pub mod memory_service;
 pub mod native_backend;
 pub mod permission_service;
+pub mod protocol_contract;
 pub mod prompt_contract;
 pub mod prompt_policy;
 mod prompt_templates;
@@ -283,6 +285,8 @@ impl AgentRuntimeServices {
             "agent.proactive.list" => self.backend.call(method, payload),
             "agent.proactive.dismiss" => self.backend.call(method, payload),
             "agent.proactive.openSession" => self.backend.call(method, payload),
+
+            "agent.protocol.contract" => Ok(protocol_contract::current_protocol_contract_json()),
 
             _ => Err(AgentRuntimeError::UnknownMethod(method.to_string())),
         }

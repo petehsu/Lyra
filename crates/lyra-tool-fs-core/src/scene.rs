@@ -9,7 +9,6 @@ pub enum ToolScene {
     Terminal,
     Browser,
     Workbench,
-    Design,
     Automation,
 }
 
@@ -22,7 +21,6 @@ impl ToolScene {
             Self::Terminal => "terminal",
             Self::Browser => "browser",
             Self::Workbench => "workbench",
-            Self::Design => "design",
             Self::Automation => "automation",
         }
     }
@@ -34,7 +32,6 @@ impl ToolScene {
             "terminal" => Self::Terminal,
             "browser" => Self::Browser,
             "workbench" => Self::Workbench,
-            "design" => Self::Design,
             "automation" => Self::Automation,
             _ => Self::General,
         }
@@ -53,30 +50,17 @@ pub struct ToolSceneSignals {
     pub terminal_active: bool,
     pub browser_active: bool,
     pub editor_active: bool,
-    pub design_active: bool,
     pub software_active: bool,
     pub active_skills: Vec<String>,
 }
 
 pub fn infer_scene(signals: &ToolSceneSignals) -> ToolScene {
     let session_kind = signals.session_kind.as_deref().unwrap_or_default().trim();
-    if matches!(session_kind, "design") {
-        return ToolScene::Design;
-    }
     if matches!(session_kind, "project-code" | "code") {
         return ToolScene::ProjectCode;
     }
     if matches!(session_kind, "automation") {
         return ToolScene::Automation;
-    }
-    if signals.design_active
-        || signals
-            .active_skills
-            .iter()
-            .any(|skill| skill == "lyra-design-research")
-        || signal_kind_matches(signals, ["design", "image", "canvas"])
-    {
-        return ToolScene::Design;
     }
     if signals.terminal_active || signal_kind_matches(signals, ["terminal"]) {
         return ToolScene::Terminal;
@@ -122,7 +106,6 @@ pub(crate) fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {
         ToolScene::Terminal => vec!["terminal", "todo", "workbench"],
         ToolScene::Browser => vec!["browser", "workbench", "web"],
         ToolScene::Workbench => vec!["workbench", "browser", "todo"],
-        ToolScene::Design => vec!["design", "browser", "web", "workbench"],
         ToolScene::Automation => vec!["todo", "terminal", "software", "workbench"],
         ToolScene::General => vec!["workbench", "browser", "memory", "todo"],
     }
@@ -162,11 +145,6 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
             "workbench_close_terminal",
             "workbench_move_terminal",
             "workbench_extract_tab_text",
-        ],
-        ToolScene::Design => vec![
-            "design_search_styles",
-            "design_get_style_details",
-            "read_file",
         ],
         ToolScene::Automation => vec!["todo_read", "todo_write", "run_command", "terminal_run"],
         ToolScene::General => vec![

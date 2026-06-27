@@ -47,6 +47,7 @@ import {
 import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useLocalSearchIndexStatus } from "./use-local-search-index-status";
+import { useDownloadNotifications } from "./use-download-notifications";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime } from "./use-workbench-browser-runtime";
@@ -94,6 +95,7 @@ import { useWorkspaceSurfaceRouterProps } from "./use-workspace-surface-router-p
 import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
 import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
+import { EXPECTED_PROTOCOL_VERSION } from "../../../shared/agent";
 
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_SYNC_INTERVAL_MS = 33;
@@ -101,6 +103,24 @@ const AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID = "lyra-agent-history-browser-preview
 
 export const WorkbenchShell = () => {
   const desktopApi = getDesktopApi();
+
+  useEffect(() => {
+    const api = desktopApi?.agent;
+    if (!api) return;
+    void api.readProtocolContract().then(
+      (contract) => {
+        if (contract.protocolVersion !== EXPECTED_PROTOCOL_VERSION) {
+          console.warn(
+            `[lyra] protocol version mismatch: frontend=${EXPECTED_PROTOCOL_VERSION}, runtime=${contract.protocolVersion}. Please upgrade Lyra.`
+          );
+        }
+      },
+      (error: unknown) => {
+        console.warn(`[lyra] failed to read protocol contract: ${error}`);
+      }
+    );
+  }, [desktopApi]);
+
   const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
   const [settingsFocusRequest, setSettingsFocusRequest] =
@@ -239,6 +259,11 @@ resolvedThemeId,
   useWorkbenchProviderFaultNotifications({
     desktopApi,
     notificationModel,
+    publishNotification,
+    t
+  });
+  useDownloadNotifications({
+    desktopApi,
     publishNotification,
     t
   });
@@ -472,6 +497,12 @@ resolvedThemeId,
     terminalModel,
     terminalWorkspaceActions
   });
+  const onFocusTerminalTabInDock = useCallback((tabId: string): void => {
+    terminalModel.setActiveTab(tabId);
+    if (!panelLayoutModel.isBottomPanelVisible) {
+      panelLayoutModel.toggleBottomPanel();
+    }
+  }, [terminalModel, panelLayoutModel]);
   const sidebarAiSurfaceProps = useWorkbenchSidebarAiSurfaceProps({
     desktopApi,
     preferences: preferencesModel.preferences,
@@ -495,6 +526,9 @@ resolvedThemeId,
     onPickFileFromFileManager: requestFileAttach,
     listWorkspaceTabs,
     listTerminalTabs,
+    getTerminalTabPanes: terminalModel.getTabPanes,
+    onCloseTerminalTab: terminalWorkspaceActions.closeTerminalTabEverywhere,
+    onFocusTerminalTabInDock,
     locationControls,
     openDialog: globalDialogModel.openDialog,
     t

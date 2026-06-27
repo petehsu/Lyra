@@ -9,43 +9,45 @@ impl RuntimeEventMapper {
         session_id: &str,
         turn_id: &str,
         event: lyra_agent_kernel::KernelTurnEvent,
-    ) -> serde_json::Value {
+    ) -> crate::agent_event::AgentEvent {
+        use crate::agent_event::AgentEvent;
         match event {
-            lyra_agent_kernel::KernelTurnEvent::MessageDelta { delta } => serde_json::json!({
-                "kind": "messageDelta",
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "delta": delta,
-            }),
-            lyra_agent_kernel::KernelTurnEvent::ToolCall(call) => serde_json::json!({
-                "kind": "toolStarted",
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "tool": {
+            lyra_agent_kernel::KernelTurnEvent::MessageDelta { delta } => AgentEvent::MessageDelta {
+                session_id: session_id.to_string(),
+                message_id: String::new(),
+                block_id: None,
+                replace: None,
+                delta,
+            },
+            lyra_agent_kernel::KernelTurnEvent::ToolCall(call) => AgentEvent::ToolStarted {
+                session_id: session_id.to_string(),
+                message_id: None,
+                tool: serde_json::json!({
                     "id": call.id,
                     "name": call.name,
                     "input": call.input,
-                },
-            }),
-            lyra_agent_kernel::KernelTurnEvent::ToolResult(result) => serde_json::json!({
-                "kind": "toolFinished",
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "toolCallId": result.tool_call_id,
-                "status": result.status,
-                "output": result.output,
-            }),
-            lyra_agent_kernel::KernelTurnEvent::Finished => serde_json::json!({
-                "kind": "turnFinished",
-                "sessionId": session_id,
-                "turnId": turn_id,
-            }),
-            lyra_agent_kernel::KernelTurnEvent::Failed { message } => serde_json::json!({
-                "kind": "turnFailed",
-                "sessionId": session_id,
-                "turnId": turn_id,
-                "message": message,
-            }),
+                }),
+            },
+            lyra_agent_kernel::KernelTurnEvent::ToolResult(result) => AgentEvent::ToolFinished {
+                session_id: session_id.to_string(),
+                message_id: None,
+                tool: serde_json::json!({
+                    "toolCallId": result.tool_call_id,
+                    "status": result.status,
+                    "output": result.output,
+                }),
+            },
+            lyra_agent_kernel::KernelTurnEvent::Finished => AgentEvent::TurnFinished {
+                session_id: session_id.to_string(),
+                turn_id: turn_id.to_string(),
+                status: "ok".to_string(),
+            },
+            lyra_agent_kernel::KernelTurnEvent::Failed { message } => AgentEvent::TurnFailed {
+                session_id: session_id.to_string(),
+                turn_id: turn_id.to_string(),
+                message,
+                failure_kind: None,
+            },
         }
     }
 

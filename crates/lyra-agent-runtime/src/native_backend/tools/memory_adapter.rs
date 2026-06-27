@@ -44,6 +44,7 @@ pub(crate) fn execute_memory_tool_adapter(
         "memory_apply_candidate" => memory_apply_candidate(input.clone()),
         "memory_reject_candidate" => memory_reject_candidate(input.clone()),
         "memory_explain_injection" => memory_explain_injection(input.clone()),
+        "memory_read_compressed_context" => read_compressed_context(input.clone()),
         _ => Err(AgentRuntimeError::Core(format!(
             "unknown memory tool: {tool_name}"
         ))),
@@ -113,6 +114,77 @@ fn memory_action_name(name: &str) -> &'static str {
         "memory_apply_candidate" => "apply_candidate",
         "memory_reject_candidate" => "reject_candidate",
         "memory_explain_injection" => "explain_injection",
+        "memory_read_compressed_context" => "read_compressed_context",
         _ => "search",
     }
+}
+
+fn read_compressed_context(input: Value) -> AgentRuntimeResult<Value> {
+    let session_id = input
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if session_id.is_empty() {
+        return Err(AgentRuntimeError::Core(
+            "read_compressed_context requires sessionId".to_string(),
+        ));
+    }
+    let root = runtime_root_for_memory()?;
+    let session = load_session(&root, &session_id)?.ok_or_else(|| {
+        AgentRuntimeError::Core(format!("session not found: {session_id}"))
+    })?;
+
+    let messages = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut blocks = Vec::new();
+    for msg in &messages {
+        let kind = msg
+            .pointer("/metadata/kind")
+            .and_then(Value::as_str);
+        if kind != Some("compressed-context-block") {
+            continue;
+        }
+        let compressed_ids: Vec<String> = msg
+            .pointer("/metadata/compressedMessageIds")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let text = msg.get("text").and_then(Value::as_str).unwrap_or("");
+        let parsed: Value = serde_json::from_str(text).unwrap_or(json!({}));
+        let block_id = msg
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let original_messages = if compressed_ids.is_empty() {
+            Vec::new()
+        } else {
+            cut_store::read_cut_messages(&root, &session_id, &compressed_ids)?
+        };
+        blocks.push(json!({
+            "blockId": block_id,
+            "summary": parsed.get("summary").cloned().unwrap_or(Value::Null),
+            "keyDecisions": parsed.get("keyDecisions").cloned().unwrap_or(Value::Null),
+            "projectState": parsed.get("projectState").cloned().unwrap_or(Value::Null),
+            "tokenEstimate": parsed.get("tokenEstimate").cloned().unwrap_or(Value::Null),
+            "compressedMessageIds": compressed_ids,
+            "originalMessages": original_messages,
+        }));
+    }
+
+    Ok(json!({
+        "sessionId": session_id,
+        "blocks": blocks,
+        "blockCount": blocks.len(),
+    }))
 }

@@ -301,6 +301,7 @@ fn build_simple_pdf(text: &str) -> Vec<u8> {
 mod foundation;
 mod hardware_tools;
 mod memory;
+mod memory_compress;
 mod phase2_memory;
 mod phase3_memory;
 mod phase4_memory;

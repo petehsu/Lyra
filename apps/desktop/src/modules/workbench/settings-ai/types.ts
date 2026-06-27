@@ -4,7 +4,6 @@ import type {
   AgentProviderRouteEntry,
   AgentConfigSnapshot,
   AgentConfigUpdateRequest,
-  AgentRolesUpdateRequest,
   AgentAccountLoginCompleteRequest,
   AgentAccountLoginCompleteResponse,
   AgentAccountLoginStartRequest,
@@ -122,43 +121,10 @@ export type SettingsAiLabels = {
   readonly removeAccount: string;
   readonly providerProfileTitle: string;
   readonly authHeaderLabel: string;
-  readonly roleModelsTitle: string;
-  readonly roleSwarmSubagentLabel: string;
-  readonly roleReviewLabel: string;
-  readonly roleJudgeLabel: string;
-  readonly roleMemoryLabel: string;
-  readonly roleAmbientLabel: string;
-  readonly roleProviderDefaultPlaceholder: string;
-  readonly roleMemoryDefaultPlaceholder: string;
-  readonly saveRoleModels: string;
   readonly promptExperimentsTitle: string;
   readonly promptExperimentsDescription: string;
   readonly leanPromptDeliveryLabel: string;
   readonly statefulPromptContractLabel: string;
-  readonly notificationsTitle: string;
-  readonly notificationsDescription: string;
-  readonly desktopNotificationsLabel: string;
-  readonly ntfyTopicLabel: string;
-  readonly ntfyServerLabel: string;
-  readonly emailNotificationsLabel: string;
-  readonly emailToLabel: string;
-  readonly emailSmtpHostLabel: string;
-  readonly emailSmtpPortLabel: string;
-  readonly emailFromLabel: string;
-  readonly emailPasswordLabel: string;
-  readonly emailImapHostLabel: string;
-  readonly emailImapPortLabel: string;
-  readonly emailReplyLabel: string;
-  readonly telegramNotificationsLabel: string;
-  readonly telegramBotTokenLabel: string;
-  readonly telegramChatIdLabel: string;
-  readonly telegramReplyLabel: string;
-  readonly discordNotificationsLabel: string;
-  readonly discordBotTokenLabel: string;
-  readonly discordChannelIdLabel: string;
-  readonly discordBotUserIdLabel: string;
-  readonly discordReplyLabel: string;
-  readonly saveNotifications: string;
   readonly runtimeUnavailable: string;
   readonly fileEditorUnavailable: string;
   readonly configPathUnavailable: string;
@@ -211,9 +177,6 @@ export type SettingsAiModel = {
   readonly completeAgentAccountLogin?: (
     request: AgentAccountLoginCompleteRequest
   ) => Promise<AgentAccountLoginCompleteResponse | null>;
-  readonly updateAgentRoles?: (
-    request: AgentRolesUpdateRequest
-  ) => Promise<void>;
   readonly switchAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
   readonly removeAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
 };

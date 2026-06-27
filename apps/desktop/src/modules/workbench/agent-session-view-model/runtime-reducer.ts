@@ -317,6 +317,21 @@ export const applyAgentRuntimeEventToSnapshot = (
     };
   }
 
+  if (event.kind === "messageReasoningDelta") {
+    return {
+      ...session,
+      messages: session.messages.map((message) => {
+        if (message.id !== event.messageId) return message;
+        return {
+          ...message,
+          reasoningContent: `${message.reasoningContent ?? ""}${event.delta}`,
+          reasoningStatus: "thinking",
+        };
+      }),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   if (event.kind === "toolStarted") {
     const targetMessageId = event.messageId ?? lastAssistantMessageId(session.messages);
     return {

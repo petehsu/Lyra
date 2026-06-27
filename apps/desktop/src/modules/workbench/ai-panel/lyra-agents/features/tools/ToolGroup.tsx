@@ -5,6 +5,7 @@ import {
   ChevronIcon,
   ErrorCircleIcon,
   ToolCallIcon,
+  ToolIcon,
 } from "../../components/Icons";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolDetails } from "./ToolDetails";
@@ -18,13 +19,21 @@ import {
   shouldShowEditDiffStats
 } from "./InlineDiffStats";
 
+export type ThinkingEntry = { id: string; body: string; status: "running" | "done" };
+
 /**
  * Level 1 head has three faces keyed by the group status and per-call errors:
  *   - running: current tool icon + shimmering title
  *   - error:   red ✗ icon
  *   - done:    green ✓ icon + group label
  */
-export function ToolGroupBlock({ group }: { group: ToolGroup }) {
+export function ToolGroupBlock({
+  group,
+  thinkingEntries = [],
+}: {
+  group: ToolGroup;
+  thinkingEntries?: ThinkingEntry[];
+}) {
   const isRunning = group.status === "running";
   const isLiveEditGroup =
     isRunning &&
@@ -105,6 +114,15 @@ export function ToolGroupBlock({ group }: { group: ToolGroup }) {
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
           <div className="lyra-agents-tool-group-body">
+            {thinkingEntries.map((entry) => (
+              <div
+                key={entry.id}
+                className="lyra-agents-stagger-item"
+                style={{ "--stagger-index": 0 } as React.CSSProperties}
+              >
+                <ThinkingRow entry={entry} />
+              </div>
+            ))}
             {group.calls.map((call, i) => (
               <div
                 key={call.id}
@@ -237,6 +255,44 @@ function ToolCallHeadLabel({
         </span>
       ) : null}
     </span>
+  );
+}
+
+function ThinkingRow({ entry }: { entry: ThinkingEntry }) {
+  const [open, setOpen] = useState(false);
+  const isRunning = entry.status === "running";
+  return (
+    <div className={`lyra-agents-tool-call ${open ? "open" : ""} status-${entry.status}`}>
+      <AppButton variant="ghost" size="sm"
+        type="button"
+        className="lyra-agents-tool-call-head has-details"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="lyra-agents-icon-swap">
+          <span className="lyra-agents-icon-swap-tool">
+            <ToolIcon kind="thought" />
+          </span>
+          <span className="lyra-agents-icon-swap-chevron">
+            <ChevronIcon open={open} />
+          </span>
+        </span>
+        <span className="lyra-agents-tool-call-head-label">
+          <span className={`lyra-agents-tool-call-title ${isRunning ? "lyra-agents-shimmer" : ""}`}>
+            {isRunning
+              ? t("lyra-agents-message.thinkingInProgress")
+              : t("lyra-agents-message.thinkingLabel")}
+          </span>
+        </span>
+      </AppButton>
+      <div className="lyra-agents-collapse" data-open={open}>
+        <div className="lyra-agents-collapse-inner">
+          <div className="lyra-agents-tool-call-body">
+            <div className="lyra-agents-thinking-body">{entry.body}</div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

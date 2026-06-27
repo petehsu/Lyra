@@ -2042,6 +2042,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
         active_ui_message_by_turn: HashMap::new(),
+        active_compressions: HashSet::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -2114,7 +2115,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         tool_usage_cache: HashMap::new(),
         active_session_id: Some(legacy_session_id.clone()),
         config,
-        active_skills: HashSet::from(["lyra-design-research".to_string()]),
+        active_skills: HashSet::from(["test-skill".to_string()]),
         pending_permissions: HashMap::from([(
             "permission-legacy".to_string(),
             PermissionRequest {
@@ -2171,7 +2172,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         Some("custom-provider")
     );
     assert!(loaded.config.providers.contains_key("custom-provider"));
-    assert!(loaded.active_skills.contains("lyra-design-research"));
+    assert!(loaded.active_skills.contains("test-skill"));
     let memory_records = list_long_term_memory(
         temp.path(),
         MemoryQuery {
@@ -2194,7 +2195,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         persisted.config.default_provider.as_deref(),
         Some("custom-provider")
     );
-    assert!(persisted.active_skills.contains("lyra-design-research"));
+    assert!(persisted.active_skills.contains("test-skill"));
 }
 
 #[test]
@@ -2335,6 +2336,7 @@ fn native_state_persists_only_live_pending_requests() {
         suppressed_tool_usage_by_turn: HashMap::new(),
         inspected_tool_descriptors_by_session: HashMap::new(),
         active_ui_message_by_turn: HashMap::new(),
+        active_compressions: HashSet::new(),
         event_callback: None,
         host_dispatcher: None,
     };
@@ -3362,9 +3364,6 @@ fn model_request_injects_lyra_identity_and_tools() {
                 .is_some()
         );
     }
-    assert!(!request.tools.iter().any(|tool| {
-        tool.pointer("/function/name").and_then(Value::as_str) == Some("lyra_design_search_styles")
-    }));
 }
 
 #[test]
@@ -3430,7 +3429,7 @@ fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
 
 #[test]
 fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
-    for tools in [model_tools(false), model_tools(true)] {
+    for tools in [model_tools()] {
         let names = tools
             .iter()
             .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
@@ -3472,6 +3471,13 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == EXEC_COMMAND_MODEL_TOOL
                         || name == WRITE_STDIN_MODEL_TOOL
                         || name == LYRA_SESSION_READ_MESSAGE_TOOL
+                        || name == PLAN_BEGIN_MODEL_TOOL
+                        || name == PLAN_WRITE_MODEL_TOOL
+                        || name == PLAN_FINALIZE_MODEL_TOOL
+                        || name == PLAN_REVISE_MODEL_TOOL
+                        || name == TODO_WRITE_MODEL_TOOL
+                        || name == TODO_UPDATE_MODEL_TOOL
+                        || name == TODO_FINISH_MODEL_TOOL
                 })
         }));
         assert!(!tools.iter().any(|tool| {
@@ -3484,7 +3490,6 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                             | "shell_run"
                             | "terminal_read"
                             | "lyra_lumen_read"
-                            | "lyra_design_search_styles"
                             | "software_invoke_capability"
                     )
                 })
@@ -3546,7 +3551,6 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
     for expected in [
         "core_builtin",
         "terminal_action_specs",
-        "design_tools",
         "skill_registry",
         "mcp_current_state",
         "software_host_capabilities",
@@ -3571,7 +3575,6 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             Some("project-code"),
             None,
-            false,
             &HashSet::new(),
             &json!({})
         ),
@@ -3581,7 +3584,6 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             None,
             None,
-            false,
             &HashSet::new(),
             &json!({ "activeTab": { "kind": "terminal" } }),
         ),
@@ -3591,7 +3593,6 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             None,
             None,
-            false,
             &HashSet::new(),
             &json!({ "activeTab": { "kind": "browser" } }),
         ),
@@ -3601,7 +3602,6 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             None,
             None,
-            false,
             &HashSet::new(),
             &json!({
                 "activeTabId": "term-1",
@@ -3618,7 +3618,6 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             None,
             None,
-            false,
             &HashSet::new(),
             &json!({
                 "focusedTabId": "page-1",
@@ -3636,57 +3635,11 @@ fn tool_filesystem_scene_uses_runtime_state_signals() {
         infer_tool_filesystem_scene(
             None,
             None,
-            false,
             &HashSet::new(),
             &json!({ "activeTab": { "kind": "software" } }),
         ),
         "automation"
     );
-    assert_eq!(
-        infer_tool_filesystem_scene(
-            None,
-            None,
-            false,
-            &HashSet::from(["lyra-design-research".to_string()]),
-            &json!({}),
-        ),
-        "design"
-    );
-}
-
-#[test]
-fn design_prompt_gets_design_tools_and_dynamic_policy() {
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Design Prompt Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    {
-        let mut state = state().lock().expect("state lock");
-        let session = state.sessions.get_mut(&session_id).expect("session");
-        session.snapshot["messages"]
-            .as_array_mut()
-            .expect("messages")
-            .push(user_message(
-                "重新设计这个设置页面".to_string(),
-                Vec::new(),
-                now(),
-            ));
-    }
-    let request = build_model_request(&session_id).expect("model request");
-    let system_prompt = request.messages[0]["content"]
-        .as_str()
-        .expect("system prompt");
-    assert!(system_prompt.contains("Design Research Summary"));
-    assert!(request.tools.iter().any(|tool| {
-        tool.pointer("/function/name").and_then(Value::as_str) == Some("tool_fs_run")
-    }));
-    assert!(system_prompt.contains("design ref"));
-    assert!(system_prompt.contains("\"presearchHints\""));
-    assert!(!system_prompt.contains("\"availableTools\""));
 }
 #[test]
 fn model_tool_execution_records_workbench_activity() {

@@ -112,6 +112,7 @@ impl NativeRuntimeState {
             active_ui_message_by_turn: HashMap::new(),
             event_callback: None,
             host_dispatcher: None,
+            active_compressions: HashSet::new(),
         };
         let pruned_pending = loaded.prune_non_live_pending();
         if pruned_pending || reset_tool_sessions {

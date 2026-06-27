@@ -133,7 +133,6 @@ pub struct PromptPolicyInput {
     pub persona: PersonaContext,
     pub active_skill_prompt: String,
     pub memory_prompt: String,
-    pub design_research_required: bool,
     pub accounting: PromptAccounting,
     pub delivery_mode: Option<PromptDeliveryMode>,
     pub previous_runtime_contract: Option<Value>,
@@ -431,18 +430,6 @@ fn render_prompt_sections(
             text: render_prompt_template("computer_scene.md.j2", json!({})),
         },
     ];
-    if scenes.design {
-        sections.push(PromptSectionCandidate {
-            id: "P3.designScene",
-            layer: PromptLayer::P3,
-            mode_policy: PromptSectionModePolicy::SceneOnly,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: Some("design"),
-            text: render_prompt_template("design_scene.md.j2", json!({})),
-        });
-    }
     if scenes.citation {
         sections.push(PromptSectionCandidate {
             id: "P3.citationScene",
@@ -545,7 +532,6 @@ fn render_prompt_template(name: &str, context: Value) -> String {
 struct SelectedSceneModules {
     browser: bool,
     computer: bool,
-    design: bool,
     citation: bool,
     image: bool,
 }
@@ -553,7 +539,7 @@ struct SelectedSceneModules {
 fn select_scene_modules(
     input: &PromptPolicyInput,
     runtime_context: &Value,
-    active_skill_prompt: &str,
+    _active_skill_prompt: &str,
 ) -> SelectedSceneModules {
     let latest_text = latest_user_scene_text(input, runtime_context).to_ascii_lowercase();
     SelectedSceneModules {
@@ -602,17 +588,6 @@ fn select_scene_modules(
                     "窗口",
                     "应用",
                     "软件",
-                ],
-            ),
-        design: input.design_research_required
-            || design_skill_active(active_skill_prompt)
-            || scene_matches(runtime_context, &["design"])
-            || recovery_signal_matches(runtime_context, &["design"])
-            || text_contains_any(
-                &latest_text,
-                &[
-                    "design", "ui", "frontend", "layout", "visual", "设计", "界面", "前端", "布局",
-                    "视觉",
                 ],
             ),
         citation: text_contains_any(
@@ -782,9 +757,7 @@ fn hash_text(text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn design_skill_active(active_skill_prompt: &str) -> bool {
-    active_skill_prompt.contains("lyra-design-research")
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -816,7 +789,6 @@ mod tests {
             ["network_awareness", "_section"].concat(),
             ["verification", "_section"].concat(),
             ["computer_use", "_section"].concat(),
-            ["design_research", "_section"].concat(),
         ];
         for helper in legacy_helpers {
             assert!(
@@ -890,7 +862,6 @@ mod tests {
             "artifact_read",
             "workbench_read_tab",
             "lyra_lumen",
-            "lyra_design",
             "software_invoke_capability",
         ] {
             assert!(
@@ -942,22 +913,6 @@ mod tests {
 
     fn is_tool_path_or_identifier_char(value: Option<char>) -> bool {
         value.is_some_and(|value| value.is_ascii_alphanumeric() || matches!(value, '_' | '-' | '/'))
-    }
-
-    #[test]
-    fn design_policy_is_dynamic() {
-        let normal = build_system_prompt(&PromptPolicyInput {
-            runtime_context: json!({}),
-            design_research_required: false,
-            ..PromptPolicyInput::default()
-        });
-        let design = build_system_prompt(&PromptPolicyInput {
-            runtime_context: json!({}),
-            design_research_required: true,
-            ..PromptPolicyInput::default()
-        });
-        assert!(!normal.contains("Design Research Summary"));
-        assert!(design.contains("Design Research Summary"));
     }
 
     #[test]

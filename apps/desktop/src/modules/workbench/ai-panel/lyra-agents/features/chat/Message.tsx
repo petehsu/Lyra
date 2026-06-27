@@ -8,9 +8,9 @@ import {
 import { writeClipboardText } from "../../../../../../shared/clipboard";
 import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from "../../core/types";
 import { useData } from "../../data/DataProvider";
-import { ToolGroupBlock } from "../tools/ToolGroup";
+import { ToolGroupBlock, type ThinkingEntry } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
-import { ThinkingIndicator, ToolExecutionIndicator } from "../../components/Icons";
+import { ThinkingIndicator, ToolExecutionIndicator, CheckCircleIcon, ChevronIcon } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
 import { formatMessage, t } from "../../core/i18n";
@@ -22,6 +22,43 @@ import { textHasInlineContentMarkers } from "./message-citation";
 export function isAgentMessageWorking(message: ChatMessage): boolean {
   return message.blocks.some(
     (b) => b.type === "tools" && b.group.status === "running"
+  );
+}
+
+function ThinkingBlock({ id, body, status }: { id: string; body: string; status: "running" | "done" }) {
+  const [open, setOpen] = useState(false);
+  const isRunning = status === "running";
+  const mode = isRunning ? "running" : "done";
+  return (
+    <div className={`lyra-agents-tool-group ${open ? "open" : ""} mode-${mode}`}>
+      <AppButton
+        variant="ghost"
+        size="sm"
+        type="button"
+        className="lyra-agents-tool-group-head"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="lyra-agents-tool-group-icon-slot">
+          <span className="lyra-agents-tool-group-lead">
+            {isRunning ? <ThinkingIndicator /> : <CheckCircleIcon />}
+          </span>
+          <span className="lyra-agents-chevron-slot">
+            <ChevronIcon open={open} />
+          </span>
+        </span>
+        <span className={`lyra-agents-tool-group-label ${isRunning ? "lyra-agents-shimmer" : ""}`}>
+          {isRunning
+            ? t("lyra-agents-message.thinkingInProgress")
+            : t("lyra-agents-message.thinkingLabel")}
+        </span>
+      </AppButton>
+      <div className="lyra-agents-collapse" data-open={open}>
+        <div className="lyra-agents-collapse-inner">
+          <div className="lyra-agents-thinking-body">{body}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -440,6 +477,10 @@ const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => 
         left.image.workspaceTabAddress === right.image.workspaceTabAddress;
     case "tools":
       return right.type === "tools" && toolGroupEqual(left.group, right.group);
+    case "thinking":
+      return right.type === "thinking" &&
+        left.body === right.body &&
+        left.status === right.status;
     default:
       return false;
   }
@@ -903,11 +944,53 @@ const AgentMessage = memo(function AgentMessage({
         </figure>
       );
     }
+    if (b.type === "thinking") {
+      return <ThinkingBlock key={b.id} id={b.id} body={b.body} status={b.status} />;
+    }
     return <ToolGroupBlock key={b.id} group={b.group} />;
   };
 
+  const groupBlocksForRender = (blocks: readonly MessageBlock[]): React.ReactNode[] => {
+    const nodes: React.ReactNode[] = [];
+    const pendingThinking: ThinkingEntry[] = [];
+    let lastToolsIdx = -1;
+    let lastToolsKey = "";
+    let lastToolsGroup: ToolGroup | null = null;
+    let lastToolsThinking: ThinkingEntry[] = [];
+    for (const block of blocks) {
+      if (block.type === "thinking") {
+        pendingThinking.push({ id: block.id, body: block.body, status: block.status });
+      } else if (block.type === "tools") {
+        const entries = pendingThinking.splice(0);
+        nodes.push(
+          <ToolGroupBlock key={block.id} group={block.group} thinkingEntries={entries} />
+        );
+        lastToolsIdx = nodes.length - 1;
+        lastToolsKey = block.id;
+        lastToolsGroup = block.group;
+        lastToolsThinking = entries;
+      } else {
+        nodes.push(renderAgentBlock(block));
+      }
+    }
+    if (pendingThinking.length > 0 && lastToolsIdx >= 0) {
+      nodes[lastToolsIdx] = (
+        <ToolGroupBlock
+          key={lastToolsKey}
+          group={lastToolsGroup!}
+          thinkingEntries={[...lastToolsThinking, ...pendingThinking]}
+        />
+      );
+    } else if (pendingThinking.length > 0) {
+      for (const entry of pendingThinking) {
+        nodes.push(<ThinkingBlock key={entry.id} id={entry.id} body={entry.body} status={entry.status} />);
+      }
+    }
+    return nodes;
+  };
+
   const renderedBlocks = finalSummaryBlockId === null
-    ? message.blocks.map(renderAgentBlock)
+    ? groupBlocksForRender(message.blocks)
     : (
         <>
           <div className={`lyra-agents-message-process-fold ${preSummaryOpen ? "open" : ""}`}>
@@ -926,7 +1009,7 @@ const AgentMessage = memo(function AgentMessage({
             <div className="lyra-agents-collapse" data-open={preSummaryOpen}>
               <div className="lyra-agents-collapse-inner">
                 <div className="lyra-agents-message-process-fold-body">
-                  {preSummaryBlocks.map(renderAgentBlock)}
+                  {groupBlocksForRender(preSummaryBlocks)}
                 </div>
               </div>
             </div>

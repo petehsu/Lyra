@@ -12,13 +12,13 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem for non-code domains such as browser, workbench, memory, design, software, hardware, web, todo, terminal, skills, or mcp. For project code work, use exec_command and apply_patch directly instead of Tool-FS.",
+            "Search Lyra Tool Filesystem for non-code domains such as browser, workbench, memory, software, hardware, web, todo, terminal, skills, or mcp. For project code work, use exec_command and apply_patch directly instead of Tool-FS.",
             json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Natural-language non-code task or capability to find, such as read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
-                    "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "design", "automation"] },
-                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, design, hardware, skills, or mcp." },
+                    "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "automation"] },
+                    "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, hardware, skills, or mcp." },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 12 }
                 },

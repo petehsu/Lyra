@@ -236,8 +236,9 @@ export const useWorkbenchLocationModel = ({
           ? "unavailable"
           : "unauthorized";
     const unlocatedLabel = t("location.unlocated");
+    const displayName = state.fix?.displayName ?? unlocatedLabel;
     const label = status === "located"
-      ? state.fix?.displayName ?? unlocatedLabel
+      ? t("location.located")
       : status === "locating"
         ? t("location.locating")
         : status === "unavailable"
@@ -248,7 +249,7 @@ export const useWorkbenchLocationModel = ({
       label,
       title: hasConsent
         ? located
-          ? formatChipTitle(t("location.chipTitleLocated"), label)
+          ? formatChipTitle(t("location.chipTitleLocated"), displayName)
           : status === "unavailable"
             ? t("location.chipTitleUnavailable")
             : t("location.chipTitleRetry")

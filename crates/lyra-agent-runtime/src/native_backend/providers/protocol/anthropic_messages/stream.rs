@@ -151,6 +151,9 @@ fn map_stream_event(
                 Some("thinking") => {
                     if let Some(thinking) = block.get("thinking").and_then(Value::as_str) {
                         state.thinking.push_str(thinking);
+                        crate::native_backend::turns::append_reasoning_delta(
+                            thinking, ui_message_id, session_id, turn_id,
+                        )?;
                     }
                 }
                 _ => {}
@@ -162,6 +165,9 @@ fn map_stream_event(
                 Some("thinking_delta") => {
                     if let Some(thinking) = delta.get("thinking").and_then(Value::as_str) {
                         state.thinking.push_str(thinking);
+                        crate::native_backend::turns::append_reasoning_delta(
+                            thinking, ui_message_id, session_id, turn_id,
+                        )?;
                     }
                 }
                 Some("text_delta") => {

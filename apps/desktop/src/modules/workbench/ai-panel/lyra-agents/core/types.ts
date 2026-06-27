@@ -317,7 +317,8 @@ export type MessageBlock =
       body: string;
     }
   | { type: "image"; id: string; image: AgentImageAttachment }
-  | { type: "tools"; id: string; group: ToolGroup };
+  | { type: "tools"; id: string; group: ToolGroup }
+  | { type: "thinking"; id: string; body: string; status: "running" | "done" };
 
 export interface ChatMessage {
   id: string;
@@ -353,6 +354,7 @@ export interface ModelOption {
   detail?: string | null;
   available: boolean;
   enabled: boolean;
+  contextWindow?: number | null;
 }
 
 export interface ProviderOptionControl {
@@ -432,4 +434,5 @@ export interface SessionMeta {
   workingDirIsHome: boolean;
   totalAdditions: number;
   totalDeletions: number;
+  tokenEstimate?: number | null;
 }

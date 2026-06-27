@@ -173,7 +173,9 @@ export const createAgentIpcBridge = ({
     storageRoot,
     browserFollowMode,
     getBrowserBridge,
-    closePrivateTerminalsForSession: terminalToolHost.closePrivateTerminalsForSession
+    closePrivateTerminalsForSession: terminalToolHost.closePrivateTerminalsForSession,
+    listPrivateTerminalsForSession: terminalToolHost.listPrivateTerminalsForSession,
+    closePrivateTerminalSession: terminalToolHost.closePrivateTerminalSession
   });
 
   return {

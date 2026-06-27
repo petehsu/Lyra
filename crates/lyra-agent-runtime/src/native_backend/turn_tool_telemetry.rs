@@ -253,7 +253,6 @@ fn scene_modules_for_domain(domain: &str) -> Vec<String> {
         "computer" | "desktop" | "software" | "workbench" | "terminal" | "shell" => {
             vec!["computer".to_string()]
         }
-        "design" => vec!["design".to_string()],
         _ => Vec::new(),
     }
 }
@@ -298,12 +297,6 @@ fn scene_modules_for_tool_text(tool: &Value) -> Vec<String> {
     .any(|needle| lower.contains(needle))
     {
         scenes.push("computer".to_string());
-    }
-    if ["design", "ui", "frontend", "设计", "界面", "前端"]
-        .iter()
-        .any(|needle| lower.contains(needle))
-    {
-        scenes.push("design".to_string());
     }
     scenes
 }

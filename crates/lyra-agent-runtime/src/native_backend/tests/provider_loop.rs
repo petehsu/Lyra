@@ -89,7 +89,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         &session_id,
         &turn_id,
         &cancellation,
-        &model_tools(false),
+        &model_tools(),
     )
     .expect("streaming reply");
 
@@ -211,7 +211,7 @@ fn streaming_parser_preserves_markdown_whitespace_in_committed_message() {
         &session_id,
         &turn_id,
         &cancellation,
-        &model_tools(false),
+        &model_tools(),
     )
     .expect("streaming reply");
 
@@ -286,7 +286,7 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         &session_id,
         &turn_id,
         &cancellation,
-        &model_tools(false),
+        &model_tools(),
     )
     .expect("streaming reply");
 
@@ -356,7 +356,7 @@ fn textual_tool_call_is_rejected_before_assistant_text_commit() {
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
         .expect_err("textual tool calls must be rejected");
     assert!(error.to_string().contains("textual tool"));
 }
@@ -375,7 +375,7 @@ fn textual_tool_result_ref_is_rejected_before_assistant_text_commit() {
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
         .expect_err("tool result ref placeholders must be rejected");
     assert!(error.to_string().contains("textual tool protocol leak"));
 }
@@ -391,7 +391,7 @@ fn missing_tool_preamble_is_rejected_for_retry() {
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
         .expect_err("tool preambles without tool calls must be rejected");
     assert!(
         error
@@ -419,7 +419,7 @@ fn markdown_json_tool_call_snippet_is_rejected_as_protocol_error() {
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
         .expect_err("markdown JSON tool snippets must be rejected");
     assert!(error.to_string().contains("textual tool-call syntax"));
     assert!(reply.content.is_none());
@@ -438,7 +438,7 @@ fn textual_provider_visible_function_call_is_rejected_as_protocol_error() {
         stop_signal: Default::default(),
     };
 
-    let error = normalize_model_reply_protocol(&mut reply, &model_tools(false))
+    let error = normalize_model_reply_protocol(&mut reply, &model_tools())
         .expect_err("function-like textual tool calls must be rejected");
     assert!(error.to_string().contains("textual tool-call syntax"));
     assert!(reply.content.is_none());
@@ -570,7 +570,7 @@ fn streaming_textual_tool_call_is_rejected() {
         &session_id,
         &turn_id,
         &cancellation,
-        &model_tools(false),
+        &model_tools(),
     )
     .expect_err("streaming textual tool call must be rejected");
 
@@ -598,7 +598,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let tools = model_tools(false);
+    let tools = model_tools();
     let stream = concat!(
         "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0}}\n\n",
         "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\n",
@@ -1506,7 +1506,7 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
         &provider,
         "mimo-v2.5-pro",
         &[json!({ "role": "user", "content": "hello" })],
-        &model_tools(false),
+        &model_tools(),
     )
     .expect("mimo hooked request should succeed");
 
@@ -1597,7 +1597,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
         provider: provider.clone(),
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -1708,7 +1708,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
         provider: provider.clone(),
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -1863,7 +1863,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
         provider: provider.clone(),
         model: "mimo-v2.5-pro".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "mimo-v2.5-pro"),
         input_downgrades: Vec::new(),
@@ -1994,7 +1994,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
         provider: provider.clone(),
         model: "gpt-5-mini".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "gpt-5-mini"),
         input_downgrades: Vec::new(),
@@ -2141,7 +2141,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
         provider: provider.clone(),
         model: "claude-sonnet-4-6".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "claude-sonnet-4-6"),
         input_downgrades: Vec::new(),
@@ -2352,7 +2352,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
         provider: provider.clone(),
         model: "gemini-2.5-flash".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "gemini-2.5-flash"),
         input_downgrades: Vec::new(),
@@ -2505,7 +2505,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
         provider: provider.clone(),
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "anthropic.claude-3-5-sonnet-20241022-v2:0"),
         input_downgrades: Vec::new(),
@@ -3025,7 +3025,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
         provider: provider.clone(),
         model: "llama3.2:latest".to_string(),
         messages: vec![json!({ "role": "user", "content": "what tabs are open?" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "llama3.2:latest"),
         input_downgrades: Vec::new(),
@@ -3374,7 +3374,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -3512,7 +3512,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "读取这张截图" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -3639,7 +3639,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),
@@ -3806,7 +3806,7 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
         provider: provider.clone(),
         model: "test-model".to_string(),
         messages: vec![json!({ "role": "user", "content": "keep working" })],
-        tools: model_tools(false),
+        tools: model_tools(),
         host_dispatcher: None,
         capabilities: model_capabilities(&provider, "test-model"),
         input_downgrades: Vec::new(),

@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Initial dynamic prompt delivery V1 audit baseline."
+reason = "Bumped PROMPT_TEMPLATE_VERSION to 7 — terminal session awareness: added Terminal sessions section to full_contract (terminal_list for live sessions, terminal_run for long-running cmd non-blocking, terminal_read/screen/wait to check back, terminal_signal/close to kill stale). Added one-liner to compact_contract."

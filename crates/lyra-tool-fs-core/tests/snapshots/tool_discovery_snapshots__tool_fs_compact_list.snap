@@ -44,7 +44,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_map; operation: map; provide args matching miniSchema.",
-        "summary": "Map actionable browser elements.",
+        "summary": "Map actionable elements on any web page — understand how real interfaces are structured before building your own.",
         "title": "Map browser page"
       },
       {
@@ -56,7 +56,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_read; operation: read; provide args matching miniSchema.",
-        "summary": "Read text from a browser page.",
+        "summary": "Read text from any browser page — examine real websites, documentation, reference implementations, community discussions.",
         "title": "Read browser page"
       },
       {

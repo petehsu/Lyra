@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Lyra — Your Desktop AI Agent. Rust-native. Electron UI. Multi-provider. Built to think.">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>Lyra — Your Desktop AI Agent</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✨</text></svg>">
+</head>
+<body>
+
+  <!-- ==================== Hero ==================== -->
+  <section class="hero">
+    <pre class="hero-ascii" aria-hidden="true">
+                                           ..:::----:::..
+                                   .:-=*##%%@@@@@@@@@@@@%%##*+-:.
+                               :=*#%@@@@@@@@%%%%%%%%%%%%%@@@@@@@%%*+-.                           .
+                           .=*%@@@@@%%%%%@@@@@@@@@@@@@@@@@@%%%%%%@@@@%#+:
+                        .=#@@@@%%%%@@@@@@%%#**+++===+++**#%%@@@@@%%%%@@@@%+:
+                      -#@@@%%%%@@@@%#*=-:.                 .:-=*#@@@@%%%%@@@%+.
+                   .=%@@%%%%@@@@#+-.                             .-*%@@%%%%%@@%*:
+                 .+%@@%%@@@@%*-                                      -#@%%@@%%@@@*:
+                =%@@%%@@%%#+-::-=======--:.                            =%@%@@@@%%@@+.
+              .#@@%%@@@@%%%%%@@@@@@@@@@@@@@%#*+-:                       :%%%@@@@@%%@%-
+             =%@%%@@@%%%%@@@@@@@@@@@@@@@@@@@@@@@@%*=:                    :%%%@@@%%@%@@+
+            +@%%@@@%%@@@@%#**+==----==+**#%@@@@%%@@@@#+:                  =@%@@@@@%@%%@#.
+           *@%%@@%%@@%*=:.                 :-+#%@@@%%@@@*:                .%%%%@#%@%@@%@%.
+          *@%@@@%@@#=.                          :+#%%%%%@@*:               #@%%@*.%@%@@%@%.
+         +@%@@@%@%=                         .::---=#@%@@%%@@+              *@%%@% .%@%@@%@#
+        -@%@@@%@#.                     .-+*#%@@@@@@%%%%@@@%%@#.            #@%%@%  .%%%@@%@*
+       .%%%@@%@#                    :+#%@@@@%%@@@@@@@@@%%%@@%@%:          .%%%%@#   -@%@@@%@-
+       +@%@@%%%.                 :+%@@@@%%%@@%#**+++*#%@@@%@@%@%:         =@%@%%+    *@%@@%%#
+      .%%%@@%@=                =#@@@%%%%%@%*-.        .-+%@%%@%@%.        %%%@%@:    .%%@@@%@-
+      =@%@@%@%               =%@@%%%@@@%@*.              .+@@%@%@*       +@%@%%#      *@%@@%%*
+      *@%@@%@*             :#@@%%%@@@@%@=                  -%%%@%@-     -@%@@%@:      -@%@@%@%
+      %@%@@%@-            +@@%%%@@@@@%@*                    =@%@%%*    -@%%@%@+       .@%@@@%@:
+      %@%@@%@:          .#@%%%%@*#@%@%@:                     %@%%@%   =@%%@%@*        .%@%@@%@-
+      %@%@@%@:         .#@%@%@%= *@%@%@:                     %@%%@% .*@%%%%@*         .%@%@@%@-
+      %@%@@%@-         #@%@%@%:  +%%@%@+                    -@%@%@*=%@%%%@@+          .@%@@@%@:
+      *@%@@%@+        *@%@%%%.   :@%@@%@-                  :%%%@@@%@@%%@@%-           -@%@@%@%
+      =@%@@%@%       -@%@%%%:     *@%@%%@+.               =%@%@@@@@%%@@%+.            *@%@@%%*
+      .%%@@@%@-      #%%@%@=       %@%@@%@%+:          :=#@@%@%%%%@@@%+.             .%%%@@%@-
+       *@%@@%%#     -@%@%@#        :%@%@@%@@@%#++===+*%@@@%%%%@@@@%*-.               *@%@@%%%
+       .%%%@@%@+    +%%@%@=         :%@%@@%%%@@@@@@@@@@%%@@@@@%#+-.                 -@%@@@%@-
+        =@%@@@%@-   #@%@%@:          .#@%%@@@%%%@@@@@@@@%%#*=-.                    :%%%@@%@*
+         +@%@@%%@-  #@%%@%.            *@@%%@@%%*=----::.                         =%%%@@%@#
+          *@%@@%%@= *@%%@%.             -#@@%%%%%*-                             :*@%%@@%@%.
+           *@%%@%%@++@%@%@:               =%@@@%@@@@#+-.                     .=#@@%@@@%@#.
+            +@@%@@%@%@@@%@*                 -*%@@@%%@@@%#*+-:..        ..:=+#%@@%%@@%%@*
+             -%@%%@%@@@@@%@-                  .=*%@@@@%%@@@@@@%%%#####%%@@@@@@%%@@@%@@+
+              .*@@%%@@@@@%%%:                     :=*#%@@@@@@@@@@@@@@@@@@%%%%%@@@%@@#:
+                -%@@%%@@@@%@%=                        .:-=+*###%%%%%%#*+*%%%@@%%@@%+
+                  =%@@%%%@@%%@#-                                      :+#%%@%%@@%+.
+                    =#@@@%%%@%@@#=:                               .-*%@@@%%%@@%+.
+                      -*%@@@%%%%@@@#*=:.                     .-=*%@@@@%%%@@@#=-.
+                        .=#%@@@%%%%@@@@@%#*++=--------==+*##%@@@@@%%%@@@@#+:.
+                           .-*%@@@@@%%%%@@@@@@@@@@@@@@@@@@@@%%%%%@@@@%*=:.
+                               :-+#%@@@@@@@%%%%%%%%%%%%%%@@@@@@@%#*=:.
+                                    :-=+*#%%@@@@@@@@@@@@%%##*+-:.
+                                           ...:::--::::..
+    </pre>
+
+    <h1 class="hero-tagline">
+      Your <span class="gradient-text">Desktop</span> AI Agent
+    </h1>
+
+    <p class="hero-subtitle">
+      Rust-native core. Electron UI. Multi-provider LLM. Built to think, act, and remember.
+    </p>
+
+    <div class="hero-actions">
+      <a href="#" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 15.575L6.475 10.05l1.4-1.425L11 11.75V3h2v8.75l3.125-3.125 1.4 1.425L12 15.575ZM5 21v-2h14v2H5Z"/></svg>
+        Download
+      </a>
+      <a href="https://github.com" class="btn btn-secondary" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2Z"/></svg>
+        GitHub
+      </a>
+    </div>
+
+    <div class="hero-scroll" aria-hidden="true">
+      <span>SCROLL</span>
+      <div class="hero-scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- ==================== Features ==================== -->
+  <section class="section" id="features">
+    <div class="container">
+      <div class="animate-in">
+        <p class="section-label">Features</p>
+        <h2 class="section-title">Everything your desktop needs</h2>
+        <p class="section-desc">A single AI agent that understands your screen, runs your terminal, browses the web, and manages your files — all locally.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3 class="feature-title">Agent Runtime</h3>
+          <p class="feature-desc">Rust 原生 agent 内核，支持多轮对话、工具调用、权限控制与任务编排。低延迟，高可靠。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3 class="feature-title">Browser Control</h3>
+          <p class="feature-desc">内置 Chromium 浏览器，支持页面理解、DOM 操作、表单填写和自动化导航。像人一样浏览网页。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💻</div>
+          <h3 class="feature-title">Terminal</h3>
+          <p class="feature-desc">智能终端管理，支持多会话、命令补全、输出解析与错误恢复。安全沙箱内执行。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📁</div>
+          <h3 class="feature-title">File Manager</h3>
+          <p class="feature-desc">原生文件浏览、搜索、预览与批量操作。理解项目结构，智能定位目标文件。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔌</div>
+          <h3 class="feature-title">Multi-Provider</h3>
+          <p class="feature-desc">支持 OpenAI、Anthropic、Google Gemini、xAI、本地模型等多 provider。自由切换，一键配置。</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🧩</div>
+          <h3 class="feature-title">Plugin System</h3>
+          <p class="feature-desc">可扩展的工具与 UIUX 插件架构。从软件商店安装，或用 TypeScript 编写自定义插件。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Tech Stack ==================== -->
+  <section class="section" id="tech">
+    <div class="container">
+      <div class="animate-in">
+        <p class="section-label">Architecture</p>
+        <h2 class="section-title">Built for performance</h2>
+        <p class="section-desc">Rust 核心负责计算密集型任务，Electron 提供原生 UI，TypeScript 串联一切。</p>
+      </div>
+
+      <div class="tech-grid">
+        <div class="tech-item">
+          <span class="tech-dot rust"></span>
+          Rust
+        </div>
+        <div class="tech-item">
+          <span class="tech-dot electron"></span>
+          Electron
+        </div>
+        <div class="tech-item">
+          <span class="tech-dot typescript"></span>
+          TypeScript
+        </div>
+        <div class="tech-item">
+          <span class="tech-dot vite"></span>
+          Vite
+        </div>
+        <div class="tech-item">
+          <span class="tech-dot node"></span>
+          Node.js N-API
+        </div>
+      </div>
+
+      <div class="arch-diagram">
+        <div class="arch-layers">
+          <div class="arch-layer ui">
+            <span class="arch-layer-label">UI Layer</span>
+            <div class="arch-layer-content">
+              <span class="arch-chip">Electron</span>
+              <span class="arch-chip">TypeScript</span>
+              <span class="arch-chip">SCSS</span>
+              <span class="arch-chip">Vite</span>
+            </div>
+          </div>
+          <div class="arch-arrow">↕</div>
+          <div class="arch-layer runtime">
+            <span class="arch-layer-label">Runtime</span>
+            <div class="arch-layer-content">
+              <span class="arch-chip">Agent Kernel</span>
+              <span class="arch-chip">Tool System</span>
+              <span class="arch-chip">Plugin Engine</span>
+              <span class="arch-chip">Memory</span>
+            </div>
+          </div>
+          <div class="arch-arrow">↕</div>
+          <div class="arch-layer native">
+            <span class="arch-layer-label">Native Core</span>
+            <div class="arch-layer-content">
+              <span class="arch-chip">lyrad</span>
+              <span class="arch-chip">terminal-core</span>
+              <span class="arch-chip">files-napi</span>
+              <span class="arch-chip">accessibility-napi</span>
+              <span class="arch-chip">download-core</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Footer ==================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span>Lyra</span>
+        </div>
+        <nav class="footer-links">
+          <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+          <a href="#features">Features</a>
+          <a href="#tech">Architecture</a>
+        </nav>
+      </div>
+      <p class="footer-copy">© 2026 Lyra. Built with 🤖 by the Lyra team.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

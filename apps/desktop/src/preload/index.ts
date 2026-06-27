@@ -20,6 +20,9 @@ import {
   type AgentPermissionPolicySetModeRequest,
   type AgentPermissionPolicySnapshot,
   type AgentPermissionRespondRequest,
+  type AgentPrivateTerminalCloseRequest,
+  type AgentPrivateTerminalListRequest,
+  type AgentPrivateTerminalSnapshot,
   type AgentPlanReviseRequest,
   type AgentProjectPlanDeleteRequest,
   type AgentProjectPlanDeleteResponse,
@@ -64,7 +67,6 @@ import {
   type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
   type AgentActionRunRequest,
-  type AgentRolesUpdateRequest,
   type AgentFeedbackRunRequest,
   type AgentLoginProviderCatalogSnapshot,
   type AgentModelDeleteRequest,
@@ -80,6 +82,7 @@ import {
   type AgentSessionSummary,
   type AgentSessionListRequest,
   type AgentSessionListResponse,
+  type AgentProtocolContract,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
@@ -251,7 +254,9 @@ import {
   type ProjectIdentityResolveRequest,
   type ProjectIdentitySnapshot,
   type LyraDesktopApi,
-  type WindowStatePayload
+  type WindowStatePayload,
+  type DetectedEditor,
+  type OpenInEditorRequest
 } from "../shared/desktop-bridge";
 import type {
   FileManagerCreateFileRequest,
@@ -851,6 +856,9 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   openExternal: (url: string) => ipcRenderer.invoke(LYRA_CHANNELS.openExternal, url),
+  detectEditors: () => ipcRenderer.invoke(LYRA_CHANNELS.detectEditors) as Promise<DetectedEditor[]>,
+  openInEditor: (request: OpenInEditorRequest) => ipcRenderer.invoke(LYRA_CHANNELS.openInEditor, request) as Promise<boolean>,
+  revealInFolder: (path: string) => ipcRenderer.invoke(LYRA_CHANNELS.revealInFolder, path) as Promise<boolean>,
   identity: {
     readUserIcon: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.identityReadUserIcon) as Promise<IdentityIconSnapshot | null>,
@@ -1597,11 +1605,6 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentProviderOptionsUpdate,
         request
       ) as Promise<AgentModelCatalogSnapshot>,
-    updateAgentRoles: (request: AgentRolesUpdateRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.agentRolesUpdate,
-        request
-      ) as Promise<AgentConfigSnapshot>,
     runImprove: (request?: AgentActionRunRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentImproveRun,
@@ -1678,7 +1681,21 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       return () => {
         agentEventListeners.delete(listener);
       };
-    }
+    },
+    listPrivateTerminals: (request: AgentPrivateTerminalListRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTerminalListPrivate,
+        request
+      ) as Promise<readonly AgentPrivateTerminalSnapshot[]>,
+    closePrivateTerminal: (request: AgentPrivateTerminalCloseRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentTerminalClosePrivate,
+        request
+      ) as Promise<void>,
+    readProtocolContract: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentProtocolContract
+      ) as Promise<AgentProtocolContract>
   },
   workbenchObservation: {
     registerHandler: (handler) => {

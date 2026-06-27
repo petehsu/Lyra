@@ -31,7 +31,6 @@ impl ProviderService {
                 | "agent.models.enable"
                 | "agent.models.delete"
                 | "agent.models.refresh"
-                | "agent.roles.update"
                 | "agent.accounts.list"
                 | "agent.accounts.login"
                 | "agent.accounts.loginProviders"
@@ -58,7 +57,6 @@ impl ProviderService {
             "agent.models.enable" => self.set_model_enabled(payload),
             "agent.models.delete" => self.delete_model(payload),
             "agent.models.refresh" => self.refresh_models(payload),
-            "agent.roles.update" => self.update_roles(payload),
             "agent.accounts.list" => self.accounts(payload),
             "agent.accounts.login" => self.login_account(payload),
             "agent.accounts.loginProviders" => self.login_providers(payload),
@@ -199,13 +197,6 @@ impl ProviderService {
     pub fn provider_catalog(&self) -> crate::AgentRuntimeResult<serde_json::Value> {
         self.backend
             .call("agent.provider.catalog.read", serde_json::json!({}))
-    }
-
-    pub fn update_roles(
-        &self,
-        payload: serde_json::Value,
-    ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.roles.update", payload)
     }
 
     pub fn accounts(

@@ -316,3 +316,107 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     assert!(temp.path().join("moved.txt").exists());
     assert!(!temp.path().join("delete.txt").exists());
 }
+
+/// Regression: a `~/...` path passed to file tools must expand to the user's
+/// home directory, not be joined onto the workspace root as a literal `~`
+/// component. Before the fix, `write_file("~/Documents/cursor-demos/x")`
+/// silently created `<root>/~/Documents/cursor-demos/x` (a real directory
+/// named `~`), the model then saw the correct path as empty, and rewrote
+/// everything. Other tilde variants (`~user`, `~+`, `~-`) must be rejected.
+#[test]
+fn native_file_tools_expand_tilde_and_reject_variants() {
+    let backend = LyraAgentBackend;
+    // Home-unbound session: no workingDir, so the workspace root falls back to
+    // the real home directory (mirrors the regression scenario where the user
+    // ran the agent from ~ without picking a project). This keeps the test
+    // independent of a synthetic tempdir-vs-home relationship.
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Tilde Regression" }))
+        .expect("create home-unbound session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+
+    let home = dirs::home_dir().expect("home dir available in test env");
+    let sentinel = format!("lyra-tilde-regression-{}.txt", Uuid::new_v4());
+    let expected_path = home.join(&sentinel);
+    // The home directory may already contain a literal `~` directory left over
+    // from a prior buggy run (e.g. ~/Documents/cursor-demos). Record what is
+    // there before the test so we can assert the write did not touch it rather
+    // than asserting it never exists at all.
+    let literal_tilde_dir = home.join("~");
+    let literal_tilde_existed_before = literal_tilde_dir.exists();
+    let literal_tilde_entry_count_before = if literal_tilde_existed_before {
+        fs::read_dir(&literal_tilde_dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    let written = tool_file_write(
+        &session_id,
+        &turn_id,
+        "tool-tilde-write",
+        &json!({
+            "path": format!("~/{}", sentinel),
+            "content": "tilde expansion regression",
+            "overwrite": true,
+        }),
+    )
+    .expect("home-relative write should succeed and expand to home");
+    assert_eq!(
+        written.raw["changedFiles"][0]["path"].as_str(),
+        Some(sentinel.as_str()),
+        "relative path should be the home-relative suffix, not a literal ~/... path"
+    );
+    assert!(
+        expected_path.exists(),
+        "file should land at <home>/{} after tilde expansion, not under a literal ~ dir",
+        sentinel
+    );
+    assert_eq!(
+        fs::read_to_string(&expected_path).expect("read sentinel back"),
+        "tilde expansion regression",
+    );
+    let literal_tilde_entry_count_after = if literal_tilde_dir.exists() {
+        fs::read_dir(&literal_tilde_dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    assert_eq!(
+        literal_tilde_entry_count_after, literal_tilde_entry_count_before,
+        "the literal '~' directory entry count must not change: the write should expand ~ to \
+         home, not create files under a literal ~ directory"
+    );
+    let _ = fs::remove_file(&expected_path);
+
+    // A bare `~` also expands to home itself.
+    let bare_result = tool_file_list(&session_id, &json!({ "path": "~" })).expect("bare ~ lists home");
+    assert!(
+        !bare_result.content.is_empty(),
+        "listing '~' should list the home directory contents"
+    );
+
+    // Tilde variants other than `~` / `~/` are rejected outright.
+    let rejected = tool_file_write(
+        &session_id,
+        &turn_id,
+        "tool-tilde-variant",
+        &json!({
+            "path": "~root/should-not-exist.txt",
+            "content": "rejected",
+            "overwrite": true,
+        }),
+    )
+    .expect_err("~user variant must be rejected");
+    assert_eq!(
+        rejected.code, "bad_request",
+        "tilde variants (~user/~+/~-) must be rejected as bad_request, not silently joined"
+    );
+    assert!(
+        !home.join("~root").join("should-not-exist.txt").exists(),
+        "no file should be created under a literal ~root directory"
+    );
+}

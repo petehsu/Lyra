@@ -40,6 +40,15 @@ export const createTerminalToolHost = ({
 }): {
   readonly handlers: AgentHostCapabilityHandlers;
   readonly closePrivateTerminalsForSession: (agentSessionId: string) => Promise<void>;
+  readonly listPrivateTerminalsForSession: (agentSessionId: string) => readonly {
+    readonly sessionId: string;
+    readonly title: string;
+    readonly cwd?: string;
+    readonly mode: "shell" | "command";
+    readonly command?: string;
+    readonly createdAt: string;
+  }[];
+  readonly closePrivateTerminalSession: (agentSessionId: string, terminalSessionId: string) => Promise<void>;
   readonly dispose: () => void;
 } => {
   type TerminalTargetPreference = "auto" | "private" | "ui";
@@ -761,6 +770,53 @@ export const createTerminalToolHost = ({
         }
       })
     );
+  };
+
+  const listPrivateTerminalsForSession = (agentSessionId: string): readonly {
+    readonly sessionId: string;
+    readonly title: string;
+    readonly cwd?: string;
+    readonly mode: "shell" | "command";
+    readonly command?: string;
+    readonly createdAt: string;
+  }[] => {
+    const terminals = privateTerminalsByAgentSession.get(agentSessionId);
+    if (terminals === undefined) return [];
+    return [...terminals.values()].map((entry) => ({
+      sessionId: entry.sessionId,
+      title: entry.title,
+      ...(entry.cwd === undefined ? {} : { cwd: entry.cwd }),
+      mode: entry.mode,
+      ...(entry.command === undefined ? {} : { command: entry.command }),
+      createdAt: entry.createdAt
+    }));
+  };
+
+  const closePrivateTerminalSession = async (
+    agentSessionId: string,
+    terminalSessionId: string
+  ): Promise<void> => {
+    const terminals = privateTerminalsByAgentSession.get(agentSessionId);
+    if (terminals === undefined) return;
+    const entry = terminals.get(terminalSessionId);
+    if (entry === undefined) return;
+    terminals.delete(terminalSessionId);
+    cursorByTerminalSessionId.delete(terminalSessionId);
+    screenCursorByTerminalSessionId.delete(terminalSessionId);
+    try {
+      await terminalBridge.closeSession({
+        sessionId: terminalSessionId,
+        actor: { kind: "system" },
+        correlation: {
+          agentSessionId,
+          terminalToolName: "terminal.closePrivateSession"
+        }
+      });
+    } catch (error) {
+      if (!isSessionNotFoundError(error)) {
+        console.warn(`[lyra-agent] failed to close private terminal ${terminalSessionId}:`, error);
+      }
+    }
   };
 
 
@@ -1586,6 +1642,8 @@ export const createTerminalToolHost = ({
   return {
     handlers: terminalHandlers,
     closePrivateTerminalsForSession,
+    listPrivateTerminalsForSession,
+    closePrivateTerminalSession,
     dispose: () => {
       for (const agentSessionId of [...privateTerminalsByAgentSession.keys()]) {
         void closePrivateTerminalsForSession(agentSessionId);

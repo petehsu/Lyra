@@ -249,3 +249,53 @@ fn delete_session_removes_cuts() {
     delete_session_store(&root, session_id).expect("delete session");
     assert!(!cuts_path.exists());
 }
+
+#[test]
+fn spawn_trim_skips_when_compression_active() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+    let session_id = format!("session-trim-guard-{}", Uuid::new_v4());
+    let session = build_overflow_session(&session_id);
+    save_session(&root, &session).expect("save session");
+
+    let message_count_before = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    {
+        let mut state = state().lock().expect("state lock");
+        state.sessions.insert(session_id.clone(), session);
+        state.active_compressions.insert(session_id.clone());
+    }
+
+    spawn_post_turn_session_trim(root.clone(), session_id.clone());
+
+    // Give the spawned thread time to run (or skip).
+    thread::sleep(Duration::from_millis(300));
+
+    let after_count = state()
+        .lock()
+        .ok()
+        .and_then(|state| {
+            state
+                .sessions
+                .get(&session_id)
+                .and_then(|s| s.snapshot.get("messages"))
+                .and_then(Value::as_array)
+                .map(|m| m.len())
+        })
+        .unwrap_or(0);
+
+    assert_eq!(
+        after_count, message_count_before,
+        "session should not be trimmed while compression is active"
+    );
+
+    // Cleanup
+    let mut state = state().lock().expect("state lock cleanup");
+    state.active_compressions.remove(&session_id);
+    state.sessions.remove(&session_id);
+}

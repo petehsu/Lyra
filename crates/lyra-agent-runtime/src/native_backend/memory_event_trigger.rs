@@ -6,10 +6,8 @@ use std::{
 
 static MEMORY_JOB_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
 
-pub(crate) const EVENT_TURN_COMPLETED: &str = "turn_completed";
 pub(crate) const EVENT_TOOL_CALL_COMPLETED: &str = "tool_call_completed";
 pub(crate) const EVENT_FILE_CHANGE_RECORDED: &str = "file_change_recorded";
-pub(crate) const EVENT_DECISION_RECORDED: &str = "decision_recorded";
 
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryTriggerEvent {
@@ -93,31 +91,8 @@ pub(crate) fn drain_memory_jobs(root: &Path) -> AgentRuntimeResult<usize> {
 
 fn process_memory_job(root: &Path, job: &MemoryJobRecord) -> AgentRuntimeResult<Value> {
     match job.job_type.as_str() {
-        EVENT_TURN_COMPLETED => {
-            let user_text = job
-                .payload
-                .get("userText")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let assistant_text = job
-                .payload
-                .get("assistantText")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            run_post_turn_memory_extraction(
-                root,
-                &job.session_id,
-                &job.turn_id,
-                &user_text,
-                assistant_text.as_deref(),
-            )
-        }
-        EVENT_TOOL_CALL_COMPLETED | EVENT_FILE_CHANGE_RECORDED | EVENT_DECISION_RECORDED => {
+        EVENT_TOOL_CALL_COMPLETED | EVENT_FILE_CHANGE_RECORDED => {
             run_event_memory_extraction(root, job)
-        }
-        other if other == super::memory_token_checkpoint::EVENT_TOKEN_CHECKPOINT => {
-            super::memory_token_checkpoint::run_token_checkpoint_memory_extraction(root, job)
         }
         other => Err(AgentRuntimeError::Core(format!(
             "unsupported memory job type: {other}"
@@ -162,23 +137,6 @@ fn run_event_memory_extraction(root: &Path, job: &MemoryJobRecord) -> AgentRunti
         "eventType": job.job_type,
         "candidates": created,
     }))
-}
-
-pub(crate) fn memory_trigger_from_turn(
-    session_id: &str,
-    turn_id: &str,
-    user_text: &str,
-    assistant_text: Option<&str>,
-) -> MemoryTriggerEvent {
-    MemoryTriggerEvent {
-        event_type: EVENT_TURN_COMPLETED.to_string(),
-        session_id: session_id.to_string(),
-        turn_id: turn_id.to_string(),
-        payload: json!({
-            "userText": user_text,
-            "assistantText": assistant_text.unwrap_or_default(),
-        }),
-    }
 }
 
 pub(crate) fn memory_trigger_from_tool(
@@ -231,15 +189,4 @@ fn is_file_change_tool(name: &str) -> bool {
     )
 }
 
-pub(crate) fn spawn_post_turn_memory_extraction(
-    root: PathBuf,
-    session_id: String,
-    turn_id: String,
-    user_text: String,
-    assistant_text: Option<String>,
-) {
-    emit_memory_trigger(
-        &root,
-        memory_trigger_from_turn(&session_id, &turn_id, &user_text, assistant_text.as_deref()),
-    );
-}
+

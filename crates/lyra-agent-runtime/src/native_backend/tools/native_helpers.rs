@@ -1,4 +1,5 @@
 use super::*;
+use std::borrow::Cow;
 use std::path::Component;
 
 const DEFAULT_TOOL_RAW_CHARS: usize = 32_000;
@@ -294,6 +295,47 @@ pub(crate) fn session_workspace_root(session_id: &str) -> Result<PathBuf, Native
     Ok(root)
 }
 
+/// Expand a leading `~` / `~/` (POSIX) or `~\` (Windows) prefix to the user's
+/// home directory. Other tilde variants (`~user`, `~+`, `~-`, `~1`, ...) are
+/// rejected because Rust's `Path` treats `~` as a normal component name, so
+/// they would otherwise be silently joined onto the workspace root and create
+/// a literal `~` directory under it (see the "files written to ~/Documents
+/// then reported missing" regression). Mirrors Claude Code's `expandPath` /
+/// `expandTilde` pair: expand the two safe forms, reject everything else.
+fn expand_tilde_prefix(raw: &str) -> Result<Cow<'_, str>, NativeToolFailure> {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with('~') {
+        return Ok(Cow::Borrowed(raw));
+    }
+    let is_bare_home = trimmed == "~";
+    let is_slash_prefixed = trimmed.starts_with("~/")
+        || (cfg!(windows) && trimmed.starts_with("~\\"));
+    if !is_bare_home && !is_slash_prefixed {
+        // `~root`, `~+`, `~-`, `~1`, ... are not expandable by us and must not
+        // fall through to the workspace-relative branch where they would create
+        // a literal `~...` directory.
+        return Err(NativeToolFailure::new(
+            "bad_request",
+            format!("unsupported tilde expansion in path: {trimmed}"),
+            "Use an absolute path, a workspace-relative path, or a ~/ home-relative path. Variants like ~user, ~+, ~- are rejected.",
+        ));
+    }
+    let home = dirs::home_dir().ok_or_else(|| {
+        NativeToolFailure::new(
+            "workspace_unbound",
+            "home directory is unavailable for tilde expansion",
+            "Use an absolute path or bind the session to a project root and retry.",
+        )
+    })?;
+    let home = home.display().to_string();
+    if is_bare_home {
+        Ok(Cow::Owned(home))
+    } else {
+        // Keep the separator and the rest of the path intact.
+        Ok(Cow::Owned(format!("{home}{}", &trimmed[1..])))
+    }
+}
+
 fn resolve_session_absolute_path(
     session_id: &str,
     raw_path: &str,
@@ -306,8 +348,12 @@ fn resolve_session_absolute_path(
             "Retry with a normal filesystem path.",
         ));
     }
+    // Expand `~`/`~/` to the home directory before any Path handling so that
+    // `~/Documents/x` resolves to `<home>/Documents/x` instead of being joined
+    // onto the workspace root as a literal `~` component.
+    let raw_path = expand_tilde_prefix(raw_path)?;
     let root = session_workspace_root(session_id)?;
-    let candidate = PathBuf::from(raw_path);
+    let candidate = PathBuf::from(raw_path.as_ref());
     let candidate = if candidate.is_absolute() {
         candidate
     } else {

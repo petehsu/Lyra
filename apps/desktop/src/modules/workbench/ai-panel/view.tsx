@@ -603,6 +603,9 @@ export const AiPanelSurface = ({
   onPickFileFromFileManager,
   listWorkspaceTabs,
   listTerminalTabs,
+  getTerminalTabPanes,
+  onCloseTerminalTab,
+  onFocusTerminalTabInDock,
   locationControls,
   aiRichRenderingEnabled = true
 }: AiPanelSurfaceProps) => {
@@ -649,6 +652,9 @@ export const AiPanelSurface = ({
       onPickFileFromFileManager,
       listWorkspaceTabs,
       listTerminalTabs,
+      getTerminalTabPanes,
+      onCloseTerminalTab,
+      onFocusTerminalTabInDock,
       locationControls,
       aiRichRenderingEnabled
     }

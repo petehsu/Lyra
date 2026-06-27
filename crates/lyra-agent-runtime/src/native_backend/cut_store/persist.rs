@@ -235,3 +235,70 @@ pub(crate) fn manifest_path(root: &Path, session_id: &str) -> PathBuf {
 pub(crate) fn cuts_dir(root: &Path, session_id: &str) -> PathBuf {
     session_dir(root, session_id).join("cuts")
 }
+
+pub(crate) fn read_cut_messages(
+    root: &Path,
+    session_id: &str,
+    msg_ids: &[String],
+) -> AgentRuntimeResult<Vec<Value>> {
+    if msg_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let manifest = load_manifest(root, session_id)?;
+    let dir = cuts_dir(root, session_id);
+    let id_set: std::collections::HashSet<&str> =
+        msg_ids.iter().map(String::as_str).collect();
+    let mut found: std::collections::HashMap<String, Value> =
+        std::collections::HashMap::new();
+
+    for entry in &manifest.packs {
+        if found.len() >= id_set.len() {
+            break;
+        }
+        let pack_path = dir.join(&entry.path);
+        if !pack_path.is_file() {
+            continue;
+        }
+        let conn = open_cut_pack(&pack_path)?;
+        let placeholders = msg_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT msg_id, content_raw FROM cut_payload WHERE msg_id IN ({placeholders})"
+        );
+        let params: Vec<&dyn rusqlite::ToSql> = msg_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let msg_id: String = row.get(0)?;
+                let content_raw: String = row.get(1)?;
+                Ok((msg_id, content_raw))
+            })
+            .map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
+        for row in rows {
+            let (msg_id, content_raw) =
+                row.map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
+            if !id_set.contains(msg_id.as_str()) {
+                continue;
+            }
+            let value: Value = serde_json::from_str(&content_raw)
+                .map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
+            found.insert(msg_id, value);
+        }
+    }
+
+    let mut result = Vec::with_capacity(msg_ids.len());
+    for id in msg_ids {
+        if let Some(value) = found.remove(id) {
+            result.push(value);
+        }
+    }
+    Ok(result)
+}

@@ -110,7 +110,6 @@ pub struct ToolExposureRequest {
     pub risk_filter: Option<String>,
     pub page: usize,
     pub page_size: usize,
-    pub include_design_tools: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1012,30 +1011,7 @@ pub struct SkillRegistry {
 
 impl SkillRegistry {
     pub fn with_builtin_skills() -> Self {
-        let registry = Self::default();
-        registry.register(LyraSkillManifest {
-            id: "lyra-design-research".to_string(),
-            name: "Lyra Design Research".to_string(),
-            version: "1.0.0".to_string(),
-            description:
-                "Use Lyra design reference tools before creating or changing UI screens."
-                    .to_string(),
-            prompt: "For design or UI work, call Lyra design reference tools first, then include a concise Design Research Summary before proposing or editing UI.".to_string(),
-            permissions: vec!["design.reference.read".to_string()],
-            tool_capabilities: vec![
-                AgentToolCapabilityRef {
-                    provider_id: "lyra-design".to_string(),
-                    tool_name: "lyra_design_search_styles".to_string(),
-                    capability_id: None,
-                },
-                AgentToolCapabilityRef {
-                    provider_id: "lyra-design".to_string(),
-                    tool_name: "lyra_design_get_style_details".to_string(),
-                    capability_id: None,
-                },
-            ],
-        });
-        registry
+        Self::default()
     }
 
     pub fn register(&self, manifest: LyraSkillManifest) {
@@ -1321,10 +1297,6 @@ fn exposure_request_from_input(input: Value) -> ToolExposureRequest {
         risk_filter: string_field(&input, "riskLevel"),
         page: input.get("page").and_then(Value::as_u64).unwrap_or(0) as usize,
         page_size: input.get("pageSize").and_then(Value::as_u64).unwrap_or(20) as usize,
-        include_design_tools: input
-            .get("includeDesignTools")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
     }
 }
 

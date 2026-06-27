@@ -12,6 +12,8 @@ export type AgentMessage = {
   readonly createdAt: string;
   readonly metadata?: unknown;
   readonly rollback?: AgentMessageRollback | null;
+  readonly reasoningContent?: string | null;
+  readonly reasoningStatus?: "thinking" | "done" | null;
 };
 
 export type AgentMessageBlock =
@@ -309,6 +311,7 @@ export type AgentSessionSnapshot = {
   readonly updatedAt: string;
   readonly memory?: AgentMemorySnapshot | null;
   readonly ledger?: AgentSessionLedgerSummary | null;
+  readonly tokenEstimate?: number | null;
 };
 
 export type AgentMemoryVisibility =
@@ -906,6 +909,12 @@ export type AgentRuntimeEvent =
       readonly delta: string;
     }
   | {
+      readonly kind: "messageReasoningDelta";
+      readonly sessionId: string;
+      readonly messageId: string;
+      readonly delta: string;
+    }
+  | {
       readonly kind: "toolStarted" | "toolFinished";
       readonly sessionId: string;
       readonly messageId?: string | null;
@@ -1039,6 +1048,13 @@ export type AgentRuntimeEvent =
       readonly sessionId: string;
       readonly messageId: string;
       readonly message: string;
+    }
+  | {
+      readonly kind: "contextCompressionProgress";
+      readonly sessionId: string;
+      readonly status: "started" | "completed" | "failed";
+      readonly tokenBefore: number | null;
+      readonly tokenAfter: number | null;
     };
 
 export type AgentRegisteredCommand = {
@@ -1120,27 +1136,6 @@ export type AgentConfigUpdateRequest = {
   readonly openaiVerbosity?: string | null;
   readonly promptDeliveryMode?: "full" | "lean-experimental" | null;
   readonly openaiResponsesStatefulPromptContract?: boolean;
-  readonly ntfyTopic?: string | null;
-  readonly ntfyServer?: string | null;
-  readonly desktopNotifications?: boolean;
-  readonly emailEnabled?: boolean;
-  readonly emailTo?: string | null;
-  readonly emailSmtpHost?: string | null;
-  readonly emailSmtpPort?: number;
-  readonly emailFrom?: string | null;
-  readonly emailPassword?: string | null;
-  readonly emailImapHost?: string | null;
-  readonly emailImapPort?: number;
-  readonly emailReplyEnabled?: boolean;
-  readonly telegramEnabled?: boolean;
-  readonly telegramBotToken?: string | null;
-  readonly telegramChatId?: string | null;
-  readonly telegramReplyEnabled?: boolean;
-  readonly discordEnabled?: boolean;
-  readonly discordBotToken?: string | null;
-  readonly discordChannelId?: string | null;
-  readonly discordBotUserId?: string | null;
-  readonly discordReplyEnabled?: boolean;
 };
 
 export type AgentProviderProfileModelRequest = {
@@ -1301,12 +1296,28 @@ export type AgentProviderOptionsUpdateRequest = {
   readonly serviceTier?: string | null;
 };
 
-export type AgentRolesUpdateRequest = {
-  readonly swarmModel?: string | null;
-  readonly reviewModel?: string | null;
-  readonly judgeModel?: string | null;
-  readonly memoryModel?: string | null;
-  readonly ambientModel?: string | null;
+export type AgentPrivateTerminalSnapshot = {
+  readonly sessionId: string;
+  readonly title: string;
+  readonly cwd?: string;
+  readonly mode: "shell" | "command";
+  readonly command?: string;
+  readonly createdAt: string;
+};
+
+export type AgentPrivateTerminalListRequest = {
+  readonly sessionId: string;
+};
+
+export const EXPECTED_PROTOCOL_VERSION = 1;
+
+export type AgentProtocolContract = {
+  readonly protocolVersion: number;
+};
+
+export type AgentPrivateTerminalCloseRequest = {
+  readonly sessionId: string;
+  readonly terminalSessionId: string;
 };
 
 export type AgentApi = {
@@ -1409,9 +1420,6 @@ export type AgentApi = {
   readonly updateAgentProviderOptions: (
     request: AgentProviderOptionsUpdateRequest
   ) => Promise<AgentModelCatalogSnapshot>;
-  readonly updateAgentRoles: (
-    request: AgentRolesUpdateRequest
-  ) => Promise<AgentConfigSnapshot>;
   readonly runImprove: (
     request?: AgentActionRunRequest
   ) => Promise<AgentTurnSendResponse>;
@@ -1444,4 +1452,11 @@ export type AgentApi = {
     request: AgentImageAttachmentMaterializeRequest
   ) => Promise<AgentImageAttachmentMaterializeResponse>;
   readonly onEvent: (listener: (event: AgentRuntimeEvent) => void) => () => void;
+  readonly listPrivateTerminals: (
+    request: AgentPrivateTerminalListRequest
+  ) => Promise<readonly AgentPrivateTerminalSnapshot[]>;
+  readonly closePrivateTerminal: (
+    request: AgentPrivateTerminalCloseRequest
+  ) => Promise<void>;
+  readonly readProtocolContract: () => Promise<AgentProtocolContract>;
 };

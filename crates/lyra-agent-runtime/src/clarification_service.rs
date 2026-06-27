@@ -1,4 +1,19 @@
+use serde::{Deserialize, Serialize};
 use crate::BackendHandle;
+
+/// Typed client→server clarification response message.
+///
+/// Validates at the trust boundary: malformed payloads fail with a clear
+/// error instead of silent missing fields downstream.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClarificationResponse {
+    pub session_id: String,
+    pub clarification_id: String,
+    pub answer: String,
+    #[serde(default)]
+    pub selected_option: Option<String>,
+}
 
 #[derive(Clone, Debug)]
 pub struct ClarificationService {
@@ -22,7 +37,9 @@ impl ClarificationService {
         &self,
         payload: serde_json::Value,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call("agent.clarification.respond", payload)
+        let msg: ClarificationResponse = serde_json::from_value(payload)
+            .map_err(|e| crate::AgentRuntimeError::Serialization(e.to_string()))?;
+        self.backend.call("agent.clarification.respond", serde_json::to_value(&msg).unwrap_or_default())
     }
 
     pub fn respond(
@@ -31,9 +48,7 @@ impl ClarificationService {
         clarification_id: String,
         answer: String,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        self.backend.call(
-            "agent.clarification.respond",
-            serde_json::json!({ "sessionId": session_id, "clarificationId": clarification_id, "answer": answer }),
-        )
+        let msg = ClarificationResponse { session_id, clarification_id, answer, selected_option: None };
+        self.backend.call("agent.clarification.respond", serde_json::to_value(&msg).unwrap_or_default())
     }
 }

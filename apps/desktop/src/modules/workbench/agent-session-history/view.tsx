@@ -504,6 +504,10 @@ const HistoryTranscriptBlock = ({ block }: { readonly block: HistoryMessageBlock
     );
   }
 
+  if (block.type === "thinking") {
+    return null; // ponytail: thinking blocks hidden in history transcript
+  }
+
   return (
     <section
       className="lyra-agent-history-transcript-tool-block"

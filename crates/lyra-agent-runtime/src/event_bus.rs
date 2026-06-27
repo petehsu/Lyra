@@ -6,6 +6,7 @@ use std::sync::{
 use serde_json::Value;
 
 use crate::BackendHandle;
+use crate::agent_event::AgentEvent;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeEventBus {
@@ -45,6 +46,12 @@ impl RuntimeEventBus {
     pub fn publish_raw(&self, event: &str) {
         let value = serde_json::from_str(event)
             .unwrap_or_else(|_| serde_json::json!({ "kind": "unparsed", "raw": event }));
+        self.publish(value);
+    }
+
+    pub fn publish_event(&self, event: AgentEvent) {
+        let value = serde_json::to_value(&event)
+            .unwrap_or_else(|_| serde_json::json!({ "kind": "unparsed" }));
         self.publish(value);
     }
 

@@ -328,7 +328,6 @@ const createDesktopApi = () => {
       switchAgentModel: vi.fn(async () => modelsResponse),
       refreshAgentModels: vi.fn(async () => modelsResponse),
       updateAgentProviderOptions: vi.fn(async () => modelsResponse),
-      updateAgentRoles: vi.fn(async () => ({ config: {}, commands: [] })),
       runImprove,
       runRefactor,
       triggerPoke,

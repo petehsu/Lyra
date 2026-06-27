@@ -67,6 +67,7 @@ import type { AgentFileAttachment } from "./composer-file";
 import { AgentProviderBrandIcon } from "../../../../agent-provider-brand-icon";
 import { getDesktopApi } from "../../../../shell/service";
 
+
 const TOOLBAR_ICON_SIZE = 14;
 const TOOLBAR_ICON_STROKE_WIDTH = 2.1;
 const SEND_LOGO_BURST_MS = 560;

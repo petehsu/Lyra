@@ -108,43 +108,10 @@ const labels: SettingsAiLabels = {
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
-  roleModelsTitle: "Agent Role Models",
-  roleSwarmSubagentLabel: "Swarm / subagent",
-  roleReviewLabel: "Review",
-  roleJudgeLabel: "Judge",
-  roleMemoryLabel: "Memory",
-  roleAmbientLabel: "Ambient",
-  roleProviderDefaultPlaceholder: "provider default",
-  roleMemoryDefaultPlaceholder: "sidecar auto-select",
-  saveRoleModels: "Save role models",
   promptExperimentsTitle: "Prompt delivery",
   promptExperimentsDescription: "Experimental prompt token controls.",
   leanPromptDeliveryLabel: "Lean prompt delivery",
   statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
-  notificationsTitle: "Notifications",
-  notificationsDescription: "Configure notifications.",
-  desktopNotificationsLabel: "Desktop notifications",
-  ntfyTopicLabel: "ntfy topic",
-  ntfyServerLabel: "ntfy server",
-  emailNotificationsLabel: "Email notifications",
-  emailToLabel: "Email recipient",
-  emailSmtpHostLabel: "SMTP host",
-  emailSmtpPortLabel: "SMTP port",
-  emailFromLabel: "Sender email",
-  emailPasswordLabel: "SMTP password",
-  emailImapHostLabel: "IMAP host",
-  emailImapPortLabel: "IMAP port",
-  emailReplyLabel: "Email replies control Agent",
-  telegramNotificationsLabel: "Telegram notifications",
-  telegramBotTokenLabel: "Telegram bot token",
-  telegramChatIdLabel: "Telegram chat ID",
-  telegramReplyLabel: "Telegram replies control Agent",
-  discordNotificationsLabel: "Discord notifications",
-  discordBotTokenLabel: "Discord bot token",
-  discordChannelIdLabel: "Discord channel ID",
-  discordBotUserIdLabel: "Discord bot user ID",
-  discordReplyLabel: "Discord replies control Agent",
-  saveNotifications: "Save notifications",
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
@@ -190,23 +157,6 @@ const agentConfigSnapshot = {
         requiresApiKey: false,
         models: [{ id: "gpt-5" }],
       },
-    },
-    roles: {
-      swarmModel: "gpt-5",
-      memoryModel: "mimo-v2.5-pro",
-      reviewModel: "gpt-5-mini",
-      judgeModel: "gpt-5",
-      ambientModel: "mimo-v2.5-pro",
-    },
-    notifications: {
-      desktopNotifications: true,
-      ntfyTopic: "lyra-alerts",
-      ntfyServer: "https://ntfy.sh",
-      emailEnabled: false,
-      emailSmtpPort: 587,
-      emailImapPort: 993,
-      telegramEnabled: false,
-      discordEnabled: false,
     },
   },
   commands: [
@@ -453,7 +403,6 @@ const createDesktopApi = () => {
   const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
   const refreshAgentModels = vi.fn(async () => agentModelCatalog);
-  const updateAgentRoles = vi.fn(async () => agentConfigSnapshot);
   const openExternal = vi.fn(async () => true);
 
   return {
@@ -473,7 +422,6 @@ const createDesktopApi = () => {
         setAgentModelEnabled,
         deleteAgentModel,
         refreshAgentModels,
-        updateAgentRoles,
       },
     } as unknown as LyraDesktopApi,
     readAgentConfig,
@@ -490,7 +438,6 @@ const createDesktopApi = () => {
     updateAgentConfig,
     saveAgentProviderProfile,
     refreshAgentModels,
-    updateAgentRoles,
   };
 };
 
@@ -772,62 +719,6 @@ describe("useSettingsAiModel", () => {
     expect(updateAgentConfig).toHaveBeenCalledWith({
       defaultProvider: "openai-compatible",
       defaultModel: "gpt-5",
-    });
-  });
-
-  test("saves notification config through the Lyra Agent runtime bridge", async () => {
-    const { api, updateAgentConfig } = createDesktopApi();
-    const { result } = renderModel(api);
-
-    await waitFor(() => {
-      expect(result.current.agentConfig).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.updateAgentConfig?.({
-        desktopNotifications: false,
-        ntfyTopic: "agent-topic",
-        emailEnabled: true,
-        emailTo: "ops@example.com",
-        telegramEnabled: true,
-        telegramChatId: "12345",
-      });
-    });
-
-    expect(updateAgentConfig).toHaveBeenCalledWith({
-      desktopNotifications: false,
-      ntfyTopic: "agent-topic",
-      emailEnabled: true,
-      emailTo: "ops@example.com",
-      telegramEnabled: true,
-      telegramChatId: "12345",
-    });
-  });
-
-  test("saves agent role model overrides through the Lyra Agent bridge", async () => {
-    const { api, updateAgentRoles } = createDesktopApi();
-    const { result } = renderModel(api);
-
-    await waitFor(() => {
-      expect(result.current.agentConfig).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.updateAgentRoles?.({
-        swarmModel: "gpt-5",
-        reviewModel: "gpt-5-mini",
-        judgeModel: "gpt-5",
-        memoryModel: "mimo-v2.5-pro",
-        ambientModel: "mimo-v2.5-pro",
-      });
-    });
-
-    expect(updateAgentRoles).toHaveBeenCalledWith({
-      swarmModel: "gpt-5",
-      reviewModel: "gpt-5-mini",
-      judgeModel: "gpt-5",
-      memoryModel: "mimo-v2.5-pro",
-      ambientModel: "mimo-v2.5-pro",
     });
   });
 

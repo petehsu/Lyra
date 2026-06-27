@@ -111,43 +111,10 @@ const labels: SettingsAiLabels = {
   removeAccount: "Remove account",
   providerProfileTitle: "Lyra Agent Provider Profile",
   authHeaderLabel: "Auth Header",
-  roleModelsTitle: "Agent Role Models",
-  roleSwarmSubagentLabel: "Swarm / subagent",
-  roleReviewLabel: "Review",
-  roleJudgeLabel: "Judge",
-  roleMemoryLabel: "Memory",
-  roleAmbientLabel: "Ambient",
-  roleProviderDefaultPlaceholder: "provider default",
-  roleMemoryDefaultPlaceholder: "sidecar auto-select",
-  saveRoleModels: "Save role models",
   promptExperimentsTitle: "Prompt delivery",
   promptExperimentsDescription: "Experimental prompt token controls.",
   leanPromptDeliveryLabel: "Lean prompt delivery",
   statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
-  notificationsTitle: "Notifications",
-  notificationsDescription: "Configure notifications.",
-  desktopNotificationsLabel: "Desktop notifications",
-  ntfyTopicLabel: "ntfy topic",
-  ntfyServerLabel: "ntfy server",
-  emailNotificationsLabel: "Email notifications",
-  emailToLabel: "Email recipient",
-  emailSmtpHostLabel: "SMTP host",
-  emailSmtpPortLabel: "SMTP port",
-  emailFromLabel: "Sender email",
-  emailPasswordLabel: "SMTP password",
-  emailImapHostLabel: "IMAP host",
-  emailImapPortLabel: "IMAP port",
-  emailReplyLabel: "Email replies control Agent",
-  telegramNotificationsLabel: "Telegram notifications",
-  telegramBotTokenLabel: "Telegram bot token",
-  telegramChatIdLabel: "Telegram chat ID",
-  telegramReplyLabel: "Telegram replies control Agent",
-  discordNotificationsLabel: "Discord notifications",
-  discordBotTokenLabel: "Discord bot token",
-  discordChannelIdLabel: "Discord channel ID",
-  discordBotUserIdLabel: "Discord bot user ID",
-  discordReplyLabel: "Discord replies control Agent",
-  saveNotifications: "Save notifications",
   runtimeUnavailable: "Lyra Agent runtime bridge is unavailable.",
   fileEditorUnavailable: "Workbench file editor is unavailable.",
   configPathUnavailable: "Lyra Agent config path is unavailable.",
@@ -324,27 +291,10 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
           models: [{ id: "gpt-5" }],
         },
       },
-      roles: {
-        swarmModel: "gpt-5",
-        memoryModel: "mimo-v2.5-pro",
-        reviewModel: "gpt-5-mini",
-        judgeModel: "gpt-5",
-        ambientModel: "mimo-v2.5-pro",
-      },
       promptDelivery: {
         mode: "full",
         leanExperimental: false,
         openaiResponsesStatefulPromptContract: false,
-      },
-      notifications: {
-        desktopNotifications: true,
-        ntfyTopic: "lyra-alerts",
-        ntfyServer: "https://ntfy.sh",
-        emailEnabled: false,
-        emailSmtpPort: 587,
-        emailImapPort: 993,
-        telegramEnabled: false,
-        discordEnabled: false,
       },
     },
     commands: [
@@ -525,7 +475,6 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   switchAgentModel: vi.fn(),
   startAgentAccountLogin: vi.fn(),
   completeAgentAccountLogin: vi.fn(),
-  updateAgentRoles: vi.fn(),
   switchAgentAccount: vi.fn(),
   removeAgentAccount: vi.fn(),
   ...overrides,
@@ -958,7 +907,6 @@ describe("SettingsAiView", () => {
             leanExperimental: false,
             openaiResponsesStatefulPromptContract: false,
           },
-          notifications: {},
         },
         commands: [],
       },
@@ -1043,38 +991,6 @@ describe("SettingsAiView", () => {
     expect(openAgentConfigFile).not.toHaveBeenCalled();
   });
 
-  test("saves agent role model overrides", () => {
-    const updateAgentRoles = vi.fn();
-    const model = createModel({ updateAgentRoles });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    fireEvent.change(screen.getByLabelText("Swarm / subagent"), {
-      target: { value: "claude-opus-4-6" },
-    });
-    fireEvent.change(screen.getByLabelText("Review"), {
-      target: { value: "gpt-5-review" },
-    });
-    fireEvent.change(screen.getByLabelText("Judge"), {
-      target: { value: "gpt-5-judge" },
-    });
-    fireEvent.change(screen.getByLabelText("Memory"), {
-      target: { value: "mimo-v2.5-pro" },
-    });
-    fireEvent.change(screen.getByLabelText("Ambient"), {
-      target: { value: "gpt-5-ambient" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Save role models/ }));
-
-    expect(updateAgentRoles).toHaveBeenCalledWith({
-      swarmModel: "claude-opus-4-6",
-      reviewModel: "gpt-5-review",
-      judgeModel: "gpt-5-judge",
-      memoryModel: "mimo-v2.5-pro",
-      ambientModel: "gpt-5-ambient",
-    });
-  });
-
   test("toggles prompt delivery experiments through the Lyra Agent config bridge", () => {
     const updateAgentConfig = vi.fn();
     const model = createModel({ updateAgentConfig });
@@ -1126,42 +1042,6 @@ describe("SettingsAiView", () => {
       googleClientSecret: "client-secret",
       gmailAccessTier: "full",
     });
-  });
-
-  test("saves notification config through the Lyra Agent config bridge", () => {
-    const updateAgentConfig = vi.fn();
-    const model = createModel({ updateAgentConfig });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    fireEvent.change(screen.getByLabelText("ntfy topic"), {
-      target: { value: "agent-topic" },
-    });
-    fireEvent.click(screen.getByLabelText("Email notifications"));
-    fireEvent.change(screen.getByLabelText("Email recipient"), {
-      target: { value: "ops@example.com" },
-    });
-    fireEvent.change(screen.getByLabelText("SMTP host"), {
-      target: { value: "smtp.example.com" },
-    });
-    fireEvent.change(screen.getByLabelText("SMTP password"), {
-      target: { value: "smtp-secret" },
-    });
-    fireEvent.click(screen.getByLabelText("Telegram notifications"));
-    fireEvent.change(screen.getByLabelText("Telegram chat ID"), {
-      target: { value: "12345" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Save notifications/ }));
-
-    expect(updateAgentConfig).toHaveBeenCalledWith(expect.objectContaining({
-      ntfyTopic: "agent-topic",
-      emailEnabled: true,
-      emailTo: "ops@example.com",
-      emailSmtpHost: "smtp.example.com",
-      emailPassword: "smtp-secret",
-      telegramEnabled: true,
-      telegramChatId: "12345",
-    }));
   });
 
   test("shows Lyra Agent bridge errors inline", () => {

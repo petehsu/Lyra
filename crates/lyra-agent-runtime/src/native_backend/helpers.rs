@@ -53,6 +53,9 @@ pub(crate) fn touch_snapshot(snapshot: &mut Value) {
         .filter(|value| !value.is_null())
         .unwrap_or(Value::Null);
     snapshot["memory"] = memory;
+    if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
+        snapshot["tokenEstimate"] = json!(super::token_estimate::estimate_messages_tokens(messages));
+    }
 }
 
 pub(crate) fn touch_session(session: &mut NativeSession) {
@@ -75,6 +78,17 @@ pub(crate) fn iso_ms(value: &str) -> i64 {
 }
 
 pub(crate) fn emit_with_callback(callback: &Option<Arc<EventCallback>>, event: Value) {
+    if let Some(callback) = callback
+        && let Ok(payload) = serde_json::to_string(&event)
+    {
+        callback(payload);
+    }
+}
+
+pub(crate) fn emit_event(
+    callback: &Option<Arc<EventCallback>>,
+    event: crate::agent_event::AgentEvent,
+) {
     if let Some(callback) = callback
         && let Ok(payload) = serde_json::to_string(&event)
     {

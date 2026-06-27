@@ -118,6 +118,9 @@ export interface DataProviderValue {
   /** Reveal a local path in the Workbench without assuming it is an editable file. */
   revealPathInWorkbench(filePath: string): Promise<void>;
 
+  /** Open a directory in Lyra's built-in file manager (bypasses project-tree routing). */
+  openInFileManager(path: string): Promise<void>;
+
   /** Open or focus the rich plan review surface for the pending plan. */
   openPlanReview(plan: AgentPlanSnapshot): Promise<void>;
 
@@ -228,6 +231,15 @@ export interface DataProviderValue {
 
   /** Terminal tabs available for inline citation from the composer attach menu. */
   readonly terminalTabs: readonly import("../../../terminal-dock/types").TerminalDockTab[];
+
+  /** Pane-level state for a terminal dock tab (sourceAgentSessionId, cwd, etc.). */
+  getTerminalTabPanes(tabId: string): readonly import("../../../terminal-dock/types").TerminalDockPane[];
+
+  /** Close/kill a terminal tab everywhere (dock + workspace). */
+  closeTerminalTab(tabId: string): void;
+
+  /** Focus a terminal tab in the bottom terminal panel, showing the panel if hidden. */
+  focusTerminalTabInDock(tabId: string): void;
 
   /** Cancel the currently running turn when available. */
   cancelTurn(): Promise<void>;

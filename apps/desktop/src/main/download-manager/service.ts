@@ -4,6 +4,7 @@ import {
   shell,
   type BrowserWindow,
   type DownloadItem,
+  type Session,
   type WebContents
 } from "electron";
 
@@ -131,6 +132,7 @@ export const createDownloadManagerIpcBridge = ({
   readonly getWindow: () => BrowserWindow | null;
 }): DownloadManagerIpcBridge => {
   const sourcesByWebContentsId = new Map<number, DownloadSourceContext>();
+  const attachedDownloadSessions = new Set<Session>();
   let cachedSnapshot: DownloadManagerSnapshot = EMPTY_SNAPSHOT;
   let disposed = false;
 
@@ -415,6 +417,11 @@ export const createDownloadManagerIpcBridge = ({
         url: toOptionalString(webContents.getURL())
       });
       sourcesByWebContentsId.set(webContents.id, readContext());
+      const wcSession = webContents.session;
+      if (!attachedDownloadSessions.has(wcSession)) {
+        attachedDownloadSessions.add(wcSession);
+        wcSession.on("will-download", handleWillDownload);
+      }
       const updateContext = (): void => {
         if (webContents.isDestroyed()) {
           return;
@@ -441,6 +448,10 @@ export const createDownloadManagerIpcBridge = ({
       }
       disposed = true;
       session.defaultSession.off("will-download", handleWillDownload);
+      for (const wcSession of attachedDownloadSessions) {
+        wcSession.off("will-download", handleWillDownload);
+      }
+      attachedDownloadSessions.clear();
       unsubscribeRuntimeEvents();
       eventSender.dispose();
       for (const [channel] of handlers) {

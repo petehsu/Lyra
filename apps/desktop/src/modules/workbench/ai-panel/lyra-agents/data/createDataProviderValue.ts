@@ -19,7 +19,7 @@ import type {
   AgentRollbackPreviewResponse,
   AgentTranscriptCitation
 } from "../../../../../shared/agent";
-import type { TerminalDockTab } from "../../../terminal-dock/types";
+import type { TerminalDockPane, TerminalDockTab } from "../../../terminal-dock/types";
 import type { WorkspaceTab } from "../../../workspace-tabs/types";
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { ComposerInsertableCitation, ComposerSegment } from "../features/chat/message-citation";
@@ -52,6 +52,7 @@ export interface CreateDataProviderValueInput {
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
+  openInFileManager?: (path: string) => Promise<void>;
   openPlanReview?: (plan: AgentPlanSnapshot) => Promise<void>;
   openProjectTodo?: () => Promise<void>;
   openProjectPlanManager?: (view?: "plan" | "todo" | "both") => Promise<void>;
@@ -100,6 +101,9 @@ export interface CreateDataProviderValueInput {
   >;
   workspaceTabs?: readonly WorkspaceTab[];
   terminalTabs?: readonly TerminalDockTab[];
+  getTerminalTabPanes?: (tabId: string) => readonly TerminalDockPane[];
+  closeTerminalTab?: (tabId: string) => void;
+  focusTerminalTabInDock?: (tabId: string) => void;
   cancelTurn?: () => Promise<void>;
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
@@ -149,6 +153,7 @@ export function createDataProviderValue({
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
   revealPathInWorkbench = () => resolved,
+  openInFileManager = () => resolved,
   openPlanReview = () => resolved,
   openProjectTodo = () => resolved,
   openProjectPlanManager = () => resolved,
@@ -181,6 +186,9 @@ export function createDataProviderValue({
   pickFileFromFileManager = () => Promise.resolve(null),
   workspaceTabs = [],
   terminalTabs = [],
+  getTerminalTabPanes = () => [],
+  closeTerminalTab = () => undefined,
+  focusTerminalTabInDock = () => undefined,
   cancelTurn = () => resolved,
   previewRollback = () => Promise.resolve({
     sessionId: "",
@@ -229,6 +237,7 @@ export function createDataProviderValue({
     openUrlInWorkbench,
     openFileInWorkbench,
     revealPathInWorkbench,
+    openInFileManager,
     openPlanReview,
     openProjectTodo,
     openProjectPlanManager,
@@ -259,6 +268,9 @@ export function createDataProviderValue({
     pickFileFromFileManager,
     workspaceTabs,
     terminalTabs,
+    getTerminalTabPanes,
+    closeTerminalTab,
+    focusTerminalTabInDock,
     cancelTurn,
     previewRollback,
     rollbackMessage,

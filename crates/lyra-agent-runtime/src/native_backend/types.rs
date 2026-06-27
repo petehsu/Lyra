@@ -20,6 +20,7 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) active_ui_message_by_turn: HashMap<String, String>,
     pub(crate) event_callback: Option<Arc<EventCallback>>,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
+    pub(crate) active_compressions: HashSet<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -156,11 +157,7 @@ pub(crate) struct NativeConfig {
     #[serde(default)]
     pub(crate) providers: HashMap<String, NativeProviderProfile>,
     #[serde(default)]
-    pub(crate) roles: HashMap<String, String>,
-    #[serde(default)]
     pub(crate) accounts: Vec<NativeAccount>,
-    #[serde(default)]
-    pub(crate) notifications: Map<String, Value>,
     #[serde(default = "default_true")]
     pub(crate) proactive_enabled: bool,
     #[serde(default)]

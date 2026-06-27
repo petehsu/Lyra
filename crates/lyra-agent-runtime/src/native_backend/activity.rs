@@ -742,8 +742,6 @@ pub(crate) fn tool_label(name: &str, action: &str) -> String {
         ("skills", "activate") => "Activated Lyra skill",
         ("skills", "deactivate") => "Deactivated Lyra skill",
         ("mcp", _) => "Checked MCP capability",
-        ("lyra_design", "search_styles") => "Searched design references",
-        ("lyra_design", "get_style_details") => "Read design reference details",
         ("software", "list_capabilities") => "Listed Lyra software",
         ("software", "inspect_capability") => "Inspected Lyra software",
         ("software", "read_state") => "Read Lyra software state",
@@ -959,9 +957,6 @@ pub(crate) fn format_tool_output(name: &str, action: &str, value: &Value) -> Str
     if name == "memory" {
         return format_memory_output(action, value);
     }
-    if name == "lyra_design" {
-        return format_design_output(action, value);
-    }
     serde_json::to_string_pretty(value).unwrap_or_else(|_| String::new())
 }
 
@@ -1008,30 +1003,12 @@ pub(crate) fn execute_skill_state_change(name: &str, input: &Value) -> Result<Va
     }
 }
 
-pub(crate) fn native_skill_states(active_skills: &HashSet<String>) -> Vec<Value> {
-    ["lyra-design-research"]
-        .into_iter()
-        .filter_map(|skill_id| native_skill_state(skill_id, active_skills))
-        .collect()
+pub(crate) fn native_skill_states(_active_skills: &HashSet<String>) -> Vec<Value> {
+    Vec::new()
 }
 
-pub(crate) fn native_skill_state(skill_id: &str, active_skills: &HashSet<String>) -> Option<Value> {
-    match skill_id {
-        "lyra-design-research" => Some(json!({
-            "id": "lyra-design-research",
-            "name": "Lyra Design Research",
-            "version": "1.0.0",
-            "description": "Use Lyra design reference tools before creating or changing UI screens.",
-            "prompt": "For design or UI work, call Lyra design reference tools first, then include a concise Design Research Summary before proposing or editing UI.",
-            "permissions": ["design.reference.read"],
-            "toolCapabilities": [
-                { "providerId": "tool-fs", "toolPath": "/tools/design/search_styles" },
-                { "providerId": "tool-fs", "toolPath": "/tools/design/get_style_details" }
-            ],
-            "active": active_skills.contains(skill_id),
-        })),
-        _ => None,
-    }
+pub(crate) fn native_skill_state(_skill_id: &str, _active_skills: &HashSet<String>) -> Option<Value> {
+    None
 }
 
 pub(crate) fn format_skill_output(action: &str, value: &Value) -> String {
@@ -1059,38 +1036,6 @@ pub(crate) fn format_skill_output(action: &str, value: &Value) -> String {
             .and_then(Value::as_str)
             .map(|id| format!("Deactivated Lyra skill: {id}"))
             .unwrap_or_else(|| "Deactivated Lyra skill.".to_string()),
-        _ => serde_json::to_string_pretty(value).unwrap_or_default(),
-    }
-}
-
-pub(crate) fn format_design_output(action: &str, value: &Value) -> String {
-    match action {
-        "search_styles" => {
-            let styles = value
-                .get("styles")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            let names = styles
-                .iter()
-                .filter_map(|style| style.get("title").and_then(Value::as_str))
-                .collect::<Vec<_>>();
-            if names.is_empty() {
-                "No Lyra design references matched.".to_string()
-            } else {
-                format!(
-                    "Lyra design references: {}. Inspect the closest style before designing.",
-                    names.join(", ")
-                )
-            }
-        }
-        "get_style_details" => {
-            let title = value
-                .pointer("/style/title")
-                .and_then(Value::as_str)
-                .unwrap_or("Lyra design reference");
-            format!("{title} details loaded. Include Design Research Summary before designing.")
-        }
         _ => serde_json::to_string_pretty(value).unwrap_or_default(),
     }
 }
@@ -1775,6 +1720,28 @@ pub(crate) fn emit_context_trimmed(session_id: &str, detail: Value) {
             "kind": "contextTrimmed",
             "sessionId": session_id,
             "detail": detail,
+        }),
+    );
+}
+
+pub(crate) fn emit_context_compression_progress(
+    session_id: &str,
+    status: &str,
+    token_before: Option<usize>,
+    token_after: Option<usize>,
+) {
+    let callback = state()
+        .lock()
+        .ok()
+        .and_then(|state| state.event_callback.clone());
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "contextCompressionProgress",
+            "sessionId": session_id,
+            "status": status,
+            "tokenBefore": token_before,
+            "tokenAfter": token_after,
         }),
     );
 }

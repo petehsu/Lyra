@@ -25,7 +25,6 @@ use crate::{
     AgentRuntimeBackend, AgentRuntimeError, AgentRuntimeResult, EventCallback,
     HostCapabilityDispatcher, ProviderTransportKind,
     context_builder::{ContextBuilder, ProviderContextOptions},
-    design_tools,
     prompt_policy::{self, PersonaContext, PromptAccounting, PromptPolicyInput},
 };
 
@@ -55,6 +54,7 @@ pub mod inline_images;
 mod memory;
 mod memory_audit_export;
 mod memory_autonomy;
+mod memory_compress;
 mod memory_derived_fields;
 mod memory_embedding_config;
 mod memory_event_trigger;
@@ -65,7 +65,6 @@ mod memory_retrieval_policy;
 mod memory_stability_policy;
 mod memory_store;
 mod memory_sync;
-mod memory_token_checkpoint;
 mod network;
 pub mod page_citations;
 mod permission_policy;
@@ -102,8 +101,8 @@ mod tests;
 use self::{
     actions::*, activity::*, clarifications::*, context::*, file_citations::*, helpers::*,
     inline_images::*, memory::*, memory_audit_export::*, memory_autonomy::*,
-    memory_derived_fields::*, memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
-    memory_retrieval_policy::*, memory_store::*, memory_sync::*, memory_token_checkpoint::*,
+    memory_compress::*, memory_derived_fields::*, memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
+    memory_retrieval_policy::*, memory_store::*, memory_sync::*,
     network::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
     plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
@@ -183,7 +182,6 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.models.enable" => set_model_enabled(payload),
             "agent.models.delete" => delete_model(payload),
             "agent.models.refresh" => refresh_models(payload),
-            "agent.roles.update" => update_roles(payload),
             "agent.accounts.list" => list_accounts(),
             "agent.accounts.login" => login_account(payload),
             "agent.accounts.loginProviders" => login_providers(),

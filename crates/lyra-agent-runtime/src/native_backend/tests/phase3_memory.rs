@@ -61,26 +61,6 @@ fn ranked_injection_uses_layered_depth_markers() {
 }
 
 #[test]
-fn memory_trigger_tables_accept_turn_and_tool_events() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let event = memory_trigger_from_turn(
-        "session-trigger",
-        "turn-trigger",
-        "remember this project uses Rust",
-        Some("ok"),
-    );
-    record_memory_trigger(temp.path(), &event).expect("record trigger");
-    let job_id = enqueue_memory_job(temp.path(), &event).expect("enqueue job");
-    let job = claim_next_memory_job(temp.path())
-        .expect("claim job")
-        .expect("pending job");
-    assert_eq!(job.id, job_id);
-    assert_eq!(job.job_type, EVENT_TURN_COMPLETED);
-    finish_memory_job(temp.path(), &job.id, "completed", json!({ "ok": true }))
-        .expect("finish job");
-}
-
-#[test]
 fn frozen_record_blocks_auto_overwrite() {
     let temp = tempfile::tempdir().expect("tempdir");
     let existing = create_long_term_memory(

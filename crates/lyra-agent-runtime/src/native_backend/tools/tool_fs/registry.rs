@@ -18,7 +18,6 @@ impl RuntimeToolManifestProvider {
                 "web",
                 "todo",
                 "memory",
-                "design",
                 "skills",
                 "mcp",
                 "software",
@@ -29,8 +28,7 @@ impl RuntimeToolManifestProvider {
         )];
         for (name, domains) in [
             ("terminal_action_specs", &["terminal"][..]),
-            ("design_tools", &["design"][..]),
-            ("skill_registry", &["skills"][..]),
+        ("skill_registry", &["skills"][..]),
             ("mcp_current_state", &["mcp"][..]),
             ("host_static_capabilities", &["workbench", "browser"][..]),
         ] {

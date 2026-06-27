@@ -16,7 +16,6 @@ import type {
   AgentModelSwitchRequest,
   AgentProviderCatalogSnapshot,
   AgentProviderProfileSaveRequest,
-  AgentRolesUpdateRequest,
   LyraDesktopApi,
 } from "../../../shared/desktop-bridge";
 import type {
@@ -304,20 +303,6 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi, refreshAgent]);
 
-  const updateAgentRoles = useCallback(async (request: AgentRolesUpdateRequest) => {
-    if (desktopApi?.agent === undefined) return;
-    setIsSaving(true);
-    try {
-      setAgentConfig(await desktopApi.agent.updateAgentRoles(request));
-      await refreshAgent();
-      setErrorMessage(null);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSaving(false);
-    }
-  }, [desktopApi, refreshAgent]);
-
   const switchAgentAccount = useCallback(async (request: AgentAccountRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
@@ -426,7 +411,6 @@ export const useSettingsAiModel = ({
     switchAgentModel,
     startAgentAccountLogin,
     completeAgentAccountLogin,
-    updateAgentRoles,
     switchAgentAccount,
     removeAgentAccount,
   };
