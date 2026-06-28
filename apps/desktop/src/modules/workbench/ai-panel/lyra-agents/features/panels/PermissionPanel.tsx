@@ -1,7 +1,7 @@
 import { Terminal, FileText, Globe, AlertTriangle } from "lucide-react";
 import { ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { useState, type CSSProperties } from "react";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { AppButton } from "@renderer/ui/components";
 
 export interface PermissionRequest {

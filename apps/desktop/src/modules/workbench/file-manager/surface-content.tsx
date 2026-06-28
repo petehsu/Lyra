@@ -1,3 +1,5 @@
+import { AppErrorState } from "@renderer/ui/components";
+
 import { FileManagerDirectoryContent } from "./surface-directory";
 import { FileManagerDownloadsContent } from "./surface-downloads";
 import { FileManagerFavoritesContent, FileManagerHomeContent } from "./surface-home";
@@ -30,9 +32,10 @@ export const FileManagerContent = ({
     ) : null}
 
     {renderModel.body.kind === "error" ? (
-      <div className="lyra-file-manager-empty-state lyra-file-manager-empty-state-error">
-        {renderModel.body.message ?? labels.unavailable}
-      </div>
+      <AppErrorState
+        className="lyra-file-manager-empty-state"
+        title={renderModel.body.message ?? labels.unavailable}
+      />
     ) : null}
 
     <FileManagerHomeContent

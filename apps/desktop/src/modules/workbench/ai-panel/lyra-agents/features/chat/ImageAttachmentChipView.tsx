@@ -1,5 +1,8 @@
 import type { AgentImageAttachment } from "../../core/types";
-import { CITATION_CHIP_ICON_SVGS } from "./citation-chip-dom";
+import {
+  ComposerChipIcon,
+  composerChipIconKindForImage
+} from "./composer-chip-icon";
 import { imageAttachmentChipKind, imageAttachmentPreview, imageChipAriaLabel } from "./composer-image";
 
 type ImageAttachmentChipViewProps = {
@@ -11,11 +14,6 @@ export const ImageAttachmentChipView = ({ image, onClick }: ImageAttachmentChipV
   const kind = imageAttachmentChipKind(image);
   const preview = imageAttachmentPreview(image);
   const interactive = onClick !== undefined;
-  const icon = kind === "workspace"
-    ? CITATION_CHIP_ICON_SVGS.imageBrowser
-    : kind === "window"
-      ? CITATION_CHIP_ICON_SVGS.imageWindow
-      : CITATION_CHIP_ICON_SVGS.imageFile;
 
   return (
     <span
@@ -35,11 +33,7 @@ export const ImageAttachmentChipView = ({ image, onClick }: ImageAttachmentChipV
         onClick();
       } : undefined}
     >
-      <span
-        className="lyra-agents-citation-chip-icon"
-        aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: icon }}
-      />
+      <ComposerChipIcon kind={composerChipIconKindForImage(image)} />
       <span className="lyra-agents-citation-chip-preview-wrap">
         <span className="lyra-agents-citation-chip-preview">{preview}</span>
       </span>

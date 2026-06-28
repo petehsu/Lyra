@@ -164,6 +164,18 @@
   --lyra-list-row-pad-x: var(--lyra-space-10);
   --lyra-list-row-pad-y: var(--lyra-space-10);
 
+  --lyra-app-sidebar-rail-min-w: var(--lyra-unit-176);
+  --lyra-app-sidebar-rail-max-w: var(--lyra-unit-360);
+  --lyra-app-sidebar-rail-w: var(--lyra-unit-220);
+  --lyra-app-sidebar-rail-pad-y: var(--lyra-space-12);
+  --lyra-app-sidebar-rail-pad-x: var(--lyra-space-8);
+  --lyra-app-sidebar-rail-gap: var(--lyra-space-12);
+  --lyra-app-sidebar-row-h: var(--lyra-control-h-28);
+  --lyra-app-sidebar-row-gap: var(--lyra-space-2);
+  --lyra-app-sidebar-row-pad-x: var(--lyra-space-8);
+  --lyra-app-sidebar-row-radius: var(--lyra-radius-8);
+  --lyra-app-sidebar-icon-size: var(--lyra-icon-size-14);
+
   --lyra-surface-radius-sm: var(--lyra-radius-8);
   --lyra-surface-radius-md: var(--lyra-radius-10);
   --lyra-surface-radius-lg: var(--lyra-radius-12);
@@ -211,6 +223,12 @@
   --lyra-size-results-sidebar-w: 320px;
   --lyra-size-notification-preview-min-w: 180px;
   --lyra-size-notification-preview-max-w: 360px;
+  --lyra-size-content-readable-w: 760px;
+  --lyra-size-popover-sm-w: 400px;
+  --lyra-size-popover-md-h: 560px;
+  --lyra-size-diagram-min-w: 520px;
+  --lyra-size-diagram-max-h: 720px;
+  --lyra-effect-inset-fill: 9999px;
 
   --lyra-z-base: 0;
   --lyra-z-floating: 18;

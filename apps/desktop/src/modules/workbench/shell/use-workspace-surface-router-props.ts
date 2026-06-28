@@ -1,4 +1,5 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { FileManagerFavorite } from "../../../shared/file-manager";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type {
   FileEditorChangeReviewItem,
@@ -62,6 +63,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
   readonly labels: WorkbenchLabels;
   readonly softwareCapabilities: SoftwareCapabilitiesRegistryModel;
   readonly onOpenFileFromManager: (filePath: string) => void;
+  readonly onOpenFavoriteFromFileManager?: (favorite: FileManagerFavorite) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly onOpenNotificationSource: (notificationId: string) => void;
   readonly onRequestClearNotifications: () => void;
@@ -121,6 +123,7 @@ export const useWorkspaceSurfaceRouterProps = ({
   labels,
   softwareCapabilities,
   onOpenFileFromManager,
+  onOpenFavoriteFromFileManager,
   onRevealPathInFileManager,
   onOpenNotificationSource,
   onRequestClearNotifications,
@@ -184,6 +187,9 @@ export const useWorkspaceSurfaceRouterProps = ({
     onSearchResultsSourceFilterChange: preferencesModel.setSearchResultsSourceFilter,
     settings,
     onOpenFileFromManager,
+    ...(onOpenFavoriteFromFileManager === undefined
+      ? {}
+      : { onOpenFavoriteFromFileManager }),
     onRevealPathInFileManager,
     i18n: labels.workspaceI18n,
     notifications: {

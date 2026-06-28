@@ -20,7 +20,6 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
-  Loader2,
   File,
   Terminal,
   Hammer,
@@ -51,14 +50,6 @@ export const ChevronIcon = ({ open }: { open: boolean }) => (
     }}
     aria-hidden
   />
-);
-
-export const ThinkingIndicator = () => (
-  <span className="lyra-agents-thinking-indicator" aria-hidden="true">
-    <span />
-    <span />
-    <span />
-  </span>
 );
 
 export const ToolExecutionIndicator = () => (
@@ -238,15 +229,6 @@ export const FileIcon = () => (
 
 export const ErrorCircleIcon = () => (
   <XCircle size={14} strokeWidth={1.8} aria-hidden />
-);
-
-export const SpinnerIcon = () => (
-  <Loader2
-    size={14}
-    strokeWidth={2}
-    className="lyra-agents-spinner"
-    aria-hidden
-  />
 );
 
 export const CheckCircleIcon = () => (

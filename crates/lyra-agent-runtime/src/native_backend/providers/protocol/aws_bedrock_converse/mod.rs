@@ -190,6 +190,7 @@ fn parse_foundation_models(body: &Value) -> Vec<NativeProviderModel> {
                 .get("responseStreamingSupported")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+            supports_reasoning_effort: None,
             enabled: true,
         })
         .collect::<Vec<_>>();

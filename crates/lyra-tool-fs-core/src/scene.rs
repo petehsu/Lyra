@@ -133,6 +133,7 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
             "workbench_list_tabs",
             "workbench_read_workspace",
             "workbench_read_tab",
+            "workbench_list_favorites",
             "workbench_capture_visual_evidence",
             "workbench_list_terminals",
             "workbench_activate_tab",
@@ -150,6 +151,7 @@ pub(crate) fn pinned_handle_names(scene: ToolScene) -> Vec<&'static str> {
         ToolScene::General => vec![
             "workbench_list_tabs",
             "workbench_read_workspace",
+            "workbench_list_favorites",
             "memory_search",
             "todo_read",
         ],

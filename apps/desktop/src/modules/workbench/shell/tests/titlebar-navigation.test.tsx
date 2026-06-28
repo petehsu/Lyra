@@ -287,8 +287,8 @@ describe("TitlebarNavigation", () => {
       );
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page result" }));
-    fireEvent.click(screen.getByRole("button", { name: "Previous page result" }));
+    fireEvent.click(screen.getByRole("button", { name: /Next page result|下一页结果/u }));
+    fireEvent.click(screen.getByRole("button", { name: /Previous page result|上一页结果/u }));
     expect(onPageFindNext).toHaveBeenCalledTimes(1);
     expect(onPageFindPrevious).toHaveBeenCalledTimes(1);
     expect(onPageFindClose).not.toHaveBeenCalled();

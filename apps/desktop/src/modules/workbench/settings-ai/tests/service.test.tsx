@@ -87,13 +87,6 @@ const labels: SettingsAiLabels = {
   callbackInputLabel: "Callback URL or code",
   callbackInputPlaceholder: "Paste callback",
   loginCallbackDescription: "Paste the callback from the browser.",
-  gmailLoginTitle: "Google/Gmail Tool Access",
-  gmailLoginDescription: "Configure Gmail tool access.",
-  gmailClientIdLabel: "Google OAuth Client ID",
-  gmailClientSecretLabel: "Google OAuth Client Secret",
-  gmailAccessTierLabel: "Gmail Access",
-  gmailAccessReadOnly: "Read and draft",
-  gmailAccessFull: "Full Gmail access",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
   localProviderTitle: "Local Models",
@@ -326,18 +319,6 @@ const agentLoginProviders = {
       statusMethod: "OAuth",
       detail: "Claude login",
       recommended: true,
-      configured: false,
-      state: "notConfigured",
-      requiresCallback: true,
-      requiresApiKey: false,
-    },
-    {
-      id: "google",
-      displayName: "Google/Gmail",
-      authKind: "OAuth",
-      statusMethod: "OAuth",
-      detail: "Gmail tool access",
-      recommended: false,
       configured: false,
       state: "notConfigured",
       requiresCallback: true,
@@ -677,7 +658,7 @@ describe("useSettingsAiModel", () => {
     const { result } = renderModel(api);
 
     await waitFor(() => {
-      expect(result.current.agentLoginProviders?.providers).toHaveLength(2);
+      expect(result.current.agentLoginProviders?.providers).toHaveLength(1);
     });
 
     await act(async () => {

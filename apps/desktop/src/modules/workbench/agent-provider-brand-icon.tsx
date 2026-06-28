@@ -44,11 +44,19 @@ type AgentProviderBrandIconProps = {
 };
 
 type BrandMatcher = {
-  readonly icon: IconType;
+  readonly icon: AgentProviderBrandIconSource;
   readonly match: readonly string[];
 };
 
 type SpecialBrand = "mimo";
+
+type AgentProviderBrandIconSource = IconType & {
+  readonly BrandColor?: IconType;
+  readonly Color?: IconType;
+  readonly colorPrimary?: string;
+};
+
+type BrandLuma = "dark" | "light" | "unknown";
 
 // Mirrors the XiaomiMiMo Mono icon from @lobehub/icons 5.x. The current desktop
 // app is React 18, while that package line declares React 19 peers.
@@ -75,7 +83,7 @@ const BRAND_MATCHERS: readonly BrandMatcher[] = [
   { icon: Anthropic, match: ["anthropic"] },
   { icon: Claude, match: ["claude"] },
   { icon: Gemini, match: ["gemini", "vertex"] },
-  { icon: Google, match: ["google", "gmail"] },
+  { icon: Google, match: ["google"] },
   { icon: Ollama, match: ["ollama"] },
   { icon: LmStudio, match: ["lmstudio", "lm-studio", "lm studio"] },
   { icon: Bedrock, match: ["bedrock", "aws"] },
@@ -151,7 +159,7 @@ const getInitials = (label: string | null | undefined): string => {
 
 export const resolveAgentProviderBrandIcon = (
   props: AgentProviderBrandIconProps
-): IconType | null => {
+): AgentProviderBrandIconSource | null => {
   const searchText = getSearchText(props);
   return BRAND_MATCHERS.find((matcher) =>
     matcher.match.some((keyword) => searchText.includes(normalize(keyword)))
@@ -163,6 +171,33 @@ const resolveSpecialBrand = (props: AgentProviderBrandIconProps): SpecialBrand |
   return SPECIAL_BRAND_MATCHERS.find((matcher) =>
     matcher.match.some((keyword) => searchText.includes(normalize(keyword)))
   )?.brand ?? null;
+};
+
+const resolveRenderableBrandIcon = (Icon: AgentProviderBrandIconSource): IconType =>
+  Icon.BrandColor ?? Icon.Color ?? Icon;
+
+const resolveMonoBrandColor = (Icon: AgentProviderBrandIconSource): string | undefined => {
+  if (Icon.BrandColor !== undefined || Icon.Color !== undefined) {
+    return undefined;
+  }
+  const color = Icon.colorPrimary?.trim();
+  return color === undefined || color.length === 0 ? undefined : color;
+};
+
+const resolveBrandLuma = (color: string | undefined): BrandLuma => {
+  const match = color?.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/iu);
+  if (match === null || match === undefined) {
+    return "unknown";
+  }
+  const hex = match[1] ?? "";
+  const normalized = hex.length === 3
+    ? [...hex].map((value) => `${value}${value}`).join("")
+    : hex;
+  const [red, green, blue] = [0, 2, 4].map((offset) =>
+    Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255
+  );
+  const luma = 0.2126 * (red ?? 0) + 0.7152 * (green ?? 0) + 0.0722 * (blue ?? 0);
+  return luma < 0.5 ? "dark" : "light";
 };
 
 export const AgentProviderBrandIcon = ({
@@ -199,9 +234,20 @@ export const AgentProviderBrandIcon = ({
   }
 
   if (Icon !== null) {
+    const RenderIcon = resolveRenderableBrandIcon(Icon);
+    const monoBrandColor = resolveMonoBrandColor(Icon);
     return (
-      <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
-        <Icon size={size} aria-hidden="true" focusable="false" />
+      <span
+        className={classNames}
+        data-lyra-brand-luma={resolveBrandLuma(monoBrandColor)}
+        title={label ?? provider ?? providerId ?? undefined}
+      >
+        <RenderIcon
+          size={size}
+          aria-hidden="true"
+          focusable="false"
+          style={monoBrandColor === undefined ? undefined : { color: monoBrandColor }}
+        />
       </span>
     );
   }

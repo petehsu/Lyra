@@ -2,11 +2,17 @@ import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
 
+// ponytail: 首次启动检测 OS locale；已保存的偏好通过 preferences/service.ts localStorage 优先覆盖
+const detectInitialLocale = (): WorkbenchLocale => {
+  if (typeof navigator === "undefined") return "zh-CN";
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+};
+
 const docsEntryAddress =
   import.meta.env.VITE_LYRA_DOCS_ENTRY_ADDRESS ?? "http://localhost:5174/docs";
 
 export const WORKBENCH_CONFIG = {
-  locale: "zh-CN" as WorkbenchLocale,
+  locale: detectInitialLocale() as WorkbenchLocale,
   theme: "lyra-system" as WorkbenchThemeId,
   uiPackId: "classic" as WorkbenchUiPackId,
   browser: {

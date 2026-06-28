@@ -20,7 +20,7 @@ import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import type { ChatMessage } from "../../core/types";
 import { APP_CONFIG } from "../../core/config";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import {
   getIsLayoutResizing,

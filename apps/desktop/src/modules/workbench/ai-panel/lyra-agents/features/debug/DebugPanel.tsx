@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bug } from "lucide-react";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { AppButton, AppCheckbox } from "@renderer/ui/components";
 
 /**

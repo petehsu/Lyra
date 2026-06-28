@@ -10,12 +10,14 @@ describe("panel-layout-shell-vars", () => {
     const vars = buildPanelLayoutCssVars({
       leftWidth: 320,
       bottomHeight: 200,
+      appSidebarWidth: 240,
       isLeftPanelVisible: false,
       isBottomPanelVisible: true
     });
 
     expect(vars["--left-width"]).toBe("0px");
     expect(vars["--bottom-height"]).toBe("200px");
+    expect(vars["--lyra-app-sidebar-rail-w"]).toBe("240px");
   });
 
   test("applyPanelLayoutCssVars writes custom properties on the shell root", () => {
@@ -25,6 +27,7 @@ describe("panel-layout-shell-vars", () => {
       buildPanelLayoutCssVars({
         leftWidth: 280,
         bottomHeight: 160,
+        appSidebarWidth: 220,
         isLeftPanelVisible: true,
         isBottomPanelVisible: true
       })

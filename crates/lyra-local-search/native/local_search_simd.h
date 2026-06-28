@@ -23,6 +23,13 @@
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define LYRA_LS_X86 1
 #include <immintrin.h>
+#if defined(_WIN32)
+#if defined(__GNUC__)
+#include <cpuid.h>
+#else
+#include <intrin.h>
+#endif
+#endif
 #endif
 
 #if defined(__aarch64__) || defined(__ARM_NEON) || defined(_M_ARM64)
@@ -61,7 +68,17 @@ static inline bool lyra_ls_cpu_has_avx2() {
     }
     return value != 0;
 #elif defined(_WIN32)
-#include <intrin.h>
+#if defined(__GNUC__)
+    unsigned int eax = 0;
+    unsigned int ebx = 0;
+    unsigned int ecx = 0;
+    unsigned int edx = 0;
+    if (__get_cpuid_max(0, nullptr) < 7) {
+        return false;
+    }
+    __cpuid_count(7, 0, eax, ebx, ecx, edx);
+    return (ebx & (1u << 5)) != 0;
+#else
     int cpu_info[4] = {0, 0, 0, 0};
     __cpuid(cpu_info, 0);
     if (cpu_info[0] < 7) {
@@ -69,6 +86,7 @@ static inline bool lyra_ls_cpu_has_avx2() {
     }
     __cpuidex(cpu_info, 7, 0);
     return (cpu_info[1] & (1 << 5)) != 0;
+#endif
 #else
     return __builtin_cpu_supports("avx2");
 #endif

@@ -150,6 +150,15 @@ const DISALLOWED_WORKBENCH_INTRINSIC_CONTROLS = new Set([
   "textarea"
 ]);
 
+const APPROVED_DESKTOP_ICON_MODULES = new Set([
+  "lucide-react",
+  "@lobehub/icons/es/icons",
+  "@lobehub/icons/es/types"
+]);
+
+const ICON_PACKAGE_MODULE_PATTERN =
+  /^(?:lucide-react|@lobehub\/icons(?:\/|$)|react-icons(?:\/|$)|@heroicons(?:\/|$)|@phosphor-icons(?:\/|$)|phosphor-react$|@tabler\/icons(?:-|\/|$)|@remixicon\/react$|@iconify\/react$|@radix-ui\/react-icons$|@mui\/icons-material(?:\/|$)|feather-icons(?:\/|$)|material-icons(?:\/|$))/;
+
 const selectorRules: readonly SelectorRule[] = [
   {
     selector: ".lyra-settings-nav-item:hover",
@@ -253,7 +262,7 @@ const selectorRules: readonly SelectorRule[] = [
   },
   {
     selector: ".lyra-global-dialog-action-primary",
-    required: [/color:\s*var\(--lyra-text-primary\)\s*;/],
+    required: [/color:\s*var\(--lyra-app-primary-button-fg\)\s*;/],
     forbidden: [/var\(--lyra-(?:text-accent|line-focused|accent-primary)\)/]
   },
   {
@@ -1032,6 +1041,13 @@ export const scanWorkbenchDesignContracts = (filePath: string, text: string): st
     violations.push(`${relativePath}:1 AI rich content diagrams must use neutral line tokens, not focused accent tokens.`);
   }
 
+  if (
+    /apps\/desktop\/src\/modules\/workbench\/ai-panel\/lyra-agents\/features\/chat\/(?:citation-chip-dom|.*ChipView)\.tsx?$/.test(normalizedPath)
+    && /CITATION_CHIP_ICON_SVGS|dangerouslySetInnerHTML|\.innerHTML\s*=/.test(text)
+  ) {
+    violations.push(`${relativePath}:1 Citation and attachment chips must use the shared Lucide composer-chip-icon registry, not inline SVG strings.`);
+  }
+
   return violations;
 };
 
@@ -1066,6 +1082,12 @@ export const scanUiImportBoundaries = (filePath: string, text: string): string[]
     node: ts.ImportDeclaration | ts.ExportDeclaration,
     moduleSpecifier: string
   ): void => {
+    if (
+      ICON_PACKAGE_MODULE_PATTERN.test(moduleSpecifier)
+      && APPROVED_DESKTOP_ICON_MODULES.has(moduleSpecifier) === false
+    ) {
+      pushViolation(node, "Desktop icon imports are limited to lucide-react, plus @lobehub/icons/es/icons for provider brand marks.");
+    }
     if (moduleSpecifier.startsWith("@radix-ui/") && isPrimitiveLayer === false) {
       pushViolation(node, "Radix primitives must be wrapped inside apps/desktop/src/renderer/ui/primitives before business code consumes them.");
     }

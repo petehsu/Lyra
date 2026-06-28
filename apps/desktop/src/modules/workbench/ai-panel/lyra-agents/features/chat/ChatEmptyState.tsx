@@ -11,7 +11,7 @@ import { useRef } from "react";
 import { AppButton } from "@renderer/ui/components";
 import { LYRA_ASCII_LOGO } from "./ascii-logo";
 import { useAsciiFlicker } from "./use-ascii-flicker";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 
 export function ChatEmptyState({
   projectName,

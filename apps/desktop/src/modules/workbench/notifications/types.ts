@@ -98,7 +98,6 @@ export type NotificationCenterLabels = {
   readonly title: string;
   readonly listTitle: string;
   readonly emptyTitle: string;
-  readonly emptyDescription: string;
   readonly markAllRead: string;
   readonly clearAll: string;
   readonly openSource: string;

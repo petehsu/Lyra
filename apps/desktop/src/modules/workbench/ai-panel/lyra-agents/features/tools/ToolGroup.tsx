@@ -10,7 +10,7 @@ import {
 import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { ToolDetails } from "./ToolDetails";
 import { useFoldAnchorVisible } from "../../hooks/useFoldAnchorVisible";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { AppButton } from "@renderer/ui/components";
 import { useData } from "../../data/DataProvider";
 import {

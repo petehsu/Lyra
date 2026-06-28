@@ -30,6 +30,7 @@ pub(crate) fn discovered_model(
         supports_image_input: false,
         supports_tool_calling,
         supports_streaming,
+        supports_reasoning_effort: None,
         enabled: true,
     }
 }
@@ -232,6 +233,7 @@ mod tests {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }];
         let discovered = vec![discovered_model(

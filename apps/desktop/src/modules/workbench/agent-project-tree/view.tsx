@@ -382,7 +382,6 @@ export const AgentProjectTreeSurface = ({
           <AppEmptyState
             className="lyra-agent-project-tree-empty"
             title={labels.selectFileTitle}
-            description={labels.selectFileDescription}
           />
         ) : (
           <FileEditorSurface

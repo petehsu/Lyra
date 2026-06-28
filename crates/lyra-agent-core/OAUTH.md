@@ -35,8 +35,8 @@ Legacy `JCODE_*` variables are retained as internal compatibility fallbacks.
 ## Providers
 
 Claude, OpenAI/Codex, Azure OpenAI, Gemini, Cursor, Copilot, Antigravity,
-Google/Gmail, OpenRouter, and OpenAI-compatible profiles should be added or
-refreshed from Lyra Agent settings.
+OpenRouter, and OpenAI-compatible profiles should be added or refreshed from
+Lyra Agent settings.
 
 For OAuth providers, Lyra Agent opens the provider authorization page and waits
 for the local callback. If the browser callback fails, use the settings page's
@@ -58,5 +58,3 @@ translated or rebranded.
   account has access to the Azure OpenAI resource.
 - If Gemini Workspace entitlement fails, set `GOOGLE_CLOUD_PROJECT` or
   `GOOGLE_CLOUD_PROJECT_ID` and retry.
-- If Google/Gmail needs a broader scope, upgrade access from Lyra Agent
-  settings.

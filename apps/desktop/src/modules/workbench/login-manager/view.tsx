@@ -1,6 +1,7 @@
 import {
   AppBadge,
   AppButton,
+  AppEmptyState,
   AppIconButton,
   AppInput,
   AppObjectRow,
@@ -57,6 +58,7 @@ import type {
   LoginManagerSnapshot
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { formatMediumDateTime } from "@workbench/i18n";
 import type { LoginManagerSurfaceProps } from "./types";
 
 type TabMode = "sessions" | "credentials" | "review";
@@ -167,13 +169,7 @@ const formatTime = (value?: string): string => {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(date);
+  return formatMediumDateTime(date.getTime());
 };
 
 const sourceLabel = (
@@ -247,17 +243,11 @@ const SourceBadge = ({
 );
 
 const EmptyState = ({
-  title,
-  description
+  title
 }: {
   readonly title: string;
-  readonly description: string;
 }) => (
-  <div className="lyra-login-manager-empty">
-    <KeyRound size={20} />
-    <strong>{title}</strong>
-    <span>{description}</span>
-  </div>
+  <AppEmptyState className="lyra-login-manager-empty" title={title} />
 );
 
 export const LoginManagerSurface = ({
@@ -643,7 +633,6 @@ export const LoginManagerSurface = ({
             filteredCredentials.length === 0 ? (
               <EmptyState
                 title={labels.emptyCredentialsTitle}
-                description={labels.emptyCredentialsDescription}
               />
             ) : filteredCredentials.map((credential) => (
               <AppObjectRow
@@ -665,7 +654,6 @@ export const LoginManagerSurface = ({
           ) : filteredSessions.length === 0 ? (
             <EmptyState
               title={labels.emptySessionsTitle}
-              description={labels.emptySessionsDescription}
             />
           ) : filteredSessions.map((session) => (
             <AppObjectRow
@@ -749,7 +737,6 @@ export const LoginManagerSurface = ({
               filteredCredentials.length === 0 ? (
                 <EmptyState
                   title={labels.emptyCredentialsTitle}
-                  description={labels.emptyCredentialsDescription}
                 />
               ) : filteredCredentials.map((credential) => (
                 <AppObjectRow
@@ -771,7 +758,6 @@ export const LoginManagerSurface = ({
             ) : filteredSessions.length === 0 ? (
               <EmptyState
                 title={labels.emptySessionsTitle}
-                description={labels.emptySessionsDescription}
               />
             ) : filteredSessions.map((session) => (
               <AppObjectRow
@@ -797,7 +783,6 @@ export const LoginManagerSurface = ({
           {selectedItem === null ? (
             <EmptyState
               title={mode === "credentials" ? labels.emptyCredentialsTitle : labels.emptySessionsTitle}
-              description={mode === "credentials" ? labels.emptyCredentialsDescription : labels.emptySessionsDescription}
             />
           ) : selectedItem.kind === "session" ? (
             <article className="lyra-login-manager-detail-panel">

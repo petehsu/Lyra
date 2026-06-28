@@ -3,7 +3,7 @@ import type {
   AgentTranscriptCitation,
   AgentTranscriptCitationExcerptKind
 } from "../../../../../../shared/agent";
-import { formatMessage, t } from "../../core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 import type { ChatMessage } from "../../core/types";
 import type { ComposerImageSegment } from "./composer-image";
 import { imageAttachmentMarker, orphanInlineImageAttachment } from "./composer-image";
@@ -199,7 +199,8 @@ export const hasComposerContent = (segments: readonly ComposerSegment[]): boolea
       : segment.value.trim().length > 0
   );
 
-const INLINE_CONTENT_MARKER_PATTERN = /⟦(?:page-)?cite:([^⟧]+)⟧|⟦image:([^⟧]+)⟧|⟦file:([^⟧]+)⟧/g;
+const INLINE_CONTENT_MARKER_PATTERN = /⟦([a-z-]+):([^⟧]+)⟧/g;
+const INLINE_CONTENT_MARKER_TEST_PATTERN = /⟦[a-z-]+:[^⟧]+⟧/;
 
 export type RenderedCitationSegment =
   | { readonly type: "transcript"; readonly citation: AgentTranscriptCitation }
@@ -208,10 +209,22 @@ export type RenderedCitationSegment =
   | { readonly type: "file"; readonly file: AgentFileAttachment };
 
 export const textHasInlineContentMarkers = (text: string): boolean =>
-  textHasCitationMarkers(text)
-  || /⟦page-cite:/.test(text)
-  || /⟦image:/.test(text)
-  || /⟦file:/.test(text);
+  INLINE_CONTENT_MARKER_TEST_PATTERN.test(text);
+
+const markerFallbackText = (kind: string): string => {
+  switch (kind) {
+    case "cite":
+      return t("lyra-agents-inline-reference.citation");
+    case "page-cite":
+      return t("lyra-agents-inline-reference.page");
+    case "image":
+      return t("lyra-agents-inline-reference.image");
+    case "file":
+      return t("lyra-agents-inline-reference.file");
+    default:
+      return t("lyra-agents-inline-reference.reference");
+  }
+};
 
 export const parseRenderedCitationSegments = (
   text: string,
@@ -239,33 +252,34 @@ export const parseRenderedCitationSegments = (
       segments.push({ type: "text", value: text.slice(lastIndex, index) });
     }
     const markerText = match[0] ?? "";
-    const citationId = match[1] ?? "";
-    const imageId = match[2] ?? "";
-    const fileId = match[3] ?? "";
-    if (markerText.startsWith("⟦image:")) {
-      const image = imageById.get(imageId) ?? orphanInlineImageAttachment(imageId);
+    const markerKind = match[1] ?? "";
+    const markerId = match[2] ?? "";
+    if (markerKind === "image") {
+      const image = imageById.get(markerId) ?? orphanInlineImageAttachment(markerId);
       segments.push({ type: "image", image });
-    } else if (markerText.startsWith("⟦file:")) {
-      const file = fileById.get(fileId);
+    } else if (markerKind === "file") {
+      const file = fileById.get(markerId);
       if (file !== undefined) {
         segments.push({ type: "file", file });
       } else {
-        segments.push({ type: "text", value: markerText });
+        segments.push({ type: "text", value: markerFallbackText(markerKind) });
       }
-    } else if (markerText.startsWith("⟦page-cite:")) {
-      const citation = pageById.get(citationId);
+    } else if (markerKind === "page-cite") {
+      const citation = pageById.get(markerId);
       if (citation !== undefined) {
         segments.push({ type: "page", citation });
       } else {
-        segments.push({ type: "text", value: markerText });
+        segments.push({ type: "text", value: markerFallbackText(markerKind) });
       }
-    } else {
-      const citation = transcriptById.get(citationId);
+    } else if (markerKind === "cite") {
+      const citation = transcriptById.get(markerId);
       if (citation !== undefined) {
         segments.push({ type: "transcript", citation });
       } else {
-        segments.push({ type: "text", value: markerText });
+        segments.push({ type: "text", value: markerFallbackText(markerKind) });
       }
+    } else {
+      segments.push({ type: "text", value: markerFallbackText(markerKind) });
     }
     lastIndex = index + markerText.length;
   }
@@ -273,6 +287,42 @@ export const parseRenderedCitationSegments = (
     segments.push({ type: "text", value: text.slice(lastIndex) });
   }
   return segments.length > 0 ? segments : [{ type: "text", value: text }];
+};
+
+export const inlineContentMarkersToDisplayText = (
+  text: string,
+  transcriptCitations: readonly AgentTranscriptCitation[] = [],
+  pageCitations: readonly AgentPageCitation[] = [],
+  inlineImages: readonly AgentImageAttachment[] = [],
+  fileAttachments: readonly AgentFileAttachment[] = []
+): string => {
+  if (!textHasInlineContentMarkers(text)) {
+    return text;
+  }
+  return parseRenderedCitationSegments(
+    text,
+    transcriptCitations,
+    pageCitations,
+    inlineImages,
+    fileAttachments
+  )
+    .map((segment) => {
+      switch (segment.type) {
+        case "text":
+          return segment.value;
+        case "transcript":
+          return segment.citation.preview;
+        case "page":
+          return segment.citation.preview || segment.citation.tabTitle;
+        case "image":
+          return segment.image.label ?? markerFallbackText("image");
+        case "file":
+          return segment.file.preview;
+      }
+    })
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
 };
 
 const nullableString = (value: unknown): string | null =>

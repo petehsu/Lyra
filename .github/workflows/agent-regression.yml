@@ -31,6 +31,9 @@ jobs:
       - name: Prompt contract gate
         run: pnpm lint:prompt-contract
 
+      - name: i18n integrity check
+        run: pnpm --filter @lyra/desktop lint:i18n
+
       - name: Run Rust Agent slice tests
         run: cargo test -p lyrad -p lyra-agent-core
 

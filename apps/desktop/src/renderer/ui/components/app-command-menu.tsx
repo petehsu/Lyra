@@ -116,7 +116,7 @@ export const AppCommandMenu = ({
         aria-label={`${searchAriaLabel} results`}
       >
         {filteredItems.length === 0 ? (
-          emptyState ?? <AppEmptyState density="compact" title="No commands" description="Try a different search." />
+          emptyState ?? <AppEmptyState density="compact" title="No commands" />
         ) : filteredItems.map((item) => (
           <AppObjectRow
             key={item.id}

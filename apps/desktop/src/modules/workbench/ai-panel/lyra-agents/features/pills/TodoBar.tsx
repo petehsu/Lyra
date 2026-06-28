@@ -1,5 +1,6 @@
 import { ListChecks } from "lucide-react";
-import { t } from "../../core/i18n";
+import { AppButton } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 
 export interface TodoItem {
   id: string;
@@ -36,8 +37,10 @@ export function TodoBar({
   const label = t("lyra-agents-composer.openTodoBoard");
 
   return (
-    <button
+    <AppButton
       type="button"
+      variant="ghost"
+      size="sm"
       className="lyra-agents-todo-capsule"
       onClick={() => { void onOpenBoard?.(); }}
       disabled={onOpenBoard === undefined}
@@ -50,6 +53,6 @@ export function TodoBar({
         <span className="lyra-agents-todo-capsule-sep">|</span>
         {total}
       </span>
-    </button>
+    </AppButton>
   );
 }

@@ -10,10 +10,24 @@ export type FileManagerEntryIconKind =
   | "container"
   | "git-meta"
   | "secret"
+  | "react"
+  | "vue"
+  | "svelte"
+  | "html"
+  | "css"
+  | "xml"
   | "typescript"
   | "javascript"
+  | "go"
+  | "java"
+  | "c-cpp"
+  | "csharp"
+  | "swift"
+  | "php"
+  | "ruby"
   | "rust"
   | "python"
+  | "notebook"
   | "shell"
   | "code-generic"
   | "json-data"
@@ -27,6 +41,9 @@ export type FileManagerEntryIconKind =
   | "audio"
   | "archive"
   | "font"
+  | "design"
+  | "model"
+  | "log"
   | "binary"
   | "certificate"
   | "diff"
@@ -116,6 +133,13 @@ const EXACT_FILE_NAME_RULES: Readonly<Record<string, FileManagerEntryIconKind>> 
   "prettier.config.cjs": "config",
   "prettier.config.mjs": "config",
   "prettier.config.ts": "config",
+  "astro.config.mjs": "config",
+  "astro.config.ts": "config",
+  "next.config.js": "config",
+  "next.config.mjs": "config",
+  "next.config.ts": "config",
+  "svelte.config.js": "config",
+  "svelte.config.ts": "config",
   "vitest.config.ts": "config",
   "vite.config.ts": "config",
   "webpack.config.js": "config",
@@ -156,8 +180,14 @@ const FILE_NAME_SUFFIX_RULES: readonly FileNameSuffixRule[] = [
   { suffix: ".test.tsx", iconKind: "typescript" },
   { suffix: ".spec.js", iconKind: "javascript" },
   { suffix: ".test.js", iconKind: "javascript" },
+  { suffix: ".module.css", iconKind: "css" },
+  { suffix: ".module.scss", iconKind: "css" },
+  { suffix: ".module.sass", iconKind: "css" },
+  { suffix: ".module.less", iconKind: "css" },
   { suffix: ".d.ts", iconKind: "typescript" },
   { suffix: ".lock", iconKind: "dependency-lock" },
+  { suffix: ".min.js", iconKind: "javascript" },
+  { suffix: ".min.css", iconKind: "css" },
   { suffix: ".pem", iconKind: "certificate" },
   { suffix: ".crt", iconKind: "certificate" },
   { suffix: ".cer", iconKind: "certificate" },
@@ -190,35 +220,50 @@ const PATH_RULES: readonly PathRule[] = [
 
 const EXTENSION_ICON_RULES: Readonly<Record<string, FileManagerEntryIconKind>> = {
   ts: "typescript",
-  tsx: "typescript",
+  tsx: "react",
   mts: "typescript",
   cts: "typescript",
   js: "javascript",
-  jsx: "javascript",
+  jsx: "react",
   mjs: "javascript",
   cjs: "javascript",
+  vue: "vue",
+  svelte: "svelte",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "css",
+  sass: "css",
+  less: "css",
+  postcss: "css",
+  xml: "xml",
+  xsd: "xml",
+  xsl: "xml",
+  rss: "xml",
+  atom: "xml",
   rs: "rust",
   py: "python",
   pyi: "python",
-  ipynb: "python",
-  go: "code-generic",
-  java: "code-generic",
-  kt: "code-generic",
-  kts: "code-generic",
-  swift: "code-generic",
-  c: "code-generic",
-  h: "code-generic",
-  hh: "code-generic",
-  hpp: "code-generic",
-  hxx: "code-generic",
-  cc: "code-generic",
-  cpp: "code-generic",
-  cxx: "code-generic",
-  cs: "code-generic",
+  ipynb: "notebook",
+  go: "go",
+  java: "java",
+  kt: "java",
+  kts: "java",
+  swift: "swift",
+  c: "c-cpp",
+  h: "c-cpp",
+  hh: "c-cpp",
+  hpp: "c-cpp",
+  hxx: "c-cpp",
+  cc: "c-cpp",
+  cpp: "c-cpp",
+  cxx: "c-cpp",
+  cs: "csharp",
   fs: "code-generic",
   fsx: "code-generic",
-  php: "code-generic",
-  rb: "code-generic",
+  php: "php",
+  rb: "ruby",
+  ruby: "ruby",
   lua: "code-generic",
   ex: "code-generic",
   exs: "code-generic",
@@ -276,6 +321,12 @@ const EXTENSION_ICON_RULES: Readonly<Record<string, FileManagerEntryIconKind>> =
   heic: "image",
   ico: "image",
   svg: "image",
+  fig: "design",
+  figma: "design",
+  sketch: "design",
+  psd: "design",
+  ai: "design",
+  xd: "design",
   mp4: "video",
   m4v: "video",
   mkv: "video",
@@ -328,6 +379,13 @@ const EXTENSION_ICON_RULES: Readonly<Record<string, FileManagerEntryIconKind>> =
   gpg: "certificate",
   asc: "certificate",
   sig: "certificate",
+  onnx: "model",
+  pt: "model",
+  pth: "model",
+  safetensors: "model",
+  gguf: "model",
+  tflite: "model",
+  log: "log",
   exe: "binary",
   dll: "binary",
   so: "binary",

@@ -111,6 +111,9 @@ export const createAppSurfaceRenderModel = (
         labels: context.fileManagerLabels,
         model: context.fileManagerModel,
         onOpenFile: context.onOpenFileFromManager,
+        ...(context.onOpenFavoriteFromFileManager === undefined
+          ? {}
+          : { onOpenFavorite: context.onOpenFavoriteFromFileManager }),
         chooser: context.resolveFileManagerChooser?.(tab.appInstanceId) ?? null
       }
     };

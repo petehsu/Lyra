@@ -12,7 +12,7 @@ export {
 } from "./data/createDataProviderValue";
 
 export { APP_CONFIG, type AppConfig } from "./core/config";
-export { getLocale, setLocale, t, type Locale } from "./core/i18n";
+export { getLocale, setLocale, t, type Locale } from "@workbench/i18n";
 export type * from "./core/types";
 
 export { ChatView, Composer, Message } from "./features/chat";

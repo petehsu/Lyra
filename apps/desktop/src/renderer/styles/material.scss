@@ -148,6 +148,14 @@
   --lyra-terminal-bright-magenta: var(--lyra-text-secondary);
   --lyra-terminal-bright-cyan: var(--lyra-text-primary);
   --lyra-terminal-bright-white: var(--lyra-text-primary);
+  --lyra-syntax-comment: #6a9955;
+  --lyra-syntax-string: #ce9178;
+  --lyra-syntax-number: #b5cea8;
+  --lyra-syntax-keyword: #569cd6;
+  --lyra-syntax-function: #dcdcaa;
+  --lyra-syntax-type: #4ec9b0;
+  --lyra-syntax-property: #9cdcfe;
+  --lyra-syntax-variable: var(--lyra-syntax-property);
 }
 
 :root[data-lyra-theme-tone="dark"] {

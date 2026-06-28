@@ -18,6 +18,7 @@ import type { FormEvent } from "react";
 
 import {
   AppBadge,
+  AppEmptyState,
   AppIconButton,
   AppInput,
   AppSelect,
@@ -1118,7 +1119,7 @@ export const FileManagerDownloadsContent = ({
       />
 
       {downloads.isEmpty ? (
-        <div className="lyra-file-manager-empty-state">{labels.emptyDownloads}</div>
+        <AppEmptyState className="lyra-file-manager-empty-state" title={labels.emptyDownloads} />
       ) : (
         <div className="lyra-app-group lyra-app-row-list lyra-file-manager-download-list">
           {downloads.tasks.map((task) => (

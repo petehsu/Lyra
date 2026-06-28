@@ -1,4 +1,4 @@
-import { AppList, AppObjectRow } from "@renderer/ui/components";
+import { AppEmptyState, AppList, AppObjectRow } from "@renderer/ui/components";
 
 import {
   renderFileManagerEntryIcon
@@ -24,7 +24,7 @@ export const FileManagerTrashContent = ({
       <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-list-shell">
         <div className="lyra-app-group lyra-file-manager-large-grid">
           {trash.isEmpty ? (
-            <div className="lyra-file-manager-empty-state">{labels.emptyTrashState}</div>
+            <AppEmptyState className="lyra-file-manager-empty-state" title={labels.emptyTrashState} />
           ) : trash.entries.map(({ entry, active }) => (
             <FileManagerLargeTrashTile
               key={entry.id}
@@ -52,9 +52,10 @@ export const FileManagerTrashContent = ({
     <div className="lyra-app-content-column lyra-app-content-column-wide lyra-file-manager-list-shell">
       <AppList className="lyra-app-group lyra-file-manager-list-grid">
         {trash.isEmpty ? (
-          <div className="lyra-file-manager-empty-state lyra-file-manager-empty-state-span">
-            {labels.emptyTrashState}
-          </div>
+          <AppEmptyState
+            className="lyra-file-manager-empty-state"
+            title={labels.emptyTrashState}
+          />
         ) : trash.entries.map(({ entry, active }) => (
           <AppObjectRow
             key={entry.id}

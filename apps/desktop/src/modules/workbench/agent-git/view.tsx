@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Diff,
   GitBranch,
   GitCommitHorizontal,
   Minus,
@@ -200,9 +199,7 @@ const DiffPane = ({
     return (
       <AppEmptyState
         className="lyra-agent-git-empty"
-        icon={<Diff size={22} aria-hidden="true" />}
         title={labels.selectFileTitle}
-        description={labels.selectFileDescription}
       />
     );
   }
@@ -213,10 +210,10 @@ const DiffPane = ({
     return <AppErrorState className="lyra-agent-git-diff-state" title={diffState.message} />;
   }
   if (diffState.diff.isBinary) {
-    return <AppEmptyState className="lyra-agent-git-diff-state" icon={<Diff size={18} aria-hidden="true" />} title={labels.binaryDiff} />;
+    return <AppEmptyState className="lyra-agent-git-diff-state" title={labels.binaryDiff} />;
   }
   if (diffState.diff.diff.trim().length === 0) {
-    return <AppEmptyState className="lyra-agent-git-diff-state" icon={<Diff size={18} aria-hidden="true" />} title={labels.noDiff} />;
+    return <AppEmptyState className="lyra-agent-git-diff-state" title={labels.noDiff} />;
   }
   return (
     <section className="lyra-agent-git-diff" aria-label={diffState.file.path}>
@@ -367,7 +364,6 @@ export const AgentGitSurface = ({
             className="lyra-agent-git-empty lyra-agent-git-empty-sidebar"
             density="compact"
             title={labels.emptyTitle}
-            description={labels.emptyDescription}
           />
         ) : (
           <>

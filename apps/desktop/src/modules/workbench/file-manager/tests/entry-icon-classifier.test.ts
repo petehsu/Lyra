@@ -142,6 +142,29 @@ describe("file manager entry icon classifier", () => {
     ).toBe("shell");
   });
 
+  test("classifies richer frontend and language identities", () => {
+    expect(resolveFileManagerEntryIconKind(createFileEntry({
+      name: "App.tsx",
+      extension: "tsx"
+    }))).toBe("react");
+    expect(resolveFileManagerEntryIconKind(createFileEntry({
+      name: "App.vue",
+      extension: "vue"
+    }))).toBe("vue");
+    expect(resolveFileManagerEntryIconKind(createFileEntry({
+      name: "theme.module.scss",
+      extension: "scss"
+    }))).toBe("css");
+    expect(resolveFileManagerEntryIconKind(createFileEntry({
+      name: "main.go",
+      extension: "go"
+    }))).toBe("go");
+    expect(resolveFileManagerEntryIconKind(createFileEntry({
+      name: "model.safetensors",
+      extension: "safetensors"
+    }))).toBe("model");
+  });
+
   test("classifies media and archive files", () => {
     expect(
       resolveFileManagerEntryIconKind(

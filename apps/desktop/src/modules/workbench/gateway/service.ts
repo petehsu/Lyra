@@ -1,12 +1,13 @@
 import type { WorkbenchCommand } from "../shell/types";
 import type { WorkbenchGateway, WorkbenchGatewayResult } from "./types";
+import { formatMessage } from "@workbench/i18n";
 
 const withPrefix = (prefix: string, lines: readonly string[]): readonly string[] => lines.map((line) => `${prefix}${line}`);
 
 const mapCommandToResult = (command: WorkbenchCommand): WorkbenchGatewayResult => {
   if (command.kind === "url") {
     return {
-      summary: `已打开目标地址并准备 DOM 上下文：${command.value}`,
+      summary: formatMessage("gateway.summaryUrl", { value: command.value }),
       actions: [
         `browser_navigate ${command.value}`,
         "browser_capture_dom",
@@ -18,7 +19,7 @@ const mapCommandToResult = (command: WorkbenchCommand): WorkbenchGatewayResult =
 
   if (command.kind === "file") {
     return {
-      summary: `已定位文件并同步到编辑区：${command.value}`,
+      summary: formatMessage("gateway.summaryFile", { value: command.value }),
       actions: [
         `read_file ${command.value}`,
         "collect_symbol_outline",
@@ -30,7 +31,7 @@ const mapCommandToResult = (command: WorkbenchCommand): WorkbenchGatewayResult =
 
   if (command.kind === "command") {
     return {
-      summary: `已准备执行终端命令：${command.value}`,
+      summary: formatMessage("gateway.summaryCommand", { value: command.value }),
       actions: [
         `run_command ${command.value}`,
         "collect_exit_code",
@@ -41,7 +42,7 @@ const mapCommandToResult = (command: WorkbenchCommand): WorkbenchGatewayResult =
   }
 
   return {
-    summary: `任务已进入 Agent 编排：${command.value}`,
+    summary: formatMessage("gateway.summaryTask", { value: command.value }),
     actions: [
       "collect_context workspace",
       "plan_task_tree",

@@ -25,15 +25,16 @@ import {
   subscribeLayoutResizeEnd
 } from "../shell/use-panel-layout";
 import { LyraAgentsApp } from "./lyra-agents/LyraAgentsApp";
-import { t } from "./lyra-agents/core/i18n";
+import { t, formatMessage } from "@workbench/i18n";
 import { useData } from "./lyra-agents/data/DataProvider";
 import { HeaderControls } from "./lyra-agents/features/header/Header";
+import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/message-citation";
 import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
 import { estimateTabTitleContentWidth } from "../text-metrics";
 
-const DEFAULT_SESSION_TITLE = "新会话";
+// ponytail: 不能在模块级调用 t() — locale 可能已切换；在调用点调用 t() 保证当前 locale
 const AI_SESSION_TAB_DRAG_THRESHOLD_PX = 4;
 const AI_SESSION_TAB_CONTENT_MARGIN_TOTAL_PX = 18;
 const AI_SESSION_TAB_MIN_WIDTH_PX = 120;
@@ -331,7 +332,7 @@ const AiPanelTabsHeader = ({
         : [{
             tabId: "__local-draft",
             sessionId: null,
-            title: DEFAULT_SESSION_TITLE,
+            title: t("aiPanel.defaultSessionTitle"),
             lastKnownStatus: null
           } satisfies AiPanelSessionTab];
   const activeIndex = Math.max(
@@ -466,7 +467,7 @@ const AiPanelTabsHeader = ({
           dragVisual !== null && "lyra-agents-session-tab-strip-sorting"
         )}
         role="tablist"
-        aria-label="AI sessions"
+        aria-label={t("aiPanel.sessionTabsAriaLabel")}
       >
         <div
           ref={listRef}
@@ -482,9 +483,11 @@ const AiPanelTabsHeader = ({
             const active = tab.tabId === effectiveActiveTabId;
             const hasCurrentSnapshot =
               tab.sessionId !== null && tab.sessionId === currentSessionId;
-            const title = hasCurrentSnapshot
-              ? session.title.trim() || tab.title || DEFAULT_SESSION_TITLE
-              : tab.title.trim() || DEFAULT_SESSION_TITLE;
+            const rawTitle = hasCurrentSnapshot
+              ? session.title.trim() || tab.title
+              : tab.title.trim();
+            const title = inlineContentMarkersToDisplayText(rawTitle).trim()
+              || t("aiPanel.defaultSessionTitle");
             const running = hasCurrentSnapshot ? isTurnRunning : tab.lastKnownStatus === "running";
             const workingDir = hasCurrentSnapshot
               ? session.workingDir
@@ -539,8 +542,8 @@ const AiPanelTabsHeader = ({
                 </AppButton>
                 <AppIconButton
                   className="lyra-agents-session-tab-close"
-                  aria-label={`Close session tab: ${title}`}
-                  title={`Close session tab: ${title}`}
+                  aria-label={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
+                  title={formatMessage("aiPanel.closeSessionTabAriaLabel", { title })}
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseSessionTab?.(tab.tabId);

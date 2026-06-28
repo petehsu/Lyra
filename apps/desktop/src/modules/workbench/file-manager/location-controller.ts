@@ -24,6 +24,7 @@ import {
   createId,
   directoryResponseFromSnapshot,
   isDirectoryLocation,
+  isPathFavorite,
   mergeRecentLocations,
   resolveFavorites
 } from "./state-model";
@@ -141,7 +142,9 @@ export const useFileManagerLocationController = ({
         return false;
       }
 
-      return favorites.some((item) => isSameLocationPath(item.path, path, platform));
+      return favorites.some((item) =>
+        isPathFavorite(item) && isSameLocationPath(item.path, path, platform)
+      );
     },
     [platform]
   );
@@ -379,8 +382,9 @@ export const useFileManagerLocationController = ({
       await writeFavoritesForState(state, (currentFavorites) => {
         const exists = isFavoritePath(currentFavorites, location.path);
         if (exists) {
-          return currentFavorites.filter(
-            (item) => isSameLocationPath(item.path, location.path, platform) === false
+          return currentFavorites.filter((item) =>
+            isPathFavorite(item) === false
+            || isSameLocationPath(item.path, location.path, platform) === false
           );
         }
 
@@ -390,6 +394,7 @@ export const useFileManagerLocationController = ({
                 id: createId("favorite"),
                 title: location.title,
                 path: location.path,
+                kind: "path",
                 specialId:
                   location.specialId as Exclude<
                     FileManagerFavorite["specialId"],
@@ -399,7 +404,8 @@ export const useFileManagerLocationController = ({
             : {
                 id: createId("favorite"),
                 title: location.title,
-                path: location.path
+                path: location.path,
+                kind: "path"
               };
 
         return [

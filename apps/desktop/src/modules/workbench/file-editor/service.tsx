@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { t } from "@workbench/i18n";
 
 import type {
   LspDocumentRequest,
@@ -127,21 +128,21 @@ const normalizeRevealLocation = (
 
 const readUnsupportedMessage = (reason: string | undefined): string => {
   if (reason === "virtual-tool-path") {
-    return "这是 Lyra 运行时工具路径，不是本地文件。";
+    return t("fileEditor.unsupportedVirtualToolPath");
   }
   if (reason === "not-found") {
-    return "文件不存在或尚未创建。";
+    return t("fileEditor.unsupportedNotFound");
   }
   if (reason === "not-file") {
-    return "当前路径不是可编辑文件。";
+    return t("fileEditor.unsupportedNotFile");
   }
   if (reason === "file-too-large") {
-    return "文件过大，已降级为只读或不可编辑。";
+    return t("fileEditor.unsupportedFileTooLarge");
   }
   if (reason === "encoding-not-supported") {
-    return "当前文件编码暂不支持编辑。";
+    return t("fileEditor.unsupportedEncodingNotSupported");
   }
-  return "当前文件类型暂不支持编辑。";
+  return t("fileEditor.unsupportedDefault");
 };
 
 const shouldSyncLsp = (state: FileEditorAppState): boolean =>
@@ -313,7 +314,7 @@ export const useFileEditorModel = ({
         ...current,
         status: "error",
         iconKey: "file-editor-unsupported",
-        message: "文件编辑器原生能力不可用。"
+        message: t("fileEditor.nativeCapabilityUnavailable")
       });
       return;
     }
@@ -729,7 +730,7 @@ export const useFileEditorModel = ({
       patchState(instanceId, (state) => ({
         ...state,
         status: "error",
-        message: "文件编辑器原生能力不可用。"
+        message: t("fileEditor.nativeCapabilityUnavailable")
       }));
       return;
     }

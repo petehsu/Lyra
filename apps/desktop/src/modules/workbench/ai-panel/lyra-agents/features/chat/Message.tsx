@@ -10,10 +10,10 @@ import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock, type ThinkingEntry } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
-import { ThinkingIndicator, ToolExecutionIndicator, CheckCircleIcon, ChevronIcon } from "../../components/Icons";
+import { ToolExecutionIndicator, CheckCircleIcon, ChevronIcon, ToolIcon } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
-import { formatMessage, t } from "../../core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 import { AppButton } from "@renderer/ui/components";
 import { MessageCitationText } from "./MessageCitationText";
 import { textHasInlineContentMarkers } from "./message-citation";
@@ -41,7 +41,7 @@ function ThinkingBlock({ id, body, status }: { id: string; body: string; status:
       >
         <span className="lyra-agents-tool-group-icon-slot">
           <span className="lyra-agents-tool-group-lead">
-            {isRunning ? <ThinkingIndicator /> : <CheckCircleIcon />}
+            {isRunning ? <ToolIcon kind="thought" /> : <CheckCircleIcon />}
           </span>
           <span className="lyra-agents-chevron-slot">
             <ChevronIcon open={open} />
@@ -455,6 +455,26 @@ const toolGroupEqual = (left: ToolGroup, right: ToolGroup): boolean => {
     toolCallsEqual(left.calls, right.calls);
 };
 
+const mergeToolGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
+  const callsById = new Map<string, ToolCall>();
+  for (const call of [...left.calls, ...right.calls]) {
+    callsById.set(call.id, call);
+  }
+  const calls = [...callsById.values()];
+  const running = calls.find((call) => call.status === "running");
+  const { currentCallId: _currentCallId, ...base } = left;
+  return {
+    ...base,
+    status: running === undefined ? "done" : "running",
+    label: running?.title ?? left.label,
+    hint: running === undefined
+      ? formatMessage("tool.events", { count: calls.length })
+      : t("tool.running"),
+    ...(running === undefined ? {} : { currentCallId: running.id }),
+    calls
+  };
+};
+
 const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => {
   if (left === right) return true;
   if (left.type !== right.type || left.id !== right.id) return false;
@@ -549,13 +569,13 @@ export function messageActivityIndicator(
   followActivity: string | null | undefined
 ) {
   const toolCall = activeToolCall(message);
-  if (toolCall?.kind === "thought") return <ThinkingIndicator />;
+  if (toolCall?.kind === "thought") return <ToolIcon kind="thought" />;
 
   const activity = normalizeFollowActivity(followActivity);
   if (activity === "waiting_for_tool" || toolCall !== null) {
     return <ToolExecutionIndicator />;
   }
-  if (activity === "streaming_model") return <ThinkingIndicator />;
+  if (activity === "streaming_model") return <ToolIcon kind="thought" />;
   if (usesServiceStatusDots(followActivity)) return <ServiceStatusDots />;
   return <BrailleSpinner />;
 }
@@ -751,15 +771,17 @@ export function Message({
                 <span className="lyra-agents-time-copy" onClick={handleCopy} role="button" aria-label={t("lyra-agents-message.copy")}>
                   <Copy size={12} strokeWidth={2} />
                 </span>
-                <span
-                  className="lyra-agents-time-copy"
-                  onClick={() => onCiteMessage?.()}
-                  role="button"
-                  aria-label={t("lyra-agents-message.citeMessage")}
-                  title={t("lyra-agents-message.citeMessage")}
-                >
-                  <Link2 size={12} strokeWidth={2} />
-                </span>
+                {onCiteMessage === undefined ? null : (
+                  <span
+                    className="lyra-agents-time-copy"
+                    onClick={onCiteMessage}
+                    role="button"
+                    aria-label={t("lyra-agents-message.citeMessage")}
+                    title={t("lyra-agents-message.citeMessage")}
+                  >
+                    <Link2 size={12} strokeWidth={2} />
+                  </span>
+                )}
                 {message.rollback?.available === true ? (
                   <span
                     className="lyra-agents-time-copy"
@@ -957,11 +979,22 @@ const AgentMessage = memo(function AgentMessage({
     let lastToolsKey = "";
     let lastToolsGroup: ToolGroup | null = null;
     let lastToolsThinking: ThinkingEntry[] = [];
+    let lastRenderedWasTools = false;
     for (const block of blocks) {
       if (block.type === "thinking") {
         pendingThinking.push({ id: block.id, body: block.body, status: block.status });
       } else if (block.type === "tools") {
         const entries = pendingThinking.splice(0);
+        if (lastRenderedWasTools && lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
+          const mergedGroup = mergeToolGroups(lastToolsGroup, block.group);
+          const mergedThinking = [...lastToolsThinking, ...entries];
+          nodes[lastToolsIdx] = (
+            <ToolGroupBlock key={lastToolsKey} group={mergedGroup} thinkingEntries={mergedThinking} />
+          );
+          lastToolsGroup = mergedGroup;
+          lastToolsThinking = mergedThinking;
+          continue;
+        }
         nodes.push(
           <ToolGroupBlock key={block.id} group={block.group} thinkingEntries={entries} />
         );
@@ -969,8 +1002,10 @@ const AgentMessage = memo(function AgentMessage({
         lastToolsKey = block.id;
         lastToolsGroup = block.group;
         lastToolsThinking = entries;
+        lastRenderedWasTools = true;
       } else {
         nodes.push(renderAgentBlock(block));
+        lastRenderedWasTools = false;
       }
     }
     if (pendingThinking.length > 0 && lastToolsIdx >= 0) {

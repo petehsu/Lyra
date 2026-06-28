@@ -24,7 +24,7 @@ import {
   Trash2
 } from "lucide-react";
 import { useState } from "react";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import type { AiPanelSide } from "../../../types";
 

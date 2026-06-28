@@ -11,10 +11,12 @@ import {
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
 import {
   applyPanelLayoutCssVars,
-  buildPanelLayoutCssVars
+  buildPanelLayoutCssVars,
+  type PanelLayoutCssVars
 } from "./panel-layout-shell-vars";
 import { notifyLayoutResizeEnd, notifyLayoutResizeStart } from "./layout-resize-end";
 import {
+  clamp,
   resolveCoupledPanelSizes,
   type PanelSizeState,
   resolvePanelSizeBounds
@@ -39,6 +41,7 @@ export const getIsLayoutResizing = (): boolean => layoutResizingActive;
 export type PanelLayoutState = {
   readonly leftWidth: number;
   readonly bottomHeight: number;
+  readonly appSidebarWidth: number;
   readonly isLeftPanelVisible: boolean;
   readonly isBottomPanelVisible: boolean;
   readonly aiPanelSide: AiPanelSide;
@@ -56,18 +59,23 @@ export type PanelLayoutActions = {
 
 export type PanelLayoutModel = PanelLayoutState &
   PanelLayoutActions & {
-    readonly cssVars: {
-      readonly "--left-width": string;
-      readonly "--left-panel-content-width": string;
-      readonly "--left-panel-mobile-height": string;
-      readonly "--left-panel-content-mobile-height": string;
-      readonly "--bottom-height": string;
-      readonly "--bottom-panel-content-height": string;
-    };
+    readonly cssVars: PanelLayoutCssVars;
   };
 
 const WORKBENCH_LAYOUT_STATE_KEY = "layout" as const;
 const POINTER_EVENTS_DISABLED_CLASS = "lyra-pointer-events-disabled";
+const APP_SIDEBAR_RESIZE_SELECTOR = [
+  ".lyra-app-sidebar-nav",
+  ".lyra-settings-nav",
+  ".lyra-agent-plan-board-manager-sidebar",
+  ".lyra-agent-project-tree-sidebar",
+  ".lyra-agent-git-sidebar",
+  ".lyra-login-manager-sidebar"
+].join(",");
+const APP_SIDEBAR_RESIZE_HIT_SLOP = 8;
+const APP_SIDEBAR_MIN_WIDTH = 176;
+const APP_SIDEBAR_MAX_WIDTH = 360;
+const APP_SIDEBAR_DEFAULT_WIDTH = 220;
 
 const readPersistedLayoutState = (): Record<string, unknown> => {
   const raw = readWorkbenchStateSync(WORKBENCH_LAYOUT_STATE_KEY);
@@ -113,6 +121,16 @@ const readPersistedPanelSize = (
 ): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 
+const resolveAppSidebarWidth = (value: number): number =>
+  clamp(value, APP_SIDEBAR_MIN_WIDTH, APP_SIDEBAR_MAX_WIDTH);
+
+const readInitialAppSidebarWidth = (): number => {
+  const parsed = readPersistedLayoutState();
+  return resolveAppSidebarWidth(
+    readPersistedPanelSize(parsed.appSidebarWidth, APP_SIDEBAR_DEFAULT_WIDTH)
+  );
+};
+
 const createInitialPanelSizes = (): PanelSizeState => {
   const parsed = readPersistedLayoutState();
   const bounds = resolvePanelSizeBounds();
@@ -136,6 +154,7 @@ export const usePanelLayoutModel = (
   shellRootRef?: RefObject<HTMLElement | null>
 ): PanelLayoutModel => {
   const [panelSizes, setPanelSizes] = useState<PanelSizeState>(createInitialPanelSizes);
+  const [appSidebarWidth, setAppSidebarWidth] = useState(readInitialAppSidebarWidth);
   const [isLeftPanelVisible, setIsLeftPanelVisible] = useState(true);
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(true);
   const [aiPanelSide, setAiPanelSide] = useState<AiPanelSide>(readInitialAiPanelSide);
@@ -143,10 +162,13 @@ export const usePanelLayoutModel = (
     useState<TerminalPanelSide>(readInitialTerminalPanelSide);
 
   const dragDraftRef = useRef<PanelSizeState | null>(null);
+  const appSidebarWidthDraftRef = useRef<number | null>(null);
+  const appSidebarWidthRef = useRef(appSidebarWidth);
   const visibilityRef = useRef({
     isLeftPanelVisible,
     isBottomPanelVisible
   });
+  appSidebarWidthRef.current = appSidebarWidth;
   visibilityRef.current = {
     isLeftPanelVisible,
     isBottomPanelVisible
@@ -162,6 +184,7 @@ export const usePanelLayoutModel = (
         buildPanelLayoutCssVars({
           leftWidth: sizes.leftWidth,
           bottomHeight: sizes.bottomHeight,
+          appSidebarWidth: appSidebarWidthRef.current,
           isLeftPanelVisible: visibilityRef.current.isLeftPanelVisible,
           isBottomPanelVisible: visibilityRef.current.isBottomPanelVisible
         })
@@ -170,7 +193,11 @@ export const usePanelLayoutModel = (
     [shellRootRef]
   );
 
-  const beginDrag = useCallback((cursor: string, onMove: (event: MouseEvent) => void): void => {
+  const beginDrag = useCallback((
+    cursor: string,
+    onMove: (event: MouseEvent) => void,
+    onEnd?: () => void
+  ): void => {
     const previousCursor = document.body.style.cursor;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = cursor;
@@ -209,6 +236,7 @@ export const usePanelLayoutModel = (
           bottomHeight: finalDraft.bottomHeight
         });
       }
+      onEnd?.();
 
       notifyLayoutResizeEnd();
 
@@ -279,6 +307,56 @@ export const usePanelLayoutModel = (
   }, []);
 
   useEffect(() => {
+    const root = resolveShellRoot(shellRootRef);
+    if (root === null) {
+      return;
+    }
+
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.button !== 0 || event.target instanceof Element === false) {
+        return;
+      }
+      const sidebar = event.target.closest(APP_SIDEBAR_RESIZE_SELECTOR);
+      if (sidebar instanceof HTMLElement === false || root.contains(sidebar) === false) {
+        return;
+      }
+      const rect = sidebar.getBoundingClientRect();
+      if (
+        event.clientX < rect.right - APP_SIDEBAR_RESIZE_HIT_SLOP ||
+        event.clientX > rect.right + APP_SIDEBAR_RESIZE_HIT_SLOP
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = appSidebarWidthRef.current;
+      beginDrag(
+        "col-resize",
+        (moveEvent) => {
+          const nextWidth = resolveAppSidebarWidth(startWidth + moveEvent.clientX - startX);
+          appSidebarWidthDraftRef.current = nextWidth;
+          root.style.setProperty("--lyra-app-sidebar-rail-w", `${nextWidth}px`);
+        },
+        () => {
+          const finalWidth = appSidebarWidthDraftRef.current;
+          appSidebarWidthDraftRef.current = null;
+          if (finalWidth === null) {
+            return;
+          }
+          setAppSidebarWidth(finalWidth);
+          persistLayoutState({ appSidebarWidth: finalWidth });
+        }
+      );
+    };
+
+    root.addEventListener("mousedown", onMouseDown);
+    return () => {
+      root.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [beginDrag, shellRootRef]);
+
+  useEffect(() => {
     const onResize = (): void => {
       const bounds = resolvePanelSizeBounds();
       setPanelSizes((current) =>
@@ -303,10 +381,11 @@ export const usePanelLayoutModel = (
       buildPanelLayoutCssVars({
         leftWidth,
         bottomHeight,
+        appSidebarWidth,
         isLeftPanelVisible,
         isBottomPanelVisible
       }),
-    [bottomHeight, isBottomPanelVisible, isLeftPanelVisible, leftWidth]
+    [appSidebarWidth, bottomHeight, isBottomPanelVisible, isLeftPanelVisible, leftWidth]
   );
 
   const toggleLeftPanel = useCallback(() => {
@@ -336,6 +415,7 @@ export const usePanelLayoutModel = (
   return {
     leftWidth,
     bottomHeight,
+    appSidebarWidth,
     isLeftPanelVisible,
     isBottomPanelVisible,
     aiPanelSide,

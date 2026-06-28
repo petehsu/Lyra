@@ -299,13 +299,13 @@ describe("AgentSessionHistorySurface", () => {
       expect(listSessions).toHaveBeenCalledWith({ limit: 500 });
     });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Sessions 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sessions 2" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Archived sessions 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Web history 1" })).toBeInTheDocument();
     });
 
     expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
-    expect(screen.queryByText("Review UI polish")).not.toBeInTheDocument();
+    expect(screen.getByText("Review UI polish")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search history")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
@@ -398,15 +398,15 @@ describe("AgentSessionHistorySurface", () => {
       onOpenBrowserHistoryEntry: vi.fn()
     });
 
-    await screen.findByRole("button", { name: "Sessions 3" });
-    expect(screen.getByRole("button", { name: "Lyra 2" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "Launch 1" })).toHaveAttribute("aria-expanded", "true");
+    await screen.findByRole("button", { name: "Sessions 4" });
+    expect(screen.getByRole("button", { name: "Lyra" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Launch" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Fix agent storage")).toBeInTheDocument();
     expect(screen.getByText("Refactor project index")).toBeInTheDocument();
     expect(screen.getByText("Prepare launch notes")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Lyra 2" }));
-    expect(screen.getByRole("button", { name: "Lyra 2" })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Lyra" }));
+    expect(screen.getByRole("button", { name: "Lyra" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Fix agent storage")).not.toBeInTheDocument();
     expect(screen.queryByText("Refactor project index")).not.toBeInTheDocument();
     expect(screen.getByText("Prepare launch notes")).toBeInTheDocument();
@@ -426,7 +426,7 @@ describe("AgentSessionHistorySurface", () => {
         target: {
           kind: "session",
           sessionId: "session-1",
-          category: "project-sessions"
+          category: "sessions"
         }
       }
     });
@@ -434,7 +434,7 @@ describe("AgentSessionHistorySurface", () => {
     await waitFor(() => {
       expect(readSession).toHaveBeenCalledWith({ sessionId: "session-1" });
     });
-    expect(screen.getByRole("button", { name: "Session preview: Fix agent storage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open in AI Panel: Fix agent storage" })).toBeInTheDocument();
     expect(await screen.findByText("Preview answer for session-1")).toBeInTheDocument();
 
     rerender(
@@ -494,21 +494,22 @@ describe("AgentSessionHistorySurface", () => {
     });
 
     await screen.findByText("Review UI polish");
-    fireEvent.click(screen.getByRole("button", { name: "Session preview: Review UI polish" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }));
 
     await waitFor(() => {
       expect(readSession).toHaveBeenCalledWith({ sessionId: "session-2" });
     });
     expect(screen.getByText("Preview answer for session-2")).toBeInTheDocument();
     const previewPane = screen.getByRole("complementary", { name: "Session preview" });
-    expect(within(previewPane).getByRole("heading", { name: "Review UI polish" })).toBeInTheDocument();
+    expect(within(previewPane).queryByRole("heading", { name: "Review UI polish" })).not.toBeInTheDocument();
+    expect(previewPane.querySelector(".lyra-agents-message")).not.toBeNull();
     expect(container.querySelector(".msg")).toBeNull();
     expect(screen.queryByText("OpenAI / gpt-5")).not.toBeInTheDocument();
     expect(screen.queryByText("idle")).not.toBeInTheDocument();
     expect(onOpenSession).not.toHaveBeenCalled();
   });
 
-  test("opens a previewed session in the AI panel only from the row icon", async () => {
+  test("opens a session in the AI panel from the row click", async () => {
     const { api, readSession } = createDesktopApi();
     const onOpenSession = vi.fn();
 
@@ -537,7 +538,7 @@ describe("AgentSessionHistorySurface", () => {
     });
 
     await screen.findByText("Review UI polish");
-    fireEvent.click(screen.getByRole("button", { name: "Session preview: Review UI polish" }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }));
     await screen.findByText("Preview answer for session-2");
 
     act(() => {
@@ -576,12 +577,20 @@ describe("AgentSessionHistorySurface", () => {
     });
 
     await screen.findByText("Review UI polish");
-    fireEvent.click(screen.getByRole("button", { name: "Saved: Review UI polish" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }), {
+      clientX: 12,
+      clientY: 24
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Saved" }));
     await waitFor(() => {
       expect(saveSession).toHaveBeenCalledWith({ sessionId: "session-2", label: null });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Rename: Review UI polish" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Open in AI Panel: Review UI polish" }), {
+      clientX: 12,
+      clientY: 24
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
     fireEvent.change(screen.getByPlaceholderText("Enter a session name"), {
       target: { value: "Renamed session" }
     });
@@ -593,7 +602,11 @@ describe("AgentSessionHistorySurface", () => {
       });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Archive: Renamed session" }));
+    fireEvent.contextMenu(await screen.findByRole("button", { name: "Open in AI Panel: Renamed session" }), {
+      clientX: 12,
+      clientY: 24
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
     await waitFor(() => {
       expect(archiveSession).toHaveBeenCalledWith({ sessionId: "session-2", archived: true });
     });
@@ -620,8 +633,7 @@ describe("AgentSessionHistorySurface", () => {
       onSessionDeleted
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Project sessions 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete: Fix agent storage" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete: Fix agent storage" }));
     fireEvent.click(screen.getByRole("button", { name: /Delete permanently/u }));
 
     await waitFor(() => {

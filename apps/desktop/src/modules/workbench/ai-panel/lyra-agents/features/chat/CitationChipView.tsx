@@ -1,5 +1,5 @@
 import type { AgentTranscriptCitation } from "../../../../../../shared/agent";
-import { CITATION_CHIP_ICON_SVGS } from "./citation-chip-dom";
+import { ComposerChipIcon } from "./composer-chip-icon";
 import { citationChipAriaLabel } from "./message-citation";
 
 type CitationChipViewProps = {
@@ -28,11 +28,7 @@ export const CitationChipView = ({ citation, onClick }: CitationChipViewProps) =
         onClick();
       } : undefined}
     >
-      <span
-        className="lyra-agents-citation-chip-icon"
-        aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: CITATION_CHIP_ICON_SVGS[citation.role] }}
-      />
+      <ComposerChipIcon kind={citation.role} />
       <span className="lyra-agents-citation-chip-preview-wrap">
         <span className="lyra-agents-citation-chip-preview">{citation.preview}</span>
       </span>

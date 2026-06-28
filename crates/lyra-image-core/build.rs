@@ -94,6 +94,10 @@ fn candidate_roots() -> Vec<PathBuf> {
         }
     }
 
+    if is_cross_compiling() {
+        return roots;
+    }
+
     if let Ok(output) = Command::new("brew")
         .args(["--prefix", "openimageio"])
         .output()
@@ -157,6 +161,10 @@ fn candidate_libtiff_roots() -> Vec<PathBuf> {
             }
         }
     }
+    if is_cross_compiling() {
+        return roots;
+    }
+
     if let Ok(output) = Command::new("brew").args(["--prefix", "libtiff"]).output() {
         if output.status.success() {
             if let Ok(value) = String::from_utf8(output.stdout) {
@@ -174,6 +182,10 @@ fn candidate_libtiff_roots() -> Vec<PathBuf> {
         PathBuf::from("/usr/local"),
     ]);
     roots
+}
+
+fn is_cross_compiling() -> bool {
+    env::var("HOST").ok() != env::var("TARGET").ok()
 }
 
 fn libtiff_location_for_root(root: &Path) -> Option<OiioLocation> {

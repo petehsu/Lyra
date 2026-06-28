@@ -1,8 +1,12 @@
-import { AppButton, AppIconButton, AppInput } from "@renderer/ui/components";
+import {
+  AppButton,
+  AppDialog,
+  AppIconButton,
+  AppInput
+} from "@renderer/ui/components";
 import { Check, Copy } from "lucide-react";
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { writeClipboardText } from "../../../shared/clipboard";
 import { getDesktopApi } from "../shell/service";
@@ -54,6 +58,7 @@ export const GlobalDialogHost = ({
   const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const copiedResetTimerRef = useRef<number | null>(null);
+  const formId = useId();
 
   const clearCopiedResetTimer = useCallback((): void => {
     if (copiedResetTimerRef.current !== null) {
@@ -93,23 +98,6 @@ export const GlobalDialogHost = ({
 
   useEffect(() => {
     if (state.isOpen === false) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose, state.isOpen]);
-
-  useEffect(() => {
-    if (state.isOpen === false) {
       setCopiedItemId(null);
       setInputValue("");
       clearCopiedResetTimer();
@@ -142,10 +130,6 @@ export const GlobalDialogHost = ({
     [clearCopiedResetTimer]
   );
 
-  if (state.isOpen === false || typeof document === "undefined") {
-    return null;
-  }
-
   const actionsClassName = [
     "lyra-global-dialog-actions",
     toActionLayoutClassName(state.actions.length)
@@ -157,24 +141,66 @@ export const GlobalDialogHost = ({
     `lyra-global-dialog-source-icon-${sourceIconTone}`
   ].join(" ");
 
-  return createPortal(
-    <div
-      className="lyra-global-dialog-layer"
-      aria-label="global-dialog-layer"
-      onMouseDown={onClose}
-      onDragStart={(event) => {
-        event.preventDefault();
+  const footer = state.actions.length > 0 ? (
+    <footer className={actionsClassName}>
+      {state.actions.map((action) => {
+        const isSubmitAction =
+          state.input !== undefined && action.id === submitActionId;
+
+        return (
+          <AppButton
+            key={action.id}
+            form={isSubmitAction ? formId : undefined}
+            type={isSubmitAction ? "submit" : "button"}
+            size="sm"
+            variant={
+              action.tone === "primary"
+                ? "default"
+                : action.tone === "danger"
+                  ? "destructive"
+                  : "secondary"
+            }
+            className={[
+              "lyra-global-dialog-action",
+              action.tone === "primary"
+                ? "lyra-global-dialog-action-primary"
+                : "",
+              action.tone === "danger"
+                ? "lyra-global-dialog-action-danger"
+                : ""
+            ]
+              .filter((value) => value.length > 0)
+              .join(" ")}
+            disabled={action.disabled}
+            onClick={isSubmitAction ? undefined : () => {
+              onSelectAction(action.id, { inputValue });
+            }}
+          >
+            {action.label}
+          </AppButton>
+        );
+      })}
+    </footer>
+  ) : undefined;
+
+  return (
+    <AppDialog
+      open={state.isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
       }}
+      title={state.title}
+      description={state.description}
+      contentClassName="lyra-global-dialog"
+      bodyClassName="lyra-global-dialog-body"
+      footer={footer}
     >
       <form
-        className="lyra-global-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={state.title}
+        id={formId}
+        className="lyra-global-dialog-form"
         onSubmit={onSubmit}
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
         onDragStart={(event) => {
           event.preventDefault();
         }}
@@ -196,15 +222,11 @@ export const GlobalDialogHost = ({
           </section>
         ) : null}
 
-        <header className="lyra-global-dialog-header">
-          <h2>{state.title}</h2>
-          {state.description !== undefined ? (
-            <p>{state.description}</p>
-          ) : null}
-        </header>
-
         {state.input !== undefined ? (
-          <label className="lyra-global-dialog-input" htmlFor={`global-dialog-${state.input.id}`}>
+          <label
+            className="lyra-global-dialog-input"
+            htmlFor={`global-dialog-${state.input.id}`}
+          >
             <span>{state.input.label}</span>
             <AppInput
               id={`global-dialog-${state.input.id}`}
@@ -252,51 +274,18 @@ export const GlobalDialogHost = ({
                       onCopyItem(item.id, item.value);
                     }}
                   >
-                    {isCopied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                    {isCopied ? (
+                      <Check size={14} aria-hidden="true" />
+                    ) : (
+                      <Copy size={14} aria-hidden="true" />
+                    )}
                   </AppIconButton>
                 </article>
               );
             })}
           </section>
         ) : null}
-
-        {state.actions.length > 0 ? (
-          <footer className={actionsClassName}>
-            {state.actions.map((action) => (
-              <AppButton
-                key={action.id}
-                type="button"
-                size="sm"
-                variant={
-                  action.tone === "primary"
-                    ? "default"
-                    : action.tone === "danger"
-                      ? "destructive"
-                      : "secondary"
-                }
-                className={[
-                  "lyra-global-dialog-action",
-                  action.tone === "primary"
-                    ? "lyra-global-dialog-action-primary"
-                    : "",
-                  action.tone === "danger"
-                    ? "lyra-global-dialog-action-danger"
-                    : ""
-                ]
-                  .filter((value) => value.length > 0)
-                  .join(" ")}
-                disabled={action.disabled}
-                onClick={() => {
-                  onSelectAction(action.id, { inputValue });
-                }}
-              >
-                {action.label}
-              </AppButton>
-            ))}
-          </footer>
-        ) : null}
       </form>
-    </div>,
-    document.body
+    </AppDialog>
   );
 };

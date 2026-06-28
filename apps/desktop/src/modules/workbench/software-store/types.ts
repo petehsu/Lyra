@@ -57,7 +57,6 @@ export type SoftwareStoreLabels = {
   readonly selectItemTitle: string;
   readonly selectItemDescription: string;
   readonly emptyTitle: string;
-  readonly emptyDescription: string;
   readonly typeLabel: string;
   readonly categoryLabel: string;
   readonly versionLabel: string;

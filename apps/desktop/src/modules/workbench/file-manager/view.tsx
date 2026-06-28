@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type { LyraDesktopApi, SearchIndexStatusResponse } from "../../../shared/desktop-bridge";
+import type { FileManagerFavorite } from "../../../shared/file-manager";
 import { useFileManagerSurfaceActions } from "./use-file-manager-surface-actions";
 
 export type FileManagerSurfaceProps = {
@@ -31,6 +32,7 @@ export type FileManagerSurfaceProps = {
   readonly labels: FileManagerSurfaceLabels;
   readonly model: FileManagerModel;
   readonly onOpenFile: (filePath: string) => void;
+  readonly onOpenFavorite?: (favorite: FileManagerFavorite) => void;
   readonly chooser?: FileManagerChooserMode | null;
 };
 
@@ -153,6 +155,7 @@ export const FileManagerSurface = ({
   labels,
   model,
   onOpenFile,
+  onOpenFavorite,
   chooser
 }: FileManagerSurfaceProps) => {
   const isLoading = state?.status === "loading";
@@ -182,7 +185,8 @@ export const FileManagerSurface = ({
     state,
     model,
     onOpenFile,
-    chooser,
+    ...(onOpenFavorite === undefined ? {} : { onOpenFavorite }),
+    ...(chooser === undefined ? {} : { chooser }),
     renderModel,
     searchIndex,
     setPageKindOverride,

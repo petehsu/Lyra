@@ -430,6 +430,85 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     config
         .providers
+        .entry("deepseek".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "deepseek".to_string(),
+            label: "DeepSeek".to_string(),
+            route_id: providers::routes::deepseek::OPENAI_ROUTE_ID.to_string(),
+            base_url: env::var("DEEPSEEK_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::deepseek::OPENAI_BASE_URL.to_string())),
+            default_model: env::var("DEEPSEEK_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            api_key: env::var("DEEPSEEK_API_KEY").ok(),
+            api_key_env: Some("DEEPSEEK_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("glm".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "glm".to_string(),
+            label: "GLM".to_string(),
+            route_id: providers::routes::glm::ROUTE_ID.to_string(),
+            base_url: env::var("GLM_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::glm::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("GLM_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            api_key: env::var("GLM_API_KEY")
+                .ok()
+                .or_else(|| env::var("ZHIPU_API_KEY").ok())
+                .or_else(|| env::var("ZAI_API_KEY").ok()),
+            api_key_env: Some("GLM_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("moonshot".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "moonshot".to_string(),
+            label: "Kimi".to_string(),
+            route_id: providers::routes::moonshot::ROUTE_ID.to_string(),
+            base_url: env::var("MOONSHOT_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::moonshot::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("MOONSHOT_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            api_key: env::var("MOONSHOT_API_KEY").ok(),
+            api_key_env: Some("MOONSHOT_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
+        .entry("nvidia".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "nvidia".to_string(),
+            label: "NVIDIA NIM".to_string(),
+            route_id: providers::routes::nvidia::ROUTE_ID.to_string(),
+            base_url: env::var("NVIDIA_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::nvidia::DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("NVIDIA_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            api_key: env::var("NVIDIA_API_KEY").ok(),
+            api_key_env: Some("NVIDIA_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
         .entry("anthropic".to_string())
         .or_insert_with(|| {
             let default_model = env::var("ANTHROPIC_MODEL")

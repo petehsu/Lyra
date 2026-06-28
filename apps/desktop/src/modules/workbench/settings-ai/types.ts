@@ -100,13 +100,6 @@ export type SettingsAiLabels = {
   readonly callbackInputLabel: string;
   readonly callbackInputPlaceholder: string;
   readonly loginCallbackDescription: string;
-  readonly gmailLoginTitle: string;
-  readonly gmailLoginDescription: string;
-  readonly gmailClientIdLabel: string;
-  readonly gmailClientSecretLabel: string;
-  readonly gmailAccessTierLabel: string;
-  readonly gmailAccessReadOnly: string;
-  readonly gmailAccessFull: string;
   readonly apiKeyProviderTitle: string;
   readonly apiKeyProviderDescription: string;
   readonly localProviderTitle: string;

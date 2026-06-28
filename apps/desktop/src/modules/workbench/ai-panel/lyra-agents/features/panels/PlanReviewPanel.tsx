@@ -4,7 +4,7 @@ import type {
   AgentPlanSnapshot
 } from "../../../../../../shared/agent";
 import { AppButton } from "@renderer/ui/components";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 
 export function PlanReviewPanel({
   plan,

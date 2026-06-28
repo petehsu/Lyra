@@ -61,7 +61,7 @@ export const AppDataTable = <TRow,>({
     : error
       ? (errorState ?? <AppErrorState title="Unable to load data" description="Try again from the page action." />)
       : rows.length === 0
-        ? (emptyState ?? <AppEmptyState title="No data" description="There are no rows to show." />)
+        ? (emptyState ?? <AppEmptyState title="No data" />)
         : null;
 
   return (

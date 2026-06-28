@@ -115,225 +115,6 @@
   background: var(--lyra-app-material-panel-bg);
 }
 
-/* Unified morph list picker */
-.lyra-list-picker {
-  --lyra-list-picker-width: 100%;
-  --lyra-list-picker-row-height: var(--lyra-unit-36);
-  --lyra-list-picker-option-height: var(--lyra-unit-32);
-  --lyra-list-picker-option-gap: var(--lyra-unit-4);
-  --lyra-list-picker-surface-padding: var(--lyra-unit-4);
-  --lyra-list-picker-option-count: 1;
-  --lyra-list-picker-closed-radius: var(--lyra-unit-999);
-  --lyra-list-picker-expanded-radius: var(--lyra-unit-12);
-  --lyra-list-picker-font-size: var(--lyra-unit-12);
-  --lyra-list-picker-padding-inline: var(--lyra-unit-10);
-  width: var(--lyra-list-picker-width);
-  min-width: var(--lyra-list-picker-width);
-  height: var(--lyra-list-picker-row-height);
-  position: relative;
-  isolation: isolate;
-}
-
-.lyra-list-picker-size-probe {
-  height: var(--lyra-list-picker-row-height);
-  width: max-content;
-  display: var(--lyra-list-picker-size-probe-display, none);
-  align-items: center;
-  padding: 0 calc(var(--lyra-list-picker-padding-inline) + var(--lyra-unit-18)) 0
-    var(--lyra-list-picker-padding-inline);
-  color: transparent;
-  font: inherit;
-  font-size: var(--lyra-list-picker-font-size);
-  white-space: nowrap;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.lyra-list-picker-compact {
-  --lyra-list-picker-row-height: var(--lyra-unit-27);
-  --lyra-list-picker-option-height: var(--lyra-unit-26);
-  --lyra-list-picker-option-gap: var(--lyra-unit-3);
-  --lyra-list-picker-surface-padding: var(--lyra-unit-4);
-  --lyra-list-picker-expanded-radius: var(--lyra-unit-14);
-  --lyra-list-picker-font-size: var(--lyra-unit-11);
-}
-
-.lyra-list-picker-shape-pill {
-  --lyra-list-picker-closed-radius: var(--lyra-unit-999);
-}
-
-.lyra-list-picker-shape-rounded {
-  --lyra-list-picker-closed-radius: var(--lyra-radius-8);
-}
-
-.lyra-list-picker-open {
-  z-index: 18;
-}
-
-.lyra-list-picker-surface {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  min-height: var(--lyra-list-picker-row-height);
-  height: var(--lyra-list-picker-row-height);
-  overflow: hidden;
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-app-border) 34%, transparent);
-  border-radius: var(--lyra-list-picker-closed-radius);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-surface-bg) 90%, transparent) 0%,
-      color-mix(in srgb, var(--lyra-app-panel-bg) 84%, transparent) 100%
-    );
-  box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-app-surface-bg) 28%, transparent),
-    0 var(--lyra-unit-7) var(--lyra-unit-22) color-mix(in srgb, var(--lyra-app-bg) 10%, transparent);
-  transition:
-    height 190ms cubic-bezier(0.22, 0.82, 0.24, 1),
-    border-color var(--lyra-transition-fast),
-    box-shadow var(--lyra-transition-fast);
-}
-
-.lyra-list-picker:hover .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-app-border) 48%, var(--lyra-text-secondary) 28%);
-}
-
-.lyra-list-picker:focus-within .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-app-border) 48%, var(--lyra-text-secondary) 28%);
-}
-
-.lyra-list-picker-open .lyra-list-picker-surface {
-  height: calc(
-    var(--lyra-list-picker-row-height) +
-    (var(--lyra-list-picker-option-count) * var(--lyra-list-picker-option-height)) +
-    ((var(--lyra-list-picker-option-count) - 1) * var(--lyra-list-picker-option-gap)) +
-    (var(--lyra-list-picker-surface-padding) * 2) +
-    var(--lyra-unit-2)
-  );
-  border-radius: var(--lyra-list-picker-expanded-radius);
-  box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-app-surface-bg) 30%, transparent),
-    0 var(--lyra-unit-14) var(--lyra-unit-30) color-mix(in srgb, var(--lyra-app-bg) 10%, transparent);
-}
-
-.lyra-list-picker-options {
-  margin: 0;
-  padding: var(--lyra-list-picker-surface-padding) var(--lyra-list-picker-surface-padding) var(--lyra-unit-2);
-  list-style: none;
-  display: grid;
-  flex: 0 0 auto;
-  gap: var(--lyra-list-picker-option-gap);
-  min-height: calc(
-    (var(--lyra-list-picker-option-count) * var(--lyra-list-picker-option-height)) +
-    ((var(--lyra-list-picker-option-count) - 1) * var(--lyra-list-picker-option-gap)) +
-    (var(--lyra-list-picker-surface-padding) * 2)
-  );
-}
-
-.lyra-list-picker-option-item {
-  display: block;
-}
-
-.lyra-list-picker-option {
-  width: 100%;
-  min-height: var(--lyra-list-picker-option-height);
-  border: 0;
-  border-radius: var(--lyra-unit-8);
-  background: transparent;
-  color: var(--lyra-text-secondary);
-  font: inherit;
-  font-size: var(--lyra-list-picker-font-size);
-  text-align: left;
-  padding: 0 var(--lyra-list-picker-padding-inline);
-  cursor: pointer;
-  transition:
-    color var(--lyra-transition-fast),
-    background-color var(--lyra-transition-fast);
-}
-
-.lyra-list-picker-option:hover {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 36%, transparent);
-}
-
-.lyra-list-picker-option-active {
-  color: var(--lyra-text-primary);
-  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 48%, transparent);
-}
-
-.lyra-list-picker-option-disabled,
-.lyra-list-picker-option:disabled {
-  color: var(--lyra-text-muted);
-  background: transparent;
-  opacity: 0.56;
-  cursor: not-allowed;
-}
-
-.lyra-list-picker-trigger {
-  width: 100%;
-  height: var(--lyra-list-picker-row-height);
-  min-height: var(--lyra-list-picker-row-height);
-  box-sizing: border-box;
-  border: 0;
-  border-top: var(--lyra-unit-0-5) solid transparent;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  color: var(--lyra-text-secondary);
-  font: inherit;
-  font-size: var(--lyra-list-picker-font-size);
-  padding: 0 var(--lyra-list-picker-padding-inline);
-  cursor: pointer;
-  position: relative;
-  z-index: 2;
-  transition:
-    color var(--lyra-transition-fast),
-    border-color var(--lyra-transition-fast);
-}
-
-.lyra-list-picker-trigger:hover {
-  color: var(--lyra-text-primary);
-}
-
-.lyra-list-picker-trigger:disabled {
-  color: var(--lyra-text-muted);
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.lyra-list-picker-open .lyra-list-picker-trigger {
-  border-top-color: color-mix(in srgb, var(--lyra-app-border) 38%, transparent);
-}
-
-.lyra-list-picker-trigger-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--lyra-unit-4);
-}
-
-.lyra-list-picker-trigger::after {
-  content: "";
-  width: var(--lyra-unit-6);
-  height: var(--lyra-unit-6);
-  margin-left: auto;
-  border-right: var(--lyra-unit-1-5) solid color-mix(in srgb, var(--lyra-text-muted) 90%, transparent);
-  border-bottom: var(--lyra-unit-1-5) solid color-mix(in srgb, var(--lyra-text-muted) 90%, transparent);
-  transform: rotate(45deg) translateY(var(--lyra-optical-caret-y-nudge));
-  pointer-events: none;
-  transition:
-    transform 170ms ease,
-    border-color var(--lyra-transition-fast);
-}
-
-.lyra-list-picker-open .lyra-list-picker-trigger::after {
-  transform: rotate(-135deg) translateY(var(--lyra-unit-0-5));
-}
-
 .lyra-titlebar {
   min-height: 0;
   display: grid;
@@ -604,16 +385,25 @@
   font-size: var(--lyra-text-size-12);
   line-height: 1.5;
   outline: none;
-  padding-right: var(--lyra-shell-titlebar-nav-h);
+  padding-right: calc(
+    var(--lyra-shell-titlebar-nav-h) *
+    var(--lyra-titlebar-navigation-action-slots, 1)
+  );
 }
 
 .lyra-titlebar-navigation-shell[data-has-value="true"] .lyra-titlebar-navigation-input,
 .lyra-titlebar-navigation-shell[data-has-trailing-control="true"] .lyra-titlebar-navigation-input {
-  padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 2);
+  padding-right: calc(
+    var(--lyra-shell-titlebar-nav-h) *
+    var(--lyra-titlebar-navigation-action-slots, 2)
+  );
 }
 
 .lyra-titlebar-navigation-shell[data-has-value="true"][data-has-trailing-control="true"] .lyra-titlebar-navigation-input {
-  padding-right: calc(var(--lyra-shell-titlebar-nav-h) * 3);
+  padding-right: calc(
+    var(--lyra-shell-titlebar-nav-h) *
+    var(--lyra-titlebar-navigation-action-slots, 3)
+  );
 }
 
 .lyra-titlebar-navigation-shell[data-mode="page-find"] .lyra-titlebar-navigation-input {
@@ -661,6 +451,11 @@
   color: var(--lyra-text-primary);
   background: transparent;
   opacity: 1;
+}
+
+.lyra-titlebar-navigation-favorite-action[aria-pressed="true"],
+.lyra-titlebar-navigation-favorite-action[data-active="true"] {
+  color: var(--lyra-accent);
 }
 
 .lyra-titlebar-page-find-counter {

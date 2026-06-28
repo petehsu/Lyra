@@ -29,6 +29,10 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::local_openai_compatible::descriptor(),
         routes::ollama::descriptor(),
     ];
+    routes.extend(routes::deepseek::route_descriptors());
+    routes.extend(routes::glm::route_descriptors());
+    routes.extend(routes::moonshot::route_descriptors());
+    routes.push(routes::nvidia::descriptor());
     routes.extend(routes::mimo::route_descriptors());
     routes.extend([
         routes::lmstudio::descriptor(),
@@ -79,6 +83,9 @@ pub(crate) fn route_model_discovery_hook(
         | routes::mimo::ANTHROPIC_TOKEN_PLAN_AMS_ROUTE_ID => {
             Some(routes::mimo::model_discovery_hook())
         }
+        routes::deepseek::OPENAI_ROUTE_ID | routes::deepseek::ANTHROPIC_ROUTE_ID => {
+            Some(routes::deepseek::model_discovery_hook())
+        }
         _ => None,
     }
 }
@@ -91,6 +98,10 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "gemini" | "google_gemini" => Some(routes::google_gemini::ROUTE_ID),
         "openrouter" => Some(routes::openrouter::ROUTE_ID),
         "mimo" => Some(routes::mimo::PAY_AS_YOU_GO_ROUTE_ID),
+        "deepseek" => Some(routes::deepseek::OPENAI_ROUTE_ID),
+        "glm" | "zhipu" | "zai" => Some(routes::glm::ROUTE_ID),
+        "kimi" | "moonshot" => Some(routes::moonshot::ROUTE_ID),
+        "nvidia" | "nim" => Some(routes::nvidia::ROUTE_ID),
         _ => None,
     }
 }
@@ -122,6 +133,7 @@ mod tests {
                 supports_image_input: true,
                 supports_tool_calling: true,
                 supports_streaming: true,
+                supports_reasoning_effort: None,
                 enabled: true,
             }],
         }
@@ -187,6 +199,105 @@ mod tests {
         assert!(route.runtime_supported);
         assert!(route.model_discovery_supported);
         assert!(route.custom_headers_supported);
+    }
+
+    #[test]
+    fn deepseek_routes_are_auto_discovery_routes() {
+        let openai_route =
+            require_route(routes::deepseek::OPENAI_ROUTE_ID).expect("deepseek route");
+        assert_eq!(
+            openai_route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            openai_route.default_base_url.as_deref(),
+            Some(routes::deepseek::OPENAI_BASE_URL)
+        );
+        assert_eq!(openai_route.auth_kind, "bearer");
+        assert!(openai_route.quick_setup_supported);
+        assert!(openai_route.model_discovery_supported);
+
+        let anthropic_route =
+            require_route(routes::deepseek::ANTHROPIC_ROUTE_ID).expect("deepseek anthropic route");
+        assert_eq!(
+            anthropic_route.protocol_id,
+            protocol::anthropic_messages::PROTOCOL_ID
+        );
+        assert_eq!(
+            anthropic_route.default_base_url.as_deref(),
+            Some(routes::deepseek::ANTHROPIC_BASE_URL)
+        );
+        assert_eq!(anthropic_route.auth_kind, "x-api-key");
+        assert!(anthropic_route.quick_setup_supported);
+        assert!(anthropic_route.model_discovery_supported);
+    }
+
+    #[test]
+    fn glm_routes_are_openai_compatible_discovery_routes() {
+        let route = require_route(routes::glm::ROUTE_ID).expect("glm route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::glm::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+
+        let zai_route = require_route(routes::glm::ZAI_ROUTE_ID).expect("zai glm route");
+        assert_eq!(
+            zai_route.default_base_url.as_deref(),
+            Some(routes::glm::ZAI_BASE_URL)
+        );
+        assert_eq!(
+            zai_route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+    }
+
+    #[test]
+    fn moonshot_routes_are_openai_compatible_discovery_routes() {
+        let route = require_route(routes::moonshot::ROUTE_ID).expect("moonshot route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::moonshot::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+
+        let cn_route = require_route(routes::moonshot::CN_ROUTE_ID).expect("moonshot cn route");
+        assert_eq!(
+            cn_route.default_base_url.as_deref(),
+            Some(routes::moonshot::CN_BASE_URL)
+        );
+        assert_eq!(
+            cn_route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+    }
+
+    #[test]
+    fn nvidia_route_is_openai_compatible_discovery_route() {
+        let route = require_route(routes::nvidia::ROUTE_ID).expect("nvidia route");
+        assert_eq!(
+            route.protocol_id,
+            protocol::openai_chat_completions::PROTOCOL_ID
+        );
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::nvidia::DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
     }
 
     #[test]
@@ -325,6 +436,8 @@ mod tests {
         assert!(
             route_model_discovery_hook(routes::mimo::ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID).is_some()
         );
+        assert!(route_model_discovery_hook(routes::deepseek::OPENAI_ROUTE_ID).is_some());
+        assert!(route_model_discovery_hook(routes::deepseek::ANTHROPIC_ROUTE_ID).is_some());
         assert!(route_model_discovery_hook(routes::llama_cpp_server::ROUTE_ID).is_none());
         assert!(route_model_discovery_hook(routes::vllm::ROUTE_ID).is_none());
     }

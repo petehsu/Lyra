@@ -7,6 +7,7 @@ import type { WorkbenchObservationService } from "../workbench-observation/types
 import { createAgentIpcRouter } from "./agent-ipc-router";
 import { createAxToolHost } from "./ax-tool-host";
 import { createComputerToolHost } from "./computer-tool-host";
+import { createFavoritesToolHost } from "./favorites-tool-host";
 import { createLumenToolHost } from "./lumen-tool-host";
 import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
@@ -90,6 +91,7 @@ export const createAgentIpcBridge = ({
   });
 
   const softwareCapabilityHost = createSoftwareCapabilityHost({ getWindow });
+  const favoritesToolHost = createFavoritesToolHost({ storageRoot });
 
   const computerToolHost = createComputerToolHost({
     ...(resolveSensitiveValueForFill === undefined
@@ -161,6 +163,7 @@ export const createAgentIpcBridge = ({
     ...computerToolHost.handlers,
     ...terminalToolHost.handlers,
     ...softwareCapabilityHost.handlers,
+    ...favoritesToolHost.handlers,
     ...createHostPersonaContextHandlers(workbenchState)
   };
 

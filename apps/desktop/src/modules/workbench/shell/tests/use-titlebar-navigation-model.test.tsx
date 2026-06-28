@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type {
@@ -119,6 +119,8 @@ const renderModel = ({
     ariaLabel: "Address",
     submitLabel: "Go",
     reloadLabel: "Reload page",
+    addFavoriteLabel: "Add Favorite",
+    removeFavoriteLabel: "Remove Favorite",
     onReload,
     historyAppPlaceholder: "Search history",
     historyAppSuggestionLabels: {
@@ -217,6 +219,48 @@ describe("useTitlebarNavigationModel", () => {
 
     expect(onReload).toHaveBeenCalledTimes(1);
     expect(tabsModel.navigateResolvedInput).not.toHaveBeenCalled();
+  });
+
+  test("toggles the active web page favorite through file-manager favorites", async () => {
+    let favorites: NonNullable<Awaited<ReturnType<LyraDesktopApi["files"]["readFavorites"]>>>["favorites"] = [];
+    const readFavorites = vi.fn(async () => ({ favorites }));
+    const writeFavorites = vi.fn(async (payload: { readonly favorites: typeof favorites }) => {
+      favorites = payload.favorites;
+      return { favorites };
+    });
+    const { result } = renderModel({
+      activeTab: createPageTab(),
+      activePageRuntimeState: createRuntimeState({
+        title: "Example",
+        faviconUrl: "https://example.com/favicon.ico"
+      }),
+      desktopApi: {
+        files: {
+          readFavorites,
+          writeFavorites
+        }
+      } as unknown as LyraDesktopApi
+    });
+
+    await waitFor(() => expect(readFavorites).toHaveBeenCalled());
+    expect(result.current.favoriteButton).toMatchObject({
+      visible: true,
+      active: false,
+      label: "Add Favorite"
+    });
+
+    act(() => {
+      result.current.favoriteButton.onToggle();
+    });
+
+    await waitFor(() => expect(writeFavorites).toHaveBeenCalled());
+    expect(favorites[0]).toEqual(expect.objectContaining({
+      kind: "web",
+      title: "Example",
+      path: "https://example.com/",
+      url: "https://example.com/",
+      faviconUrl: "https://example.com/favicon.ico"
+    }));
   });
 
   test("submits navigation when a page address has changed", async () => {

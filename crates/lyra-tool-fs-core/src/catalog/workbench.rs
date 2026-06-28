@@ -122,5 +122,21 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Extract paginated text from one workbench tab.",
             Some("workbench_extract_tab_text"),
         ),
+        super::s(
+            "/tools/workbench/list_favorites",
+            "workbench",
+            "list_favorites",
+            "List favorites",
+            "List Lyra favorites from File Manager, including paths, web pages, and agent sessions.",
+            Some("workbench_list_favorites"),
+        ),
+        super::s(
+            "/tools/workbench/remove_favorite",
+            "workbench",
+            "remove_favorite",
+            "Remove favorite",
+            "Remove one Lyra favorite by id.",
+            Some("workbench_remove_favorite"),
+        ),
     ]
 }

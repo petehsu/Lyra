@@ -10,12 +10,10 @@ import {
 } from "react";
 
 import { WORKBENCH_CONFIG } from "../config";
-import { ContextMenuHost, useContextMenuModel } from "../context-menu";
-import {
-  GlobalDialogHost,
-  useGlobalDialogModel
-} from "../global-dialog";
+import { useContextMenuModel } from "../context-menu";
+import { useGlobalDialogModel } from "../global-dialog";
 import { createTranslator } from "../i18n";
+import { changeI18nLocale } from "../i18n/i18n-instance";
 import { useWorkbenchNotificationModel } from "../notifications";
 import { useWorkbenchPreferencesModel } from "../preferences";
 import { useWorkbenchLocationModel } from "../location";
@@ -26,10 +24,6 @@ import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
 import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
 
-import { TitlebarElementPickerButton } from "./titlebar-element-picker-button";
-import { WorkbenchTitlebarContextProvider, WorkbenchTitlebarContextSlot } from "./titlebar-context";
-import { TitlebarNavigation } from "./titlebar-navigation";
-import { createTitlebarSecurityLabels } from "./titlebar-security-labels";
 import { useBrowserSearchModel } from "../browser-search";
 import {
   useBrowserPageContextMenu,
@@ -44,7 +38,6 @@ import {
   type AgentSessionHistoryBrowserPreviewPage,
   type AgentSessionHistoryLocateRequest
 } from "../agent-session-history";
-import { AgentBrowserActivityOverlay } from "./agent-browser-activity-overlay";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
 import { useLocalSearchIndexStatus } from "./use-local-search-index-status";
 import { useDownloadNotifications } from "./use-download-notifications";
@@ -63,38 +56,28 @@ import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
 import { useTerminalWorkspaceActions } from "./use-terminal-workspace-actions";
 import { useTerminalIdentityProjection } from "./use-terminal-identity-projection";
 import { useWorkspaceAppIdentityProjection } from "./use-workspace-app-identity-projection";
-import { useWorkbenchAiLaunchProps } from "./use-workbench-ai-launch-props";
 import { useWorkbenchFileAppModels } from "./use-workbench-file-app-models";
-import { useWorkbenchEditorReviewModel } from "./use-workbench-editor-review-model";
-import { useWorkbenchEmptyAppTabGuards } from "./use-workbench-empty-app-tab-guards";
 import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-notice";
-import { useWorkbenchNotificationNavigation } from "./use-workbench-notification-navigation";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-chooser";
 import { useWorkbenchProjectBindChooser } from "./use-workbench-project-bind-chooser";
 import { useWorkbenchSearchSettings } from "./use-workbench-search-settings";
 import { useWorkbenchAgentAppOpeners } from "./use-workbench-agent-app-openers";
 import { useAgentEditFollow } from "./use-agent-edit-follow";
-import { useWorkbenchShellAdapterProps } from "./use-workbench-shell-adapter-props";
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
-import { useWorkbenchShellSlots } from "./use-workbench-shell-slots";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
 import { useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
 import {
-  useWorkbenchSystemNotificationActivation,
   useWorkbenchSystemNotificationPermissionGuard,
   useWorkbenchSystemNotificationPublisher
 } from "./use-workbench-system-notifications";
 import { useWorkbenchThemeRuntime } from "./use-workbench-theme-runtime";
-import { useWorkbenchWorkspaceTabsProps } from "./use-workbench-workspace-tabs-props";
-import { useWorkspaceSurfaceRouterProps } from "./use-workspace-surface-router-props";
-import { useTitlebarElementPickerModel } from "./use-titlebar-element-picker-model";
-import { useTitlebarNavigationModel } from "./use-titlebar-navigation-model";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
+import { WorkbenchShellStage } from "./workbench-shell-stage";
 import { EXPECTED_PROTOCOL_VERSION } from "../../../shared/agent";
 
 const WORKBENCH_BROWSER_LAYOUT_ANIMATION_MS = 260;
@@ -143,6 +126,11 @@ export const WorkbenchShell = () => {
     () => createTranslator(preferencesModel.preferences.locale),
     [preferencesModel.preferences.locale]
   );
+  // ponytail: i18next locale 同步 + html lang 更新；createTranslator 已委托 i18next，此处确保 i18next language 跟随偏好
+  useEffect(() => {
+    changeI18nLocale(preferencesModel.preferences.locale);
+    document.documentElement.lang = preferencesModel.preferences.locale;
+  }, [preferencesModel.preferences.locale]);
   const labels = useWorkbenchLabels(t);
   const rootRef = useRef<HTMLElement | null>(null);
   const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
@@ -591,355 +579,83 @@ resolvedThemeId,
     agentProjectTreeModel
   });
 
-  const {
-    editorReviewItems,
-    activeEditorReviewIndex,
-    resolveActiveEditorWorkItem,
-    onGoToPreviousEditorWorkItem,
-    onGoToNextEditorWorkItem,
-    onAcceptAllEditorWorkItems,
-    onAcceptEditorWorkItem,
-    onRejectEditorWorkItem,
-    onUndoEditorWorkItem
-  } = useWorkbenchEditorReviewModel({
-    desktopApi,
-    onOpenFileFromManager
-  });
-
-  const titlebarNavigation = useTitlebarNavigationModel({
-    desktopApi,
-    activeTab,
-    activePageRuntimeState,
-    activeFileEditorState,
-    activeFileManagerState,
-    tabsModel,
-    searchEngines: searchSettingsFacade.registeredSearchEngines,
-    autoSearchEngines: searchSettingsFacade.integratedSearchEngines,
-    localSearchReady: localSearchIndexStatus.ready,
-    omniboxNonBrowserSubmitTarget:
-      preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
-    placeholder: t("navigation.titlebarPlaceholder"),
-    ariaLabel: t("navigation.titlebarAriaLabel"),
-    submitLabel: t("navigation.submitAction"),
-    reloadLabel: t("navigation.reloadAction"),
-    onReload,
-    historyAppPlaceholder: labels.agentSessionHistory.searchPlaceholder,
-    historyAppSuggestionLabels,
-    onHistoryAppReload: () => {
-      refreshBrowserHistoryEntries();
-      setAgentHistoryRefreshRequestKey((current) => current + 1);
-    },
-    onHistoryAppSuggestionSelect: (target) => {
-      setAgentHistoryLocateRequest((current) => ({
-        requestKey: (current?.requestKey ?? 0) + 1,
-        target
-      }));
-    },
-    onOpenFilePath: (path) => onOpenFileFromManager(path),
-    onOpenDirectoryPath: openDirectoryFromNavigation,
-    onRunTerminalCommand
-  });
-  const titlebarElementPicker = useTitlebarElementPickerModel({
-    desktopApi,
-    activeTab,
-    enableLabel: t("navigation.elementPickerEnable"),
-    disableLabel: t("navigation.elementPickerDisable"),
-    activeLabel: t("navigation.elementPickerActive"),
-    inspectLabel: t("navigation.elementPickerInspect"),
-    layoutLabel: t("navigation.elementPickerLayout")
-  });
-  const aiLaunchProps = useWorkbenchAiLaunchProps(t);
-  const sidebarAiSurfacePropsWithFileOpen = {
-    ...sidebarAiSurfaceProps,
-    composerCitationSinkRef,
-    onSetActiveBrowserTab: tabsModel.setActiveTab,
-    activeSessionTabId: aiSessionTabsModel.activeTabId,
-    activeSessionId: aiSessionTabsModel.activeSessionId,
-    sessionTabs: aiSessionTabsModel.tabs,
-    onActiveSessionChange: aiSessionTabsModel.activateSession,
-    onActivateSessionTab: aiSessionTabsModel.activateSession,
-    onCloseSessionTab: aiSessionTabsModel.closeSession, onReorderSessionTabs: aiSessionTabsModel.reorderSessionTabs,
-    onCreateDraftSessionTab: aiSessionTabsModel.createDraftSession,
-    onCreateSessionTab: aiSessionTabsModel.createSession, onMissingSession: aiSessionTabsModel.removeSession,
-    onUpdateDraftWorkingDir: aiSessionTabsModel.setDraftWorkingDir, onSessionSnapshotChange: aiSessionTabsModel.upsertSnapshot
-  };
-  useWorkbenchEmptyAppTabGuards({
-    tabsModel,
-    notificationCount: notificationModel.notifications.length
-  });
-
-  const {
-    onOpenNotificationCenter,
-    onOpenNotificationPreview,
-    onOpenNotificationSource,
-    onRequestClearNotifications
-  } = useWorkbenchNotificationNavigation({
-    tabsModel,
-    fileManagerModel,
-    fileEditorModel,
-    notificationModel,
-    openDialog: globalDialogModel.openDialog,
-    t
-  });
-
-  useWorkbenchSystemNotificationActivation({
-    desktopApi,
-    notificationModel,
-    onOpenNotificationCenter,
-    onOpenNotificationSource
-  });
-
-  const onOpenAgentSession = useCallback((sessionId: string): void => {
-    const trimmedSessionId = sessionId.trim();
-    if (trimmedSessionId.length === 0) {
-      return;
-    }
-    aiSessionTabsModel.openSession(trimmedSessionId);
-    if (!panelLayoutModel.isLeftPanelVisible) {
-      beginBrowserLayoutAnimationSync();
-      panelLayoutModel.toggleLeftPanel();
-    }
-  }, [
-    aiSessionTabsModel,
-    beginBrowserLayoutAnimationSync,
-    panelLayoutModel.isLeftPanelVisible,
-    panelLayoutModel.toggleLeftPanel
-  ]);
-
-  const workspaceSurfaceProps = useWorkspaceSurfaceRouterProps({
-    activeTab,
-    tabsModel,
-    browserSearchModel,
-    searchEngines: searchSettingsFacade.registeredSearchEngines,
-    autoSearchEngines: searchSettingsFacade.integratedSearchEngines,
-    engineById: searchSettingsFacade.engineById,
-    onPageHostChange: registerPageHost,
-    terminalModel,
-    desktopApi,
-    resolvedThemeId,
-    fileManagerModel,
-    resolveFileManagerChooser,
-    fileEditorModel,
-    imageViewerModel,
-    agentProjectTreeModel,
-    agentPlanBoardModel,
-    activeEditorReviewIndex,
-    editorReviewItems,
-    resolveActiveEditorWorkItem,
-    onGoToPreviousEditorWorkItem,
-    onGoToNextEditorWorkItem,
-    onAcceptAllEditorWorkItems,
-    onAcceptEditorWorkItem,
-    onRejectEditorWorkItem,
-    onUndoEditorWorkItem,
-    preferencesModel,
-    settings: settingsSurfaceProps,
-    onOpenSettingsSection: openSettingsSectionFromCapability,
-    notificationModel,
-    localSearchReady: localSearchIndexStatus.ready,
-    labels,
-    softwareCapabilities,
-    onOpenFileFromManager,
-    onRevealPathInFileManager,
-    onOpenNotificationSource,
-    onRequestClearNotifications,
-    onOpenAgentGit,
-    agentSessionHistory: {
-      labels: labels.agentSessionHistory,
-      activeSessionId: aiSessionTabsModel.activeSessionId,
-      onOpenSession: onOpenAgentSession,
-      onSessionDeleted: aiSessionTabsModel.removeSession,
-      openDialog: globalDialogModel.openDialog,
-      query: activeTab?.pageKind === "app" && activeTab.appId === "agent-session-history"
-        ? activeTab.inputValue
-        : "",
-      refreshRequestKey: agentHistoryRefreshRequestKey,
-      locateRequest: agentHistoryLocateRequest,
-      browserHistory: browserHistoryEntries,
-      browserHistoryPreviewPageId: AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID,
-      onBrowserHistoryPreviewChange: setAgentHistoryBrowserPreviewPage,
-      onBrowserHistoryPreviewHostChange: registerPageHost,
-      onOpenBrowserHistoryEntry: (entry) => {
-        tabsModel.openPageInNewTab(entry.url, entry.title);
-      },
-      locale: preferencesModel.preferences.locale
-    }
-  });
   const rootClassName = cx(
     "lyra-root",
     uiRuntime.rootClassName,
     isFullScreen && "lyra-root-fullscreen",
     globalDialogModel.state.isOpen && "lyra-root-modal-open"
   );
-  const isMac = desktopApi?.appMeta.platform === "darwin";
-  const workbenchPresentationState = useMemo(
-    () => ({
-      isMac,
-      isMaximized,
-      isFullScreen,
-      isAiPanelVisible: panelLayoutModel.isLeftPanelVisible,
-      isTerminalPanelVisible: panelLayoutModel.isBottomPanelVisible,
-      terminalPanelSide: panelLayoutModel.terminalPanelSide
-    }),
-    [
-      isMac,
-      isFullScreen,
-      isMaximized,
-      panelLayoutModel.isBottomPanelVisible,
-      panelLayoutModel.isLeftPanelVisible,
-      panelLayoutModel.terminalPanelSide
-    ]
-  );
-  const AiPanelAdapter = uiRuntime.adapters.aiPanel;
-  const ShellAdapter = uiRuntime.adapters.shell;
-  const TerminalDockAdapter = uiRuntime.adapters.terminalDock;
-  const WorkspaceSurfaceAdapter = uiRuntime.adapters.workspaceSurface;
-  const WorkspaceTabsAdapter = uiRuntime.adapters.workspaceTabs;
-  const workspaceTabsLabels = useMemo(
-    () => ({
-      goBackLabel: t("browser.goBack"),
-      goForwardLabel: t("browser.goForward"),
-      toggleTabStackLabel: t("browser.toggleTabStack"),
-      openNewTabLabel: t("browser.openNewTab"),
-      closeTabLabel: t("browser.closeTab")
-    }),
-    [t]
-  );
-  const titlebarSecurityLabels = useMemo(() => createTitlebarSecurityLabels(t), [t]);
-  const workspaceTabsProps = useWorkbenchWorkspaceTabsProps({
-    tabsModel,
-    terminalIdentityByTabId,
-    workspaceAppIdentityByTabId,
-    activeTabPageKind,
-    canGoBack: pageNavigationState.canGoBack,
-    canGoForward: pageNavigationState.canGoForward,
-    stackedMode: stackedBrowserTabs,
-    setStackedMode: setStackedBrowserTabs,
-    labels: workspaceTabsLabels,
-    splitTriggerMode: preferencesModel.preferences.splitTriggerMode,
-    interactionPolicy: uiRuntime.interactions.workspaceTabs,
-    terminalWorkspaceActions,
-    workbenchActions,
-    onGoBack,
-    onGoForward
-  });
-  const notificationTopbarProps = useMemo(
-    () => ({
-      labels: labels.notificationTopbar,
-      notificationCount: notificationModel.notifications.length,
-      unreadCount: notificationModel.unreadCount,
-      preview: notificationModel.topbarPreview,
-      onOpenCenter: onOpenNotificationCenter,
-      onOpenPreview: onOpenNotificationPreview
-    }),
-    [
-      labels.notificationTopbar,
-      notificationModel.notifications.length,
-      notificationModel.topbarPreview,
-      notificationModel.unreadCount,
-      onOpenNotificationCenter,
-      onOpenNotificationPreview
-    ]
-  );
-  const workbenchChromeSlots = useWorkbenchShellSlots({
-    titlebarNavigation: null,
-    titlebarContext: null,
-    leftPanel: sidebarAiSurfacePropsWithFileOpen === null ? null : (
-      <AiPanelAdapter {...sidebarAiSurfacePropsWithFileOpen} />
-    ),
-    workspace: (
-      <>
-        <WorkspaceSurfaceAdapter
-          {...workspaceSurfaceProps}
-          surfaceAdapters={uiRuntime.adapters.surfaces}
-        />
-        <AgentBrowserActivityOverlay
-          state={browserAgentVisualState}
-        />
-      </>
-    ),
-    browserTabs: (
-      <WorkspaceTabsAdapter
-        {...workspaceTabsProps}
-        agentActiveTabId={browserAgentVisualState.active ? browserAgentVisualState.tabId : null}
-        toolbarContextControl={<WorkbenchTitlebarContextSlot />}
-        navigationControl={
-          <TitlebarNavigation
-            {...titlebarNavigation}
-            activeBrowserTabId={activeBrowserTabId}
-            browserChromePopoverBridge={desktopApi?.workbenchBrowser}
-            locale={preferencesModel.preferences.locale}
-            securityLabels={titlebarSecurityLabels}
-            trailingControl={
-              titlebarElementPicker.visible ? (
-                <TitlebarElementPickerButton
-                  active={titlebarElementPicker.enabled}
-                  mode={titlebarElementPicker.mode}
-                  ariaLabel={titlebarElementPicker.ariaLabel}
-                  activeDescription={titlebarElementPicker.activeDescription}
-                  onToggle={titlebarElementPicker.onToggle}
-                />
-              ) : undefined
-            }
-          />
-        }
-      />
-    ),
-    terminalPanel: (
-      <TerminalDockAdapter
-        desktopApi={desktopApi}
-        labels={labels.terminal}
-        themeSignature={preferencesModel.preferences.theme}
-        uiThemeId={resolvedThemeId}
-        model={terminalModel}
-        terminalIdentityByTabId={terminalIdentityByTabId}
-        terminalPanelSide={panelLayoutModel.terminalPanelSide}
-        onRequestCloseTab={terminalWorkspaceActions.closeTerminalTabEverywhere}
-        onRequestTabContextMenu={(request) => {
-          terminalWorkspaceActions.openDockTabContextMenu(
-            request.tabId,
-            request.anchorX,
-            request.anchorY
-          );
-        }}
-        onToggleTerminalPanelSide={workbenchActions.toggleTerminalPanelSide}
-        onDropWorkspaceTerminalTab={terminalWorkspaceActions.openTerminalTabInDock}
-      />
-    ),
-    overlays: (
-      <>
-        <ContextMenuHost
-          state={contextMenuModel.state}
-          onClose={contextMenuModel.closeMenu}
-          onSelectItem={contextMenuModel.selectItem}
-        />
-        <GlobalDialogHost
-          state={globalDialogModel.state}
-          onClose={globalDialogModel.closeDialog}
-          onSelectAction={globalDialogModel.selectAction}
-        />
-      </>
-    )
-  });
-  const shellAdapterProps = useWorkbenchShellAdapterProps({
-    rootRef,
-    rootClassName,
-    rootStyle,
-    uiRuntime,
-    actions: workbenchActions,
-    labels: workbenchChromeLabels,
-    presentationState: workbenchPresentationState,
-    isMac,
-    panelLayoutModel,
-    slots: workbenchChromeSlots,
-    notificationTopbar: notificationTopbarProps,
-    aiLaunch: aiLaunchProps,
-    onRootDragStartCapture
-  });
 
   return (
-    <WorkbenchTitlebarContextProvider activeScopeId={visibleWorkspaceLayout.mode === "split" ? visibleWorkspaceLayout.focusedSplitTabId : visibleWorkspaceLayout.activeTabId}>
-      <ShellAdapter {...shellAdapterProps} />
-    </WorkbenchTitlebarContextProvider>
+    <WorkbenchShellStage
+      activeBrowserTabId={activeBrowserTabId}
+      activeFileEditorState={activeFileEditorState}
+      activeFileManagerState={activeFileManagerState}
+      activePageRuntimeState={activePageRuntimeState}
+      activeTab={activeTab}
+      activeTabPageKind={activeTabPageKind}
+      agentHistoryLocateRequest={agentHistoryLocateRequest}
+      agentHistoryRefreshRequestKey={agentHistoryRefreshRequestKey}
+      agentHistoryBrowserPreviewTabId={AGENT_HISTORY_BROWSER_PREVIEW_TAB_ID}
+      agentPlanBoardModel={agentPlanBoardModel}
+      agentProjectTreeModel={agentProjectTreeModel}
+      aiSessionTabsModel={aiSessionTabsModel}
+      beginBrowserLayoutAnimationSync={beginBrowserLayoutAnimationSync}
+      browserAgentVisualState={browserAgentVisualState}
+      browserHistoryEntries={browserHistoryEntries}
+      browserSearchModel={browserSearchModel}
+      composerCitationSinkRef={composerCitationSinkRef}
+      contextMenuModel={contextMenuModel}
+      desktopApi={desktopApi}
+      fileEditorModel={fileEditorModel}
+      fileManagerModel={fileManagerModel}
+      globalDialogModel={globalDialogModel}
+      historyAppSuggestionLabels={historyAppSuggestionLabels}
+      imageViewerModel={imageViewerModel}
+      isFullScreen={isFullScreen}
+      isMaximized={isMaximized}
+      labels={labels}
+      localSearchIndexStatus={localSearchIndexStatus}
+      notificationModel={notificationModel}
+      onGoBack={onGoBack}
+      onGoForward={onGoForward}
+      onOpenAgentGit={onOpenAgentGit}
+      onOpenFileFromManager={onOpenFileFromManager}
+      onReload={onReload}
+      onRevealPathInFileManager={onRevealPathInFileManager}
+      onRootDragStartCapture={onRootDragStartCapture}
+      onRunTerminalCommand={onRunTerminalCommand}
+      openDirectoryFromNavigation={openDirectoryFromNavigation}
+      openSettingsSectionFromCapability={openSettingsSectionFromCapability}
+      pageNavigationState={pageNavigationState}
+      panelLayoutModel={panelLayoutModel}
+      preferencesModel={preferencesModel}
+      refreshBrowserHistoryEntries={refreshBrowserHistoryEntries}
+      registerPageHost={registerPageHost}
+      resolveFileManagerChooser={resolveFileManagerChooser}
+      resolvedThemeId={resolvedThemeId}
+      rootClassName={rootClassName}
+      rootRef={rootRef}
+      rootStyle={rootStyle}
+      searchSettingsFacade={searchSettingsFacade}
+      setAgentHistoryBrowserPreviewPage={setAgentHistoryBrowserPreviewPage}
+      setAgentHistoryLocateRequest={setAgentHistoryLocateRequest}
+      setAgentHistoryRefreshRequestKey={setAgentHistoryRefreshRequestKey}
+      setStackedBrowserTabs={setStackedBrowserTabs}
+      settingsSurfaceProps={settingsSurfaceProps}
+      sidebarAiSurfaceProps={sidebarAiSurfaceProps}
+      softwareCapabilities={softwareCapabilities}
+      stackedBrowserTabs={stackedBrowserTabs}
+      t={t}
+      tabsModel={tabsModel}
+      terminalIdentityByTabId={terminalIdentityByTabId}
+      terminalModel={terminalModel}
+      terminalWorkspaceActions={terminalWorkspaceActions}
+      uiRuntime={uiRuntime}
+      visibleWorkspaceLayout={visibleWorkspaceLayout}
+      workbenchActions={workbenchActions}
+      workbenchChromeLabels={workbenchChromeLabels}
+      workspaceAppIdentityByTabId={workspaceAppIdentityByTabId}
+    />
   );
 };

@@ -76,4 +76,44 @@ describe("usePanelLayoutModel", () => {
     expect(persisted.leftWidth).toBe(result.current.leftWidth);
     expect(persisted.bottomHeight).toBe(result.current.bottomHeight);
   });
+
+  test("persists shared app sidebar width from sidebar edge drag", () => {
+    const root = document.createElement("div");
+    const sidebar = document.createElement("aside");
+    sidebar.className = "lyra-app-sidebar-nav";
+    Object.defineProperty(sidebar, "getBoundingClientRect", {
+      value: () => ({
+        left: 0,
+        top: 0,
+        right: 220,
+        bottom: 400,
+        width: 220,
+        height: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({})
+      })
+    });
+    root.append(sidebar);
+    document.body.append(root);
+    const ref = { current: root };
+    const { result } = renderHook(() => usePanelLayoutModel(ref));
+
+    act(() => {
+      sidebar.dispatchEvent(new MouseEvent("mousedown", {
+        bubbles: true,
+        button: 0,
+        clientX: 220
+      }));
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 260 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
+    });
+
+    const persisted = JSON.parse(readWorkbenchStateSync("layout") ?? "{}") as {
+      readonly appSidebarWidth?: number;
+    };
+    expect(result.current.appSidebarWidth).toBe(260);
+    expect(persisted.appSidebarWidth).toBe(260);
+    root.remove();
+  });
 });

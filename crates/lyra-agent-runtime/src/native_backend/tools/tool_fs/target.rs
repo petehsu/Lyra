@@ -116,6 +116,12 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/workbench/extract_tab_text" => {
             host("workbench.extractTabText", "workbench", "extract_tab_text")
         }
+        "/tools/workbench/list_favorites" => {
+            host("workbench.listFavorites", "workbench", "list_favorites")
+        }
+        "/tools/workbench/remove_favorite" => {
+            host("workbench.removeFavorite", "workbench", "remove_favorite")
+        }
         "/tools/software/list_capabilities" => {
             host("software.listCapabilities", "software", "list_capabilities")
         }

@@ -141,16 +141,17 @@ describe("useWorkbenchAgentAppOpeners", () => {
     });
 
     expect(agentPlanBoardModel.ensureManagerInstance).toHaveBeenCalledWith(
-      "agent-plan-board-manager-session-1-project",
+      "agent-plan-board-manager-session-1-project-both",
       {
         agentSessionId: "session-1",
         workingDir: "/project",
         title: "Plans and Todos",
+        view: "both",
       }
     );
     expect(tabsModel.openAppTab).toHaveBeenCalledWith(expect.objectContaining({
       appId: "agent-plan-board",
-      appInstanceId: "agent-plan-board-manager-session-1-project",
+      appInstanceId: "agent-plan-board-manager-session-1-project-both",
       title: "Plans and Todos",
     }));
   });

@@ -2,12 +2,13 @@ import { ArrowUpRight, CheckCheck, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 
 import {
-  AppBadge,
   AppButton,
+  AppEmptyState,
   AppIconButton,
   AppObjectRow,
   AppSidebar
 } from "@renderer/ui/components";
+import { formatShortDateTime } from "@workbench/i18n";
 import { renderNotificationSourceIcon } from "./icon-registry";
 import type { NotificationCenterLabels, WorkbenchNotificationItem } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
@@ -22,15 +23,8 @@ export type NotificationCenterSurfaceProps = {
   readonly onOpenNotificationSource: (notificationId: string) => void;
 };
 
-const formatTimestamp = (timestamp: number): string => {
-  const date = new Date(timestamp);
-  return date.toLocaleString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-};
+// ponytail: formatTimestamp 委托 formatter.ts formatShortDateTime — 保持 locale 一致性
+const formatTimestamp = (timestamp: number): string => formatShortDateTime(timestamp);
 
 export const NotificationCenterSurface = ({
   labels,
@@ -109,10 +103,7 @@ export const NotificationCenterSurface = ({
       <section className="lyra-notification-center-body">
         <AppSidebar className="lyra-notification-center-list" aria-label={labels.listTitle}>
           {notifications.length === 0 ? (
-            <div className="lyra-notification-center-empty">
-              <strong>{labels.emptyTitle}</strong>
-              <span>{labels.emptyDescription}</span>
-            </div>
+            <AppEmptyState className="lyra-notification-center-empty" title={labels.emptyTitle} />
           ) : notifications.map((item) => {
             const isActive = item.id === selected?.id;
             const isUnread = item.readAt === undefined;
@@ -128,8 +119,6 @@ export const NotificationCenterSurface = ({
                 icon={renderNotificationSourceIcon(item.source.iconKey, 16)}
                 title={item.title}
                 description={item.preview}
-                meta={formatTimestamp(item.createdAt)}
-                badges={isUnread ? <AppBadge tone="info">{labels.unread}</AppBadge> : undefined}
                 onClick={() => {
                   onSelectNotification(item.id);
                 }}
@@ -140,10 +129,7 @@ export const NotificationCenterSurface = ({
 
         <section className="lyra-notification-center-detail" aria-label="notification-center-detail">
           {selected === null ? (
-            <div className="lyra-notification-center-detail-empty">
-              <strong>{labels.emptyTitle}</strong>
-              <span>{labels.emptyDescription}</span>
-            </div>
+            <AppEmptyState className="lyra-notification-center-detail-empty" title={labels.emptyTitle} />
           ) : (
             <article className="lyra-notification-center-detail-card">
               <header className="lyra-notification-center-detail-head">

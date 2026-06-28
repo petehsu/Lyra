@@ -758,7 +758,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
         sessionId: "session-1",
-        model: "gpt-5"
+        model: "gpt-5",
+        provider: "openai"
       });
     });
   });
@@ -2240,7 +2241,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
         sessionId: null,
-        model: "gpt-5"
+        model: "gpt-5",
+        provider: "openai"
       });
     });
 
@@ -2265,7 +2267,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({
         sessionId: "session-2",
-        model: "gpt-5"
+        model: "gpt-5",
+        provider: "openai"
       });
     });
   });

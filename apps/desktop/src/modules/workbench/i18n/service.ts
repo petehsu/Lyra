@@ -1,13 +1,21 @@
-import { WORKBENCH_DICTIONARIES } from "./config";
-import type { I18nKey, WorkbenchDictionary, WorkbenchLocale } from "./types";
+import i18n from "./i18n-instance";
+import type { I18nKey, WorkbenchLocale } from "./types";
 
-const FALLBACK_LOCALE: WorkbenchLocale = "en-US";
+// ponytail: workbench 翻译器 — createTranslator(locale) 返回 (key, options?) => string
+export const createTranslator = (_locale: WorkbenchLocale) =>
+  (key: I18nKey, options?: Record<string, unknown>): string =>
+    (options ? i18n.t(key, options) : i18n.t(key)) as string;
 
-const resolveDictionary = (locale: WorkbenchLocale): WorkbenchDictionary =>
-  WORKBENCH_DICTIONARIES[locale] ?? WORKBENCH_DICTIONARIES[FALLBACK_LOCALE];
+// ponytail: agent 面板兼容 API — 委托 i18next 单 namespace，签名与原 core/i18n.ts 一致
+export const t = (key: I18nKey): string => i18n.t(key) as string;
 
-export const createTranslator = (locale: WorkbenchLocale) => {
-  const dictionary = resolveDictionary(locale);
+export const formatMessage = (
+  key: I18nKey,
+  values: Readonly<Record<string, string | number>>,
+): string => i18n.t(key, { ...values }) as string;
 
-  return (key: I18nKey): string => dictionary[key] ?? WORKBENCH_DICTIONARIES[FALLBACK_LOCALE][key];
+export const setLocale = (locale: WorkbenchLocale): void => {
+  void i18n.changeLanguage(locale);
 };
+
+export const getLocale = (): WorkbenchLocale => i18n.language as WorkbenchLocale;

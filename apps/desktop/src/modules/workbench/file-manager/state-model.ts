@@ -95,7 +95,15 @@ export const resolveFavorites = (
   favorites: readonly FileManagerFavorite[],
   labels: FileManagerSurfaceLabels
 ): readonly FileManagerFavorite[] =>
-  favorites.map((favorite) => withResolvedLocationTitle(favorite, labels));
+  favorites.map((favorite) =>
+    isPathFavorite(favorite)
+      ? withResolvedLocationTitle(favorite, labels)
+      : favorite
+  );
+
+export const isPathFavorite = (
+  favorite: Pick<FileManagerFavorite, "kind">
+): boolean => favorite.kind !== "web" && favorite.kind !== "agent-session";
 
 export const resolveRecentLocations = (
   recentLocations: readonly FileManagerRecentLocation[],

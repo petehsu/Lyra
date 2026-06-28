@@ -7,6 +7,7 @@ import {
   type FileManagerModel,
   type FileManagerSurfaceLabels
 } from "../file-manager";
+import type { FileManagerFavorite } from "../../../shared/file-manager";
 import {
   type FileEditorChangeReviewItem,
   type FileEditorLabels,
@@ -130,6 +131,7 @@ export type WorkspaceSurfaceRouterProps = {
     readonly onUndoEditorWorkItem: (item: FileEditorChangeReviewItem) => void;
   };
   readonly onOpenFileFromManager: (filePath: string) => void;
+  readonly onOpenFavoriteFromFileManager?: (favorite: FileManagerFavorite) => void;
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly settings: WorkspaceSurfaceSettingsProps;

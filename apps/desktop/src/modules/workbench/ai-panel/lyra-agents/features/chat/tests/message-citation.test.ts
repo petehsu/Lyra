@@ -7,6 +7,7 @@ import {
   parseTextWithCitationMarkers,
   parseTranscriptCitationsFromMetadata,
   hasComposerContent,
+  inlineContentMarkersToDisplayText,
   parseRenderedCitationSegments,
   segmentsToCitations,
   segmentsToPlainText,
@@ -140,5 +141,14 @@ describe("composer segments", () => {
     ] as const;
     expect(hasComposerContent(segments)).toBe(true);
     expect(segmentsToPlainText(segments)).toBe("Look at ⟦image:img-1⟧ please review");
+  });
+
+  it("collapses inline markers to stable display text for plain titles", () => {
+    const citation = buildFullMessageCitation(sampleMessage("Quoted", "user"));
+    expect(inlineContentMarkersToDisplayText(`Use ⟦cite:${citation.id}⟧`, [citation]))
+      .toBe("Use Quoted");
+    const fallback = inlineContentMarkersToDisplayText("⟦page-cite:missing⟧ ⟦future-ref:abc⟧");
+    expect(fallback).not.toContain("⟦");
+    expect(fallback.length).toBeGreaterThan(0);
   });
 });

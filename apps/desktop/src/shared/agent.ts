@@ -686,9 +686,6 @@ export type AgentLoginProviderCatalogSnapshot = {
 export type AgentAccountLoginStartRequest = {
   readonly provider: string;
   readonly label?: string | null;
-  readonly googleClientId?: string | null;
-  readonly googleClientSecret?: string | null;
-  readonly gmailAccessTier?: "readonly" | "full" | string | null;
 };
 
 export type AgentAccountLoginStartResponse = {
@@ -1238,6 +1235,7 @@ export type AgentModelEntry = {
   readonly contextWindow?: number | null;
   readonly supportsImageInput?: boolean;
   readonly supportsToolCalling?: boolean;
+  readonly supportsReasoningEffort?: boolean | null;
   readonly available: boolean;
   readonly enabled: boolean;
 };

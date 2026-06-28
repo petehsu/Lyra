@@ -19,7 +19,12 @@ fn favorite_from_core(
         id: favorite.id,
         title: favorite.title,
         path: favorite.path,
+        kind: favorite.kind,
         special_id: favorite.special_id,
+        url: favorite.url,
+        favicon_url: favorite.favicon_url,
+        session_id: favorite.session_id,
+        working_dir: favorite.working_dir,
     }
 }
 

@@ -40,6 +40,7 @@ export type FileManagerSurfaceActions = {
   readonly onOpenDirectoryPath: (path: string) => void;
   readonly onOpenDisk: (disk: FileManagerDisk) => void;
   readonly onOpenRecentLocation: (recent: FileManagerRecentLocation) => void;
+  readonly onOpenFavorite: (favorite: FileManagerFavorite) => void;
   readonly onFavoriteContextMenu: (
     favorite: FileManagerFavorite,
     anchorX: number,

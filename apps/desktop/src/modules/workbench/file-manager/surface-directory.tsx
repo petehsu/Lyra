@@ -1,4 +1,4 @@
-import { AppList, AppObjectRow } from "@renderer/ui/components";
+import { AppEmptyState, AppList, AppObjectRow } from "@renderer/ui/components";
 
 import {
   renderFileManagerEntryIcon
@@ -34,7 +34,7 @@ export const FileManagerDirectoryContent = ({
           )}
 
           {directory.isEmpty ? (
-            <div className="lyra-file-manager-empty-state">{labels.emptyDirectory}</div>
+            <AppEmptyState className="lyra-file-manager-empty-state" title={labels.emptyDirectory} />
           ) : directory.entries.map(({ entry, active }) => (
             <FileManagerLargeEntryTile
               key={entry.id}
@@ -74,9 +74,10 @@ export const FileManagerDirectoryContent = ({
         )}
 
         {directory.isEmpty ? (
-          <div className="lyra-file-manager-empty-state lyra-file-manager-empty-state-span">
-            {labels.emptyDirectory}
-          </div>
+          <AppEmptyState
+            className="lyra-file-manager-empty-state"
+            title={labels.emptyDirectory}
+          />
         ) : directory.entries.map(({ entry, active }) => (
           <AppObjectRow
             key={entry.id}

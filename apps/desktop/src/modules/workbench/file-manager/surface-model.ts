@@ -10,7 +10,7 @@ import type {
 } from "../../../shared/file-manager";
 import type { DownloadManagerTask } from "../../../shared/download-manager";
 import { isImageViewerSupportedPath } from "../image-viewer";
-import { findSelectedEntry } from "./state-model";
+import { findSelectedEntry, isPathFavorite } from "./state-model";
 import type {
   FileManagerAppState,
   FileManagerChooserMode,
@@ -324,8 +324,11 @@ export const isFileManagerActiveLocation = (
 
 export const isFileManagerActiveFavorite = (
   state: FileManagerAppState,
-  favorite: Pick<FileManagerFavorite, "path">
+  favorite: Pick<FileManagerFavorite, "kind" | "path">
 ): boolean => {
+  if (isPathFavorite(favorite) === false) {
+    return false;
+  }
   const currentPath = state.currentLocation?.path;
   if (currentPath === undefined) {
     return false;
@@ -338,7 +341,9 @@ const isCurrentFavorite = (state: FileManagerAppState): boolean => {
   if (state.currentLocation?.path === undefined) {
     return false;
   }
-  return state.favorites.some((item) => item.path === state.currentLocation?.path);
+  return state.favorites.some((item) =>
+    isPathFavorite(item) && item.path === state.currentLocation?.path
+  );
 };
 
 export const formatFileManagerDiskBytes = (value: number): string => {

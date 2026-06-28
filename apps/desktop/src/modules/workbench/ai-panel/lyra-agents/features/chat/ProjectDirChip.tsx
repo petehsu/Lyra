@@ -1,28 +1,17 @@
-// ============================================================================
-// ProjectDirChip — working-directory chip shown outside the composer input box
-// ============================================================================
-//
-// Sits at the bottom-left of the composer stack (outside the textarea). Shows
-// "Home" when the session is bound to the default home directory, otherwise the
-// bound project's name. When the project is bound, clicking opens a dropdown
-// menu with options to open the project in Lyra's file tree, the system file
-// manager, or any detected external editor/IDE. When not bound, clicking
-// triggers the project chooser flow.
-
 import { ChevronDown, Folder } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AppButton } from "@renderer/ui/components";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@renderer/ui/primitives/dropdown-menu";
+  AppButton,
+  AppMenu,
+  AppMenuContent,
+  AppMenuItem,
+  AppMenuSeparator,
+  AppMenuTrigger
+} from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
 import type { DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import { IdentityIconView, useSessionIdentityIcon } from "../../../../identity";
-import { formatMessage, t } from "../../core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 
 const ICON_SIZE = 13;
 const ICON_STROKE_WIDTH = 2;
@@ -101,8 +90,8 @@ export function ProjectDirChip({
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <AppMenu>
+      <AppMenuTrigger asChild>
         <AppButton
           variant="ghost"
           size="sm"
@@ -113,27 +102,27 @@ export function ProjectDirChip({
         >
           {chipContent}
         </AppButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={4}>
-        <DropdownMenuItem onClick={() => { void onOpenProjectTree(); }}>
+      </AppMenuTrigger>
+      <AppMenuContent align="start" sideOffset={4}>
+        <AppMenuItem onClick={() => { void onOpenProjectTree(); }}>
           {t("header.openProjectTree")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => { if (workingDir) void onOpenInFileManager(workingDir); }}>
+        </AppMenuItem>
+        <AppMenuItem onClick={() => { if (workingDir) void onOpenInFileManager(workingDir); }}>
           {t("header.openInFileManager")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={reveal}>
+        </AppMenuItem>
+        <AppMenuItem onClick={reveal}>
           {t("header.revealInFileManager")}
-        </DropdownMenuItem>
-        {editors.length > 0 ? <DropdownMenuSeparator /> : null}
+        </AppMenuItem>
+        {editors.length > 0 ? <AppMenuSeparator /> : null}
         {editors.map((editor) => (
-          <DropdownMenuItem key={editor.id} onClick={() => openEditor(editor.id)}>
+          <AppMenuItem key={editor.id} onClick={() => openEditor(editor.id)}>
             <span className="lyra-agents-editor-menu-row">
               {editor.icon ? <img src={editor.icon} alt="" className="lyra-agents-editor-menu-icon" /> : null}
               {formatMessage("header.openInEditor", { editor: editor.label })}
             </span>
-          </DropdownMenuItem>
+          </AppMenuItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </AppMenuContent>
+    </AppMenu>
   );
 }

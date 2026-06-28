@@ -41,7 +41,7 @@ import type {
   DiffFileEntry,
   PermissionRequest
 } from "./lyra-agents/core/types";
-import { setLocale, t, type Locale } from "./lyra-agents/core/i18n";
+import { setLocale, t, type Locale } from "@workbench/i18n";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
@@ -629,7 +629,7 @@ export const useLyraAgentDataProvider = (
 
     dispatch({ type: "loading" });
     const initialSession = requestedSessionId === null
-      ? agentApi.createSession({ title: "新会话" })
+      ? agentApi.createSession({ title: t("aiPanel.defaultSessionTitle") })
       : (async () => {
           const exists = await sessionExistsInList(agentApi, requestedSessionId);
           if (!exists) {
@@ -732,7 +732,7 @@ export const useLyraAgentDataProvider = (
 
   const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
     const workingDir = activeDraftWorkingDir?.trim() ?? "";
-    return workingDir.length > 0 ? { title: "新会话", workingDir } : { title: "新会话" };
+    return workingDir.length > 0 ? { title: t("aiPanel.defaultSessionTitle"), workingDir } : { title: t("aiPanel.defaultSessionTitle") };
   }, [activeDraftWorkingDir]);
 
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
@@ -1334,18 +1334,26 @@ export const useLyraAgentDataProvider = (
 
   const switchModel = useCallback(async (modelId: string): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const trimmed = modelId.trim();
-    if (trimmed.length === 0) return;
+    const selectedModel = modelState?.models.find((model) => model.id === modelId);
+    const model = (selectedModel?.model ?? modelId).trim();
+    const provider = (
+      selectedModel?.providerKey
+      ?? selectedModel?.providerId
+      ?? selectedModel?.provider
+      ?? ""
+    ).trim();
+    if (model.length === 0) return;
     setModelBusy("switch");
     try {
       setModelState(await desktopApi.agent.switchAgentModel({
         sessionId: currentSessionId,
-        model: trimmed
+        model,
+        provider: provider.length === 0 ? null : provider
       }));
     } finally {
       setModelBusy(null);
     }
-  }, [currentSessionId, desktopApi]);
+  }, [currentSessionId, desktopApi, modelState?.models]);
 
   const refreshModels = useCallback(async (): Promise<void> => {
     if (desktopApi?.agent === undefined) return;

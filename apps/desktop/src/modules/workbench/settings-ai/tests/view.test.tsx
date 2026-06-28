@@ -90,13 +90,6 @@ const labels: SettingsAiLabels = {
   callbackInputLabel: "Callback URL or code",
   callbackInputPlaceholder: "Paste callback",
   loginCallbackDescription: "Paste the callback from the browser.",
-  gmailLoginTitle: "Google/Gmail Tool Access",
-  gmailLoginDescription: "Configure Gmail tool access.",
-  gmailClientIdLabel: "Google OAuth Client ID",
-  gmailClientSecretLabel: "Google OAuth Client Secret",
-  gmailAccessTierLabel: "Gmail Access",
-  gmailAccessReadOnly: "Read and draft",
-  gmailAccessFull: "Full Gmail access",
   apiKeyProviderTitle: "Add API Key Provider",
   apiKeyProviderDescription: "Save an API key provider.",
   localProviderTitle: "Local Models",
@@ -225,6 +218,40 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
       quickSetupSupported: true,
     },
     {
+      id: "glm",
+      providerId: "zhipu",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "GLM",
+      description: "Zhipu GLM OpenAI-compatible endpoint.",
+      defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      apiMethod: "chatCompletions",
+      authKind: "bearer",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: false,
+      localBackend: null,
+      catalogSection: "hosted",
+      quickSetupSupported: true,
+    },
+    {
+      id: "nvidia",
+      providerId: "nvidia",
+      protocolId: "openai_chat_completions",
+      protocolFamily: "openai-compatible",
+      label: "NVIDIA NIM",
+      description: "NVIDIA NIM OpenAI-compatible endpoint.",
+      defaultBaseUrl: "https://integrate.api.nvidia.com/v1",
+      apiMethod: "chatCompletions",
+      authKind: "bearer",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: false,
+      localBackend: null,
+      catalogSection: "hosted",
+      quickSetupSupported: true,
+    },
+    {
       id: "custom_openai_compatible",
       providerId: "custom_openai_compatible",
       protocolId: "openai_chat_completions",
@@ -333,18 +360,6 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
         requiresCallback: true,
         requiresApiKey: false,
       },
-      {
-        id: "google",
-        displayName: "Google/Gmail",
-        authKind: "OAuth",
-        statusMethod: "OAuth",
-        detail: "Gmail tool access",
-        recommended: false,
-        configured: false,
-        state: "notConfigured",
-        requiresCallback: true,
-        requiresApiKey: false,
-      },
     ],
   },
   agentProviderCatalog: {
@@ -372,6 +387,40 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
         label: "OpenAI",
         description: "OpenAI hosted route.",
         defaultBaseUrl: "https://api.openai.com/v1",
+        apiMethod: "chatCompletions",
+        authKind: "bearer",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: false,
+        localBackend: null,
+        catalogSection: "hosted",
+        quickSetupSupported: true,
+      },
+      {
+        id: "glm",
+        providerId: "zhipu",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "GLM",
+        description: "Zhipu GLM OpenAI-compatible endpoint.",
+        defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+        apiMethod: "chatCompletions",
+        authKind: "bearer",
+        runtimeSupported: true,
+        modelDiscoverySupported: true,
+        customHeadersSupported: false,
+        localBackend: null,
+        catalogSection: "hosted",
+        quickSetupSupported: true,
+      },
+      {
+        id: "nvidia",
+        providerId: "nvidia",
+        protocolId: "openai_chat_completions",
+        protocolFamily: "openai-compatible",
+        label: "NVIDIA NIM",
+        description: "NVIDIA NIM OpenAI-compatible endpoint.",
+        defaultBaseUrl: "https://integrate.api.nvidia.com/v1",
         apiMethod: "chatCompletions",
         authKind: "bearer",
         runtimeSupported: true,
@@ -591,7 +640,9 @@ describe("SettingsAiView", () => {
       refreshAgentModels,
     });
 
-    render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+    const { rerender } = render(
+      <SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
 
@@ -624,6 +675,22 @@ describe("SettingsAiView", () => {
       setDefault: false,
     });
     expect(await screen.findByText("gpt-5.1")).toBeInTheDocument();
+    await act(async () => {
+      rerender(
+        <SettingsAiModelsView
+          labels={labels}
+          model={{
+            ...model,
+            agentProviderCatalog: {
+              ...model.agentProviderCatalog!,
+              routes: model.agentProviderCatalog!.routes.map((route) => ({ ...route })),
+            },
+          }}
+          openDialog={vi.fn()}
+        />
+      );
+    });
+    expect(screen.getByText("gpt-5.1")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "gpt-5.1" })).toBeChecked();
     expect(screen.queryByRole("button", { name: "Disable All" })).not.toBeInTheDocument();
 
@@ -654,6 +721,18 @@ describe("SettingsAiView", () => {
     });
 
     expect(screen.getByRole("button", { name: /Custom OpenAI-Compatible/ })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "智谱" },
+    });
+
+    expect(screen.getByRole("button", { name: /^GLM\b/u })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "英伟达" },
+    });
+
+    expect(screen.getByRole("button", { name: /^NVIDIA NIM\b/u })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -1005,42 +1084,6 @@ describe("SettingsAiView", () => {
     });
     expect(updateAgentConfig).toHaveBeenCalledWith({
       openaiResponsesStatefulPromptContract: true,
-    });
-  });
-
-  test("starts Google Gmail login with OAuth credentials and access tier", async () => {
-    const startAgentAccountLogin = vi.fn(async () => ({
-      provider: "google",
-      label: "gmail",
-      flowId: "flow-google",
-      authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
-      callbackHint: "Paste callback",
-      authKind: "OAuth",
-      instructions: "Open Google",
-      requiresCallback: true,
-      requiresApiKey: false,
-    }));
-    const model = createModel({ startAgentAccountLogin });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    fireEvent.change(screen.getByLabelText("Google OAuth Client ID"), {
-      target: { value: "client-id.apps.googleusercontent.com" },
-    });
-    fireEvent.change(screen.getByLabelText("Google OAuth Client Secret"), {
-      target: { value: "client-secret" },
-    });
-    fireEvent.click(screen.getByRole("combobox", { name: "Gmail Access" }));
-    fireEvent.click(screen.getByRole("option", { name: "Full Gmail access" }));
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Start login/ }));
-    });
-
-    expect(startAgentAccountLogin).toHaveBeenCalledWith({
-      provider: "google",
-      googleClientId: "client-id.apps.googleusercontent.com",
-      googleClientSecret: "client-secret",
-      gmailAccessTier: "full",
     });
   });
 

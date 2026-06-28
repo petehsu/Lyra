@@ -765,6 +765,7 @@ fn streaming_transport_error_does_not_replay_as_non_streaming() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -868,6 +869,7 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -977,6 +979,7 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1058,6 +1061,7 @@ fn committed_stream_does_not_fall_back_to_non_streaming() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1160,6 +1164,7 @@ fn running_tool_marked_failed_on_transport_failure() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1258,6 +1263,7 @@ fn model_loop_continues_and_concatenates_max_tokens_text() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1362,6 +1368,7 @@ fn model_loop_marks_continuation_exhaustion() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1438,6 +1445,7 @@ fn openai_responses_route_executes_non_streaming_request() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1498,6 +1506,7 @@ fn mimo_hosted_route_applies_specialized_body_and_api_key_header() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1590,6 +1599,7 @@ fn mimo_tool_loop_replays_reasoning_content_with_assistant_tool_calls() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1701,6 +1711,7 @@ fn mimo_streaming_tool_loop_replays_reasoning_content_with_assistant_tool_calls(
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1856,6 +1867,7 @@ fn mimo_anthropic_tool_loop_replays_thinking_blocks_with_assistant_tool_calls() 
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -1987,6 +1999,7 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2134,6 +2147,7 @@ fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2216,6 +2230,7 @@ fn custom_anthropic_compatible_route_executes_messages_request() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2345,6 +2360,7 @@ fn gemini_generate_content_tool_loop_converts_function_calls_and_responses() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2498,6 +2514,7 @@ fn aws_bedrock_converse_tool_loop_signs_and_converts_tool_use_and_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2567,6 +2584,7 @@ fn local_descriptor_route_keeps_generic_fallback_execution() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2618,6 +2636,7 @@ fn non_streaming_provider_html_error_body_surfaces_status_and_preview() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -2671,6 +2690,7 @@ fn non_streaming_provider_success_non_json_body_surfaces_decode_context() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3018,6 +3038,7 @@ fn ollama_chat_tool_loop_round_trips_tool_results() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3263,6 +3284,7 @@ fn empty_streaming_reply_retries_non_streaming_before_failing_turn() {
             supports_image_input: false,
             supports_tool_calling: false,
             supports_streaming: true,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3367,6 +3389,7 @@ fn model_loop_has_no_fixed_tool_round_cap() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3505,6 +3528,7 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             supports_image_input: true,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3632,6 +3656,7 @@ fn model_loop_progress_guard_synthesizes_repeated_identical_tool_rounds() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };
@@ -3799,6 +3824,7 @@ fn model_loop_progress_guard_allows_structured_clarification_only() {
             supports_image_input: false,
             supports_tool_calling: true,
             supports_streaming: false,
+            supports_reasoning_effort: None,
             enabled: true,
         }],
     };

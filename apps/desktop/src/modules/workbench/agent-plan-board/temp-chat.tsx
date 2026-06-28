@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CornerUpLeft, MessageSquare, X } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { renderMarkdown } from "@lyra/markdown-render";
 
+import {
+  AppIconButton,
+  AppTextarea
+} from "@renderer/ui/components";
 import type {
   AgentMessage,
   AgentPlanAnnotation,
@@ -26,7 +30,7 @@ type PlanTempChatProps = {
 };
 
 /**
- * Temporary plan-chat capsule mounted at the bottom-right of the Plan Board.
+ * Temporary plan-chat rail mounted inside the Plan Board.
  *
  * It runs an isolated ephemeral agent session seeded with the parent session's
  * plan/todo context. The temp agent can explain or propose plan changes; it must
@@ -76,7 +80,6 @@ export const PlanTempChat = ({
   desktopApi,
   onApplyRevision
 }: PlanTempChatProps) => {
-  const [open, setOpen] = useState(false);
   const [tempSessionId, setTempSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<readonly TempChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -108,7 +111,7 @@ export const PlanTempChat = ({
   // Subscribe to runtime events scoped to the temp session. The main session-view-model
   // is keyed to the parent session, so these events never reach the main transcript.
   useEffect(() => {
-    if (!open || tempSessionId === null || desktopApi === null) return;
+    if (tempSessionId === null || desktopApi === null) return;
     const agent = desktopApi.agent;
     if (agent === undefined) return;
     const unsubscribe = agent.onEvent((event: AgentRuntimeEvent) => {
@@ -156,7 +159,14 @@ export const PlanTempChat = ({
     return () => {
       unsubscribe();
     };
-  }, [open, tempSessionId, desktopApi, flushAssistantMessage]);
+  }, [tempSessionId, desktopApi, flushAssistantMessage]);
+
+  useEffect(() => () => {
+    const agent = desktopApi?.agent;
+    if (tempSessionId !== null && agent !== undefined) {
+      void agent.deleteSession({ sessionId: tempSessionId });
+    }
+  }, [desktopApi, tempSessionId]);
 
   // Auto-scroll the message list on new content.
   useEffect(() => {
@@ -201,26 +211,6 @@ export const PlanTempChat = ({
       setError(next instanceof Error ? next.message : "Failed to send message");
     }
   }, [draft, busy, ensureTempSession, desktopApi]);
-
-  // Discard the ephemeral session on close so its messages are destroyed.
-  const handleClose = useCallback(async () => {
-    setOpen(false);
-    const agent = desktopApi?.agent;
-    if (tempSessionId !== null && agent !== undefined) {
-      try {
-        await agent.deleteSession({ sessionId: tempSessionId });
-      } catch {
-        // Best-effort cleanup; the session is in-memory and will die with the process.
-      }
-    }
-    setTempSessionId(null);
-    setMessages([]);
-    setDraft("");
-    setBusy(false);
-    setError(null);
-    assistantBufferRef.current.clear();
-    appliedPlanRef.current = null;
-  }, [tempSessionId, desktopApi]);
 
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -272,38 +262,9 @@ export const PlanTempChat = ({
     labels.tempChatApplied
   ]);
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="lyra-agent-plan-board-temp-chat-trigger"
-        title={labels.tempChatOpen}
-        aria-label={labels.tempChatOpen}
-        onClick={() => { setOpen(true); }}
-      >
-        <MessageSquare size={16} />
-      </button>
-    );
-  }
-
   return (
-    <div className="lyra-agent-plan-board-temp-chat" data-open={open}>
-      <div className="lyra-agent-plan-board-temp-chat-head">
-        <span className="lyra-agent-plan-board-temp-chat-title">{labels.tempChatTitle}</span>
-        <button
-          type="button"
-          className="lyra-agent-plan-board-temp-chat-close"
-          title={labels.tempChatClose}
-          aria-label={labels.tempChatClose}
-          onClick={() => { void handleClose(); }}
-        >
-          <X size={14} />
-        </button>
-      </div>
+    <div className="lyra-agent-plan-board-temp-chat">
       <div className="lyra-agent-plan-board-temp-chat-body" ref={scrollRef}>
-        {messages.length === 0 ? (
-          <p className="lyra-agent-plan-board-temp-chat-empty">{labels.tempChatExplainOnly}</p>
-        ) : null}
         {messages.map((message) => (
           <div
             key={message.id}
@@ -317,9 +278,15 @@ export const PlanTempChat = ({
           <div className="lyra-agent-plan-board-temp-chat-error">{error}</div>
         ) : null}
       </div>
-      <div className="lyra-agent-plan-board-temp-chat-input">
-        <input
-          className="lyra-agent-plan-board-temp-chat-text"
+      <form
+        className="lyra-agents-composer lyra-agent-plan-board-temp-chat-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSend();
+        }}
+      >
+        <AppTextarea
+          className="lyra-agents-composer-input lyra-agent-plan-board-temp-chat-text"
           placeholder={labels.tempChatPlaceholder}
           value={draft}
           disabled={busy}
@@ -331,17 +298,21 @@ export const PlanTempChat = ({
             }
           }}
         />
-        <button
-          type="button"
-          className="lyra-agent-plan-board-temp-chat-send"
-          disabled={draft.trim().length === 0 || busy}
-          title={labels.tempChatSend}
-          aria-label={labels.tempChatSend}
-          onClick={() => { void handleSend(); }}
-        >
-          <CornerUpLeft size={14} />
-        </button>
-      </div>
+        <div className="lyra-agents-composer-bottom lyra-agent-plan-board-temp-chat-bottom">
+          <span />
+          <div className="lyra-agents-composer-primary-actions">
+            <AppIconButton
+              type="submit"
+              className="lyra-agents-composer-send lyra-agent-plan-board-temp-chat-send"
+              disabled={draft.trim().length === 0 || busy}
+              title={labels.tempChatSend}
+              aria-label={labels.tempChatSend}
+            >
+              <ArrowUp size={14} />
+            </AppIconButton>
+          </div>
+        </div>
+      </form>
     </div>
   );
 };

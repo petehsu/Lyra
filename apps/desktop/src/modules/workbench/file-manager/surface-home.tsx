@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
-import { AppBadge, AppObjectRow } from "@renderer/ui/components";
+import { AppBadge, AppEmptyState, AppObjectRow } from "@renderer/ui/components";
 
 import {
   renderFileManagerDiskIcon,
+  renderFileManagerFavoriteIcon,
   renderFileManagerLocationIcon,
   renderFileManagerSectionIcon
 } from "./icon-registry";
@@ -136,7 +137,7 @@ export const FileManagerHomeContent = ({
 
       <HomeSection title={labels.homeSectionRecent} section="recent">
         {home.isRecentEmpty ? (
-          <div className="lyra-file-manager-home-empty">{labels.noRecentLocations}</div>
+          <AppEmptyState className="lyra-file-manager-empty-state" title={labels.noRecentLocations} />
         ) : home.recentLocations.map((recent) => (
           <AppObjectRow
             key={recent.id}
@@ -181,9 +182,7 @@ export const FileManagerFavoritesContent = ({
         <h3>{labels.homeSectionFavorites}</h3>
       </header>
       {favorites.isEmpty ? (
-        <div className="lyra-file-manager-empty-state">
-          {labels.noFavorites}
-        </div>
+        <AppEmptyState className="lyra-file-manager-empty-state" title={labels.noFavorites} />
       ) : (
         <div className="lyra-app-group lyra-app-row-list lyra-file-manager-favorites-list">
           {favorites.favorites.map((favorite) => (
@@ -191,15 +190,21 @@ export const FileManagerFavoritesContent = ({
               key={favorite.id}
               className="lyra-file-manager-favorite-row"
               onClick={() => {
-                actions.onOpenDirectoryPath(favorite.path);
+                actions.onOpenFavorite(favorite);
               }}
               onContextMenu={(event) => {
                 preventContextMenuDefaults(event);
                 actions.onFavoriteContextMenu(favorite, event.clientX, event.clientY);
               }}
-              icon={renderFileManagerLocationIcon(favorite)}
+              icon={renderFileManagerFavoriteIcon(favorite)}
               title={favorite.title}
-              description={favorite.path}
+              description={
+                favorite.kind === "web"
+                  ? favorite.url ?? favorite.path
+                  : favorite.kind === "agent-session"
+                    ? favorite.workingDir ?? favorite.sessionId ?? favorite.path
+                    : favorite.path
+              }
             />
           ))}
         </div>

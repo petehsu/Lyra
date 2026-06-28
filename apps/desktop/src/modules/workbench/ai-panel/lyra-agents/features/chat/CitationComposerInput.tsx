@@ -51,7 +51,7 @@ type CitationComposerInputProps = {
   onImageAttachmentsAccepted?(attachments: readonly AgentImageAttachment[]): void;
 };
 
-const parseEditorSegments = (
+export const parseEditorSegments = (
   root: HTMLElement,
   knownSegments: readonly ComposerSegment[]
 ): ComposerSegment[] => {
@@ -86,8 +86,8 @@ const parseEditorSegments = (
     segments.push({ type: "text", value });
   };
 
-  root.childNodes.forEach((node) => {
-    if (node instanceof HTMLSpanElement && node.dataset.fileAttachmentId !== undefined) {
+  const visitNode = (node: Node): void => {
+    if (node instanceof HTMLElement && node.dataset.fileAttachmentId !== undefined) {
       const known = knownFiles.get(node.dataset.fileAttachmentId);
       if (known !== undefined) {
         segments.push({ type: "file", file: known });
@@ -104,7 +104,7 @@ const parseEditorSegments = (
       }
       return;
     }
-    if (node instanceof HTMLSpanElement && node.dataset.attachmentId !== undefined) {
+    if (node instanceof HTMLElement && node.dataset.attachmentId !== undefined) {
       const attachmentId = node.dataset.attachmentId;
       const known = knownImages.get(attachmentId);
       if (known !== undefined) {
@@ -128,7 +128,7 @@ const parseEditorSegments = (
       }
       return;
     }
-    if (node instanceof HTMLSpanElement && node.dataset.citationId !== undefined) {
+    if (node instanceof HTMLElement && node.dataset.citationId !== undefined) {
       const citationId = node.dataset.citationId;
       if (node.dataset.citationKind === "page") {
         const known = knownPage.get(citationId);
@@ -194,9 +194,11 @@ const parseEditorSegments = (
       return;
     }
     if (node instanceof HTMLElement) {
-      pushText(node.textContent ?? "");
+      node.childNodes.forEach(visitNode);
     }
-  });
+  };
+
+  root.childNodes.forEach(visitNode);
   return segments;
 };
 

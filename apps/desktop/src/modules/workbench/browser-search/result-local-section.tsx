@@ -1,4 +1,5 @@
 import type { LocalSearchPayload, SearchChannelStatus } from "./types";
+import { formatBytes, formatNumber } from "@workbench/i18n";
 
 const SKELETON_RESULT_CARDS = [0, 1, 2, 3, 4, 5] as const;
 
@@ -21,19 +22,6 @@ type ResultLocalSectionProps = {
   readonly error?: string;
 };
 
-const formatCompactBytes = (bytes: number): string => {
-  if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-  }
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-  }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KiB`;
-  }
-  return `${bytes} B`;
-};
-
 const formatSkippedSummary = (
   skipped: NonNullable<LocalSearchPayload["indexStatus"]>["skipped"]
 ): string => {
@@ -46,7 +34,7 @@ const formatSkippedSummary = (
   if (total === 0) {
     return "skipped 0";
   }
-  return `skipped ${total.toLocaleString()}`;
+  return `skipped ${formatNumber(total)}`;
 };
 
 export const ResultLocalSection = ({
@@ -77,23 +65,23 @@ export const ResultLocalSection = ({
         <div className="lyra-results-local-index-panel" aria-label={localPanelTitleLabel}>
           <span>
             <strong>{localIndexLabel}</strong> {indexStatus.state} · {indexStatus.engineVersion} ·{" "}
-            {formatCompactBytes(indexStatus.storageBytes)}
+            {formatBytes(indexStatus.storageBytes)}
           </span>
           <span>
-            snapshot {formatCompactBytes(indexStatus.snapshotBytes)} · delta{" "}
-            {formatCompactBytes(indexStatus.deltaBytes)} · pending{" "}
-            {indexStatus.pendingChanges.toLocaleString()}
+            snapshot {formatBytes(indexStatus.snapshotBytes)} · delta{" "}
+            {formatBytes(indexStatus.deltaBytes)} · pending{" "}
+            {formatNumber(indexStatus.pendingChanges)}
           </span>
           <span>
-            {localScopeLabel}: {payload.scopePreset} · roots {payload.roots.length.toLocaleString()}
+            {localScopeLabel}: {payload.scopePreset} · roots {formatNumber(payload.roots.length)}
           </span>
           <span>
-            {localScannedFilesLabel}: {indexStatus.indexedFiles.toLocaleString()} ·{" "}
-            {localScannedDirsLabel}: {indexStatus.indexedDirs.toLocaleString()} ·{" "}
-            {localContentScansLabel}: {indexStatus.indexedContentFiles.toLocaleString()}
+            {localScannedFilesLabel}: {formatNumber(indexStatus.indexedFiles)} ·{" "}
+            {localScannedDirsLabel}: {formatNumber(indexStatus.indexedDirs)} ·{" "}
+            {localContentScansLabel}: {formatNumber(indexStatus.indexedContentFiles)}
           </span>
           <span>
-            {localMatchedLabel}: {payload.stats.matchedFiles.toLocaleString()} ·{" "}
+            {localMatchedLabel}: {formatNumber(payload.stats.matchedFiles)} ·{" "}
             {formatSkippedSummary(indexStatus.skipped)}
           </span>
         </div>

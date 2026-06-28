@@ -5,11 +5,13 @@ export type PanelLayoutCssVars = {
   readonly "--left-panel-content-mobile-height": string;
   readonly "--bottom-height": string;
   readonly "--bottom-panel-content-height": string;
+  readonly "--lyra-app-sidebar-rail-w": string;
 };
 
 export type PanelLayoutShellVarInput = {
   readonly leftWidth: number;
   readonly bottomHeight: number;
+  readonly appSidebarWidth: number;
   readonly isLeftPanelVisible: boolean;
   readonly isBottomPanelVisible: boolean;
 };
@@ -22,7 +24,8 @@ export const buildPanelLayoutCssVars = (
   "--left-panel-mobile-height": input.isLeftPanelVisible ? "var(--lyra-unit-180)" : "0px",
   "--left-panel-content-mobile-height": "var(--lyra-unit-180)",
   "--bottom-height": input.isBottomPanelVisible ? `${input.bottomHeight}px` : "0px",
-  "--bottom-panel-content-height": `${input.bottomHeight}px`
+  "--bottom-panel-content-height": `${input.bottomHeight}px`,
+  "--lyra-app-sidebar-rail-w": `${input.appSidebarWidth}px`
 });
 
 export const applyPanelLayoutCssVars = (

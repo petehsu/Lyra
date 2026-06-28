@@ -8,6 +8,8 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { readWorkbenchStateSync, writeWorkbenchStateSync } from "../state-storage";
+import { t } from "@workbench/i18n";
+import { inlineContentMarkersToDisplayText } from "./lyra-agents/features/chat/message-citation";
 
 export type AiPanelSessionTab = {
   readonly tabId: string;
@@ -32,7 +34,6 @@ type AiPanelSessionTabsSnapshot = AiPanelSessionTabsState & {
 };
 
 const AI_PANEL_TABS_STATE_KEY = "ai-panel-tabs" as const;
-const DEFAULT_SESSION_TITLE = "新会话";
 let draftSerial = 0;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -48,6 +49,10 @@ const sanitizeNullableString = (value: unknown): string | null => {
   if (value === null) return null;
   return sanitizeOptionalString(value) ?? null;
 };
+
+const sanitizeTabTitle = (value: unknown): string =>
+  sanitizeOptionalString(inlineContentMarkersToDisplayText(typeof value === "string" ? value : ""))
+  ?? t("aiPanel.defaultSessionTitle");
 
 const sanitizeStatus = (value: unknown): AgentTurnStatus | null => {
   if (
@@ -75,7 +80,7 @@ const createDraftTab = (
   return {
     tabId: createDraftTabId(),
     sessionId: null,
-    title: sanitizeOptionalString(request.title) ?? DEFAULT_SESSION_TITLE,
+    title: sanitizeTabTitle(request.title),
     lastKnownStatus: null,
     ...(workingDir === null ? {} : { draftWorkingDir: workingDir })
   };
@@ -86,7 +91,7 @@ const sanitizeTab = (value: unknown): AiPanelSessionTab | null => {
   const sessionId = sanitizeNullableString(value.sessionId);
   const tabId = sanitizeOptionalString(value.tabId) ?? sessionId ?? undefined;
   if (tabId === undefined) return null;
-  const title = sanitizeOptionalString(value.title) ?? DEFAULT_SESSION_TITLE;
+  const title = sanitizeTabTitle(value.title);
   const updatedAt = sanitizeOptionalString(value.updatedAt);
   const workingDir = sanitizeOptionalString(value.workingDir);
   const draftWorkingDir = sanitizeOptionalString(value.draftWorkingDir);
@@ -124,7 +129,7 @@ const normalizeTabs = (
     normalizedTabs.push({
       tabId,
       sessionId,
-      title: tab.title.trim() || DEFAULT_SESSION_TITLE,
+      title: sanitizeTabTitle(tab.title),
       lastKnownStatus: tab.lastKnownStatus,
       ...(tab.updatedAt === undefined ? {} : { updatedAt: tab.updatedAt }),
       ...(workingDir === undefined ? {} : { workingDir }),
@@ -198,7 +203,7 @@ const tabFromSnapshot = (
 ): AiPanelSessionTab => ({
   tabId,
   sessionId: snapshot.id,
-  title: snapshot.title.trim() || DEFAULT_SESSION_TITLE,
+  title: sanitizeTabTitle(snapshot.title),
   lastKnownStatus: snapshot.turnStatus,
   updatedAt: snapshot.updatedAt,
   workingDir: snapshot.workingDir,
@@ -313,7 +318,7 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
       const tab = {
         tabId: trimmed,
         sessionId: trimmed,
-        title: DEFAULT_SESSION_TITLE,
+        title: t("aiPanel.defaultSessionTitle"),
         lastKnownStatus: null
       } satisfies AiPanelSessionTab;
       return normalizeTabs([...current.tabs, tab], tab.tabId, trimmed);

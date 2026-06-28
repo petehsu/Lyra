@@ -31,7 +31,8 @@ import type {
 import { isSameLocationPath } from "./location-utils";
 import {
   canFavoriteLocation,
-  isDirectoryLocation
+  isDirectoryLocation,
+  isPathFavorite
 } from "./state-model";
 import type { FileManagerStateStore } from "./state-store";
 
@@ -133,38 +134,38 @@ export const useFileManagerContextMenusController = ({
 
   const openFavoriteContextMenu = useCallback(
     (instanceId: string, favorite: FileManagerFavorite, anchorX: number, anchorY: number) => {
+      const items: ContextMenuItem[] = [];
+      if (isPathFavorite(favorite)) {
+        items.push({
+          id: `open-favorite-${favorite.id}`,
+          label: labels.contextOpen,
+          icon: <FolderUp size={14} />,
+          onSelect: () => {
+            void loadDirectory(instanceId, favorite.path);
+          }
+        });
+      }
+      items.push({
+        id: `remove-favorite-${favorite.id}`,
+        label: labels.removeFavorite,
+        icon: <StarOff size={14} />,
+        onSelect: () => {
+          const state = statesRef.current[instanceId];
+          if (state === undefined) {
+            return;
+          }
+          void writeFavoritesForState(state, (currentFavorites) =>
+            currentFavorites.filter((item) => item.id !== favorite.id)
+          );
+        }
+      });
       contextMenuModel.openMenu({
         anchorX,
         anchorY,
-        items: [
-          {
-            id: `open-favorite-${favorite.id}`,
-            label: labels.contextOpen,
-            icon: <FolderUp size={14} />,
-            onSelect: () => {
-              void loadDirectory(instanceId, favorite.path);
-            }
-          },
-          {
-            id: `remove-favorite-${favorite.id}`,
-            label: labels.removeFavorite,
-            icon: <StarOff size={14} />,
-            onSelect: () => {
-              const state = statesRef.current[instanceId];
-              if (state === undefined) {
-                return;
-              }
-              void writeFavoritesForState(state, (currentFavorites) =>
-                currentFavorites.filter(
-                  (item) => isSameLocationPath(item.path, favorite.path, platform) === false
-                )
-              );
-            }
-          }
-        ]
+        items
       });
     },
-    [contextMenuModel, labels.contextOpen, labels.removeFavorite, loadDirectory, platform, statesRef, writeFavoritesForState]
+    [contextMenuModel, labels.contextOpen, labels.removeFavorite, loadDirectory, statesRef, writeFavoritesForState]
   );
 
   const openLocationContextMenu = useCallback(

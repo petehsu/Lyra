@@ -1,4 +1,4 @@
-import { CircleAlert, Loader2, Search } from "lucide-react";
+import { CircleAlert, Loader2 } from "lucide-react";
 import {
   forwardRef,
   type ForwardedRef,
@@ -45,36 +45,42 @@ const renderState = (
     ...props
   }: AppStateProps,
   ref: ForwardedRef<HTMLDivElement>
-) => (
-  <div
-    ref={ref}
-    className={cn(
-      "lyra-app-state",
-      `lyra-app-state-${kind}`,
-      `lyra-app-state-density-${density}`,
-      `lyra-app-state-align-${align}`,
-      `lyra-app-state-tone-${tone}`,
-      className
-    )}
-    {...props}
-  >
-    <span className="lyra-app-state-icon" aria-hidden="true">
-      {icon}
-    </span>
-    <span className="lyra-app-state-copy">
-      <strong className="lyra-app-state-title">{title}</strong>
-      {description === undefined ? null : (
-        <span className="lyra-app-state-description">{description}</span>
+) => {
+  const iconNode = icon === false ? null : icon;
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "lyra-app-state",
+        `lyra-app-state-${kind}`,
+        `lyra-app-state-density-${density}`,
+        `lyra-app-state-align-${align}`,
+        `lyra-app-state-tone-${tone}`,
+        className
       )}
-    </span>
-    {actions === undefined ? null : (
-      <span className="lyra-app-state-actions">{actions}</span>
-    )}
-  </div>
-);
+      {...props}
+    >
+      {iconNode === undefined || iconNode === null ? null : (
+        <span className="lyra-app-state-icon" aria-hidden="true">
+          {iconNode}
+        </span>
+      )}
+      <span className="lyra-app-state-copy">
+        <strong className="lyra-app-state-title">{title}</strong>
+        {description === undefined ? null : (
+          <span className="lyra-app-state-description">{description}</span>
+        )}
+      </span>
+      {actions === undefined ? null : (
+        <span className="lyra-app-state-actions">{actions}</span>
+      )}
+    </div>
+  );
+};
 
 export const AppEmptyState = forwardRef<HTMLDivElement, AppEmptyStateProps>((props, ref) =>
-  renderState("empty", <Search aria-hidden="true" />, props, ref)
+  renderState("empty", null, props, ref)
 );
 
 AppEmptyState.displayName = "AppEmptyState";

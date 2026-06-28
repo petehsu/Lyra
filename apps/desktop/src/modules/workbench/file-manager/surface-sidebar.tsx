@@ -6,6 +6,7 @@ import {
   AppSidebar,
   AppSidebarSection
 } from "@renderer/ui/components";
+import { formatBytes, formatNumber } from "@workbench/i18n";
 import {
   renderFileManagerAppIcon,
   renderFileManagerLocationIcon,
@@ -17,21 +18,6 @@ import type {
   FileManagerSearchIndexModel,
   FileManagerSurfaceLabels
 } from "./types";
-
-const formatBytes = (bytes: number): string => {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0 B";
-  }
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"] as const;
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const fractionDigits = Number.isInteger(value) || value >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
-};
 
 const replaceTokens = (
   template: string,
@@ -104,15 +90,15 @@ const FileManagerSearchIndexStatus = ({
     status === null
       ? undefined
       : replaceTokens(labels.searchIndexStats, {
-          files: status.indexedFiles.toLocaleString(),
-          contentFiles: status.indexedContentFiles.toLocaleString(),
+          files: formatNumber(status.indexedFiles),
+          contentFiles: formatNumber(status.indexedContentFiles),
           storage: formatBytes(status.storageBytes)
         });
   const pendingLabel =
     status === null || status.pendingChanges === 0
       ? undefined
       : replaceTokens(labels.searchIndexPending, {
-          count: status.pendingChanges.toLocaleString()
+          count: formatNumber(status.pendingChanges)
         });
   const phaseLabel =
     status === null

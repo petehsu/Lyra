@@ -9,7 +9,7 @@ import type {
   SessionMeta,
   TodoItem
 } from "../core/types";
-import { t } from "../core/i18n";
+import { t } from "@workbench/i18n";
 import type {
   AgentFileCitation,
   AgentPageCitation,

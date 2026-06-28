@@ -25,11 +25,18 @@ export type FileManagerLocation = {
   readonly specialId?: FileManagerSpecialLocationId;
 };
 
+export type FileManagerFavoriteKind = "path" | "web" | "agent-session";
+
 export type FileManagerFavorite = {
   readonly id: string;
   readonly title: string;
   readonly path: string;
+  readonly kind?: FileManagerFavoriteKind;
   readonly specialId?: Exclude<FileManagerSpecialLocationId, "trash" | "favorites">;
+  readonly url?: string;
+  readonly faviconUrl?: string;
+  readonly sessionId?: string;
+  readonly workingDir?: string;
 };
 
 export type FileManagerRecentLocation = {

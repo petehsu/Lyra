@@ -55,7 +55,7 @@ import {
 } from "./composer-attach-menu-icons";
 import { buildTerminalTabPageCitation } from "./terminal-tab-citation";
 import { buildWorkspaceTabPageCitation } from "./workspace-tab-citation";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import type { TerminalDockTab } from "../../../../terminal-dock/types";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import type {
@@ -149,6 +149,8 @@ export function Composer({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendLogoVisible, setSendLogoVisible] = useState(false);
+  const [modelMenuBoundary, setModelMenuBoundary] = useState<HTMLElement | null>(null);
+  const composerRootRef = useRef<HTMLFormElement>(null);
   const composerInputRef = useRef<CitationComposerInputHandle>(null);
   const sendInFlightRef = useRef(false);
   const sendLogoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -299,6 +301,11 @@ export function Composer({
     }
   }, []);
 
+  useEffect(() => {
+    const panel = composerRootRef.current?.closest(".lyra-panel-left-content");
+    setModelMenuBoundary(panel instanceof HTMLElement ? panel : null);
+  }, []);
+
   const canSend = disabledReason === undefined && !sendBusy && hasComposerContent(segments);
   const hasDraft = hasComposerContent(segments);
   const showPauseButton = isTurnRunning && !hasDraft;
@@ -406,7 +413,7 @@ export function Composer({
       ];
 
   return (
-    <form className="lyra-agents-composer" onSubmit={handleSubmit}>
+    <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>
       {sendError !== null && (
         <div className="lyra-agents-composer-send-error" role="alert">
           <CircleAlert size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} aria-hidden="true" />
@@ -579,6 +586,7 @@ export function Composer({
               <AppModelMenu
                 className="lyra-agents-composer-model-picker"
                 contentClassName="lyra-agents-composer-select-content"
+                collisionBoundary={modelMenuBoundary ?? undefined}
                 ariaLabel={t("lyra-agents-composer.modelControls")}
                 value={selectedModelValue}
                 placeholder={selectedModel?.label ?? modelPickerOptions[0]?.label ?? ""}

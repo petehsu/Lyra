@@ -5,7 +5,7 @@ import type {
   WorkbenchTabSummary
 } from "../../core/types";
 import { FileTypeIcon } from "../../components/FileTypeIcon";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import {
   ActionTargetList,

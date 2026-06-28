@@ -26,7 +26,12 @@ pub struct FileManagerFavorite {
     pub id: String,
     pub title: String,
     pub path: String,
+    pub kind: Option<String>,
     pub special_id: Option<String>,
+    pub url: Option<String>,
+    pub favicon_url: Option<String>,
+    pub session_id: Option<String>,
+    pub working_dir: Option<String>,
 }
 
 #[napi(object)]

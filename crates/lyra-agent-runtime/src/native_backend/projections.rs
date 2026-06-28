@@ -1,5 +1,13 @@
 use super::*;
 
+const REMOVED_LOGIN_PROVIDERS: &[&str] = &["gmail"];
+
+fn visible_default_provider(config: &NativeConfig) -> Option<&String> {
+    config.default_provider.as_ref().filter(|provider| {
+        !REMOVED_LOGIN_PROVIDERS.contains(&provider.as_str())
+    })
+}
+
 pub(crate) fn user_message(text: String, images: Vec<Value>, created_at: String) -> Value {
     let mut blocks = Vec::new();
     if !text.trim().is_empty() {
@@ -190,11 +198,16 @@ pub(crate) fn registered_commands() -> Vec<Value> {
 }
 
 pub(crate) fn accounts_json(config: &NativeConfig) -> Value {
+    let accounts = config
+        .accounts
+        .iter()
+        .filter(|account| !REMOVED_LOGIN_PROVIDERS.contains(&account.provider.as_str()))
+        .collect::<Vec<_>>();
     json!({
-        "defaultProvider": config.default_provider,
+        "defaultProvider": visible_default_provider(config),
         "defaultModel": config.default_model,
         "authStatus": auth_status(config),
-        "accounts": config.accounts,
+        "accounts": accounts,
     })
 }
 
@@ -211,7 +224,7 @@ pub(crate) fn auth_status(config: &NativeConfig) -> Value {
         .collect::<Vec<_>>();
     json!({
         "configuredProviders": configured,
-        "defaultProvider": config.default_provider,
+        "defaultProvider": visible_default_provider(config),
     })
 }
 
@@ -246,11 +259,11 @@ pub(crate) fn login_provider(
     })
 }
 
-pub(crate) fn option_state(current: Option<String>, options: &[&str]) -> Value {
+pub(crate) fn option_state(current: Option<String>, options: &[&str], supported: bool) -> Value {
     json!({
         "current": current,
         "options": options,
-        "supported": true,
+        "supported": supported,
     })
 }
 
@@ -273,4 +286,31 @@ pub(crate) fn provider_api_key(provider: &NativeProviderProfile) -> Option<Strin
                 .and_then(|key| env::var(key).ok())
         })
         .filter(|value| !value.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accounts_json_hides_removed_login_providers() {
+        let config = NativeConfig {
+            default_provider: Some("gmail".to_string()),
+            accounts: vec![NativeAccount {
+                provider: "gmail".to_string(),
+                label: "Removed provider".to_string(),
+                kind: "oauth".to_string(),
+                active: true,
+                configured: true,
+                detail: None,
+            }],
+            ..NativeConfig::default()
+        };
+
+        let value = accounts_json(&config);
+
+        assert!(value["accounts"].as_array().expect("accounts").is_empty());
+        assert!(value["defaultProvider"].is_null());
+        assert!(value["authStatus"]["defaultProvider"].is_null());
+    }
 }

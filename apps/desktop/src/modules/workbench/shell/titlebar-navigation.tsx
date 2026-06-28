@@ -12,9 +12,10 @@ import {
   Globe,
   Info,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  Star
 } from "lucide-react";
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
 import type {
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserEvent,
@@ -22,6 +23,7 @@ import type {
   WorkbenchBrowserSearchInPageResult
 } from "../../../shared/desktop-bridge";
 import { AppIconButton, AppInput } from "@renderer/ui/components";
+import { t, formatMessage } from "@workbench/i18n";
 import type { OmniboxSuggestion } from "./use-titlebar-navigation-model";
 import { useAnchoredOverlayPosition } from "./use-anchored-overlay-position";
 
@@ -86,6 +88,12 @@ type TitlebarNavigationProps = {
   readonly onSubmit: () => void | Promise<void>;
   readonly onFocus: () => void;
   readonly onBlur: () => void;
+  readonly favoriteButton?: {
+    readonly visible: boolean;
+    readonly active: boolean;
+    readonly label: string;
+    readonly onToggle: () => void;
+  };
   readonly trailingControl?: ReactNode;
 
   // New autocomplete additions:
@@ -126,6 +134,7 @@ export const TitlebarNavigation = ({
   onSubmit,
   onFocus,
   onBlur,
+  favoriteButton,
   trailingControl,
   suggestions = [],
   selectedIndex = -1,
@@ -145,7 +154,14 @@ export const TitlebarNavigation = ({
 }: TitlebarNavigationProps) => {
   const hasValue = value.length > 0;
   const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
+  const hasFavoriteButton = favoriteButton?.visible === true;
   const pageFindMode = mode === "page-find";
+  const actionSlots = pageFindMode
+    ? 1
+    : 1 + (hasValue ? 1 : 0) + (hasTrailingControl ? 1 : 0) + (hasFavoriteButton ? 1 : 0);
+  const shellStyle = {
+    "--lyra-titlebar-navigation-action-slots": actionSlots
+  } as CSSProperties;
   const primaryActionLabel =
     primaryActionKind === "reload" ? reloadLabel : submitLabel;
 
@@ -599,7 +615,7 @@ export const TitlebarNavigation = ({
       ref={suggestionsRef}
       className="lyra-omnibox-suggestions"
       role="listbox"
-      aria-label="地址建议"
+      aria-label={t("navigation.addressSuggestionAriaLabel")}
     >
       {suggestions.map((suggestion, index) => (
         <li
@@ -623,7 +639,7 @@ export const TitlebarNavigation = ({
             </span>
           </div>
           <span className="lyra-suggestion-type-badge">
-            {suggestion.type === "history" ? "历史" : "搜索建议"}
+            {suggestion.type === "history" ? t("navigation.suggestionTypeHistory") : t("navigation.suggestionTypeSearch")}
           </span>
         </li>
       ))}
@@ -655,7 +671,7 @@ export const TitlebarNavigation = ({
       ref={suggestionsRef}
       className="lyra-omnibox-suggestions"
       role="listbox"
-      aria-label="网页内容搜索结果"
+      aria-label={t("navigation.pageFindResultsAriaLabel")}
     >
       {pageFindMatches.length > 0 ? (
         pageFindMatches.map((match) => {
@@ -680,19 +696,19 @@ export const TitlebarNavigation = ({
                 </span>
               </div>
               <span className="lyra-suggestion-type-badge">
-                {selected ? "当前" : "结果"}
+                {selected ? t("navigation.pageFindResultCurrent") : t("navigation.pageFindResultLabel")}
               </span>
             </li>
           );
         })
       ) : (
         <li className="lyra-find-empty">
-          {value.trim().length === 0 ? "输入网页内容开始搜索" : "未找到匹配结果"}
+          {value.trim().length === 0 ? t("navigation.pageFindEmptyStart") : t("navigation.pageFindEmptyNoMatch")}
         </li>
       )}
       {pageFindResult?.truncated === true ? (
         <li className="lyra-find-truncated">
-          仅显示前 {pageFindMatches.length} 个结果。
+          {formatMessage("navigation.pageFindTruncationNotice", { count: pageFindMatches.length })}
         </li>
       ) : null}
     </ul>
@@ -709,9 +725,11 @@ export const TitlebarNavigation = ({
           }
           data-has-value={hasValue ? "true" : "false"}
           data-has-trailing-control={hasTrailingControl ? "true" : "false"}
+          data-has-favorite-control={hasFavoriteButton ? "true" : "false"}
           data-suggestions-open={navigationShellExpanded ? "true" : "false"}
           data-mode={pageFindMode ? "page-find" : "normal"}
           data-native-find-open="false"
+          style={shellStyle}
         >
           {pageFindResultsList}
           {inlineSuggestionPanelOpen ? suggestionsList : null}
@@ -755,11 +773,26 @@ export const TitlebarNavigation = ({
             />
             <span className="lyra-titlebar-navigation-actions">
               {trailingControl}
+              {hasFavoriteButton ? (
+                <AppIconButton
+                  className="lyra-titlebar-navigation-action lyra-titlebar-navigation-favorite-action"
+                  active={favoriteButton!.active}
+                  aria-label={favoriteButton!.label}
+                  title={favoriteButton!.label}
+                  onClick={favoriteButton!.onToggle}
+                >
+                  <Star
+                    size={14}
+                    aria-hidden="true"
+                    fill={favoriteButton!.active ? "currentColor" : "none"}
+                  />
+                </AppIconButton>
+              ) : null}
               {hasValue ? (
                 <AppIconButton
                   className="lyra-titlebar-navigation-action"
-                  aria-label={`Clear ${ariaLabel}`}
-                  title={`Clear ${ariaLabel}`}
+                  aria-label={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
+                  title={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
                   onClick={() => {
                     onChange("");
                   }}
@@ -774,8 +807,8 @@ export const TitlebarNavigation = ({
                   </span>
                   <AppIconButton
                     className="lyra-titlebar-navigation-action"
-                    aria-label="Previous page result"
-                    title="Previous page result"
+                    aria-label={t("navigation.previousPageResult")}
+                    title={t("navigation.previousPageResult")}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       void onPageFindPrevious();
@@ -785,8 +818,8 @@ export const TitlebarNavigation = ({
                   </AppIconButton>
                   <AppIconButton
                     className="lyra-titlebar-navigation-action"
-                    aria-label="Next page result"
-                    title="Next page result"
+                    aria-label={t("navigation.nextPageResult")}
+                    title={t("navigation.nextPageResult")}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
                       void onPageFindNext();

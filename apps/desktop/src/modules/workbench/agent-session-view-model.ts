@@ -3,7 +3,7 @@ import type {
   AgentSessionSnapshot
 } from "../../shared/agent";
 import type { ModelOption, SessionMeta, TodoItem } from "./ai-panel/lyra-agents/core/types";
-import { formatMessage } from "./ai-panel/lyra-agents/core/i18n";
+import { formatMessage } from "@workbench/i18n";
 
 export {
   applyAgentRuntimeEventToSnapshot,

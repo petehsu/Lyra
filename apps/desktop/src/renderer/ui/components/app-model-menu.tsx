@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 
 import {
   DropdownMenu,
@@ -13,6 +13,8 @@ import {
   DropdownMenuTrigger
 } from "../primitives";
 import { cn } from "../utils";
+
+type DropdownMenuContentProps = ComponentProps<typeof DropdownMenuContent>;
 
 export type AppModelMenuOption<TValue extends string = string> = {
   readonly disabled?: boolean;
@@ -34,6 +36,8 @@ export type AppModelMenuSubmenu<TValue extends string = string> = {
 export type AppModelMenuProps<TModelValue extends string = string> = {
   readonly ariaLabel: string;
   readonly className?: string;
+  readonly collisionBoundary?: DropdownMenuContentProps["collisionBoundary"];
+  readonly collisionPadding?: DropdownMenuContentProps["collisionPadding"];
   readonly contentClassName?: string;
   readonly disabled?: boolean;
   readonly onModelChange: (value: TModelValue) => void;
@@ -49,6 +53,8 @@ const labelText = (label: ReactNode): string | undefined =>
 export const AppModelMenu = <TModelValue extends string = string>({
   ariaLabel,
   className,
+  collisionBoundary,
+  collisionPadding = 8,
   contentClassName,
   disabled = false,
   onModelChange,
@@ -97,6 +103,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
       <DropdownMenuContent
         className={cn("lyra-app-model-menu-content", contentClassName)}
         align="start"
+        collisionBoundary={collisionBoundary}
+        collisionPadding={collisionPadding}
       >
         <DropdownMenuGroup>
           {options.map((option) => {
@@ -194,6 +202,8 @@ export const AppModelMenu = <TModelValue extends string = string>({
                     <DropdownMenuSubContent
                       className="lyra-app-model-menu-sub-content"
                       alignOffset={-4}
+                      collisionBoundary={collisionBoundary}
+                      collisionPadding={collisionPadding}
                     >
                       {submenu.options.map((option) => {
                         const active = option.value === submenu.value;

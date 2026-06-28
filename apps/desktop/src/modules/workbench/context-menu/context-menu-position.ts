@@ -54,6 +54,9 @@ export const readContextMenuPaneBoundary = (
     right: window.innerWidth,
     bottom: window.innerHeight
   };
+  if (typeof document.elementsFromPoint !== "function") {
+    return viewport;
+  }
   const elements = document.elementsFromPoint(anchorX, anchorY);
   for (const element of elements) {
     if (!(element instanceof HTMLElement)) {

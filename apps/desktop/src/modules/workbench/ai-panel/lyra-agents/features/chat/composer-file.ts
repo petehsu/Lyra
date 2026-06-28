@@ -1,4 +1,4 @@
-import { formatMessage, t } from "../../core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 import { resolveElectronFilePath } from "./electron-file-path";
 import { isAttachableImageFile } from "./image-drop";
 import { TRANSCRIPT_CITATION_PREVIEW_CHARS, truncateQuotedText } from "./message-citation";

@@ -54,7 +54,7 @@
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--lyra-unit-220) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
   background: var(--lyra-settings-shell-bg);
   -webkit-backdrop-filter: var(--lyra-app-material-blur-md) var(--lyra-app-material-saturate);
   backdrop-filter: var(--lyra-app-material-blur-md) var(--lyra-app-material-saturate);
@@ -70,10 +70,10 @@
   --lyra-settings-row-hover-bg: var(--lyra-app-row-hover-bg);
   --lyra-settings-row-active-bg: var(--lyra-app-row-active-bg);
   min-height: 0;
-  padding: var(--lyra-space-12) var(--lyra-space-8);
+  padding: var(--lyra-app-sidebar-rail-pad-y) var(--lyra-app-sidebar-rail-pad-x);
   display: grid;
   align-content: start;
-  gap: var(--lyra-space-12);
+  gap: var(--lyra-app-sidebar-rail-gap);
   overflow: auto;
   border-right: var(--lyra-stroke-thin) solid var(--lyra-settings-border);
   background: var(--lyra-settings-sidebar-bg);
@@ -83,7 +83,7 @@
 
 .lyra-settings-nav-list {
   display: grid;
-  gap: var(--lyra-space-2);
+  gap: var(--lyra-app-sidebar-row-gap);
 }
 
 .lyra-settings-nav-actions {
@@ -105,11 +105,11 @@
 }
 
 .lyra-settings-nav-item {
-  min-height: var(--lyra-control-h-28);
+  min-height: var(--lyra-app-sidebar-row-h);
   width: 100%;
-  padding: 0 var(--lyra-space-8);
+  padding: 0 var(--lyra-app-sidebar-row-pad-x);
   border: 0;
-  border-radius: var(--lyra-settings-radius-control);
+  border-radius: var(--lyra-app-sidebar-row-radius);
   background: transparent;
   color: var(--lyra-text-secondary);
   font: inherit;
@@ -144,8 +144,8 @@
 }
 
 .lyra-settings-nav-icon {
-  width: var(--lyra-icon-size-14);
-  height: var(--lyra-icon-size-14);
+  width: var(--lyra-app-sidebar-icon-size);
+  height: var(--lyra-app-sidebar-icon-size);
   flex: 0 0 auto;
   color: currentColor;
   opacity: 0.72;
@@ -1619,6 +1619,11 @@
   height: 100%;
 }
 
+[data-lyra-theme-tone="dark"] .lyra-agent-provider-brand-icon[data-lyra-brand-luma="dark"] svg,
+[data-lyra-theme-tone="light"] .lyra-agent-provider-brand-icon[data-lyra-brand-luma="light"] svg {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .lyra-agent-provider-brand-icon-initials {
   min-width: var(--lyra-icon-size-16);
   height: var(--lyra-icon-size-16);
@@ -1790,16 +1795,6 @@
   color: var(--lyra-text-muted);
   font-size: var(--lyra-text-size-body);
   line-height: var(--lyra-text-line-body);
-}
-
-.lyra-settings-ai-provider-picker .lyra-list-picker-open .lyra-list-picker-surface {
-  max-height: var(--lyra-unit-220);
-}
-
-.lyra-settings-ai-provider-picker .lyra-list-picker-options {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: auto;
 }
 
 @media (min-width: 1180px) {
@@ -2152,63 +2147,6 @@
   width: var(--lyra-browser-search-icon-slot);
   height: 100%;
   border-radius: 0 var(--lyra-unit-999) var(--lyra-unit-999) 0;
-}
-
-.lyra-browser-search-mode-picker {
-  --lyra-list-picker-width: fit-content;
-  --lyra-list-picker-row-height: var(--lyra-size-browser-pill-h);
-  --lyra-list-picker-option-height: var(--lyra-control-h-30);
-  --lyra-list-picker-option-gap: 0;
-  --lyra-list-picker-surface-padding: var(--lyra-unit-4);
-  --lyra-list-picker-closed-radius: var(--lyra-unit-999);
-  --lyra-list-picker-expanded-radius: var(--lyra-unit-26);
-  --lyra-list-picker-font-size: var(--lyra-text-size-13);
-  --lyra-list-picker-padding-inline: var(--lyra-unit-16);
-  --lyra-list-picker-size-probe-display: flex;
-  width: fit-content;
-  min-width: fit-content;
-}
-
-.lyra-browser-search-mode-picker .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-panel-bg) 58%, transparent),
-      color-mix(in srgb, var(--lyra-app-surface-bg) 42%, transparent)
-    );
-  box-shadow:
-    inset 0 var(--lyra-unit-1) 0 color-mix(in srgb, var(--lyra-app-panel-bg) 72%, transparent),
-    0 var(--lyra-unit-16) var(--lyra-unit-40) color-mix(in srgb, var(--lyra-app-bg) 16%, transparent);
-}
-
-.lyra-browser-search-mode-picker.lyra-list-picker-open .lyra-list-picker-surface {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--lyra-app-panel-bg) 64%, transparent),
-      color-mix(in srgb, var(--lyra-app-surface-bg) 48%, transparent)
-    );
-}
-
-.lyra-browser-search-mode-picker .lyra-list-picker-option {
-  border-radius: 0;
-  padding: 0 calc(var(--lyra-list-picker-padding-inline) - var(--lyra-list-picker-surface-padding));
-  white-space: nowrap;
-}
-
-.lyra-browser-search-mode-picker .lyra-list-picker-option:hover,
-.lyra-browser-search-mode-picker .lyra-list-picker-option-active,
-.lyra-browser-search-mode-picker .lyra-list-picker-option-active:hover {
-  background: transparent;
-}
-
-.lyra-browser-search-mode-picker:hover .lyra-list-picker-surface {
-  border-color: color-mix(in srgb, var(--lyra-app-border) 46%, transparent);
-}
-
-.lyra-browser-search-mode-picker .lyra-list-picker-trigger {
-  white-space: nowrap;
 }
 
 .lyra-search-circle {
@@ -2718,35 +2656,23 @@
   }
 }
 
-/* Source: global-dialog.css */
-/* Global dialog overlay and action styles */
-.lyra-global-dialog-layer {
-  position: fixed;
-  inset: 0;
-  z-index: var(--lyra-z-dialog);
-  display: grid;
-  place-items: center;
-  padding: var(--lyra-unit-22);
-  background: color-mix(in srgb, var(--lyra-app-bg) 36%, transparent);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
 .lyra-global-dialog {
   width: min(var(--lyra-dialog-max-w), calc(100vw - var(--lyra-unit-44)));
-  max-height: calc(100vh - var(--lyra-unit-44));
-  overflow: auto;
-  display: grid;
-  gap: var(--lyra-surface-gap);
-  padding: var(--lyra-dialog-pad);
-  border-radius: var(--lyra-surface-radius-lg);
-  border: var(--lyra-unit-0-5) solid color-mix(in srgb, var(--lyra-app-border) 50%, transparent);
-  background: color-mix(in srgb, var(--lyra-app-surface-bg) 94%, var(--lyra-app-panel-bg) 6%);
-  box-shadow: none;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
+}
+
+.lyra-global-dialog-body,
+.lyra-global-dialog-form {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-surface-gap);
+}
+
+.lyra-global-dialog-form {
+  margin: 0;
 }
 
 .lyra-global-dialog-source {
@@ -2847,25 +2773,6 @@
   word-break: break-all;
 }
 
-.lyra-global-dialog-header {
-  display: grid;
-  gap: var(--lyra-unit-7);
-}
-
-.lyra-global-dialog-header h2 {
-  margin: 0;
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-unit-16);
-  line-height: 1.3;
-}
-
-.lyra-global-dialog-header p {
-  margin: 0;
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-unit-13);
-  line-height: 1.45;
-}
-
 .lyra-global-dialog-input {
   display: grid;
   gap: var(--lyra-unit-6);
@@ -2878,6 +2785,7 @@
 }
 
 .lyra-global-dialog-actions {
+  width: 100%;
   display: grid;
   gap: var(--lyra-unit-8);
 }
@@ -2900,6 +2808,10 @@
   font-size: var(--lyra-unit-12);
 }
 
+.lyra-global-dialog-action-primary {
+  color: var(--lyra-app-primary-button-fg);
+}
+
 .lyra-global-dialog-action-primary.lyra-ui-button {
   color: var(--lyra-app-primary-button-fg);
 }
@@ -2909,13 +2821,8 @@
 }
 
 @media (max-width: 980px) {
-  .lyra-global-dialog-layer {
-    padding: var(--lyra-unit-14);
-  }
-
   .lyra-global-dialog {
     width: min(var(--lyra-unit-560), calc(100vw - var(--lyra-unit-28)));
-    max-height: calc(100vh - var(--lyra-unit-28));
   }
 
   .lyra-global-dialog-copy-item {
@@ -2950,12 +2857,12 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--lyra-unit-220) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
 }
 
 .lyra-file-manager-nav-item.lyra-app-object-row .lyra-file-manager-icon-shell {
-  width: var(--lyra-icon-size-14);
-  height: var(--lyra-icon-size-14);
+  width: var(--lyra-app-sidebar-icon-size);
+  height: var(--lyra-app-sidebar-icon-size);
 }
 
 .lyra-file-manager-nav {
@@ -2964,7 +2871,7 @@
 }
 
 .lyra-file-manager-nav .lyra-file-manager-nav-group {
-  gap: var(--lyra-space-2);
+  gap: var(--lyra-app-sidebar-row-gap);
 }
 
 .lyra-file-manager-nav .lyra-app-sidebar-nav-label {
@@ -2972,8 +2879,8 @@
 }
 
 .lyra-file-manager-nav .lyra-file-manager-nav-item.lyra-app-object-row {
-  min-height: var(--lyra-control-h-28);
-  padding: 0 var(--lyra-space-8);
+  min-height: var(--lyra-app-sidebar-row-h);
+  padding: 0 var(--lyra-app-sidebar-row-pad-x);
   color: var(--lyra-text-secondary);
   font-weight: 450;
   background: transparent;
@@ -3212,12 +3119,6 @@
 .lyra-file-manager-favorite-row .lyra-app-object-row-icon {
   background: transparent;
   box-shadow: none;
-}
-
-.lyra-file-manager-home-empty {
-  padding: var(--lyra-space-10);
-  color: var(--lyra-text-muted);
-  font-size: var(--lyra-text-size-12);
 }
 
 .lyra-file-manager-disk-card {
@@ -3789,25 +3690,9 @@
 }
 
 .lyra-file-manager-empty-state {
-  min-height: var(--lyra-unit-72);
-  display: grid;
-  place-items: center;
-  margin: 0;
-  padding: var(--lyra-space-16);
-  border: var(--lyra-stroke-thin) dashed color-mix(in srgb, var(--lyra-app-border) 82%, transparent);
-  border-radius: var(--lyra-radius-10);
-  color: var(--lyra-text-muted);
-  background: var(--lyra-app-surface-bg);
-  font-size: var(--lyra-text-size-12);
-  line-height: var(--lyra-text-line-18);
-}
-
-.lyra-file-manager-empty-state-span {
   grid-column: 1 / -1;
-}
-
-.lyra-file-manager-empty-state-error {
-  color: var(--lyra-status-error);
+  min-height: var(--lyra-unit-72);
+  margin: 0;
 }
 
 .lyra-file-manager-chooser-bar {
@@ -3918,6 +3803,111 @@
   align-items: center;
   justify-content: center;
   color: currentColor;
+}
+
+.lyra-file-manager-favorite-favicon {
+  width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  border-radius: var(--lyra-radius-3);
+  object-fit: cover;
+}
+
+.lyra-file-manager-icon-label {
+  min-width: var(--lyra-icon-size-14);
+  height: var(--lyra-icon-size-14);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--lyra-radius-4);
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: var(--lyra-text-size-10);
+  font-weight: 720;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.lyra-file-manager-icon-shell-kind-package-manifest,
+.lyra-file-manager-icon-shell-kind-spreadsheet {
+  color: color-mix(in srgb, var(--lyra-status-success) 78%, var(--lyra-text-primary) 22%);
+}
+
+.lyra-file-manager-icon-shell-kind-dependency-lock,
+.lyra-file-manager-icon-shell-kind-workflow,
+.lyra-file-manager-icon-shell-kind-presentation,
+.lyra-file-manager-icon-shell-kind-audio {
+  color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-text-primary) 28%);
+}
+
+.lyra-file-manager-icon-shell-kind-config,
+.lyra-file-manager-icon-shell-kind-json-data,
+.lyra-file-manager-icon-shell-kind-document,
+.lyra-file-manager-icon-shell-kind-font {
+  color: color-mix(in srgb, var(--lyra-syntax-property) 74%, var(--lyra-text-primary) 26%);
+}
+
+.lyra-file-manager-icon-shell-kind-container,
+.lyra-file-manager-icon-shell-kind-database,
+.lyra-file-manager-icon-shell-kind-markdown,
+.lyra-file-manager-icon-shell-kind-image {
+  color: color-mix(in srgb, var(--lyra-syntax-type) 74%, var(--lyra-text-primary) 26%);
+}
+
+.lyra-file-manager-icon-shell-kind-typescript,
+.lyra-file-manager-icon-shell-kind-code-generic,
+.lyra-file-manager-icon-shell-kind-video {
+  color: color-mix(in srgb, var(--lyra-syntax-keyword) 76%, var(--lyra-text-primary) 24%);
+}
+
+.lyra-file-manager-icon-shell-kind-javascript,
+.lyra-file-manager-icon-shell-kind-python,
+.lyra-file-manager-icon-shell-kind-shell {
+  color: color-mix(in srgb, var(--lyra-syntax-function) 72%, var(--lyra-text-primary) 28%);
+}
+
+.lyra-file-manager-icon-shell-kind-rust,
+.lyra-file-manager-icon-shell-kind-archive,
+.lyra-file-manager-icon-shell-kind-binary,
+.lyra-file-manager-icon-shell-kind-diff {
+  color: color-mix(in srgb, var(--lyra-syntax-string) 72%, var(--lyra-text-primary) 28%);
+}
+
+.lyra-file-manager-icon-shell-kind-git-meta,
+.lyra-file-manager-icon-shell-kind-certificate {
+  color: color-mix(in srgb, var(--lyra-status-success) 68%, var(--lyra-text-secondary) 32%);
+}
+
+.lyra-file-manager-icon-shell-kind-secret {
+  color: color-mix(in srgb, var(--lyra-status-error) 78%, var(--lyra-text-primary) 22%);
+}
+
+.lyra-file-manager-icon-shell-kind-react,
+.lyra-file-manager-icon-shell-kind-vue,
+.lyra-file-manager-icon-shell-kind-svelte,
+.lyra-file-manager-icon-shell-kind-html,
+.lyra-file-manager-icon-shell-kind-css,
+.lyra-file-manager-icon-shell-kind-xml,
+.lyra-file-manager-icon-shell-kind-go,
+.lyra-file-manager-icon-shell-kind-java,
+.lyra-file-manager-icon-shell-kind-c-cpp,
+.lyra-file-manager-icon-shell-kind-csharp,
+.lyra-file-manager-icon-shell-kind-swift,
+.lyra-file-manager-icon-shell-kind-php,
+.lyra-file-manager-icon-shell-kind-ruby,
+.lyra-file-manager-icon-shell-kind-notebook {
+  color: color-mix(in srgb, var(--lyra-syntax-keyword) 74%, var(--lyra-text-primary) 26%);
+}
+
+.lyra-file-manager-icon-shell-kind-design {
+  color: color-mix(in srgb, var(--lyra-syntax-function) 72%, var(--lyra-text-primary) 28%);
+}
+
+.lyra-file-manager-icon-shell-kind-model {
+  color: color-mix(in srgb, var(--lyra-status-warning) 72%, var(--lyra-text-primary) 28%);
+}
+
+.lyra-file-manager-icon-shell-kind-log {
+  color: color-mix(in srgb, var(--lyra-text-muted) 78%, var(--lyra-text-primary) 22%);
 }
 
 .lyra-file-manager-icon-shell-disk {
@@ -4076,7 +4066,7 @@
 
 @media (max-width: 860px) {
   .lyra-file-manager-layout {
-    grid-template-columns: var(--lyra-unit-180) minmax(0, 1fr);
+    grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
   }
 
   .lyra-file-manager-content {
@@ -4436,18 +4426,18 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: var(--lyra-space-2);
+  gap: var(--lyra-app-sidebar-row-gap);
   padding: 0;
 }
 
 .lyra-login-manager-body {
   display: grid;
-  grid-template-columns: minmax(var(--lyra-unit-300), var(--lyra-unit-360)) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
   min-height: 0;
 }
 
 .lyra-login-manager-embedded .lyra-login-manager-body {
-  grid-template-columns: minmax(var(--lyra-unit-260), var(--lyra-unit-300)) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
 }
 
 .lyra-login-manager-sidebar {
@@ -4455,8 +4445,8 @@
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
-  gap: var(--lyra-space-10);
-  padding: var(--lyra-space-10) var(--lyra-space-8) var(--lyra-space-12);
+  gap: var(--lyra-app-sidebar-rail-gap);
+  padding: var(--lyra-app-sidebar-rail-pad-y) var(--lyra-app-sidebar-rail-pad-x);
   border-right: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   background: var(--lyra-app-material-sidebar-bg);
   -webkit-backdrop-filter: var(--lyra-app-material-blur-sm) var(--lyra-app-material-saturate);
@@ -4476,7 +4466,7 @@
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: var(--lyra-space-2);
+  gap: var(--lyra-app-sidebar-row-gap);
 }
 
 .lyra-login-manager-embedded-row {
@@ -4485,7 +4475,7 @@
 }
 
 .lyra-login-manager-embedded-row.lyra-app-object-row {
-  padding-inline: var(--lyra-space-8);
+  padding-inline: var(--lyra-app-sidebar-row-pad-x);
 }
 
 .lyra-login-manager-embedded-row .lyra-app-object-row-title {
@@ -4645,31 +4635,7 @@
 }
 
 .lyra-login-manager-empty {
-  display: grid;
-  place-items: center;
-  gap: var(--lyra-space-6);
   min-height: var(--lyra-unit-160);
-  padding: var(--lyra-space-20);
-  color: var(--lyra-text-secondary);
-  text-align: center;
-}
-
-.lyra-login-manager-empty svg {
-  color: var(--lyra-text-muted);
-}
-
-.lyra-login-manager-empty strong {
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-text-size-body);
-  font-weight: 600;
-  line-height: var(--lyra-text-line-body);
-}
-
-.lyra-login-manager-empty span {
-  max-width: var(--lyra-unit-360);
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-text-size-body);
-  line-height: var(--lyra-text-line-body);
 }
 
 @media (max-width: 860px) {
@@ -4684,7 +4650,7 @@
   }
 
   .lyra-login-manager-embedded .lyra-login-manager-body {
-    grid-template-columns: minmax(var(--lyra-unit-260), var(--lyra-unit-300)) minmax(0, 1fr);
+    grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
     grid-template-rows: none;
   }
 
@@ -4838,7 +4804,7 @@
 .lyra-notification-center-body {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(var(--lyra-unit-280), var(--lyra-unit-360)) minmax(0, 1fr);
+  grid-template-columns: var(--lyra-app-sidebar-rail-w) minmax(0, 1fr);
 }
 
 .lyra-notification-center-list {
@@ -4846,15 +4812,15 @@
   overflow-y: auto;
   display: grid;
   grid-auto-rows: min-content;
-  gap: var(--lyra-space-2);
+  gap: var(--lyra-app-sidebar-row-gap);
 }
 
 .lyra-notification-center-item.lyra-app-object-row {
   min-height: var(--lyra-unit-58);
   position: relative;
-  padding: var(--lyra-space-8) var(--lyra-space-10);
+  padding: var(--lyra-space-8) var(--lyra-app-sidebar-row-pad-x);
   border: 0;
-  border-radius: var(--lyra-radius-8);
+  border-radius: var(--lyra-app-sidebar-row-radius);
   color: var(--lyra-text-secondary);
   background: transparent;
 }
@@ -4913,27 +4879,6 @@
 .lyra-notification-center-detail-empty {
   min-width: 0;
   min-height: var(--lyra-unit-160);
-  display: grid;
-  place-content: center;
-  gap: var(--lyra-space-6);
-  padding: var(--lyra-space-20);
-  text-align: center;
-}
-
-.lyra-notification-center-empty strong,
-.lyra-notification-center-detail-empty strong {
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-text-size-body);
-  font-weight: 600;
-  line-height: var(--lyra-text-line-body);
-}
-
-.lyra-notification-center-empty span,
-.lyra-notification-center-detail-empty span {
-  max-width: var(--lyra-unit-300);
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-text-size-body);
-  line-height: var(--lyra-text-line-body);
 }
 
 .lyra-notification-center-detail {
@@ -4943,8 +4888,7 @@
   background: var(--lyra-app-panel-bg);
 }
 
-.lyra-notification-center-detail-card,
-.lyra-notification-center-detail-empty {
+.lyra-notification-center-detail-card {
   min-width: 0;
   border: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   border-radius: var(--lyra-radius-10);
@@ -5287,24 +5231,6 @@
 
 .lyra-software-store-empty {
   min-height: var(--lyra-unit-160);
-  padding: var(--lyra-space-24);
-  display: grid;
-  place-content: center;
-  gap: var(--lyra-space-6);
-  text-align: center;
-}
-
-.lyra-software-store-empty strong {
-  color: var(--lyra-text-primary);
-  font-size: var(--lyra-text-size-body);
-  font-weight: 600;
-  line-height: var(--lyra-text-line-body);
-}
-
-.lyra-software-store-empty span {
-  color: var(--lyra-text-secondary);
-  font-size: var(--lyra-text-size-body);
-  line-height: var(--lyra-text-line-body);
 }
 
 .lyra-software-store-detail {
@@ -6064,42 +5990,42 @@
 
 .lyra-file-editor-host .lyra-monaco-ts-comment,
 .lyra-file-editor-diff-host .lyra-monaco-ts-comment {
-  color: #6a9955;
+  color: var(--lyra-syntax-comment);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-string,
 .lyra-file-editor-diff-host .lyra-monaco-ts-string {
-  color: #ce9178;
+  color: var(--lyra-syntax-string);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-number,
 .lyra-file-editor-diff-host .lyra-monaco-ts-number {
-  color: #b5cea8;
+  color: var(--lyra-syntax-number);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-keyword,
 .lyra-file-editor-diff-host .lyra-monaco-ts-keyword {
-  color: #569cd6;
+  color: var(--lyra-syntax-keyword);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-function,
 .lyra-file-editor-diff-host .lyra-monaco-ts-function {
-  color: #dcdcaa;
+  color: var(--lyra-syntax-function);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-type,
 .lyra-file-editor-diff-host .lyra-monaco-ts-type {
-  color: #4ec9b0;
+  color: var(--lyra-syntax-type);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-property,
 .lyra-file-editor-diff-host .lyra-monaco-ts-property {
-  color: #9cdcfe;
+  color: var(--lyra-syntax-property);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-variable,
 .lyra-file-editor-diff-host .lyra-monaco-ts-variable {
-  color: #9cdcfe;
+  color: var(--lyra-syntax-variable);
 }
 
 .lyra-file-editor-host .lyra-monaco-ts-default,

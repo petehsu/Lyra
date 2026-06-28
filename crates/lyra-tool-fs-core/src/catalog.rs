@@ -1021,6 +1021,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ("mcp", "server_connect" | "server_disconnect" | "server_reload" | "tool_execute") => {
             "external"
         }
+        ("workbench", "remove_favorite") => "runtime_mutation",
         ("software", "invoke_capability") => "external",
         _ => "read",
     }
@@ -2352,6 +2353,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
             ],
             &["question"],
+        ),
+        ("workbench", "remove_favorite") => object_schema(
+            [("id", string("Favorite id returned by /tools/workbench/list_favorites."))],
+            &["id"],
         ),
         ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
             [

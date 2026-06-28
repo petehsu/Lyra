@@ -1,6 +1,7 @@
 import {
   AppBadge,
   AppButton,
+  AppEmptyState,
   AppIconButton,
   AppInput,
   AppObjectRow,
@@ -53,6 +54,7 @@ import type {
   UiuxPackSource
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { formatShortDateTime } from "@workbench/i18n";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import {
   softwareStoreDetailKey,
@@ -93,6 +95,7 @@ type SoftwareStoreItem = BuiltinSoftwareItem | UiuxSoftwareItem;
 const createItemKey = (kind: SoftwareStoreItem["kind"], id: string): string =>
   `${kind}:${id}`;
 
+// ponytail: formatDate 委托 formatter.ts formatShortDateTime — 保持 locale 一致性
 const formatDate = (value: string | undefined): string => {
   if (value === undefined) {
     return "";
@@ -101,12 +104,7 @@ const formatDate = (value: string | undefined): string => {
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return formatShortDateTime(date.getTime());
 };
 
 const formatSource = (
@@ -675,10 +673,7 @@ export const SoftwareStoreSurface = ({
             </div>
 
             {filteredItems.length === 0 ? (
-              <div className="lyra-software-store-empty">
-                <strong>{labels.emptyTitle}</strong>
-                <span>{labels.emptyDescription}</span>
-              </div>
+              <AppEmptyState className="lyra-software-store-empty" title={labels.emptyTitle} />
             ) : (
               <div className="lyra-software-store-section-stack">
                 {builtinItems.length === 0 ? null : (

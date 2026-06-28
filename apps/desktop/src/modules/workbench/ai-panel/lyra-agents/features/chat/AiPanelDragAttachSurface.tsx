@@ -20,7 +20,7 @@ import {
   subscribePageDragCitationSession
 } from "../../../../browser-tabs/page-drag-citation-session";
 import { getDesktopApi } from "../../../../shell/service";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import { isAiPanelAttachDrag, resolveAiPanelDropEffect } from "./ai-panel-drag-attach";
 import { DragAttachHubIcon } from "./DragAttachHubIcon";

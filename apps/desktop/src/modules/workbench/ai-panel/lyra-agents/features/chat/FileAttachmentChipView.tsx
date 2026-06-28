@@ -1,4 +1,4 @@
-import { CITATION_CHIP_ICON_SVGS } from "./citation-chip-dom";
+import { ComposerChipIcon } from "./composer-chip-icon";
 import type { AgentFileAttachment } from "./composer-file";
 import { fileAttachmentChipAriaLabel } from "./composer-file";
 
@@ -28,11 +28,7 @@ export const FileAttachmentChipView = ({ file, onClick }: FileAttachmentChipView
         onClick();
       } : undefined}
     >
-      <span
-        className="lyra-agents-citation-chip-icon"
-        aria-hidden="true"
-        dangerouslySetInnerHTML={{ __html: CITATION_CHIP_ICON_SVGS.file }}
-      />
+      <ComposerChipIcon kind="file" />
       <span className="lyra-agents-citation-chip-preview-wrap">
         <span className="lyra-agents-citation-chip-preview">{file.preview}</span>
       </span>

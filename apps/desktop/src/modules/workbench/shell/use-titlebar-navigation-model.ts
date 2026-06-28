@@ -6,6 +6,7 @@ import type {
   WorkbenchBrowserPageRuntimeState,
   WorkbenchBrowserSearchInPageResult
 } from "../../../shared/desktop-bridge";
+import type { FileManagerFavorite } from "../../../shared/file-manager";
 import type {
   AgentSessionHistoryCategory,
   AgentSessionHistoryLocateRequest
@@ -126,6 +127,8 @@ type UseTitlebarNavigationModelOptions = {
   readonly ariaLabel: string;
   readonly submitLabel: string;
   readonly reloadLabel: string;
+  readonly addFavoriteLabel: string;
+  readonly removeFavoriteLabel: string;
   readonly onReload: () => void;
   readonly historyAppPlaceholder?: string;
   readonly onHistoryAppReload?: () => void;
@@ -155,6 +158,12 @@ type TitlebarNavigationModel = {
   readonly onSubmit: () => Promise<void>;
   readonly onFocus: () => void;
   readonly onBlur: () => void;
+  readonly favoriteButton: {
+    readonly visible: boolean;
+    readonly active: boolean;
+    readonly label: string;
+    readonly onToggle: () => void;
+  };
 
   // New autocomplete additions:
   readonly suggestions: readonly OmniboxSuggestion[];
@@ -181,6 +190,20 @@ type HistoryAppWorkspaceTab = WorkspaceTab & {
 
 const isHistoryAppTab = (tab: WorkspaceTab | undefined): tab is HistoryAppWorkspaceTab =>
   tab?.pageKind === "app" && tab.appId === "agent-session-history";
+
+const createFavoriteId = (): string =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? `favorite-${crypto.randomUUID()}`
+    : `favorite-${Math.random().toString(16).slice(2, 10)}`;
+
+const normalizeWebFavoriteUrl = (value: string): string | null => {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+};
 
 const getSessionHistoryCategory = (
   session: AgentSessionSummary
@@ -306,6 +329,8 @@ export const useTitlebarNavigationModel = ({
   ariaLabel,
   submitLabel,
   reloadLabel,
+  addFavoriteLabel,
+  removeFavoriteLabel,
   onReload,
   historyAppPlaceholder,
   onHistoryAppReload,
@@ -326,6 +351,7 @@ export const useTitlebarNavigationModel = ({
   const [pageFindQuery, setPageFindQuery] = useState("");
   const [pageFindResult, setPageFindResult] = useState<WorkbenchBrowserSearchInPageResult | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
+  const [favorites, setFavorites] = useState<readonly FileManagerFavorite[]>([]);
 
   const contextualValue = useMemo(
     () =>
@@ -352,6 +378,15 @@ export const useTitlebarNavigationModel = ({
     activeTab?.pageKind === "page"
       ? activePageRuntimeState?.address ?? activeTab.displayAddress
       : "";
+  const activeWebFavoriteUrl = activeTabIsBrowserPage
+    ? normalizeWebFavoriteUrl(activePageAddress)
+    : null;
+  const activeWebFavorite = activeWebFavoriteUrl === null
+    ? undefined
+    : favorites.find((favorite) =>
+      favorite.kind === "web" &&
+      normalizeWebFavoriteUrl(favorite.url ?? favorite.path) === activeWebFavoriteUrl
+    );
   const primaryActionKind: TitlebarNavigationPrimaryActionKind =
     activeTabIsHistoryApp
       ? "reload"
@@ -381,6 +416,60 @@ export const useTitlebarNavigationModel = ({
     setPageFindResult(null);
     setShowSuggestions(false);
   }, []);
+
+  useEffect(() => {
+    if (desktopApi?.files === undefined) {
+      setFavorites([]);
+      return undefined;
+    }
+    let cancelled = false;
+    void desktopApi.files.readFavorites()
+      .then((payload) => {
+        if (!cancelled) {
+          setFavorites(payload.favorites);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFavorites([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopApi]);
+
+  const toggleWebFavorite = useCallback((): void => {
+    if (desktopApi?.files === undefined || activeWebFavoriteUrl === null) {
+      return;
+    }
+    void desktopApi.files.readFavorites()
+      .then(async (payload) => {
+        const existing = payload.favorites.find((favorite) =>
+          favorite.kind === "web" &&
+          normalizeWebFavoriteUrl(favorite.url ?? favorite.path) === activeWebFavoriteUrl
+        );
+        const nextFavorites =
+          existing === undefined
+            ? [
+                {
+                  id: createFavoriteId(),
+                  title: activePageRuntimeState?.title?.trim() || activeWebFavoriteUrl,
+                  path: activeWebFavoriteUrl,
+                  kind: "web" as const,
+                  url: activeWebFavoriteUrl,
+                  ...(activePageRuntimeState?.faviconUrl === undefined
+                    ? {}
+                    : { faviconUrl: activePageRuntimeState.faviconUrl })
+                },
+                ...payload.favorites
+              ]
+            : payload.favorites.filter((favorite) => favorite.id !== existing.id);
+        const written = await desktopApi.files.writeFavorites({ favorites: nextFavorites });
+        setFavorites(written.favorites);
+      })
+      .catch(() => undefined);
+  }, [activePageRuntimeState, activeWebFavoriteUrl, desktopApi]);
 
   const closePageFind = useCallback((): void => {
     const tabId = pageFindTabId;
@@ -935,6 +1024,12 @@ export const useTitlebarNavigationModel = ({
       }
     },
     onBlur,
+    favoriteButton: {
+      visible: pageFindActive === false && activeWebFavoriteUrl !== null,
+      active: activeWebFavorite !== undefined,
+      label: activeWebFavorite === undefined ? addFavoriteLabel : removeFavoriteLabel,
+      onToggle: toggleWebFavorite
+    },
 
     // Autocomplete predictions integration
     suggestions,

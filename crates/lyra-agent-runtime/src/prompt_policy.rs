@@ -848,6 +848,31 @@ mod tests {
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("opaque member-owned refs"));
         assert!(prompt.contains("Don't claim done without evidence"));
+        // ponytail: SOP reinforcement assertions — prove the new disciplines are in the prompt
+        assert!(prompt.contains("Test alongside code"));
+        assert!(prompt.contains("Self-critique"));
+        assert!(prompt.contains("Don't introduce regressions"));
+        assert!(prompt.contains("Engineering discipline"));
+        assert!(prompt.contains("Conventional Commits"));
+        // ponytail: internet/reference awareness assertions
+        assert!(prompt.contains("browser reaches everything the search API might miss"));
+        assert!(prompt.contains("Don't design blind"));
+        assert!(prompt.contains("keep a reference project open in browser while writing"));
+        assert!(prompt.contains("internet is your reference library"));
+        // ponytail: deep-fusion assertions
+        assert!(prompt.contains("climb the ladder"));
+        assert!(prompt.contains("YAGNI"));
+        assert!(prompt.contains("No unrequested abstractions"));
+        assert!(prompt.contains("Shortest working diff"));
+        assert!(prompt.contains("ponytail:"));
+        // ponytail: UI/UX design reference awareness
+        assert!(prompt.contains("land-book.com"));
+        assert!(prompt.contains("ui.aceternity.com"));
+        assert!(prompt.contains("DESIGN.md"));
+        // ponytail: asset/commercial awareness
+        assert!(prompt.contains("Pinterest"));
+        assert!(prompt.contains("Pexels"));
+        assert!(prompt.contains("commercial-grade quality"));
         assert!(prompt.contains("\"promptDelivery\""));
         assert!(prompt.contains("\"promptRuntimeContract\""));
         assert!(!prompt.contains("Tool-FS scenario playbooks"));
@@ -887,6 +912,22 @@ mod tests {
         assert!(!prompt.contains("nickname only"));
         assert!(prompt.contains("Compact operating contract"));
         assert!(prompt.contains("Verification"));
+        // ponytail: compact SOP one-liners present even w/o persona
+        assert!(prompt.contains("Self-critique before done"));
+        assert!(prompt.contains("Don't regress"));
+        assert!(prompt.contains("Conventional Commits"));
+        // ponytail: compact internet awareness one-liners
+        assert!(prompt.contains("browser search directly"));
+        assert!(prompt.contains("keep reference open while coding"));
+        // ponytail: compact deep-fusion one-liners
+        assert!(prompt.contains("Code first, then"));
+        assert!(prompt.contains("No unrequested abstractions"));
+        // ponytail: compact UI/UX design reference
+        assert!(prompt.contains("land-book.com"));
+        assert!(prompt.contains("DESIGN.md"));
+        // ponytail: compact asset/commercial awareness
+        assert!(prompt.contains("Pinterest"));
+        assert!(prompt.contains("Commercial-grade quality"));
     }
 
     #[test]

@@ -307,6 +307,7 @@ export type FileManagerSearchIndexModel = {
   readonly status: SearchIndexStatusResponse | null;
   readonly errorMessage: string | undefined;
   readonly rebuilding: boolean;
+  readonly rebuildSearchIndex: () => Promise<void>;
 };
 
 export type FileManagerChooserMode =

@@ -8,7 +8,6 @@ const labels: NotificationCenterLabels = {
   title: "Notification Center",
   listTitle: "Notification list",
   emptyTitle: "No notifications",
-  emptyDescription: "Important updates and app activity will appear here.",
   markAllRead: "Mark all as read",
   clearAll: "Clear all",
   openSource: "Open source",
@@ -54,10 +53,10 @@ describe("NotificationCenterSurface", () => {
     );
 
     expect(screen.getAllByText("No notifications")).toHaveLength(2);
-    expect(screen.getAllByText("Important updates and app activity will appear here.")).toHaveLength(2);
+    expect(screen.queryByText("Important updates and app activity will appear here.")).toBeNull();
   });
 
-  test("uses object rows, unread badges, and preserves selection/open behavior", () => {
+  test("uses quiet rows, unread dots, and preserves selection/open behavior", () => {
     const onSelectNotification = vi.fn();
     const onOpenNotificationSource = vi.fn();
     render(
@@ -77,7 +76,8 @@ describe("NotificationCenterSurface", () => {
 
     const firstRow = screen.getByRole("button", { name: /Notification one/ });
     expect(firstRow).toHaveClass("lyra-app-object-row", "lyra-notification-center-item-unread");
-    expect(screen.getByText("Unread")).toHaveClass("lyra-app-badge-info");
+    expect(firstRow).not.toHaveTextContent("Unread");
+    expect(firstRow.querySelector(".lyra-app-object-row-meta")).toBeNull();
 
     fireEvent.click(firstRow);
     expect(onSelectNotification).toHaveBeenCalledWith("one");

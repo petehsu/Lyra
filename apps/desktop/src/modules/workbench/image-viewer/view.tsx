@@ -24,6 +24,7 @@ import type { ImageViewerOpenResult } from "../../../shared/image-viewer";
 import type { ImageViewerSurfaceProps } from "./surface-types";
 import type { ImageViewerAppState, ImageViewerLabels, ImageViewerModel } from "./types";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
+import { formatBytes } from "@workbench/i18n";
 
 export type { ImageViewerSurfaceProps } from "./surface-types";
 
@@ -203,13 +204,6 @@ type LoadingOverlayProps = {
 const MAX_TEXTURE_CACHE = 384;
 const MAX_TILE_REQUESTS_PER_VIEW = 96;
 const MAX_CONCURRENT_TILE_REQUESTS = 12;
-
-const formatBytes = (value: number): string => {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-};
 
 const SOURCE_RENDER_FORMATS = new Set([
   "avif",

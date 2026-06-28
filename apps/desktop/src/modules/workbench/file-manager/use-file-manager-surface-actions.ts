@@ -12,6 +12,7 @@ import {
 import { resolveFileManagerEntryIconKind } from "./entry-icon-classifier";
 import type {
   FileManagerEntry,
+  FileManagerFavorite,
   FileManagerTrashEntry
 } from "../../../shared/file-manager";
 import { deriveFileManagerSurfaceModel } from "./surface-model";
@@ -64,6 +65,7 @@ export const useFileManagerSurfaceActions = ({
   state,
   model,
   onOpenFile,
+  onOpenFavorite,
   chooser,
   renderModel,
   searchIndex,
@@ -73,6 +75,7 @@ export const useFileManagerSurfaceActions = ({
   readonly state: FileManagerAppState | null;
   readonly model: FileManagerModel;
   readonly onOpenFile: (filePath: string) => void;
+  readonly onOpenFavorite?: (favorite: FileManagerFavorite) => void;
   readonly chooser?: FileManagerChooserMode | null;
   readonly renderModel: FileManagerRenderModel | null;
   readonly searchIndex: FileManagerSearchIndexModel;
@@ -156,6 +159,7 @@ export const useFileManagerSurfaceActions = ({
       },
       onOpenFavorites: () => {
         setPageKindOverride("favorites");
+        void model.openHome(instanceId, false);
       },
       onOpenDownloads: () => {
         setPageKindOverride(null);
@@ -186,6 +190,14 @@ export const useFileManagerSurfaceActions = ({
       onOpenRecentLocation: (recent) => {
         setPageKindOverride(null);
         void model.openDirectory(instanceId, recent.path);
+      },
+      onOpenFavorite: (favorite) => {
+        if (favorite.kind === "web" || favorite.kind === "agent-session") {
+          onOpenFavorite?.(favorite);
+          return;
+        }
+        setPageKindOverride(null);
+        void model.openDirectory(instanceId, favorite.path);
       },
       onFavoriteContextMenu: (favorite, anchorX, anchorY) => {
         model.openFavoriteContextMenu(instanceId, favorite, anchorX, anchorY);
@@ -359,6 +371,7 @@ export const useFileManagerSurfaceActions = ({
     dragPreviewRef,
     model,
     onOpenFile,
+    onOpenFavorite,
     renderModel,
     searchIndex.rebuildSearchIndex,
     setPageKindOverride,

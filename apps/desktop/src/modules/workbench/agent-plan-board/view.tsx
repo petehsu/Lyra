@@ -7,13 +7,19 @@ import {
   HelpCircle,
   MessageSquare,
   Pencil,
-  RefreshCw,
   RotateCcw,
   Trash2,
   X,
   XCircle
 } from "lucide-react";
 
+import {
+  AppButton,
+  AppIconButton,
+  AppInput,
+  AppList,
+  AppTextarea
+} from "@renderer/ui/components";
 import type {
   AgentPlanAnnotation,
   AgentPlanSnapshot,
@@ -176,7 +182,7 @@ const MarkdownPreview = ({
           {isEditing || isCommenting ? (
             <div className="lyra-agent-plan-board-line-editor">
               {isEditing && block.kind === "rich" ? (
-                <textarea
+                <AppTextarea
                   autoFocus
                   rows={Math.min(Math.max(draft.split("\n").length, 2), 12)}
                   className="lyra-agent-plan-board-line-input lyra-agent-plan-board-line-textarea"
@@ -190,7 +196,7 @@ const MarkdownPreview = ({
                   }}
                 />
               ) : (
-                <input
+                <AppInput
                   autoFocus
                   className="lyra-agent-plan-board-line-input"
                   placeholder={isEditing ? labels.editPlaceholder : labels.commentPlaceholder}
@@ -207,7 +213,7 @@ const MarkdownPreview = ({
                   }}
                 />
               )}
-              <button
+              <AppIconButton
                 className="lyra-agent-plan-board-line-icon-btn"
                 type="button"
                 disabled={disabled}
@@ -215,15 +221,15 @@ const MarkdownPreview = ({
                 onClick={() => { void (isEditing ? saveEdit(block) : saveComment(block)); }}
               >
                 <Check size={13} />
-              </button>
-              <button
+              </AppIconButton>
+              <AppIconButton
                 className="lyra-agent-plan-board-line-icon-btn"
                 type="button"
                 title={labels.cancel}
                 onClick={cancel}
               >
                 <X size={13} />
-              </button>
+              </AppIconButton>
             </div>
           ) : content}
           {blockAnnotations.length > 0 ? (
@@ -238,22 +244,26 @@ const MarkdownPreview = ({
         </div>
         {onRevise !== undefined ? (
           <div className="lyra-agent-plan-board-line-actions">
-            <button
+            <AppButton
               className="lyra-agent-plan-board-line-action"
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => startEdit(block)}
             >
               <Pencil size={12} />
               {labels.editLine}
-            </button>
-            <button
+            </AppButton>
+            <AppButton
               className="lyra-agent-plan-board-line-action"
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => startComment(block)}
             >
               <MessageSquare size={12} />
               {labels.commentLine}
-            </button>
+            </AppButton>
           </div>
         ) : null}
       </div>
@@ -350,10 +360,8 @@ const PlanTodoDetail = ({
   readonly onRevisePlan?: AgentPlanBoardSurfaceProps["onRevisePlan"];
   readonly onResumePlan?: () => Promise<void>;
 }) => {
-  const showTodo = view !== "plan" && todo !== null;
+  const showTodo = view === "todo" && todo !== null;
   const showPlan = view !== "todo";
-  const current = todo === null ? 0 : Math.min(todo.currentIndex + 1, todo.todos.length);
-  const total = todo?.todos.length ?? 0;
   const isSetAside = plan.phase === "set_aside";
   const [resuming, setResuming] = useState(false);
   const handleResume = async (): Promise<void> => {
@@ -367,42 +375,26 @@ const PlanTodoDetail = ({
   };
   return (
     <>
-      <header className="lyra-agent-plan-board-header">
-        <div>
-          <p className="lyra-agent-plan-board-eyebrow">{labels.title}</p>
-          <h1>{plan.title}</h1>
+      {isSetAside && onResumePlan !== undefined ? (
+        <div className="lyra-agent-plan-board-inline-actions">
+          <span className="lyra-agent-plan-board-badge is-set-aside">{labels.setAsideBadge}</span>
+          <AppButton
+            type="button"
+            className="lyra-agent-plan-board-resume-btn"
+            variant="secondary"
+            size="sm"
+            disabled={resuming}
+            onClick={() => { void handleResume(); }}
+          >
+            <RotateCcw size={13} />
+            {labels.resumePlan}
+          </AppButton>
         </div>
-        <div className="lyra-agent-plan-board-meta">
-          {isSetAside ? (
-            <span className="lyra-agent-plan-board-badge is-set-aside">{labels.setAsideBadge}</span>
-          ) : null}
-          <span>{labels.phase}: {plan.phase}</span>
-          <span>{labels.version}: {plan.activeVersionId}</span>
-          {showTodo ? <span>{labels.currentStep}: {current}/{total}</span> : null}
-          {isSetAside && onResumePlan !== undefined ? (
-            <button
-              type="button"
-              className="lyra-agent-plan-board-resume-btn"
-              disabled={resuming}
-              onClick={() => { void handleResume(); }}
-            >
-              <RotateCcw size={13} />
-              {labels.resumePlan}
-            </button>
-          ) : null}
-        </div>
-      </header>
+      ) : null}
 
       <main className={showTodo && showPlan ? "lyra-agent-plan-board-main has-todo" : "lyra-agent-plan-board-main"}>
-        {showTodo ? (
-          <aside className="lyra-agent-plan-board-todo">
-            <h2>{labels.todo}</h2>
-            <TodoList todos={todo.todos} currentIndex={todo.currentIndex} labels={labels} />
-          </aside>
-        ) : null}
         {showPlan ? (
-          <section className="lyra-agent-plan-board-plan">
-            <h2>{labels.plan}</h2>
+          <section className="lyra-agent-plan-board-plan" aria-label={labels.plan}>
             <MarkdownPreview
               labels={labels}
               markdown={plan.markdown}
@@ -410,6 +402,12 @@ const PlanTodoDetail = ({
               onRevise={onRevisePlan}
             />
           </section>
+        ) : null}
+        {showTodo ? (
+          <aside className="lyra-agent-plan-board-todo">
+            <h2>{labels.todo}</h2>
+            <TodoList todos={todo.todos} currentIndex={todo.currentIndex} labels={labels} />
+          </aside>
         ) : null}
         {!showTodo && !showPlan ? (
           <p className="lyra-agent-plan-board-empty">{labels.noTodo}</p>
@@ -419,11 +417,49 @@ const PlanTodoDetail = ({
   );
 };
 
-const formatDateTime = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-};
+const PlanWorkspace = ({
+  labels,
+  plan,
+  todo,
+  view = "both",
+  parentSessionId,
+  desktopApi,
+  onRevisePlan,
+  onResumePlan
+}: {
+  readonly labels: AgentPlanBoardSurfaceProps["labels"];
+  readonly plan: AgentPlanSnapshot;
+  readonly todo: AgentProjectTodoSnapshot | null;
+  readonly view?: AgentPlanBoardView;
+  readonly parentSessionId: string;
+  readonly desktopApi: AgentPlanBoardSurfaceProps["desktopApi"];
+  readonly onRevisePlan?: AgentPlanBoardSurfaceProps["onRevisePlan"];
+  readonly onResumePlan?: () => Promise<void>;
+}) => (
+  <div className={view === "todo" ? "lyra-agent-plan-board-workspace" : "lyra-agent-plan-board-workspace has-chat"}>
+    <section className="lyra-agent-plan-board-workspace-document">
+      <PlanTodoDetail
+        labels={labels}
+        plan={plan}
+        todo={todo}
+        view={view}
+        onRevisePlan={onRevisePlan}
+        {...(onResumePlan === undefined ? {} : { onResumePlan })}
+      />
+    </section>
+    {view === "todo" ? null : (
+      <aside className="lyra-agent-plan-board-chat-rail">
+        <PlanTempChat
+          labels={labels}
+          parentSessionId={parentSessionId}
+          plan={plan}
+          desktopApi={desktopApi}
+          onApplyRevision={onRevisePlan}
+        />
+      </aside>
+    )}
+  </div>
+);
 
 const PlanManagerList = ({
   labels,
@@ -455,54 +491,53 @@ const PlanManagerList = ({
   };
 
   return (
-    <div className="lyra-agent-plan-board-manager-list">
+    <AppList className="lyra-agent-plan-board-manager-list">
       {plans.map((plan) => {
         const busy = busyPlanId === plan.planId || loading;
+        const title = plan.title.trim().length > 0 ? plan.title : labels.openPlan;
+        const disabled = busy || onOpenPlan === undefined;
+        const handleActivate = (): void => {
+          if (!disabled) {
+            void runPlanAction(plan.planId, onOpenPlan);
+          }
+        };
         return (
-          <article
+          <div
             key={plan.planId}
             className={[
-              "lyra-agent-plan-board-manager-item",
+              "lyra-agent-plan-board-manager-entry",
               selectedPlanId === plan.planId ? "is-selected" : ""
-            ].join(" ")}
+            ].filter(Boolean).join(" ")}
           >
-            <button
+            <AppButton
               type="button"
               className="lyra-agent-plan-board-manager-open"
-              disabled={busy || onOpenPlan === undefined}
-              title={labels.openPlan}
-              onClick={() => { void runPlanAction(plan.planId, onOpenPlan); }}
+              variant="ghost"
+              disabled={disabled}
+              aria-label={`${labels.openPlan}: ${title}`}
+              title={title}
+              onClick={handleActivate}
             >
-              <span className="lyra-agent-plan-board-manager-title">{plan.title}</span>
-              <span className="lyra-agent-plan-board-manager-meta">
-                {labels.status}: {plan.status}
-              </span>
-              <span className="lyra-agent-plan-board-manager-meta">
-                {labels.updated}: {formatDateTime(plan.updatedAtIso)}
-              </span>
-              {plan.todoStatus !== null && plan.todoStatus !== undefined ? (
-                <span className="lyra-agent-plan-board-manager-meta">
-                  {labels.todo}: {plan.todoStatus}
-                </span>
-              ) : null}
-            </button>
-            <button
+              <span>{title}</span>
+            </AppButton>
+            <AppIconButton
               type="button"
               className="lyra-agent-plan-board-manager-delete"
+              tone="danger"
               disabled={busy || onDeletePlan === undefined}
               title={labels.deletePlan}
               aria-label={labels.deletePlan}
               onClick={() => { void runPlanAction(plan.planId, onDeletePlan); }}
             >
               <Trash2 size={13} />
-            </button>
-          </article>
+            </AppIconButton>
+          </div>
         );
       })}
       {plans.length === 0 ? (
         <p className="lyra-agent-plan-board-empty">{loading ? labels.loading : labels.noPlans}</p>
       ) : null}
-    </div>
+    </AppList>
   );
 };
 
@@ -588,34 +623,11 @@ export const AgentPlanBoardSurface = ({
     const selectedPlan = state.selectedPlan;
     return (
       <div className="lyra-agent-plan-board">
-        <header className="lyra-agent-plan-board-header">
-          <div>
-            <p className="lyra-agent-plan-board-eyebrow">{labels.manager}</p>
-            <h1>{labels.title}</h1>
-          </div>
-          <div className="lyra-agent-plan-board-meta">
-            <span>{state.workingDir}</span>
-            {state.loading ? <span>{labels.loading}</span> : null}
-          </div>
-        </header>
         {state.error !== null ? (
           <div className="lyra-agent-plan-board-error">{state.error}</div>
         ) : null}
         <main className="lyra-agent-plan-board-manager">
           <aside className="lyra-agent-plan-board-manager-sidebar">
-            <div className="lyra-agent-plan-board-manager-toolbar">
-              <h2>{labels.manager}</h2>
-              <button
-                type="button"
-                className="lyra-agent-plan-board-manager-icon-btn"
-                disabled={state.loading || onRefreshManager === undefined}
-                title={labels.refresh}
-                aria-label={labels.refresh}
-                onClick={() => { void onRefreshManager?.(); }}
-              >
-                <RefreshCw size={13} />
-              </button>
-            </div>
             <PlanManagerList
               labels={labels}
               plans={state.plans}
@@ -629,56 +641,33 @@ export const AgentPlanBoardSurface = ({
             {selectedPlan === null ? (
               <p className="lyra-agent-plan-board-empty">{labels.noPlans}</p>
             ) : (
-              <div className="lyra-agent-plan-board-manager-detail-inner">
-                <button
-                  type="button"
-                  className="lyra-agent-plan-board-manager-back"
-                  disabled={state.loading || onRefreshManager === undefined}
-                  onClick={() => { void onRefreshManager?.(); }}
-                >
-                  <RefreshCw size={13} />
-                  {labels.refresh}
-                </button>
-                <PlanTodoDetail
-                  labels={labels}
-                  plan={selectedPlan}
-                  todo={state.selectedProjectTodo}
-                  view={state.view}
-                  onRevisePlan={onRevisePlan}
-                  onResumePlan={resumePlan}
-                />
-              </div>
+              <PlanWorkspace
+                labels={labels}
+                plan={selectedPlan}
+                todo={state.selectedProjectTodo}
+                view={state.view}
+                parentSessionId={state.agentSessionId}
+                desktopApi={desktopApi}
+                onRevisePlan={onRevisePlan}
+                {...(resumePlan === undefined ? {} : { onResumePlan: resumePlan })}
+              />
             )}
           </section>
         </main>
-        {selectedPlan === null || state.view === "todo" ? null : (
-          <PlanTempChat
-            labels={labels}
-            parentSessionId={state.agentSessionId}
-            plan={selectedPlan}
-            desktopApi={desktopApi}
-            onApplyRevision={onRevisePlan}
-          />
-        )}
       </div>
     );
   }
 
   return (
     <div className="lyra-agent-plan-board">
-      <PlanTodoDetail
+      <PlanWorkspace
         labels={labels}
         plan={state.plan}
         todo={state.projectTodo}
-        onRevisePlan={onRevisePlan}
-        onResumePlan={resumePlan}
-      />
-      <PlanTempChat
-        labels={labels}
         parentSessionId={state.agentSessionId}
-        plan={state.plan}
         desktopApi={desktopApi}
-        onApplyRevision={onRevisePlan}
+        onRevisePlan={onRevisePlan}
+        {...(resumePlan === undefined ? {} : { onResumePlan: resumePlan })}
       />
     </div>
   );

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Link2, PanelBottom, Square, SquareTerminal } from "lucide-react";
-import { AppButton, AppIconButton } from "@renderer/ui/components";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@renderer/ui/primitives/dropdown-menu";
+  AppButton,
+  AppIconButton,
+  AppMenu,
+  AppMenuContent,
+  AppMenuTrigger
+} from "@renderer/ui/components";
 import type { TerminalDockTab } from "../../../../terminal-dock/types";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import type {
@@ -14,7 +15,7 @@ import type {
 } from "../../../../../../shared/agent";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import type { SessionMeta } from "../../core/types";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import { buildTerminalTabPageCitation } from "./terminal-tab-citation";
 
 const ICON_SIZE = 13;
@@ -65,9 +66,14 @@ export function BackgroundTerminalButton({
       setPrivateTerminals([]);
       return;
     }
+    const listPrivateTerminals = desktopApi.agent.listPrivateTerminals;
+    if (typeof listPrivateTerminals !== "function") {
+      setPrivateTerminals([]);
+      return;
+    }
     let cancelled = false;
     const fetchList = () => {
-      desktopApi.agent!.listPrivateTerminals({ sessionId: sid })
+      listPrivateTerminals({ sessionId: sid })
         .then((list) => {
           if (!cancelled) setPrivateTerminals(list);
         })
@@ -97,8 +103,8 @@ export function BackgroundTerminalButton({
   const count = uiTerminals.length + privateTerminals.length;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <AppMenu>
+      <AppMenuTrigger asChild>
         <AppButton
           variant="ghost"
           size="sm"
@@ -113,8 +119,8 @@ export function BackgroundTerminalButton({
             <span className="lyra-agents-bg-terminal-count">{count}</span>
           ) : null}
         </AppButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={4}>
+      </AppMenuTrigger>
+      <AppMenuContent align="start" sideOffset={4}>
         {count === 0 ? (
           <div className="lyra-agents-bg-terminal-empty">
             {t("lyra-agents-composer.backgroundTerminalsEmpty")}
@@ -198,7 +204,7 @@ export function BackgroundTerminalButton({
             ))}
           </>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </AppMenuContent>
+    </AppMenu>
   );
 }

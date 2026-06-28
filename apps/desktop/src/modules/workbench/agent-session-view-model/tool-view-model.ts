@@ -1,6 +1,6 @@
 import type { AgentToolActivity } from "../../../shared/agent";
 import type { ToolCall, ToolDetails, ToolGroup } from "../ai-panel/lyra-agents/core/types";
-import { formatMessage, t } from "../ai-panel/lyra-agents/core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 import {
   artifactPreviewsFromEvidence,
   artifactTargetsFromEvidence,

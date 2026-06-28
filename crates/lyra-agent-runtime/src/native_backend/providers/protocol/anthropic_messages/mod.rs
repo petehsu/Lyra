@@ -129,6 +129,7 @@ mod tests {
                 supports_image_input: true,
                 supports_tool_calling: true,
                 supports_streaming: true,
+                supports_reasoning_effort: None,
                 enabled: true,
             }],
         }

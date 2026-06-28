@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 
 import type { ChatMessage, SessionMeta } from "../../../core/types";
-import { setLocale } from "../../../core/i18n";
+import { setLocale } from "@workbench/i18n";
 import { createDataProviderValue } from "../../../data/createDataProviderValue";
 import { DataContextProvider } from "../../../data/DataProvider";
 import { Message } from "../Message";
@@ -83,6 +83,39 @@ describe("agent message process fold", () => {
     expect(
       container.querySelector(".lyra-agents-message-process-fold .lyra-agents-collapse")
     ).toHaveAttribute("data-open", "true");
+  });
+
+  test("merges consecutive tool folds before the final summary", () => {
+    setLocale("zh-CN");
+    renderMessage({
+      ...completedAgentMessage,
+      id: "agent-consecutive-tools",
+      blocks: [
+        completedAgentMessage.blocks[1]!,
+        {
+          type: "tools",
+          id: "tools-2",
+          group: {
+            id: "group-2",
+            status: "done",
+            label: "Agent 活动",
+            calls: [{
+              id: "call-2",
+              kind: "read",
+              title: "读取文件",
+              status: "success",
+              details: {
+                type: "read",
+                file: "README.md"
+              }
+            }]
+          }
+        },
+        { type: "text", id: "summary-2", body: "完成。" }
+      ]
+    });
+
+    expect(screen.getAllByRole("button", { name: "Agent 活动" })).toHaveLength(1);
   });
 
   test("does not fold simple completed agent text", () => {

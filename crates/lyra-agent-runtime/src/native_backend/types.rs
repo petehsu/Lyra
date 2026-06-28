@@ -192,6 +192,12 @@ pub(crate) struct NativeProviderModel {
     pub(crate) supports_tool_calling: bool,
     #[serde(default = "default_false")]
     pub(crate) supports_streaming: bool,
+    /// ponytail: 模型是否支持 reasoning_effort 参数。
+    /// None = 未知，按协议级门控回退（openai_responses 协议默认 true）。
+    /// Some(false) = 明确不支持（如 gpt-4o），即使协议是 openai_responses 也不显示。
+    /// Some(true) = 明确支持（如 o3、o4-mini）。
+    #[serde(default)]
+    pub(crate) supports_reasoning_effort: Option<bool>,
     #[serde(default = "default_true")]
     pub(crate) enabled: bool,
 }

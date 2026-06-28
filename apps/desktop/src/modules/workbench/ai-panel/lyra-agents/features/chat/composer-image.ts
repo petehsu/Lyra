@@ -2,7 +2,7 @@ import type {
   AgentImageAttachmentMaterializeRequest,
   AgentImageInput
 } from "../../../../../../shared/agent";
-import { formatMessage, t } from "../../core/i18n";
+import { formatMessage, t } from "@workbench/i18n";
 import type { AgentImageAttachment } from "../../core/types";
 import { TRANSCRIPT_CITATION_PREVIEW_CHARS } from "./message-citation";
 import {

@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Bumped PROMPT_TEMPLATE_VERSION to 7 — terminal session awareness: added Terminal sessions section to full_contract (terminal_list for live sessions, terminal_run for long-running cmd non-blocking, terminal_read/screen/wait to check back, terminal_signal/close to kill stale). Added one-liner to compact_contract."
+reason = "Bumped PROMPT_TEMPLATE_VERSION to 12 — asset/commercial awareness: added real-image sourcing (Pinterest, Pexels, Unsplash instead of training-data defaults), anti-placeholder discipline (don't use lazy defaults for images/icons/copy), and commercial-grade quality mindset to full_contract Workstation awareness + Engineering discipline and compact_contract."

@@ -1,4 +1,4 @@
-import { Check, ExternalLink, LogIn, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentPropsWithoutRef } from "react";
 
@@ -8,7 +8,6 @@ import {
   AppInput,
   AppObjectRow,
   AppSearchField,
-  AppSelect,
   AppStatusMessage,
   AppSwitch,
   AppTextarea
@@ -76,11 +75,6 @@ type AgentConfigShape = {
 
 const asAgentConfig = (value: unknown): AgentConfigShape =>
   (value ?? {}) as AgentConfigShape;
-
-const nullableTrimmed = (value: string): string | null => {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-};
 
 const uniqueModelIds = (...groups: readonly string[][]): string[] => {
   const seen = new Set<string>();
@@ -259,8 +253,16 @@ const PROVIDER_ROUTE_ALIASES: readonly {
     values: ["deepseek", "deep seek", "深度求索", "深度搜索"],
   },
   {
+    match: (route) => route.providerId.includes("zhipu") || route.label.toLocaleLowerCase().includes("glm"),
+    values: ["glm", "zai", "z.ai", "zhipu", "bigmodel", "智谱", "智谱ai", "智谱 ai"],
+  },
+  {
     match: (route) => route.providerId.includes("moonshot") || route.label.toLocaleLowerCase().includes("kimi"),
     values: ["moonshot", "kimi", "月之暗面", "月之暗面 kimi"],
+  },
+  {
+    match: (route) => route.providerId.includes("nvidia") || route.label.toLocaleLowerCase().includes("nvidia"),
+    values: ["nvidia", "nim", "nvidia nim", "英伟达"],
   },
   {
     match: (route) => route.providerId.includes("baidu") || route.label.toLocaleLowerCase().includes("wenxin"),
@@ -500,6 +502,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const selectedProviderRoute =
     providerRoutes.find((route) => route.id === selectedProviderRouteId)
     ?? null;
+  const hasSelectedProviderRoute = selectedProviderRoute !== null;
+  const selectedProviderRouteDefaultBaseUrl = selectedProviderRoute?.defaultBaseUrl ?? null;
   const selectedProviderProfile = selectedProviderRoute === null
     ? null
     : model.profiles.find((profile) => profile.routeId === selectedProviderRoute.id) ?? null;
@@ -590,13 +594,13 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     && discoveredModelIds.every((id) => disabledDiscoveredModelIds.has(id));
 
   useEffect(() => {
-    if (selectedProviderRoute === null) {
+    if (!hasSelectedProviderRoute) {
       return;
     }
     setProviderBaseUrl(
       selectedProviderProfile?.baseUrl
       ?? selectedProviderConfig?.baseUrl
-      ?? selectedProviderRoute.defaultBaseUrl
+      ?? selectedProviderRouteDefaultBaseUrl
       ?? ""
     );
     setProviderApiKey("");
@@ -607,9 +611,11 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     setIsDiscoveringModels(false);
     setDiscoveryReturnedEmpty(false);
   }, [
+    hasSelectedProviderRoute,
     selectedProviderConfig?.baseUrl,
     selectedProviderProfile?.baseUrl,
-    selectedProviderRoute,
+    selectedProviderRouteDefaultBaseUrl,
+    selectedProviderRouteId,
   ]);
 
   const setModelEnabled = (entry: SettingsAiRenderedModelEntry, enabled: boolean): void => {
@@ -1103,10 +1109,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
   const config = asAgentConfig(model.agentConfig?.config);
   const loginProviders = model.agentLoginProviders?.providers ?? [];
-  const googleLoginProvider = loginProviders.find((provider) => provider.id === "google");
-  const oauthLoginProviders = loginProviders.filter((provider) =>
-    provider.requiresCallback && provider.id !== "google"
-  );
+  const oauthLoginProviders = loginProviders.filter((provider) => provider.requiresCallback);
   const leanPromptDeliveryEnabled =
     config.promptDelivery?.mode === "lean-experimental"
     || config.promptDelivery?.leanExperimental === true;
@@ -1120,9 +1123,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
     readonly instructions: string;
   } | null>(null);
   const [callbackInput, setCallbackInput] = useState("");
-  const [googleClientId, setGoogleClientId] = useState("");
-  const [googleClientSecret, setGoogleClientSecret] = useState("");
-  const [gmailAccessTier, setGmailAccessTier] = useState<"readonly" | "full">("readonly");
 
   return (
     <section className="lyra-settings-ai-stack">
@@ -1175,80 +1175,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             />
           ))}
         </div>
-
-        {googleLoginProvider === undefined ? null : (
-          <div className="lyra-settings-ai-oauth-panel">
-            <span className="lyra-settings-ai-inline-editor-title-copy">
-              <strong>{labels.gmailLoginTitle}</strong>
-              <small>{labels.gmailLoginDescription}</small>
-              <small>
-                {googleLoginProvider.authKind} · {googleLoginProvider.configured ? labels.accountConfigured : labels.accountNotConfigured}
-              </small>
-            </span>
-            <div className="lyra-settings-ai-form">
-              <SettingsAiInputField
-                label={labels.gmailClientIdLabel}
-                type="text"
-                value={googleClientId}
-                onValueChange={setGoogleClientId}
-              />
-              <SettingsAiInputField
-                label={labels.gmailClientSecretLabel}
-                type="password"
-                autoComplete="off"
-                value={googleClientSecret}
-                onValueChange={setGoogleClientSecret}
-              />
-              <label className="lyra-settings-ai-field">
-                <span>{labels.gmailAccessTierLabel}</span>
-                <AppSelect
-                  ariaLabel={labels.gmailAccessTierLabel}
-                  className="lyra-settings-ai-select"
-                  value={gmailAccessTier}
-                  options={[
-                    { value: "readonly", label: labels.gmailAccessReadOnly },
-                    { value: "full", label: labels.gmailAccessFull }
-                  ]}
-                  onValueChange={(nextValue) => {
-                    setGmailAccessTier(nextValue === "full" ? "full" : "readonly");
-                  }}
-                />
-              </label>
-            </div>
-            <footer className="lyra-settings-ai-inline-editor-footer">
-              <span className="lyra-settings-ai-actions">
-                <AppButton
-                  variant="default"
-                  size="sm"
-                  className="lyra-settings-ai-action lyra-settings-ai-action-primary"
-                  disabled={model.isSaving}
-                  onClick={() => {
-                    void model.startAgentAccountLogin?.({
-                      provider: "google",
-                      googleClientId: nullableTrimmed(googleClientId),
-                      googleClientSecret: nullableTrimmed(googleClientSecret),
-                      gmailAccessTier,
-                    }).then((response) => {
-                      if (response === null) return;
-                      setPendingLogin({
-                        provider: response.provider,
-                        label: response.label ?? null,
-                        flowId: response.flowId,
-                        callbackHint: response.callbackHint ?? null,
-                        instructions: response.instructions,
-                      });
-                      setCallbackInput("");
-                      setGoogleClientSecret("");
-                    });
-                  }}
-                >
-                  <LogIn size={14} aria-hidden="true" />
-                  {labels.startLogin}
-                </AppButton>
-              </span>
-            </footer>
-          </div>
-        )}
 
         {pendingLogin === null ? null : (
           <div className="lyra-settings-ai-oauth-panel">

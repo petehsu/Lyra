@@ -18,9 +18,7 @@ export type LoginManagerLabels = {
   readonly reviewTab: string;
   readonly passwordsUnavailable: string;
   readonly emptySessionsTitle: string;
-  readonly emptySessionsDescription: string;
   readonly emptyCredentialsTitle: string;
-  readonly emptyCredentialsDescription: string;
   readonly openSite: string;
   readonly logoutSite: string;
   readonly deleteCredential: string;

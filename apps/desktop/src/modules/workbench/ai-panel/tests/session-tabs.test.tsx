@@ -92,7 +92,8 @@ describe("AI panel session tabs", () => {
         { sessionId: "", title: "Empty" },
         { sessionId: "session-a", title: "   ", lastKnownStatus: "running" },
         { sessionId: "session-a", title: "Duplicate" },
-        { sessionId: "session-b", title: "Beta", lastKnownStatus: "unknown" }
+        { sessionId: "session-b", title: "Beta", lastKnownStatus: "unknown" },
+        { sessionId: "session-c", title: "Review ⟦page-cite:missing⟧", lastKnownStatus: "idle" }
       ],
       activeSessionId: "missing-session"
     }));
@@ -110,6 +111,12 @@ describe("AI panel session tabs", () => {
           sessionId: "session-b",
           title: "Beta",
           lastKnownStatus: null
+        },
+        {
+          tabId: "session-c",
+          sessionId: "session-c",
+          title: expect.not.stringContaining("⟦"),
+          lastKnownStatus: "idle"
         }
       ],
       activeTabId: "session-a",

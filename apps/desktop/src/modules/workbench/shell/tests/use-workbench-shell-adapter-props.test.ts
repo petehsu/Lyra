@@ -13,13 +13,15 @@ const createPanelLayoutModel = (): PanelLayoutModel => ({
   isBottomPanelVisible: false,
   leftWidth: 320,
   bottomHeight: 260,
+  appSidebarWidth: 220,
   cssVars: {
     "--left-width": "320px",
     "--left-panel-content-width": "320px",
     "--left-panel-mobile-height": "220px",
     "--left-panel-content-mobile-height": "220px",
     "--bottom-height": "260px",
-    "--bottom-panel-content-height": "260px"
+    "--bottom-panel-content-height": "260px",
+    "--lyra-app-sidebar-rail-w": "220px"
   },
   toggleLeftPanel: vi.fn(),
   toggleBottomPanel: vi.fn(),

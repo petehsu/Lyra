@@ -3,29 +3,16 @@ import type { AgentImageAttachment } from "../../core/types";
 import type { AgentFileAttachment } from "./composer-file";
 import { fileAttachmentChipAriaLabel } from "./composer-file";
 import {
+  composerChipIconKindForImage,
+  mountComposerChipIcon
+} from "./composer-chip-icon";
+import {
   imageAttachmentChipKind,
   imageAttachmentPreview,
   imageChipAriaLabel
 } from "./composer-image";
 import type { ComposerSegment } from "./message-citation";
 import { mountPageCitationTabIcon } from "./page-citation-tab-icon";
-
-/** Lucide-aligned stroke icons for citation and attachment chips. */
-export const CITATION_CHIP_ICON_SVGS = {
-  assistant: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>`,
-  user: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
-  page: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`,
-  imageFile: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`,
-  imageBrowser: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
-  imageWindow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>`,
-  file: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`
-} as const;
-
-const IMAGE_CHIP_ICON_BY_KIND = {
-  file: CITATION_CHIP_ICON_SVGS.imageFile,
-  workspace: CITATION_CHIP_ICON_SVGS.imageBrowser,
-  window: CITATION_CHIP_ICON_SVGS.imageWindow
-} as const;
 
 const applyCitationDataset = (chip: HTMLSpanElement, citation: AgentTranscriptCitation): void => {
   chip.dataset.citationId = citation.id;
@@ -109,7 +96,7 @@ export const createImageChipElement = (image: AgentImageAttachment): HTMLSpanEle
 
   const icon = document.createElement("span");
   icon.className = "lyra-agents-citation-chip-icon";
-  icon.innerHTML = IMAGE_CHIP_ICON_BY_KIND[kind];
+  mountComposerChipIcon(icon, composerChipIconKindForImage(image));
   chip.appendChild(icon);
 
   const previewWrap = document.createElement("span");
@@ -133,7 +120,7 @@ export const createFileChipElement = (file: AgentFileAttachment): HTMLSpanElemen
 
   const icon = document.createElement("span");
   icon.className = "lyra-agents-citation-chip-icon";
-  icon.innerHTML = CITATION_CHIP_ICON_SVGS.file;
+  mountComposerChipIcon(icon, "file");
   chip.appendChild(icon);
 
   const previewWrap = document.createElement("span");
@@ -171,7 +158,7 @@ export const createCitationChipElement = (citation: AgentTranscriptCitation): HT
 
   const icon = document.createElement("span");
   icon.className = "lyra-agents-citation-chip-icon";
-  icon.innerHTML = CITATION_CHIP_ICON_SVGS[citation.role];
+  mountComposerChipIcon(icon, citation.role);
   chip.appendChild(icon);
 
   const previewWrap = document.createElement("span");
@@ -193,7 +180,7 @@ export const hydrateCitationChipElement = (
   applyCitationDataset(chip, citation);
   const icon = chip.querySelector<HTMLElement>(".lyra-agents-citation-chip-icon");
   if (icon !== null) {
-    icon.innerHTML = CITATION_CHIP_ICON_SVGS[citation.role];
+    mountComposerChipIcon(icon, citation.role);
   }
   const preview = chip.querySelector<HTMLElement>(".lyra-agents-citation-chip-preview");
   if (preview !== null) {

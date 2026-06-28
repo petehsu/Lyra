@@ -1,6 +1,6 @@
 import type { AgentMessageBlock, AgentSessionSnapshot, AgentToolActivity } from "../../../shared/agent";
 import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
-import { formatMessage, t } from "../ai-panel/lyra-agents/core/i18n";
+import { formatMessage, t, formatTime } from "@workbench/i18n";
 import { isInternalRuntimeFallbackText } from "../ai-panel/lyra-agents/core/turn-failure-message";
 import { parseTranscriptCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-file";
@@ -13,12 +13,7 @@ export const formatAgentMessageTime = (value: string | undefined): string | unde
   if (value === undefined) return undefined;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    hourCycle: "h23"
-  }).format(date);
+  return formatTime(date.getTime());
 };
 
 export const cleanSyntheticImageText = (text: string): string => {

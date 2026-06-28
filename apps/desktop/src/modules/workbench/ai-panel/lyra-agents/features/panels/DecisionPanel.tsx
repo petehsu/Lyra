@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, ArrowUp, HelpCircle, Info } from "lucide-react";
-import { t } from "../../core/i18n";
+import { t } from "@workbench/i18n";
 import type { DecisionQuestion } from "../../core/types";
 import { AppButton, AppInput, AppTooltip } from "@renderer/ui/components";
 

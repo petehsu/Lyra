@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { APP_CONFIG } from "./core/config";
-import { setLocale, type Locale } from "./core/i18n";
+import { setLocale, type Locale } from "@workbench/i18n";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { assertUsingRealData } from "./styles/guards";
 import {
