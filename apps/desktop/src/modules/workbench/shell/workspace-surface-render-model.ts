@@ -41,26 +41,11 @@ export const createWorkspaceSurfaceRenderModel = (
               sourceFilterLabel: context.i18n.resultsSourceFilter,
               autoSearchLabel: context.i18n.resultsAutoTab,
               webTabLabel: context.i18n.resultsWebTab,
-              localTabLabel: context.i18n.resultsLocalTab,
-              localIndexNotReadyLabel: context.i18n.resultsLocalIndexNotReady,
-              localSearchReady: context.localSearchReady,
               onSearchEngineSelectionChange: (nextSelection) => {
                 void applySearchEngineSelection(
                   context,
                   tab.searchQuery ?? "",
                   nextSelection
-                );
-              },
-              onSwitchToLocalSearch: () => {
-                if (!context.localSearchReady) {
-                  return;
-                }
-                context.tabsModel.openLocalSearchTab(
-                  {
-                    query: tab.searchQuery ?? "",
-                    selection
-                  },
-                  { target: "active-tab" }
                 );
               }
             }),

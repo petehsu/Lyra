@@ -112,6 +112,29 @@ describe("agent tool family projection", () => {
     });
   });
 
+  test("projects native todo tools with task titles", () => {
+    const call = toToolCall(tool({
+      name: "todo",
+      label: "Used Lyra tool",
+      input: { action: "update", id: "todo-1", status: "in_progress" },
+      output: { content: "Updated todo." }
+    }));
+
+    expect(call.kind).toBe("task");
+    expect(call.title).toBe("Update todo");
+  });
+
+  test("names Tool-FS search activity specifically", () => {
+    const call = toToolCall(tool({
+      name: "tool_fs_search",
+      label: "Run tool",
+      input: { query: "browser control" },
+      output: { content: "Matched tools." }
+    }));
+
+    expect(call.title).toBe("Search tools");
+  });
+
   test("projects legacy named browser and shell tools", () => {
     const lumen = toToolCall(tool({
       name: "lyra_lumen",

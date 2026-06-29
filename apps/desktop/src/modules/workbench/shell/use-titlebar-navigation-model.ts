@@ -117,10 +117,9 @@ type UseTitlebarNavigationModelOptions = {
   readonly activeFileManagerState: FileManagerAppState | null;
   readonly searchEngines: readonly SearchEngineDefinition[];
   readonly autoSearchEngines: readonly SearchEngineDefinition[];
-  readonly localSearchReady?: boolean;
   readonly tabsModel: Pick<
     WorkspaceTabsModel,
-    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
+    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs"
   >;
   readonly omniboxNonBrowserSubmitTarget: WorkbenchOmniboxNonBrowserSubmitTarget;
   readonly placeholder: string;
@@ -322,7 +321,6 @@ export const useTitlebarNavigationModel = ({
   activeFileManagerState,
   searchEngines,
   autoSearchEngines,
-  localSearchReady = true,
   tabsModel,
   omniboxNonBrowserSubmitTarget,
   placeholder,
@@ -776,18 +774,9 @@ export const useTitlebarNavigationModel = ({
               searchEngines: autoSearchEngines
             });
             if (target === null) {
-              if (!localSearchReady) {
-                return;
-              }
-              tabsModel.openLocalSearchTab(
-                {
-                  query: resolution.query,
-                  selection: { mode: "auto", engineIds: [] }
-                },
-                { target: "active-tab" }
-              );
-            } else {
-              tabsModel.openWebSearchTabs(
+              return;
+            }
+            tabsModel.openWebSearchTabs(
                 {
                   query: resolution.query,
                   targets: [{
@@ -799,7 +788,6 @@ export const useTitlebarNavigationModel = ({
                 },
                 { target: "active-tab" }
               );
-            }
           }
           return;
         case "file":
@@ -845,35 +833,22 @@ export const useTitlebarNavigationModel = ({
               ? "active-tab"
               : "new-tab";
           if (target === null) {
-            if (!localSearchReady) {
-              return;
-            }
-            tabsModel.openLocalSearchTab(
-              {
-                query: resolution.query,
-                selection: { mode: "auto", engineIds: [] }
-              },
-              { target: targetMode }
-            );
-          } else {
-            tabsModel.openWebSearchTabs(
-              {
-                query: resolution.query,
-                targets: [{
-                  address: target.searchUrl,
-                  engineId: target.engine.id,
-                  title: target.engine.label
-                }],
-                selection: { mode: "auto", engineIds: [] }
-              },
-              {
-              target:
-                omniboxNonBrowserSubmitTarget === "replace_active_tab"
-                  ? "active-tab"
-                  : "new-tab"
-              }
-            );
+            return;
           }
+          tabsModel.openWebSearchTabs(
+            {
+              query: resolution.query,
+              targets: [{
+                address: target.searchUrl,
+                engineId: target.engine.id,
+                title: target.engine.label
+              }],
+              selection: { mode: "auto", engineIds: [] }
+            },
+            {
+              target: targetMode
+            }
+          );
         }
         clearDraft(activeTabId);
         return;
@@ -892,7 +867,6 @@ export const useTitlebarNavigationModel = ({
     autoSearchEngines,
     clearDraft,
     desktopApi,
-    localSearchReady,
     omniboxNonBrowserSubmitTarget,
     onOpenDirectoryPath,
     onOpenFilePath,

@@ -1,10 +1,6 @@
 export {
-  cancelLocalSearchStream,
   createEmptySearchPayload,
-  fetchLocalSearchPayload,
-  readLocalSearchStream,
-  resolveWebSearchTarget,
-  startLocalSearchStream
+  resolveWebSearchTarget
 } from "./service";
 export { BrowserResultSurface } from "./result-surface";
 export type { BrowserResultSurfaceProps } from "./result-surface";

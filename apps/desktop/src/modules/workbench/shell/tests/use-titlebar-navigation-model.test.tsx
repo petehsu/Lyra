@@ -15,12 +15,11 @@ import {
 
 const createTabsModel = (): Pick<
   WorkspaceTabsModel,
-  "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
+  "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs"
 > => ({
   navigateResolvedInput: vi.fn(() => "browser-tab-1"),
   updateActiveInput: vi.fn(),
-  openWebSearchTabs: vi.fn(() => ["browser-tab-1"]),
-  openLocalSearchTab: vi.fn(() => "browser-tab-1")
+  openWebSearchTabs: vi.fn(() => ["browser-tab-1"])
 });
 
 const createPageTab = (overrides: Partial<WorkspaceTab> = {}): WorkspaceTab => ({
@@ -96,7 +95,7 @@ const renderModel = ({
   readonly activePageRuntimeState?: WorkbenchBrowserPageRuntimeState | null;
   readonly tabsModel?: Pick<
     WorkspaceTabsModel,
-    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs" | "openLocalSearchTab"
+    "navigateResolvedInput" | "updateActiveInput" | "openWebSearchTabs"
   >;
   readonly onReload?: () => void;
   readonly onHistoryAppReload?: () => void;

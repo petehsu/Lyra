@@ -1058,10 +1058,7 @@ const registerIpcHandlers = async (): Promise<void> => {
   console.info(`[lyra-terminal] runtime attached: ${terminalBridge.loadResult.loadedFrom}`);
   disposeTerminalBridge = terminalBridge.dispose;
 
-  const searchBridge = createSearchIpcBridge({
-    runtimeClient,
-    storageRoot: storageRoots.modules.search
-  });
+  const searchBridge = createSearchIpcBridge();
   disposeSearchBridge = searchBridge.dispose;
 
   const lspBridge = createLspIpcBridge(runtimeClient, () => mainWindow);

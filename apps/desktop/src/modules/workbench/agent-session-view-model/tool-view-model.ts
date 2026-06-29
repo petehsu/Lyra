@@ -44,6 +44,7 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   const toolPath = (toolFsPath(tool) ?? "").toLowerCase();
   const toolName = normalizedToolName(tool);
   const legacyFamily = legacyToolFamily(tool);
+  if (isTodoTool(toolName, domain, toolPath)) return "task";
   if (
     domain === "plan" ||
     toolPath.startsWith("/tools/plan/") ||
@@ -66,7 +67,6 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
     toolPath.startsWith("/tools/web/")
   ) return "web";
   if (domain === "shell" || toolPath.startsWith("/tools/shell/") || legacyFamily === "shell") return "shell";
-  if (domain === "todo" || toolPath.startsWith("/tools/todo/")) return "task";
   if (domain === "git" || toolPath.startsWith("/tools/git/")) {
     return ["stage", "unstage", "discard"].includes(action) ? "edit" : "read";
   }
@@ -78,6 +78,12 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
   if (domain === "code" || toolPath.startsWith("/tools/code/")) return "search";
   return "thought";
 };
+
+const isTodoTool = (toolName: string, domain: string, toolPath: string): boolean =>
+  domain === "todo"
+  || toolPath.startsWith("/tools/todo/")
+  || toolName === "todo"
+  || toolName.startsWith("todo_");
 
 export const toolKindFromHint = (hint: string | null | undefined): ToolCall["kind"] | null => {
   switch ((hint ?? "").toLowerCase()) {
@@ -248,6 +254,7 @@ export const toolFsMetaTitle = (tool: AgentToolActivity): string | null => {
   const operation = toolName.startsWith("tool_fs_")
     ? toolName.slice("tool_fs_".length)
     : stringField(input, "action") ?? tool.operation ?? stringField(input, "operation");
+  if (operation === "search") return "Search tools";
   if (operation === "list") return "List tools";
   if (operation === "read_doc") return "Read tool docs";
   if (operation === "inspect") return "Inspect tool";
@@ -266,6 +273,19 @@ export const toolPathTitle = (tool: AgentToolActivity): string | null => {
     .join(" ");
 };
 
+const todoTitle = (tool: AgentToolActivity): string | null => {
+  const toolName = normalizedToolName(tool);
+  const action = (toolFsOperation(tool) ?? toolName.replace(/^todo_/, "")).toLowerCase();
+  const domain = (toolFsDomain(tool) ?? "").toLowerCase();
+  const toolPath = (toolFsPath(tool) ?? "").toLowerCase();
+  if (!isTodoTool(toolName, domain, toolPath)) return null;
+  if (action === "read") return "Read todos";
+  if (action === "write") return "Write todos";
+  if (action === "update") return "Update todo";
+  if (action === "finish") return "Finish todos";
+  return "Todo activity";
+};
+
 export const genericToolTitle = (tool: AgentToolActivity): string => {
   const toolName = normalizedToolName(tool);
   if (toolKind(tool) === "plan") {
@@ -275,6 +295,8 @@ export const genericToolTitle = (tool: AgentToolActivity): string => {
     if (toolName === "plan_revise") return "Revising plan";
     return "Planning";
   }
+  const todo = todoTitle(tool);
+  if (todo !== null) return todo;
   const metaTitle = toolFsMetaTitle(tool);
   if (metaTitle !== null) return metaTitle;
   const label = tool.label.trim();

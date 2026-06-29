@@ -19,8 +19,12 @@ import {
   AppWindow,
   Clock3,
   CheckCircle2,
+  CheckCheck,
+  ClipboardPaste,
   XCircle,
+  Database,
   File,
+  FileCode2,
   Terminal,
   Hammer,
   FolderOpen,
@@ -29,11 +33,17 @@ import {
   Eye,
   FileCog,
   FolderTree,
+  GitBranch,
+  GitCommitHorizontal,
+  GitCompareArrows,
   Link2,
   RadioTower,
   ScrollText,
+  Sparkles,
   Target,
   Workflow,
+  Puzzle,
+  Webhook,
 } from "lucide-react";
 import type { ToolCall } from "../types";
 
@@ -78,7 +88,7 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
     case "workbench":
       return <AppWindow {...props} />;
     case "thought":
-      return <Clock3 {...props} />;
+      return <Sparkles {...props} />;
     case "plan":
       return <BookText {...props} />;
     case "task":
@@ -96,10 +106,104 @@ function includesAny(value: string, needles: readonly string[]): boolean {
   return needles.some((needle) => value.includes(needle));
 }
 
+function detailKey(details: ToolCall["details"]): string {
+  if (details === undefined) return "";
+  switch (details.type) {
+    case "edit":
+    case "read":
+      return details.file;
+    case "search":
+      return details.query;
+    case "shell":
+      return details.command;
+    case "terminal":
+    case "workbench":
+    case "lumen":
+    case "software":
+      return [
+        details.action,
+        "softwareId" in details ? details.softwareId : "",
+        "actionId" in details ? details.actionId : ""
+      ].join(" ");
+    case "web":
+      return [details.url, details.query, details.title].join(" ");
+    case "task":
+      return "todo";
+    case "ask":
+      return details.question;
+    case "text":
+      return "";
+  }
+}
+
 export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   const props = { size: ICON_SIZE, strokeWidth: ICON_STROKE, "aria-hidden": true as const };
   const details = call.details;
   const title = lower(call.title);
+  const semantic = `${title} ${lower(detailKey(details))}`;
+
+  if (includesAny(semantic, ["todo", "todos", "待办"])) {
+    if (includesAny(semantic, ["finish", "complete", "completed", "done", "完成"])) {
+      return <CheckCheck {...props} />;
+    }
+    if (includesAny(semantic, ["update", "updated", "progress", "in_progress", "执行"])) {
+      return <CheckCheck {...props} />;
+    }
+    if (includesAny(semantic, ["write", "replace", "写入"])) {
+      return <ClipboardPaste {...props} />;
+    }
+    if (includesAny(semantic, ["read", "list", "读取", "列表"])) {
+      return <List {...props} />;
+    }
+    return <ListChecks {...props} />;
+  }
+  if (includesAny(semantic, ["/tools/git/", "git "])) {
+    if (includesAny(semantic, ["diff", "compare"])) return <GitCompareArrows {...props} />;
+    if (semantic.includes("commit")) return <GitCommitHorizontal {...props} />;
+    return <GitBranch {...props} />;
+  }
+  if (includesAny(title, ["search tools", "tool search"])) {
+    return <Search {...props} />;
+  }
+  if (includesAny(title, ["list tools", "list tool"])) {
+    return <List {...props} />;
+  }
+  if (includesAny(title, ["read tool docs", "tool docs"])) {
+    return <BookText {...props} />;
+  }
+  if (includesAny(title, ["read lyra artifact", "artifact"])) {
+    return <FileText {...props} />;
+  }
+  if (includesAny(title, ["searched project", "project search"])) {
+    return <Search {...props} />;
+  }
+  if (includesAny(title, ["searched web", "web search", "search web"])) {
+    return <Search {...props} />;
+  }
+  if (includesAny(title, ["fetched web page", "fetch url", "fetch webpage", "fetch web page"])) {
+    return <Link2 {...props} />;
+  }
+  if (includesAny(title, ["updated memory", "searched memory", "memory"])) {
+    return <Database {...props} />;
+  }
+  if (includesAny(title, ["queried lsp", "code symbols", "code text", "searched code"])) {
+    return <FileCode2 {...props} />;
+  }
+  if (includesAny(title, ["expanded code graph", "code graph"])) {
+    return <Workflow {...props} />;
+  }
+  if (includesAny(title, ["asked for clarification", "clarification"])) {
+    return <HelpCircle {...props} />;
+  }
+  if (includesAny(title, ["lyra skill", "skills"])) {
+    return <Puzzle {...props} />;
+  }
+  if (includesAny(title, ["mcp capability", "mcp"])) {
+    return <Webhook {...props} />;
+  }
+  if (includesAny(title, ["lyra software", "software"])) {
+    return <Store {...props} />;
+  }
 
   if (includesAny(title, ["act in browser", "click browser", "type in browser", "drag browser"])) {
     return <Target {...props} />;
@@ -199,7 +303,7 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   }
   if (call.kind === "search") return <Search {...props} />;
   if (call.kind === "shell") return <SquareTerminal {...props} />;
-  if (call.kind === "thought") return <Clock3 {...props} />;
+  if (call.kind === "thought") return <Sparkles {...props} />;
   if (call.kind === "plan") return <BookText {...props} />;
   if (call.kind === "create") return <FilePlus {...props} />;
   if (call.kind === "task") return <ListChecks {...props} />;

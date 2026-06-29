@@ -1,12 +1,9 @@
-import { RefreshCw } from "lucide-react";
-
 import {
   AppIconButton,
   AppObjectRow,
   AppSidebar,
   AppSidebarSection
 } from "@renderer/ui/components";
-import { formatBytes, formatNumber } from "@workbench/i18n";
 import {
   renderFileManagerAppIcon,
   renderFileManagerLocationIcon,
@@ -14,145 +11,11 @@ import {
 } from "./icon-registry";
 import { preventContextMenuDefaults } from "./surface-view-events";
 import type { FileManagerSurfaceViewProps } from "./surface-view-types";
-import type {
-  FileManagerSearchIndexModel,
-  FileManagerSurfaceLabels
-} from "./types";
-
-const replaceTokens = (
-  template: string,
-  values: Record<string, string>
-): string =>
-  Object.entries(values).reduce(
-    (next, [key, value]) => next.replaceAll(`{${key}}`, value),
-    template
-  );
-
-const resolveSearchIndexTone = (
-  searchIndex: FileManagerSearchIndexModel
-): "ready" | "building" | "failed" | "idle" | "unavailable" => {
-  if (searchIndex.rebuilding) {
-    return "building";
-  }
-  if (searchIndex.errorMessage !== undefined) {
-    return "failed";
-  }
-  if (searchIndex.status === null) {
-    return "unavailable";
-  }
-  if (searchIndex.status.phase === "policy_mismatch") {
-    return "failed";
-  }
-  return searchIndex.status.state;
-};
-
-const resolveSearchIndexLabel = (
-  searchIndex: FileManagerSearchIndexModel,
-  labels: FileManagerSurfaceLabels
-): string => {
-  if (searchIndex.rebuilding) {
-    return labels.searchIndexRebuilding;
-  }
-  if (searchIndex.errorMessage !== undefined) {
-    return labels.searchIndexFailed;
-  }
-  if (searchIndex.status === null) {
-    return labels.searchIndexUnavailable;
-  }
-  if (searchIndex.status.phase === "policy_mismatch") {
-    return labels.searchIndexNeedsRebuild;
-  }
-  switch (searchIndex.status.state) {
-    case "ready":
-      return labels.searchIndexReady;
-    case "building":
-      return labels.searchIndexBuilding;
-    case "failed":
-      return labels.searchIndexFailed;
-    case "idle":
-      return labels.searchIndexIdle;
-  }
-};
-
-const FileManagerSearchIndexStatus = ({
-  labels,
-  searchIndex,
-  onRebuildSearchIndex
-}: {
-  readonly labels: FileManagerSurfaceLabels;
-  readonly searchIndex: FileManagerSearchIndexModel;
-  readonly onRebuildSearchIndex: () => void;
-}) => {
-  const status = searchIndex.status;
-  const tone = resolveSearchIndexTone(searchIndex);
-  const stateLabel = resolveSearchIndexLabel(searchIndex, labels);
-  const statsLabel =
-    status === null
-      ? undefined
-      : replaceTokens(labels.searchIndexStats, {
-          files: formatNumber(status.indexedFiles),
-          contentFiles: formatNumber(status.indexedContentFiles),
-          storage: formatBytes(status.storageBytes)
-        });
-  const pendingLabel =
-    status === null || status.pendingChanges === 0
-      ? undefined
-      : replaceTokens(labels.searchIndexPending, {
-          count: formatNumber(status.pendingChanges)
-        });
-  const phaseLabel =
-    status === null
-      ? undefined
-      : replaceTokens(labels.searchIndexPhase, { phase: status.phase });
-  const errorLabel = searchIndex.errorMessage ?? status?.error ?? status?.policyWarnings[0];
-  const detailTitle = [
-    statsLabel,
-    phaseLabel,
-    pendingLabel,
-    errorLabel
-  ].filter((item): item is string => item !== undefined).join(" · ");
-
-  return (
-    <section
-      className={`lyra-app-sidebar-status lyra-file-manager-index-status lyra-file-manager-index-status-${tone}`}
-      aria-label={labels.searchIndexTitle}
-      title={detailTitle.length === 0 ? undefined : detailTitle}
-    >
-      <div className="lyra-file-manager-index-status-header">
-        <span className="lyra-file-manager-index-status-dot" aria-hidden="true" />
-        <div className="lyra-file-manager-index-status-copy">
-          <span className="lyra-file-manager-index-status-title">
-            {labels.searchIndexTitle}
-          </span>
-          <strong>{stateLabel}</strong>
-        </div>
-        <AppIconButton
-          variant="ghost"
-          tone="muted"
-          className="lyra-file-manager-index-status-action"
-          disabled={searchIndex.rebuilding}
-          aria-label={searchIndex.rebuilding ? labels.searchIndexRebuilding : labels.searchIndexRebuild}
-          title={searchIndex.rebuilding ? labels.searchIndexRebuilding : labels.searchIndexRebuild}
-          onClick={onRebuildSearchIndex}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-        </AppIconButton>
-      </div>
-      {statsLabel === undefined ? null : (
-        <span className="lyra-file-manager-index-status-line">{statsLabel}</span>
-      )}
-      {errorLabel === undefined ? null : (
-        <span className="lyra-file-manager-index-status-error">{errorLabel}</span>
-      )}
-    </section>
-  );
-};
 
 export const FileManagerSidebar = ({
   renderModel,
   labels,
-  actions,
-  searchIndex
+  actions
 }: FileManagerSurfaceViewProps) => {
   const favoritesActive =
     renderModel.sidebar.favoritesActive
@@ -208,11 +71,6 @@ export const FileManagerSidebar = ({
           />
         ))}
       </AppSidebarSection>
-      <FileManagerSearchIndexStatus
-        labels={labels}
-        searchIndex={searchIndex}
-        onRebuildSearchIndex={actions.onRebuildSearchIndex}
-      />
     </AppSidebar>
   );
 };

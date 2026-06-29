@@ -20,7 +20,7 @@ export type WorkbenchSplitOverflowPolicy =
   | "replace_oldest"
   | "replace_target";
 
-export type WorkbenchSearchResultsSourceFilter = "all" | "web" | "local";
+export type WorkbenchSearchResultsSourceFilter = "all" | "web";
 export type WorkbenchOmniboxNonBrowserSubmitTarget = "new_tab" | "replace_active_tab";
 export type WorkbenchAiStopBehavior = "turn_only" | "turn_and_background";
 

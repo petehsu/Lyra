@@ -47,7 +47,7 @@ const isBoolean = (value: unknown): value is boolean => typeof value === "boolea
 const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
   value === "turn_only" || value === "turn_and_background";
 const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
-  value === "all" || value === "web" || value === "local";
+  value === "all" || value === "web";
 const isWorkbenchOmniboxNonBrowserSubmitTarget = (
   value: unknown
 ): value is WorkbenchOmniboxNonBrowserSubmitTarget =>

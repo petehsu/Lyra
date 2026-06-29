@@ -783,6 +783,12 @@ pub(crate) fn append_tool_block_to_ui_message(session_id: &str, message_id: &str
                 if !message.get("blocks").is_some_and(Value::is_array) {
                     message["blocks"] = json!([]);
                 }
+                let existing_text = message
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                ensure_existing_text_block(message, &existing_text);
                 let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
                     return;
                 };
@@ -892,17 +898,137 @@ pub(crate) fn commit_visible_assistant_reply(
     true
 }
 
+fn ensure_existing_text_block(message: &mut Value, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    if !message.get("blocks").is_some_and(Value::is_array) {
+        message["blocks"] = json!([]);
+    }
+    let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
+        return;
+    };
+    if blocks.iter().any(|block| {
+        block.get("type").and_then(Value::as_str) == Some("text")
+            && block
+                .get("text")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+    }) {
+        return;
+    }
+    if let Some(block) = blocks
+        .first_mut()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+    {
+        block["text"] = Value::String(text.to_string());
+        return;
+    }
+    blocks.insert(0, json!({ "type": "text", "id": "text-0", "text": text }));
+}
+
+fn append_reasoning_to_message(message: &mut Value, delta: &str, status: &str) -> String {
+    let existing = message
+        .get("reasoningContent")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    message["reasoningContent"] = json!(format!("{existing}{delta}"));
+    let existing_text = message
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if !message.get("blocks").is_some_and(Value::is_array) {
+        message["blocks"] = json!([]);
+    }
+    ensure_existing_text_block(message, &existing_text);
+    if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
+        if let Some(block) = blocks
+            .last_mut()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
+        {
+            let block_id = block
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("thinking-0")
+                .to_string();
+            let text = format!(
+                "{}{}",
+                block
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+                delta
+            );
+            block["text"] = Value::String(text);
+            block["status"] = Value::String(status.to_string());
+            return block_id;
+        }
+        let block_id = format!("thinking-{}", blocks.len());
+        blocks.push(json!({ "type": "thinking", "id": block_id, "text": delta, "status": status }));
+        return block_id;
+    }
+    "thinking-0".to_string()
+}
+
+fn finish_reasoning_blocks(message: &mut Value, reasoning: &str) {
+    let existing_text = message
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    ensure_existing_text_block(message, &existing_text);
+    let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) else {
+        message["blocks"] = json!([
+            { "type": "thinking", "id": "thinking-0", "text": reasoning, "status": "done" }
+        ]);
+        return;
+    };
+    let has_thinking = blocks
+        .iter()
+        .any(|block| block.get("type").and_then(Value::as_str) == Some("thinking"));
+    if has_thinking {
+        for block in blocks {
+            if block.get("type").and_then(Value::as_str) == Some("thinking") {
+                block["status"] = Value::String("done".to_string());
+            }
+        }
+        return;
+    }
+    blocks.insert(
+        0,
+        json!({ "type": "thinking", "id": "thinking-0", "text": reasoning, "status": "done" }),
+    );
+}
+
 /// Stamp `reasoningContent` onto a UI assistant message and mark status as done.
 fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option<&str>) {
     let Some(reasoning) = reasoning.filter(|r| !r.trim().is_empty()) else {
         return;
     };
-    let Ok(mut state) = state().lock() else { return };
-    let Some(session) = state.sessions.get_mut(session_id) else { return };
-    let Some(messages) = session.snapshot.get_mut("messages").and_then(Value::as_array_mut) else { return };
-    let Some(message) = messages.iter_mut().rev().find(|m| m.get("id").and_then(Value::as_str) == Some(message_id)) else { return };
+    let Ok(mut state) = state().lock() else {
+        return;
+    };
+    let Some(session) = state.sessions.get_mut(session_id) else {
+        return;
+    };
+    let Some(messages) = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(message) = messages
+        .iter_mut()
+        .rev()
+        .find(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
+    else {
+        return;
+    };
     message["reasoningContent"] = json!(reasoning);
     message["reasoningStatus"] = json!("done");
+    finish_reasoning_blocks(message, reasoning);
     touch_session(session);
     let _ = state.save_state();
 }
@@ -973,9 +1099,9 @@ pub(crate) fn append_assistant_delta(
                 .ok_or_else(|| {
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
-            append_text_to_message(message, delta);
+            let block_id = append_text_to_message(message, delta);
             touch_session(session);
-            callback
+            (callback, block_id)
         }
         Err(_) => {
             return Err(AgentRuntimeError::Core(
@@ -990,10 +1116,10 @@ pub(crate) fn append_assistant_delta(
         "kind": "messageDelta",
         "sessionId": session_id,
         "messageId": message_id,
-        "blockId": "text-0",
+        "blockId": callback.1,
         "delta": delta,
     });
-    emit_with_callback(&callback, event);
+    emit_with_callback(&callback.0, event);
     Ok(())
 }
 
@@ -1026,14 +1152,10 @@ pub(crate) fn append_assistant_reasoning_delta(
                 .ok_or_else(|| {
                     AgentRuntimeError::Core(format!("message not found: {message_id}"))
                 })?;
-            let existing = message
-                .get("reasoningContent")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            message["reasoningContent"] = json!(format!("{existing}{delta}"));
+            let block_id = append_reasoning_to_message(message, delta, "thinking");
             message["reasoningStatus"] = json!("thinking");
             touch_session(session);
-            callback
+            (callback, block_id)
         }
         Err(_) => {
             return Err(AgentRuntimeError::Core(
@@ -1045,9 +1167,10 @@ pub(crate) fn append_assistant_reasoning_delta(
         "kind": "messageReasoningDelta",
         "sessionId": session_id,
         "messageId": message_id,
+        "blockId": callback.1,
         "delta": delta,
     });
-    emit_with_callback(&callback, event);
+    emit_with_callback(&callback.0, event);
     Ok(())
 }
 
@@ -1234,6 +1357,15 @@ fn assistant_message_has_visible_timeline_content(message: &Value) -> bool {
     for block in blocks {
         match block.get("type").and_then(Value::as_str) {
             Some("tool") | Some("image") => return true,
+            Some("thinking") => {
+                if block
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| !text.trim().is_empty())
+                {
+                    return true;
+                }
+            }
             Some("text") => {
                 if block
                     .get("text")
@@ -1264,24 +1396,28 @@ fn prune_empty_assistant_messages(snapshot: &mut Value) -> usize {
     original_len.saturating_sub(messages.len())
 }
 
-pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
-    let next_text = format!(
-        "{}{}",
-        message
-            .get("text")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-        delta
-    );
+pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String {
+    let previous_text = message
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let next_text = format!("{previous_text}{delta}");
     message["text"] = Value::String(next_text.clone());
     if !message.get("blocks").is_some_and(Value::is_array) {
         message["blocks"] = json!([{ "type": "text", "id": "text-0", "text": "" }]);
     }
+    ensure_existing_text_block(message, &previous_text);
     if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
         if let Some(block) = blocks
-            .iter_mut()
-            .find(|block| block.get("id").and_then(Value::as_str) == Some("text-0"))
+            .last_mut()
+            .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
         {
+            let block_id = block
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("text-0")
+                .to_string();
             let text = format!(
                 "{}{}",
                 block
@@ -1291,13 +1427,14 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) {
                 delta
             );
             block["text"] = Value::String(text);
+            return block_id;
         } else {
-            blocks.insert(
-                0,
-                json!({ "type": "text", "id": "text-0", "text": next_text }),
-            );
+            let block_id = format!("text-{}", blocks.len());
+            blocks.push(json!({ "type": "text", "id": block_id, "text": delta }));
+            return block_id;
         }
     }
+    "text-0".to_string()
 }
 
 pub(crate) fn finish_turn(
@@ -1428,10 +1565,8 @@ pub(crate) fn finish_turn_with_metadata(
                             .and_then(Value::as_u64)
                             .map(|v| v as usize)
                             .unwrap_or(0);
-                        let has_uncompressed = session_messages
-                            .iter()
-                            .skip(compressed_up_to)
-                            .any(|msg| {
+                        let has_uncompressed =
+                            session_messages.iter().skip(compressed_up_to).any(|msg| {
                                 matches!(
                                     msg.get("role").and_then(Value::as_str),
                                     Some("user") | Some("assistant")
@@ -1803,6 +1938,46 @@ mod narration_tests {
         assert_eq!(
             session_turn_status_for_finish_status("cancelled"),
             "cancelled"
+        );
+    }
+
+    #[test]
+    fn assistant_blocks_keep_text_after_reasoning_in_order() {
+        let mut message = json!({
+            "text": "先说一句。",
+            "blocks": [{ "type": "text", "id": "text-0", "text": "先说一句。" }]
+        });
+
+        let thinking_id = append_reasoning_to_message(&mut message, "中间思考。", "thinking");
+        let text_id = append_text_to_message(&mut message, "再说一句。");
+
+        assert_eq!(thinking_id, "thinking-1");
+        assert_eq!(text_id, "text-2");
+        assert_eq!(
+            message["blocks"],
+            json!([
+                { "type": "text", "id": "text-0", "text": "先说一句。" },
+                { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" },
+                { "type": "text", "id": "text-2", "text": "再说一句。" }
+            ])
+        );
+    }
+
+    #[test]
+    fn reasoning_preserves_legacy_text_without_blocks() {
+        let mut message = json!({
+            "text": "先说一句。"
+        });
+
+        let thinking_id = append_reasoning_to_message(&mut message, "中间思考。", "thinking");
+
+        assert_eq!(thinking_id, "thinking-1");
+        assert_eq!(
+            message["blocks"],
+            json!([
+                { "type": "text", "id": "text-0", "text": "先说一句。" },
+                { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" }
+            ])
         );
     }
 }

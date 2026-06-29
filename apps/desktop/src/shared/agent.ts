@@ -23,6 +23,12 @@ export type AgentMessageBlock =
       readonly text: string;
     }
   | {
+      readonly type: "thinking";
+      readonly id: string;
+      readonly text: string;
+      readonly status?: "thinking" | "done" | null;
+    }
+  | {
       readonly type: "image";
       readonly id: string;
       readonly mediaType: string;
@@ -909,6 +915,7 @@ export type AgentRuntimeEvent =
       readonly kind: "messageReasoningDelta";
       readonly sessionId: string;
       readonly messageId: string;
+      readonly blockId?: string | null;
       readonly delta: string;
     }
   | {

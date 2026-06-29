@@ -2,32 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   createWebResultViewModel,
-  resolveLocalSearchStatusLabel,
-  resolveOfficialCategoryLabel,
-  resolveSearchResultChannelVisibility
+  resolveOfficialCategoryLabel
 } from "../result-surface-model";
 
 describe("result surface model", () => {
-  test("resolves source channel visibility", () => {
-    expect(resolveSearchResultChannelVisibility("all")).toEqual({
-      showWebResults: true,
-      showLocalResults: true
-    });
-    expect(resolveSearchResultChannelVisibility("web")).toEqual({
-      showWebResults: true,
-      showLocalResults: false
-    });
-  });
-
-  test("maps local channel status labels", () => {
-    expect(resolveLocalSearchStatusLabel("loading", {
-      idle: "Idle",
-      loading: "Loading",
-      ready: "Ready",
-      error: "Error"
-    })).toBe("Loading");
-  });
-
   test("builds web result labels and engine chips", () => {
     const model = createWebResultViewModel(
       {

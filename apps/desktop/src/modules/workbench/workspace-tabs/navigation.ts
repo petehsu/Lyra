@@ -153,12 +153,10 @@ export const resolveReplacementTab = (
             }
       );
     case "search":
-    case "local-search":
       return createResultsTabWithId(
         current.id,
         request.query,
-        config,
-        request.kind === "local-search" ? request.selection : undefined
+        config
       );
     case "web-search":
       return createWebSearchTabWithId(
@@ -184,12 +182,10 @@ export const createNavigationTab = (
     case "page":
       return createPageTab(serial, request.address, request.title);
     case "search":
-    case "local-search":
       return createResultsTab(
         serial,
         request.query,
-        config,
-        request.kind === "local-search" ? request.selection : undefined
+        config
       );
     case "web-search":
       return createWebSearchTab(

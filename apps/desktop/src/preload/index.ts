@@ -173,18 +173,6 @@ import {
   type TerminalWriteRequest,
   type SearchResolveWebEngineRequest,
   type SearchResolveWebEngineResponse,
-  type SearchLocalRequest,
-  type SearchLocalResponse,
-  type SearchLocalStreamCancelRequest,
-  type SearchLocalStreamCancelResponse,
-  type SearchLocalStreamReadRequest,
-  type SearchLocalStreamReadResponse,
-  type SearchLocalStreamStartRequest,
-  type SearchLocalStreamStartResponse,
-  type SearchIndexStatusRequest,
-  type SearchIndexStatusResponse,
-  type SearchRebuildIndexRequest,
-  type SearchRebuildIndexResponse,
   type SystemNotificationAccessRequestResult,
   type SystemNotificationActivation,
   type SystemNotificationOpenSettingsResult,
@@ -939,37 +927,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.resolveWebSearchEngine,
         request
-      ) as Promise<SearchResolveWebEngineResponse>,
-    local: (request: SearchLocalRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.localSearch,
-        request
-      ) as Promise<SearchLocalResponse>,
-    startLocalStream: (request: SearchLocalStreamStartRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.localSearchStreamStart,
-        request
-      ) as Promise<SearchLocalStreamStartResponse>,
-    readLocalStream: (request: SearchLocalStreamReadRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.localSearchStreamRead,
-        request
-      ) as Promise<SearchLocalStreamReadResponse>,
-    cancelLocalStream: (request: SearchLocalStreamCancelRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.localSearchStreamCancel,
-        request
-      ) as Promise<SearchLocalStreamCancelResponse>,
-    readIndexStatus: (request?: SearchIndexStatusRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchIndexStatus,
-        request ?? {}
-      ) as Promise<SearchIndexStatusResponse>,
-    rebuildIndex: (request?: SearchRebuildIndexRequest) =>
-      ipcRenderer.invoke(
-        LYRA_CHANNELS.searchIndexRebuild,
-        request ?? {}
-      ) as Promise<SearchRebuildIndexResponse>
+      ) as Promise<SearchResolveWebEngineResponse>
   },
   files: {
     readHome: () => ipcRenderer.invoke(LYRA_CHANNELS.filesReadHome) as Promise<FileManagerReadHomeResponse>,

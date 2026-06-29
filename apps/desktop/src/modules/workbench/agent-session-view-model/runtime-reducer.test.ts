@@ -71,6 +71,63 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
     ]);
   });
 
+  test("keeps reasoning blocks in stream order between text blocks", () => {
+    const current = session({
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "First.",
+        blocks: [{ type: "text", id: "text-0", text: "First." }],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const withReasoning = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "messageReasoningDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "thinking-1",
+      delta: "Think."
+    });
+    const next = applyAgentRuntimeEventToSnapshot(withReasoning, {
+      kind: "messageDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "text-2",
+      delta: " Second."
+    });
+
+    expect(next.messages[0]?.blocks).toEqual([
+      { type: "text", id: "text-0", text: "First." },
+      { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" },
+      { type: "text", id: "text-2", text: " Second." }
+    ]);
+  });
+
+  test("keeps legacy assistant text when reasoning adds the first block", () => {
+    const current = session({
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "First.",
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const next = applyAgentRuntimeEventToSnapshot(current, {
+      kind: "messageReasoningDelta",
+      sessionId: "session-1",
+      messageId: "message-1",
+      blockId: "thinking-1",
+      delta: "Think."
+    });
+
+    expect(next.messages[0]?.blocks).toEqual([
+      { type: "text", id: "text-0", text: "First." },
+      { type: "thinking", id: "thinking-1", text: "Think.", status: "thinking" }
+    ]);
+  });
+
   test("completed artifacted edit output replaces running preview", () => {
     const current = session({
       messages: [{

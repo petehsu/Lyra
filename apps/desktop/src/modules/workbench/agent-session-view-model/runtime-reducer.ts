@@ -155,15 +155,8 @@ const appendTextDeltaToBlocks = (
       }
     ];
   }
-  let lastTextBlockId: string | undefined;
-  for (let index = currentBlocks.length - 1; index >= 0; index -= 1) {
-    const block = currentBlocks[index];
-    if (block?.type === "text") {
-      lastTextBlockId = block.id;
-      break;
-    }
-  }
-  const targetBlockId = blockId ?? lastTextBlockId;
+  const lastBlock = currentBlocks[currentBlocks.length - 1];
+  const targetBlockId = blockId ?? (lastBlock?.type === "text" ? lastBlock.id : undefined);
 
   if (targetBlockId !== undefined) {
     let found = false;
@@ -184,6 +177,61 @@ const appendTextDeltaToBlocks = (
       type: "text",
       id: targetBlockId ?? `text-${currentBlocks.length}`,
       text: delta
+    }
+  ];
+};
+
+const ensureExistingTextBlock = (
+  blocks: readonly AgentMessageBlock[] | undefined,
+  text: string
+): readonly AgentMessageBlock[] => {
+  const currentBlocks = [...(blocks ?? [])];
+  if (text.length === 0) return currentBlocks;
+  if (currentBlocks.some((block) => block.type === "text" && block.text.length > 0)) {
+    return currentBlocks;
+  }
+  const firstBlock = currentBlocks[0];
+  if (firstBlock?.type === "text") {
+    return [
+      { ...firstBlock, text },
+      ...currentBlocks.slice(1)
+    ];
+  }
+  return [
+    { type: "text", id: "text-0", text },
+    ...currentBlocks
+  ];
+};
+
+const appendReasoningDeltaToBlocks = (
+  blocks: readonly AgentMessageBlock[] | undefined,
+  blockId: string | null | undefined,
+  delta: string,
+  fallbackText = ""
+): readonly AgentMessageBlock[] => {
+  const currentBlocks = [...ensureExistingTextBlock(blocks, fallbackText)];
+  const lastBlock = currentBlocks[currentBlocks.length - 1];
+  const targetBlockId = blockId ?? (lastBlock?.type === "thinking" ? lastBlock.id : undefined);
+  if (targetBlockId !== undefined) {
+    let found = false;
+    const nextBlocks = currentBlocks.map((block) => {
+      if (block.type !== "thinking" || block.id !== targetBlockId) return block;
+      found = true;
+      return {
+        ...block,
+        text: `${block.text}${delta}`,
+        status: "thinking" as const
+      };
+    });
+    if (found) return nextBlocks;
+  }
+  return [
+    ...currentBlocks,
+    {
+      type: "thinking",
+      id: targetBlockId ?? `thinking-${currentBlocks.length}`,
+      text: delta,
+      status: "thinking"
     }
   ];
 };
@@ -213,9 +261,10 @@ const lastAssistantMessageId = (
 
 const appendToolBlockToMessage = (
   blocks: readonly AgentMessageBlock[] | undefined,
-  toolId: string
+  toolId: string,
+  fallbackText = ""
 ): readonly AgentMessageBlock[] => {
-  const currentBlocks = [...(blocks ?? [])];
+  const currentBlocks = [...ensureExistingTextBlock(blocks, fallbackText)];
   if (currentBlocks.some((block) => block.type === "tool" && toolIdForBlock(block) === toolId)) {
     return currentBlocks;
   }
@@ -255,7 +304,7 @@ const ensureToolBlockLinkedToMessage = (
     message.id === messageId
       ? {
           ...message,
-          blocks: appendToolBlockToMessage(message.blocks, toolId)
+          blocks: appendToolBlockToMessage(message.blocks, toolId, message.text)
         }
       : message
   );
@@ -322,10 +371,17 @@ export const applyAgentRuntimeEventToSnapshot = (
       ...session,
       messages: session.messages.map((message) => {
         if (message.id !== event.messageId) return message;
+        const blocks = appendReasoningDeltaToBlocks(
+          message.blocks,
+          event.blockId,
+          event.delta,
+          message.text
+        );
         return {
           ...message,
           reasoningContent: `${message.reasoningContent ?? ""}${event.delta}`,
           reasoningStatus: "thinking",
+          blocks
         };
       }),
       updatedAt: new Date().toISOString()

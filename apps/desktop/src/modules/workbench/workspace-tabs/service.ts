@@ -395,28 +395,6 @@ export const useWorkspaceTabsModel = (
     return tabs.map((tab) => tab.id);
   }, [allocateTabSerial, config, dispatchWorkspaceTabsAction]);
 
-  const openLocalSearchTab = useCallback((
-    request: {
-      readonly query: string;
-      readonly selection?: WorkspaceSearchEngineSelection;
-    },
-    options?: {
-      readonly target?: WorkspaceNavigationTarget;
-    }
-  ): string => {
-    const tab = createResultsTab(
-      allocateTabSerial(),
-      request.query,
-      config,
-      request.selection
-    );
-    dispatchWorkspaceTabsAction({
-      type: options?.target === "new-tab" ? "open-search-tabs" : "replace-active-search-tabs",
-      tabs: [tab]
-    });
-    return tab.id;
-  }, [allocateTabSerial, config, dispatchWorkspaceTabsAction]);
-
   const commitActiveInput = useCallback((): void => {
     const current = activeTab;
     if (current === undefined) {
@@ -499,7 +477,6 @@ export const useWorkspaceTabsModel = (
     updatePageMeta,
     syncPageRuntimeState,
     openWebSearchTabs,
-    openLocalSearchTab,
     navigateResolvedInput,
     updateActiveInput,
     commitActiveInput

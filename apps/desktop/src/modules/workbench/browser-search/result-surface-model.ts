@@ -1,23 +1,10 @@
 import type { SearchOfficialCategory } from "../../../shared/desktop-bridge";
 import type {
   AggregatedSearchResult,
-  SearchChannelStatus,
   SearchEngineDefinition
 } from "./types";
 
-export type SearchResultsSourceFilter = "all" | "web" | "local";
-
-export type SearchResultChannelVisibility = {
-  readonly showWebResults: boolean;
-  readonly showLocalResults: boolean;
-};
-
-export type SearchResultLocalStatusLabels = {
-  readonly idle: string;
-  readonly loading: string;
-  readonly ready: string;
-  readonly error: string;
-};
+export type SearchResultsSourceFilter = "all" | "web";
 
 export type SearchResultOfficialCategoryLabels = {
   readonly fallback: string;
@@ -37,29 +24,6 @@ export type WebResultSourceChip = {
 export type WebResultViewModel = {
   readonly officialCategoryLabel: string;
   readonly sourceChips: readonly WebResultSourceChip[];
-};
-
-export const resolveSearchResultChannelVisibility = (
-  sourceFilter: SearchResultsSourceFilter
-): SearchResultChannelVisibility => ({
-  showWebResults: sourceFilter !== "local",
-  showLocalResults: sourceFilter !== "web"
-});
-
-export const resolveLocalSearchStatusLabel = (
-  status: SearchChannelStatus,
-  labels: SearchResultLocalStatusLabels
-): string => {
-  if (status === "idle") {
-    return labels.idle;
-  }
-  if (status === "loading") {
-    return labels.loading;
-  }
-  if (status === "ready") {
-    return labels.ready;
-  }
-  return labels.error;
 };
 
 export const resolveEngineLabel = (

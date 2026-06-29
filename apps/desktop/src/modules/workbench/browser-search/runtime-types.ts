@@ -12,8 +12,6 @@ import type {
 export type BrowserSearchSettings = {
   readonly searchEngines: readonly SearchEngineDefinition[];
   readonly resultsPerEngine: number;
-  readonly localProjectRoot?: string;
-  readonly localLimit?: number;
 };
 
 export type BrowserSearchModel = {
@@ -30,7 +28,6 @@ export type UseBrowserSearchModelArgs = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly tabsModel: WorkspaceTabsModel;
   readonly searchSettings: BrowserSearchSettings;
-  readonly localSearchReady?: boolean;
 };
 
 export type StandardSearchTask = {

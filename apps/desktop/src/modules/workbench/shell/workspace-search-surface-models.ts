@@ -28,13 +28,6 @@ export const applySearchEngineSelection = async (
       searchEngines: context.autoSearchEngines
     });
     if (target === null) {
-      if (!context.localSearchReady) {
-        return;
-      }
-      context.tabsModel.openLocalSearchTab(
-        { query, selection },
-        { target: "active-tab" }
-      );
       return;
     }
     context.tabsModel.openWebSearchTabs(
@@ -107,10 +100,7 @@ export const createSearchResultsModel = (
   context: WorkspaceSurfaceRenderContext
 ): WorkspaceSurfaceRenderModel => {
   const selection = resolveTabSearchSelection(tab);
-  const sourceFilter =
-    context.localSearchReady || context.searchResultsSourceFilter !== "local"
-      ? context.searchResultsSourceFilter
-      : "web";
+  const sourceFilter = context.searchResultsSourceFilter;
   return {
     kind: "searchResults",
     props: {
@@ -135,35 +125,16 @@ export const createSearchResultsModel = (
         : `${context.i18n.resultsNoResults} · ${context.browserSearchModel.searchError}`,
     engineErrorLabel: context.i18n.resultsEngineError,
     webTabLabel: context.i18n.resultsWebTab,
-    localTabLabel: context.i18n.resultsLocalTab,
-    localTitleLabel: context.i18n.resultsLocalTitle,
-    localPanelTitleLabel: context.i18n.resultsLocalPanelTitle,
-    localNoMatchesLabel: context.i18n.resultsLocalNoMatches,
-    localSearchingMoreLabel: context.i18n.resultsLocalSearchingMore,
-    localScopeLabel: context.i18n.resultsLocalScope,
-    localScannedFilesLabel: context.i18n.resultsLocalScannedFiles,
-    localScannedDirsLabel: context.i18n.resultsLocalScannedDirs,
-    localContentScansLabel: context.i18n.resultsLocalContentScans,
-    localMatchedLabel: context.i18n.resultsLocalMatched,
-    localIndexLabel: context.i18n.resultsLocalIndex,
-    localScoreLabel: context.i18n.resultsLocalScore,
-    localLineLabel: context.i18n.resultsLocalLine,
-    localIndexNotReadyLabel: context.i18n.resultsLocalIndexNotReady,
-    localTimedOutLabel: context.i18n.resultsLocalTimedOut,
     channelIdleLabel: context.i18n.channelIdle,
     channelLoadingLabel: context.i18n.channelLoading,
     channelReadyLabel: context.i18n.channelReady,
     channelErrorLabel: context.i18n.channelError,
     sourceFilter,
     payload: context.browserSearchModel.standardSearchState,
-    localSearchReady: context.localSearchReady,
     searchEngineSelectionMode: selection.mode,
     searchSelectedEngineIds: selection.engineIds,
     searchEngines: context.searchEngines,
     onSourceFilterChange: (nextSourceFilter) => {
-      if (nextSourceFilter === "local" && !context.localSearchReady) {
-        return;
-      }
       context.onSearchResultsSourceFilterChange(nextSourceFilter);
     },
     onSearchEngineSelectionChange: (nextSelection) => {

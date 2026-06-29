@@ -7,7 +7,6 @@ import {
 import {
   buildBrowserSearchSettingsCacheKey,
   createLoadingSearchPayload,
-  DEFAULT_LOCAL_SCOPE_PRESET,
   createRequestId,
   resolveActiveBrowserSearchCacheKeys
 } from "./runtime-model";
@@ -30,8 +29,7 @@ import {
 export const useBrowserSearchModel = ({
   desktopApi,
   tabsModel,
-  searchSettings,
-  localSearchReady = true
+  searchSettings
 }: UseBrowserSearchModelArgs): BrowserSearchModel => {
   const searchPillRef = useRef<HTMLDivElement | null>(null);
   const standardSearchCacheRef = useRef(new Map<string, BrowserSearchPayload>());
@@ -40,8 +38,7 @@ export const useBrowserSearchModel = ({
   const unmountedRef = useRef(false);
   const [standardSearchState, setStandardSearchState] = useState<BrowserSearchPayload>(() =>
     createEmptySearchPayload({
-      query: "",
-      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
+      query: ""
     })
   );
   const [isSearching, setIsSearching] = useState(false);
@@ -116,8 +113,7 @@ export const useBrowserSearchModel = ({
     if (query.length === 0 || activeStandardCacheKey === null) {
       setStandardSearchState(
         createEmptySearchPayload({
-          query: "",
-          scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
+          query: ""
         })
       );
       setIsSearching(false);
@@ -143,8 +139,7 @@ export const useBrowserSearchModel = ({
 
     const loading = createLoadingSearchPayload({
       query,
-      requestId: createRequestId(),
-      scopePreset: DEFAULT_LOCAL_SCOPE_PRESET
+      requestId: createRequestId()
     });
     setStandardSearchState(loading);
     setIsSearching(true);
@@ -230,13 +225,6 @@ export const useBrowserSearchModel = ({
       searchEngines: searchSettings.searchEngines
     });
     if (target === null) {
-      if (!localSearchReady) {
-        return;
-      }
-      tabsModel.openLocalSearchTab({
-        query: input,
-        selection: { mode: "auto", engineIds: [] }
-      });
       return;
     }
     tabsModel.openWebSearchTabs({
@@ -253,7 +241,6 @@ export const useBrowserSearchModel = ({
   }, [
     captureSearchPillRect,
     desktopApi,
-    localSearchReady,
     searchSettings.searchEngines,
     tabsModel
   ]);

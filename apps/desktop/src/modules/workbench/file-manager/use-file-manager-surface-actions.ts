@@ -20,8 +20,7 @@ import type { FileManagerSurfaceActions } from "./surface-view";
 import type {
   FileManagerAppState,
   FileManagerChooserMode,
-  FileManagerModel,
-  FileManagerSearchIndexModel
+  FileManagerModel
 } from "./types";
 
 type FileManagerRenderModel = ReturnType<typeof deriveFileManagerSurfaceModel>;
@@ -68,7 +67,6 @@ export const useFileManagerSurfaceActions = ({
   onOpenFavorite,
   chooser,
   renderModel,
-  searchIndex,
   setPageKindOverride,
   dragPreviewRef
 }: {
@@ -78,7 +76,6 @@ export const useFileManagerSurfaceActions = ({
   readonly onOpenFavorite?: (favorite: FileManagerFavorite) => void;
   readonly chooser?: FileManagerChooserMode | null;
   readonly renderModel: FileManagerRenderModel | null;
-  readonly searchIndex: FileManagerSearchIndexModel;
   readonly setPageKindOverride: (value: "favorites" | null) => void;
   readonly dragPreviewRef: MutableRefObject<HTMLElement | null>;
 }): FileManagerSurfaceActions | null =>
@@ -91,7 +88,6 @@ export const useFileManagerSurfaceActions = ({
     const viewKind = state.viewKind;
     const chooserCanConfirm = renderModel.chooserBar?.canConfirm === true;
     const chooserOnConfirm = chooser?.onConfirm;
-    const rebuildSearchIndex = searchIndex.rebuildSearchIndex;
 
     const clearEntryDragPreview = (): void => {
       const currentPreview = dragPreviewRef.current;
@@ -361,9 +357,6 @@ export const useFileManagerSurfaceActions = ({
       },
       onStopDownloadRemoteApi: () => {
         void model.stopDownloadRemoteApi(instanceId);
-      },
-      onRebuildSearchIndex: () => {
-        void rebuildSearchIndex();
       }
     };
   }, [
@@ -373,7 +366,6 @@ export const useFileManagerSurfaceActions = ({
     onOpenFile,
     onOpenFavorite,
     renderModel,
-    searchIndex.rebuildSearchIndex,
     setPageKindOverride,
     state
   ]);

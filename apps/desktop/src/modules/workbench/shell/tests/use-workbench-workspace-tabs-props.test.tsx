@@ -58,7 +58,6 @@ const createTabsModel = (): WorkspaceTabsModel => {
     updatePageMeta: vi.fn(),
     syncPageRuntimeState: vi.fn(),
     openWebSearchTabs: vi.fn(() => [firstTab.id]),
-    openLocalSearchTab: vi.fn(() => firstTab.id),
     navigateResolvedInput: vi.fn(() => firstTab.id),
     updateActiveInput: vi.fn(),
     commitActiveInput: vi.fn()

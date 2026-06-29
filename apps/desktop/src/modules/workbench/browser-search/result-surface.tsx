@@ -5,15 +5,11 @@ import type {
   SearchEngineDefinition
 } from "./types";
 import { AppTabs } from "@renderer/ui/components";
-import { ResultLocalSection } from "./result-local-section";
-import {
-  resolveLocalSearchStatusLabel,
-  type SearchResultsSourceFilter
+import type {
+  SearchResultsSourceFilter
 } from "./result-surface-model";
-import { resolveLocalSearchErrorLabel } from "./local-search-errors";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import {
-  isSearchIndexReady,
   resolveNextSearchEngineSelection
 } from "./service";
 
@@ -36,28 +32,12 @@ export type BrowserResultSurfaceProps = {
   readonly emptyLabel: string;
   readonly engineErrorLabel: string;
   readonly webTabLabel: string;
-  readonly localTabLabel: string;
-  readonly localTitleLabel: string;
-  readonly localPanelTitleLabel: string;
-  readonly localNoMatchesLabel: string;
-  readonly localSearchingMoreLabel: string;
-  readonly localScopeLabel: string;
-  readonly localScannedFilesLabel: string;
-  readonly localScannedDirsLabel: string;
-  readonly localContentScansLabel: string;
-  readonly localMatchedLabel: string;
-  readonly localIndexLabel: string;
-  readonly localScoreLabel: string;
-  readonly localLineLabel: string;
-  readonly localIndexNotReadyLabel: string;
-  readonly localTimedOutLabel: string;
   readonly channelIdleLabel: string;
   readonly channelLoadingLabel: string;
   readonly channelReadyLabel: string;
   readonly channelErrorLabel: string;
   readonly sourceFilter: SearchResultsSourceFilter;
   readonly payload: BrowserSearchPayload;
-  readonly localSearchReady?: boolean;
   readonly sharedStartRect?: DOMRect | null;
   readonly searchEngineSelectionMode?: "auto" | "manual";
   readonly searchSelectedEngineIds?: readonly string[];
@@ -95,28 +75,12 @@ export const BrowserResultSurface = ({
   emptyLabel,
   engineErrorLabel,
   webTabLabel,
-  localTabLabel,
-  localTitleLabel,
-  localPanelTitleLabel,
-  localNoMatchesLabel,
-  localSearchingMoreLabel,
-  localScopeLabel,
-  localScannedFilesLabel,
-  localScannedDirsLabel,
-  localContentScansLabel,
-  localMatchedLabel,
-  localIndexLabel,
-  localScoreLabel,
-  localLineLabel,
-  localIndexNotReadyLabel,
-  localTimedOutLabel,
   channelIdleLabel,
   channelLoadingLabel,
   channelReadyLabel,
   channelErrorLabel,
   sourceFilter,
   payload,
-  localSearchReady,
   sharedStartRect,
   searchEngineSelectionMode = "auto",
   searchSelectedEngineIds = [],
@@ -129,18 +93,6 @@ export const BrowserResultSurface = ({
   onOpenUrl,
   onSharedAnimationDone
 }: BrowserResultSurfaceProps) => {
-  const localStatusLabel = resolveLocalSearchStatusLabel(payload.local.status, {
-    idle: channelIdleLabel,
-    loading: channelLoadingLabel,
-    ready: channelReadyLabel,
-    error: channelErrorLabel
-  });
-  const localErrorLabel = resolveLocalSearchErrorLabel(payload.local.error, {
-    streamTimeout: localTimedOutLabel
-  });
-  const localErrorProps = localErrorLabel === undefined ? {} : { error: localErrorLabel };
-  const localIndexReady =
-    localSearchReady ?? isSearchIndexReady(payload.local.payload.indexStatus);
   const titlebarContribution = useMemo(
     () => ({
       ariaLabel: headingLabel,
@@ -151,24 +103,15 @@ export const BrowserResultSurface = ({
               ariaLabel={`${sourceFilterLabel} options`}
               className="lyra-titlebar-context-tabs"
               selectionMode="multiple"
-              value={sourceFilter === "local"
-                ? "local"
-                : searchEngineSelectionMode === "manual"
+              value={
+                searchEngineSelectionMode === "manual"
                   ? searchSelectedEngineIds[0] ?? "auto"
                   : "auto"}
-              activeValues={sourceFilter === "local"
-                ? ["local"]
-                : searchEngineSelectionMode === "manual"
+              activeValues={
+                searchEngineSelectionMode === "manual"
                   ? searchSelectedEngineIds
                   : ["auto"]}
               options={[
-                {
-                  value: "local",
-                  label: localTabLabel,
-                  ariaLabel: `${sourceFilterLabel}: ${localTabLabel}`,
-                  disabled: !localIndexReady,
-                  ...(localIndexReady ? {} : { title: localIndexNotReadyLabel })
-                },
                 {
                   value: "auto",
                   label: autoSearchLabel,
@@ -181,11 +124,6 @@ export const BrowserResultSurface = ({
                 }))
               ]}
               onValueChange={(value) => {
-                if (value === "local") {
-                  if (!localIndexReady) return;
-                  onSourceFilterChange("local");
-                  return;
-                }
                 if (value === "auto") {
                   onSwitchToWebSearch();
                   return;
@@ -204,18 +142,13 @@ export const BrowserResultSurface = ({
     }),
     [
       headingLabel,
-      localTabLabel,
-      localIndexNotReadyLabel,
-      localIndexReady,
       autoSearchLabel,
       onSearchEngineSelectionChange,
       onSwitchToWebSearch,
-      onSourceFilterChange,
       payload.query,
       searchEngineSelectionMode,
       searchEngines,
       searchSelectedEngineIds,
-      sourceFilter,
       sourceFilterLabel,
       webTabLabel
     ]
@@ -224,7 +157,6 @@ export const BrowserResultSurface = ({
 
   void inputValue;
   void logoUrl;
-  void localStatusLabel;
   void onInputChange;
   void onOpenUrl;
   void onSharedAnimationDone;
@@ -243,35 +175,12 @@ export const BrowserResultSurface = ({
   void officialSupportLabel;
   void emptyLabel;
   void engineErrorLabel;
-  void localPanelTitleLabel;
-  void localScopeLabel;
-  void localScannedFilesLabel;
-  void localScannedDirsLabel;
-  void localContentScansLabel;
-  void localMatchedLabel;
+  void channelIdleLabel;
+  void channelLoadingLabel;
+  void channelReadyLabel;
+  void channelErrorLabel;
 
   return (
-    <section className="lyra-results-shell" aria-label="search-results-surface">
-      <section className="lyra-results-main lyra-results-main-local">
-        <ResultLocalSection
-          payload={payload.local.payload}
-          status={payload.local.status}
-          showWebResults={false}
-          localTitleLabel={localTitleLabel}
-          localPanelTitleLabel={localPanelTitleLabel}
-          localNoMatchesLabel={localNoMatchesLabel}
-          localSearchingMoreLabel={localSearchingMoreLabel}
-          localScopeLabel={localScopeLabel}
-          localScannedFilesLabel={localScannedFilesLabel}
-          localScannedDirsLabel={localScannedDirsLabel}
-          localContentScansLabel={localContentScansLabel}
-          localMatchedLabel={localMatchedLabel}
-          localIndexLabel={localIndexLabel}
-          localScoreLabel={localScoreLabel}
-          localLineLabel={localLineLabel}
-          {...localErrorProps}
-        />
-      </section>
-    </section>
+    <section className="lyra-results-shell" aria-label="search-results-surface" />
   );
 };

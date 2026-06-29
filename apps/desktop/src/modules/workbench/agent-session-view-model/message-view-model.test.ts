@@ -8,6 +8,7 @@ const session = (
 ): AgentSessionSnapshot => ({
   id: "session-1",
   title: "Session",
+  sessionKind: "normal",
   workingDir: "/project",
   projectBound: false,
   workingDirIsHome: false,
@@ -85,8 +86,12 @@ describe("agentSessionToChatMessages", () => {
     const toolBlock = messages[0]?.blocks.find((block) => block.type === "tools");
     expect(toolBlock?.type).toBe("tools");
     expect(toolBlock?.group.status).toBe("running");
-    expect(toolBlock?.group.calls[0]?.details?.type).toBe("edit");
-    expect(toolBlock?.group.calls[0]?.details?.hunks.length).toBeGreaterThan(0);
+    const details = toolBlock?.group.calls[0]?.details;
+    expect(details?.type).toBe("edit");
+    if (details?.type !== "edit") {
+      throw new Error("expected edit tool details");
+    }
+    expect(details.hunks.length).toBeGreaterThan(0);
   });
 
   it("renders a single card when the same tool id is both linked and running", () => {
@@ -179,5 +184,31 @@ describe("agentSessionToChatMessages", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.workDurationMs).toBe(5_000);
+  });
+
+  it("renders thinking blocks in their factual block order", () => {
+    const messages = agentSessionToChatMessages(session({
+      turnStatus: "idle",
+      follow: { running: false, activity: null },
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "先说一句。再说一句。",
+        blocks: [
+          { type: "text", id: "text-0", text: "先说一句。" },
+          { type: "thinking", id: "thinking-1", text: "中间思考。", status: "done" },
+          { type: "text", id: "text-2", text: "再说一句。" }
+        ],
+        createdAt: "2026-06-20T00:00:00.000Z",
+        reasoningContent: "旧字段不应重复显示",
+        reasoningStatus: "done"
+      }]
+    }));
+
+    expect(messages[0]?.blocks).toEqual([
+      { type: "text", id: "assistant-1-text-0", body: "先说一句。" },
+      { type: "thinking", id: "assistant-1-thinking-1", body: "中间思考。", status: "done" },
+      { type: "text", id: "assistant-1-text-2", body: "再说一句。" }
+    ]);
   });
 });

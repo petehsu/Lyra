@@ -10,7 +10,7 @@ export type WorkspaceTabPageKind =
   | "terminal"
   | "app";
 
-export type WorkspaceSearchSource = "web" | "local";
+export type WorkspaceSearchSource = "web";
 export type WorkspaceSearchEngineSelectionMode = "auto" | "manual";
 
 export type WorkspaceSearchEngineSelection = {
@@ -81,11 +81,6 @@ export type WorkspaceResolvedNavigation =
       readonly address: string;
       readonly engineId?: string;
       readonly title?: string;
-      readonly selection?: WorkspaceSearchEngineSelection;
-    }
-  | {
-      readonly kind: "local-search";
-      readonly query: string;
       readonly selection?: WorkspaceSearchEngineSelection;
     };
 
@@ -193,15 +188,6 @@ export type WorkspaceTabsActions = {
       readonly target?: WorkspaceNavigationTarget;
     }
   ) => readonly string[];
-  readonly openLocalSearchTab: (
-    request: {
-      readonly query: string;
-      readonly selection?: WorkspaceSearchEngineSelection;
-    },
-    options?: {
-      readonly target?: WorkspaceNavigationTarget;
-    }
-  ) => string;
   readonly navigateResolvedInput: (
     request: WorkspaceResolvedNavigation,
     options?: {

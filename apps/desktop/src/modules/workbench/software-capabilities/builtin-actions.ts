@@ -88,7 +88,7 @@ export const createBuiltinHandlers = ({
     });
     const selection = { mode: "auto" as const, engineIds: [] };
     const tabId = target === null
-      ? tabsModel.openLocalSearchTab({ query, selection }, { target: "new-tab" })
+      ? ""
       : tabsModel.openWebSearchTabs(
           {
             query,

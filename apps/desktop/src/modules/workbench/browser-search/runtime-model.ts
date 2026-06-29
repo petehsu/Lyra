@@ -3,11 +3,7 @@ import { createEmptySearchPayload } from "./service";
 import type { BrowserSearchSettings } from "./runtime-types";
 import type {
   BrowserSearchPayload,
-  LocalSearchScopePreset
 } from "./types";
-
-export const DEFAULT_LOCAL_SEARCH_LIMIT = 60;
-export const DEFAULT_LOCAL_SCOPE_PRESET: LocalSearchScopePreset = "home";
 
 export const buildBrowserSearchSettingsCacheKey = (
   settings: BrowserSearchSettings
@@ -17,27 +13,22 @@ export const buildBrowserSearchSettingsCacheKey = (
       id: engine.id,
       endpoint: engine.endpoint ?? null
     })),
-    limitPerEngine: settings.resultsPerEngine,
-    localProjectRoot: settings.localProjectRoot ?? null,
-    localLimit: settings.localLimit ?? DEFAULT_LOCAL_SEARCH_LIMIT
+    limitPerEngine: settings.resultsPerEngine
   });
 
 export const createLoadingSearchPayload = (options: {
   readonly query: string;
   readonly requestId: string;
-  readonly scopePreset: LocalSearchScopePreset;
 }): BrowserSearchPayload => {
   const payload = createEmptySearchPayload({
-    query: options.query,
-    scopePreset: options.scopePreset
+    query: options.query
   });
   return {
     ...payload,
     queryRequestId: options.requestId,
-    web: payload.web,
-    local: {
-      status: "loading",
-      payload: payload.local.payload
+    web: {
+      ...payload.web,
+      status: "loading"
     }
   };
 };

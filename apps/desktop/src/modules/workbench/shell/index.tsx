@@ -39,7 +39,6 @@ import {
   type AgentSessionHistoryLocateRequest
 } from "../agent-session-history";
 import { useBrowserLayoutAnimationSync } from "./use-browser-layout-animation-sync";
-import { useLocalSearchIndexStatus } from "./use-local-search-index-status";
 import { useDownloadNotifications } from "./use-download-notifications";
 import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context";
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
@@ -239,11 +238,6 @@ resolvedThemeId,
     preferences: preferencesModel.preferences,
     t
   });
-  const localSearchIndexStatus = useLocalSearchIndexStatus({
-    desktopApi,
-    publishNotification,
-    t
-  });
   useWorkbenchProviderFaultNotifications({
     desktopApi,
     notificationModel,
@@ -258,8 +252,7 @@ resolvedThemeId,
   const browserSearchModel = useBrowserSearchModel({
     desktopApi,
     tabsModel,
-    searchSettings: searchSettingsFacade.browserSearchSettings,
-    localSearchReady: localSearchIndexStatus.ready
+    searchSettings: searchSettingsFacade.browserSearchSettings
   });
   useBrowserPageContextMenu({
     desktopApi,
@@ -615,7 +608,6 @@ resolvedThemeId,
       isFullScreen={isFullScreen}
       isMaximized={isMaximized}
       labels={labels}
-      localSearchIndexStatus={localSearchIndexStatus}
       notificationModel={notificationModel}
       onGoBack={onGoBack}
       onGoForward={onGoForward}

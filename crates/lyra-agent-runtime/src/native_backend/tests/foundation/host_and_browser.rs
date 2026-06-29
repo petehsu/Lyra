@@ -1448,7 +1448,6 @@ fn tool_fs_dynamic_software_provider_failures_are_diagnostic_not_fatal() {
 
 #[test]
 fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally() {
-    ensure_test_local_search_tools_available();
     let service = ToolActivityService::default();
     assert_eq!(
         service.model_tool_names(),
@@ -1481,10 +1480,7 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "terminal_wait",
         "terminal_write",
         "terminal_close",
-        "project_search",
-        "code_search_text",
-        "code_search_symbol",
-        "code_graph_expand",
+        "code_grep_text",
         "lsp_query",
         "web_search",
         "web_fetch",

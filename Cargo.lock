@@ -767,15 +767,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-channel"
-version = "0.5.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2399,7 +2390,6 @@ dependencies = [
  "lyra-agent-plugins",
  "lyra-agent-reader",
  "lyra-hardware-core",
- "lyra-search-core",
  "lyra-tool-fs-core",
  "minijinja",
  "regex",
@@ -2594,24 +2584,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lyra-local-search"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "cc",
- "clap",
- "crossbeam-channel",
- "glob",
- "ignore",
- "nucleo",
- "pretty_assertions",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "lyra-lsp-core"
 version = "0.1.0"
 dependencies = [
@@ -2642,20 +2614,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "lyra-search-core"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "glob",
- "lyra-local-search",
- "notify",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
 ]
 
 [[package]]
@@ -2712,11 +2670,9 @@ dependencies = [
  "lyra-agent-runtime",
  "lyra-code-intel-core",
  "lyra-download-core",
- "lyra-local-search",
  "lyra-lsp-core",
  "lyra-performance-core",
  "lyra-runtime-protocol",
- "lyra-search-core",
  "lyra-terminal-core",
  "rayon",
  "reqwest",
@@ -3043,25 +2999,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "nucleo"
-version = "0.5.0"
-source = "git+https://github.com/helix-editor/nucleo.git?rev=4253de9faabb4e5c6d81d946a5e35a90f87347ee#4253de9faabb4e5c6d81d946a5e35a90f87347ee"
-dependencies = [
- "nucleo-matcher",
- "parking_lot",
- "rayon",
-]
-
-[[package]]
-name = "nucleo-matcher"
-version = "0.3.1"
-source = "git+https://github.com/helix-editor/nucleo.git?rev=4253de9faabb4e5c6d81d946a5e35a90f87347ee#4253de9faabb4e5c6d81d946a5e35a90f87347ee"
-dependencies = [
- "memchr",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -4408,9 +4345,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

@@ -60,21 +60,6 @@ export type WorkspaceSurfaceI18nProps = {
   readonly resultsAllTab: string;
   readonly resultsAutoTab: string;
   readonly resultsWebTab: string;
-  readonly resultsLocalTab: string;
-  readonly resultsLocalTitle: string;
-  readonly resultsLocalPanelTitle: string;
-  readonly resultsLocalNoMatches: string;
-  readonly resultsLocalSearchingMore: string;
-  readonly resultsLocalScope: string;
-  readonly resultsLocalScannedFiles: string;
-  readonly resultsLocalScannedDirs: string;
-  readonly resultsLocalContentScans: string;
-  readonly resultsLocalMatched: string;
-  readonly resultsLocalIndex: string;
-  readonly resultsLocalScore: string;
-  readonly resultsLocalLine: string;
-  readonly resultsLocalIndexNotReady: string;
-  readonly resultsLocalTimedOut: string;
   readonly channelIdle: string;
   readonly channelLoading: string;
   readonly channelReady: string;
@@ -135,9 +120,8 @@ export type WorkspaceSurfaceRouterProps = {
   readonly onRevealPathInFileManager: (filePath: string) => void;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
   readonly settings: WorkspaceSurfaceSettingsProps;
-  readonly searchResultsSourceFilter: "all" | "web" | "local";
-  readonly localSearchReady: boolean;
-  readonly onSearchResultsSourceFilterChange: (value: "all" | "web" | "local") => void;
+  readonly searchResultsSourceFilter: "all" | "web";
+  readonly onSearchResultsSourceFilterChange: (value: "all" | "web") => void;
   readonly i18n: WorkspaceSurfaceI18nProps;
   readonly notifications: {
     readonly model: WorkbenchNotificationModel;

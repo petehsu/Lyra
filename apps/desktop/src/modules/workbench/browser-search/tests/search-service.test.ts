@@ -137,14 +137,11 @@ describe("manual web search selection", () => {
 describe("search payload helpers", () => {
   test("createEmptySearchPayload builds the empty shape", () => {
     const payload = createEmptySearchPayload({
-      query: "lyra",
-      scopePreset: "home"
+      query: "lyra"
     });
 
     expect(payload.query).toBe("lyra");
     expect(payload.web.status).toBe("idle");
     expect(payload.web.payload.blendedResults).toEqual([]);
-    expect(payload.local.status).toBe("idle");
-    expect(payload.local.payload.scopePreset).toBe("home");
   });
 });

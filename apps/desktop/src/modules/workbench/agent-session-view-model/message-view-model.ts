@@ -112,6 +112,10 @@ const emptyPendingTextBlock = (
   body: ""
 });
 
+const thinkingBlockStatus = (
+  status: "thinking" | "done" | null | undefined
+): "running" | "done" => status === "thinking" ? "running" : "done";
+
 const timelineTimeMs = (value: string | undefined, fallback: number): number => {
   if (value === undefined) return fallback;
   const parsed = new Date(value).getTime();
@@ -251,8 +255,12 @@ const chatBlocksForAgentMessage = (
     }
     return [
       ...(message.reasoningContent?.trim()
-        ? [{ type: "thinking" as const, id: `${message.id}-thinking`, body: message.reasoningContent,
-          status: message.reasoningStatus === "thinking" ? "running" : "done" }]
+        ? [{
+            type: "thinking" as const,
+            id: `${message.id}-thinking`,
+            body: message.reasoningContent,
+            status: thinkingBlockStatus(message.reasoningStatus)
+          }]
         : []),
       {
         type: "text",
@@ -281,6 +289,19 @@ const chatBlocksForAgentMessage = (
   };
 
   for (const block of sourceBlocks) {
+    if (block.type === "thinking") {
+      flushTools();
+      if (block.text.trim().length > 0) {
+        chatBlocks.push({
+          type: "thinking",
+          id: `${message.id}-${block.id}`,
+          body: block.text,
+          status: thinkingBlockStatus(block.status)
+        });
+      }
+      continue;
+    }
+
     if (block.type === "text") {
       if (
         hasAssistantToolBlock &&
@@ -327,9 +348,13 @@ const chatBlocksForAgentMessage = (
   }
   flushTools();
 
-  if (message.reasoningContent?.trim()) {
-    chatBlocks.unshift({ type: "thinking", id: `${message.id}-thinking`, body: message.reasoningContent,
-      status: message.reasoningStatus === "thinking" ? "running" : "done" });
+  if (message.reasoningContent?.trim() && !sourceBlocks.some((block) => block.type === "thinking")) {
+    chatBlocks.unshift({
+      type: "thinking",
+      id: `${message.id}-thinking`,
+      body: message.reasoningContent,
+      status: thinkingBlockStatus(message.reasoningStatus)
+    });
   }
   if (chatBlocks.length > 0) return chatBlocks;
   if (
@@ -347,8 +372,12 @@ const chatBlocksForAgentMessage = (
   }
   return [
     ...(message.reasoningContent?.trim()
-      ? [{ type: "thinking" as const, id: `${message.id}-thinking`, body: message.reasoningContent,
-        status: message.reasoningStatus === "thinking" ? "running" : "done" }]
+      ? [{
+          type: "thinking" as const,
+          id: `${message.id}-thinking`,
+          body: message.reasoningContent,
+          status: thinkingBlockStatus(message.reasoningStatus)
+        }]
       : []),
     {
       type: "text",
@@ -460,9 +489,12 @@ export const agentSessionToChatMessages = (
     const msg = item.message;
     if (finalItems.length > 0) {
       const prevItem = finalItems[finalItems.length - 1];
-      const prev = prevItem?.message;
+      if (prevItem === undefined) {
+        finalItems.push(item);
+        continue;
+      }
+      const prev = prevItem.message;
       if (
-        prev !== undefined &&
         prev.author === msg.author &&
         prev.author === "agent" &&
         !isPendingAgentMessage(prev) &&

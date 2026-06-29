@@ -3,8 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { ContextMenuModel } from "../../context-menu";
 import type {
-  LyraDesktopApi,
-  SearchIndexStatusResponse
+  LyraDesktopApi
 } from "../../../../shared/desktop-bridge";
 import { createBrowserStorageStateRef } from "../../../../shared/workbench-browser";
 import type {
@@ -168,44 +167,9 @@ const labels: FileManagerSurfaceLabels = {
   downloadRemoteApiPort: "端口",
   downloadRemoteApiAllowLan: "允许局域网",
   downloadRemoteApiToken: "Token 可用",
-  searchIndexTitle: "本地索引",
-  searchIndexReady: "已完成",
-  searchIndexBuilding: "构建中",
-  searchIndexIdle: "未建立",
-  searchIndexFailed: "失败",
-  searchIndexUnavailable: "索引不可用",
-  searchIndexNeedsRebuild: "需要重新索引",
-  searchIndexRebuild: "重新索引",
-  searchIndexRebuilding: "正在重新索引",
-  searchIndexStats: "{files} 个文件 · {contentFiles} 个内容 · {storage}",
-  searchIndexPending: "{count} 个变更待处理",
-  searchIndexPhase: "阶段：{phase}",
   chooserBindProjectLabel: "绑定当前目录",
   chooserSelectDirectoryPlaceholder: "先进入一个目录"
 };
-
-const emptySearchIndexStatus = (): SearchIndexStatusResponse => ({
-  state: "idle",
-  engineVersion: "native-v3",
-  phase: "idle",
-  policySource: [],
-  policyWarnings: [],
-  indexedFiles: 0,
-  indexedDirs: 0,
-  indexedContentFiles: 0,
-  storageBytes: 0,
-  snapshotBytes: 0,
-  deltaBytes: 0,
-  pendingChanges: 0,
-  skipped: {
-    hidden: 0,
-    vendor: 0,
-    binaryOrTooLarge: 0,
-    unreadable: 0,
-    contentBudget: 0
-  },
-  roots: []
-});
 
 const homeResponse: FileManagerReadHomeResponse = {
   location: {
@@ -430,60 +394,7 @@ const createDesktopApi = (): {
           ),
           fallbackUsed: false
         };
-      },
-      local: async () => ({
-        query: "",
-        scopePreset: "home" as const,
-        roots: [],
-        results: [],
-        truncated: false,
-        elapsedMs: 0,
-        stats: {
-          scannedFiles: 0,
-          scannedDirs: 0,
-          contentScannedFiles: 0,
-          matchedFiles: 0,
-          skippedUnreadable: 0,
-          skippedBinaryOrTooLarge: 0,
-          usedIndex: false
-        },
-        indexStatus: emptySearchIndexStatus()
-      }),
-      startLocalStream: async () => ({
-        streamId: "stream-1",
-        query: "",
-        scopePreset: "home" as const,
-        roots: []
-      }),
-      readLocalStream: async () => ({
-        streamId: "stream-1",
-        query: "",
-        scopePreset: "home" as const,
-        roots: [],
-        results: [],
-        truncated: false,
-        elapsedMs: 0,
-        stats: {
-          scannedFiles: 0,
-          scannedDirs: 0,
-          contentScannedFiles: 0,
-          matchedFiles: 0,
-          skippedUnreadable: 0,
-          skippedBinaryOrTooLarge: 0,
-          usedIndex: false
-        },
-        indexStatus: emptySearchIndexStatus(),
-        done: true
-      }),
-      cancelLocalStream: async () => ({
-        removed: true
-      }),
-      readIndexStatus: async () => emptySearchIndexStatus(),
-      rebuildIndex: async () => ({
-        status: emptySearchIndexStatus(),
-        scopePreset: "home" as const,
-        roots: []
-      })
+      }
     },
     workbenchBrowser: {
       syncTopology: async () => undefined,

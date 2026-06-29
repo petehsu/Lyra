@@ -33,6 +33,36 @@ describe("message activity indicators", () => {
     expect(retryMarkup).toContain("lyra-agents-service-status-dots");
   });
 
+  test("renders dynamic indicators while thinking", () => {
+    const streamingMarkup = renderToStaticMarkup(
+      messageActivityIndicator(emptyAgentMessage(), "streaming_model")
+    );
+    const thoughtToolMarkup = renderToStaticMarkup(
+      messageActivityIndicator({
+        id: "agent-thinking",
+        author: "agent",
+        blocks: [{
+          type: "tools",
+          id: "tools-1",
+          group: {
+            id: "group-1",
+            status: "running",
+            label: "Thinking",
+            currentCallId: "thought-1",
+            calls: [{
+              id: "thought-1",
+              kind: "thought",
+              title: "Thinking",
+              status: "running"
+            }]
+          }
+        }]
+      }, null)
+    );
+    expect(streamingMarkup).toContain("lyra-agents-braille-spinner");
+    expect(thoughtToolMarkup).toContain("lyra-agents-braille-spinner");
+  });
+
   test("resolves connecting placeholder as activity host while turn is running", () => {
     const messages: ChatMessage[] = [emptyAgentMessage()];
     expect(resolveAgentActivityHostMessageId(messages, true)).toBe("agent-1");

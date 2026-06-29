@@ -51,7 +51,6 @@ export const WorkbenchShellStage = ({
   isFullScreen,
   isMaximized,
   labels,
-  localSearchIndexStatus,
   notificationModel,
   onGoBack,
   onGoForward,
@@ -118,7 +117,6 @@ export const WorkbenchShellStage = ({
     tabsModel,
     searchEngines: searchSettingsFacade.registeredSearchEngines,
     autoSearchEngines: searchSettingsFacade.integratedSearchEngines,
-    localSearchReady: localSearchIndexStatus.ready,
     omniboxNonBrowserSubmitTarget:
       preferencesModel.preferences.omniboxNonBrowserSubmitTarget,
     placeholder: t("navigation.titlebarPlaceholder"),
@@ -261,7 +259,6 @@ export const WorkbenchShellStage = ({
     settings: settingsSurfaceProps,
     onOpenSettingsSection: openSettingsSectionFromCapability,
     notificationModel,
-    localSearchReady: localSearchIndexStatus.ready,
     labels,
     softwareCapabilities,
     onOpenFileFromManager,

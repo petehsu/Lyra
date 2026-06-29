@@ -203,7 +203,7 @@ export const createResultsTabWithId = (
   faviconUrl: undefined,
   query,
   searchQuery: query,
-  searchSource: "local",
+  searchSource: "web",
   ...(selection === undefined
     ? {}
     : {

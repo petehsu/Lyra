@@ -246,7 +246,6 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    ensure_test_local_search_index_ready(temp.path());
     let project_root = temp.path().canonicalize().expect("canonical project root");
     let outside_root = outside
         .path()
@@ -384,9 +383,6 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     )
     .expect_err("unbound high-risk shell still needs permission");
     assert_eq!(unbound_dangerous.code, "permission_required");
-    let text = tool_code_search_text(&session_id, &json!({ "query": "build_widget" }))
-        .expect("text search");
-    assert!(text.content.contains("src/lib.rs:2"));
     let grep = tool_code_grep_text(
         &session_id,
         &json!({ "query": "build_widget", "glob": "*.rs", "limit": 10 }),
@@ -399,9 +395,6 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
     )
     .expect("regex grep");
     assert!(regex.content.contains("src/lib.rs:2"));
-    let graph = tool_code_graph_expand(&session_id, &json!({ "symbol": "Widget" }))
-        .expect("graph fallback");
-    assert_eq!(graph.raw["degraded"], true);
     let lsp =
         tool_lsp_query(&session_id, &json!({ "queryType": "diagnostics" })).expect("lsp fallback");
     assert_eq!(lsp.raw["available"], false);

@@ -3,10 +3,6 @@ use crate::modules::code_intel::{
     expand_code_graph_json, read_code_index_status_json, rebuild_code_index_json,
     search_code_symbol_json, search_code_text_json,
 };
-use crate::modules::fs::{
-    read_search_index_status_json, rebuild_search_index_json, search_local_json,
-    search_local_stream_cancel_json, search_local_stream_read_json, search_local_stream_start_json,
-};
 use crate::modules::web::{
     search_site_stream_cancel_json, search_site_stream_read_json, search_site_stream_start_json,
 };
@@ -151,12 +147,6 @@ fn handle_download_request(method: &str, payload: Value) -> Result<Value, Runtim
 
 fn handle_search_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
     match method {
-        "search.local" => call_json(payload, search_local_json),
-        "search.local.stream.start" => call_json(payload, search_local_stream_start_json),
-        "search.local.stream.read" => call_json(payload, search_local_stream_read_json),
-        "search.local.stream.cancel" => call_json(payload, search_local_stream_cancel_json),
-        "search.index.status" => call_json(payload, read_search_index_status_json),
-        "search.index.rebuild" => call_json(payload, rebuild_search_index_json),
         "search.site.stream.start" => call_json(payload, search_site_stream_start_json),
         "search.site.stream.read" => call_json(payload, search_site_stream_read_json),
         "search.site.stream.cancel" => call_json(payload, search_site_stream_cancel_json),

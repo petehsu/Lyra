@@ -10,7 +10,7 @@ import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from
 import { useData } from "../../data/DataProvider";
 import { ToolGroupBlock, type ThinkingEntry } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
-import { ToolExecutionIndicator, CheckCircleIcon, ChevronIcon, ToolIcon } from "../../components/Icons";
+import { ToolExecutionIndicator, ChevronIcon, ToolIcon } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
 import { formatMessage, t } from "@workbench/i18n";
@@ -41,7 +41,7 @@ function ThinkingBlock({ id, body, status }: { id: string; body: string; status:
       >
         <span className="lyra-agents-tool-group-icon-slot">
           <span className="lyra-agents-tool-group-lead">
-            {isRunning ? <ToolIcon kind="thought" /> : <CheckCircleIcon />}
+            <ToolIcon kind="thought" />
           </span>
           <span className="lyra-agents-chevron-slot">
             <ChevronIcon open={open} />
@@ -55,7 +55,9 @@ function ThinkingBlock({ id, body, status }: { id: string; body: string; status:
       </AppButton>
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-thinking-body">{body}</div>
+          <div className="lyra-agents-tool-group-body">
+            <div className="lyra-agents-thinking-body">{body}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -569,13 +571,13 @@ export function messageActivityIndicator(
   followActivity: string | null | undefined
 ) {
   const toolCall = activeToolCall(message);
-  if (toolCall?.kind === "thought") return <ToolIcon kind="thought" />;
+  if (toolCall?.kind === "thought") return <BrailleSpinner />;
 
   const activity = normalizeFollowActivity(followActivity);
   if (activity === "waiting_for_tool" || toolCall !== null) {
     return <ToolExecutionIndicator />;
   }
-  if (activity === "streaming_model") return <ToolIcon kind="thought" />;
+  if (activity === "streaming_model") return <BrailleSpinner />;
   if (usesServiceStatusDots(followActivity)) return <ServiceStatusDots />;
   return <BrailleSpinner />;
 }
@@ -979,13 +981,26 @@ const AgentMessage = memo(function AgentMessage({
     let lastToolsKey = "";
     let lastToolsGroup: ToolGroup | null = null;
     let lastToolsThinking: ThinkingEntry[] = [];
-    let lastRenderedWasTools = false;
+    const flushPendingThinking = () => {
+      if (pendingThinking.length === 0) return;
+      if (lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
+        const entries = [...lastToolsThinking, ...pendingThinking.splice(0)];
+        nodes[lastToolsIdx] = (
+          <ToolGroupBlock key={lastToolsKey} group={lastToolsGroup} thinkingEntries={entries} />
+        );
+        lastToolsThinking = entries;
+        return;
+      }
+      for (const entry of pendingThinking.splice(0)) {
+        nodes.push(<ThinkingBlock key={entry.id} id={entry.id} body={entry.body} status={entry.status} />);
+      }
+    };
     for (const block of blocks) {
       if (block.type === "thinking") {
         pendingThinking.push({ id: block.id, body: block.body, status: block.status });
       } else if (block.type === "tools") {
         const entries = pendingThinking.splice(0);
-        if (lastRenderedWasTools && lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
+        if (lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
           const mergedGroup = mergeToolGroups(lastToolsGroup, block.group);
           const mergedThinking = [...lastToolsThinking, ...entries];
           nodes[lastToolsIdx] = (
@@ -1002,25 +1017,12 @@ const AgentMessage = memo(function AgentMessage({
         lastToolsKey = block.id;
         lastToolsGroup = block.group;
         lastToolsThinking = entries;
-        lastRenderedWasTools = true;
       } else {
+        flushPendingThinking();
         nodes.push(renderAgentBlock(block));
-        lastRenderedWasTools = false;
       }
     }
-    if (pendingThinking.length > 0 && lastToolsIdx >= 0) {
-      nodes[lastToolsIdx] = (
-        <ToolGroupBlock
-          key={lastToolsKey}
-          group={lastToolsGroup!}
-          thinkingEntries={[...lastToolsThinking, ...pendingThinking]}
-        />
-      );
-    } else if (pendingThinking.length > 0) {
-      for (const entry of pendingThinking) {
-        nodes.push(<ThinkingBlock key={entry.id} id={entry.id} body={entry.body} status={entry.status} />);
-      }
-    }
+    flushPendingThinking();
     return nodes;
   };
 

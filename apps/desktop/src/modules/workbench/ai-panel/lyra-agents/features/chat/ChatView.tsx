@@ -853,34 +853,31 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             }}
             desktopApi={desktopApi}
           />
-          {session.projectBound && !session.workingDirIsHome ? (
-            <>
-              <AppButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                className="lyra-agents-project-plan-chip"
-                aria-label={t("lyra-agents-composer.openPlan")}
-                title={t("lyra-agents-composer.openPlan")}
-                onClick={() => { void openPlanBoard(); }}
-              >
-                <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
-                <span>{t("lyra-agents-composer.openPlan")}</span>
-              </AppButton>
-              <AppButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                className="lyra-agents-project-todo-chip"
-                aria-label={t("lyra-agents-composer.openTodo")}
-                title={t("lyra-agents-composer.openTodo")}
-                onClick={() => { void openTodoBoard(); }}
-              >
-                <ListChecks size={13} strokeWidth={2.1} aria-hidden="true" />
-                <span>{t("lyra-agents-composer.openTodo")}</span>
-              </AppButton>
-            </>
-          ) : null}
+          {/* ponytail: 规划/代办入口按钮常驻显示，不再受 projectBound 条件门控 */}
+          <AppButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            className="lyra-agents-project-plan-chip"
+            aria-label={t("lyra-agents-composer.openPlan")}
+            title={t("lyra-agents-composer.openPlan")}
+            onClick={() => { void openPlanBoard(); }}
+          >
+            <BookText size={13} strokeWidth={2.1} aria-hidden="true" />
+            <span>{t("lyra-agents-composer.openPlan")}</span>
+          </AppButton>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            className="lyra-agents-project-todo-chip"
+            aria-label={t("lyra-agents-composer.openTodo")}
+            title={t("lyra-agents-composer.openTodo")}
+            onClick={() => { void openTodoBoard(); }}
+          >
+            <ListChecks size={13} strokeWidth={2.1} aria-hidden="true" />
+            <span>{t("lyra-agents-composer.openTodo")}</span>
+          </AppButton>
           {locationControls !== null && locationControls !== undefined ? (
             <AppButton
               variant="ghost"

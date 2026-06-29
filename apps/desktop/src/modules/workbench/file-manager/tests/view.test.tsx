@@ -9,8 +9,7 @@ import {
 } from "../../shell/titlebar-context";
 import type { FileManagerAppState, FileManagerModel, FileManagerSurfaceLabels } from "../types";
 import type {
-  LyraDesktopApi,
-  SearchIndexStatusResponse
+  LyraDesktopApi
 } from "../../../../shared/desktop-bridge";
 import { FileManagerSurface } from "../view";
 
@@ -166,18 +165,6 @@ const labels: FileManagerSurfaceLabels = {
   downloadRemoteApiPort: "Port",
   downloadRemoteApiAllowLan: "Allow LAN",
   downloadRemoteApiToken: "Token available",
-  searchIndexTitle: "Local Index",
-  searchIndexReady: "Complete",
-  searchIndexBuilding: "Indexing",
-  searchIndexIdle: "Not built",
-  searchIndexFailed: "Failed",
-  searchIndexUnavailable: "Index unavailable",
-  searchIndexNeedsRebuild: "Reindex required",
-  searchIndexRebuild: "Reindex",
-  searchIndexRebuilding: "Reindexing",
-  searchIndexStats: "{files} files · {contentFiles} content · {storage}",
-  searchIndexPending: "{count} pending changes",
-  searchIndexPhase: "Phase: {phase}",
   chooserBindProjectLabel: "Bind project",
   chooserSelectDirectoryPlaceholder: "Open a directory to bind"
 };
@@ -360,52 +347,6 @@ const createModel = (): FileManagerModel => ({
   openTrashContextMenu: vi.fn()
 });
 
-const createSearchIndexStatus = (
-  overrides: Partial<SearchIndexStatusResponse> = {}
-): SearchIndexStatusResponse => ({
-  state: "ready",
-  engineVersion: "native-v3",
-  phase: "ready",
-  policyHash: "policy",
-  policySource: ["builtin"],
-  policyWarnings: [],
-  indexedFiles: 42,
-  indexedDirs: 8,
-  indexedContentFiles: 7,
-  storageBytes: 2048,
-  snapshotBytes: 2048,
-  deltaBytes: 0,
-  pendingChanges: 0,
-  skipped: {
-    hidden: 0,
-    vendor: 0,
-    binaryOrTooLarge: 0,
-    unreadable: 0,
-    contentBudget: 0
-  },
-  roots: [
-    {
-      root: "/tmp/project",
-      state: "ready",
-      indexedFiles: 42,
-      indexedDirs: 8,
-      indexedContentFiles: 7,
-      contentBytesIndexed: 1024,
-      skipped: {
-        hidden: 0,
-        vendor: 0,
-        binaryOrTooLarge: 0,
-        unreadable: 0,
-        contentBudget: 0
-      },
-      lastBuiltAt: "2026-06-10T00:00:00.000Z"
-    }
-  ],
-  lastBuiltAt: "2026-06-10T00:00:00.000Z",
-  progress: 1,
-  ...overrides
-});
-
 const renderFileManagerSurface = (
   props: ComponentProps<typeof FileManagerSurface>
 ) => {
@@ -494,42 +435,6 @@ describe("FileManagerSurface", () => {
     fireEvent.click(screen.getByText("Download Manager"));
 
     expect(model.openDownloads).toHaveBeenCalledWith("fm-1");
-  });
-
-  test("shows real local search index status and can request reindex", async () => {
-    const model = createModel();
-    const readIndexStatus = vi.fn(async () => createSearchIndexStatus());
-    const rebuildIndex = vi.fn(async () => ({
-      status: createSearchIndexStatus({
-        state: "building",
-        phase: "indexing",
-        progress: 0
-      }),
-      scopePreset: "home" as const,
-      roots: ["/tmp/project"]
-    }));
-    renderFileManagerSurface({
-      desktopApi: {
-        search: {
-          readIndexStatus,
-          rebuildIndex
-        }
-      } as unknown as LyraDesktopApi,
-      state: createState(),
-      labels,
-      model,
-      onOpenFile: vi.fn()
-    });
-
-    expect(await screen.findByText("Complete")).toBeInTheDocument();
-    expect(screen.getByText("42 files · 7 content · 2 KiB")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Reindex" }));
-
-    await waitFor(() => {
-      expect(rebuildIndex).toHaveBeenCalledTimes(1);
-    });
-    expect(await screen.findByText("Indexing")).toBeInTheDocument();
   });
 
   test("routes download manager form and row actions", () => {

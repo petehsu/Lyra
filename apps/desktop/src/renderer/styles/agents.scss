@@ -1680,9 +1680,12 @@
 .lyra-agents-thinking-body {
   padding: var(--lyra-unit-3) 0;
   font-size: var(--lyra-unit-13);
-  color: var(--lyra-text-tertiary);
+  color: var(--lyra-text-muted);
   white-space: pre-wrap;
   line-height: 1.5;
+  max-height: var(--lyra-unit-260);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Shared inline diff-stats cluster (used in level-1 head, level-2 row,

@@ -17,7 +17,6 @@ lyra-agent-plugins.workspace = true
 # context-window trimming and memory checkpoints are accurate for CJK/code.
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
 lyra-hardware-core.workspace = true
-lyra-search-core.workspace = true
 lyra-tool-fs-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
