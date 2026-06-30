@@ -573,6 +573,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         <div className="lyra-agents-project-dir-chip-row lyra-agents-project-meta-row">
           <ProjectDirChip
             desktopApi={desktopApi}
+            sessionId={session.id}
             projectName={session.project.trim().length > 0 ? session.project.trim() : null}
             workingDir={session.workingDir}
             isHome={session.workingDirIsHome}

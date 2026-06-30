@@ -523,6 +523,12 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "systemRecall": system_recall_json(&system_recall_records)
     });
     runtime_context["activeSkills"] = json!(active_skills.iter().cloned().collect::<Vec<_>>());
+    // Phase 4.2: inject code-graph project context into the prompt.
+    if let Some(dir) = working_dir.as_deref().filter(|d| !d.is_empty()) {
+        runtime_context["projectContext"] = tools::project_context_for_prompt(
+            std::path::Path::new(dir),
+        );
+    }
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         model_tool_names()
     } else {

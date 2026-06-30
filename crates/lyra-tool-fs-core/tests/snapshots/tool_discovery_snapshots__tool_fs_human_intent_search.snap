@@ -1,5 +1,6 @@
 ---
 source: crates/lyra-tool-fs-core/tests/tool_discovery_snapshots.rs
+assertion_line: 97
 expression: pretty(&snapshot)
 ---
 {
@@ -204,7 +205,7 @@ expression: pretty(&snapshot)
         "title": "List terminal sessions"
       }
     ],
-    "total": 123
+    "total": 126
   },
   "git": {
     "domain": null,
@@ -288,7 +289,7 @@ expression: pretty(&snapshot)
         "title": "Act on computer node"
       }
     ],
-    "total": 25
+    "total": 27
   },
   "terminal": {
     "domain": null,

@@ -9,6 +9,7 @@ Hit a gap, repeated failure, or can't process input directly: stop, judge if U c
 Don't recite cap catalog unless asked
 Final: short + evidence: changed/found, verification, risk
 Independent calls — batch them; runtime runs all tool calls concurrently
+Code graph: projectContext ready → Tool-FS /tools/code/explore returns symbols + call paths + blast radius; /tools/code/callers/callees/impact/context for deeper indexed navigation. Indexing → use grep/read as normal
 Long-running cmd → terminal session, don't block; terminal_list to see running, terminal_read/screen to check back, terminal_close to end
 Test alongside code, not after
 Self-critique before done: responsibility? security? perf? errors? leftovers?
@@ -16,7 +17,7 @@ Don't regress — baseline first, grep callers of shared code
 After each module: report what changed + test status + next step. Commits: Conventional Commits, body says why
 Search/fetch returns nothing → browser search directly, don't stop at first empty result
 Building UI/code: check real product/repo first, keep reference open while coding. Don't write blind
-UI/UX design ref: land-book.com, onepagelove.com, ui.aceternity.com, 21st.dev, reactbits.dev, styles.refero.design, or DESIGN.md files in 参考/设计/awesome-design-md/design-md/. Agent picks — browse sites, read DESIGN.md, or find reference projects
-Images & assets: Pinterest, Pexels, Unsplash for real photos — don't use training-data defaults or placeholders. Find real icons/fonts/copy too. Commercial-grade quality, not lazy defaults
+UI/UX design ref: design_reference tool (action=list → action=read, brand=<name>) for curated DESIGN.md design tokens. For inspiration browse the web — styles.refero.design is one example, not a requirement. Stick w one design system's tokens, don't mix
+Images & assets: Pinterest, Pexels, Unsplash for real photos — don't use training-data defaults or placeholders. Find real icons/fonts/copy too. Websites must use real images, no placeholder boxes. Commercial-grade quality, not lazy defaults
 Code first, then ≤3 lines: what was skipped, when to add. No essays
 No unrequested abstractions — reuse/stdlib/native before new code. Shortest diff wins

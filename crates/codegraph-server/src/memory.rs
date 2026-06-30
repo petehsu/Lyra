@@ -1,0 +1,722 @@
+// Copyright 2025-2026 Andrey Vasilevsky <anvanster@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+
+//! Memory layer integration for CodeGraph Server
+//!
+//! Provides persistent memory storage with semantic search for AI agent context.
+//! Uses on-demand database opening to avoid lock conflicts between processes.
+//!
+//! Data is stored globally at `~/.codegraph/projects/<slug>/memory/` where
+//! `<slug>` is derived from the workspace directory name + a short hash of
+//! the full path for uniqueness (e.g. `myproject-a3f2`).
+
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+// Import and re-export types from codegraph_memory
+pub use codegraph_memory::{
+    MemoryError, MemoryNode, MemorySearch, MemoryStore, SearchConfig, SearchResult, VectorEngine,
+};
+
+/// Generate a project slug from a workspace path.
+///
+/// The slug is `<dir-name-lowercase>-<4-hex-hash>` where the hash is derived
+/// from the full canonical path, ensuring uniqueness even when two projects
+/// share the same directory name.
+///
+/// Example: `/Users/dev/projects/myapp` → `"myapp-a3f2"`
+pub(crate) fn project_slug(workspace_path: &Path) -> String {
+    // Canonicalize for stable hashing (resolve symlinks, normalize)
+    let canonical = workspace_path
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_path.to_path_buf());
+
+    // Slug: last path component, lowercased, non-alphanumeric replaced with '-'
+    let dir_name = canonical
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project");
+    let slug_base: String = dir_name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    // 4-hex-char hash of full path for uniqueness
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    canonical.to_string_lossy().as_ref().hash(&mut hasher);
+    let hash = hasher.finish();
+    let short_hash = format!("{:04x}", hash & 0xFFFF);
+
+    format!("{slug_base}-{short_hash}")
+}
+
+/// `~/.codegraph` — the shared state directory.
+pub(crate) fn codegraph_home_dir() -> Result<PathBuf, MemoryError> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or_else(|| MemoryError::Other("Cannot determine home directory".to_string()))?;
+    Ok(PathBuf::from(home).join(".codegraph"))
+}
+
+/// Current graph-DB generation, from `~/.codegraph/graph.generation`.
+/// Missing/unreadable/unparseable all map to 0 — the historical layout —
+/// so existing installs keep their data and a torn pointer write degrades
+/// to pre-generation behavior instead of an error.
+pub(crate) fn graph_db_generation() -> u64 {
+    let Ok(dir) = codegraph_home_dir() else {
+        return 0;
+    };
+    std::fs::read_to_string(dir.join("graph.generation"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// Map a generation to its DB directory: 0 → `graph.db` (historical),
+/// N>0 → `graph.db.N`.
+pub(crate) fn graph_db_path_for_generation(codegraph_dir: &Path, generation: u64) -> PathBuf {
+    if generation == 0 {
+        codegraph_dir.join("graph.db")
+    } else {
+        codegraph_dir.join(format!("graph.db.{generation}"))
+    }
+}
+
+/// Path to the shared graph database.
+///
+/// All projects share a single RocksDB, with per-project key namespacing via
+/// [`codegraph::NamespacedBackend`]. The path is `~/.codegraph/graph.db`
+/// redirected by the generation pointer: when a poisoned DB can't be renamed
+/// or removed in place (Windows keeps handles on it — crashed siblings, AV
+/// scanners), [`bump_graph_generation`] points every open/persist call site
+/// at a fresh `graph.db.N` instead. Resolved fresh on each call so running
+/// sessions pick up a redirect on their next persist.
+pub(crate) fn shared_graph_db_path() -> Result<PathBuf, MemoryError> {
+    let dir = codegraph_home_dir()?;
+    Ok(graph_db_path_for_generation(&dir, graph_db_generation()))
+}
+
+/// Redirect the shared graph DB to a brand-new directory by bumping the
+/// generation pointer; returns the new path. The poisoned old directory is
+/// NOT touched here — renaming/deleting it is best-effort cleanup that can
+/// happen whenever its handles finally free up (see the sweep in
+/// `open_persistent_graph`), which is exactly why redirecting beats renaming
+/// as the recovery primitive.
+pub(crate) fn bump_graph_generation() -> Result<PathBuf, MemoryError> {
+    let dir = codegraph_home_dir()?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| MemoryError::Other(format!("Failed to create ~/.codegraph: {e}")))?;
+    let next = graph_db_generation() + 1;
+    std::fs::write(dir.join("graph.generation"), next.to_string())
+        .map_err(|e| MemoryError::Other(format!("Failed to write graph.generation: {e}")))?;
+    Ok(graph_db_path_for_generation(&dir, next))
+}
+
+/// True for workspaces that should NOT pollute the persistent
+/// `~/.codegraph/projects/<slug>/` registry. Currently matches
+/// integration-test tempdirs created by `codegraph-harness` (any
+/// path component starting with `codegraph-harness-`). Their state
+/// is routed to `<workspace>/.codegraph-state/` so it dies with the
+/// tempdir instead of accumulating one stale entry per test case.
+pub fn is_ephemeral_workspace(workspace_path: &Path) -> bool {
+    let canonical = workspace_path
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_path.to_path_buf());
+    canonical.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .map(|s| s.starts_with("codegraph-harness-"))
+            .unwrap_or(false)
+    })
+}
+
+/// True for slugs derived from ephemeral workspaces (test harness
+/// tempdirs). Used by cross-project scans to filter out stale
+/// ephemeral entries in the shared graph.db AND to short-circuit
+/// cross-project lookups when the current workspace is itself
+/// ephemeral (the test harness only cares about isolated results).
+pub fn is_ephemeral_slug(slug: &str) -> bool {
+    slug.starts_with("codegraph-harness-")
+}
+
+/// Derive a global data directory for a workspace under `~/.codegraph/projects/<slug>/`.
+/// Ephemeral workspaces (test harness tempdirs) route to
+/// `<workspace>/.codegraph-state/` instead so they don't accumulate
+/// in the global registry.
+fn project_data_dir(workspace_path: &Path) -> Result<PathBuf, MemoryError> {
+    if is_ephemeral_workspace(workspace_path) {
+        return Ok(workspace_path.join(".codegraph-state"));
+    }
+
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or_else(|| MemoryError::Other("Cannot determine home directory".to_string()))?;
+
+    let slug = project_slug(workspace_path);
+
+    Ok(PathBuf::from(home)
+        .join(".codegraph")
+        .join("projects")
+        .join(slug))
+}
+
+/// Memory manager for the LSP server
+///
+/// Opens the database on-demand for each operation and closes it immediately after.
+/// This allows multiple processes (VS Code extension + Claude MCP) to share the same
+/// database without lock conflicts.
+///
+/// Data is stored at `~/.codegraph/projects/<slug>/memory/` rather than in the
+/// workspace directory, keeping workspaces clean.
+pub struct MemoryManager {
+    /// Resolved path to memory database (e.g. ~/.codegraph/projects/<slug>/memory)
+    data_dir: Arc<RwLock<Option<PathBuf>>>,
+    /// Path to extension root (unused by fastembed, kept for API compatibility)
+    #[allow(dead_code)]
+    extension_path: Option<PathBuf>,
+    /// Cached vector engine (holds model, not DB - safe to keep)
+    engine: Arc<RwLock<Option<Arc<VectorEngine>>>>,
+    /// Embedding model selection
+    embedding_model: codegraph_memory::CodeGraphEmbeddingModel,
+}
+
+impl MemoryManager {
+    /// Create a new MemoryManager
+    pub fn new(extension_path: Option<PathBuf>) -> Self {
+        Self::with_model(
+            extension_path,
+            codegraph_memory::CodeGraphEmbeddingModel::default(),
+        )
+    }
+
+    /// Create a new MemoryManager with a specific embedding model
+    pub fn with_model(
+        extension_path: Option<PathBuf>,
+        embedding_model: codegraph_memory::CodeGraphEmbeddingModel,
+    ) -> Self {
+        Self {
+            data_dir: Arc::new(RwLock::new(None)),
+            extension_path,
+            engine: Arc::new(RwLock::new(None)),
+            embedding_model,
+        }
+    }
+
+    /// Initialize the memory manager with workspace path
+    ///
+    /// Resolves the global data directory at `~/.codegraph/projects/<slug>/memory/`,
+    /// migrating from the old `workspace/.codegraph/memory/` location if needed.
+    /// Does NOT hold the database open - that happens on-demand per operation.
+    ///
+    /// # Arguments
+    /// * `workspace_path` - Path to the workspace root
+    pub async fn initialize(&self, workspace_path: &Path) -> Result<(), MemoryError> {
+        tracing::info!("[MemoryManager::initialize] Starting initialization");
+        tracing::info!(
+            "[MemoryManager::initialize] Workspace path: {:?}",
+            workspace_path
+        );
+
+        // Resolve global data directory
+        let project_dir = project_data_dir(workspace_path)?;
+        let data_dir = project_dir.join("memory");
+        tracing::info!("[MemoryManager::initialize] Data directory: {:?}", data_dir);
+
+        // Auto-migrate from old workspace-local location if needed
+        let old_dir = workspace_path.join(".codegraph").join("memory");
+        if !data_dir.exists() && old_dir.exists() {
+            tracing::info!(
+                "[MemoryManager::initialize] Migrating memory from {:?} to {:?}",
+                old_dir,
+                data_dir
+            );
+            if let Err(e) = Self::migrate_data(&old_dir, &data_dir) {
+                tracing::warn!(
+                    "[MemoryManager::initialize] Migration failed, starting fresh: {}",
+                    e
+                );
+            }
+        }
+
+        // Create data directory
+        std::fs::create_dir_all(&data_dir).map_err(|e| {
+            tracing::error!(
+                "[MemoryManager::initialize] Failed to create data directory: {}",
+                e
+            );
+            e
+        })?;
+
+        // Model B: if a shared VectorEngine was injected via `set_engine`, reuse
+        // it and skip the per-workspace RAM gate + model load entirely — the
+        // socket engine holds ONE model across all workspaces.
+        if self.engine.read().await.is_some() {
+            *self.data_dir.write().await = Some(data_dir.clone());
+            tracing::info!("[MemoryManager::initialize] reusing shared vector engine (no per-workspace model load)");
+            return Ok(());
+        }
+
+        // Initialize vector engine with selected model (cached, doesn't hold DB lock)
+        let cache_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".codegraph")
+            .join("fastembed_cache");
+        // RAM gate: loading the ONNX model + runtime can OOM-kill the process
+        // on constrained machines — a NATIVE crash Rust can't catch (this is
+        // the dominant `hard_crash` in crash telemetry). If too little memory
+        // is free right now, skip the model and run graph-only (degraded beats
+        // dead). `available_memory` reflects what we can actually allocate.
+        {
+            let mut sys = sysinfo::System::new();
+            sys.refresh_memory();
+            let avail = sys.available_memory();
+            const MIN_FREE_BYTES: u64 = 1_500_000_000; // ~1.5 GB for model + ort runtime
+            tracing::info!(
+                "[MemoryManager::initialize] available memory: {} MB",
+                avail / 1_000_000
+            );
+            if avail < MIN_FREE_BYTES {
+                crate::crash_phase::mark("onnx_skipped_lowmem");
+                tracing::warn!(
+                    "[MemoryManager::initialize] only {} MB free — skipping embedding model to avoid OOM; semantic search disabled (graph-only)",
+                    avail / 1_000_000
+                );
+                return Err(MemoryError::Other(format!(
+                    "insufficient memory ({} MB free) to load embedding model; running graph-only",
+                    avail / 1_000_000
+                )));
+            }
+        }
+
+        // Phase marker: a native crash during the ONNX model load never runs
+        // the panic hook, so stamp the phase for the extension to read post-mortem.
+        crate::crash_phase::mark("onnx_load");
+        let engine = VectorEngine::with_model(cache_dir, self.embedding_model).map_err(|e| {
+            tracing::error!(
+                "[MemoryManager::initialize] VectorEngine initialization failed: {:?}",
+                e
+            );
+            e
+        })?;
+        crate::crash_phase::mark("post_onnx");
+
+        // Store resolved path and engine for on-demand use
+        *self.data_dir.write().await = Some(data_dir.clone());
+        *self.engine.write().await = Some(Arc::new(engine));
+
+        tracing::info!(
+            "[MemoryManager::initialize] Memory initialized at {:?}",
+            data_dir
+        );
+        Ok(())
+    }
+
+    /// Migrate memory data from old workspace-local path to new global path
+    fn migrate_data(old_dir: &Path, new_dir: &Path) -> Result<(), String> {
+        // Ensure parent exists
+        if let Some(parent) = new_dir.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent dir: {e}"))?;
+        }
+
+        // Move the directory
+        std::fs::rename(old_dir, new_dir).map_err(|e| {
+            // rename() fails across filesystems; fall back to copy
+            format!("rename failed ({e}), data will be recreated at new location")
+        })?;
+
+        tracing::info!(
+            "[MemoryManager] Successfully migrated memory to {:?}",
+            new_dir
+        );
+
+        // Clean up empty .codegraph/ in workspace
+        if let Some(codegraph_dir) = old_dir.parent() {
+            if codegraph_dir
+                .read_dir()
+                .map(|mut d| d.next().is_none())
+                .unwrap_or(false)
+            {
+                let _ = std::fs::remove_dir(codegraph_dir);
+                tracing::info!(
+                    "[MemoryManager] Removed empty {:?} from workspace",
+                    codegraph_dir
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if memory manager is initialized
+    pub async fn is_initialized(&self) -> bool {
+        self.data_dir.read().await.is_some() && self.engine.read().await.is_some()
+    }
+
+    /// Get the shared VectorEngine for embedding operations.
+    /// Returns None if memory manager hasn't been initialized yet.
+    pub async fn get_vector_engine(&self) -> Option<Arc<VectorEngine>> {
+        self.engine.read().await.clone()
+    }
+
+    /// Inject a shared VectorEngine (Model B socket engine) so this manager
+    /// reuses one model instead of loading its own. Call before `initialize`.
+    pub async fn set_engine(&self, engine: Arc<VectorEngine>) {
+        *self.engine.write().await = Some(engine);
+    }
+
+    /// Open a fresh MemoryStore for an operation
+    ///
+    /// The store is dropped when it goes out of scope, releasing the DB lock.
+    async fn open_store(&self) -> Result<MemoryStore, MemoryError> {
+        let data_dir = self
+            .data_dir
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| MemoryError::Other("Memory manager not initialized".to_string()))?;
+
+        let engine = self
+            .engine
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| MemoryError::Other("Vector engine not initialized".to_string()))?;
+
+        MemoryStore::new(&data_dir, engine)
+    }
+
+    /// Store a memory node
+    ///
+    /// Opens DB, stores memory, closes DB.
+    pub async fn put(&self, node: MemoryNode) -> Result<String, MemoryError> {
+        let store = self.open_store().await?;
+        store.put(node).await
+    }
+
+    /// Get a memory by ID
+    ///
+    /// Opens DB, retrieves memory, closes DB.
+    pub async fn get(&self, id: &str) -> Result<Option<MemoryNode>, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.get(id))
+    }
+
+    /// Search memories with hybrid search
+    ///
+    /// Opens DB, performs search, closes DB.
+    pub async fn search(
+        &self,
+        query: &str,
+        config: &SearchConfig,
+        code_context: &[String],
+    ) -> Result<Vec<SearchResult>, MemoryError> {
+        let store = self.open_store().await?;
+        let store = Arc::new(store);
+        let search = MemorySearch::new(store)?;
+        search.search(query, code_context, config)
+    }
+
+    /// Find memories linked to a code node
+    pub async fn find_by_code_node(
+        &self,
+        code_node_id: &str,
+    ) -> Result<Vec<MemoryNode>, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.find_by_code_node(code_node_id))
+    }
+
+    /// Find memories with a specific tag
+    pub async fn find_by_tag(&self, tag: &str) -> Result<Vec<MemoryNode>, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.find_by_tag(tag))
+    }
+
+    /// Invalidate a memory (mark as no longer current)
+    pub async fn invalidate(&self, id: &str, reason: &str) -> Result<(), MemoryError> {
+        let store = self.open_store().await?;
+        store.invalidate(id, reason)
+    }
+
+    /// Delete a memory permanently
+    pub async fn delete(&self, id: &str) -> Result<bool, MemoryError> {
+        let store = self.open_store().await?;
+        store.delete(id)
+    }
+
+    /// Get all current (non-invalidated) memories
+    pub async fn get_all_current(&self) -> Result<Vec<MemoryNode>, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.get_all_current())
+    }
+
+    /// Get all memories, optionally including invalidated ones
+    pub async fn get_all_memories(
+        &self,
+        current_only: bool,
+    ) -> Result<Vec<MemoryNode>, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.get_all_memories(current_only))
+    }
+
+    /// Get store statistics
+    pub async fn stats(&self) -> Result<serde_json::Value, MemoryError> {
+        let store = self.open_store().await?;
+        Ok(store.stats())
+    }
+
+    /// Invalidate all memories linked to any of the given code node IDs
+    ///
+    /// Used for auto-invalidation when code changes.
+    pub async fn invalidate_for_code_nodes(
+        &self,
+        node_ids: &[String],
+        reason: &str,
+    ) -> Result<Vec<(String, String)>, MemoryError> {
+        if !self.is_initialized().await {
+            return Ok(vec![]);
+        }
+
+        let store = self.open_store().await?;
+        let mut invalidated = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
+        for node_id in node_ids {
+            let memories = store.find_by_code_node(node_id);
+            for memory in memories {
+                let id_str = memory.id.to_string();
+                // Avoid invalidating the same memory twice
+                if seen_ids.insert(id_str.clone())
+                    && memory.temporal.is_current()
+                    && store.invalidate(&id_str, reason).is_ok()
+                {
+                    invalidated.push((id_str, memory.title.clone()));
+                }
+            }
+        }
+
+        if !invalidated.is_empty() {
+            tracing::info!(
+                "Auto-invalidated {} memories due to code changes: {}",
+                invalidated.len(),
+                reason
+            );
+        }
+
+        Ok(invalidated)
+    }
+
+    /// Create a memory builder for convenience
+    pub fn builder() -> codegraph_memory::MemoryNodeBuilder {
+        MemoryNode::builder()
+    }
+
+    // ── Doc store operations ─────────────────────────────────────────
+
+    /// Open a fresh DocStore for an operation (parallel to open_store).
+    async fn open_doc_store(&self) -> Result<codegraph_memory::DocStore, MemoryError> {
+        let data_dir = self
+            .data_dir
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| MemoryError::Other("Memory manager not initialized".to_string()))?;
+
+        let engine = self
+            .engine
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| MemoryError::Other("Vector engine not initialized".to_string()))?;
+
+        // Docs DB lives alongside memory DB: ~/.codegraph/projects/<slug>/docs/
+        let docs_dir = data_dir.parent().unwrap_or(&data_dir).join("docs");
+
+        codegraph_memory::DocStore::new(&docs_dir, engine)
+    }
+
+    /// Index a local markdown file into the docs store.
+    pub async fn index_markdown(
+        &self,
+        file_path: &Path,
+        max_chunk_words: usize,
+    ) -> Result<Vec<codegraph_memory::DocChunk>, MemoryError> {
+        let store = self.open_doc_store().await?;
+        store.index_file(file_path, max_chunk_words)
+    }
+
+    /// Index raw markdown content (for URL-fetched docs in Phase 2).
+    pub async fn index_markdown_content(
+        &self,
+        content: &str,
+        source_label: &str,
+        max_chunk_words: usize,
+    ) -> Result<Vec<codegraph_memory::DocChunk>, MemoryError> {
+        let store = self.open_doc_store().await?;
+        store.index_content(content, source_label, max_chunk_words)
+    }
+
+    /// Semantic search over indexed doc chunks.
+    pub async fn search_docs(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<codegraph_memory::DocSearchResult>, MemoryError> {
+        let store = self.open_doc_store().await?;
+        store.search(query, limit)
+    }
+
+    /// List all source files that have been indexed as docs.
+    pub async fn list_doc_sources(&self) -> Result<Vec<String>, MemoryError> {
+        let store = self.open_doc_store().await?;
+        Ok(store.list_sources())
+    }
+
+    /// Remove all indexed chunks from a given source file.
+    pub async fn remove_doc_source(&self, source: &str) -> Result<(), MemoryError> {
+        let store = self.open_doc_store().await?;
+        store.remove_source(source)
+    }
+
+    /// Get all chunks from a specific source file (for verify_design / design_gaps).
+    pub async fn get_doc_chunks_by_source(
+        &self,
+        source: &str,
+    ) -> Result<Vec<codegraph_memory::DocChunk>, MemoryError> {
+        let store = self.open_doc_store().await?;
+        Ok(store.get_chunks_by_source(source))
+    }
+}
+
+// Re-export additional commonly used types for convenience
+pub use codegraph_memory::{
+    search::{MatchReason, MemoryKindFilter},
+    CodeLink, IssueSeverity, LinkedNodeType, MemoryId, MemoryKind, MemoryNodeBuilder, MemorySource,
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_zero_maps_to_historical_path() {
+        let dir = Path::new("/home/u/.codegraph");
+        assert_eq!(
+            graph_db_path_for_generation(dir, 0),
+            dir.join("graph.db"),
+            "gen 0 must keep the pre-0.18.4 layout so existing installs retain their data"
+        );
+    }
+
+    #[test]
+    fn nonzero_generations_get_suffixed_dirs() {
+        let dir = Path::new("/home/u/.codegraph");
+        assert_eq!(graph_db_path_for_generation(dir, 1), dir.join("graph.db.1"));
+        assert_eq!(
+            graph_db_path_for_generation(dir, 42),
+            dir.join("graph.db.42")
+        );
+    }
+
+    #[test]
+    fn test_project_data_dir_format() {
+        // Uses a path that exists so canonicalize works
+        let dir = project_data_dir(Path::new("/tmp")).unwrap();
+        let dir_str = dir.to_string_lossy();
+
+        assert!(dir_str.contains(".codegraph/projects/"));
+        // Should end with slug containing "tmp" (or "private" on macOS due to canonicalize)
+        // and a 4-char hex suffix
+        let slug = dir.file_name().unwrap().to_string_lossy();
+        // Slug format: <name>-<4hex>
+        assert!(slug.len() >= 6, "slug too short: {slug}");
+        let parts: Vec<&str> = slug.rsplitn(2, '-').collect();
+        assert_eq!(
+            parts[0].len(),
+            4,
+            "hash should be 4 hex chars: {}",
+            parts[0]
+        );
+        assert!(
+            parts[0].chars().all(|c| c.is_ascii_hexdigit()),
+            "hash should be hex: {}",
+            parts[0]
+        );
+    }
+
+    #[test]
+    fn test_project_data_dir_different_paths_different_hashes() {
+        let dir1 = project_data_dir(Path::new("/tmp/project-a")).unwrap();
+        let dir2 = project_data_dir(Path::new("/tmp/project-b")).unwrap();
+        assert_ne!(dir1, dir2);
+    }
+
+    #[test]
+    fn test_project_data_dir_same_name_different_parent() {
+        let dir1 = project_data_dir(Path::new("/tmp/a/app")).unwrap();
+        let dir2 = project_data_dir(Path::new("/tmp/b/app")).unwrap();
+        // Same base name but different hashes
+        let slug1 = dir1.file_name().unwrap().to_string_lossy();
+        let slug2 = dir2.file_name().unwrap().to_string_lossy();
+        assert!(slug1.starts_with("app-"));
+        assert!(slug2.starts_with("app-"));
+        assert_ne!(slug1, slug2);
+    }
+
+    #[tokio::test]
+    async fn test_memory_manager_uninitialized() {
+        let manager = MemoryManager::new(None);
+        assert!(!manager.is_initialized().await);
+
+        // Operations should fail when not initialized
+        let result = manager.get("test-id").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires model files"]
+    async fn test_memory_manager_lifecycle() {
+        use tempfile::TempDir;
+        let temp_dir = TempDir::new().unwrap();
+        let manager = MemoryManager::new(None);
+
+        // Initialize
+        manager.initialize(temp_dir.path()).await.unwrap();
+        assert!(manager.is_initialized().await);
+
+        // Create and store a memory
+        let memory = MemoryManager::builder()
+            .debug_context("Test problem", "Test solution")
+            .title("Test Memory")
+            .content("This is test content")
+            .tag("test")
+            .build()
+            .unwrap();
+
+        let id = manager.put(memory).await.unwrap();
+
+        // Retrieve it
+        let retrieved = manager.get(&id).await.unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().title, "Test Memory");
+
+        // Search for it
+        let config = SearchConfig::default();
+        let results = manager.search("test problem", &config, &[]).await.unwrap();
+        assert!(!results.is_empty());
+
+        // Invalidate it
+        manager.invalidate(&id, "testing").await.unwrap();
+    }
+}

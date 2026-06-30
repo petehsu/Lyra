@@ -255,7 +255,7 @@ pub(crate) fn execute_model_tool_with_runtime(
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
-        "For code work use exec_command for inspection/validation and apply_patch for edits. For non-code domains use tool_fs_search, tool_fs_list, tool_fs_inspect, and tool_fs_run.",
+        "For exact code inspection/validation use direct file/search/shell tools; for edits use apply_patch/edit tools. For indexed CodeGraph navigation use Tool-FS /tools/code/* through tool_fs_search/inspect/run.",
         None,
     );
     record_tool_activity(

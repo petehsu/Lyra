@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   Bell,
@@ -283,41 +283,21 @@ type LegalNoticesState =
 const buildLegalNoticeKey = (item: ThirdPartyNoticeItem): string =>
   `${item.ecosystem}:${item.name}:${item.version ?? ""}`;
 
-const LegalNoticeMetaRow = ({
-  label,
-  value
-}: {
-  readonly label: string;
-  readonly value: string | number | undefined;
-}) => {
-  if (value === undefined || value === "") {
-    return null;
-  }
-  return (
-    <div className="lyra-settings-legal-meta-row">
-      <small>{label}</small>
-      <span>{value}</span>
-    </div>
-  );
+const formatLegalUpdatedAt = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
 };
 
-const LegalNoticeTextBlock = ({
-  label,
-  value
-}: {
-  readonly label: string;
-  readonly value: string | undefined;
-}) => {
-  if (value === undefined || value.trim().length === 0) {
-    return null;
-  }
-  return (
-    <section className="lyra-settings-legal-text-block">
-      <h4>{label}</h4>
-      <pre>{value.trim()}</pre>
-    </section>
-  );
-};
+const legalNoticeBody = (item: ThirdPartyNoticeItem): string =>
+  [item.noticeText, item.licenseText]
+    .filter((value): value is string => value !== undefined && value.trim().length > 0)
+    .map((value) => value.trim())
+    .join("\n\n");
 
 const LegalNoticesView = ({
   control
@@ -325,7 +305,6 @@ const LegalNoticesView = ({
   readonly control: SettingsLegalNoticesCustomControlDescriptor;
 }) => {
   const [state, setState] = useState<LegalNoticesState>({ kind: "loading" });
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
     const legalApi = control.desktopApi?.legal;
@@ -355,15 +334,6 @@ const LegalNoticesView = ({
     };
   }, [control.desktopApi]);
 
-  const selectedItem = useMemo(() => {
-    if (state.kind !== "ready") {
-      return null;
-    }
-    return state.document.items.find((item) => buildLegalNoticeKey(item) === selectedKey)
-      ?? state.document.items[0]
-      ?? null;
-  }, [selectedKey, state]);
-
   if (state.kind === "loading") {
     return (
       <div className="lyra-settings-ai-empty-panel" role="status">
@@ -380,7 +350,7 @@ const LegalNoticesView = ({
     );
   }
 
-  if (state.document.items.length === 0 || selectedItem === null) {
+  if (state.document.items.length === 0) {
     return (
       <div className="lyra-settings-ai-empty-panel" role="status">
         <strong>{control.labels.legalNoticesEmptyLabel}</strong>
@@ -390,59 +360,25 @@ const LegalNoticesView = ({
 
   return (
     <div className="lyra-settings-legal" role="group" aria-label={control.labels.legalNoticesLabel}>
-      <div className="lyra-settings-legal-summary">
-        <LegalNoticeMetaRow
-          label={control.labels.legalPackageCountLabel}
-          value={state.document.packageCount}
-        />
-        <LegalNoticeMetaRow
-          label={control.labels.legalGeneratedAtLabel}
-          value={new Date(state.document.generatedAt).toLocaleString()}
-        />
-      </div>
-      <div className="lyra-settings-legal-browser">
-        <div className="lyra-settings-legal-list" aria-label={control.labels.legalNoticesLabel}>
-          {state.document.items.map((item) => {
-            const key = buildLegalNoticeKey(item);
-            const active = buildLegalNoticeKey(selectedItem) === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                className={active
-                  ? "lyra-settings-legal-item lyra-settings-legal-item-active"
-                  : "lyra-settings-legal-item"}
-                onClick={() => {
-                  setSelectedKey(key);
-                }}
-              >
-                <strong>{item.name}</strong>
-                <small>{[item.version, item.license, item.ecosystem].filter(Boolean).join(" · ")}</small>
-              </button>
-            );
-          })}
-        </div>
-        <article className="lyra-settings-legal-detail">
-          <header className="lyra-settings-legal-detail-header">
-            <h3>{selectedItem.name}</h3>
-            <small>{[selectedItem.version, selectedItem.ecosystem].filter(Boolean).join(" · ")}</small>
-          </header>
-          <div className="lyra-settings-legal-meta">
-            <LegalNoticeMetaRow label={control.labels.legalLicenseLabel} value={selectedItem.license} />
-            <LegalNoticeMetaRow label={control.labels.legalSourceLabel} value={selectedItem.source} />
-            <LegalNoticeMetaRow label={control.labels.legalRepositoryLabel} value={selectedItem.repository} />
-            <LegalNoticeMetaRow label={control.labels.legalHomepageLabel} value={selectedItem.homepage} />
-          </div>
-          <LegalNoticeTextBlock
-            label={control.labels.legalNoticeTextLabel}
-            value={selectedItem.noticeText}
-          />
-          <LegalNoticeTextBlock
-            label={control.labels.legalLicenseTextLabel}
-            value={selectedItem.licenseText}
-          />
-        </article>
-      </div>
+      <header className="lyra-settings-legal-header">
+        <h2>{control.labels.legalNoticesLabel}</h2>
+        <p className="lyra-settings-legal-updated">
+          {control.labels.legalLastUpdatedPrefix} {formatLegalUpdatedAt(state.document.generatedAt)}
+        </p>
+      </header>
+      <p className="lyra-settings-legal-intro">{control.labels.legalNoticesIntro}</p>
+      {state.document.items.map((item, index) => {
+        const body = legalNoticeBody(item);
+        return (
+          <section key={`${buildLegalNoticeKey(item)}:${index}`} className="lyra-settings-legal-notice">
+            <h3>{item.name}</h3>
+            <p className="lyra-settings-legal-license">{item.license}</p>
+            {body.length > 0 ? (
+              <div className="lyra-settings-legal-body">{body}</div>
+            ) : null}
+          </section>
+        );
+      })}
     </div>
   );
 };

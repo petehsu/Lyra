@@ -57,6 +57,7 @@ import type {
   AgentAccountRequest,
   AgentAccountsSnapshot,
   AgentFeedbackRunRequest,
+  AgentCodegraphStatus,
   AgentConfigSnapshot,
   AgentProviderCatalogSnapshot,
   AgentConfigUpdateRequest,
@@ -194,6 +195,14 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentSessionSnapshot>(
           "agent.session.bindProject",
           payload as AgentSessionBindProjectRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentCodegraphStatus,
+      (_event, payload) =>
+        requestRuntime<AgentCodegraphStatus>(
+          "agent.codegraph.status",
+          payload as { sessionId?: string }
         )
     ],
     [

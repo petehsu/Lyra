@@ -28,6 +28,7 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::custom_anthropic_compatible::descriptor(),
         routes::local_openai_compatible::descriptor(),
         routes::ollama::descriptor(),
+        routes::ollama::cloud_descriptor(),
     ];
     routes.extend(routes::deepseek::route_descriptors());
     routes.extend(routes::glm::route_descriptors());
@@ -102,6 +103,7 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "glm" | "zhipu" | "zai" => Some(routes::glm::ROUTE_ID),
         "kimi" | "moonshot" => Some(routes::moonshot::ROUTE_ID),
         "nvidia" | "nim" => Some(routes::nvidia::ROUTE_ID),
+        "ollama_cloud" | "ollama-cloud" => Some(routes::ollama::CLOUD_ROUTE_ID),
         _ => None,
     }
 }
@@ -298,6 +300,22 @@ mod tests {
         assert_eq!(route.auth_kind, "bearer");
         assert!(route.quick_setup_supported);
         assert!(route.model_discovery_supported);
+    }
+
+    #[test]
+    fn ollama_cloud_route_is_hosted_ollama_chat_route() {
+        let route = require_route(routes::ollama::CLOUD_ROUTE_ID).expect("ollama cloud route");
+
+        assert_eq!(route.protocol_id, protocol::ollama_chat::PROTOCOL_ID);
+        assert_eq!(
+            route.default_base_url.as_deref(),
+            Some(routes::ollama::CLOUD_DEFAULT_BASE_URL)
+        );
+        assert_eq!(route.auth_kind, "bearer");
+        assert_eq!(route.catalog_section, "hosted");
+        assert!(route.quick_setup_supported);
+        assert!(route.model_discovery_supported);
+        assert!(route.local_backend.is_none());
     }
 
     #[test]

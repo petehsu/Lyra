@@ -177,6 +177,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         linuxCompatRecoveryDescription: t("settings.linuxCompatRecoveryDescription"),
         linuxCompatRequestFailed: t("settings.linuxCompatRequestFailed"),
         legalNoticesLabel: t("settings.legalNoticesLabel"),
+        legalNoticesIntro: t("settings.legalNoticesIntro"),
+        legalLastUpdatedPrefix: t("settings.legalLastUpdatedPrefix"),
         legalNoticesLoadingLabel: t("settings.legalNoticesLoadingLabel"),
         legalNoticesEmptyLabel: t("settings.legalNoticesEmptyLabel"),
         legalNoticesErrorLabel: t("settings.legalNoticesErrorLabel"),

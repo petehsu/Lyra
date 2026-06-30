@@ -97,6 +97,8 @@ export type SettingsSoftwareStoreCustomControlDescriptor = {
 export type SettingsLegalNoticesLabels = Pick<
   BrowserSettingsSurfaceProps,
   | "legalNoticesLabel"
+  | "legalNoticesIntro"
+  | "legalLastUpdatedPrefix"
   | "legalNoticesLoadingLabel"
   | "legalNoticesEmptyLabel"
   | "legalNoticesErrorLabel"
@@ -701,6 +703,8 @@ const createSectionControl = (
             desktopApi: props.desktopApi,
             labels: {
               legalNoticesLabel: props.legalNoticesLabel,
+              legalNoticesIntro: props.legalNoticesIntro,
+              legalLastUpdatedPrefix: props.legalLastUpdatedPrefix,
               legalNoticesLoadingLabel: props.legalNoticesLoadingLabel,
               legalNoticesEmptyLabel: props.legalNoticesEmptyLabel,
               legalNoticesErrorLabel: props.legalNoticesErrorLabel,

@@ -126,6 +126,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatRecoveryDescription: string;
   readonly linuxCompatRequestFailed: string;
   readonly legalNoticesLabel: string;
+  readonly legalNoticesIntro: string;
+  readonly legalLastUpdatedPrefix: string;
   readonly legalNoticesLoadingLabel: string;
   readonly legalNoticesEmptyLabel: string;
   readonly legalNoticesErrorLabel: string;

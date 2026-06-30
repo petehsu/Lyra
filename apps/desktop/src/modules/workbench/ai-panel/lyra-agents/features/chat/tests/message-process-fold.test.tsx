@@ -182,7 +182,11 @@ describe("agent message process fold", () => {
     });
 
     const thinking = screen.getByRole("button", { name: "Agent 活动" });
+    const iconClass = thinking
+      .querySelector(".lyra-agents-tool-group-lead svg")
+      ?.getAttribute("class") ?? "";
     const answer = screen.getByText("当前打开了 13 个标签页。");
+    expect(iconClass).toContain("circle-check");
     expect(thinking.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

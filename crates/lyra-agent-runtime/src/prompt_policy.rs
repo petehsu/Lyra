@@ -757,8 +757,6 @@ fn hash_text(text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,9 +864,11 @@ mod tests {
         assert!(prompt.contains("Shortest working diff"));
         assert!(prompt.contains("ponytail:"));
         // ponytail: UI/UX design reference awareness
-        assert!(prompt.contains("land-book.com"));
-        assert!(prompt.contains("ui.aceternity.com"));
+        assert!(prompt.contains("styles.refero.design"));
+        assert!(prompt.contains("not a requirement"));
         assert!(prompt.contains("DESIGN.md"));
+        assert!(prompt.contains("stick w it"));
+        assert!(prompt.contains("don't mix tokens"));
         // ponytail: asset/commercial awareness
         assert!(prompt.contains("Pinterest"));
         assert!(prompt.contains("Pexels"));
@@ -923,8 +923,10 @@ mod tests {
         assert!(prompt.contains("Code first, then"));
         assert!(prompt.contains("No unrequested abstractions"));
         // ponytail: compact UI/UX design reference
-        assert!(prompt.contains("land-book.com"));
+        assert!(prompt.contains("styles.refero.design"));
+        assert!(prompt.contains("not a requirement"));
         assert!(prompt.contains("DESIGN.md"));
+        assert!(prompt.contains("don't mix"));
         // ponytail: compact asset/commercial awareness
         assert!(prompt.contains("Pinterest"));
         assert!(prompt.contains("Commercial-grade quality"));

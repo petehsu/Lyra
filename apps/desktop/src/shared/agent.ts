@@ -1314,15 +1314,23 @@ export type AgentPrivateTerminalListRequest = {
   readonly sessionId: string;
 };
 
+export type AgentPrivateTerminalCloseRequest = {
+  readonly sessionId: string;
+  readonly terminalSessionId: string;
+};
+
 export const EXPECTED_PROTOCOL_VERSION = 1;
 
 export type AgentProtocolContract = {
   readonly protocolVersion: number;
 };
 
-export type AgentPrivateTerminalCloseRequest = {
-  readonly sessionId: string;
-  readonly terminalSessionId: string;
+export type AgentCodegraphStatus = {
+  readonly state: "idle" | "indexing" | "ready" | "failed";
+  readonly progress?: number;
+  readonly fileCount?: number;
+  readonly symbolCount?: number;
+  readonly error?: string;
 };
 
 export type AgentApi = {
@@ -1342,6 +1350,7 @@ export type AgentApi = {
     request: AgentSessionDeleteRequest
   ) => Promise<AgentSessionDeleteResponse>;
   readonly bindProject: (request: AgentSessionBindProjectRequest) => Promise<AgentSessionSnapshot>;
+  readonly codegraphStatus: (request: { sessionId?: string }) => Promise<AgentCodegraphStatus>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;

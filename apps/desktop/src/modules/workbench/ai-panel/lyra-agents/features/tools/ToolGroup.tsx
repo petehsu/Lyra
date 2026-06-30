@@ -82,7 +82,7 @@ export function ToolGroupBlock({
               <ToolCallIcon call={currentCall} />
             ) : hasError ? (
               <ErrorCircleIcon />
-            ) : isRunning || group.calls.length === 0 ? (
+            ) : isRunning ? (
               <ToolIcon kind="thought" />
             ) : (
               <CheckCircleIcon />

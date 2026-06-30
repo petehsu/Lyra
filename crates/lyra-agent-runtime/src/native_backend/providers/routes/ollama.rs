@@ -2,6 +2,8 @@ use super::super::{protocol, types::ProviderRouteDescriptor};
 
 pub(crate) const ROUTE_ID: &str = "ollama";
 pub(crate) const DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434";
+pub(crate) const CLOUD_ROUTE_ID: &str = "ollama_cloud";
+pub(crate) const CLOUD_DEFAULT_BASE_URL: &str = "https://ollama.com";
 
 pub(crate) fn descriptor() -> ProviderRouteDescriptor {
     ProviderRouteDescriptor {
@@ -20,6 +22,27 @@ pub(crate) fn descriptor() -> ProviderRouteDescriptor {
         local_backend: Some("ollama".to_string()),
         catalog_section: "local".to_string(),
         quick_setup_supported: false,
+        supports_stateful_prompt_contract: false,
+    }
+}
+
+pub(crate) fn cloud_descriptor() -> ProviderRouteDescriptor {
+    ProviderRouteDescriptor {
+        id: CLOUD_ROUTE_ID.to_string(),
+        provider_id: "ollama".to_string(),
+        protocol_id: protocol::ollama_chat::PROTOCOL_ID.to_string(),
+        protocol_family: protocol::ollama_chat::PROTOCOL_FAMILY.to_string(),
+        label: "Ollama Cloud".to_string(),
+        description: "Ollama Cloud hosted chat route.".to_string(),
+        default_base_url: Some(CLOUD_DEFAULT_BASE_URL.to_string()),
+        api_method: "chat".to_string(),
+        auth_kind: "bearer".to_string(),
+        runtime_supported: true,
+        model_discovery_supported: true,
+        custom_headers_supported: false,
+        local_backend: None,
+        catalog_section: "hosted".to_string(),
+        quick_setup_supported: true,
         supports_stateful_prompt_contract: false,
     }
 }

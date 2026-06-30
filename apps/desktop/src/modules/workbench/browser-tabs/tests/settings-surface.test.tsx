@@ -118,9 +118,12 @@ describe("BrowserSettingsSurface", () => {
     expect(within(nav).getByRole("button", { name: "Legal" })).toHaveClass(
       "lyra-settings-nav-item-active"
     );
-    expect(await screen.findAllByText("Example Package")).toHaveLength(2);
-    expect(screen.getByText("Example notice")).toBeInTheDocument();
-    expect(screen.getByText("Example license")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Open Source Notices" })).toBeInTheDocument();
+    expect(screen.getByText("Last updated June 30, 2026")).toBeInTheDocument();
+    expect(screen.getByText("The following lists open source components.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Example Package" })).toBeInTheDocument();
+    expect(screen.getByText(/Example notice/u)).toBeInTheDocument();
+    expect(screen.getByText(/Example license/u)).toBeInTheDocument();
     expect(readThirdPartyNotices).toHaveBeenCalledTimes(1);
   });
 

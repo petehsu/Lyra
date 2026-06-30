@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Bumped PROMPT_TEMPLATE_VERSION to 12 — asset/commercial awareness: added real-image sourcing (Pinterest, Pexels, Unsplash instead of training-data defaults), anti-placeholder discipline (don't use lazy defaults for images/icons/copy), and commercial-grade quality mindset to full_contract Workstation awareness + Engineering discipline and compact_contract."
+reason = "Bumped PROMPT_TEMPLATE_VERSION to 15 — corrected CodeGraph prompt contract to match the actual Tool-FS exposure: provider-visible access goes through tool_fs_search/inspect/run with /tools/code/* paths, while native codegraph_* handles remain internal runtime targets. projectContext carries resolver/framework/architecture/bridge summary for prompt-time routing, and CodeGraph tool outputs attach staleness metadata without advertising nonexistent provider-visible tools."

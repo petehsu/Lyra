@@ -26,6 +26,50 @@ members = [
   "crates/lyra-local-inference-core",
   "crates/lyra-performance-core",
   "crates/lyra-computer-use-core",
+  # CodeGraph engine (ported from codegraph-ai)
+  "crates/codegraph",
+  "crates/codegraph-parser-api",
+  "crates/codegraph-python",
+  "crates/codegraph-rust",
+  "crates/codegraph-typescript",
+  "crates/codegraph-go",
+  "crates/codegraph-c",
+  "crates/codegraph-cpp",
+  "crates/codegraph-java",
+  "crates/codegraph-kotlin",
+  "crates/codegraph-csharp",
+  "crates/codegraph-php",
+  "crates/codegraph-ruby",
+  "crates/codegraph-swift",
+  "crates/codegraph-tcl",
+  "crates/codegraph-verilog",
+  "crates/codegraph-cobol",
+  "crates/codegraph-fortran",
+  "crates/codegraph-dart",
+  "crates/codegraph-zig",
+  "crates/codegraph-lua",
+  "crates/codegraph-groovy",
+  "crates/codegraph-hcl",
+  "crates/codegraph-elixir",
+  "crates/codegraph-bash",
+  "crates/codegraph-r",
+  "crates/codegraph-scala",
+  "crates/codegraph-haskell",
+  "crates/codegraph-julia",
+  "crates/codegraph-yaml",
+  "crates/codegraph-ocaml",
+  "crates/codegraph-perl",
+  "crates/codegraph-toml",
+  "crates/codegraph-css",
+  "crates/codegraph-objc",
+  "crates/codegraph-elm",
+  "crates/codegraph-clojure",
+  "crates/codegraph-solidity",
+  "crates/codegraph-erlang",
+  "crates/codegraph-dockerfile",
+  "crates/codegraph-memory",
+  "crates/codegraph-server",
+  "crates/codegraph-harness",
 ]
 resolver = "2"
 
@@ -52,7 +96,52 @@ lyra-agent-runtime = { path = "crates/lyra-agent-runtime" }
 lyra-agent-reader = { path = "crates/lyra-agent-reader" }
 lyra-docs-core = { path = "crates/lyra-docs-core" }
 lyra-tool-fs-core = { path = "crates/lyra-tool-fs-core" }
+lyra-code-intel-core = { path = "crates/lyra-code-intel-core" }
 lyra-performance-core = { path = "crates/lyra-performance-core" }
+
+# CodeGraph internal crates (ported from codegraph-ai)
+codegraph = { path = "crates/codegraph" }
+codegraph-parser-api = { path = "crates/codegraph-parser-api" }
+codegraph-python = { path = "crates/codegraph-python" }
+codegraph-rust = { path = "crates/codegraph-rust" }
+codegraph-typescript = { path = "crates/codegraph-typescript" }
+codegraph-go = { path = "crates/codegraph-go" }
+codegraph-c = { path = "crates/codegraph-c" }
+codegraph-cpp = { path = "crates/codegraph-cpp" }
+codegraph-java = { path = "crates/codegraph-java" }
+codegraph-kotlin = { path = "crates/codegraph-kotlin" }
+codegraph-csharp = { path = "crates/codegraph-csharp" }
+codegraph-php = { path = "crates/codegraph-php" }
+codegraph-ruby = { path = "crates/codegraph-ruby" }
+codegraph-swift = { path = "crates/codegraph-swift" }
+codegraph-tcl = { path = "crates/codegraph-tcl" }
+codegraph-verilog = { path = "crates/codegraph-verilog" }
+codegraph-cobol = { path = "crates/codegraph-cobol" }
+codegraph-fortran = { path = "crates/codegraph-fortran" }
+codegraph-dart = { path = "crates/codegraph-dart" }
+codegraph-zig = { path = "crates/codegraph-zig" }
+codegraph-lua = { path = "crates/codegraph-lua" }
+codegraph-groovy = { path = "crates/codegraph-groovy" }
+codegraph-hcl = { path = "crates/codegraph-hcl" }
+codegraph-elixir = { path = "crates/codegraph-elixir" }
+codegraph-bash = { path = "crates/codegraph-bash" }
+codegraph-r = { path = "crates/codegraph-r" }
+codegraph-scala = { path = "crates/codegraph-scala" }
+codegraph-haskell = { path = "crates/codegraph-haskell" }
+codegraph-julia = { path = "crates/codegraph-julia" }
+codegraph-yaml = { path = "crates/codegraph-yaml" }
+codegraph-ocaml = { path = "crates/codegraph-ocaml" }
+codegraph-perl = { path = "crates/codegraph-perl" }
+codegraph-toml = { path = "crates/codegraph-toml" }
+codegraph-css = { path = "crates/codegraph-css" }
+codegraph-objc = { path = "crates/codegraph-objc" }
+codegraph-elm = { path = "crates/codegraph-elm" }
+codegraph-clojure = { path = "crates/codegraph-clojure" }
+codegraph-solidity = { path = "crates/codegraph-solidity" }
+codegraph-erlang = { path = "crates/codegraph-erlang" }
+codegraph-dockerfile = { path = "crates/codegraph-dockerfile" }
+codegraph-memory = { path = "crates/codegraph-memory" }
+codegraph-server = { path = "crates/codegraph-server" }
 
 # External
 age = "0.11.1"
@@ -68,6 +157,7 @@ async-stream = "0.3.6"
 async-trait = "0.1.89"
 axum = { version = "0.8", default-features = false }
 base64 = "0.22.1"
+bincode = "1.3"
 blake3 = "1.8"
 bm25 = "2.3.2"
 bytes = "1.10.1"
@@ -96,10 +186,13 @@ encoding_rs = "0.8.35"
 env-flags = "0.1.1"
 env_logger = "0.11.9"
 eventsource-stream = "0.2.3"
+fastembed = { version = "4", default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
+fs2 = "0.4"
 futures = { version = "0.3", default-features = false }
 gethostname = "1.1.0"
 glob = "0.3"
 globset = "0.4"
+hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
 hmac = "0.12.1"
 hidapi = "2.6.6"
 http = "1.3.1"
@@ -111,6 +204,7 @@ ignore = "0.4.23"
 image = { version = "^0.25.9", default-features = false }
 include_dir = "0.7.4"
 indexmap = "2.12.0"
+instant-distance = "0.6"
 insta = "1.46.3"
 inventory = "0.3.19"
 itertools = "0.14.0"
@@ -118,12 +212,14 @@ jsonwebtoken = "9.3.1"
 keyring = { version = "3.6", default-features = false }
 lazy_static = "1"
 libc = "0.2.182"
+libz-sys = "=1.1.25"
 log = "0.4"
 lru = "0.16.3"
 maplit = "1.0.2"
 mime_guess = "2.0.5"
 minijinja = "2"
 multimap = "0.10.0"
+dashmap = "5"
 network-interface = "2.0.5"
 notify = "8.2.0"
 nokhwa = "0.10.11"
@@ -131,6 +227,7 @@ once_cell = "1.20.2"
 openssl-sys = "*"
 os_info = "3.12.0"
 owo-colors = "4.3.0"
+parking_lot = "0.12"
 path-absolutize = "3.1.1"
 pathdiff = "0.2"
 portable-pty = "0.9.0"
@@ -146,6 +243,8 @@ regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = { version = "0.12", default-features = false }
 rmcp = { version = "0.15.0", default-features = false }
+rocksdb = "0.22"
+rmp-serde = "1.1"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 rusb = "0.9.4"
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
@@ -158,7 +257,7 @@ rustls-pki-types = "1.14.0"
 schemars = "0.8.22"
 scraper = "0.24.0"
 semver = "1.0"
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_path_to_error = "0.1.20"
 serde_with = "3.17"
@@ -194,7 +293,7 @@ thiserror = "2.0.17"
 time = "0.3.47"
 tiny_http = "0.12"
 tiktoken-rs = "0.12.0"
-tokio = "1"
+tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.18"
 tokio-test = "0.4"
 tokio-tungstenite = { version = "0.28.0", features = [
@@ -204,10 +303,13 @@ tokio-tungstenite = { version = "0.28.0", features = [
 tokio-util = "0.7.18"
 toml = "0.9.5"
 toml_edit = "0.24.0"
+tower-lsp = "0.20"
 tracing = "0.1.44"
 tracing-appender = "0.2.3"
-tracing-subscriber = "0.3.22"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tracing-test = "0.2.5"
+tree-sitter = "0.25"
+tree-sitter-language = "0.1"
 tonic = { version = "0.14.3", default-features = false, features = ["channel", "codegen"] }
 tonic-prost = "0.14.3"
 
@@ -218,7 +320,7 @@ unicode-segmentation = "1.12.0"
 unicode-width = "0.2"
 url = "2"
 urlencoding = "2.1"
-uuid = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
 v8 = "=146.4.0"
 vt100 = "0.16.2"
 walkdir = "2.5.0"

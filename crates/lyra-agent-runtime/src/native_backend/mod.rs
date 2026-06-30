@@ -122,6 +122,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.session.archive" => archive_session(payload),
             "agent.session.delete" => delete_session(payload),
             "agent.session.bindProject" => bind_project(payload),
+            "agent.codegraph.status" => tools::codegraph_status(payload),
 
             "agent.cli.follow.read" => read_cli_follow(payload),
             "agent.cli.follow.update" => update_cli_follow(payload),

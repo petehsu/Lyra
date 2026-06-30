@@ -63,6 +63,7 @@ import {
   type AgentAccountLoginStartResponse,
   type AgentAccountRequest,
   type AgentAccountsSnapshot,
+  type AgentCodegraphStatus,
   type AgentConfigSnapshot,
   type AgentProviderCatalogSnapshot,
   type AgentConfigUpdateRequest,
@@ -1394,6 +1395,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionBindProject,
         request
       ) as Promise<AgentSessionSnapshot>,
+    codegraphStatus: (request: { sessionId?: string }) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentCodegraphStatus,
+        request
+      ) as Promise<AgentCodegraphStatus>,
     startTurn: (request: AgentTurnSendRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentTurnStart,

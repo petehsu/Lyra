@@ -18,6 +18,7 @@ lyra-agent-plugins.workspace = true
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
 lyra-hardware-core.workspace = true
 lyra-tool-fs-core.workspace = true
+lyra-code-intel-core.workspace = true
 futures = { workspace = true, features = ["executor"] }
 diffy.workspace = true
 glob.workspace = true

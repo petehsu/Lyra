@@ -1,4 +1,4 @@
-import { ChevronDown, Folder } from "lucide-react";
+import { CheckCircle, ChevronDown, Folder, Loader2, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AppButton,
@@ -9,15 +9,45 @@ import {
   AppMenuTrigger
 } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
-import type { DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
+import type { AgentCodegraphStatus, DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import { IdentityIconView, useSessionIdentityIcon } from "../../../../identity";
 import { formatMessage, t } from "@workbench/i18n";
 
 const ICON_SIZE = 13;
 const ICON_STROKE_WIDTH = 2;
 
+function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null }) {
+  if (!status || status.state === "idle") return null;
+  const pct = status.progress != null ? Math.round(status.progress * 100) : 0;
+  return (
+    <div
+      className="lyra-agents-codegraph-status-row"
+      title={status.error ?? ""}
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", fontSize: 12, opacity: 0.85 }}
+    >
+      {status.state === "indexing" ? (
+        <>
+          <Loader2 size={12} className="lyra-agents-codegraph-spinner" style={{ animation: "spin 1s linear infinite" }} aria-hidden="true" />
+          <span>{formatMessage("header.codegraphIndexing", { progress: pct })}</span>
+        </>
+      ) : status.state === "ready" ? (
+        <>
+          <CheckCircle size={12} style={{ color: "var(--app-color-success, #22c55e)" }} aria-hidden="true" />
+          <span>{formatMessage("header.codegraphReady", { fileCount: status.fileCount ?? 0 })}</span>
+        </>
+      ) : status.state === "failed" ? (
+        <>
+          <CircleAlert size={12} style={{ color: "var(--app-color-error, #ef4444)" }} aria-hidden="true" />
+          <span>{t("header.codegraphFailed")}</span>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectDirChip({
   desktopApi,
+  sessionId,
   projectName,
   workingDir,
   isHome,
@@ -27,6 +57,7 @@ export function ProjectDirChip({
   onOpenInFileManager,
 }: {
   desktopApi?: LyraDesktopApi | null;
+  sessionId?: string | null | undefined;
   projectName: string | null;
   workingDir: string | null;
   isHome: boolean;
@@ -40,11 +71,31 @@ export function ProjectDirChip({
     ? t("lyra-agents-composer.workingDirHome")
     : projectName.trim();
   const [editors, setEditors] = useState<DetectedEditor[]>([]);
+  const [cgStatus, setCgStatus] = useState<AgentCodegraphStatus | null>(null);
 
   useEffect(() => {
     if (!canOpenProjectTree || !desktopApi?.detectEditors) return;
     void desktopApi.detectEditors().then(setEditors).catch(() => undefined);
   }, [canOpenProjectTree, desktopApi]);
+
+  // ponytail: 轮询足够支撑当前菜单态；上限是 2s 延迟，升级路径是 runtime 事件推送。
+  useEffect(() => {
+    if (!canOpenProjectTree || !workingDir || !sessionId || !desktopApi?.agent?.codegraphStatus) return;
+    let active = true;
+    const poll = () => {
+      void desktopApi.agent!.codegraphStatus!({ sessionId }).then((s) => {
+        if (active) {
+          setCgStatus(s);
+          if (s.state === "ready" || s.state === "failed") {
+            clearInterval(timer);
+          }
+        }
+      }).catch(() => undefined);
+    };
+    poll();
+    const timer = setInterval(poll, 2000);
+    return () => { active = false; clearInterval(timer); };
+  }, [canOpenProjectTree, workingDir, desktopApi, sessionId]);
 
   const chipContent = (
     <>
@@ -104,6 +155,8 @@ export function ProjectDirChip({
         </AppButton>
       </AppMenuTrigger>
       <AppMenuContent align="start" sideOffset={4}>
+        <CodegraphStatusRow status={cgStatus} />
+        {cgStatus && cgStatus.state !== "idle" ? <AppMenuSeparator /> : null}
         <AppMenuItem onClick={() => { void onOpenProjectTree(); }}>
           {t("header.openProjectTree")}
         </AppMenuItem>

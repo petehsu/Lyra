@@ -610,11 +610,16 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
             "session is already bound to a project and cannot be rebound".to_string(),
         ));
     }
-    set_string(&mut session.snapshot, "workingDir", working_dir);
+    set_string(&mut session.snapshot, "workingDir", working_dir.clone());
     set_bool(&mut session.snapshot, "projectBound", true);
     set_bool(&mut session.snapshot, "workingDirIsHome", false);
     touch_session(session);
     let snapshot = session.snapshot.clone();
+    let working_dir_path = working_dir.clone();
     state.save_state()?;
+    // Phase 4.1: kick off background code-graph indexing for the newly
+    // bound project. Fire-and-forget — indexing runs in the engine's
+    // embedded tokio runtime; the call returns immediately after spawning.
+    tools::trigger_indexing(std::path::Path::new(&working_dir_path));
     Ok(snapshot)
 }

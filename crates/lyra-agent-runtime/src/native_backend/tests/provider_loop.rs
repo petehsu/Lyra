@@ -1,5 +1,6 @@
 use super::*;
 use crate::native_backend::providers::protocol::openai_chat_completions;
+use std::sync::mpsc;
 
 fn read_http_headers_only(stream: &mut std::net::TcpStream) -> String {
     let mut headers = Vec::new();
@@ -2942,6 +2943,61 @@ fn ollama_refresh_discovers_tags() {
 
     assert!(model_ids.contains(&"llama3.2:latest"));
     assert!(model_ids.contains(&"qwen3:8b"));
+    server.join().expect("server join");
+}
+
+#[test]
+fn ollama_cloud_refresh_discovers_tags_with_bearer_auth() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ollama cloud provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept ollama cloud tags request");
+        let headers = read_http_headers_only(&mut stream);
+        assert!(headers.starts_with("get /api/tags "));
+        assert!(headers.contains("authorization: bearer sk-ollama"));
+        let body = json!({
+            "models": [
+                { "name": "gpt-oss:120b" }
+            ]
+        })
+        .to_string();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write ollama cloud tags response");
+    });
+
+    let backend = LyraAgentBackend;
+    let profile_name = format!("ollama-cloud-{}", Uuid::new_v4());
+    backend
+        .call_agent_method(
+            "agent.provider.profile.save",
+            json!({
+                "profileName": profile_name,
+                "routeId": "ollama_cloud",
+                "baseUrl": format!("http://{addr}"),
+                "defaultModel": "gpt-oss:120b",
+                "apiKey": "sk-ollama",
+                "setDefault": false
+            }),
+        )
+        .expect("save ollama cloud profile");
+
+    let catalog = backend
+        .call_agent_method("agent.models.refresh", json!({ "provider": profile_name }))
+        .expect("refresh ollama cloud models");
+    let model_ids = catalog["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .filter(|model| model["providerId"].as_str() == Some(profile_name.as_str()))
+        .filter_map(|model| model["id"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(model_ids.contains(&"gpt-oss:120b"));
     server.join().expect("server join");
 }
 

@@ -430,6 +430,26 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         });
     config
         .providers
+        .entry("ollama_cloud".to_string())
+        .or_insert_with(|| NativeProviderProfile {
+            id: "ollama_cloud".to_string(),
+            label: "Ollama Cloud".to_string(),
+            route_id: providers::routes::ollama::CLOUD_ROUTE_ID.to_string(),
+            base_url: env::var("OLLAMA_CLOUD_BASE_URL")
+                .ok()
+                .or_else(|| Some(providers::routes::ollama::CLOUD_DEFAULT_BASE_URL.to_string())),
+            default_model: env::var("OLLAMA_CLOUD_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| Some("gpt-oss:120b".to_string())),
+            api_key: env::var("OLLAMA_API_KEY").ok(),
+            api_key_env: Some("OLLAMA_API_KEY".to_string()),
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: Vec::new(),
+        });
+    config
+        .providers
         .entry("deepseek".to_string())
         .or_insert_with(|| NativeProviderProfile {
             id: "deepseek".to_string(),

@@ -11,6 +11,7 @@ mod browser_ax;
 mod clarification;
 mod code;
 mod computer;
+mod design;
 mod filesystem;
 mod git;
 mod hardware;
@@ -147,6 +148,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(browser::manifests());
     entries.extend(browser_ax::manifests());
     entries.extend(computer::manifests());
+    entries.extend(design::manifests());
     entries.extend(filesystem::manifests());
     entries.extend(code::manifests());
     entries.extend(shell::manifests());
@@ -201,6 +203,9 @@ fn description_for(
     summary: &str,
 ) -> String {
     let purpose = match (domain, operation) {
+        ("design", "read") => {
+            "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list to see all available design references, then action=read with a brand name to get the full DESIGN.md."
+        }
         ("filesystem", "read") if path.ends_with("/read_file") => {
             "Use when the agent needs to open, inspect, or quote a complete file from the workspace."
         }
@@ -227,6 +232,21 @@ fn description_for(
         }
         ("code", "grep_text") => {
             "Use first for exact strings, regex, identifiers, labels, call sites, or content inside a known workspace/root. This is the fastest precise content search; prefer it over the Lyra index for grep-like tasks."
+        }
+        ("code", "explore") => {
+            "Use when the agent needs indexed code navigation for a symbol or concept: matching symbols, call edges, and blast-radius hints from the bound project."
+        }
+        ("code", "callers") => {
+            "Use when the agent needs direct callers of a symbol from the CodeGraph index."
+        }
+        ("code", "callees") => {
+            "Use when the agent needs direct callees of a symbol from the CodeGraph index."
+        }
+        ("code", "impact") => {
+            "Use before changing a symbol to inspect upstream callers and blast radius from the CodeGraph index."
+        }
+        ("code", "context") => {
+            "Use when the agent needs a CodeGraph project overview: index status, entry points, key modules, frameworks, architecture, and language bridges."
         }
         ("code", "search_text" | "project") => {
             "Use when the agent needs Lyra native indexed search: fuzzy file/content recall, broad Home or multi-root lookup, approximate names, or quick candidate discovery before reading files. Prefer grep_text for exact strings or regex."
@@ -436,6 +456,49 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "查文本",
                 ]
             }
+            ("code", "explore") => vec![
+                "codegraph",
+                "code graph explore",
+                "symbol graph",
+                "call graph overview",
+                "blast radius",
+                "代码图谱",
+                "符号图谱",
+                "调用关系",
+            ],
+            ("code", "callers") => vec![
+                "find callers",
+                "who calls",
+                "incoming calls",
+                "upstream callers",
+                "调用方",
+                "谁调用了",
+            ],
+            ("code", "callees") => vec![
+                "find callees",
+                "what calls",
+                "outgoing calls",
+                "downstream calls",
+                "被调用方",
+                "调用了谁",
+            ],
+            ("code", "impact") => vec![
+                "impact analysis",
+                "blast radius",
+                "change impact",
+                "affected callers",
+                "影响分析",
+                "变更影响",
+            ],
+            ("code", "context") => vec![
+                "project context",
+                "codegraph context",
+                "entry points",
+                "architecture summary",
+                "frameworks",
+                "项目上下文",
+                "架构摘要",
+            ],
             ("code", "search_text" | "project") => {
                 vec![
                     "indexed search",
@@ -1053,6 +1116,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
+        ("design", _) => "read",
         ("code", _) => "search",
         ("shell", _) => "shell",
         ("hardware", _) => "hardware",
@@ -1095,6 +1159,24 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 ("artifactId", string("Lyra artifact id.")),
                 ("path", string("Artifact path.")),
+            ],
+            &[],
+        ),
+        ("design", "read") => object_schema(
+            [
+                (
+                    "action",
+                    json!({
+                        "type": "string",
+                        "enum": ["list", "read"],
+                        "default": "list",
+                        "description": "list: return all brand names + descriptions. read: return the full DESIGN.md for a given brand."
+                    }),
+                ),
+                (
+                    "brand",
+                    string("Brand name to read (required when action=read). Call action=list first to see available brands."),
+                ),
             ],
             &[],
         ),
@@ -1234,6 +1316,76 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
             ],
             &["query"],
+        ),
+        ("code", "explore") => object_schema(
+            [
+                (
+                    "query",
+                    string("Symbol, function, class, component, module, route, or concept to search in the CodeGraph index."),
+                ),
+                (
+                    "limit",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "default": 10 }),
+                ),
+            ],
+            &["query"],
+        ),
+        ("code", "callers" | "callees") => {
+            let mut schema = object_schema(
+                [
+                    ("symbol", string("Symbol name to inspect in the CodeGraph index.")),
+                    ("query", string("Alias for symbol when called from generic Tool-FS search/run flows.")),
+                    (
+                        "depth",
+                        json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 1 }),
+                    ),
+                    (
+                        "limit",
+                        json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }),
+                    ),
+                ],
+                &[],
+            );
+            if let Some(object) = schema.as_object_mut() {
+                object.insert(
+                    "anyOf".to_string(),
+                    json!([{ "required": ["symbol"] }, { "required": ["query"] }]),
+                );
+            }
+            schema
+        }
+        ("code", "impact") => {
+            let mut schema = object_schema(
+                [
+                    ("symbol", string("Symbol name to inspect in the CodeGraph index.")),
+                    ("query", string("Alias for symbol when called from generic Tool-FS search/run flows.")),
+                    (
+                        "depth",
+                        json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 2 }),
+                    ),
+                    (
+                        "limit",
+                        json!({ "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }),
+                    ),
+                ],
+                &[],
+            );
+            if let Some(object) = schema.as_object_mut() {
+                object.insert(
+                    "anyOf".to_string(),
+                    json!([{ "required": ["symbol"] }, { "required": ["query"] }]),
+                );
+            }
+            schema
+        }
+        ("code", "context") => object_schema(
+            [
+                (
+                    "includeStaleness",
+                    json!({ "type": "boolean", "default": true, "description": "Include changed-file staleness metadata when the index is older than source files." }),
+                ),
+            ],
+            &[],
         ),
         ("code", _) => object_schema(
             [
@@ -2394,7 +2546,8 @@ Lyra browser / Lumen (interactive pages)
 - Verify completion → /tools/browser/judge_task
 
 Project / code
-- Repo survey or code change → use direct exec_command for rg/sed/cat/git/tests and direct apply_patch for every file mutation.
+- Repo survey, exact text search, shell validation, git review, or file mutation → use direct exec_command/apply_patch flow.
+- Indexed symbol navigation, callers/callees, impact, or project architecture overview → run /tools/code/explore, /tools/code/callers, /tools/code/callees, /tools/code/impact, or /tools/code/context through Tool-FS.
 
 Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
 }
@@ -2416,6 +2569,7 @@ pub fn domain_summary(domain: &str) -> &'static str {
             "Control native desktop apps through the OS accessibility tree (osRef): map, find, act, and verify semantically without screenshots or coordinates."
         }
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
+        "design" => "Browse and read curated DESIGN.md design system references for UI work.",
         "code" => "Search code text, symbols, code graph, and LSP data.",
         "shell" => "Run bounded shell commands in the bound workspace.",
         "terminal" => "Control Lyra terminal sessions and terminal panes.",

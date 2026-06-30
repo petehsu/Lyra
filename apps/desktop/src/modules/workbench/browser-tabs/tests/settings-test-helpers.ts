@@ -84,6 +84,8 @@ export const createBrowserSettingsSurfaceProps = (
   linuxCompatRecoveryDescription: "Lyra switched to a safer launch strategy.",
   linuxCompatRequestFailed: "Linux compatibility request failed.",
   legalNoticesLabel: "Open Source Notices",
+  legalNoticesIntro: "The following lists open source components.",
+  legalLastUpdatedPrefix: "Last updated",
   legalNoticesLoadingLabel: "Loading notices",
   legalNoticesEmptyLabel: "No notices generated",
   legalNoticesErrorLabel: "Open source notices are unavailable.",
