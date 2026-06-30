@@ -470,6 +470,7 @@ export const LYRA_CHANNELS = {
   detectEditors: "lyra:shell/detect-editors",
   openInEditor: "lyra:shell/open-in-editor",
   revealInFolder: "lyra:shell/reveal-in-folder",
+  legalReadThirdPartyNotices: "lyra:legal/read-third-party-notices",
   identityReadUserIcon: "lyra:identity/read-user-icon",
   identityResolveProject: "lyra:identity/resolve-project",
   systemNotificationsReadStatus: "lyra:system-notifications/read-status",
@@ -714,6 +715,28 @@ export type AppMetaPayload = {
   readonly hostName?: string | undefined;
   readonly locale?: string | undefined;
   readonly timeZone?: string | undefined;
+};
+
+export type ThirdPartyNoticeItem = {
+  readonly name: string;
+  readonly version?: string;
+  readonly ecosystem: string;
+  readonly license: string;
+  readonly source?: string;
+  readonly repository?: string;
+  readonly homepage?: string;
+  readonly notes?: string;
+  readonly licenseText?: string;
+  readonly noticeText?: string;
+};
+
+export type ThirdPartyNoticesDocument = {
+  readonly schemaVersion: 1;
+  readonly generatedAt: string;
+  readonly packageCount: number;
+  readonly ecosystems: Record<string, number>;
+  readonly items: readonly ThirdPartyNoticeItem[];
+  readonly markdown: string;
 };
 
 export type SystemNotificationMode = "off" | "background" | "all";
@@ -2491,6 +2514,10 @@ export type UiuxPacksApi = {
   readonly resolveRuntime: (request: UiuxResolveRuntimeRequest) => Promise<UiuxPackRuntime | null>;
 };
 
+export type LegalApi = {
+  readonly readThirdPartyNotices: () => Promise<ThirdPartyNoticesDocument>;
+};
+
 export type DetectedEditor = { id: string; label: string; icon?: string };
 export type OpenInEditorRequest = { editorId: string; path: string };
 
@@ -2503,6 +2530,7 @@ export type LyraDesktopApi = {
   readonly detectEditors: () => Promise<DetectedEditor[]>;
   readonly openInEditor: (request: OpenInEditorRequest) => Promise<boolean>;
   readonly revealInFolder: (path: string) => Promise<boolean>;
+  readonly legal?: LegalApi;
   readonly identity?: IdentityApi;
   readonly systemNotifications?: SystemNotificationsApi;
   readonly linuxCompat: LinuxCompatApi;

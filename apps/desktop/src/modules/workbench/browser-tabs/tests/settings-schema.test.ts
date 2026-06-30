@@ -17,6 +17,7 @@ const createSchemaInput = (
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
   linuxCategoryLabel: "Linux",
+  legalCategoryLabel: "Legal",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
   splitOverflowPolicyLabel: "Split overflow",
@@ -34,6 +35,7 @@ const createSchemaInput = (
   linuxCompatProfileLabel: "Linux startup profile",
   linuxCompatStatusLabel: "Linux status",
   linuxCompatRestartLabel: "Restart Lyra",
+  legalNoticesLabel: "Open source notices",
   linuxCompatVisible: false,
   uiStyleOptions: Array.from({ length: uiStyleOptionCount }, () => ({
     value: "classic" as const,
@@ -55,7 +57,8 @@ describe("createWorkbenchSettingsSchema", () => {
       "linux",
       "search",
       "ai",
-      "models"
+      "models",
+      "legal"
     ]);
     expect(schema.categories.map((category) => category.label)).toEqual([
       "General",
@@ -67,7 +70,8 @@ describe("createWorkbenchSettingsSchema", () => {
       "Linux",
       "Search",
       "Lyra Agents",
-      "Models"
+      "Models",
+      "Legal"
     ]);
   });
 

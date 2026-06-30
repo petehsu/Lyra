@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, FolderOpen, GitBranch, RefreshCw } from "lucide-react";
 
 import {
@@ -8,7 +8,7 @@ import {
   AppStatusMessage,
   AppToolbarButton
 } from "@renderer/ui/components";
-import type { FileManagerEntry } from "../../../shared/file-manager";
+import type { FileManagerEntry, FileManagerDirectoryPatch } from "../../../shared/file-manager";
 import { FileEditorSurface } from "../file-editor";
 import { renderFileManagerEntryIcon } from "../file-manager";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
@@ -20,6 +20,21 @@ import type {
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+// ponytail: filter noise directories and hidden entries instead of full gitignore
+// parsing. Covers the 90% case — node_modules, .git, build artifacts. Upgrade
+// path: add a native gitignore-aware readDirectory binding if needed.
+const NOISE_DIRECTORY_NAMES = new Set([
+  "node_modules", ".git", "target", "dist", "build", ".next",
+  "__pycache__", ".venv", "venv", ".cache", ".svelte-kit", ".turbo"
+]);
+
+const isNoiseEntry = (entry: FileManagerEntry): boolean =>
+  entry.isHidden ||
+  (entry.kind === "directory" && NOISE_DIRECTORY_NAMES.has(entry.name));
+
+const filterNoise = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
+  entries.filter((entry) => !isNoiseEntry(entry));
+
 const sortEntries = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
   [...entries].sort((left, right) => {
     if (left.kind !== right.kind) {
@@ -30,6 +45,36 @@ const sortEntries = (entries: readonly FileManagerEntry[]): readonly FileManager
       sensitivity: "base"
     });
   });
+
+const prepareEntries = (entries: readonly FileManagerEntry[]): readonly FileManagerEntry[] =>
+  sortEntries(filterNoise(entries));
+
+// Apply a live directory patch to the entry list.
+export const applyPatchToEntries = (
+  entries: readonly FileManagerEntry[],
+  patch: FileManagerDirectoryPatch
+): readonly FileManagerEntry[] => {
+  if (patch.kind === "reset") {
+    return patch.snapshot?.entries ?? entries;
+  }
+  if (patch.kind === "remove") {
+    const removePath = patch.path ?? patch.oldPath;
+    if (removePath === undefined) return entries;
+    return entries.filter((entry) => entry.path !== removePath);
+  }
+  if (patch.kind === "rename") {
+    if (patch.oldPath === undefined || patch.entry === undefined) return entries;
+    return sortEntries(filterNoise([
+      ...entries.filter((entry) => entry.path !== patch.oldPath),
+      patch.entry
+    ]));
+  }
+  // create or update
+  if (patch.entry === undefined) return entries;
+  const next = entries.filter((entry) => entry.path !== patch.entry!.path);
+  next.push(patch.entry);
+  return sortEntries(filterNoise(next));
+};
 
 const indentStyle = (depth: number, base: number): { readonly paddingLeft: string } => ({
   paddingLeft: `${Math.max(depth, 0) * 14 + base}px`
@@ -152,7 +197,7 @@ const TreeDirectory = ({
     );
   }
 
-  const entries = sortEntries(node.entries);
+  const entries = prepareEntries(node.entries);
   if (entries.length === 0) {
     return (
       <AppEmptyState
@@ -243,6 +288,10 @@ export const AgentProjectTreeSurface = ({
     [state.expandedPaths]
   );
 
+  // Subscription tracking: path ↔ subscriptionId + generation.
+  const subByPathRef = useRef<Map<string, { subscriptionId: string; generation: number }>>(new Map());
+  const pathBySubIdRef = useRef<Map<string, string>>(new Map());
+
   const setDirectoryState = useCallback((
     path: string,
     next: AgentProjectTreeDirectoryState
@@ -252,6 +301,14 @@ export const AgentProjectTreeSurface = ({
       [path]: next
     }));
   }, []);
+
+  const unsubscribePath = useCallback((path: string): void => {
+    const sub = subByPathRef.current.get(path);
+    if (sub === undefined) return;
+    subByPathRef.current.delete(path);
+    pathBySubIdRef.current.delete(sub.subscriptionId);
+    void desktopApi?.files?.unsubscribeDirectory?.(sub.subscriptionId);
+  }, [desktopApi?.files]);
 
   const loadDirectory = useCallback((path: string): void => {
     if (desktopApi?.files === undefined) {
@@ -263,16 +320,40 @@ export const AgentProjectTreeSurface = ({
       return;
     }
 
+    unsubscribePath(path);
     setDirectoryState(path, {
       status: "loading",
       entries: [],
       errorMessage: null
     });
-    void desktopApi.files.readDirectory({ path })
-      .then((response) => {
+
+    const files = desktopApi.files;
+    const useSubscribe = typeof files.subscribeDirectory === "function";
+
+    const load = useSubscribe
+      ? files.subscribeDirectory!({ path }).then((response) => ({
+          entries: response.snapshot.entries,
+          subscriptionId: response.subscriptionId,
+          generation: response.snapshot.generation
+        }))
+      : files.readDirectory({ path }).then((response) => ({
+          entries: response.entries,
+          subscriptionId: undefined as string | undefined,
+          generation: undefined as number | undefined
+        }));
+
+    void load
+      .then((result) => {
+        if (result.subscriptionId !== undefined) {
+          subByPathRef.current.set(path, {
+            subscriptionId: result.subscriptionId,
+            generation: result.generation ?? 0
+          });
+          pathBySubIdRef.current.set(result.subscriptionId, path);
+        }
         setDirectoryState(path, {
           status: "ready",
-          entries: response.entries,
+          entries: result.entries,
           errorMessage: null
         });
       })
@@ -283,11 +364,47 @@ export const AgentProjectTreeSurface = ({
           errorMessage: toErrorMessage(error)
         });
       });
-  }, [desktopApi?.files, labels.unavailable, setDirectoryState]);
+  }, [desktopApi?.files, labels.unavailable, setDirectoryState, unsubscribePath]);
+
+  // Listen for live directory patches and apply them to the tree.
+  useEffect(() => {
+    if (desktopApi?.files?.onDirectoryPatch === undefined) return undefined;
+    return desktopApi.files.onDirectoryPatch((patch: FileManagerDirectoryPatch) => {
+      const path = pathBySubIdRef.current.get(patch.subscriptionId);
+      if (path === undefined) return;
+      const sub = subByPathRef.current.get(path);
+      if (sub === undefined || patch.generation < sub.generation) return;
+      subByPathRef.current.set(path, { subscriptionId: sub.subscriptionId, generation: patch.generation });
+
+      setDirectoryStates((current) => {
+        const node = current[path];
+        if (node === undefined || node.status !== "ready") return current;
+        const entries = applyPatchToEntries(node.entries, patch);
+        if (entries === node.entries) return current;
+        return { ...current, [path]: { ...node, entries } };
+      });
+    });
+  }, [desktopApi?.files]);
+
+  // Unsubscribe all on unmount or root change.
+  useEffect(() => {
+    return () => {
+      for (const path of subByPathRef.current.keys()) {
+        const sub = subByPathRef.current.get(path);
+        if (sub !== undefined) {
+          void desktopApi?.files?.unsubscribeDirectory?.(sub.subscriptionId);
+        }
+      }
+      subByPathRef.current.clear();
+      pathBySubIdRef.current.clear();
+    };
+  }, [desktopApi?.files, state.rootPath]);
 
   useEffect(() => {
     setDirectoryStates({});
     setActionError(null);
+    subByPathRef.current.clear();
+    pathBySubIdRef.current.clear();
     loadDirectory(state.rootPath);
   }, [loadDirectory, refreshKey, state.rootPath]);
 

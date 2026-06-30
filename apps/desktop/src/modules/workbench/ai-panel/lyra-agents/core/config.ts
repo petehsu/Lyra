@@ -30,28 +30,15 @@ export const APP_CONFIG = {
   },
 
   /**
-   * Progressive message rendering. Runtime context remains complete; this only
-   * limits UI work. Reveal batches are sized by adaptive height budgets, not
-   * fixed message counts.
+   * Render-budget message window. Instead of virtual scrolling with height
+   * estimation, we render at most `maxRenderMessages` messages as DOM nodes.
+   * "Show earlier" increases the count by `loadBatchSize`. This trades memory
+   * for stability — no height-table jitter, no spacer jumps.
    */
   messageWindow: {
-    minRevealCount: 3,
-    maxRevealCount: 40,
-    governor: {
-      initialBudgetViewportRatio: 0.8,
-      loadBudgetViewportRatio: 1,
-      minBudgetViewportRatio: 0.5,
-      maxBudgetViewportRatio: 2.5,
-      smoothFrameMs: 20,
-      jankFrameMs: 32,
-      fastPrependMs: 50,
-      slowPrependMs: 120,
-      increaseFactor: 1.25,
-      decreaseFactor: 0.6,
-      frameSampleSize: 30,
-      minMultiplier: 0.5,
-      maxMultiplier: 2
-    }
+    initialRenderCount: 50,
+    loadBatchSize: 50,
+    maxRenderMessages: 500,
   },
 
   /** Streaming text playback speed. */

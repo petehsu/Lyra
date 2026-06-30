@@ -3772,7 +3772,7 @@
 }
 
 .lyra-agent-plan-board-workspace.has-chat {
-  grid-template-columns: minmax(0, 1fr) minmax(var(--lyra-unit-300), var(--lyra-unit-360));
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--lyra-unit-360));
 }
 
 .lyra-agent-plan-board-workspace-document {
@@ -3786,6 +3786,7 @@
 .lyra-agent-plan-board-chat-rail {
   min-width: 0;
   min-height: 0;
+  width: 100%;
   display: flex;
   border-left: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   background: var(--lyra-app-surface-bg);
@@ -3938,6 +3939,7 @@
 .lyra-agent-plan-board-temp-chat {
   min-width: 0;
   min-height: 0;
+  width: 100%;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -4005,6 +4007,8 @@
 
 .lyra-agent-plan-board-temp-chat-composer {
   margin: 0 var(--lyra-space-12) var(--lyra-space-12);
+  max-width: calc(100% - var(--lyra-space-24));
+  box-sizing: border-box;
 }
 
 .lyra-agent-plan-board-temp-chat-text {
@@ -4865,9 +4869,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--lyra-effect-control-raised-bg);
-  color: var(--lyra-agents-content-bg);
-  border: 0;
+  background: var(--lyra-app-primary-button);
+  color: var(--lyra-app-primary-button-fg);
+  border: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-primary-button) 80%, transparent);
   border-radius: 50%;
   padding: 0;
   cursor: pointer;
@@ -4879,7 +4883,7 @@
 }
 
 .lyra-agents-decision-submit:not(:disabled):hover {
-  background: var(--lyra-effect-overlay-solid-fg);
+  background: color-mix(in srgb, var(--lyra-app-primary-button) 88%, var(--lyra-app-input-focus-bg));
 }
 
 .lyra-agents-decision-submit:not(:disabled):active {
@@ -4887,8 +4891,9 @@
 }
 
 .lyra-agents-decision-submit:disabled {
-  background: var(--lyra-app-row-hover-bg);
+  background: var(--lyra-app-input-bg);
   color: var(--lyra-text-muted);
+  border-color: var(--lyra-app-input-border);
   cursor: default;
 }
 

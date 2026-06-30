@@ -56,19 +56,7 @@ import {
   agentSessionMetaWithDraftWorkingDir,
   normalizeAgentSessionSnapshot
 } from "../agent-session-view-model";
-import {
-  CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-  CHAT_MESSAGE_GAP_PX
-} from "./lyra-agents/features/chat/chat-layout-constants";
-import {
-  createMessageWindowPlanConfig,
-  planAdditionalRevealCount,
-  planRevealCountFromEnd
-} from "./lyra-agents/features/chat/message-window-plan";
-import type {
-  CitationScrollTarget,
-  MessageWindowBudgetRequest
-} from "./lyra-agents/data/DataProvider";
+import type { CitationScrollTarget } from "./lyra-agents/data/DataProvider";
 import type { ComposerInsertableCitation } from "./lyra-agents/features/chat/message-citation";
 import {
   buildFileAttachmentFromPath,
@@ -347,14 +335,6 @@ const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
   return null;
 };
 
-const sessionExistsInList = async (
-  agentApi: NonNullable<LyraDesktopApi["agent"]>,
-  sessionId: string
-): Promise<boolean> => {
-  const response = await agentApi.listSessions({});
-  return response.sessions.some((session) => session.id === sessionId);
-};
-
 const classifyPermissionRequest = (
   title: string,
   detail: string
@@ -487,8 +467,10 @@ export const useLyraAgentDataProvider = (
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
-  const [visibleMessageLimit, setVisibleMessageLimit] = useState<number>(
-    APP_CONFIG.messageWindow.minRevealCount
+  // Render budget: number of most-recent messages to render as DOM.
+  // Replaces the old virtual-scroll + height-estimation system.
+  const [renderBudgetCount, setRenderBudgetCount] = useState<number>(
+    APP_CONFIG.messageWindow.initialRenderCount
   );
   const [pendingCitation, setPendingCitation] = useState<ComposerInsertableCitation | null>(null);
   const [pendingCitationNonce, setPendingCitationNonce] = useState(0);
@@ -501,14 +483,13 @@ export const useLyraAgentDataProvider = (
   const citationHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
-  const previousMessageWindowRef = useRef<{
-    readonly sessionId: string | null;
-    readonly messageCount: number;
-  }>({
-    sessionId: null,
-    messageCount: 0
-  });
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
+  // Session snapshot cache — eliminates IPC round-trip on tab switch.
+  // ponytail: simple Map cache, cap 32 entries. Not a true LRU (no access-time
+  // tracking), but sufficient: Map iteration order = insertion order, so the
+  // oldest entry is evicted first. Upgrade path: track last-accessed timestamps
+  // if cache hit rate degrades with many concurrent sessions.
+  const sessionCacheRef = useRef<Map<string, AgentSessionSnapshot>>(new Map());
   const modelConfigSignature = useMemo(() => {
     const config = settingsAiModel?.agentConfig?.config as {
       provider?: unknown;
@@ -526,41 +507,29 @@ export const useLyraAgentDataProvider = (
     currentSessionIdRef.current = state.session?.id ?? null;
   }, [state.session?.id]);
 
+  // Keep cache in sync — every session state change writes to cache.
+  // During streaming this runs per-token but Map.set is O(1) and causes no re-render.
+  useEffect(() => {
+    if (state.session !== null) {
+      const cache = sessionCacheRef.current;
+      cache.set(state.session.id, state.session);
+      if (cache.size > 32) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+      }
+    }
+  }, [state.session]);
+
   useEffect(() => {
     const nextSessionId = state.session?.id ?? null;
     if (previousSessionIdRef.current !== nextSessionId) {
       setPendingClarifications([]);
       setPendingPermissions([]);
-      setVisibleMessageLimit(APP_CONFIG.messageWindow.minRevealCount);
-      previousMessageWindowRef.current = {
-        sessionId: nextSessionId,
-        messageCount: 0
-      };
+      // Reset render budget on session switch — start with the latest N messages
+      setRenderBudgetCount(APP_CONFIG.messageWindow.initialRenderCount);
       previousSessionIdRef.current = nextSessionId;
     }
   }, [state.session?.id]);
-
-  useEffect(() => {
-    const sessionId = state.session?.id ?? null;
-    const messageCount = state.session?.messages.length ?? 0;
-    const previous = previousMessageWindowRef.current;
-
-    if (previous.sessionId !== sessionId) {
-      return;
-    }
-
-    if (messageCount < previous.messageCount) {
-      setVisibleMessageLimit(APP_CONFIG.messageWindow.minRevealCount);
-    } else if (messageCount > previous.messageCount) {
-      const appendedCount = messageCount - previous.messageCount;
-      setVisibleMessageLimit((current) => Math.min(messageCount, current + appendedCount));
-    }
-
-    previousMessageWindowRef.current = {
-      sessionId,
-      messageCount
-    };
-  }, [state.session?.id, state.session?.messages.length]);
 
   useEffect(() => {
     if (desktopApi?.agent === undefined) {
@@ -627,16 +596,21 @@ export const useLyraAgentDataProvider = (
       };
     }
 
-    dispatch({ type: "loading" });
+    // If we have a cached snapshot, render immediately — no loading flash.
+    const cachedSnapshot = requestedSessionId !== null
+      ? sessionCacheRef.current.get(requestedSessionId)
+      : undefined;
+    if (cachedSnapshot !== undefined) {
+      dispatch({ type: "snapshot", snapshot: cachedSnapshot });
+    } else {
+      dispatch({ type: "loading" });
+    }
+
+    // Fetch fresh snapshot in background (even from cache, to catch updates).
+    // Removed listSessions existence check — readSession failure handles missing sessions.
     const initialSession = requestedSessionId === null
       ? agentApi.createSession({ title: t("aiPanel.defaultSessionTitle") })
-      : (async () => {
-          const exists = await sessionExistsInList(agentApi, requestedSessionId);
-          if (!exists) {
-            throw new Error(`session not found: ${requestedSessionId}`);
-          }
-          return agentApi.readSession({ sessionId: requestedSessionId });
-        })();
+      : agentApi.readSession({ sessionId: requestedSessionId });
 
     void initialSession
       .then((snapshot) => {
@@ -892,7 +866,7 @@ export const useLyraAgentDataProvider = (
     const index = session.messages.findIndex((message) => message.id === messageId);
     if (index < 0) return false;
     const neededFromEnd = session.messages.length - index;
-    setVisibleMessageLimit((current) => Math.max(current, neededFromEnd));
+    setRenderBudgetCount((current) => Math.max(current, neededFromEnd));
     return true;
   }, [state.session]);
 
@@ -929,17 +903,14 @@ export const useLyraAgentDataProvider = (
       readonly startOffset?: number | null;
     }
   ): Promise<void> => {
-    const totalMessageCount = state.session?.messages.length ?? 0;
-    const visibleCountAtStart = Math.min(totalMessageCount, visibleMessageLimit);
     ensureMessageVisible(messageId);
     setCitationScrollTarget({
       messageId,
       blockId: options?.blockId ?? null,
       startOffset: options?.startOffset ?? null,
-      visibleCountAtStart,
       token: performance.now()
     });
-  }, [ensureMessageVisible, state.session, visibleMessageLimit]);
+  }, [ensureMessageVisible, state.session]);
 
   const captureWorkspaceScreenshot = useCallback(async (): Promise<AgentImageAttachment | null> => {
     if (desktopApi === null) return null;
@@ -1748,67 +1719,18 @@ export const useLyraAgentDataProvider = (
     };
   }, [desktopApi, permissionPolicy, permissionPolicyBusy, switchPermissionMode]);
 
-  const createPlanConfig = useCallback(
-    (contentWidthPx: number) =>
-      createMessageWindowPlanConfig(contentWidthPx, {
-        minRevealCount: APP_CONFIG.messageWindow.minRevealCount,
-        maxRevealCount: APP_CONFIG.messageWindow.maxRevealCount,
-        messageGapPx: CHAT_MESSAGE_GAP_PX,
-        fallbackHeightPx: CHAT_MESSAGE_FALLBACK_HEIGHT_PX
-      }),
-    []
-  );
-
-  const syncMessageWindowBudget = useCallback(
-    async (request: MessageWindowBudgetRequest): Promise<void> => {
-      const session = state.session;
-      const messageCount = session?.messages.length ?? 0;
-      if (session === null || messageCount === 0) {
-        setVisibleMessageLimit(0);
-        return;
-      }
-      const allMessages = agentSessionToChatMessages(session);
-      const nextVisible = planRevealCountFromEnd(
-        allMessages,
-        request.heightBudgetPx,
-        createPlanConfig(request.contentWidthPx)
-      );
-      setVisibleMessageLimit(
-        Math.min(
-          messageCount,
-          Math.max(nextVisible, APP_CONFIG.messageWindow.minRevealCount)
-        )
-      );
-    },
-    [createPlanConfig, state.session]
-  );
-
-  const loadEarlierMessages = useCallback(
-    async (request: MessageWindowBudgetRequest): Promise<void> => {
-      const session = state.session;
-      if (session === null) return;
-      const messageCount = session.messages.length;
-      const sessionId = session.id;
-      const allMessages = agentSessionToChatMessages(session);
-      const planConfig = createPlanConfig(request.contentWidthPx);
-      setVisibleMessageLimit((current) => {
-        const additional = planAdditionalRevealCount(
-          allMessages,
-          current,
-          request.heightBudgetPx,
-          planConfig
-        );
-        return Math.min(messageCount, current + additional);
-      });
-    },
-    [createPlanConfig, state.session]
-  );
+  // Simple render-budget load: increase the visible message count by a fixed batch.
+  const loadEarlierMessages = useCallback(async (): Promise<void> => {
+    setRenderBudgetCount((current) =>
+      Math.min(current + APP_CONFIG.messageWindow.loadBatchSize, APP_CONFIG.messageWindow.maxRenderMessages)
+    );
+  }, []);
 
   const data = useMemo(() => {
     const totalMessageCount = state.session?.messages.length ?? 0;
-    const visibleMessageCount = Math.min(totalMessageCount, visibleMessageLimit);
+    const visibleMessageCount = Math.min(totalMessageCount, renderBudgetCount);
     const chatMessages = agentSessionToChatMessages(state.session, {
-      messageLimitFromEnd: visibleMessageLimit
+      messageLimitFromEnd: renderBudgetCount
     });
     const turnRunning = state.session?.follow.running ?? state.loading;
     const lastChatMessage = chatMessages.at(-1);
@@ -1886,7 +1808,6 @@ export const useLyraAgentDataProvider = (
       reportCitationScrollFinished,
       citationHighlightMessageId,
       loadEarlierMessages,
-      syncMessageWindowBudget,
       captureWorkspaceScreenshot,
       captureWindowScreenshot,
       pickFileFromFileManager,
@@ -1965,7 +1886,6 @@ export const useLyraAgentDataProvider = (
     reportCitationScrollFinished,
     citationHighlightMessageId,
     loadEarlierMessages,
-    syncMessageWindowBudget,
     modelControls,
     permissionModeControls,
     locationControls,
@@ -1981,7 +1901,7 @@ export const useLyraAgentDataProvider = (
     activeDraftWorkingDir,
     state.session,
     state.loading,
-    visibleMessageLimit,
+    renderBudgetCount,
     runJudge,
     renameSession,
     archiveSession,

@@ -51,6 +51,17 @@ enum MutationPreviewInput {
 /// atomic write is unaffected — there is no size limit on what actually lands.
 const MAX_PREVIEW_DIFF_CONTENT_BYTES: usize = 48 * 1024;
 
+/// ponytail: 超过此大小的已有文件跳过 streaming diff preview。
+/// 升级路径：分块 diff 或只 diff 变更窗口。
+const MAX_PREVIEW_FILE_SIZE: u64 = 256 * 1024;
+
+fn file_size_within_preview_limit(path: &std::path::Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(m) => m.len() <= MAX_PREVIEW_FILE_SIZE,
+        Err(_) => false,
+    }
+}
+
 fn hash_diff(diff: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     diff.hash(&mut hasher);
@@ -185,6 +196,12 @@ fn parse_edit_file_preview_input(partial_arguments: &str) -> Option<MutationPrev
 fn read_workspace_text(session_id: &str, file_path: &str, allow_missing: bool) -> Option<String> {
     let workspace_path = resolve_workspace_path(session_id, file_path, allow_missing).ok()?;
     if workspace_path.absolute.exists() {
+        // ponytail: 超过 MAX_PREVIEW_FILE_SIZE 的文件跳过 preview。
+        if let Ok(metadata) = std::fs::metadata(&workspace_path.absolute) {
+            if metadata.len() > MAX_PREVIEW_FILE_SIZE {
+                return None;
+            }
+        }
         std::fs::read_to_string(&workspace_path.absolute).ok()
     } else {
         Some(String::new())
@@ -340,7 +357,9 @@ fn preview_diff_for_input(
                 if partial_patch.contains("*** Add File: ") {
                     let workspace_path =
                         resolve_missing_ok_workspace_path(session_id, &file_path).ok()?;
-                    let old = if workspace_path.absolute.exists() {
+                    let old = if workspace_path.absolute.exists()
+                        && file_size_within_preview_limit(&workspace_path.absolute)
+                    {
                         std::fs::read_to_string(&workspace_path.absolute).ok()?
                     } else {
                         String::new()
@@ -390,7 +409,9 @@ fn preview_diff_for_input(
         }
         MutationPreviewInput::Write { path, content } if target.operation == "write" => {
             let workspace_path = resolve_missing_ok_workspace_path(session_id, path).ok()?;
-            let old = if workspace_path.absolute.exists() {
+            let old = if workspace_path.absolute.exists()
+                && file_size_within_preview_limit(&workspace_path.absolute)
+            {
                 std::fs::read_to_string(&workspace_path.absolute).ok()?
             } else {
                 String::new()
@@ -498,52 +519,42 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
     tool_call_id: &str,
     tool_name: &str,
     partial_arguments: &str,
-) {
+) -> bool {
     let normalized_name = tool_name.trim().to_ascii_lowercase();
-    // Map each code-mutation tool to its preview parser + target. The preview
-    // activity intentionally reuses the model tool name and the live tool_call_id
-    // so the front-end renders one card that transitions running→done — not a
+    // Map each code-mutation tool to its target. The preview activity
+    // intentionally reuses the model tool name and the live tool_call_id so
+    // the front-end renders one card that transitions running→done — not a
     // separate preview card alongside the real execution.
-    let (preview_input, target) = if normalized_name == APPLY_PATCH_MODEL_TOOL {
-        (
-            parse_direct_apply_patch_preview_input(partial_arguments),
-            MutationToolTarget {
-                tool_path: "/tools/runtime/apply_patch".to_string(),
-                operation: "apply_patch".to_string(),
-            },
-        )
+    let target = if normalized_name == APPLY_PATCH_MODEL_TOOL {
+        MutationToolTarget {
+            tool_path: "/tools/runtime/apply_patch".to_string(),
+            operation: "apply_patch".to_string(),
+        }
     } else if normalized_name == WRITE_FILE_MODEL_TOOL {
-        (
-            parse_write_file_preview_input(partial_arguments),
-            MutationToolTarget {
-                tool_path: "/tools/runtime/write_file".to_string(),
-                operation: "write".to_string(),
-            },
-        )
+        MutationToolTarget {
+            tool_path: "/tools/runtime/write_file".to_string(),
+            operation: "write".to_string(),
+        }
     } else if normalized_name == EDIT_FILE_MODEL_TOOL {
-        (
-            parse_edit_file_preview_input(partial_arguments),
-            MutationToolTarget {
-                tool_path: "/tools/runtime/edit_file".to_string(),
-                operation: "multiedit".to_string(),
-            },
-        )
+        MutationToolTarget {
+            tool_path: "/tools/runtime/edit_file".to_string(),
+            operation: "multiedit".to_string(),
+        }
     } else {
-        return;
+        return false;
     };
-    let Some(preview_input) = preview_input else {
-        return;
-    };
-    let Some((relative_path, diff)) = preview_diff_for_input(session_id, &target, &preview_input)
-    else {
-        return;
-    };
-    if diff.trim().is_empty() || diff.contains("No textual diff") {
-        return;
-    }
 
+    // ponytail: throttle check BEFORE parse + file-read + diff.
+    // Previously the hash was computed on the diff output (after file read +
+    // Myers diff), making every SSE chunk pay O(file_size) I/O + O(N·D) CPU
+    // even when the 32ms throttle would skip the emit — an O(N²) death loop
+    // on large file writes that saturated CPU and triggered the 90s streaming
+    // idle timeout. Hashing the raw partial_arguments is a cheap proxy:
+    // the input grows monotonically, so the hash always changes (dedup is a
+    // no-op in practice); the time-based throttle is what actually gates
+    // the expensive work below.
+    let input_hash = hash_diff(partial_arguments);
     let key = streaming_preview_state::preview_key(session_id, turn_id, tool_call_id);
-    let diff_hash = hash_diff(&diff);
     let now_instant = Instant::now();
     let mut should_emit = false;
     let mut first_emit = false;
@@ -553,7 +564,7 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
         |entry| {
             first_emit = !entry.started;
             if !first_emit {
-                if entry.last_diff_hash == diff_hash {
+                if entry.last_diff_hash == input_hash {
                     return;
                 }
                 if now_instant.duration_since(entry.last_emitted_at) < PREVIEW_THROTTLE {
@@ -561,7 +572,7 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
                 }
             }
             entry.last_emitted_at = now_instant;
-            entry.last_diff_hash = diff_hash;
+            entry.last_diff_hash = input_hash;
             if first_emit {
                 entry.started = true;
                 entry.started_at = now();
@@ -577,7 +588,26 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
         },
     );
     if !should_emit {
-        return;
+        return false;
+    }
+
+    // Expensive work: parse + file read + diff — only after throttle passes.
+    let preview_input = if normalized_name == APPLY_PATCH_MODEL_TOOL {
+        parse_direct_apply_patch_preview_input(partial_arguments)
+    } else if normalized_name == WRITE_FILE_MODEL_TOOL {
+        parse_write_file_preview_input(partial_arguments)
+    } else {
+        parse_edit_file_preview_input(partial_arguments)
+    };
+    let Some(preview_input) = preview_input else {
+        return false;
+    };
+    let Some((relative_path, diff)) = preview_diff_for_input(session_id, &target, &preview_input)
+    else {
+        return false;
+    };
+    if diff.trim().is_empty() || diff.contains("No textual diff") {
+        return false;
     }
 
     let input = build_tool_input(partial_arguments, &target.tool_path);
@@ -594,6 +624,7 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
         &started_at,
         first_emit,
     );
+    true
 }
 
 pub(crate) fn maybe_emit_streaming_diff_previews_from_accumulators(
@@ -603,7 +634,8 @@ pub(crate) fn maybe_emit_streaming_diff_previews_from_accumulators(
         usize,
         crate::native_backend::providers::protocol::openai_common::StreamingToolCallAccumulator,
     >,
-) {
+) -> bool {
+    let mut any_emitted = false;
     for accumulator in tool_calls.values() {
         let Some(tool_call_id) = accumulator.id.as_deref().filter(|id| !id.trim().is_empty())
         else {
@@ -615,7 +647,7 @@ pub(crate) fn maybe_emit_streaming_diff_previews_from_accumulators(
         if accumulator.arguments.trim().is_empty() {
             continue;
         }
-        maybe_emit_streaming_diff_preview(
+        any_emitted |= maybe_emit_streaming_diff_preview(
             session_id,
             turn_id,
             tool_call_id,
@@ -623,6 +655,7 @@ pub(crate) fn maybe_emit_streaming_diff_previews_from_accumulators(
             &accumulator.arguments,
         );
     }
+    any_emitted
 }
 
 pub(crate) fn emit_running_mutation_diff(

@@ -27,7 +27,8 @@ describe("createSettingsSurfaceModel", () => {
       "softwareStore",
       "search",
       "ai",
-      "models"
+      "models",
+      "legal"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
       buildSettingsCategoryDomId("general"),
@@ -38,7 +39,8 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("softwareStore"),
       buildSettingsCategoryDomId("search"),
       buildSettingsCategoryDomId("ai"),
-      buildSettingsCategoryDomId("models")
+      buildSettingsCategoryDomId("models"),
+      buildSettingsCategoryDomId("legal")
     ]);
   });
 
@@ -75,6 +77,17 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.controls[0]).toMatchObject({
       kind: "custom",
       customKind: "ai-models"
+    });
+  });
+
+  test("keeps open source notices as a custom renderer passthrough", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
+    const section = findSection(model, "legalNotices");
+
+    expect(section?.frame).toBe("none");
+    expect(section?.controls[0]).toMatchObject({
+      kind: "custom",
+      customKind: "legal-notices"
     });
   });
 

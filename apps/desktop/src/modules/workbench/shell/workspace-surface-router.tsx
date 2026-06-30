@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useMemo, useRef, type ComponentProps, type ReactNode } from "react";
 
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type { BrowserSettingsSurfaceProps } from "../browser-tabs/settings-surface";
@@ -149,6 +149,9 @@ export type WorkspaceSurfaceRouterProps = {
   readonly softwareStore: SoftwareStoreSurfaceProps;
 };
 
+/** Max number of tab surfaces kept alive (mounted but hidden) for instant switching. */
+const MAX_KEPT_ALIVE_TABS = 6;
+
 const renderSurfaceModel = (
   model: WorkspaceSurfaceRenderModel,
   surfaceAdapters: WorkbenchSurfaceAdapters
@@ -241,6 +244,27 @@ export const WorkspaceSurfaceRouter = ({
   const visibleLayout = tabsModel.getVisibleWorkspaceLayout();
   const tabById = new Map(tabsModel.tabs.map((tab) => [tab.id, tab] as const));
 
+  // --- LRU keepalive for single-mode tab switching ---
+  // Track the order in which tabs were activated so we can keep the most
+  // recently used ones mounted (display:none) and evict the stalest.
+  const lruRef = useRef<readonly string[]>([]);
+  const activeId = activeTab?.id ?? visibleLayout.activeTabId;
+
+  // Update LRU during render: move activeId to the end (most recently used).
+  if (activeId.length > 0) {
+    const current = lruRef.current;
+    if (current[current.length - 1] !== activeId) {
+      lruRef.current = [...current.filter((id) => id !== activeId), activeId];
+    }
+  }
+
+  // Compute which tabs to keep alive: filter closed tabs, cap to MAX.
+  const keptAliveTabIds = useMemo(() => {
+    const existing = new Set(tabsModel.tabs.map((tab) => tab.id));
+    const lru = lruRef.current.filter((id) => existing.has(id));
+    return lru.slice(-MAX_KEPT_ALIVE_TABS);
+  }, [tabsModel.tabs]);
+
   if (visibleLayout.mode === "split") {
     const splitClassName = [
       "lyra-workspace-split",
@@ -284,5 +308,22 @@ export const WorkspaceSurfaceRouter = ({
 
   const targetTab = activeTab ?? tabById.get(visibleLayout.activeTabId);
 
-  return <div className="lyra-workspace-surface-single">{targetTab === undefined ? null : renderTabSurface(targetTab)}</div>;
+  return (
+    <div className="lyra-workspace-surface-single">
+      {keptAliveTabIds.map((tabId) => {
+        const tab = tabById.get(tabId);
+        if (tab === undefined) return null;
+        const isActive = tabId === (targetTab?.id ?? visibleLayout.activeTabId);
+        return (
+          <div
+            key={tabId}
+            className="lyra-workspace-surface-keepalive"
+            style={isActive ? undefined : { display: "none" }}
+          >
+            {renderTabSurface(tab)}
+          </div>
+        );
+      })}
+    </div>
+  );
 };

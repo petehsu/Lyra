@@ -37,7 +37,8 @@ export type SettingsFieldId =
   | "aiRichRender"
   | "aiStopBehavior"
   | "aiModels"
-  | "aiProviderSettings";
+  | "aiProviderSettings"
+  | "legalNotices";
 
 export type WorkbenchSettingsCategory = {
   readonly id: SettingsCategoryId;
@@ -78,6 +79,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "loginManagerCategoryLabel"
   | "softwareStoreCategoryLabel"
   | "linuxCategoryLabel"
+  | "legalCategoryLabel"
   | "languageLabel"
   | "themeLabel"
   | "uiStyleLabel"
@@ -98,6 +100,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "linuxCompatProfileLabel"
   | "linuxCompatStatusLabel"
   | "linuxCompatRestartLabel"
+  | "legalNoticesLabel"
   | "linuxCompatVisible"
   | "uiStyleOptions"
 >;
@@ -147,7 +150,8 @@ export const createWorkbenchSettingsSchema = (
     createField("aiRichRender", "ai", props.aiRichRenderLabel, "boolean-choice"),
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
     createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom"),
-    createField("aiModels", "models", props.modelsCategoryLabel, "custom")
+    createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
+    createField("legalNotices", "legal", props.legalNoticesLabel, "custom")
   ];
 
   const sections: readonly WorkbenchSettingsSection[] = fields.map((field) => ({
@@ -208,6 +212,11 @@ export const createWorkbenchSettingsSchema = (
       id: "models",
       label: props.modelsCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "models").map((section) => section.id)
+    },
+    {
+      id: "legal",
+      label: props.legalCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "legal").map((section) => section.id)
     }
   ];
 

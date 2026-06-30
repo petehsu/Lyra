@@ -2,6 +2,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-li
 import { describe, expect, test, vi } from "vitest";
 
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
+import type { FileManagerEntry, FileManagerDirectoryPatch } from "../../../../shared/file-manager";
 import type { FileEditorModel } from "../../file-editor";
 import {
   WorkbenchTitlebarContextProvider,
@@ -10,7 +11,7 @@ import {
 } from "../../shell/titlebar-context";
 import type { AgentProjectTreeAppState, AgentProjectTreeLabels } from "../types";
 import { useAgentProjectTreeModel } from "../service";
-import { AgentProjectTreeSurface } from "../view";
+import { AgentProjectTreeSurface, applyPatchToEntries } from "../view";
 
 const labels: AgentProjectTreeLabels = {
   title: "Project Tree",
@@ -263,5 +264,56 @@ describe("useAgentProjectTreeModel", () => {
       result.current.syncTabInstances([]);
     });
     expect(fileEditorModel.syncExternalInstances).toHaveBeenLastCalledWith([]);
+  });
+});
+
+describe("applyPatchToEntries", () => {
+  const baseEntries: FileManagerEntry[] = [
+    { id: "a", name: "a.ts", path: "/p/a.ts", kind: "file", extension: "ts", isHidden: false },
+    { id: "d", name: "dir", path: "/p/dir", kind: "directory", isHidden: false, folderState: "non-empty" }
+  ];
+
+  const makePatch = (overrides: Partial<FileManagerDirectoryPatch>): FileManagerDirectoryPatch => ({
+    subscriptionId: "sub-1",
+    directoryPath: "/p",
+    generation: 1,
+    kind: "create",
+    ...overrides
+  });
+
+  test("adds a new entry on create", () => {
+    const newEntry: FileManagerEntry = {
+      id: "b", name: "b.ts", path: "/p/b.ts", kind: "file", extension: "ts", isHidden: false
+    };
+    const result = applyPatchToEntries(baseEntries, makePatch({ kind: "create", entry: newEntry }));
+    expect(result.some((e) => e.path === "/p/b.ts")).toBe(true);
+  });
+
+  test("removes an entry on remove", () => {
+    const result = applyPatchToEntries(baseEntries, makePatch({ kind: "remove", path: "/p/a.ts" }));
+    expect(result.some((e) => e.path === "/p/a.ts")).toBe(false);
+  });
+
+  test("moves an entry on rename", () => {
+    const movedEntry: FileManagerEntry = {
+      id: "a", name: "a-renamed.ts", path: "/p/a-renamed.ts", kind: "file", extension: "ts", isHidden: false
+    };
+    const result = applyPatchToEntries(baseEntries, makePatch({
+      kind: "rename", oldPath: "/p/a.ts", entry: movedEntry
+    }));
+    expect(result.some((e) => e.path === "/p/a.ts")).toBe(false);
+    expect(result.some((e) => e.path === "/p/a-renamed.ts")).toBe(true);
+  });
+
+  test("replaces entries on reset", () => {
+    const resetEntries: FileManagerEntry[] = [
+      { id: "x", name: "x.ts", path: "/p/x.ts", kind: "file", extension: "ts", isHidden: false }
+    ];
+    const result = applyPatchToEntries(baseEntries, makePatch({
+      kind: "reset",
+      snapshot: { entries: resetEntries, generation: 2 } as FileManagerDirectoryPatch["snapshot"]
+    }));
+    expect(result.length).toBe(1);
+    expect(result[0].path).toBe("/p/x.ts");
   });
 });

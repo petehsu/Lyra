@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
   Bell,
@@ -9,6 +9,7 @@ import {
   Moon,
   Package,
   Palette,
+  ScrollText,
   Search,
   Settings2,
   Sun,
@@ -35,6 +36,7 @@ import type {
   SettingsChoiceControlDescriptor,
   SettingsControlDescriptor,
   SettingsInlineStatusActionControlDescriptor,
+  SettingsLegalNoticesCustomControlDescriptor,
   SettingsMultiChoiceControlDescriptor,
   SettingsRenderedSection,
   SettingsStatusListControlDescriptor,
@@ -42,6 +44,10 @@ import type {
   SettingsTextControlDescriptor,
   SettingsToggleGroupControlDescriptor
 } from "./settings-render-model";
+import type {
+  ThirdPartyNoticeItem,
+  ThirdPartyNoticesDocument
+} from "../../../shared/desktop-bridge";
 
 type SettingsSurfaceViewProps = {
   readonly model: SettingsSurfaceModel;
@@ -54,6 +60,7 @@ type SettingsSurfaceViewProps = {
 const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> = {
   appearance: Palette,
   general: Settings2,
+  legal: ScrollText,
   linux: Terminal,
   loginManager: KeyRound,
   models: Package,
@@ -268,6 +275,178 @@ const SettingsStatusList = ({
   </div>
 );
 
+type LegalNoticesState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error" }
+  | { readonly kind: "ready"; readonly document: ThirdPartyNoticesDocument };
+
+const buildLegalNoticeKey = (item: ThirdPartyNoticeItem): string =>
+  `${item.ecosystem}:${item.name}:${item.version ?? ""}`;
+
+const LegalNoticeMetaRow = ({
+  label,
+  value
+}: {
+  readonly label: string;
+  readonly value: string | number | undefined;
+}) => {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  return (
+    <div className="lyra-settings-legal-meta-row">
+      <small>{label}</small>
+      <span>{value}</span>
+    </div>
+  );
+};
+
+const LegalNoticeTextBlock = ({
+  label,
+  value
+}: {
+  readonly label: string;
+  readonly value: string | undefined;
+}) => {
+  if (value === undefined || value.trim().length === 0) {
+    return null;
+  }
+  return (
+    <section className="lyra-settings-legal-text-block">
+      <h4>{label}</h4>
+      <pre>{value.trim()}</pre>
+    </section>
+  );
+};
+
+const LegalNoticesView = ({
+  control
+}: {
+  readonly control: SettingsLegalNoticesCustomControlDescriptor;
+}) => {
+  const [state, setState] = useState<LegalNoticesState>({ kind: "loading" });
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const legalApi = control.desktopApi?.legal;
+    if (legalApi === undefined) {
+      setState({ kind: "error" });
+      return;
+    }
+
+    let cancelled = false;
+    setState({ kind: "loading" });
+    void legalApi.readThirdPartyNotices()
+      .then((document) => {
+        if (cancelled) {
+          return;
+        }
+        setState({ kind: "ready", document });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[lyra-legal] failed to read third-party notices", error);
+        setState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [control.desktopApi]);
+
+  const selectedItem = useMemo(() => {
+    if (state.kind !== "ready") {
+      return null;
+    }
+    return state.document.items.find((item) => buildLegalNoticeKey(item) === selectedKey)
+      ?? state.document.items[0]
+      ?? null;
+  }, [selectedKey, state]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="lyra-settings-ai-empty-panel" role="status">
+        <strong>{control.labels.legalNoticesLoadingLabel}</strong>
+      </div>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <div className="lyra-settings-ai-error" role="alert">
+        {control.labels.legalNoticesErrorLabel}
+      </div>
+    );
+  }
+
+  if (state.document.items.length === 0 || selectedItem === null) {
+    return (
+      <div className="lyra-settings-ai-empty-panel" role="status">
+        <strong>{control.labels.legalNoticesEmptyLabel}</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lyra-settings-legal" role="group" aria-label={control.labels.legalNoticesLabel}>
+      <div className="lyra-settings-legal-summary">
+        <LegalNoticeMetaRow
+          label={control.labels.legalPackageCountLabel}
+          value={state.document.packageCount}
+        />
+        <LegalNoticeMetaRow
+          label={control.labels.legalGeneratedAtLabel}
+          value={new Date(state.document.generatedAt).toLocaleString()}
+        />
+      </div>
+      <div className="lyra-settings-legal-browser">
+        <div className="lyra-settings-legal-list" aria-label={control.labels.legalNoticesLabel}>
+          {state.document.items.map((item) => {
+            const key = buildLegalNoticeKey(item);
+            const active = buildLegalNoticeKey(selectedItem) === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={active
+                  ? "lyra-settings-legal-item lyra-settings-legal-item-active"
+                  : "lyra-settings-legal-item"}
+                onClick={() => {
+                  setSelectedKey(key);
+                }}
+              >
+                <strong>{item.name}</strong>
+                <small>{[item.version, item.license, item.ecosystem].filter(Boolean).join(" · ")}</small>
+              </button>
+            );
+          })}
+        </div>
+        <article className="lyra-settings-legal-detail">
+          <header className="lyra-settings-legal-detail-header">
+            <h3>{selectedItem.name}</h3>
+            <small>{[selectedItem.version, selectedItem.ecosystem].filter(Boolean).join(" · ")}</small>
+          </header>
+          <div className="lyra-settings-legal-meta">
+            <LegalNoticeMetaRow label={control.labels.legalLicenseLabel} value={selectedItem.license} />
+            <LegalNoticeMetaRow label={control.labels.legalSourceLabel} value={selectedItem.source} />
+            <LegalNoticeMetaRow label={control.labels.legalRepositoryLabel} value={selectedItem.repository} />
+            <LegalNoticeMetaRow label={control.labels.legalHomepageLabel} value={selectedItem.homepage} />
+          </div>
+          <LegalNoticeTextBlock
+            label={control.labels.legalNoticeTextLabel}
+            value={selectedItem.noticeText}
+          />
+          <LegalNoticeTextBlock
+            label={control.labels.legalLicenseTextLabel}
+            value={selectedItem.licenseText}
+          />
+        </article>
+      </div>
+    </div>
+  );
+};
+
 const renderControl = (control: SettingsControlDescriptor): ReactNode => {
   switch (control.kind) {
     case "boolean-choice":
@@ -289,6 +468,9 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
             openDialog={control.openDialog}
           />
         );
+      }
+      if (control.customKind === "legal-notices") {
+        return <LegalNoticesView control={control} />;
       }
       return <SettingsAiView labels={control.labels} model={control.model} />;
     case "inline-status-action":

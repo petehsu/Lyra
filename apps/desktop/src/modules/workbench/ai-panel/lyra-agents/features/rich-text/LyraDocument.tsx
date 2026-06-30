@@ -8,6 +8,7 @@ import {
   type RefObject
 } from "react";
 import { renderMarkdown, sanitizeMermaidSvg, type MermaidRenderJob } from "@lyra/markdown-render";
+import { useCodeBlockHighlight } from "./use-code-block-highlight";
 
 import { useData } from "../../data/DataProvider";
 import {
@@ -328,6 +329,8 @@ export function LyraDocument({
         : null,
     [aiRichRenderingEnabled, content, streaming]
   );
+
+  useCodeBlockHighlight(rootRef, rendered?.html ?? "", aiRichRenderingEnabled && !streaming);
 
   if (!aiRichRenderingEnabled) {
     return <PlainAgentText content={content} />;

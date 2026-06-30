@@ -339,6 +339,7 @@ export const useWorkbenchSettingsSurfaceProps = ({
 
   return {
     ...labels.settingsSurface,
+    desktopApi,
     focusCategoryRequest,
     localeValue: preferences.locale,
     themeValue: preferences.theme,

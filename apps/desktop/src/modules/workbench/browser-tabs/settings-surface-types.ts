@@ -2,6 +2,7 @@ import type {
   LinuxCompatConfig,
   LinuxCompatProfile,
   LinuxCompatReadStatusResponse,
+  LyraDesktopApi,
   SystemNotificationClickBehavior,
   SystemNotificationMode
 } from "../../../shared/desktop-bridge";
@@ -30,7 +31,8 @@ export type BrowserSettingsCategoryId =
   | "linux"
   | "search"
   | "ai"
-  | "models";
+  | "models"
+  | "legal";
 
 export type BrowserSettingsCategoryFocusRequest = {
   readonly categoryId: BrowserSettingsCategoryId;
@@ -45,6 +47,7 @@ export type SettingsOption<T extends string = string> = {
 
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
+  readonly desktopApi: LyraDesktopApi | null;
   readonly focusCategoryRequest?: BrowserSettingsCategoryFocusRequest | null;
   readonly generalCategoryLabel: string;
   readonly appearanceCategoryLabel: string;
@@ -55,6 +58,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly loginManagerCategoryLabel: string;
   readonly softwareStoreCategoryLabel: string;
   readonly linuxCategoryLabel: string;
+  readonly legalCategoryLabel: string;
   readonly docsNavLabel: string;
   readonly languageLabel: string;
   readonly themeLabel: string;
@@ -121,6 +125,18 @@ export type BrowserSettingsSurfaceProps = {
   readonly linuxCompatRecoveryTitle: string;
   readonly linuxCompatRecoveryDescription: string;
   readonly linuxCompatRequestFailed: string;
+  readonly legalNoticesLabel: string;
+  readonly legalNoticesLoadingLabel: string;
+  readonly legalNoticesEmptyLabel: string;
+  readonly legalNoticesErrorLabel: string;
+  readonly legalGeneratedAtLabel: string;
+  readonly legalPackageCountLabel: string;
+  readonly legalLicenseLabel: string;
+  readonly legalSourceLabel: string;
+  readonly legalRepositoryLabel: string;
+  readonly legalHomepageLabel: string;
+  readonly legalNoticeTextLabel: string;
+  readonly legalLicenseTextLabel: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
   readonly uiStyleValue: WorkbenchUiPackId;

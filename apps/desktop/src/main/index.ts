@@ -12,10 +12,10 @@ import {
   shell
 } from "electron";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { hostname, userInfo, platform, homedir } from "node:os";
 import { exec, execSync } from "node:child_process";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -78,6 +78,7 @@ import {
   type LinuxCompatReadConfigResponse,
   type LinuxCompatRestartRequest,
   type LinuxCompatRestartResponse,
+  type ThirdPartyNoticesDocument,
   type LinuxCompatUpdateConfigRequest,
   type LinuxCompatUpdateConfigResponse,
   type WindowStatePayload,
@@ -296,6 +297,72 @@ const readAppMetaPayload = (): AppMetaPayload => {
     locale: app.getLocale(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };
+};
+
+type ThirdPartyNoticesCache = {
+  readonly path: string;
+  readonly mtimeMs: number;
+  readonly document: ThirdPartyNoticesDocument;
+};
+
+let thirdPartyNoticesCache: ThirdPartyNoticesCache | null = null;
+
+const isThirdPartyNoticesDocument = (value: unknown): value is ThirdPartyNoticesDocument => {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Partial<ThirdPartyNoticesDocument>;
+  return record.schemaVersion === 1
+    && typeof record.generatedAt === "string"
+    && typeof record.packageCount === "number"
+    && record.ecosystems !== null
+    && typeof record.ecosystems === "object"
+    && Array.isArray(record.items)
+    && typeof record.markdown === "string";
+};
+
+const resolveThirdPartyNoticesPath = async (): Promise<{ readonly path: string; readonly mtimeMs: number }> => {
+  const candidates = [
+    join(process.resourcesPath, "legal", "third-party-notices.json"),
+    join(process.cwd(), "legal", "generated", "third-party-notices.json"),
+    resolve(process.cwd(), "../../legal/generated/third-party-notices.json"),
+    resolve(currentDir, "../../../../legal/generated/third-party-notices.json")
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const stats = await stat(candidate);
+      if (stats.isFile()) {
+        return { path: candidate, mtimeMs: stats.mtimeMs };
+      }
+    } catch (_error) {
+      // try next dev/packaged candidate
+    }
+  }
+
+  throw new Error("Third-party notices have not been generated.");
+};
+
+const readThirdPartyNoticesDocument = async (): Promise<ThirdPartyNoticesDocument> => {
+  const resolvedNotices = await resolveThirdPartyNoticesPath();
+  if (
+    thirdPartyNoticesCache !== null
+    && thirdPartyNoticesCache.path === resolvedNotices.path
+    && thirdPartyNoticesCache.mtimeMs === resolvedNotices.mtimeMs
+  ) {
+    return thirdPartyNoticesCache.document;
+  }
+
+  const parsed = JSON.parse(await readFile(resolvedNotices.path, "utf8")) as unknown;
+  if (!isThirdPartyNoticesDocument(parsed)) {
+    throw new Error("Third-party notices JSON is invalid.");
+  }
+  thirdPartyNoticesCache = {
+    path: resolvedNotices.path,
+    mtimeMs: resolvedNotices.mtimeMs,
+    document: parsed
+  };
+  return parsed;
 };
 
 const publishWindowState = (window: BrowserWindow): void => {
@@ -1217,6 +1284,11 @@ const registerIpcHandlers = async (): Promise<void> => {
   ipcMain.on(LYRA_CHANNELS.readAppMetaSync, (event) => {
     event.returnValue = readAppMetaPayload();
   });
+
+  ipcMain.handle(
+    LYRA_CHANNELS.legalReadThirdPartyNotices,
+    readThirdPartyNoticesDocument
+  );
 
   ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> => {
     if (typeof url !== "string" || url.length === 0) {

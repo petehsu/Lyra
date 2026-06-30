@@ -7,14 +7,9 @@ import { createDataProviderValue } from "../../data/createDataProviderValue";
 import { DataContextProvider } from "../../data/DataProvider";
 import { APP_CONFIG } from "../../core/config";
 import { ChatView } from "./ChatView";
-import { CHAT_MESSAGE_GAP_PX } from "./chat-layout-constants";
-import {
-  createMessageWindowPlanConfig,
-  planAdditionalRevealCount,
-  planRevealCountFromEnd
-} from "./message-window-plan";
 
 const session: SessionMeta = {
+  id: "test-session",
   title: "新会话",
   project: "Lyra",
   workingDir: "/Users/petehsu/Documents/Lyra",
@@ -40,97 +35,31 @@ const makeMessage = (index: number): ChatMessage => ({
 
 const allMessages = Array.from({ length: 30 }, (_, index) => makeMessage(index + 1));
 
-let resizeObserverCallback: ResizeObserverCallback | null = null;
-
-const installResizeObserverMock = (): void => {
-  resizeObserverCallback = null;
-  class ResizeObserverMock {
-    constructor(callback: ResizeObserverCallback) {
-      resizeObserverCallback = callback;
-    }
-    observe(element: Element): void {
-      if (!(element instanceof HTMLElement)) return;
-      Object.defineProperty(element, "getBoundingClientRect", {
-        configurable: true,
-        value: () => ({
-          bottom: SLOT_HEIGHT_PX,
-          height: SLOT_HEIGHT_PX,
-          left: 0,
-          right: 300,
-          top: 0,
-          width: 300,
-          x: 0,
-          y: 0,
-          toJSON: () => ({})
-        })
-      });
-      resizeObserverCallback?.(
-        [{ target: element } as unknown as ResizeObserverEntry],
-        {} as ResizeObserver
-      );
-    }
-    unobserve(): void {}
-    disconnect(): void {}
-  }
-  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
-};
-
-const planConfigFor = (contentWidthPx: number) =>
-  createMessageWindowPlanConfig(contentWidthPx, {
-    minRevealCount: APP_CONFIG.messageWindow.minRevealCount,
-    maxRevealCount: APP_CONFIG.messageWindow.maxRevealCount,
-    messageGapPx: CHAT_MESSAGE_GAP_PX,
-    fallbackHeightPx: 80
-  });
-
-function ProgressiveChatHarness({
-  onLoadEarlier,
-  fixedVisibleCount
+function RenderBudgetChatHarness({
+  initialBudget = 12,
+  onLoadEarlier
 }: {
-  readonly onLoadEarlier?: (request: {
-    readonly heightBudgetPx: number;
-    readonly contentWidthPx: number;
-  }) => void;
-  /** Pins the progressive window for sticky/scroll tests that assume a fixed slice. */
-  readonly fixedVisibleCount?: number;
+  readonly initialBudget?: number;
+  readonly onLoadEarlier?: () => void;
 }) {
-  const [visibleCount, setVisibleCount] = useState<number>(() =>
-    fixedVisibleCount ?? Math.min(allMessages.length, 12)
-  );
-  const resolvedVisibleCount = Math.min(allMessages.length, visibleCount);
-  const messages = allMessages.slice(allMessages.length - resolvedVisibleCount);
+  const [budget, setBudget] = useState(initialBudget);
+  const resolvedBudget = Math.min(allMessages.length, budget);
+  const messages = allMessages.slice(allMessages.length - resolvedBudget);
+  const hiddenBefore = Math.max(0, allMessages.length - resolvedBudget);
   const data = createDataProviderValue({
     session,
     messages,
     messageWindow: {
-      visibleCount: resolvedVisibleCount,
-      hiddenBefore: Math.max(0, allMessages.length - resolvedVisibleCount),
+      visibleCount: resolvedBudget,
+      hiddenBefore,
       totalCount: allMessages.length,
-      canLoadEarlier:
-        fixedVisibleCount === undefined &&
-        resolvedVisibleCount < allMessages.length
+      canLoadEarlier: hiddenBefore > 0
     },
-    syncMessageWindowBudget: async (request) => {
-      if (fixedVisibleCount !== undefined) return;
-      const nextVisible = planRevealCountFromEnd(
-        allMessages,
-        request.heightBudgetPx,
-        planConfigFor(request.contentWidthPx)
+    loadEarlierMessages: async () => {
+      onLoadEarlier?.();
+      setBudget((current) =>
+        Math.min(allMessages.length, current + APP_CONFIG.messageWindow.loadBatchSize)
       );
-      setVisibleCount(Math.min(allMessages.length, nextVisible));
-    },
-    loadEarlierMessages: async (request) => {
-      if (fixedVisibleCount !== undefined) return;
-      onLoadEarlier?.(request);
-      setVisibleCount((current) => {
-        const additional = planAdditionalRevealCount(
-          allMessages,
-          current,
-          request.heightBudgetPx,
-          planConfigFor(request.contentWidthPx)
-        );
-        return Math.min(allMessages.length, current + additional);
-      });
     }
   });
 
@@ -139,11 +68,45 @@ function ProgressiveChatHarness({
       <ChatView showDecisions={false} showPermission={false} />
     </DataContextProvider>
   );
+}
+
+/**
+ * Stamps each `[data-chat-message-id]` slot with sequential offsetTop/offsetHeight
+ * so the DOM-based sticky anchor logic can resolve positions without a real layout engine.
+ */
+const layoutMessageSlots = (container: HTMLElement, slotHeight = SLOT_HEIGHT_PX): void => {
+  const slots = container.querySelectorAll<HTMLElement>("[data-chat-message-id]");
+  slots.forEach((slot, index) => {
+    Object.defineProperty(slot, "offsetTop", {
+      configurable: true,
+      value: index * slotHeight
+    });
+    Object.defineProperty(slot, "offsetHeight", {
+      configurable: true,
+      value: slotHeight
+    });
+  });
 };
 
-describe("ChatView progressive message window", () => {
+const primeScroll = (
+  scroll: HTMLDivElement,
+  options: { readonly clientHeight?: number; readonly scrollHeight?: number; readonly scrollTop?: number } = {}
+): void => {
+  const clientHeight = options.clientHeight ?? 600;
+  const scrollHeight = options.scrollHeight ?? 600;
+  Object.defineProperty(scroll, "clientHeight", { configurable: true, value: clientHeight });
+  Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: scrollHeight });
+  scroll.scrollTop = options.scrollTop ?? 0;
+  fireEvent.scroll(scroll);
+};
+
+describe("ChatView render-budget message window", () => {
   beforeEach(() => {
-    installResizeObserverMock();
+    vi.stubGlobal("ResizeObserver", class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    });
   });
 
   afterEach(() => {
@@ -151,176 +114,131 @@ describe("ChatView progressive message window", () => {
     vi.unstubAllGlobals();
   });
 
-  const primeScrollViewport = (
-    scroll: HTMLDivElement,
-    options: { readonly clientHeight?: number; readonly scrollHeight?: number } = {}
-  ): void => {
-    const clientHeight = options.clientHeight ?? 1800;
-    const scrollHeight = options.scrollHeight ?? 3000;
-    Object.defineProperty(scroll, "clientHeight", {
-      configurable: true,
-      value: clientHeight
-    });
-    Object.defineProperty(scroll, "scrollHeight", {
-      configurable: true,
-      value: scrollHeight
-    });
-    scroll.scrollTop = 0;
-    fireEvent.scroll(scroll);
-  };
-
-  const primeStickyScrollViewport = async (
-    container: HTMLElement,
-    scroll: HTMLDivElement
-  ): Promise<void> => {
-    // Mount the full pinned window first so ResizeObserver can seed every slot height.
-    primeScrollViewport(scroll, { clientHeight: 1800, scrollHeight: 3000 });
+  test("renders only the latest render-budget window on long threads", async () => {
+    render(<RenderBudgetChatHarness initialBudget={12} />);
     await waitFor(() => {
       expect(screen.getByText("Message 30")).toBeInTheDocument();
       expect(screen.getByText("Message 19")).toBeInTheDocument();
       expect(screen.queryByText("Message 18")).not.toBeInTheDocument();
     });
-    flushMeasuredHeights(container);
-
-    Object.defineProperty(scroll, "scrollHeight", {
-      configurable: true,
-      value: 1000
-    });
-    Object.defineProperty(scroll, "clientHeight", {
-      configurable: true,
-      value: 300
-    });
-    scroll.scrollTop = 0;
-    fireEvent.scroll(scroll);
-  };
-
-  const flushMeasuredHeights = (container: HTMLElement): void => {
-    container.querySelectorAll("[data-chat-message-id]").forEach((slot) => {
-      resizeObserverCallback?.(
-        [{ target: slot } as unknown as ResizeObserverEntry],
-        {} as ResizeObserver
-      );
-    });
-  };
-
-  test("renders only the latest message window on long threads", async () => {
-    const { container } = render(<ProgressiveChatHarness />);
-    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    primeScrollViewport(scroll);
-
-    await waitFor(() => {
-      expect(screen.getByText("Message 30")).toBeInTheDocument();
-      expect(screen.queryByText("Message 1")).not.toBeInTheDocument();
-    });
-    const mountedMessages = screen.getAllByText(/^Message \d+$/u);
-    expect(mountedMessages.length).toBeLessThan(allMessages.length);
-    expect(mountedMessages.length).toBeGreaterThan(APP_CONFIG.messageWindow.minRevealCount);
   });
 
-  test("loads earlier messages when the user reaches the top", async () => {
+  test("shows Show earlier button when earlier messages exist", () => {
+    const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
+    const button = container.querySelector(".lyra-agents-chat-load-earlier button");
+    expect(button).not.toBeNull();
+  });
+
+  test("hides Show earlier button when all messages are visible", () => {
+    const { container } = render(<RenderBudgetChatHarness initialBudget={30} />);
+    const button = container.querySelector(".lyra-agents-chat-load-earlier button");
+    expect(button).toBeNull();
+  });
+
+  test("loads earlier messages on Show earlier button click", async () => {
     const onLoadEarlier = vi.fn();
-    const { container } = render(<ProgressiveChatHarness onLoadEarlier={onLoadEarlier} />);
-    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    primeScrollViewport(scroll);
-    await waitFor(() => {
-      expect(screen.getByText("Message 30")).toBeInTheDocument();
-      expect(screen.queryByText("Message 1")).not.toBeInTheDocument();
-    });
-    Object.defineProperty(scroll, "clientHeight", {
-      configurable: true,
-      value: 300
-    });
-
-    scroll.scrollTop = 0;
-    fireEvent.scroll(scroll);
-
+    const { container } = render(
+      <RenderBudgetChatHarness initialBudget={12} onLoadEarlier={onLoadEarlier} />
+    );
+    const button = container.querySelector(
+      ".lyra-agents-chat-load-earlier button"
+    ) as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    fireEvent.click(button);
     await waitFor(() => {
       expect(onLoadEarlier).toHaveBeenCalled();
+      expect(screen.getByText("Message 1")).toBeInTheDocument();
     });
-
-    await waitFor(() => {
-      const mounted = screen.getAllByText(/^Message \d+$/u).map((node) => node.textContent);
-      const numbers = mounted
-        .map((text) => Number.parseInt(text?.replace("Message ", "") ?? "", 10))
-        .filter((value) => Number.isFinite(value));
-      expect(numbers.length).toBeGreaterThan(0);
-      expect(Math.min(...numbers)).toBeLessThan(Math.max(...numbers));
-    });
-    expect(screen.queryByText("Message 1")).not.toBeInTheDocument();
   });
 
-  test("shows a sticky previous user message anchor while scrolling history", async () => {
-    const { container } = render(<ProgressiveChatHarness fixedVisibleCount={12} />);
-    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    await primeStickyScrollViewport(container, scroll);
-
-    const scrollTo = vi.fn();
-    Object.defineProperty(scroll, "scrollTo", {
-      configurable: true,
-      value: scrollTo
-    });
-
-    scroll.scrollTop = 50;
-    fireEvent.scroll(scroll);
-    flushMeasuredHeights(container);
-
-    await waitFor(() => {
-      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent("Message 19");
-    });
-
-    fireEvent.click(container.querySelector(".lyra-agents-chat-thread-anchor-button") as HTMLButtonElement);
-
-    expect(scrollTo).toHaveBeenCalledWith(
-      expect.objectContaining({ behavior: "smooth" })
+  test("loads earlier messages when scrolled near the top", async () => {
+    const onLoadEarlier = vi.fn();
+    const { container } = render(
+      <RenderBudgetChatHarness initialBudget={12} onLoadEarlier={onLoadEarlier} />
     );
-  });
-
-  test("keeps the sticky previous user message anchor near the bottom of a long answer", async () => {
-    const { container } = render(<ProgressiveChatHarness fixedVisibleCount={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    await primeStickyScrollViewport(container, scroll);
-
-    scroll.scrollTop = 120;
-    fireEvent.scroll(scroll);
-    flushMeasuredHeights(container);
-
+    expect(scroll).not.toBeNull();
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 600, scrollTop: 600 });
     await waitFor(() => {
-      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent("Message 21");
+      expect(screen.getByText("Message 30")).toBeInTheDocument();
+    });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 600, scrollTop: 0 });
+    await waitFor(() => {
+      expect(onLoadEarlier).toHaveBeenCalled();
     });
   });
 
   test("mounts every message in the current window", async () => {
-    const { container } = render(<ProgressiveChatHarness fixedVisibleCount={12} />);
-    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    primeScrollViewport(scroll);
-
+    const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     await waitFor(() => {
       expect(screen.getByText("Message 30")).toBeInTheDocument();
       expect(screen.getByText("Message 19")).toBeInTheDocument();
     });
-
     const mountedSlots = container.querySelectorAll("[data-chat-message-id]").length;
     expect(mountedSlots).toBe(12);
   });
 
-  test("hides the sticky anchor once its message is visible at the top", async () => {
-    const { container } = render(<ProgressiveChatHarness fixedVisibleCount={12} />);
+  test("shows sticky anchor for the last user message above the anchor line", async () => {
+    const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    await primeStickyScrollViewport(container, scroll);
-
-    scroll.scrollTop = 50;
-    fireEvent.scroll(scroll);
-    flushMeasuredHeights(container);
-
+    expect(scroll).not.toBeNull();
+    layoutMessageSlots(container);
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
     await waitFor(() => {
-      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent("Message 19");
+      // scrollTop=50, anchorLine=50+18=68.
+      // message-19 (user): bottom=20  <= 68 → candidate
+      // message-20 (agent): bottom=40 <= 68, not user
+      // message-21 (user): bottom=60  <= 68 → candidate
+      // message-22 (agent): top=60    <= 68, bottom=80 > 68 → continue
+      // message-23 (user): top=80    > 68  → break
+      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent(
+        "Message 21"
+      );
     });
+  });
 
-    scroll.scrollTop = 0;
-    fireEvent.scroll(scroll);
-
+  test("hides sticky anchor when scrolled to the very top", async () => {
+    const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
+    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
+    expect(scroll).not.toBeNull();
+    layoutMessageSlots(container);
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
+    await waitFor(() => {
+      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toBeInTheDocument();
+    });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 0 });
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).not.toBeInTheDocument();
     });
+  });
+
+  test("clicking the sticky anchor scrolls to the anchored message", async () => {
+    const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
+    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
+    expect(scroll).not.toBeNull();
+    layoutMessageSlots(container);
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
+    await waitFor(() => {
+      expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent(
+        "Message 21"
+      );
+    });
+
+    const scrollTo = vi.fn();
+    const targetSlot = container.querySelector<HTMLElement>(
+      '[data-chat-message-id="message-21"]'
+    );
+    expect(targetSlot).not.toBeNull();
+    Object.defineProperty(targetSlot, "scrollIntoView", {
+      configurable: true,
+      value: scrollTo
+    });
+
+    const anchorButton = container.querySelector(
+      ".lyra-agents-chat-thread-anchor-button"
+    ) as HTMLButtonElement;
+    expect(anchorButton).not.toBeNull();
+    fireEvent.click(anchorButton);
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: "smooth" });
   });
 });

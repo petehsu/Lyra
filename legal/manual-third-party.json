@@ -1,0 +1,31 @@
+[
+  {
+    "name": "OpenAI Codex",
+    "version": "derived",
+    "ecosystem": "derived",
+    "license": "Apache-2.0",
+    "source": "https://github.com/openai/codex",
+    "licensePath": "legal/third-party/openai-codex/LICENSE",
+    "noticePath": "legal/third-party/openai-codex/NOTICE",
+    "notes": "Derived code and Codex-compatible tool/patch conventions."
+  },
+  {
+    "name": "bubblewrap",
+    "version": "vendored",
+    "ecosystem": "vendored",
+    "license": "LGPL-2.0",
+    "source": "https://github.com/containers/bubblewrap",
+    "licensePath": "third-party/native/bubblewrap/COPYING",
+    "notes": "Vendored native sandbox source."
+  },
+  {
+    "name": "OpenImageIO",
+    "version": "optional",
+    "ecosystem": "optional",
+    "license": "BSD-3-Clause",
+    "source": "https://github.com/AcademySoftwareFoundation/OpenImageIO",
+    "licensePath": "legal/third-party/image-codecs/LICENSE",
+    "noticePath": "legal/third-party/image-codecs/NOTICE",
+    "notes": "Optional image codec backend; not bundled unless discovered at build time."
+  }
+]

@@ -83,6 +83,47 @@ describe("BrowserSettingsSurface", () => {
     expect(screen.getByLabelText("login-manager-settings")).toHaveAttribute("data-embedded", "true");
   });
 
+  test("loads open source notices in the Legal category", async () => {
+    const readThirdPartyNotices = vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T00:00:00.000Z",
+      packageCount: 1,
+      ecosystems: { npm: 1 },
+      items: [
+        {
+          name: "Example Package",
+          version: "1.0.0",
+          ecosystem: "npm",
+          license: "MIT",
+          repository: "https://example.test/repo",
+          noticeText: "Example notice",
+          licenseText: "Example license"
+        }
+      ],
+      markdown: "# Third-Party Notices\n"
+    });
+
+    render(
+      <BrowserSettingsSurface
+        {...createBrowserSettingsSurfaceProps({
+          desktopApi: {
+            legal: { readThirdPartyNotices }
+          } as unknown as NonNullable<ReturnType<typeof createBrowserSettingsSurfaceProps>["desktopApi"]>,
+          focusCategoryRequest: { categoryId: "legal", requestId: 1 }
+        })}
+      />
+    );
+
+    const nav = screen.getByLabelText("settings-nav");
+    expect(within(nav).getByRole("button", { name: "Legal" })).toHaveClass(
+      "lyra-settings-nav-item-active"
+    );
+    expect(await screen.findAllByText("Example Package")).toHaveLength(2);
+    expect(screen.getByText("Example notice")).toBeInTheDocument();
+    expect(screen.getByText("Example license")).toBeInTheDocument();
+    expect(readThirdPartyNotices).toHaveBeenCalledTimes(1);
+  });
+
   test("renders docs as a jump action in settings navigation", () => {
     const onOpenDocs = vi.fn();
 

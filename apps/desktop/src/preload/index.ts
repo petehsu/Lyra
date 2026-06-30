@@ -171,6 +171,7 @@ import {
   type TerminalWaitUntilRequest,
   type TerminalWaitUntilResponse,
   type TerminalWriteRequest,
+  type ThirdPartyNoticesDocument,
   type SearchResolveWebEngineRequest,
   type SearchResolveWebEngineResponse,
   type SystemNotificationAccessRequestResult,
@@ -847,6 +848,10 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   detectEditors: () => ipcRenderer.invoke(LYRA_CHANNELS.detectEditors) as Promise<DetectedEditor[]>,
   openInEditor: (request: OpenInEditorRequest) => ipcRenderer.invoke(LYRA_CHANNELS.openInEditor, request) as Promise<boolean>,
   revealInFolder: (path: string) => ipcRenderer.invoke(LYRA_CHANNELS.revealInFolder, path) as Promise<boolean>,
+  legal: {
+    readThirdPartyNotices: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.legalReadThirdPartyNotices) as Promise<ThirdPartyNoticesDocument>
+  },
   identity: {
     readUserIcon: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.identityReadUserIcon) as Promise<IdentityIconSnapshot | null>,

@@ -94,10 +94,34 @@ export type SettingsSoftwareStoreCustomControlDescriptor = {
   readonly props: SoftwareStoreSurfaceProps;
 };
 
+export type SettingsLegalNoticesLabels = Pick<
+  BrowserSettingsSurfaceProps,
+  | "legalNoticesLabel"
+  | "legalNoticesLoadingLabel"
+  | "legalNoticesEmptyLabel"
+  | "legalNoticesErrorLabel"
+  | "legalGeneratedAtLabel"
+  | "legalPackageCountLabel"
+  | "legalLicenseLabel"
+  | "legalSourceLabel"
+  | "legalRepositoryLabel"
+  | "legalHomepageLabel"
+  | "legalNoticeTextLabel"
+  | "legalLicenseTextLabel"
+>;
+
+export type SettingsLegalNoticesCustomControlDescriptor = {
+  readonly kind: "custom";
+  readonly customKind: "legal-notices";
+  readonly desktopApi: BrowserSettingsSurfaceProps["desktopApi"];
+  readonly labels: SettingsLegalNoticesLabels;
+};
+
 export type SettingsCustomControlDescriptor =
   | SettingsAiCustomControlDescriptor
   | SettingsLoginManagerCustomControlDescriptor
-  | SettingsSoftwareStoreCustomControlDescriptor;
+  | SettingsSoftwareStoreCustomControlDescriptor
+  | SettingsLegalNoticesCustomControlDescriptor;
 
 export type SettingsStatusListControlDescriptor = {
   readonly kind: "status-list";
@@ -319,6 +343,8 @@ const resolveCategoryHeading = (
       return props.aiCategoryLabel;
     case "models":
       return props.modelsCategoryLabel;
+    case "legal":
+      return props.legalCategoryLabel;
     default:
       return props.title;
   }
@@ -660,6 +686,33 @@ const createSectionControl = (
             labels: props.aiLabels,
             model: props.aiModel,
             openDialog: props.openDialog
+          }
+        ]
+      });
+    case "legalNotices":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.legalNoticesLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "legal-notices",
+            desktopApi: props.desktopApi,
+            labels: {
+              legalNoticesLabel: props.legalNoticesLabel,
+              legalNoticesLoadingLabel: props.legalNoticesLoadingLabel,
+              legalNoticesEmptyLabel: props.legalNoticesEmptyLabel,
+              legalNoticesErrorLabel: props.legalNoticesErrorLabel,
+              legalGeneratedAtLabel: props.legalGeneratedAtLabel,
+              legalPackageCountLabel: props.legalPackageCountLabel,
+              legalLicenseLabel: props.legalLicenseLabel,
+              legalSourceLabel: props.legalSourceLabel,
+              legalRepositoryLabel: props.legalRepositoryLabel,
+              legalHomepageLabel: props.legalHomepageLabel,
+              legalNoticeTextLabel: props.legalNoticeTextLabel,
+              legalLicenseTextLabel: props.legalLicenseTextLabel
+            }
           }
         ]
       });

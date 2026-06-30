@@ -2,9 +2,12 @@
 // ChatView — scrollable message list + floating lyra-agents-composer stack
 // ============================================================================
 //
-// Wires together: messages, lyra-agents-scroll-to-bottom button, panels (decision /
-// permission), and lyra-agents-composer. Drives the scroll-linked decision panel
-// progress value.
+// Render-budget approach (replaces virtual scroll + height estimation):
+// All messages from the DataProvider are rendered directly as DOM. The
+// DataProvider caps the count via a render budget; a "Show earlier" button
+// loads more. This eliminates height-table / spacer / pre-measure jitter
+// at the cost of more DOM nodes for very long sessions — a tradeoff that
+// favors stability over memory, matching hermes-agent's proven approach.
 
 import {
   useCallback,
@@ -23,12 +26,6 @@ import { APP_CONFIG } from "../../core/config";
 import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import {
-  getIsLayoutResizing,
-  subscribeLayoutResizeEnd,
-  subscribeLayoutResizeStart
-} from "../../../../shell/use-panel-layout";
-import { createChatLoadGovernor } from "./chat-load-governor";
-import {
   isEmptyPendingAgentMessage,
   Message,
   resolveAgentActivityHostMessageId
@@ -42,29 +39,14 @@ import { TodoBar } from "../pills/TodoBar";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
 import { AppButton } from "@renderer/ui/components";
 import {
-  CHAT_INNER_PADDING_TOP_PX,
-  CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-  CHAT_MESSAGE_GAP_PX,
-  CHAT_VIRTUAL_OVERSCAN
-} from "./chat-layout-constants";
-import { visibleIndexRange } from "./message-height-table";
-import { nextStickyMessageId } from "./sticky-message";
-import { useMessageHeightTable } from "./use-message-height-table";
-import { VirtualizedMessageList } from "./virtualized-message-list";
-import {
   buildFullMessageCitation,
   messagePlainText,
   resolveSelectionCitation
 } from "./message-citation";
-import { runCitationScrollIntoView } from "./scroll-to-citation";
+import { queryCitationMessageElement } from "./scroll-to-citation";
 
-interface ChatViewProps {
-  /** When true, render the decision panel even if there are no questions. */
-  showDecisions: boolean;
-  showPermission: boolean;
-  desktopApi?: LyraDesktopApi | null;
-}
-
+// ponytail: sticky anchor offset from the top of the scroll viewport.
+const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
 
 const textPreviewForMessage = (message: ChatMessage): string => {
@@ -84,6 +66,12 @@ const textPreviewForMessage = (message: ChatMessage): string => {
   return message.blocks.find((block) => block.type === "tools")?.group.label ?? "";
 };
 
+interface ChatViewProps {
+  showDecisions: boolean;
+  showPermission: boolean;
+  desktopApi?: LyraDesktopApi | null;
+}
+
 export function ChatView({ showDecisions, showPermission, desktopApi = null }: ChatViewProps) {
   const {
     messages,
@@ -93,7 +81,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     planReview,
     sendMessage,
     loadEarlierMessages,
-    syncMessageWindowBudget,
     captureWorkspaceScreenshot,
     captureWindowScreenshot,
     pickFileFromFileManager,
@@ -143,9 +130,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   } = useData();
   const contextMenu = useContextMenuModel();
 
-  // The composer "Plan"/"Todos" buttons and the floating todo capsule open the
-  // project plan/todo manager (which has the left list + right detail) when the
-  // session is project-bound; otherwise they fall back to the single-plan board.
   const canManagePlans =
     session.projectBound === true &&
     session.workingDirIsHome !== true &&
@@ -161,28 +145,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const orderedIdsRef = useRef<readonly string[]>([]);
-  const listContentStartRef = useRef(0);
-  const measurableDuringResizeRef = useRef<ReadonlySet<string> | null>(null);
-
-  const messageIds = useMemo(() => messages.map((message) => message.id), [messages]);
-  orderedIdsRef.current = messageIds;
-
-  const heightTable = useMessageHeightTable(
-    scrollRef,
-    CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-    orderedIdsRef,
-    CHAT_MESSAGE_GAP_PX,
-    measurableDuringResizeRef
-  );
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [panelProgress, setPanelProgress] = useState(1);
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
-  const [viewportTop, setViewportTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [isLayoutResizing, setIsLayoutResizing] = useState(false);
 
   const hasPendingClarification = showDecisions && decisions.length > 0;
   const pendingPlanReview = planReview !== null && planReview.phase === "reviewing" ? planReview : null;
@@ -213,146 +179,48 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const rafId = useRef(0);
   const accumulatedDelta = useRef(0);
   const loadingEarlierRef = useRef(false);
-  const prependStartedAtRef = useRef<number | null>(null);
-  const loadGovernorRef = useRef(createChatLoadGovernor(APP_CONFIG.messageWindow.governor));
-  const hasSyncedMessageWindowRef = useRef(false);
-  const syncedMessageWindowSessionRef = useRef<string | null>(null);
-  const prependRestoreRef = useRef<{
-    readonly scrollHeight: number;
-    readonly scrollTop: number;
-  } | null>(null);
-  const citationScrollSessionRef = useRef<{
-    readonly token: number;
-    readonly anchorScrollHeight: number;
-    readonly anchorScrollTop: number;
-  } | null>(null);
-  const citationScrollCompletedTokenRef = useRef<number | null>(null);
-  const citationScrollCancelRef = useRef<(() => void) | null>(null);
   const scrollAnchorDistanceRef = useRef(0);
+  const citationScrollCompletedTokenRef = useRef<number | null>(null);
 
-  const pinnedMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (citationScrollTarget !== null) {
-      ids.add(citationScrollTarget.messageId);
-    }
-    if (activityIndicatorHostMessageId !== null) {
-      ids.add(activityIndicatorHostMessageId);
-    }
-    return ids.size > 0 ? [...ids] : undefined;
-  }, [activityIndicatorHostMessageId, citationScrollTarget?.messageId]);
-
-  const visibleMessageIdsDuringResize = useMemo((): ReadonlySet<string> => {
-    if (messageIds.length === 0) {
-      return new Set<string>();
-    }
-    const viewportBottom = viewportHeight <= 0
-      ? Number.POSITIVE_INFINITY
-      : viewportTop + viewportHeight;
-    const [firstIndex, lastIndex] = visibleIndexRange(
-      heightTable.store,
-      messageIds,
-      viewportTop,
-      viewportBottom,
-      CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-      CHAT_MESSAGE_GAP_PX
-    );
-    const ids = new Set(messageIds.slice(firstIndex, lastIndex + 1));
-    if (pinnedMessageIds !== undefined) {
-      for (const pinnedId of pinnedMessageIds) {
-        if (ids.has(pinnedId)) continue;
-        const pinnedIndex = messageIds.indexOf(pinnedId);
-        if (pinnedIndex < firstIndex || pinnedIndex > lastIndex) continue;
-        ids.add(pinnedId);
-      }
-    }
-    return ids;
-  }, [
-    heightTable.store,
-    heightTable.version,
-    messageIds,
-    pinnedMessageIds,
-    viewportHeight,
-    viewportTop
-  ]);
-
-  measurableDuringResizeRef.current = isLayoutResizing
-    ? visibleMessageIdsDuringResize
-    : null;
-
-  const resolveContentWidthPx = useCallback((): number => {
-    const innerWidth = innerRef.current?.clientWidth ?? 0;
-    if (innerWidth > 0) return innerWidth;
-    return APP_CONFIG.maxColumnWidth;
-  }, []);
-
-  const syncAdaptiveMessageWindow = useCallback(() => {
-    const scrollEl = scrollRef.current;
-    if (scrollEl === null || scrollEl.clientHeight <= 0) return;
-    const budget = loadGovernorRef.current.requestInitialBudget(scrollEl.clientHeight);
-    void syncMessageWindowBudget({
-      heightBudgetPx: budget,
-      contentWidthPx: resolveContentWidthPx()
-    });
-  }, [resolveContentWidthPx, syncMessageWindowBudget]);
-
-  const syncListContentStart = useCallback((scrollEl: HTMLDivElement): number => {
-    const inner = innerRef.current;
-    if (inner === null) {
-      listContentStartRef.current = 0;
-      return 0;
-    }
-    const start = inner.offsetTop + CHAT_INNER_PADDING_TOP_PX;
-    listContentStartRef.current = start;
-    return start;
-  }, []);
-
+  // --- Scroll handler: bottom detection, sticky anchor, decision panel progress ---
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-
-    const listContentStart = syncListContentStart(el);
-    const contentViewportTop = Math.max(0, el.scrollTop - listContentStart);
-    setViewportTop(contentViewportTop);
-    setViewportHeight(el.clientHeight);
-
-    if (
-      messageWindow.canLoadEarlier &&
-      !loadingEarlierRef.current &&
-      el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold &&
-      !loadGovernorRef.current.shouldDeferLoad(getIsLayoutResizing())
-    ) {
-      loadingEarlierRef.current = true;
-      prependStartedAtRef.current = performance.now();
-      prependRestoreRef.current = {
-        scrollHeight: el.scrollHeight,
-        scrollTop: el.scrollTop
-      };
-      const budget = loadGovernorRef.current.requestLoadBudget(el.clientHeight);
-      void loadEarlierMessages({
-        heightBudgetPx: budget,
-        contentWidthPx: resolveContentWidthPx()
-      }).finally(() => {
-        loadingEarlierRef.current = false;
-      });
-    }
 
     const atBottom =
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
     scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
-    setStickyMessageId((current) =>
-      nextStickyMessageId(
-        heightTable.store,
-        messageIds,
-        messages,
-        el.scrollTop,
-        listContentStart,
-        current,
-        CHAT_MESSAGE_FALLBACK_HEIGHT_PX,
-        CHAT_MESSAGE_GAP_PX
-      )
-    );
 
+    // Sticky anchor: find the last user message whose bottom is above the anchor line.
+    // Uses DOM getBoundingClientRect instead of a height table — simpler and always accurate.
+    const anchorLine = el.scrollTop + STICKY_ANCHOR_TOP_OFFSET_PX;
+    let foundStickyId: string | null = null;
+    const slots = el.querySelectorAll<HTMLElement>("[data-chat-message-id]");
+    for (const slot of slots) {
+      const top = slot.offsetTop;
+      const bottom = top + slot.offsetHeight;
+      if (bottom <= anchorLine && slot.dataset.chatMessageAuthor === "user") {
+        foundStickyId = slot.dataset.chatMessageId ?? null;
+      } else if (top > anchorLine) {
+        break;
+      }
+    }
+    setStickyMessageId(foundStickyId);
+
+    // Load earlier messages when scrolled near the top
+    if (
+      messageWindow.canLoadEarlier &&
+      !loadingEarlierRef.current &&
+      el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold
+    ) {
+      loadingEarlierRef.current = true;
+      void loadEarlierMessages().finally(() => {
+        loadingEarlierRef.current = false;
+      });
+    }
+
+    // Decision panel progress
     const currentTop = el.scrollTop;
     const delta = currentTop - lastScrollTop.current;
     lastScrollTop.current = currentTop;
@@ -378,93 +246,41 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         });
       });
     }
-  }, [
-    heightTable,
-    loadEarlierMessages,
-    messageIds,
-    messageWindow.canLoadEarlier,
-    messages,
-    resolveContentWidthPx,
-    syncListContentStart
-  ]);
+  }, [loadEarlierMessages, messageWindow.canLoadEarlier]);
 
-  useEffect(() => {
-    loadGovernorRef.current.reset();
-    hasSyncedMessageWindowRef.current = false;
-    syncedMessageWindowSessionRef.current = null;
-  }, [session.id]);
-
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (viewportHeight <= 0 || messageWindow.totalCount <= 0) {
-      return;
-    }
-    const sessionKey = session.id ?? "__active-session__";
-    if (
-      hasSyncedMessageWindowRef.current &&
-      syncedMessageWindowSessionRef.current === sessionKey
-    ) {
-      return;
-    }
-    hasSyncedMessageWindowRef.current = true;
-    syncedMessageWindowSessionRef.current = sessionKey;
-    syncAdaptiveMessageWindow();
-  }, [
-    messageWindow.totalCount,
-    session.id,
-    syncAdaptiveMessageWindow,
-    viewportHeight
-  ]);
-
-  useEffect(() => {
-    let frameId = 0;
-    let lastFrameAt = performance.now();
-    const sample = (now: number): void => {
-      loadGovernorRef.current.recordFrameDelta(now - lastFrameAt);
-      lastFrameAt = now;
-      frameId = requestAnimationFrame(sample);
-    };
-    frameId = requestAnimationFrame(sample);
-    return () => cancelAnimationFrame(frameId);
-  }, []);
-
+  // --- Scroll position maintenance on messages change ---
+  // Anchors to bottom (or preserves distance-from-bottom if user scrolled up).
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    syncListContentStart(el);
-    setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
-    setViewportHeight(el.clientHeight);
+    const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
+    el.scrollTop = nextScrollTop;
+    lastScrollTop.current = nextScrollTop;
+    const atBottom =
+      el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+    setIsAtBottom(atBottom);
+    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
+  }, [messages]);
 
-    const prependRestore = prependRestoreRef.current;
-    if (prependRestore !== null) {
-      prependRestoreRef.current = null;
-      el.scrollTop = Math.max(
-        0,
-        el.scrollHeight - prependRestore.scrollHeight + prependRestore.scrollTop
-      );
-      lastScrollTop.current = el.scrollTop;
-      scrollAnchorDistanceRef.current = el.scrollHeight - el.scrollTop;
-      setViewportTop(Math.max(0, el.scrollTop - listContentStartRef.current));
-      const startedAt = prependStartedAtRef.current;
-      if (startedAt !== null) {
-        loadGovernorRef.current.recordPrependDuration(performance.now() - startedAt);
-        prependStartedAtRef.current = null;
-      }
-      return;
-    }
+  // --- Citation scroll: scroll a specific message into view ---
+  useLayoutEffect(() => {
+    if (citationScrollTarget === null) return;
+    if (citationScrollCompletedTokenRef.current === citationScrollTarget.token) return;
 
-    if (citationScrollTarget === null) {
-      const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
-      el.scrollTop = nextScrollTop;
-      lastScrollTop.current = nextScrollTop;
-      setViewportTop(Math.max(0, nextScrollTop - listContentStartRef.current));
-      const atBottom =
-        el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
-      setIsAtBottom(atBottom);
-      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
+    const el = scrollRef.current;
+    if (el === null) return;
+
+    const domTarget = queryCitationMessageElement(el, citationScrollTarget.messageId);
+    if (domTarget !== null) {
+      domTarget.scrollIntoView({ block: "center", behavior: "auto" });
+      citationScrollCompletedTokenRef.current = citationScrollTarget.token;
+      // Highlight after a frame so the scroll settles
+      requestAnimationFrame(() => {
+        reportCitationScrollFinished(citationScrollTarget.messageId);
+      });
     }
-  }, [citationScrollTarget, messages, syncListContentStart]);
+  }, [citationScrollTarget, reportCitationScrollFinished]);
 
   useEffect(() => {
     if (decisions.length > 0 || permissions.length > 0) {
@@ -478,6 +294,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     }
   }, [messages, stickyMessageId]);
 
+  // Reset scroll anchor on session switch — start at bottom
+  useEffect(() => {
+    scrollAnchorDistanceRef.current = 0;
+    setStickyMessageId(null);
+  }, [session.id]);
+
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (el) {
@@ -489,80 +311,11 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     if (stickyMessageId === null) return;
     const el = scrollRef.current;
     if (el === null) return;
-    const index = messageIds.indexOf(stickyMessageId);
-    if (index < 0) return;
-    const targetTop =
-      listContentStartRef.current +
-      heightTable.offsetOf(messageIds, index);
-    el.scrollTo({ top: targetTop, behavior: "smooth" });
+    const target = el.querySelector<HTMLElement>(`[data-chat-message-id="${CSS.escape(stickyMessageId)}"]`);
+    if (target !== null) {
+      target.scrollIntoView({ behavior: "smooth" });
+    }
   };
-
-  useLayoutEffect(() => {
-    if (citationScrollTarget === null) return;
-    if (citationScrollCompletedTokenRef.current === citationScrollTarget.token) return;
-
-    const el = scrollRef.current;
-    if (el === null) return;
-
-    let session = citationScrollSessionRef.current;
-    if (session === null || session.token !== citationScrollTarget.token) {
-      citationScrollCompletedTokenRef.current = null;
-      session = {
-        token: citationScrollTarget.token,
-        anchorScrollHeight: el.scrollHeight,
-        anchorScrollTop: el.scrollTop
-      };
-      citationScrollSessionRef.current = session;
-    }
-
-    const index = messageIds.indexOf(citationScrollTarget.messageId);
-    if (index < 0) return;
-
-    citationScrollCancelRef.current?.();
-    citationScrollCancelRef.current = null;
-
-    if (messages.length > citationScrollTarget.visibleCountAtStart) {
-      el.scrollTop = Math.max(
-        0,
-        el.scrollHeight - session.anchorScrollHeight + session.anchorScrollTop
-      );
-    }
-
-    syncListContentStart(el);
-    const targetTop =
-      listContentStartRef.current +
-      heightTable.offsetOf(messageIds, index);
-    setIsAtBottom(false);
-
-    const syncViewport = (scrollTop: number): void => {
-      lastScrollTop.current = scrollTop;
-      setViewportTop(Math.max(0, scrollTop - listContentStartRef.current));
-    };
-
-    citationScrollCancelRef.current = runCitationScrollIntoView({
-      scrollEl: el,
-      messageId: citationScrollTarget.messageId,
-      estimatedTop: targetTop,
-      onViewportSync: syncViewport,
-      onComplete: () => {
-        citationScrollCompletedTokenRef.current = citationScrollTarget.token;
-        citationScrollCancelRef.current = null;
-        reportCitationScrollFinished(citationScrollTarget.messageId);
-      }
-    });
-
-    return () => {
-      citationScrollCancelRef.current?.();
-      citationScrollCancelRef.current = null;
-    };
-  }, [
-    citationScrollTarget,
-    heightTable.version,
-    messageIds,
-    messages.length,
-    reportCitationScrollFinished,
-    syncListContentStart
-  ]);
 
   const openMessageContextMenu = useCallback((
     event: MouseEvent<HTMLElement>,
@@ -651,32 +404,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     });
   }, [addCitationToComposer, contextMenu, previewRollback, rollbackMessage]);
 
-  useEffect(() => {
-    const unsubscribeStart = subscribeLayoutResizeStart(() => {
-      setIsLayoutResizing(true);
-    });
-    const unsubscribeEnd = subscribeLayoutResizeEnd(() => {
-      setIsLayoutResizing(false);
-    });
-    return () => {
-      unsubscribeStart();
-      unsubscribeEnd();
-    };
-  }, []);
-
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (scrollEl === null || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      setViewportHeight(scrollEl.clientHeight);
-    });
-    observer.observe(scrollEl);
-    setViewportHeight(scrollEl.clientHeight);
-    return () => observer.disconnect();
-  }, []);
-
   return (
     <>
       <ContextMenuHost
@@ -684,6 +411,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         onClose={contextMenu.closeMenu}
         onSelectItem={contextMenu.selectItem}
       />
+
       <div className="lyra-agents-chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {stickyMessage !== null && stickyMessagePreview.length > 0 ? (
           <div className="lyra-agents-chat-thread-anchor">
@@ -700,7 +428,23 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             </AppButton>
           </div>
         ) : null}
-        <div className="lyra-agents-chat-inner" ref={innerRef}>
+
+        <div className="lyra-agents-chat-inner">
+          {/* Show earlier button */}
+          {messageWindow.canLoadEarlier ? (
+            <div className="lyra-agents-chat-load-earlier">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => void loadEarlierMessages()}
+                disabled={loadingEarlierRef.current}
+              >
+                {t("scroll.showEarlier")}
+              </AppButton>
+            </div>
+          ) : null}
+
           {messages.length === 0 ? (
             <ChatEmptyState
               projectName={session.project.trim().length > 0 ? session.project.trim() : null}
@@ -708,18 +452,15 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               onChooseProject={bindProject}
             />
           ) : null}
-          <VirtualizedMessageList
-            messages={messages}
-            heightTable={heightTable}
-            viewportTop={viewportTop}
-            viewportHeight={viewportHeight}
-            contentWidth={resolveContentWidthPx()}
-            overscan={CHAT_VIRTUAL_OVERSCAN}
-            ignoreOffScreenPins={isLayoutResizing}
-            {...(pinnedMessageIds === undefined
-              ? {}
-              : { pinnedMessageIds })}
-            renderMessage={(message) => (
+
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className="lyra-agents-chat-message-slot"
+              data-chat-message-id={message.id}
+              data-chat-message-author={message.author}
+              data-message-id={message.id}
+            >
               <Message
                 message={message}
                 showActivityIndicator={
@@ -733,8 +474,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
                 onContextMenu={openMessageContextMenu}
                 onCiteMessage={() => addCitationToComposer(buildFullMessageCitation(message))}
               />
-            )}
-          />
+            </div>
+          ))}
         </div>
       </div>
 

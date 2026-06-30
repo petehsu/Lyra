@@ -12,6 +12,7 @@
     "lyra-design:bundle-playwright": "node --import tsx ../../scripts/desktop/install-lyra-design-playwright.ts",
     "downloads:build-aria2-bundles": "node --import tsx ../../tools/download-manager/build-aria2-bundles.ts",
     "downloads:verify-aria2-bundles": "node --import tsx ../../tools/download-manager/verify-aria2-bundles.ts",
+    "legal:generate": "node --import tsx ../../tools/generate-third-party-notices.ts",
     "lsp:bundle:rust-analyzer": "node --import tsx ../../tools/lsp/install-rust-analyzer.ts",
     "lsp:preflight": "node --import tsx ../../tools/lsp/preflight-lsp.ts",
     "release:preflight": "npm run typecheck && npm run test && npm run downloads:verify-aria2-bundles -- --all-targets && node --import tsx ../../tools/lsp/preflight-lsp.ts --all-targets",
@@ -19,7 +20,7 @@
     "dev:electron-vite:raw": "node --import tsx ../../scripts/desktop/dev-electron-vite.ts",
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
-    "build": "npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
+    "build": "npm run legal:generate && npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -100,6 +101,13 @@
       {
         "from": "resources/lsp",
         "to": "lsp",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../legal/generated",
+        "to": "legal",
         "filter": [
           "**/*"
         ]

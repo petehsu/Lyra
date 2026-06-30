@@ -39,14 +39,7 @@ export type CitationScrollTarget = {
   readonly messageId: string;
   readonly blockId?: string | null;
   readonly startOffset?: number | null;
-  /** Message window size before expanding to reveal the citation target. */
-  readonly visibleCountAtStart: number;
   readonly token: number;
-};
-
-export type MessageWindowBudgetRequest = {
-  readonly heightBudgetPx: number;
-  readonly contentWidthPx: number;
 };
 
 export interface MessageWindowState {
@@ -208,10 +201,7 @@ export interface DataProviderValue {
   readonly citationHighlightMessageId: string | null;
 
   /** Expand the rendered chat window with older messages. */
-  loadEarlierMessages(request: MessageWindowBudgetRequest): Promise<void>;
-
-  /** Size the initial/latest visible window from an adaptive height budget. */
-  syncMessageWindowBudget(request: MessageWindowBudgetRequest): Promise<void>;
+  loadEarlierMessages(): Promise<void>;
 
   /** Capture the active Workbench tab as an image attachment. */
   captureWorkspaceScreenshot(): Promise<AgentImageAttachment | null>;

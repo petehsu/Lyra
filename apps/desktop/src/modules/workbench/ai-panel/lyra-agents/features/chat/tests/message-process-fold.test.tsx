@@ -34,6 +34,13 @@ const renderMessage = (message: ChatMessage, isTurnRunning = false) => {
   );
 };
 
+const expectBefore = (left: Element | null, right: Element | null) => {
+  if (left === null || right === null) {
+    throw new Error("Expected both activity rows to render");
+  }
+  expect(left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+};
+
 const completedAgentMessage: ChatMessage = {
   id: "agent-1",
   author: "agent",
@@ -152,9 +159,18 @@ describe("agent message process fold", () => {
 
     expect(container.querySelectorAll(".lyra-agents-message-body > .lyra-agents-tool-group")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Agent 活动" })).toHaveLength(1);
+    const firstThinking = screen.getByText("先判断。").closest(".lyra-agents-tool-call");
+    const firstTool = screen.getByRole("button", { name: "搜索代码" }).closest(".lyra-agents-tool-call");
+    const secondThinking = screen.getByText("再判断。").closest(".lyra-agents-tool-call");
+    const secondTool = screen.getByRole("button", { name: "读取文件" }).closest(".lyra-agents-tool-call");
+    const thirdThinking = screen.getByText("最后判断。").closest(".lyra-agents-tool-call");
+    expectBefore(firstThinking, firstTool);
+    expectBefore(firstTool, secondThinking);
+    expectBefore(secondThinking, secondTool);
+    expectBefore(secondTool, thirdThinking);
   });
 
-  test("renders thinking blocks in message order", () => {
+  test("folds a single thinking block into agent activity in message order", () => {
     setLocale("zh-CN");
     renderMessage({
       id: "agent-thinking-order",
@@ -165,7 +181,7 @@ describe("agent message process fold", () => {
       ]
     });
 
-    const thinking = screen.getByRole("button", { name: "思考过程" });
+    const thinking = screen.getByRole("button", { name: "Agent 活动" });
     const answer = screen.getByText("当前打开了 13 个标签页。");
     expect(thinking.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });

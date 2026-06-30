@@ -28,7 +28,6 @@ import type { WorkbenchLocationControls } from "../../../location";
 import type {
   CitationScrollTarget,
   DataProviderValue,
-  MessageWindowBudgetRequest,
   MessageWindowState
 } from "./DataProvider";
 
@@ -90,8 +89,7 @@ export interface CreateDataProviderValueInput {
   citationScrollTarget?: CitationScrollTarget | null;
   reportCitationScrollFinished?: DataProviderValue["reportCitationScrollFinished"];
   citationHighlightMessageId?: string | null;
-  loadEarlierMessages?: (request: MessageWindowBudgetRequest) => Promise<void>;
-  syncMessageWindowBudget?: (request: MessageWindowBudgetRequest) => Promise<void>;
+  loadEarlierMessages?: () => Promise<void>;
   captureWorkspaceScreenshot?: () => Promise<AgentImageAttachment | null>;
   captureWindowScreenshot?: () => Promise<AgentImageAttachment | null>;
   pickFileFromFileManager?: () => Promise<
@@ -180,7 +178,6 @@ export function createDataProviderValue({
   reportCitationScrollFinished = () => undefined,
   citationHighlightMessageId = null,
   loadEarlierMessages = () => resolved,
-  syncMessageWindowBudget = () => resolved,
   captureWorkspaceScreenshot = () => Promise.resolve(null),
   captureWindowScreenshot = () => Promise.resolve(null),
   pickFileFromFileManager = () => Promise.resolve(null),
@@ -262,7 +259,6 @@ export function createDataProviderValue({
     reportCitationScrollFinished,
     citationHighlightMessageId,
     loadEarlierMessages,
-    syncMessageWindowBudget,
     captureWorkspaceScreenshot,
     captureWindowScreenshot,
     pickFileFromFileManager,

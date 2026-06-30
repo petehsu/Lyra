@@ -19,13 +19,13 @@ const PROVIDER_NON_STREAMING_TIMEOUT: Duration = Duration::from_secs(300);
 /// `reader.lines()` forever — no error, no cancellation, no retry, the agent
 /// just hangs. In `reqwest::blocking`, `.timeout()` is a *per read/write
 /// operation* budget (not a whole-request deadline): each `read()` on the
-/// streaming body gets a fresh window of this length. So a 90s value lets long
+/// streaming body gets a fresh window of this length. So a 180s value lets long
 /// generations run indefinitely (each arriving chunk resets the clock) while
-/// guaranteeing a stalled stream surfaces a timeout within 90s. That timeout is
+/// guaranteeing a stalled stream surfaces a timeout within 180s. That timeout is
 /// classified as `ProviderTransportKind::Timeout` (see
 /// `classify_reqwest_transport`), which the streaming safe-retry /
 /// non-streaming fallback in `call_model_once_inner` recovers from.
-const PROVIDER_STREAMING_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const PROVIDER_STREAMING_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Resolve the streaming per-operation idle timeout, honoring a
 /// `LYRA_PROVIDER_STREAMING_IDLE_TIMEOUT_MS` override (milliseconds). Tests use a

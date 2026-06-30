@@ -8,9 +8,9 @@ import {
 import { writeClipboardText } from "../../../../../../shared/clipboard";
 import type { ChatMessage, MessageBlock, ToolCall, ToolDetails, ToolGroup } from "../../core/types";
 import { useData } from "../../data/DataProvider";
-import { ToolGroupBlock, type ThinkingEntry } from "../tools/ToolGroup";
+import { ToolGroupBlock, type ThinkingEntry, type ToolGroupActivityEntry } from "../tools/ToolGroup";
 import { BrailleSpinner } from "../../components/BrailleSpinner";
-import { ToolExecutionIndicator, ChevronIcon, ToolIcon } from "../../components/Icons";
+import { ToolExecutionIndicator } from "../../components/Icons";
 import { ClickableImage, imagePreviewSource } from "../rich-text/ActionTargets";
 import { StreamingText } from "../rich-text/StreamingText";
 import { formatMessage, t } from "@workbench/i18n";
@@ -22,45 +22,6 @@ import { textHasInlineContentMarkers } from "./message-citation";
 export function isAgentMessageWorking(message: ChatMessage): boolean {
   return message.blocks.some(
     (b) => b.type === "tools" && b.group.status === "running"
-  );
-}
-
-function ThinkingBlock({ id, body, status }: { id: string; body: string; status: "running" | "done" }) {
-  const [open, setOpen] = useState(false);
-  const isRunning = status === "running";
-  const mode = isRunning ? "running" : "done";
-  return (
-    <div className={`lyra-agents-tool-group ${open ? "open" : ""} mode-${mode}`}>
-      <AppButton
-        variant="ghost"
-        size="sm"
-        type="button"
-        className="lyra-agents-tool-group-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="lyra-agents-tool-group-icon-slot">
-          <span className="lyra-agents-tool-group-lead">
-            <ToolIcon kind="thought" />
-          </span>
-          <span className="lyra-agents-chevron-slot">
-            <ChevronIcon open={open} />
-          </span>
-        </span>
-        <span className={`lyra-agents-tool-group-label ${isRunning ? "lyra-agents-shimmer" : ""}`}>
-          {isRunning
-            ? t("lyra-agents-message.thinkingInProgress")
-            : t("lyra-agents-message.thinkingLabel")}
-        </span>
-      </AppButton>
-      <div className="lyra-agents-collapse" data-open={open}>
-        <div className="lyra-agents-collapse-inner">
-          <div className="lyra-agents-tool-group-body">
-            <div className="lyra-agents-thinking-body">{body}</div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -474,6 +435,28 @@ const mergeToolGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
       : t("tool.running"),
     ...(running === undefined ? {} : { currentCallId: running.id }),
     calls
+  };
+};
+
+const thinkingActivityGroup = (entry: ThinkingEntry): ToolGroup => ({
+  id: `${entry.id}-activity`,
+  status: entry.status === "running" ? "running" : "done",
+  label: t("tool.agentActivity"),
+  ...(entry.status === "running" ? { hint: t("tool.running") } : {}),
+  calls: []
+});
+
+const mergeActivityGroups = (left: ToolGroup, right: ToolGroup): ToolGroup => {
+  const merged = mergeToolGroups(left, right);
+  if (left.status !== "running" && right.status !== "running") return merged;
+  const running = merged.calls.find((call) => call.status === "running");
+  const { currentCallId: _currentCallId, ...base } = merged;
+  return {
+    ...base,
+    status: "running",
+    label: running?.title ?? t("tool.agentActivity"),
+    hint: t("tool.running"),
+    ...(running === undefined ? {} : { currentCallId: running.id })
   };
 };
 
@@ -968,61 +951,75 @@ const AgentMessage = memo(function AgentMessage({
         </figure>
       );
     }
-    if (b.type === "thinking") {
-      return <ThinkingBlock key={b.id} id={b.id} body={b.body} status={b.status} />;
+    if (b.type === "tools") {
+      return <ToolGroupBlock key={b.id} group={b.group} />;
     }
-    return <ToolGroupBlock key={b.id} group={b.group} />;
+    return null;
   };
 
   const groupBlocksForRender = (blocks: readonly MessageBlock[]): React.ReactNode[] => {
     const nodes: React.ReactNode[] = [];
-    const pendingThinking: ThinkingEntry[] = [];
-    let lastToolsIdx = -1;
-    let lastToolsKey = "";
-    let lastToolsGroup: ToolGroup | null = null;
-    let lastToolsThinking: ThinkingEntry[] = [];
-    const flushPendingThinking = () => {
-      if (pendingThinking.length === 0) return;
-      if (lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
-        const entries = [...lastToolsThinking, ...pendingThinking.splice(0)];
-        nodes[lastToolsIdx] = (
-          <ToolGroupBlock key={lastToolsKey} group={lastToolsGroup} thinkingEntries={entries} />
+    let currentActivity: {
+      key: string;
+      group: ToolGroup;
+      entries: ToolGroupActivityEntry[];
+    } | null = null;
+    const appendActivityEntries = (entries: readonly ToolGroupActivityEntry[]) => {
+      if (currentActivity === null) return;
+      for (const entry of entries) {
+        const existingIndex = currentActivity.entries.findIndex(
+          (candidate) => candidate.type === entry.type && candidate.id === entry.id
         );
-        lastToolsThinking = entries;
-        return;
+        if (existingIndex === -1) {
+          currentActivity.entries.push(entry);
+        } else {
+          currentActivity.entries[existingIndex] = entry;
+        }
       }
-      for (const entry of pendingThinking.splice(0)) {
-        nodes.push(<ThinkingBlock key={entry.id} id={entry.id} body={entry.body} status={entry.status} />);
+    };
+    const appendActivity = (
+      key: string,
+      group: ToolGroup,
+      entries: readonly ToolGroupActivityEntry[]
+    ) => {
+      if (currentActivity === null) {
+        currentActivity = { key, group, entries: [] };
+      } else {
+        currentActivity.group = mergeActivityGroups(currentActivity.group, group);
       }
+      appendActivityEntries(entries);
+    };
+    const flushActivity = () => {
+      if (currentActivity === null) return;
+      nodes.push(
+        <ToolGroupBlock
+          key={currentActivity.key}
+          group={currentActivity.group}
+          activityEntries={currentActivity.entries}
+        />
+      );
+      currentActivity = null;
     };
     for (const block of blocks) {
       if (block.type === "thinking") {
-        pendingThinking.push({ id: block.id, body: block.body, status: block.status });
+        const entry: ThinkingEntry = { id: block.id, body: block.body, status: block.status };
+        appendActivity(block.id, thinkingActivityGroup(entry), [{
+          type: "thinking",
+          id: entry.id,
+          entry
+        }]);
       } else if (block.type === "tools") {
-        const entries = pendingThinking.splice(0);
-        if (lastToolsIdx === nodes.length - 1 && lastToolsGroup !== null) {
-          const mergedGroup = mergeToolGroups(lastToolsGroup, block.group);
-          const mergedThinking = [...lastToolsThinking, ...entries];
-          nodes[lastToolsIdx] = (
-            <ToolGroupBlock key={lastToolsKey} group={mergedGroup} thinkingEntries={mergedThinking} />
-          );
-          lastToolsGroup = mergedGroup;
-          lastToolsThinking = mergedThinking;
-          continue;
-        }
-        nodes.push(
-          <ToolGroupBlock key={block.id} group={block.group} thinkingEntries={entries} />
+        appendActivity(
+          block.id,
+          block.group,
+          block.group.calls.map((call) => ({ type: "tool", id: call.id, call }))
         );
-        lastToolsIdx = nodes.length - 1;
-        lastToolsKey = block.id;
-        lastToolsGroup = block.group;
-        lastToolsThinking = entries;
       } else {
-        flushPendingThinking();
+        flushActivity();
         nodes.push(renderAgentBlock(block));
       }
     }
-    flushPendingThinking();
+    flushActivity();
     return nodes;
   };
 

@@ -20,6 +20,9 @@ import {
 } from "./InlineDiffStats";
 
 export type ThinkingEntry = { id: string; body: string; status: "running" | "done" };
+export type ToolGroupActivityEntry =
+  | { type: "thinking"; id: string; entry: ThinkingEntry }
+  | { type: "tool"; id: string; call: ToolCall };
 
 /**
  * Level 1 head has three faces keyed by the group status and per-call errors:
@@ -30,11 +33,17 @@ export type ThinkingEntry = { id: string; body: string; status: "running" | "don
 export function ToolGroupBlock({
   group,
   thinkingEntries = [],
+  activityEntries,
 }: {
   group: ToolGroup;
   thinkingEntries?: ThinkingEntry[];
+  activityEntries?: readonly ToolGroupActivityEntry[];
 }) {
   const isRunning = group.status === "running";
+  const activityRows = activityEntries ?? [
+    ...thinkingEntries.map((entry) => ({ type: "thinking" as const, id: entry.id, entry })),
+    ...group.calls.map((call) => ({ type: "tool" as const, id: call.id, call }))
+  ];
   const isLiveEditGroup =
     isRunning &&
     group.calls.some(
@@ -73,6 +82,8 @@ export function ToolGroupBlock({
               <ToolCallIcon call={currentCall} />
             ) : hasError ? (
               <ErrorCircleIcon />
+            ) : isRunning || group.calls.length === 0 ? (
+              <ToolIcon kind="thought" />
             ) : (
               <CheckCircleIcon />
             )}
@@ -114,22 +125,17 @@ export function ToolGroupBlock({
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
           <div className="lyra-agents-tool-group-body">
-            {thinkingEntries.map((entry) => (
+            {activityRows.map((row, i) => (
               <div
-                key={entry.id}
-                className="lyra-agents-stagger-item"
-                style={{ "--stagger-index": 0 } as React.CSSProperties}
-              >
-                <ThinkingRow entry={entry} />
-              </div>
-            ))}
-            {group.calls.map((call, i) => (
-              <div
-                key={call.id}
+                key={row.id}
                 className="lyra-agents-stagger-item"
                 style={{ "--stagger-index": i } as React.CSSProperties}
               >
-                <ToolCallRow call={call} groupOpen={open} />
+                {row.type === "thinking" ? (
+                  <ThinkingRow entry={row.entry} />
+                ) : (
+                  <ToolCallRow call={row.call} groupOpen={open} />
+                )}
               </div>
             ))}
           </div>

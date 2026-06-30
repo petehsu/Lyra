@@ -1479,8 +1479,19 @@ fn call_model_once_inner(
                     // Some(true)` must never fall back (the non-streaming reply
                     // would re-emit the full assistant text, duplicating the
                     // committed delta).
-                    let can_fallback = !stream_fallback_attempted
-                        && committed_any != Some(true);
+                    //
+                    // ponytail: Fix 5 — 但在流式场景中，committed_any=true 只可能
+                    // 来自已提交的 assistant text 或已 emit 的 diff preview（tool
+                    // call 在流结束后才 finalize，不会在流中完成）。清除已提交的
+                    // draft 后，non-streaming fallback 可安全重新生成完整回复。
+                    let can_fallback = if !stream_fallback_attempted
+                        && committed_any == Some(true)
+                    {
+                        clear_failed_assistant_draft(session_id, turn_id);
+                        true
+                    } else {
+                        !stream_fallback_attempted && committed_any != Some(true)
+                    };
                     emit_provider_protocol_event(
                         session_id,
                         turn_id,
@@ -2311,15 +2322,19 @@ pub(crate) fn map_provider_stream_chunk(
                 accumulator.arguments.push_str(arguments);
             }
         }
-        crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
-            session_id,
-            turn_id,
-            &state.tool_calls,
-        );
+        let preview_emitted =
+            crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
+                session_id,
+                turn_id,
+                &state.tool_calls,
+            );
         // A streaming tool-call preview mutates session state (records a
         // preview activity), so a later transport failure is no longer safely
-        // retryable.
-        state.committed_any = true;
+        // retryable. Only mark committed when a preview was actually emitted;
+        // a throttled or skipped preview does not block safe retry / fallback.
+        if preview_emitted {
+            state.committed_any = true;
+        }
     }
     Ok(())
 }
