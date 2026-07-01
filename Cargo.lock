@@ -3688,6 +3688,8 @@ version = "0.1.0"
 dependencies = [
  "codegraph",
  "codegraph-server",
+ "notify",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

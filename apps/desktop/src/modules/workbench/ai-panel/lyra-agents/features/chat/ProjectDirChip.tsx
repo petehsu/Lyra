@@ -17,7 +17,7 @@ const ICON_SIZE = 13;
 const ICON_STROKE_WIDTH = 2;
 
 function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null }) {
-  if (!status || status.state === "idle") return null;
+  if (!status) return null;
   const pct = status.progress != null ? Math.round(status.progress * 100) : 0;
   return (
     <div
@@ -25,7 +25,12 @@ function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null })
       title={status.error ?? ""}
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", fontSize: 12, opacity: 0.85 }}
     >
-      {status.state === "indexing" ? (
+      {status.state === "idle" ? (
+        <>
+          <CircleAlert size={12} style={{ color: "var(--app-color-muted, #9ca3af)" }} aria-hidden="true" />
+          <span>{t("header.codegraphIdle")}</span>
+        </>
+      ) : status.state === "indexing" ? (
         <>
           <Loader2 size={12} className="lyra-agents-codegraph-spinner" style={{ animation: "spin 1s linear infinite" }} aria-hidden="true" />
           <span>{formatMessage("header.codegraphIndexing", { progress: pct })}</span>
@@ -79,23 +84,37 @@ export function ProjectDirChip({
   }, [canOpenProjectTree, desktopApi]);
 
   // ponytail: 轮询足够支撑当前菜单态；上限是 2s 延迟，升级路径是 runtime 事件推送。
+  // draft tab（sessionId === null）也轮询，用 workingDir 直接查。
   useEffect(() => {
-    if (!canOpenProjectTree || !workingDir || !sessionId || !desktopApi?.agent?.codegraphStatus) return;
+    if (!canOpenProjectTree || isHome || !workingDir || !desktopApi?.agent?.codegraphStatus) return;
     let active = true;
+    let timer: ReturnType<typeof setInterval>;
     const poll = () => {
-      void desktopApi.agent!.codegraphStatus!({ sessionId }).then((s) => {
+      void desktopApi.agent!.codegraphStatus!({ sessionId: sessionId ?? undefined, workingDir }).then((s) => {
         if (active) {
           setCgStatus(s);
           if (s.state === "ready" || s.state === "failed") {
             clearInterval(timer);
           }
         }
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        if (!active) return;
+        // 旧 daemon 不识别 agent.codegraph.status → METHOD_NOT_FOUND。
+        // 停轮询 + 标记 failed，避免静默空转。
+        const isStaleDaemon =
+          (error !== null && typeof error === "object" && (error as { code?: string }).code === "METHOD_NOT_FOUND")
+          || (error instanceof Error && error.message.includes("METHOD_NOT_FOUND"))
+          || (error instanceof Error && error.message.includes("unknown agent runtime method"));
+        if (isStaleDaemon) {
+          setCgStatus({ state: "failed", error: "daemon 版本不匹配，请重启" });
+          clearInterval(timer);
+        }
+      });
     };
     poll();
-    const timer = setInterval(poll, 2000);
+    timer = setInterval(poll, 2000);
     return () => { active = false; clearInterval(timer); };
-  }, [canOpenProjectTree, workingDir, desktopApi, sessionId]);
+  }, [canOpenProjectTree, isHome, workingDir, desktopApi, sessionId]);
 
   const chipContent = (
     <>
@@ -139,6 +158,7 @@ export function ProjectDirChip({
   const openEditor = (editorId: string) => {
     if (workingDir) void desktopApi?.openInEditor({ editorId, path: workingDir }).catch(() => undefined);
   };
+  const codegraphStatus = !isHome && workingDir ? cgStatus ?? { state: "idle" as const } : null;
 
   return (
     <AppMenu>
@@ -155,8 +175,8 @@ export function ProjectDirChip({
         </AppButton>
       </AppMenuTrigger>
       <AppMenuContent align="start" sideOffset={4}>
-        <CodegraphStatusRow status={cgStatus} />
-        {cgStatus && cgStatus.state !== "idle" ? <AppMenuSeparator /> : null}
+        <CodegraphStatusRow status={codegraphStatus} />
+        {codegraphStatus ? <AppMenuSeparator /> : null}
         <AppMenuItem onClick={() => { void onOpenProjectTree(); }}>
           {t("header.openProjectTree")}
         </AppMenuItem>

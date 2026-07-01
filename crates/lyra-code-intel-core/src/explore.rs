@@ -1,3 +1,4 @@
+use codegraph::NodeId;
 use codegraph_server::ai_query::{CallInfo, SymbolInfo};
 use serde::Serialize;
 
@@ -14,6 +15,19 @@ pub struct ExploreSymbol {
     pub callees: Vec<CallInfo>,
 }
 
+/// A synthesized edge — created by framework resolvers, not tree-sitter.
+/// `provenance: "heuristic"` in edge properties marks these.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SynthesizedEdge {
+    pub from_node_id: NodeId,
+    pub to_node_id: NodeId,
+    pub edge_type: String,
+    pub from_name: String,
+    pub to_name: String,
+    pub synthesized_by: String,
+}
+
 /// Unified query result from `CodeGraphEngine::explore`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,4 +36,5 @@ pub struct ExploreResult {
     pub symbols: Vec<ExploreSymbol>,
     pub total_matches: usize,
     pub elapsed_ms: u64,
+    pub synthesized_edges: Vec<SynthesizedEdge>,
 }

@@ -87,6 +87,7 @@ pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Val
             to_value(&HandshakeResponse {
                 protocol_version: PROTOCOL_VERSION,
                 server_name: crate::RUNTIME_NAME.to_string(),
+                capabilities: Some(vec!["agent.codegraph.status".to_string()]),
             })
         }
         "runtime.reload" => Ok(json!({

@@ -1395,7 +1395,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSessionBindProject,
         request
       ) as Promise<AgentSessionSnapshot>,
-    codegraphStatus: (request: { sessionId?: string }) =>
+    codegraphStatus: (request: { sessionId?: string; workingDir?: string }) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentCodegraphStatus,
         request

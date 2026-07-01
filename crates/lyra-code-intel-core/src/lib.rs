@@ -11,6 +11,8 @@ mod status;
 mod types;
 mod context;
 mod explore;
+mod watcher;
+mod resolution;
 
 pub use context::ProjectContext;
 pub use engine::{CodeGraphEngine, StalenessInfo};

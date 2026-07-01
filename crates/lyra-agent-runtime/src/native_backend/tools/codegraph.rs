@@ -264,14 +264,26 @@ pub(crate) fn project_context_for_prompt(working_dir: &Path) -> Value {
     }
 }
 
-/// IPC handler: `agent.codegraph.status(sessionId)`.
+/// IPC handler: `agent.codegraph.status(sessionId?, workingDir?)`.
 /// Returns `{ state, progress?, fileCount?, symbolCount?, error? }`.
+///
+/// 当 payload 带 `workingDir` 时直接用，无需 session（draft tab 选项目即触发）。
+/// 否则从 session 解析 workingDir（原有行为）。
 pub(crate) fn codegraph_status(payload: Value) -> super::AgentRuntimeResult<Value> {
-    let session_id = payload
-        .get("sessionId")
+    // 优先用 payload.workingDir（不依赖 session）。
+    let direct_working_dir = payload
+        .get("workingDir")
         .and_then(Value::as_str)
-        .map(str::to_string);
-    let working_dir = {
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let (working_dir, is_home) = if let Some(dir) = direct_working_dir {
+        (dir, false)
+    } else {
+        let session_id = payload
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let mut state = state().lock().map_err(|_| {
             crate::AgentRuntimeError::Core("agent runtime state lock failed".to_string())
         })?;
@@ -279,16 +291,28 @@ pub(crate) fn codegraph_status(payload: Value) -> super::AgentRuntimeResult<Valu
         let session = state.sessions.get(&id).ok_or_else(|| {
             crate::AgentRuntimeError::Core(format!("session not found: {id}"))
         })?;
-        session
+        let working_dir = session
             .snapshot
             .get("workingDir")
             .and_then(Value::as_str)
             .unwrap_or("")
-            .to_string()
+            .trim()
+            .to_string();
+        let is_home = session
+            .snapshot
+            .get("workingDirIsHome")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        (working_dir, is_home)
     };
-    if working_dir.is_empty() {
+    if working_dir.is_empty() || is_home {
         return Ok(json!({ "state": "idle" }));
     }
-    let status = index_status(Path::new(&working_dir));
+    let working_dir = Path::new(&working_dir);
+    let mut status = index_status(working_dir);
+    if matches!(status, lyra_code_intel_core::IndexStatus::Idle) {
+        trigger_indexing(working_dir);
+        status = index_status(working_dir);
+    }
     Ok(serde_json::to_value(&status).unwrap_or_else(|_| json!({ "state": "idle" })))
 }

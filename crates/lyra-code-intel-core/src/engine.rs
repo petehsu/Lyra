@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use codegraph::{CodeGraph, Node, NodeId, NodeType};
 use codegraph_server::ai_query::{CallInfo, SearchOptions};
@@ -21,8 +21,9 @@ use serde::Serialize;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::context::ProjectContext;
-use crate::explore::{ExploreResult, ExploreSymbol};
+use crate::explore::{ExploreResult, ExploreSymbol, SynthesizedEdge};
 use crate::status::IndexStatus;
+use crate::watcher::FileWatcher;
 
 // ── Inline property accessors ─────────────────────────────────────────
 // codegraph-server's `domain::node_props` module is `pub(crate)`, so we
@@ -86,6 +87,14 @@ impl StalenessInfo {
     }
 }
 
+/// A file that has changed since the last index but hasn't been re-indexed yet.
+/// Fed by the watcher; consumed by `staleness` (O(pending) read, no I/O).
+#[derive(Debug, Clone)]
+pub struct PendingFile {
+    pub first_seen: Instant,
+    pub last_seen: Instant,
+}
+
 // ── Entry per project ─────────────────────────────────────────────────
 
 struct ProjectEntry {
@@ -96,6 +105,8 @@ struct ProjectEntry {
     last_indexed_at: Arc<RwLock<Option<SystemTime>>>,
     #[allow(dead_code)]
     index_state: Arc<Mutex<IndexState>>,
+    watcher: Arc<Mutex<Option<Arc<FileWatcher>>>>,
+    pending_files: Arc<Mutex<HashMap<PathBuf, PendingFile>>>,
 }
 
 /// One engine serves all projects. Each project gets its own graph +
@@ -198,6 +209,29 @@ impl CodeGraphEngine {
             };
             return Err(message);
         }
+        // 竞态 guard：已在索引则直接返回。
+        // Ready 时不 re-index，但需确保 watcher 启动（重启后从 RocksDB 恢复的场景）。
+        let current = entry.status.read().await.clone();
+        match current {
+            IndexStatus::Indexing { .. } => return Ok(()),
+            IndexStatus::Ready { .. } => {
+                if entry.watcher.lock().await.is_none() {
+                    let parsers = Arc::clone(&self.parsers);
+                    let graph = Arc::clone(&entry.graph);
+                    let query_engine = Arc::clone(&entry.query_engine);
+                    let pending_files = Arc::clone(&entry.pending_files);
+                    let root_clone = root.clone();
+                    match FileWatcher::new(graph, parsers, query_engine, root_clone, pending_files) {
+                        Ok(fw) => *entry.watcher.lock().await = Some(Arc::new(fw)),
+                        Err(e) => {
+                            eprintln!("[codegraph] failed to start watcher (rebuild): {e}");
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
         *entry.status.write().await = IndexStatus::Indexing { progress: 0.0 };
 
         let graph = entry.graph.clone();
@@ -205,12 +239,21 @@ impl CodeGraphEngine {
         let query_engine = entry.query_engine.clone();
         let status = entry.status.clone();
         let last_indexed_at = entry.last_indexed_at.clone();
+        let watcher_slot = entry.watcher.clone();
+        let pending_files = entry.pending_files.clone();
+        let parsers = Arc::clone(&self.parsers);
         let root_clone = root.clone();
 
         tokio::spawn(async move {
             let result = indexer
                 .index_workspace(&graph, &[root_clone.clone()], &IndexConfig::default())
                 .await;
+
+            // Framework resolution pass — extract/resolve synthesized edges.
+            {
+                let mut g = graph.write().await;
+                crate::resolution::run_resolution_pass(&mut g, &root_clone);
+            }
 
             // Build caller/callee/text indexes from the freshly parsed graph.
             query_engine.build_indexes().await;
@@ -226,6 +269,24 @@ impl CodeGraphEngine {
                 file_count: result.total_files as u64,
                 symbol_count,
             };
+            // Full index complete — clear the watcher-fed dirty set.
+            pending_files.lock().await.clear();
+
+            // Start file watcher for incremental updates.
+            if watcher_slot.lock().await.is_none() {
+                match FileWatcher::new(
+                    Arc::clone(&graph),
+                    parsers,
+                    Arc::clone(&query_engine),
+                    root_clone,
+                    Arc::clone(&pending_files),
+                ) {
+                    Ok(fw) => *watcher_slot.lock().await = Some(Arc::new(fw)),
+                    Err(e) => {
+                        eprintln!("[codegraph] failed to start watcher: {e}");
+                    }
+                }
+            }
         });
 
         Ok(())
@@ -273,11 +334,18 @@ impl CodeGraphEngine {
             });
         }
 
+        // Collect synthesized edges (provenance: "heuristic") from the graph.
+        let synthesized_edges = {
+            let g = entry.graph.read().await;
+            collect_synthesized_edges(&g, &search_result.results)
+        };
+
         Ok(ExploreResult {
             query: query.to_string(),
             symbols,
             total_matches: search_result.total_matches,
             elapsed_ms: search_result.query_time_ms,
+            synthesized_edges,
         })
     }
 
@@ -387,15 +455,39 @@ impl CodeGraphEngine {
     }
 
     /// Detect whether indexed results may be stale relative to the workspace.
-    /// ponytail: this intentionally scans source mtimes at query time instead of
-    /// adding a watcher. Ceiling: O(project files) per codegraph tool call;
-    /// upgrade path is a watcher-fed dirty set in `ProjectEntry`.
+    /// Reads the watcher-fed `pending_files` dirty set first (O(pending), no
+    /// I/O). Falls back to filesystem mtime scan if the dirty set is empty
+    /// (covers changes that happened while the watcher wasn't running).
     pub async fn staleness(&self, root: &Path) -> Result<StalenessInfo, String> {
         let root = normalize_project_root(root);
         let entry = self.get_entry(&root).await?;
         if !matches!(&*entry.status.read().await, IndexStatus::Ready { .. }) {
             return Ok(StalenessInfo::fresh(0));
         }
+
+        // Fast path: watcher-fed dirty set.
+        {
+            let pf = entry.pending_files.lock().await;
+            if !pf.is_empty() {
+                let changed_files: Vec<String> = pf
+                    .keys()
+                    .map(|p| {
+                        p.strip_prefix(root.as_path())
+                            .unwrap_or(p)
+                            .to_string_lossy()
+                            .to_string()
+                    })
+                    .take(12)
+                    .collect();
+                return Ok(StalenessInfo {
+                    stale: true,
+                    checked_files: pf.len() as u64,
+                    changed_files,
+                });
+            }
+        }
+
+        // Fallback: filesystem mtime scan (watcher not running or missed events).
         let Some(indexed_at) = entry.last_indexed_at.read().await.clone() else {
             return Ok(StalenessInfo::fresh(0));
         };
@@ -431,9 +523,32 @@ impl CodeGraphEngine {
         }
 
         let slug = project_slug(root);
+        let rocksdb_path = self.storage_root.join(&slug).join("rocksdb");
+        std::fs::create_dir_all(&rocksdb_path)
+            .map_err(|e| format!("create rocksdb dir: {e}"))?;
         let graph = Arc::new(RwLock::new(
-            CodeGraph::in_memory().map_err(|e| format!("in-memory graph: {e}"))?,
+            CodeGraph::open(&rocksdb_path).map_err(|e| format!("rocksdb open: {e}"))?,
         ));
+        // CodeGraph::with_backend (called by open) runs rebuild_from_storage
+        // automatically. If the DB had data, the graph already has nodes —
+        // set status to Ready so we skip re-indexing on restart.
+        let has_existing_data = {
+            let g = graph.read().await;
+            g.iter_nodes().count() > 0
+        };
+        let initial_status = if has_existing_data {
+            // Count symbols for the Ready status.
+            let symbol_count = {
+                let g = graph.read().await;
+                g.iter_nodes().count() as u64
+            };
+            IndexStatus::Ready {
+                file_count: 0, // ponytail: unknown after rebuild; will be refreshed on next index
+                symbol_count,
+            }
+        } else {
+            IndexStatus::Idle
+        };
         let mut state = IndexState::for_workspace(&slug, root);
         let _loaded = state.load();
         let index_state = Arc::new(Mutex::new(state));
@@ -444,12 +559,16 @@ impl CodeGraphEngine {
         let query_engine = Arc::new(QueryEngine::new(Arc::clone(&graph)));
 
         let entry = Arc::new(ProjectEntry {
-            status: Arc::new(RwLock::new(IndexStatus::Idle)),
+            status: Arc::new(RwLock::new(initial_status)),
             graph,
             query_engine,
             indexer,
-            last_indexed_at: Arc::new(RwLock::new(None)),
+            last_indexed_at: Arc::new(RwLock::new(
+                if has_existing_data { Some(SystemTime::now()) } else { None }
+            )),
             index_state,
+            watcher: Arc::new(Mutex::new(None)),
+            pending_files: Arc::new(Mutex::new(HashMap::new())),
         });
         projects.insert(root.to_path_buf(), entry.clone());
         Ok(entry)
@@ -652,6 +771,55 @@ fn is_supported_source_path(path: &Path, supported_extensions: &HashSet<String>)
         .and_then(|ext| ext.to_str())
         .map(|ext| supported_extensions.contains(&ext.to_ascii_lowercase()))
         .unwrap_or(false)
+}
+
+/// Collect synthesized edges (edges with `provenance: "heuristic"`) that are
+/// connected to any of the search result nodes. Returns at most 50 edges.
+fn collect_synthesized_edges(
+    graph: &codegraph::CodeGraph,
+    results: &[codegraph_server::ai_query::SymbolMatch],
+) -> Vec<SynthesizedEdge> {
+    let result_ids: HashSet<NodeId> = results.iter().map(|m| m.node_id).collect();
+    let mut edges = Vec::new();
+    for (_eid, edge) in graph.iter_edges() {
+        let is_synthesized = edge
+            .properties
+            .get_string("provenance")
+            .map(|p| p == "heuristic")
+            .unwrap_or(false);
+        if !is_synthesized {
+            continue;
+        }
+        // Only include edges connected to search results.
+        if !result_ids.contains(&edge.source_id) && !result_ids.contains(&edge.target_id) {
+            continue;
+        }
+        let from_name = graph
+            .get_node(edge.source_id)
+            .map(|n| node_name(n))
+            .unwrap_or_default();
+        let to_name = graph
+            .get_node(edge.target_id)
+            .map(|n| node_name(n))
+            .unwrap_or_default();
+        let synthesized_by = edge
+            .properties
+            .get_string("synthesizedBy")
+            .unwrap_or("")
+            .to_string();
+        edges.push(SynthesizedEdge {
+            from_node_id: edge.source_id,
+            to_node_id: edge.target_id,
+            edge_type: edge.edge_type.to_string(),
+            from_name,
+            to_name,
+            synthesized_by,
+        });
+        if edges.len() >= 50 {
+            break;
+        }
+    }
+    edges
 }
 
 #[cfg(test)]

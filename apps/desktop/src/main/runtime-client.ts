@@ -7,6 +7,8 @@ import path from "node:path";
 import { resolveNativeResourceCandidates } from "./native-resource-paths";
 
 const PROTOCOL_VERSION = 1;
+const REQUIRED_CAPABILITIES = ["agent.codegraph.status"];
+const STALE_DAEMON = "stale daemon";
 const HANDSHAKE_METHOD = "runtime.handshake";
 const MIN_HOST_REQUEST_TIMEOUT_MS = 250;
 const DEFAULT_HOST_REQUEST_TIMEOUT_MS = 30_000;
@@ -475,21 +477,30 @@ export const createLyraRuntimeClient = (
     });
   };
 
-  const connectRuntimeDaemon = async (): Promise<void> => {
+  const connectRuntimeDaemon = async (checkStale: boolean): Promise<void> => {
     const connected = await createSocket(socketPath);
     try {
       attachSocket(connected);
-      const handshake = await sendRequestUnsafe<{ readonly protocolVersion: number }>(
-        HANDSHAKE_METHOD,
-        {
-          protocolVersion: PROTOCOL_VERSION,
-          clientName: `desktop-${os.hostname()}`
-        }
-      );
+      const handshake = await sendRequestUnsafe<{
+        readonly protocolVersion: number;
+        readonly capabilities?: readonly string[];
+      }>(HANDSHAKE_METHOD, {
+        protocolVersion: PROTOCOL_VERSION,
+        clientName: `desktop-${os.hostname()}`
+      });
       if (handshake.protocolVersion !== PROTOCOL_VERSION) {
         throw new Error(
           `Lyra runtime protocol mismatch: expected ${PROTOCOL_VERSION}, got ${handshake.protocolVersion}`
         );
+      }
+      if (checkStale) {
+        const caps = handshake.capabilities;
+        const stale =
+          caps === undefined ||
+          !REQUIRED_CAPABILITIES.every((required) => caps.includes(required));
+        if (stale) {
+          throw new Error(STALE_DAEMON);
+        }
       }
       console.info(`[lyra-runtime] runtime daemon connected socket=${socketPath}`);
     } catch (error) {
@@ -514,7 +525,7 @@ export const createLyraRuntimeClient = (
     startPromise = (async () => {
       let lastError: unknown = null;
       try {
-        await connectRuntimeDaemon();
+        await connectRuntimeDaemon(true);
         return;
       } catch (error) {
         lastError = error;
@@ -524,13 +535,29 @@ export const createLyraRuntimeClient = (
         ) {
           throw error;
         }
+        if (error instanceof Error && error.message === STALE_DAEMON) {
+          console.warn(
+            "[lyra-runtime] stale daemon detected (missing capabilities), respawning"
+          );
+          if (child !== null && child.killed === false) {
+            child.kill();
+            child = null;
+          }
+          socket?.destroy();
+          socket = null;
+          try {
+            fs.unlinkSync(socketPath);
+          } catch {
+            // socket file may not exist or already removed
+          }
+        }
       }
 
       spawnDaemon();
 
       for (let attempt = 0; attempt < 40; attempt += 1) {
         try {
-          await connectRuntimeDaemon();
+          await connectRuntimeDaemon(false);
           return;
         } catch (error) {
           lastError = error;

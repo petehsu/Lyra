@@ -44,6 +44,11 @@ pub struct HandshakeRequest {
 pub struct HandshakeResponse {
     pub protocol_version: u32,
     pub server_name: String,
+    /// Capabilities the daemon supports. Old daemons built before this
+    /// field was added won't include it — clients use that absence to
+    /// detect a stale binary and force a respawn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

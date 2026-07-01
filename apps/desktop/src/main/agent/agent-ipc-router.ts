@@ -202,7 +202,7 @@ export const createAgentIpcRouter = ({
       (_event, payload) =>
         requestRuntime<AgentCodegraphStatus>(
           "agent.codegraph.status",
-          payload as { sessionId?: string }
+          payload as { sessionId?: string; workingDir?: string }
         )
     ],
     [

@@ -9,6 +9,8 @@ serde_json = "1"
 codegraph.workspace = true
 codegraph-server.workspace = true
 tokio.workspace = true
+notify.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

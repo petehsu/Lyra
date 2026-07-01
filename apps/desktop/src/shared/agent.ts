@@ -1350,7 +1350,7 @@ export type AgentApi = {
     request: AgentSessionDeleteRequest
   ) => Promise<AgentSessionDeleteResponse>;
   readonly bindProject: (request: AgentSessionBindProjectRequest) => Promise<AgentSessionSnapshot>;
-  readonly codegraphStatus: (request: { sessionId?: string }) => Promise<AgentCodegraphStatus>;
+  readonly codegraphStatus: (request: { sessionId?: string; workingDir?: string }) => Promise<AgentCodegraphStatus>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly resumeTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
