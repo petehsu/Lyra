@@ -639,6 +639,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               ) : null}
             </AppButton>
           ) : null}
+                  </div>
+        <div className="lyra-agents-composer-context-ring-slot">
           <ContextRing />
         </div>
       </div>
