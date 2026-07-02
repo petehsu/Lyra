@@ -2,3 +2,19 @@ packages:
   - apps/*
   - services/*
   - packages/*
+  - web/docs
+
+onlyBuiltDependencies:
+  - "@parcel/watcher"
+  - "@swc/core"
+  - electron
+  - electron-winstaller
+  - esbuild
+  - sharp
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  sharp: true

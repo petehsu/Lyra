@@ -1,4 +1,4 @@
-import type { TaskIntent } from "../../contracts/task";
+import type { TaskIntent } from "../../contracts/task.js";
 
 export const createTaskPlan = (intent: TaskIntent): string[] => {
   return [

@@ -10,12 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
       - name: Install dependencies
-        run: npm ci
-      - name: Run structure guard
-        run: npm run lint:structure
-      - name: Run UI anti-web guard
-        run: npm run lint:ui-style
+        run: pnpm install --frozen-lockfile
+      - name: Run repository guardrails
+        run: pnpm check

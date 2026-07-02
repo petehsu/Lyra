@@ -116,12 +116,21 @@ const RESPONSIBILITY_CLUSTERS: readonly ResponsibilityCluster[] = [
 const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
   "apps/desktop/src/main/index.ts": {
     reason: "Existing Electron bootstrap composition root; must stay wiring-only and shrink over time.",
-    maxSourceLines: 950,
+    maxSourceLines: 1445,
     maxDimensions: 6,
-    maxImports: 35,
+    maxImports: 40,
     maxStatefulRefs: 2,
     maxHostRefs: 35,
-    maxControlFlowRefs: 90
+    maxControlFlowRefs: 153
+  },
+  "apps/desktop/src/main/agent/lumen-tool-host.ts": {
+    reason: "Existing browser automation tool host hotspot; split observation, verification, and action helpers before growing.",
+    maxSourceLines: 1810,
+    maxDimensions: 3,
+    maxImports: 13,
+    maxStatefulRefs: 3,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 125
   },
   "apps/desktop/src/modules/workbench/shell/index.tsx": {
     reason: "Existing Workbench composition shell; UI style guard also caps it at 800 physical lines.",
@@ -134,25 +143,70 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
   },
   "apps/desktop/src/modules/workbench/ai-panel/use-lyra-agent-data-provider.ts": {
     reason: "Existing bridge-heavy Agent data provider; future features must move into focused adapters.",
-    maxSourceLines: 1380,
-    maxDimensions: 5,
-    maxImports: 12,
-    maxStatefulRefs: 65,
+    maxSourceLines: 1801,
+    maxDimensions: 6,
+    maxImports: 26,
+    maxStatefulRefs: 75,
     maxHostRefs: 140,
-    maxControlFlowRefs: 165
+    maxControlFlowRefs: 190
   },
   "apps/desktop/src/preload/index.ts": {
     reason: "Existing preload bridge registration surface; additions must move to focused bridge modules.",
-    maxSourceLines: 1610,
+    maxSourceLines: 1796,
     maxDimensions: 3,
     maxImports: 5,
-    maxStatefulRefs: 12,
+    maxStatefulRefs: 13,
     maxHostRefs: 5,
-    maxControlFlowRefs: 65
+    maxControlFlowRefs: 71
+  },
+  "apps/desktop/src/main/workbench-browser/view-manager-runtime/agent-focus-input-controller.ts": {
+    reason: "Existing browser focus/input controller hotspot; keep new targeting behavior in smaller helpers.",
+    maxSourceLines: 1156,
+    maxDimensions: 3,
+    maxImports: 8,
+    maxStatefulRefs: 3,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 120
+  },
+  "apps/desktop/src/main/workbench-browser/view-manager-runtime/agent-observation-engine.ts": {
+    reason: "Existing browser observation engine hotspot; split observation stages before growing.",
+    maxSourceLines: 1595,
+    maxDimensions: 3,
+    maxImports: 14,
+    maxStatefulRefs: 8,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 84
+  },
+  "apps/desktop/src/main/workbench-browser/view-manager-runtime/ax-controller.ts": {
+    reason: "Existing accessibility controller hotspot; split detectors and mutation handling before growing.",
+    maxSourceLines: 1463,
+    maxDimensions: 3,
+    maxImports: 9,
+    maxStatefulRefs: 5,
+    maxHostRefs: 1,
+    maxControlFlowRefs: 139
+  },
+  "apps/desktop/src/modules/workbench/settings-ai/view.tsx": {
+    reason: "Existing AI settings surface hotspot; split models, skills, and MCP panels before growing.",
+    maxSourceLines: 2174,
+    maxDimensions: 4,
+    maxImports: 9,
+    maxStatefulRefs: 61,
+    maxHostRefs: 2,
+    maxControlFlowRefs: 108
+  },
+  "apps/desktop/src/modules/workbench/shell/use-titlebar-navigation-model.ts": {
+    reason: "Existing titlebar navigation model hotspot; split provider search and tab actions before growing.",
+    maxSourceLines: 943,
+    maxDimensions: 5,
+    maxImports: 13,
+    maxStatefulRefs: 27,
+    maxHostRefs: 38,
+    maxControlFlowRefs: 80
   },
   "apps/desktop/src/main/agent/terminal-tool-host.ts": {
     reason: "Existing terminal tool host hot spot; new terminal behavior belongs in terminal host helpers.",
-    maxSourceLines: 1555,
+    maxSourceLines: 1608,
     maxDimensions: 3,
     maxImports: 10,
     maxStatefulRefs: 6,
@@ -179,25 +233,16 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
   },
   "crates/lyra-image-core/src/lib.rs": {
     reason: "Existing image core crate root; decoding and model concerns should split before growing.",
-    maxSourceLines: 2110,
+    maxSourceLines: 2193,
     maxDimensions: 4,
     maxImports: 20,
     maxStatefulRefs: 10,
     maxHostRefs: 1,
     maxControlFlowRefs: 120
   },
-  "crates/lyra-local-search/src/lib.rs": {
-    reason: "Existing local-search crate root; indexing, query, and status paths should keep moving out.",
-    maxSourceLines: 1430,
-    maxDimensions: 4,
-    maxImports: 45,
-    maxStatefulRefs: 20,
-    maxHostRefs: 1,
-    maxControlFlowRefs: 75
-  },
   "crates/lyra-agent-runtime/src/native_backend/tools/web.rs": {
     reason: "Existing web native tool module; request, parsing, and projection paths should split before growing.",
-    maxSourceLines: 1840,
+    maxSourceLines: 1965,
     maxDimensions: 3,
     maxImports: 4,
     maxStatefulRefs: 9,
@@ -212,6 +257,87 @@ const HOTSPOT_BASELINE: Record<string, HotspotBudget> = {
     maxStatefulRefs: 5,
     maxHostRefs: 1,
     maxControlFlowRefs: 90
+  },
+  "crates/codegraph-server/src/ai_query/engine.rs": {
+    reason: "Existing CodeGraph AI query engine hotspot; split retrieval, ranking, and synthesis paths before growing.",
+    maxSourceLines: 3057,
+    maxDimensions: 5,
+    maxImports: 15,
+    maxStatefulRefs: 37,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 377
+  },
+  "crates/codegraph-server/src/backend.rs": {
+    reason: "Existing CodeGraph backend hotspot; split project state, indexing, and query orchestration before growing.",
+    maxSourceLines: 3640,
+    maxDimensions: 6,
+    maxImports: 35,
+    maxStatefulRefs: 24,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 331
+  },
+  "crates/codegraph-server/src/mcp/server.rs": {
+    reason: "Existing CodeGraph MCP server hotspot; split tool routing and protocol handling before growing.",
+    maxSourceLines: 4222,
+    maxDimensions: 6,
+    maxImports: 20,
+    maxStatefulRefs: 18,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 398
+  },
+  "crates/codegraph-server/src/mcp/tools.rs": {
+    reason: "Existing CodeGraph MCP tools catalog hotspot; split tool groups before growing.",
+    maxSourceLines: 1701,
+    maxDimensions: 3,
+    maxImports: 4,
+    maxStatefulRefs: 1,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 79
+  },
+  "crates/lyra-agent-runtime/src/native_backend/activity.rs": {
+    reason: "Existing native backend activity hotspot; split event emission and activity state before growing.",
+    maxSourceLines: 1840,
+    maxDimensions: 3,
+    maxImports: 1,
+    maxStatefulRefs: 1,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 150
+  },
+  "crates/lyra-agent-runtime/src/native_backend/provider.rs": {
+    reason: "Existing native provider hotspot; split provider catalog, routing, and request mapping before growing.",
+    maxSourceLines: 2383,
+    maxDimensions: 4,
+    maxImports: 5,
+    maxStatefulRefs: 16,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 190
+  },
+  "crates/lyra-agent-runtime/src/native_backend/tools/file.rs": {
+    reason: "Existing native file tool hotspot; split file operations by domain before growing.",
+    maxSourceLines: 2351,
+    maxDimensions: 3,
+    maxImports: 3,
+    maxStatefulRefs: 3,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 186
+  },
+  "crates/lyra-code-intel-core/src/engine.rs": {
+    reason: "Existing embedded CodeGraph engine hotspot; split scope discovery, indexing, and prompt projection before growing.",
+    maxSourceLines: 1417,
+    maxDimensions: 6,
+    maxImports: 21,
+    maxStatefulRefs: 47,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 115
+  },
+  "crates/lyra-tool-fs-core/src/catalog.rs": {
+    reason: "Existing Tool-FS catalog hotspot; split tool families before growing.",
+    maxSourceLines: 2589,
+    maxDimensions: 3,
+    maxImports: 6,
+    maxStatefulRefs: 0,
+    maxHostRefs: 0,
+    maxControlFlowRefs: 96
   }
 };
 

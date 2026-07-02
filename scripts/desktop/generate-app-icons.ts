@@ -26,7 +26,6 @@ const sourceMarkPath = join(brandDir, "lyra-mark.svg");
 const smallMarkPath = join(brandDir, "lyra-mark-small.svg");
 const legacyLogoPngPath = join(rendererAssetsDir, "logo.png");
 const legacyLogoSvgPath = join(rendererAssetsDir, "logo.svg");
-const siteFaviconPath = join(rootDir, "web", "site", "public", "favicon.svg");
 const iconRoot = join(rootDir, "apps", "desktop", "resources", "icons");
 const appIconDir = join(iconRoot, "app");
 const macIconDir = join(iconRoot, "macos");
@@ -476,7 +475,6 @@ const writeBrandSvgVariants = (source: string): void => {
   );
   writeSvg(join(generatedBrandDir, "lyra-mask-icon.svg"), fixedColorSvg(source, "#000000"));
   writeSvg(join(generatedBrandDir, "lyra-favicon.svg"), fixedColorSvg(source, LYRA_MARK_THEME_COLOR));
-  writeSvg(siteFaviconPath, fixedColorSvg(source, LYRA_MARK_THEME_COLOR));
   writeSvg(legacyLogoSvgPath, source);
 };
 

@@ -5,6 +5,12 @@ coverage/
 apps/desktop/out/
 apps/desktop/native/
 apps/desktop/.dev-electron/
+apps/desktop/.tmp/
+apps/desktop/.tmp-win-node-import/
+apps/desktop/lumen-evidence/
+lumen-evidence/
+screenshot*.png
+apps/desktop/screenshot*.png
 
 # Python
 __pycache__/

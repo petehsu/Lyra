@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "codegraph-harness"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1177,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "codegraph-memory"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "codegraph-server"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "clap",
  "codegraph",
@@ -3603,7 +3603,7 @@ dependencies = [
 
 [[package]]
 name = "lyra-agent-reader"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3739,7 +3739,7 @@ dependencies = [
 
 [[package]]
 name = "lyra-download-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cc",
  "chrono",
@@ -3796,7 +3796,7 @@ dependencies = [
 
 [[package]]
 name = "lyra-hardware-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3832,15 +3832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lyra-local-inference-core"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "serde",
- "tempfile",
-]
-
-[[package]]
 name = "lyra-lsp-core"
 version = "0.1.0"
 dependencies = [
@@ -3855,7 +3846,7 @@ dependencies = [
 
 [[package]]
 name = "lyra-performance-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "libc",

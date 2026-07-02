@@ -21,7 +21,11 @@
     "dev": "npm run native:build && npm run dev:electron-vite",
     "dev:fast": "npm run dev:electron-vite",
     "build": "npm run legal:generate && npm run lyra-design:bundle-playwright && npm run native:build && electron-vite build",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis portable --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb rpm tar.gz --publish never",
+    "dist:publish": "npm run build && electron-builder --publish always",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
@@ -38,15 +42,41 @@
     "appId": "dev.lyra.desktop",
     "productName": "Lyra",
     "executableName": "Lyra",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "petehsu",
+        "repo": "Lyra"
+      }
+    ],
     "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/macos/lyra.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSLocationWhenInUseUsageDescription": "Lyra uses your physical location to show where you are in the AI panel. Location is not sent to the Agent."
       }
     },
     "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "resources/icons/win/lyra.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "linux": {
       "target": [
@@ -59,6 +89,7 @@
       "icon": "resources/icons/linux"
     },
     "afterPack": "../../scripts/desktop/after-pack-linux.cjs",
+    "afterSign": "../../scripts/desktop/notarize-mac.cjs",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "extraResources": [
       {
@@ -146,6 +177,7 @@
     "dagre": "^0.8.5",
     "darkreader": "^4.9.120",
     "dompurify": "^3.3.3",
+    "electron-updater": "^6.8.9",
     "jsqr": "^1.4.0",
     "katex": "^0.16.45",
     "lucide-react": "^0.469.0",
@@ -164,6 +196,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@electron/notarize": "2.5.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",

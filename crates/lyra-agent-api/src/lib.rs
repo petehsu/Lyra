@@ -67,6 +67,7 @@ pub enum AgentSessionKind {
 pub enum AgentSessionStatus {
     Idle,
     Running,
+    Cancelled,
     Saved,
     Archived,
     Failed,
@@ -580,6 +581,13 @@ pub enum AgentRuntimeEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         render_revision: Option<u64>,
     },
+    MessageReasoningDelta {
+        session_id: AgentSessionId,
+        message_id: AgentMessageId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block_id: Option<String>,
+        delta: String,
+    },
     MessageCommitted {
         session_id: AgentSessionId,
         message: AgentMessage,
@@ -606,6 +614,24 @@ pub enum AgentRuntimeEvent {
     MemoryUpdated {
         session_id: AgentSessionId,
         snapshot: AgentMemoryProjection,
+    },
+    PlanUpdated {
+        session_id: AgentSessionId,
+        plan: Value,
+    },
+    PlanReviewRequested {
+        session_id: AgentSessionId,
+        plan: Value,
+    },
+    PlanReviewResolved {
+        session_id: AgentSessionId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan_id: Option<String>,
+        resolution: String,
+    },
+    ProjectTodoUpdated {
+        session_id: AgentSessionId,
+        todo: Value,
     },
     BrowserActivityChanged {
         session_id: AgentSessionId,
@@ -636,6 +662,10 @@ pub enum AgentRuntimeEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
     },
+    ClarificationResolved {
+        session_id: AgentSessionId,
+        clarification_id: String,
+    },
     TurnFinished {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
@@ -648,7 +678,14 @@ pub enum AgentRuntimeEvent {
     TurnFailed {
         session_id: AgentSessionId,
         turn_id: AgentTurnId,
-        error: LyraAgentError,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure_kind: Option<String>,
+    },
+    ProviderFault {
+        session_id: AgentSessionId,
+        turn_id: AgentTurnId,
+        fault: Value,
     },
     TurnInterrupted {
         session_id: AgentSessionId,
@@ -673,6 +710,14 @@ pub enum AgentRuntimeEvent {
         session_id: AgentSessionId,
         message_id: AgentMessageId,
         message: String,
+    },
+    ContextCompressionProgress {
+        session_id: AgentSessionId,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_before: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_after: Option<u64>,
     },
 }
 

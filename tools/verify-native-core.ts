@@ -224,6 +224,14 @@ const nativeOwnedModules: readonly NativeOwnedModule[] = [
 ] as const;
 
 const tsOwnedMainModules = new Map<string, string>([
+  ["auto-update", "TypeScript-owned shell module: packaged app update checks above electron-updater."],
+  ["events", "TypeScript-owned utilities: main-process event backpressure helpers."],
+  ["identity", "TypeScript-owned shell module: local project identity storage and IPC."],
+  ["location", "TypeScript-owned shell module: macOS location consent and Electron permission wiring."],
+  [
+    "screenshot-preview",
+    "TypeScript-owned shell module: screenshot preview window and filesystem watcher coordination."
+  ],
   [
     "workbench-browser",
     "TypeScript-owned shell module: embedded browser tab/view orchestration in Electron."
@@ -250,6 +258,7 @@ const tsOwnedMainModules = new Map<string, string>([
 ]);
 
 const bridgeOnlyMainModules = new Map<string, string>([
+  ["accessibility", "Bridge-only module: native accessibility loader/types consumed by browser services."],
   ["agent", "Bridge-only module: Agent IPC forwards to lyrad and owns no Agent state machine."],
   [
     "documents",

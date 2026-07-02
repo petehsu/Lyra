@@ -1,6 +1,6 @@
 # Web Shared Assets
 
-该目录用于 `web/docs` 与 `web/site` 的复用资源。
+该目录用于 `web/docs` 和后续网页入口的复用资源。
 
 ## 子目录
 1. `tokens/`：品牌设计 token（颜色、间距、圆角、排版等）。

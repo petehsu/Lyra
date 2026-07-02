@@ -1,5 +1,5 @@
 export type AgentRole = "user" | "assistant" | "system";
-export type AgentTurnStatus = "idle" | "running" | "cancelled";
+export type AgentTurnStatus = "idle" | "running" | "cancelled" | "saved" | "archived" | "failed" | "deleted";
 export type AgentTurnFinishStatus = "finished" | "cancelled";
 export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled" | "uncertain";
 export type AgentSessionKind = "normal";

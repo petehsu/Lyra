@@ -8,10 +8,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { EN_US_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/en-US";
 import { ZH_CN_DICTIONARY } from "../apps/desktop/src/modules/workbench/i18n/locales/zh-CN";
-import {
-  ZH_MESSAGES as AGENT_ZH,
-  EN_MESSAGES as AGENT_EN,
-} from "../apps/desktop/src/modules/workbench/ai-panel/lyra-agents/core/i18n";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -22,9 +18,7 @@ const REPORT_UNUSED = process.argv.includes("--report-unused");
 
 const enKeys = new Set(Object.keys(EN_US_DICTIONARY));
 const zhKeys = new Set(Object.keys(ZH_CN_DICTIONARY));
-const agentZhKeys = new Set(Object.keys(AGENT_ZH));
-const agentEnKeys = new Set(Object.keys(AGENT_EN));
-const allDefinedKeys = new Set([...enKeys, ...zhKeys, ...agentZhKeys, ...agentEnKeys]);
+const allDefinedKeys = new Set([...enKeys, ...zhKeys]);
 
 // --- Source scanning ---
 
@@ -65,25 +59,21 @@ function extractUsedKeys(files: string[]): Set<string> {
 
 // --- Reporting ---
 
-type IssueKind = "missing-in-en" | "missing-in-zh" | "missing-in-agent-en" | "missing-in-agent-zh" | "undefined-key" | "unused-key";
+type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key";
 const issues: { kind: IssueKind; key: string }[] = [];
 
 // 1. Main namespace parity
 for (const k of zhKeys) if (!enKeys.has(k)) issues.push({ kind: "missing-in-en", key: k });
 for (const k of enKeys) if (!zhKeys.has(k)) issues.push({ kind: "missing-in-zh", key: k });
 
-// 2. Agent namespace parity
-for (const k of agentZhKeys) if (!agentEnKeys.has(k)) issues.push({ kind: "missing-in-agent-en", key: k });
-for (const k of agentEnKeys) if (!agentZhKeys.has(k)) issues.push({ kind: "missing-in-agent-zh", key: k });
-
-// 3. Undefined keys in code
+// 2. Undefined keys in code
 const srcFiles = scanDir(WORKBENCH_SRC, [".ts", ".tsx"]);
 const usedKeys = extractUsedKeys(srcFiles);
 for (const k of usedKeys) {
   if (!allDefinedKeys.has(k)) issues.push({ kind: "undefined-key", key: k });
 }
 
-// 4. Unused keys (opt-in)
+// 3. Unused keys (opt-in)
 if (REPORT_UNUSED) {
   for (const k of allDefinedKeys) {
     if (!usedKeys.has(k)) issues.push({ kind: "unused-key", key: k });
@@ -107,8 +97,6 @@ for (const { kind, key } of issues) {
 const LABELS: Record<IssueKind, string> = {
   "missing-in-en": "Main: key in zh-CN but missing in en-US",
   "missing-in-zh": "Main: key in en-US but missing in zh-CN",
-  "missing-in-agent-en": "Agent: key in zh-CN but missing in en-US",
-  "missing-in-agent-zh": "Agent: key in en-US but missing in zh-CN",
   "undefined-key": "Code uses key not defined in any dictionary",
   "unused-key": "Dictionary key not used in code",
 };

@@ -27,6 +27,7 @@ import {
 } from "./app-identity";
 import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
 import { loadAccessibilityNativeBindings } from "./accessibility";
+import { createAutoUpdateService } from "./auto-update/service";
 import { loadDocsNativeBindings } from "./documents/native-loader";
 import { createAgentIpcBridge } from "./agent";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
@@ -136,6 +137,7 @@ let disposeLyraDockIconThemeSync: (() => void) | null = null;
 let disposeSystemNotificationsBridge: (() => void) | null = null;
 let disposeScreenshotPreviewBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
+let disposeAutoUpdateService: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
 const windowMaterialDecision = resolveLyraWindowMaterial({
@@ -1439,6 +1441,7 @@ app.whenReady().then(async () => {
     ...(appIconPath === null ? {} : { iconPath: appIconPath })
   });
   disposeLyraDockIconThemeSync = installLyraDockIconThemeSync();
+  disposeAutoUpdateService = createAutoUpdateService(app);
   registerLyraFileProtocol();
   linuxCompatBridge.persistStatusSnapshot(storageRoots.modules.linuxCompat);
   await registerIpcHandlers();
@@ -1532,6 +1535,10 @@ app.on("before-quit", () => {
   if (disposeLyraDockIconThemeSync !== null) {
     disposeLyraDockIconThemeSync();
     disposeLyraDockIconThemeSync = null;
+  }
+  if (disposeAutoUpdateService !== null) {
+    disposeAutoUpdateService();
+    disposeAutoUpdateService = null;
   }
   if (disposeScreenshotPreviewBridge !== null) {
     disposeScreenshotPreviewBridge();

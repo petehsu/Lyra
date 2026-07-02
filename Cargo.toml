@@ -23,7 +23,6 @@ members = [
   "crates/lyra-download-core",
   "crates/lyra-download-napi",
   "crates/lyra-accessibility-napi",
-  "crates/lyra-local-inference-core",
   "crates/lyra-performance-core",
   "crates/lyra-computer-use-core",
   # CodeGraph engine (ported from codegraph-ai)
@@ -71,10 +70,13 @@ members = [
   "crates/codegraph-server",
   "crates/codegraph-harness",
 ]
+exclude = [
+  "archive/lyra-local-inference-core",
+]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
