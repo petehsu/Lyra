@@ -76,7 +76,16 @@ export type SettingsAiLabels = {
   readonly mcpConnected: string;
   readonly mcpDisconnected: string;
   readonly mcpFailed: string;
+  readonly mcpEdit: string;
   readonly mcpRemove: string;
+  readonly mcpSave: string;
+  readonly mcpNameLabel: string;
+  readonly mcpTransportLabel: string;
+  readonly mcpCommandLabel: string;
+  readonly mcpArgsLabel: string;
+  readonly mcpUrlLabel: string;
+  readonly mcpEnvLabel: string;
+  readonly mcpHeadersLabel: string;
   readonly providerTitle: string;
   readonly connectionTitle: string;
   readonly additionalFieldsTitle: string;

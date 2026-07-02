@@ -205,6 +205,7 @@
 .lyra-settings-ai-login-provider:focus-visible,
 .lyra-settings-ai-model-option:focus-visible,
 .lyra-settings-ai-selection-item:focus-visible,
+.lyra-settings-ai-row-action:focus-visible,
 .lyra-settings-ai-row-delete:focus-visible,
 .lyra-settings-legal-item:focus-visible {
   outline: 0;
@@ -1371,7 +1372,38 @@
   gap: var(--lyra-space-6);
 }
 
+.lyra-settings-ai-mcp-item {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-mcp-editor {
+  min-width: 0;
+  padding: var(--lyra-space-12);
+  display: grid;
+  gap: var(--lyra-space-12);
+  border: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-settings-border-strong) 54%, transparent);
+  border-radius: var(--lyra-radius-8);
+  background: color-mix(in srgb, var(--lyra-settings-card-bg) 70%, transparent);
+}
+
+.lyra-settings-ai-mcp-editor-grid {
+  min-width: 0;
+  display: grid;
+  gap: var(--lyra-space-10);
+}
+
+.lyra-settings-ai-mcp-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-skill-card:hover .lyra-settings-ai-row-action,
 .lyra-settings-ai-skill-card:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-skill-card:focus-within .lyra-settings-ai-row-action,
 .lyra-settings-ai-skill-card:focus-within .lyra-settings-ai-row-delete {
   opacity: 1;
 }
@@ -1604,6 +1636,7 @@
   justify-content: flex-end;
 }
 
+.lyra-settings-ai-row-action,
 .lyra-settings-ai-row-delete {
   width: var(--lyra-control-h-30);
   height: var(--lyra-control-h-30);
@@ -1625,12 +1658,23 @@
 }
 
 .lyra-settings-ai-provider-row:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-provider-row:hover .lyra-settings-ai-row-action,
 .lyra-settings-ai-provider-row:focus-within .lyra-settings-ai-row-delete,
+.lyra-settings-ai-provider-row:focus-within .lyra-settings-ai-row-action,
 .lyra-settings-ai-model-row:hover .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-row:hover .lyra-settings-ai-row-action,
 .lyra-settings-ai-model-row:focus-within .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-row:focus-within .lyra-settings-ai-row-action,
 .lyra-settings-ai-model-option:hover .lyra-settings-ai-row-delete,
-.lyra-settings-ai-model-option:focus-within .lyra-settings-ai-row-delete {
+.lyra-settings-ai-model-option:hover .lyra-settings-ai-row-action,
+.lyra-settings-ai-model-option:focus-within .lyra-settings-ai-row-delete,
+.lyra-settings-ai-model-option:focus-within .lyra-settings-ai-row-action {
   opacity: 1;
+}
+
+.lyra-settings-ai-row-action:hover {
+  color: var(--lyra-text-primary);
+  background: transparent;
 }
 
 .lyra-settings-ai-row-delete:hover {

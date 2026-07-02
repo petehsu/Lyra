@@ -40,44 +40,44 @@ globset.workspace = true
 # CodeGraph ecosystem
 codegraph.workspace = true
 codegraph-parser-api.workspace = true
-codegraph-python.workspace = true
-codegraph-rust.workspace = true
-codegraph-typescript.workspace = true
-codegraph-go.workspace = true
-codegraph-c.workspace = true
-codegraph-java.workspace = true
-codegraph-cpp.workspace = true
-codegraph-kotlin.workspace = true
-codegraph-csharp.workspace = true
-codegraph-php.workspace = true
-codegraph-ruby.workspace = true
-codegraph-swift.workspace = true
-codegraph-tcl.workspace = true
-codegraph-verilog.workspace = true
-codegraph-cobol.workspace = true
-codegraph-fortran.workspace = true
-codegraph-dart.workspace = true
-codegraph-zig.workspace = true
-codegraph-lua.workspace = true
-codegraph-groovy.workspace = true
-codegraph-r.workspace = true
-codegraph-scala.workspace = true
-codegraph-bash.workspace = true
-codegraph-elixir.workspace = true
-codegraph-haskell.workspace = true
-codegraph-hcl.workspace = true
-codegraph-julia.workspace = true
-codegraph-ocaml.workspace = true
-codegraph-perl.workspace = true
-codegraph-toml.workspace = true
-codegraph-yaml.workspace = true
-codegraph-clojure.workspace = true
-codegraph-css.workspace = true
-codegraph-elm.workspace = true
-codegraph-erlang.workspace = true
-codegraph-objc.workspace = true
-codegraph-solidity.workspace = true
-codegraph-dockerfile.workspace = true
+codegraph-python = { workspace = true, optional = true }
+codegraph-rust = { workspace = true, optional = true }
+codegraph-typescript = { workspace = true, optional = true }
+codegraph-go = { workspace = true, optional = true }
+codegraph-c = { workspace = true, optional = true }
+codegraph-java = { workspace = true, optional = true }
+codegraph-cpp = { workspace = true, optional = true }
+codegraph-kotlin = { workspace = true, optional = true }
+codegraph-csharp = { workspace = true, optional = true }
+codegraph-php = { workspace = true, optional = true }
+codegraph-ruby = { workspace = true, optional = true }
+codegraph-swift = { workspace = true, optional = true }
+codegraph-tcl = { workspace = true, optional = true }
+codegraph-verilog = { workspace = true, optional = true }
+codegraph-cobol = { workspace = true, optional = true }
+codegraph-fortran = { workspace = true, optional = true }
+codegraph-dart = { workspace = true, optional = true }
+codegraph-zig = { workspace = true, optional = true }
+codegraph-lua = { workspace = true, optional = true }
+codegraph-groovy = { workspace = true, optional = true }
+codegraph-r = { workspace = true, optional = true }
+codegraph-scala = { workspace = true, optional = true }
+codegraph-bash = { workspace = true, optional = true }
+codegraph-elixir = { workspace = true, optional = true }
+codegraph-haskell = { workspace = true, optional = true }
+codegraph-hcl = { workspace = true, optional = true }
+codegraph-julia = { workspace = true, optional = true }
+codegraph-ocaml = { workspace = true, optional = true }
+codegraph-perl = { workspace = true, optional = true }
+codegraph-toml = { workspace = true, optional = true }
+codegraph-yaml = { workspace = true, optional = true }
+codegraph-clojure = { workspace = true, optional = true }
+codegraph-css = { workspace = true, optional = true }
+codegraph-elm = { workspace = true, optional = true }
+codegraph-erlang = { workspace = true, optional = true }
+codegraph-objc = { workspace = true, optional = true }
+codegraph-solidity = { workspace = true, optional = true }
+codegraph-dockerfile = { workspace = true, optional = true }
 
 # Memory layer
 codegraph-memory.workspace = true
@@ -88,3 +88,84 @@ clap = { workspace = true, features = ["derive"] }
 [dev-dependencies]
 tempfile = "3"
 tokio-test = "0.4"
+
+[features]
+default = ["all-grammars"]
+all-grammars = [
+  "grammar-bash",
+  "grammar-c",
+  "grammar-clojure",
+  "grammar-cobol",
+  "grammar-cpp",
+  "grammar-css",
+  "grammar-csharp",
+  "grammar-dart",
+  "grammar-dockerfile",
+  "grammar-elixir",
+  "grammar-elm",
+  "grammar-erlang",
+  "grammar-fortran",
+  "grammar-go",
+  "grammar-groovy",
+  "grammar-haskell",
+  "grammar-hcl",
+  "grammar-java",
+  "grammar-julia",
+  "grammar-kotlin",
+  "grammar-lua",
+  "grammar-objc",
+  "grammar-ocaml",
+  "grammar-perl",
+  "grammar-php",
+  "grammar-python",
+  "grammar-r",
+  "grammar-ruby",
+  "grammar-rust",
+  "grammar-scala",
+  "grammar-solidity",
+  "grammar-swift",
+  "grammar-tcl",
+  "grammar-toml",
+  "grammar-typescript",
+  "grammar-verilog",
+  "grammar-yaml",
+  "grammar-zig",
+]
+grammar-bash = ["dep:codegraph-bash"]
+grammar-c = ["dep:codegraph-c"]
+grammar-clojure = ["dep:codegraph-clojure"]
+grammar-cobol = ["dep:codegraph-cobol"]
+grammar-cpp = ["dep:codegraph-cpp"]
+grammar-css = ["dep:codegraph-css"]
+grammar-csharp = ["dep:codegraph-csharp"]
+grammar-dart = ["dep:codegraph-dart"]
+grammar-dockerfile = ["dep:codegraph-dockerfile"]
+grammar-elixir = ["dep:codegraph-elixir"]
+grammar-elm = ["dep:codegraph-elm"]
+grammar-erlang = ["dep:codegraph-erlang"]
+grammar-fortran = ["dep:codegraph-fortran"]
+grammar-go = ["dep:codegraph-go"]
+grammar-groovy = ["dep:codegraph-groovy"]
+grammar-haskell = ["dep:codegraph-haskell"]
+grammar-hcl = ["dep:codegraph-hcl"]
+grammar-java = ["dep:codegraph-java"]
+grammar-julia = ["dep:codegraph-julia"]
+grammar-kotlin = ["dep:codegraph-kotlin"]
+grammar-lua = ["dep:codegraph-lua"]
+grammar-objc = ["dep:codegraph-objc"]
+grammar-ocaml = ["dep:codegraph-ocaml"]
+grammar-perl = ["dep:codegraph-perl"]
+grammar-php = ["dep:codegraph-php"]
+grammar-python = ["dep:codegraph-python"]
+grammar-r = ["dep:codegraph-r"]
+grammar-ruby = ["dep:codegraph-ruby"]
+grammar-rust = ["dep:codegraph-rust"]
+grammar-scala = ["dep:codegraph-scala"]
+grammar-solidity = ["dep:codegraph-solidity"]
+grammar-swift = ["dep:codegraph-swift"]
+grammar-tcl = ["dep:codegraph-tcl"]
+grammar-toml = ["dep:codegraph-toml"]
+grammar-typescript = ["dep:codegraph-typescript"]
+grammar-verilog = ["dep:codegraph-verilog"]
+grammar-yaml = ["dep:codegraph-yaml"]
+grammar-zig = ["dep:codegraph-zig"]

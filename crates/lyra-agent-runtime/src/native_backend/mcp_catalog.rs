@@ -728,6 +728,46 @@ fn parse_server_drafts(payload: &Value) -> AgentRuntimeResult<Vec<McpServerDraft
     parse_single_server(payload, None).map(|server| vec![server])
 }
 
+fn preserve_redacted_values(
+    next: &mut BTreeMap<String, String>,
+    existing: &BTreeMap<String, String>,
+) {
+    for (key, value) in next.iter_mut() {
+        if value == "<configured>" {
+            if let Some(existing_value) = existing.get(key) {
+                *value = existing_value.clone();
+            }
+        }
+    }
+}
+
+fn preserve_existing_secrets(
+    mut transport: McpTransportConfig,
+    existing: Option<&McpServerConfig>,
+) -> McpTransportConfig {
+    match (&mut transport, existing.map(|server| &server.transport)) {
+        (
+            McpTransportConfig::Stdio { env, .. },
+            Some(McpTransportConfig::Stdio {
+                env: existing_env, ..
+            }),
+        ) => preserve_redacted_values(env, existing_env),
+        (
+            McpTransportConfig::Http { headers, .. } | McpTransportConfig::Sse { headers, .. },
+            Some(McpTransportConfig::Http {
+                headers: existing_headers,
+                ..
+            })
+            | Some(McpTransportConfig::Sse {
+                headers: existing_headers,
+                ..
+            }),
+        ) => preserve_redacted_values(headers, existing_headers),
+        _ => {}
+    }
+    transport
+}
+
 fn upsert_mcp_servers_at(storage_root: &Path, payload: Value) -> AgentRuntimeResult<Value> {
     let drafts = parse_server_drafts(&payload)?;
     let mut registry = read_registry_from(storage_root);
@@ -742,10 +782,11 @@ fn upsert_mcp_servers_at(storage_root: &Path, payload: Value) -> AgentRuntimeRes
             .map(|value| slugify_id(&value))
             .unwrap_or_else(|| slugify_id(&name));
         let existing = registry.servers.iter().find(|server| server.id == id);
+        let transport = preserve_existing_secrets(draft.transport, existing);
         let server = McpServerConfig {
             id: id.clone(),
             name,
-            transport: draft.transport,
+            transport,
             enabled: draft.enabled,
             state: existing
                 .map(|server| server.state.clone())
@@ -1452,6 +1493,41 @@ mod tests {
         match &registry.servers[0].transport {
             McpTransportConfig::Stdio { env, .. } => {
                 assert_eq!(env.get("API_KEY").map(String::as_str), Some("secret"));
+            }
+            _ => panic!("expected stdio"),
+        }
+    }
+
+    #[test]
+    fn upsert_preserves_redacted_env_placeholders() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let _ = upsert_mcp_servers_at(
+            temp.path(),
+            json!({
+                "id": "git",
+                "name": "Git",
+                "command": "uvx",
+                "args": ["mcp-server-git"],
+                "env": { "TOKEN": "secret" }
+            }),
+        )
+        .expect("initial upsert");
+        let _ = upsert_mcp_servers_at(
+            temp.path(),
+            json!({
+                "serverId": "git",
+                "name": "Git Tools",
+                "command": "uvx",
+                "args": "mcp-server-git --repository /repo",
+                "env": "TOKEN=<configured>\nDEBUG=1"
+            }),
+        )
+        .expect("edit upsert");
+        let registry = read_registry_from(temp.path());
+        match &registry.servers[0].transport {
+            McpTransportConfig::Stdio { env, .. } => {
+                assert_eq!(env.get("TOKEN").map(String::as_str), Some("secret"));
+                assert_eq!(env.get("DEBUG").map(String::as_str), Some("1"));
             }
             _ => panic!("expected stdio"),
         }

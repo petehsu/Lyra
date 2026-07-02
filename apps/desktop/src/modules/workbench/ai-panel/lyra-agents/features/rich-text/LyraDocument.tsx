@@ -305,6 +305,39 @@ function LazyMermaid({
   return null;
 }
 
+const MARKDOWN_STREAM_BATCH_MS = 40;
+
+function useBatchedMarkdownContent(content: string, streaming: boolean): string {
+  const [renderedContent, setRenderedContent] = useState(content);
+  const latestRef = useRef(content);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    latestRef.current = content;
+    if (!streaming) {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setRenderedContent(content);
+      return;
+    }
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      setRenderedContent(latestRef.current);
+    }, MARKDOWN_STREAM_BATCH_MS);
+  }, [content, streaming]);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+  }, []);
+
+  return streaming ? renderedContent : content;
+}
+
 export function LyraDocument({
   content,
   streaming = false
@@ -322,18 +355,19 @@ export function LyraDocument({
   } = useData();
   const rootRef = useRef<HTMLDivElement>(null);
   const mermaidTheme = useLyraMermaidTheme();
+  const renderedContent = useBatchedMarkdownContent(content, streaming);
   const rendered = useMemo(
     () =>
       aiRichRenderingEnabled
-        ? renderMarkdown(content, { mode: streaming ? "streaming" : "final" })
+        ? renderMarkdown(renderedContent, { mode: streaming ? "streaming" : "final" })
         : null,
-    [aiRichRenderingEnabled, content, streaming]
+    [aiRichRenderingEnabled, renderedContent, streaming]
   );
 
   useCodeBlockHighlight(rootRef, rendered?.html ?? "", aiRichRenderingEnabled && !streaming);
 
   if (!aiRichRenderingEnabled) {
-    return <PlainAgentText content={content} />;
+    return <PlainAgentText content={renderedContent} />;
   }
 
   const handleClick = useCallback((event: MouseEvent<HTMLDivElement>) => {

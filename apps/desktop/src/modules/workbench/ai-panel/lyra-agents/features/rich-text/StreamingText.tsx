@@ -1,5 +1,6 @@
 import { cjk } from "@streamdown/cjk";
 import { Streamdown, type StreamdownProps } from "streamdown";
+import { useEffect, useRef, useState } from "react";
 
 import { useData } from "../../data/DataProvider";
 import { useStreamText } from "../../hooks/useStreamText";
@@ -7,6 +8,38 @@ import { LyraDocument, PlainAgentText } from "./LyraDocument";
 
 const streamdownPlugins = { cjk } satisfies StreamdownProps["plugins"];
 const streamdownLinkSafety = { enabled: false } satisfies NonNullable<StreamdownProps["linkSafety"]>;
+const STREAMING_RENDER_BATCH_MS = 40;
+
+function useBatchedStreamingContent(content: string, enabled: boolean): string {
+  const [rendered, setRendered] = useState(content);
+  const latestRef = useRef(content);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    latestRef.current = content;
+    if (!enabled) {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setRendered(content);
+      return;
+    }
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      setRendered(latestRef.current);
+    }, STREAMING_RENDER_BATCH_MS);
+  }, [content, enabled]);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+  }, []);
+
+  return enabled ? rendered : content;
+}
 
 /**
  * Renders agent text during and after streaming.
@@ -22,6 +55,7 @@ export function StreamingText({
 }) {
   const { aiRichRenderingEnabled } = useData();
   const useTypewriter = streaming && !aiRichRenderingEnabled;
+  const richContent = useBatchedStreamingContent(content, streaming && aiRichRenderingEnabled);
   const { text } = useStreamText(content, {
     speed: 3,
     interval: 25,
@@ -49,7 +83,7 @@ export function StreamingText({
           parseIncompleteMarkdown
           plugins={streamdownPlugins}
         >
-          {content}
+          {richContent}
         </Streamdown>
       </div>
     );

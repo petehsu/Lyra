@@ -16,7 +16,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent
+  type MouseEvent,
+  type ReactNode
 } from "react";
 import { ArrowDown, BookText, CornerUpLeft, Copy, Link2, ListChecks, MapPin, Undo2 } from "lucide-react";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
@@ -48,6 +49,121 @@ import { queryCitationMessageElement } from "./scroll-to-citation";
 // ponytail: sticky anchor offset from the top of the scroll viewport.
 const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
+const CHAT_VIRTUALIZATION_THRESHOLD = 120;
+const CHAT_VIRTUAL_OVERSCAN_PX = 1_400;
+const CHAT_INITIAL_TAIL_MESSAGES = 80;
+
+type ChatVirtualRange = {
+  readonly start: number;
+  readonly end: number;
+  readonly top: number;
+  readonly bottom: number;
+  readonly messageCount: number;
+};
+
+const estimateMessageHeight = (message: ChatMessage): number => {
+  let textChars = 0;
+  let toolBlocks = 0;
+  let imageBlocks = 0;
+  for (const block of message.blocks) {
+    if (block.type === "text" || block.type === "thinking") {
+      textChars += block.body.length;
+    } else if (block.type === "tools") {
+      toolBlocks += 1 + block.group.calls.length;
+    } else if (block.type === "image") {
+      imageBlocks += 1;
+    }
+  }
+  const textRows = Math.ceil(textChars / 92);
+  return Math.min(900, Math.max(58, 52 + textRows * 18 + toolBlocks * 76 + imageBlocks * 180));
+};
+
+const heightForMessage = (
+  message: ChatMessage,
+  measuredHeights: ReadonlyMap<string, number>
+): number => measuredHeights.get(message.id) ?? estimateMessageHeight(message);
+
+const fullChatRange = (messageCount: number): ChatVirtualRange => ({
+  start: 0,
+  end: messageCount,
+  top: 0,
+  bottom: 0,
+  messageCount
+});
+
+const initialChatRange = (
+  messages: readonly ChatMessage[],
+  measuredHeights: ReadonlyMap<string, number>
+): ChatVirtualRange => {
+  if (messages.length <= CHAT_VIRTUALIZATION_THRESHOLD) {
+    return fullChatRange(messages.length);
+  }
+  const start = Math.max(0, messages.length - CHAT_INITIAL_TAIL_MESSAGES);
+  let top = 0;
+  for (let index = 0; index < start; index += 1) {
+    top += heightForMessage(messages[index]!, measuredHeights);
+  }
+  return {
+    start,
+    end: messages.length,
+    top,
+    bottom: 0,
+    messageCount: messages.length
+  };
+};
+
+const calculateChatRange = (
+  messages: readonly ChatMessage[],
+  measuredHeights: ReadonlyMap<string, number>,
+  scrollTop: number,
+  clientHeight: number
+): ChatVirtualRange => {
+  if (messages.length <= CHAT_VIRTUALIZATION_THRESHOLD) {
+    return fullChatRange(messages.length);
+  }
+  const viewportHeight = Math.max(480, clientHeight || 0);
+  const startCutoff = Math.max(0, scrollTop - CHAT_VIRTUAL_OVERSCAN_PX);
+  const endCutoff = scrollTop + viewportHeight + CHAT_VIRTUAL_OVERSCAN_PX;
+  let top = 0;
+  let start = 0;
+  while (start < messages.length) {
+    const nextTop = top + heightForMessage(messages[start]!, measuredHeights);
+    if (nextTop >= startCutoff) break;
+    top = nextTop;
+    start += 1;
+  }
+
+  let end = start;
+  let visibleHeight = top;
+  while (end < messages.length && visibleHeight < endCutoff) {
+    visibleHeight += heightForMessage(messages[end]!, measuredHeights);
+    end += 1;
+  }
+  if (end < messages.length) {
+    visibleHeight += heightForMessage(messages[end]!, measuredHeights);
+    end += 1;
+  }
+
+  let totalHeight = visibleHeight;
+  for (let index = end; index < messages.length; index += 1) {
+    totalHeight += heightForMessage(messages[index]!, measuredHeights);
+  }
+
+  return {
+    start,
+    end,
+    top,
+    bottom: Math.max(0, totalHeight - visibleHeight),
+    messageCount: messages.length
+  };
+};
+
+const chatRangeEqual = (left: ChatVirtualRange, right: ChatVirtualRange): boolean =>
+  left.start === right.start &&
+  left.end === right.end &&
+  left.top === right.top &&
+  left.bottom === right.bottom &&
+  left.messageCount === right.messageCount;
 
 const textPreviewForMessage = (message: ChatMessage): string => {
   const text = message.blocks
@@ -177,6 +293,48 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const loadingEarlierRef = useRef(false);
   const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
+  const measuredMessageHeightsRef = useRef<Map<string, number>>(new Map());
+  const virtualScrollFrameRef = useRef<number | null>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const [virtualRange, setVirtualRange] = useState<ChatVirtualRange>(() => fullChatRange(0));
+
+  const updateVirtualRangeNow = useCallback(() => {
+    const el = scrollRef.current;
+    const currentMessages = messagesRef.current;
+    const next = calculateChatRange(
+      currentMessages,
+      measuredMessageHeightsRef.current,
+      el?.scrollTop ?? 0,
+      el?.clientHeight ?? 0
+    );
+    setVirtualRange((current) => chatRangeEqual(current, next) ? current : next);
+  }, []);
+
+  const scheduleVirtualRangeUpdate = useCallback(() => {
+    if (virtualScrollFrameRef.current !== null) return;
+    virtualScrollFrameRef.current = window.requestAnimationFrame(() => {
+      virtualScrollFrameRef.current = null;
+      updateVirtualRangeNow();
+    });
+  }, [updateVirtualRangeNow]);
+
+  const recordMessageHeight = useCallback((messageId: string, height: number) => {
+    const normalized = Math.max(1, Math.ceil(height));
+    const current = measuredMessageHeightsRef.current.get(messageId);
+    if (current !== undefined && Math.abs(current - normalized) < 2) return;
+    measuredMessageHeightsRef.current.set(messageId, normalized);
+    scheduleVirtualRangeUpdate();
+  }, [scheduleVirtualRangeUpdate]);
+
+  const visibleRange =
+    virtualRange.messageCount === messages.length
+      ? virtualRange
+      : initialChatRange(messages, measuredMessageHeightsRef.current);
+  const visibleMessages = useMemo(
+    () => messages.slice(visibleRange.start, visibleRange.end),
+    [messages, visibleRange.end, visibleRange.start]
+  );
 
   // --- Scroll handler: bottom detection, sticky anchor, history loading ---
   const handleScroll = useCallback(() => {
@@ -187,6 +345,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
     scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
+    scheduleVirtualRangeUpdate();
 
     // Sticky anchor: find the last user message whose bottom is above the anchor line.
     // Uses DOM getBoundingClientRect instead of a height table — simpler and always accurate.
@@ -215,7 +374,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         loadingEarlierRef.current = false;
       });
     }
-  }, [loadEarlierMessages, messageWindow.canLoadEarlier]);
+  }, [loadEarlierMessages, messageWindow.canLoadEarlier, scheduleVirtualRangeUpdate]);
 
   // --- Scroll position maintenance on messages change ---
   // Anchors to bottom (or preserves distance-from-bottom if user scrolled up).
@@ -229,7 +388,38 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
     scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
-  }, [messages]);
+    updateVirtualRangeNow();
+  }, [messages, updateVirtualRangeNow]);
+
+  useEffect(() => {
+    const liveIds = new Set(messages.map((message) => message.id));
+    for (const messageId of measuredMessageHeightsRef.current.keys()) {
+      if (!liveIds.has(messageId)) {
+        measuredMessageHeightsRef.current.delete(messageId);
+      }
+    }
+    scheduleVirtualRangeUpdate();
+  }, [messages, scheduleVirtualRangeUpdate]);
+
+  useEffect(() => () => {
+    if (virtualScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(virtualScrollFrameRef.current);
+    }
+  }, []);
+
+  const scrollToEstimatedMessage = useCallback((messageId: string): boolean => {
+    const el = scrollRef.current;
+    if (el === null) return false;
+    const targetIndex = messages.findIndex((message) => message.id === messageId);
+    if (targetIndex === -1) return false;
+    let top = 0;
+    for (let index = 0; index < targetIndex; index += 1) {
+      top += heightForMessage(messages[index]!, measuredMessageHeightsRef.current);
+    }
+    el.scrollTop = Math.max(0, top - Math.floor(el.clientHeight / 2));
+    updateVirtualRangeNow();
+    return true;
+  }, [messages, updateVirtualRangeNow]);
 
   // --- Citation scroll: scroll a specific message into view ---
   useLayoutEffect(() => {
@@ -247,8 +437,18 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       requestAnimationFrame(() => {
         reportCitationScrollFinished(citationScrollTarget.messageId);
       });
+    } else if (scrollToEstimatedMessage(citationScrollTarget.messageId)) {
+      requestAnimationFrame(() => {
+        const retryTarget = queryCitationMessageElement(el, citationScrollTarget.messageId);
+        if (retryTarget === null) return;
+        retryTarget.scrollIntoView({ block: "center", behavior: "auto" });
+        citationScrollCompletedTokenRef.current = citationScrollTarget.token;
+        requestAnimationFrame(() => {
+          reportCitationScrollFinished(citationScrollTarget.messageId);
+        });
+      });
     }
-  }, [citationScrollTarget, reportCitationScrollFinished]);
+  }, [citationScrollTarget, reportCitationScrollFinished, scrollToEstimatedMessage]);
 
   useEffect(() => {
     if (stickyMessageId !== null && !messages.some((message) => message.id === stickyMessageId)) {
@@ -415,13 +615,19 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             />
           ) : null}
 
-          {messages.map((message) => (
+          {visibleRange.top > 0 ? (
             <div
+              className="lyra-agents-chat-virtual-spacer"
+              style={{ height: visibleRange.top }}
+              aria-hidden="true"
+            />
+          ) : null}
+
+          {visibleMessages.map((message) => (
+            <MeasuredMessageSlot
               key={message.id}
-              className="lyra-agents-chat-message-slot"
-              data-chat-message-id={message.id}
-              data-chat-message-author={message.author}
-              data-message-id={message.id}
+              message={message}
+              onHeight={recordMessageHeight}
             >
               <Message
                 message={message}
@@ -436,8 +642,16 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
                 onContextMenu={openMessageContextMenu}
                 onCiteMessage={() => addCitationToComposer(buildFullMessageCitation(message))}
               />
-            </div>
+            </MeasuredMessageSlot>
           ))}
+
+          {visibleRange.bottom > 0 ? (
+            <div
+              className="lyra-agents-chat-virtual-spacer"
+              style={{ height: visibleRange.bottom }}
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
       </div>
 
@@ -607,5 +821,42 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         </div>
       </div>
     </>
+  );
+}
+
+function MeasuredMessageSlot({
+  message,
+  onHeight,
+  children
+}: {
+  readonly message: ChatMessage;
+  readonly onHeight: (messageId: string, height: number) => void;
+  readonly children: ReactNode;
+}) {
+  const slotRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    if (slot === null) return;
+    const measure = () => {
+      onHeight(message.id, slot.getBoundingClientRect().height || slot.offsetHeight);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(slot);
+    return () => observer.disconnect();
+  }, [message.id, onHeight]);
+
+  return (
+    <div
+      ref={slotRef}
+      className="lyra-agents-chat-message-slot"
+      data-chat-message-id={message.id}
+      data-chat-message-author={message.author}
+      data-message-id={message.id}
+    >
+      {children}
+    </div>
   );
 }

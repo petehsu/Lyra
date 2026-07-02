@@ -9,7 +9,7 @@ use std::os::raw::c_int;
 use std::os::raw::{c_char, c_uint};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use image::{ImageFormat, ImageReader, RgbaImage};
@@ -22,6 +22,58 @@ use tiff::ColorType as TiffColorType;
 const TILE_SIZE: u32 = 512;
 const MAX_LEVEL: u32 = 24;
 const MAX_CHUNK_DECODE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_CONCURRENT_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+
+struct DecodeMemoryGate {
+    used: Mutex<u64>,
+    available: Condvar,
+}
+
+struct DecodeMemoryPermit<'a> {
+    gate: &'a DecodeMemoryGate,
+    bytes: u64,
+}
+
+static DECODE_MEMORY_GATE: OnceLock<DecodeMemoryGate> = OnceLock::new();
+
+fn decode_memory_gate() -> &'static DecodeMemoryGate {
+    DECODE_MEMORY_GATE.get_or_init(|| DecodeMemoryGate {
+        used: Mutex::new(0),
+        available: Condvar::new(),
+    })
+}
+
+fn acquire_decode_memory(estimated_bytes: u64) -> Result<DecodeMemoryPermit<'static>> {
+    acquire_decode_memory_from_gate(decode_memory_gate(), estimated_bytes)
+}
+
+fn acquire_decode_memory_from_gate(
+    gate: &DecodeMemoryGate,
+    estimated_bytes: u64,
+) -> Result<DecodeMemoryPermit<'_>> {
+    let bytes = estimated_bytes.clamp(1, MAX_CONCURRENT_DECODE_BYTES);
+    let mut used = gate
+        .used
+        .lock()
+        .map_err(|_| ImageKernelError::LockPoisoned)?;
+    while used.saturating_add(bytes) > MAX_CONCURRENT_DECODE_BYTES {
+        used = gate
+            .available
+            .wait(used)
+            .map_err(|_| ImageKernelError::LockPoisoned)?;
+    }
+    *used = used.saturating_add(bytes);
+    Ok(DecodeMemoryPermit { gate, bytes })
+}
+
+impl Drop for DecodeMemoryPermit<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut used) = self.gate.used.lock() {
+            *used = used.saturating_sub(self.bytes);
+            self.gate.available.notify_all();
+        }
+    }
+}
 
 unsafe extern "C" {
     fn lyra_image_tile_kernel_accel_name() -> *const c_char;
@@ -1147,6 +1199,16 @@ fn read_tiff_tile(
         return Ok(());
     }
 
+    let estimated_decode_bytes = estimate_tiff_tile_decode_bytes(
+        session,
+        scale,
+        tile_x,
+        tile_y,
+        width,
+        height,
+        estimated_chunk_bytes,
+    );
+    let _decode_permit = acquire_decode_memory(estimated_decode_bytes)?;
     match read_tiff_chunked_tile(session, scale, tile_x, tile_y, width, height, out) {
         Ok(()) => {
             write_cached_tile(session.cache_root.as_deref(), scale, tile_x, tile_y, out);
@@ -1157,6 +1219,42 @@ fn read_tiff_tile(
             Ok(())
         }
     }
+}
+
+fn estimate_tiff_tile_decode_bytes(
+    session: &TiffSession,
+    scale: u32,
+    tile_x: u32,
+    tile_y: u32,
+    width: u32,
+    height: u32,
+    chunk_bytes: u64,
+) -> u64 {
+    if chunk_bytes == 0 || session.chunk_width == 0 || session.chunk_height == 0 {
+        return 1;
+    }
+    let image_origin_x = u64::from(tile_x) * u64::from(TILE_SIZE) * u64::from(scale);
+    let image_origin_y = u64::from(tile_y) * u64::from(TILE_SIZE) * u64::from(scale);
+    let image_end_x = image_origin_x
+        .saturating_add(u64::from(width.saturating_sub(1)) * u64::from(scale))
+        .min(u64::from(session.width.saturating_sub(1)));
+    let image_end_y = image_origin_y
+        .saturating_add(u64::from(height.saturating_sub(1)) * u64::from(scale))
+        .min(u64::from(session.height.saturating_sub(1)));
+    let chunks_y = image_end_y
+        .saturating_div(u64::from(session.chunk_height))
+        .saturating_sub(image_origin_y.saturating_div(u64::from(session.chunk_height)))
+        .saturating_add(1);
+    let chunks_x = match session.chunk_type {
+        TiffChunkType::Strip => 1,
+        TiffChunkType::Tile => image_end_x
+            .saturating_div(u64::from(session.chunk_width))
+            .saturating_sub(image_origin_x.saturating_div(u64::from(session.chunk_width)))
+            .saturating_add(1),
+    };
+    chunk_bytes
+        .saturating_mul(chunks_x.max(1))
+        .saturating_mul(chunks_y.max(1))
 }
 
 fn read_tiff_chunked_tile(
@@ -1238,6 +1336,7 @@ fn read_raw_tiff_rows(
         fill_raw_placeholder(raw, scale, tile_x, tile_y, width, height, out);
         return Ok(());
     }
+    let _decode_permit = acquire_decode_memory(row_bytes)?;
     let mut row_buffer = vec![0u8; row_bytes as usize];
     let image_origin_x = u64::from(tile_x) * u64::from(TILE_SIZE) * u64::from(scale);
     let image_origin_y = u64::from(tile_y) * u64::from(TILE_SIZE) * u64::from(scale);
@@ -2063,6 +2162,19 @@ fn ffi_c_char_array_to_string(value: &[c_char]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_memory_permit_releases_reserved_bytes() {
+        let gate = DecodeMemoryGate {
+            used: Mutex::new(0),
+            available: Condvar::new(),
+        };
+        {
+            let _permit = acquire_decode_memory_from_gate(&gate, 4_096).expect("permit");
+            assert_eq!(*gate.used.lock().expect("lock"), 4_096);
+        }
+        assert_eq!(*gate.used.lock().expect("lock"), 0);
+    }
 
     #[test]
     fn opens_png_as_source_renderer_without_native_decode() {

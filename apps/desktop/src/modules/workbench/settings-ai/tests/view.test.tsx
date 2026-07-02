@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import { SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../view";
+import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../view";
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import type {
   SettingsAiLabels,
@@ -55,7 +55,16 @@ const labels: SettingsAiLabels = {
   mcpConnected: "Connected",
   mcpDisconnected: "Disconnected",
   mcpFailed: "Failed",
+  mcpEdit: "Edit",
   mcpRemove: "Remove",
+  mcpSave: "Save",
+  mcpNameLabel: "Name",
+  mcpTransportLabel: "Transport",
+  mcpCommandLabel: "Command",
+  mcpArgsLabel: "Arguments",
+  mcpUrlLabel: "URL",
+  mcpEnvLabel: "Environment",
+  mcpHeadersLabel: "Headers",
   providerTitle: "Provider",
   connectionTitle: "Connection",
   additionalFieldsTitle: "Additional fields",
@@ -610,10 +619,73 @@ describe("SettingsAiView", () => {
     render(<SettingsAiSkillsView labels={labels} model={model} />);
 
     expect(screen.getByText("Review Skill")).toBeInTheDocument();
+    const card = screen.getByText("Review Skill").closest(".lyra-settings-ai-skill-card");
+    const actions = card?.querySelector(".lyra-settings-ai-skill-actions");
+    expect(actions?.firstElementChild).toHaveAttribute("aria-label", "Uninstall: Review Skill");
+    expect(actions?.lastElementChild).toHaveAttribute("role", "switch");
+
     fireEvent.click(screen.getByRole("switch", { name: "Review Skill" }));
     expect(activateAgentSkill).toHaveBeenCalledWith({ skillId: "review-skill" });
     fireEvent.click(screen.getByRole("button", { name: "Uninstall: Review Skill" }));
     expect(uninstallAgentSkill).toHaveBeenCalledWith({ skillId: "review-skill" });
+  });
+
+  test("edits MCP server details from the server row", () => {
+    const upsertAgentMcpServer = vi.fn();
+    const model = createModel({
+      upsertAgentMcpServer,
+      agentMcpCatalog: {
+        storageRoot: "/tmp/mcp",
+        servers: [
+          {
+            id: "git",
+            name: "Git MCP",
+            transport: {
+              kind: "stdio",
+              command: "uvx",
+              args: ["mcp-server-git"],
+              env: { GIT_TOKEN: "<configured>" },
+            },
+            enabled: true,
+            state: "connected",
+            toolCount: 1,
+            tools: [],
+            lastError: null,
+            createdAt: "2026-07-02T00:00:00Z",
+            updatedAt: "2026-07-02T00:00:00Z",
+          },
+        ],
+      },
+    });
+
+    render(<SettingsAiMcpView labels={labels} model={model} />);
+
+    const card = screen.getByText("Git MCP").closest(".lyra-settings-ai-skill-card");
+    const actions = card?.querySelector(".lyra-settings-ai-skill-actions");
+    expect(actions?.firstElementChild).toHaveAttribute("aria-label", "Edit: Git MCP");
+    expect(actions?.children.item(1)).toHaveAttribute("aria-label", "Remove: Git MCP");
+    expect(actions?.lastElementChild).toHaveAttribute("role", "switch");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit: Git MCP" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Git Tools" },
+    });
+    fireEvent.change(screen.getByLabelText("Arguments"), {
+      target: { value: "mcp-server-git --repository /repo" },
+    });
+    fireEvent.change(screen.getByLabelText("Environment"), {
+      target: { value: "GIT_TOKEN=<configured>\nDEBUG=1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(upsertAgentMcpServer).toHaveBeenCalledWith({
+      serverId: "git",
+      name: "Git Tools",
+      command: "uvx",
+      args: "mcp-server-git --repository /repo",
+      env: "GIT_TOKEN=<configured>\nDEBUG=1",
+      enabled: true,
+    });
   });
 
   test("lists store skills and installs from the switch", () => {

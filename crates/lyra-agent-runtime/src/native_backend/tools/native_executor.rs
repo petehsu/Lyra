@@ -183,6 +183,36 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
         );
         return output;
     }
+    let native_permission_policy_decision =
+        native_permission_policy_decision_for_tool(session_id, display_name, action, &input);
+    if let Some((risk, PermissionPolicyDecision::Deny)) = &native_permission_policy_decision {
+        let output = attach_policy_decision_to_output(
+            tool_failure_output(
+                "permission_policy_denied",
+                "The local Lyra Agent permission policy denied this native tool request.",
+                "Do not execute this tool call. Explain the limitation or choose a safer alternative.",
+                None,
+            ),
+            Some(policy_denial_decision(display_name, action, &input, &risk)),
+        );
+        record_tool_activity(
+            session_id,
+            turn_id,
+            tool_activity(
+                tool_call_id,
+                display_name,
+                &tool_label(display_name, action),
+                "failed",
+                input,
+                Some(output.clone()),
+                started_at,
+                Some(now()),
+            ),
+            "toolFinished",
+        );
+        return output;
+    }
+    apply_native_permission_policy_auto_grant(&mut input, &native_permission_policy_decision);
     if let Some(permission) = native_permission_request_for_tool(
         session_id,
         turn_id,
@@ -372,25 +402,16 @@ fn outside_workspace_permission_input(
     None
 }
 
-pub(crate) fn native_permission_request_for_tool(
+fn native_permission_input_for_tool(
     session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
     display_name: &str,
     action: &str,
     input: &Value,
-) -> Option<PermissionRequest> {
+) -> Option<Value> {
     if let Some(permission_input) =
         outside_workspace_permission_input(session_id, display_name, action, input)
     {
-        return permission_request_for_tool(
-            session_id,
-            turn_id,
-            tool_call_id,
-            display_name,
-            action,
-            &permission_input,
-        );
+        return Some(permission_input);
     }
     if display_name == "file"
         && matches!(
@@ -406,14 +427,7 @@ pub(crate) fn native_permission_request_for_tool(
                 Value::String("file".to_string()),
             );
         }
-        return permission_request_for_tool(
-            session_id,
-            turn_id,
-            tool_call_id,
-            display_name,
-            action,
-            &permission_input,
-        );
+        return Some(permission_input);
     }
     if display_name == "shell" && action == "run" && shell_input_requires_permission(input) {
         let mut permission_input = input.clone();
@@ -424,16 +438,77 @@ pub(crate) fn native_permission_request_for_tool(
                 Value::String("shell".to_string()),
             );
         }
-        return permission_request_for_tool(
-            session_id,
-            turn_id,
-            tool_call_id,
-            display_name,
-            action,
-            &permission_input,
-        );
+        return Some(permission_input);
     }
     None
+}
+
+fn native_permission_policy_decision_for_tool(
+    session_id: &str,
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Option<(String, PermissionPolicyDecision)> {
+    native_permission_policy_decision_for_tool_with_evaluator(
+        session_id,
+        display_name,
+        action,
+        input,
+        evaluate_permission_policy,
+    )
+}
+
+fn native_permission_policy_decision_for_tool_with_evaluator<F>(
+    session_id: &str,
+    display_name: &str,
+    action: &str,
+    input: &Value,
+    evaluate: F,
+) -> Option<(String, PermissionPolicyDecision)>
+where
+    F: Fn(&str, &str, Option<&str>, &Value) -> PermissionPolicyDecision,
+{
+    let Some(permission_input) =
+        native_permission_input_for_tool(session_id, display_name, action, input)
+    else {
+        return None;
+    };
+    let Some(risk) = permission_risk(display_name, action, &permission_input) else {
+        return None;
+    };
+    let decision = evaluate(display_name, action, Some(&risk), &permission_input);
+    Some((risk, decision))
+}
+
+fn apply_native_permission_policy_auto_grant(
+    input: &mut Value,
+    decision: &Option<(String, PermissionPolicyDecision)>,
+) {
+    if matches!(decision, Some((_, PermissionPolicyDecision::Allow)))
+        && let Some(object) = input.as_object_mut()
+    {
+        object.insert("permissionGranted".to_string(), Value::Bool(true));
+    }
+}
+
+pub(crate) fn native_permission_request_for_tool(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    display_name: &str,
+    action: &str,
+    input: &Value,
+) -> Option<PermissionRequest> {
+    let permission_input =
+        native_permission_input_for_tool(session_id, display_name, action, input)?;
+    permission_request_for_tool(
+        session_id,
+        turn_id,
+        tool_call_id,
+        display_name,
+        action,
+        &permission_input,
+    )
 }
 
 pub(crate) fn shell_input_requires_permission(input: &Value) -> bool {
@@ -463,6 +538,29 @@ mod tests {
         crate::native_backend::session_runtime::clear_turn_cancellation(&turn_id);
 
         assert!(token.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn policy_allow_marks_high_risk_shell_as_permission_granted() {
+        let mut input = json!({ "action": "run", "command": "rm file.txt" });
+        let decision = native_permission_policy_decision_for_tool_with_evaluator(
+            "session-policy-test",
+            "shell",
+            "run",
+            &input,
+            |display_name, action, risk, permission_input| {
+                assert_eq!(display_name, "shell");
+                assert_eq!(action, "run");
+                assert_eq!(risk, Some("shell"));
+                assert_eq!(permission_input["permissionRequired"], true);
+                assert_eq!(permission_input["permissionRisk"], "shell");
+                PermissionPolicyDecision::Allow
+            },
+        );
+
+        apply_native_permission_policy_auto_grant(&mut input, &decision);
+
+        assert_eq!(input["permissionGranted"], true);
     }
 }
 

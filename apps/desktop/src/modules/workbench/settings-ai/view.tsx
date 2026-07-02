@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Check, ExternalLink, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, DragEvent as ReactDragEvent } from "react";
 
@@ -8,6 +8,7 @@ import {
   AppInput,
   AppObjectRow,
   AppSearchField,
+  AppSelect,
   AppStatusMessage,
   AppSwitch,
   AppTextarea
@@ -35,6 +36,7 @@ type SettingsAiModelsViewProps = SettingsAiViewProps & {
 
 type SettingsAiSkillsViewProps = SettingsAiViewProps;
 type SettingsAiMcpViewProps = SettingsAiViewProps;
+type McpTransportKind = AgentMcpServer["transport"]["kind"];
 
 type SettingsAiRenderedModelEntry = Pick<
   AgentModelEntry,
@@ -723,13 +725,6 @@ const SettingsAiSkillCard = ({
       {renderSkillMeta(labels, skill.permissions, skill.toolPaths)}
     </div>
     <div className="lyra-settings-ai-skill-actions">
-      <AppSwitch
-        checked={skill.active}
-        aria-label={skill.name}
-        onCheckedChange={(active) => {
-          onToggle(skill, active);
-        }}
-      />
       <AppIconButton
         aria-label={`${labels.skillsUninstall}: ${skill.name}`}
         title={labels.skillsUninstall}
@@ -741,6 +736,13 @@ const SettingsAiSkillCard = ({
       >
         <Trash2 size={14} aria-hidden="true" />
       </AppIconButton>
+      <AppSwitch
+        checked={skill.active}
+        aria-label={skill.name}
+        onCheckedChange={(active) => {
+          onToggle(skill, active);
+        }}
+      />
     </div>
   </div>
 );
@@ -809,6 +811,7 @@ const mcpStateLabel = (labels: SettingsAiLabels, state: string): string => {
 
 type SettingsAiMcpServerCardProps = {
   readonly labels: SettingsAiLabels;
+  readonly onEdit: (server: AgentMcpServer) => void;
   readonly onRemove: (server: AgentMcpServer) => void;
   readonly onToggle: (server: AgentMcpServer, active: boolean) => void;
   readonly pending: boolean;
@@ -817,6 +820,7 @@ type SettingsAiMcpServerCardProps = {
 
 const SettingsAiMcpServerCard = ({
   labels,
+  onEdit,
   onRemove,
   onToggle,
   pending,
@@ -855,13 +859,16 @@ const SettingsAiMcpServerCard = ({
         </div>
       </div>
       <div className="lyra-settings-ai-skill-actions">
-        <AppSwitch
-          checked={active}
-          aria-label={server.name}
-          onCheckedChange={(checked) => {
-            onToggle(server, checked);
+        <AppIconButton
+          aria-label={`${labels.mcpEdit}: ${server.name}`}
+          title={labels.mcpEdit}
+          className="lyra-settings-ai-row-action"
+          onClick={() => {
+            onEdit(server);
           }}
-        />
+        >
+          <Pencil size={14} aria-hidden="true" />
+        </AppIconButton>
         <AppIconButton
           aria-label={`${labels.mcpRemove}: ${server.name}`}
           title={labels.mcpRemove}
@@ -873,14 +880,173 @@ const SettingsAiMcpServerCard = ({
         >
           <Trash2 size={14} aria-hidden="true" />
         </AppIconButton>
+        <AppSwitch
+          checked={active}
+          aria-label={server.name}
+          onCheckedChange={(checked) => {
+            onToggle(server, checked);
+          }}
+        />
       </div>
     </div>
+  );
+};
+
+type McpEditDraft = {
+  readonly args: string;
+  readonly command: string;
+  readonly enabled: boolean;
+  readonly env: string;
+  readonly headers: string;
+  readonly name: string;
+  readonly transport: McpTransportKind;
+  readonly url: string;
+};
+
+const formatMcpMap = (value: Readonly<Record<string, string>> | undefined): string =>
+  Object.entries(value ?? {})
+    .map(([key, entryValue]) => `${key}=${entryValue}`)
+    .join("\n");
+
+const mcpDraftFromServer = (server: AgentMcpServer): McpEditDraft => {
+  if (server.transport.kind === "stdio") {
+    return {
+      args: server.transport.args.join(" "),
+      command: server.transport.command,
+      enabled: server.enabled,
+      env: formatMcpMap(server.transport.env),
+      headers: "",
+      name: server.name,
+      transport: "stdio",
+      url: "",
+    };
+  }
+  return {
+    args: "",
+    command: "",
+    enabled: server.enabled,
+    env: "",
+    headers: formatMcpMap(server.transport.headers),
+    name: server.name,
+    transport: server.transport.kind,
+    url: server.transport.url,
+  };
+};
+
+const mcpDraftReady = (draft: McpEditDraft): boolean =>
+  draft.name.trim().length > 0
+  && (draft.transport === "stdio"
+    ? draft.command.trim().length > 0
+    : draft.url.trim().length > 0);
+
+type SettingsAiMcpEditorProps = {
+  readonly draft: McpEditDraft;
+  readonly labels: SettingsAiLabels;
+  readonly onCancel: () => void;
+  readonly onDraftChange: (draft: McpEditDraft) => void;
+  readonly onSave: () => void;
+};
+
+const SettingsAiMcpEditor = ({
+  draft,
+  labels,
+  onCancel,
+  onDraftChange,
+  onSave,
+}: SettingsAiMcpEditorProps) => {
+  const setDraftValue = <K extends keyof McpEditDraft>(key: K, value: McpEditDraft[K]) => {
+    onDraftChange({ ...draft, [key]: value });
+  };
+  const transportOptions = useMemo(() => ([
+    { label: "stdio", value: "stdio" },
+    { label: "HTTP", value: "http" },
+    { label: "SSE", value: "sse" },
+  ] as const), []);
+
+  return (
+    <form
+      className="lyra-settings-ai-mcp-editor"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (mcpDraftReady(draft)) {
+          onSave();
+        }
+      }}
+    >
+      <div className="lyra-settings-ai-mcp-editor-grid">
+        <SettingsAiInputField
+          label={labels.mcpNameLabel}
+          value={draft.name}
+          onValueChange={(value) => setDraftValue("name", value)}
+        />
+        <label className="lyra-settings-ai-field">
+          <span>{labels.mcpTransportLabel}</span>
+          <AppSelect<McpTransportKind>
+            ariaLabel={labels.mcpTransportLabel}
+            className="lyra-settings-ai-select"
+            value={draft.transport}
+            options={transportOptions}
+            onValueChange={(value) => setDraftValue("transport", value)}
+          />
+        </label>
+        {draft.transport === "stdio" ? (
+          <>
+            <SettingsAiInputField
+              label={labels.mcpCommandLabel}
+              value={draft.command}
+              onValueChange={(value) => setDraftValue("command", value)}
+            />
+            <SettingsAiInputField
+              label={labels.mcpArgsLabel}
+              value={draft.args}
+              onValueChange={(value) => setDraftValue("args", value)}
+            />
+            <SettingsAiTextareaField
+              label={labels.mcpEnvLabel}
+              value={draft.env}
+              onValueChange={(value) => setDraftValue("env", value)}
+              rows={3}
+            />
+          </>
+        ) : (
+          <>
+            <SettingsAiInputField
+              label={labels.mcpUrlLabel}
+              value={draft.url}
+              onValueChange={(value) => setDraftValue("url", value)}
+            />
+            <SettingsAiTextareaField
+              label={labels.mcpHeadersLabel}
+              value={draft.headers}
+              onValueChange={(value) => setDraftValue("headers", value)}
+              rows={3}
+            />
+          </>
+        )}
+      </div>
+      <div className="lyra-settings-ai-mcp-editor-actions">
+        <AppButton type="button" variant="ghost" size="sm" onClick={onCancel}>
+          {labels.cancel}
+        </AppButton>
+        <AppButton
+          type="submit"
+          variant="default"
+          size="sm"
+          disabled={!mcpDraftReady(draft)}
+        >
+          <Save size={14} aria-hidden="true" />
+          {labels.mcpSave}
+        </AppButton>
+      </div>
+    </form>
   );
 };
 
 export const SettingsAiMcpView = ({ labels, model }: SettingsAiMcpViewProps) => {
   const [query, setQuery] = useState("");
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [editingServerId, setEditingServerId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<McpEditDraft | null>(null);
   const servers = model.agentMcpCatalog?.servers ?? [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredServers = normalizedQuery.length === 0
@@ -915,6 +1081,40 @@ export const SettingsAiMcpView = ({ labels, model }: SettingsAiMcpViewProps) => 
       setQuery("");
     });
   }, [model.upsertAgentMcpServer, query, runMcpOperation]);
+
+  const editServer = useCallback((server: AgentMcpServer): void => {
+    setEditingServerId(server.id);
+    setEditingDraft(mcpDraftFromServer(server));
+  }, []);
+
+  const cancelEditServer = useCallback((): void => {
+    setEditingServerId(null);
+    setEditingDraft(null);
+  }, []);
+
+  const saveEditedServer = useCallback((server: AgentMcpServer): void => {
+    if (editingDraft === null || !mcpDraftReady(editingDraft)) return;
+    void runMcpOperation(`server:${server.id}`, async () => {
+      await model.upsertAgentMcpServer?.(editingDraft.transport === "stdio"
+        ? {
+          serverId: server.id,
+          name: editingDraft.name,
+          command: editingDraft.command,
+          args: editingDraft.args,
+          env: editingDraft.env,
+          enabled: editingDraft.enabled,
+        }
+        : {
+          serverId: server.id,
+          name: editingDraft.name,
+          transport: editingDraft.transport,
+          url: editingDraft.url,
+          headers: editingDraft.headers,
+          enabled: editingDraft.enabled,
+        });
+      cancelEditServer();
+    });
+  }, [cancelEditServer, editingDraft, model.upsertAgentMcpServer, runMcpOperation]);
 
   const toggleServer = useCallback((server: AgentMcpServer, active: boolean): void => {
     void runMcpOperation(`server:${server.id}`, async () => {
@@ -975,14 +1175,25 @@ export const SettingsAiMcpView = ({ labels, model }: SettingsAiMcpViewProps) => 
         ) : (
           <div className="lyra-settings-ai-skill-list">
             {filteredServers.map((server) => (
-              <SettingsAiMcpServerCard
-                key={server.id}
-                labels={labels}
-                onRemove={removeServer}
-                onToggle={toggleServer}
-                pending={pendingIds.has(`server:${server.id}`)}
-                server={server}
-              />
+              <div className="lyra-settings-ai-mcp-item" key={server.id}>
+                <SettingsAiMcpServerCard
+                  labels={labels}
+                  onEdit={editServer}
+                  onRemove={removeServer}
+                  onToggle={toggleServer}
+                  pending={pendingIds.has(`server:${server.id}`)}
+                  server={server}
+                />
+                {editingServerId === server.id && editingDraft !== null ? (
+                  <SettingsAiMcpEditor
+                    draft={editingDraft}
+                    labels={labels}
+                    onCancel={cancelEditServer}
+                    onDraftChange={setEditingDraft}
+                    onSave={() => saveEditedServer(server)}
+                  />
+                ) : null}
+              </div>
             ))}
           </div>
         )}
