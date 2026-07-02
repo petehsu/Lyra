@@ -21,7 +21,11 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     let mut messages = vec![large_message("msg-system", "system", 100)];
     for i in 1..=20 {
         messages.push(large_message(&format!("msg-user-{i}"), "user", 20_000));
-        messages.push(large_message(&format!("msg-assistant-{i}"), "assistant", 20_000));
+        messages.push(large_message(
+            &format!("msg-assistant-{i}"),
+            "assistant",
+            20_000,
+        ));
     }
 
     let mut session = NativeSession {
@@ -81,7 +85,10 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     assert!(!selected.is_empty(), "should have selected messages");
 
     let token_before = estimate_messages_tokens(&messages);
-    assert!(token_before >= EXTRACT_COMPRESS_THRESHOLD, "session should exceed 30K tokens");
+    assert!(
+        token_before >= EXTRACT_COMPRESS_THRESHOLD,
+        "session should exceed 30K tokens"
+    );
 
     // Fixed LLM response (no TCP mock needed)
     let parsed = json!({
@@ -116,8 +123,7 @@ fn apply_compression_replaces_messages_with_block_and_archives_to_cut_store() {
     let compression_idx = msgs
         .iter()
         .position(|m| {
-            m.pointer("/metadata/kind").and_then(Value::as_str)
-                == Some("compressed-context-block")
+            m.pointer("/metadata/kind").and_then(Value::as_str) == Some("compressed-context-block")
         })
         .expect("compression block found");
 
@@ -181,9 +187,18 @@ fn read_cut_messages_round_trips_archived_messages() {
     });
 
     let entries = vec![
-        cut_store::CutMessageEntry { message: msg_a.clone(), ordinal: 0 },
-        cut_store::CutMessageEntry { message: msg_b.clone(), ordinal: 1 },
-        cut_store::CutMessageEntry { message: msg_c.clone(), ordinal: 2 },
+        cut_store::CutMessageEntry {
+            message: msg_a.clone(),
+            ordinal: 0,
+        },
+        cut_store::CutMessageEntry {
+            message: msg_b.clone(),
+            ordinal: 1,
+        },
+        cut_store::CutMessageEntry {
+            message: msg_c.clone(),
+            ordinal: 2,
+        },
     ];
     let pack = cut_store::append_cut_pack(&root, &session_id, &entries).expect("append cut pack");
     cut_store::update_manifest_with_pack(&root, &session_id, &pack).expect("update manifest");

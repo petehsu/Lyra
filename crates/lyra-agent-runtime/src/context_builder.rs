@@ -189,9 +189,7 @@ fn provider_messages_from_agent_message(
     // Wrap its JSON payload with a framing prefix so the provider treats it as a
     // summary of prior conversation, not a generic system instruction.
     if role == "system"
-        && message
-            .pointer("/metadata/kind")
-            .and_then(Value::as_str)
+        && message.pointer("/metadata/kind").and_then(Value::as_str)
             == Some("compressed-context-block")
     {
         if text.trim().is_empty() {
@@ -526,8 +524,6 @@ fn provider_transcript_from_agent_message(message: &Value) -> Vec<Value> {
         .filter_map(sanitize_provider_transcript_message)
         .collect()
 }
-
-
 
 fn sanitize_provider_transcript_message(message: &Value) -> Option<Value> {
     let role = message.get("role").and_then(Value::as_str)?;
@@ -1382,23 +1378,18 @@ mod tests {
         // final message with providerTranscript was ever committed. The
         // intermediate message must still be skipped — tool blocks must never
         // leak as plain text into the provider context.
-        let messages = vec![
-            json!({
-                "id": "msg-intermediate",
-                "role": "assistant",
-                "text": "Let me search for that.",
-                "blocks": [
-                    { "type": "text", "id": "text-0", "text": "Let me search for that." },
-                    { "type": "tool", "id": "tool-0", "toolId": "call-1" }
-                ]
-            }),
-        ];
+        let messages = vec![json!({
+            "id": "msg-intermediate",
+            "role": "assistant",
+            "text": "Let me search for that.",
+            "blocks": [
+                { "type": "text", "id": "text-0", "text": "Let me search for that." },
+                { "type": "tool", "id": "tool-0", "toolId": "call-1" }
+            ]
+        })];
 
         let mut tool_outputs = HashMap::new();
-        tool_outputs.insert(
-            "call-1".to_string(),
-            "Search results found.".to_string(),
-        );
+        tool_outputs.insert("call-1".to_string(), "Search results found.".to_string());
 
         let context = ContextBuilder::default().build_provider_context(
             "system".to_string(),
@@ -1475,10 +1466,7 @@ mod tests {
         ];
 
         let mut tool_outputs = HashMap::new();
-        tool_outputs.insert(
-            "call-1".to_string(),
-            "Search results found.".to_string(),
-        );
+        tool_outputs.insert("call-1".to_string(), "Search results found.".to_string());
 
         let context = ContextBuilder::default().build_provider_context(
             "system".to_string(),

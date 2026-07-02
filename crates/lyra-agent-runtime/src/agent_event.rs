@@ -17,14 +17,9 @@ use serde_json::Value;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentEvent {
     #[serde(rename_all = "camelCase")]
-    SessionSnapshot {
-        snapshot: Value,
-    },
+    SessionSnapshot { snapshot: Value },
     #[serde(rename_all = "camelCase")]
-    MessageCommitted {
-        session_id: String,
-        message: Value,
-    },
+    MessageCommitted { session_id: String, message: Value },
     #[serde(rename_all = "camelCase")]
     MessageDelta {
         session_id: String,
@@ -58,10 +53,7 @@ pub enum AgentEvent {
         tool: Value,
     },
     #[serde(rename_all = "camelCase")]
-    MemoryUpdated {
-        session_id: String,
-        snapshot: Value,
-    },
+    MemoryUpdated { session_id: String, snapshot: Value },
     #[serde(rename_all = "camelCase")]
     TurnStarted {
         session_id: String,
@@ -77,10 +69,7 @@ pub enum AgentEvent {
         reason: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
-    TurnCompleted {
-        session_id: String,
-        turn_id: String,
-    },
+    TurnCompleted { session_id: String, turn_id: String },
     #[serde(rename_all = "camelCase")]
     TurnFinished {
         session_id: String,
@@ -101,15 +90,9 @@ pub enum AgentEvent {
         reason: String,
     },
     #[serde(rename_all = "camelCase")]
-    TurnRecovered {
-        session_id: String,
-        turn_id: String,
-    },
+    TurnRecovered { session_id: String, turn_id: String },
     #[serde(rename_all = "camelCase")]
-    ContextTrimmed {
-        session_id: String,
-        detail: Value,
-    },
+    ContextTrimmed { session_id: String, detail: Value },
     #[serde(rename_all = "camelCase")]
     ContextCompressionProgress {
         session_id: String,
@@ -118,25 +101,13 @@ pub enum AgentEvent {
         token_after: Option<u64>,
     },
     #[serde(rename_all = "camelCase")]
-    TodoUpdated {
-        session_id: String,
-        todos: Value,
-    },
+    TodoUpdated { session_id: String, todos: Value },
     #[serde(rename_all = "camelCase")]
-    ProjectTodoUpdated {
-        session_id: String,
-        todo: Value,
-    },
+    ProjectTodoUpdated { session_id: String, todo: Value },
     #[serde(rename_all = "camelCase")]
-    PlanUpdated {
-        session_id: String,
-        plan: Value,
-    },
+    PlanUpdated { session_id: String, plan: Value },
     #[serde(rename_all = "camelCase")]
-    PlanReviewRequested {
-        session_id: String,
-        plan: Value,
-    },
+    PlanReviewRequested { session_id: String, plan: Value },
     #[serde(rename_all = "camelCase")]
     PlanReviewResolved {
         session_id: String,
@@ -148,9 +119,11 @@ pub enum AgentEvent {
         session_id: String,
         clarification_id: String,
         question: String,
+        i18n_key: Option<String>,
         options: Option<Value>,
         allow_custom_answer: bool,
         detail: Option<String>,
+        detail_i18n_key: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     ClarificationResolved {
@@ -171,10 +144,7 @@ pub enum AgentEvent {
         detail: String,
     },
     #[serde(rename_all = "camelCase")]
-    FollowStateChanged {
-        session_id: String,
-        follow: Value,
-    },
+    FollowStateChanged { session_id: String, follow: Value },
     #[serde(rename_all = "camelCase")]
     ProviderFault {
         session_id: String,
@@ -260,46 +230,266 @@ mod tests {
     #[test]
     fn all_variants_serialize_with_expected_kind() {
         let cases: Vec<(AgentEvent, &str)> = vec![
-            (AgentEvent::SessionSnapshot { snapshot: json!({}) }, "sessionSnapshot"),
-            (AgentEvent::MessageCommitted { session_id: "s".into(), message: json!({}) }, "messageCommitted"),
-            (AgentEvent::MessageDelta { session_id: "s".into(), message_id: "m".into(), block_id: None, replace: None, delta: "d".into() }, "messageDelta"),
-            (AgentEvent::MessageReasoningDelta { session_id: "s".into(), message_id: "m".into(), delta: "d".into() }, "messageReasoningDelta"),
-            (AgentEvent::ToolStarted { session_id: "s".into(), message_id: None, tool: json!({}) }, "toolStarted"),
-            (AgentEvent::ToolFinished { session_id: "s".into(), message_id: None, tool: json!({}) }, "toolFinished"),
-            (AgentEvent::ToolUpdated { session_id: "s".into(), turn_id: "t".into(), tool: json!({}) }, "toolUpdated"),
-            (AgentEvent::MemoryUpdated { session_id: "s".into(), snapshot: json!({}) }, "memoryUpdated"),
-            (AgentEvent::TurnStarted { session_id: "s".into(), turn_id: "t".into(), state: "running".into(), reason: None }, "turnStarted"),
-            (AgentEvent::TurnStateChanged { session_id: "s".into(), turn_id: "t".into(), state: "running".into(), reason: None }, "turnStateChanged"),
-            (AgentEvent::TurnCompleted { session_id: "s".into(), turn_id: "t".into() }, "turnCompleted"),
-            (AgentEvent::TurnFinished { session_id: "s".into(), turn_id: "t".into(), status: "ok".into() }, "turnFinished"),
-            (AgentEvent::TurnFailed { session_id: "s".into(), turn_id: "t".into(), message: "err".into(), failure_kind: None }, "turnFailed"),
-            (AgentEvent::TurnInterrupted { session_id: "s".into(), turn_id: "t".into(), reason: "cancel".into() }, "turnInterrupted"),
-            (AgentEvent::TurnRecovered { session_id: "s".into(), turn_id: "t".into() }, "turnRecovered"),
-            (AgentEvent::ContextTrimmed { session_id: "s".into(), detail: json!({}) }, "contextTrimmed"),
-            (AgentEvent::ContextCompressionProgress { session_id: "s".into(), status: "started".into(), token_before: None, token_after: None }, "contextCompressionProgress"),
-            (AgentEvent::TodoUpdated { session_id: "s".into(), todos: json!([]) }, "todoUpdated"),
-            (AgentEvent::ProjectTodoUpdated { session_id: "s".into(), todo: json!({}) }, "projectTodoUpdated"),
-            (AgentEvent::PlanUpdated { session_id: "s".into(), plan: json!({}) }, "planUpdated"),
-            (AgentEvent::PlanReviewRequested { session_id: "s".into(), plan: json!({}) }, "planReviewRequested"),
-            (AgentEvent::PlanReviewResolved { session_id: "s".into(), plan_id: None, resolution: "approved".into() }, "planReviewResolved"),
-            (AgentEvent::ClarificationRequested { session_id: "s".into(), clarification_id: "c".into(), question: "q".into(), options: None, allow_custom_answer: false, detail: None }, "clarificationRequested"),
-            (AgentEvent::ClarificationResolved { session_id: "s".into(), clarification_id: "c".into() }, "clarificationResolved"),
-            (AgentEvent::BrowserActivityChanged { session_id: "s".into(), turn_id: "t".into(), target: json!({}) }, "browserActivityChanged"),
-            (AgentEvent::PermissionRequested { session_id: "s".into(), permission_id: "p".into(), title: "t".into(), detail: "d".into() }, "permissionRequested"),
-            (AgentEvent::FollowStateChanged { session_id: "s".into(), follow: json!({}) }, "followStateChanged"),
-            (AgentEvent::ProviderFault { session_id: "s".into(), turn_id: "t".into(), fault: json!({}) }, "providerFault"),
-            (AgentEvent::RollbackStarted { session_id: "s".into(), message_id: "m".into() }, "rollbackStarted"),
-            (AgentEvent::RollbackFinished { session_id: "s".into(), message_id: "m".into(), removed_message_count: 1, restored_file_count: 2 }, "rollbackFinished"),
-            (AgentEvent::RollbackFailed { session_id: "s".into(), message_id: "m".into(), message: "err".into() }, "rollbackFailed"),
-            (AgentEvent::ProviderProtocolEvent { session_id: "s".into(), turn_id: "t".into(), detail: json!({}) }, "providerProtocolEvent"),
+            (
+                AgentEvent::SessionSnapshot {
+                    snapshot: json!({}),
+                },
+                "sessionSnapshot",
+            ),
+            (
+                AgentEvent::MessageCommitted {
+                    session_id: "s".into(),
+                    message: json!({}),
+                },
+                "messageCommitted",
+            ),
+            (
+                AgentEvent::MessageDelta {
+                    session_id: "s".into(),
+                    message_id: "m".into(),
+                    block_id: None,
+                    replace: None,
+                    delta: "d".into(),
+                },
+                "messageDelta",
+            ),
+            (
+                AgentEvent::MessageReasoningDelta {
+                    session_id: "s".into(),
+                    message_id: "m".into(),
+                    delta: "d".into(),
+                },
+                "messageReasoningDelta",
+            ),
+            (
+                AgentEvent::ToolStarted {
+                    session_id: "s".into(),
+                    message_id: None,
+                    tool: json!({}),
+                },
+                "toolStarted",
+            ),
+            (
+                AgentEvent::ToolFinished {
+                    session_id: "s".into(),
+                    message_id: None,
+                    tool: json!({}),
+                },
+                "toolFinished",
+            ),
+            (
+                AgentEvent::ToolUpdated {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    tool: json!({}),
+                },
+                "toolUpdated",
+            ),
+            (
+                AgentEvent::MemoryUpdated {
+                    session_id: "s".into(),
+                    snapshot: json!({}),
+                },
+                "memoryUpdated",
+            ),
+            (
+                AgentEvent::TurnStarted {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    state: "running".into(),
+                    reason: None,
+                },
+                "turnStarted",
+            ),
+            (
+                AgentEvent::TurnStateChanged {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    state: "running".into(),
+                    reason: None,
+                },
+                "turnStateChanged",
+            ),
+            (
+                AgentEvent::TurnCompleted {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                },
+                "turnCompleted",
+            ),
+            (
+                AgentEvent::TurnFinished {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    status: "ok".into(),
+                },
+                "turnFinished",
+            ),
+            (
+                AgentEvent::TurnFailed {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    message: "err".into(),
+                    failure_kind: None,
+                },
+                "turnFailed",
+            ),
+            (
+                AgentEvent::TurnInterrupted {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    reason: "cancel".into(),
+                },
+                "turnInterrupted",
+            ),
+            (
+                AgentEvent::TurnRecovered {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                },
+                "turnRecovered",
+            ),
+            (
+                AgentEvent::ContextTrimmed {
+                    session_id: "s".into(),
+                    detail: json!({}),
+                },
+                "contextTrimmed",
+            ),
+            (
+                AgentEvent::ContextCompressionProgress {
+                    session_id: "s".into(),
+                    status: "started".into(),
+                    token_before: None,
+                    token_after: None,
+                },
+                "contextCompressionProgress",
+            ),
+            (
+                AgentEvent::TodoUpdated {
+                    session_id: "s".into(),
+                    todos: json!([]),
+                },
+                "todoUpdated",
+            ),
+            (
+                AgentEvent::ProjectTodoUpdated {
+                    session_id: "s".into(),
+                    todo: json!({}),
+                },
+                "projectTodoUpdated",
+            ),
+            (
+                AgentEvent::PlanUpdated {
+                    session_id: "s".into(),
+                    plan: json!({}),
+                },
+                "planUpdated",
+            ),
+            (
+                AgentEvent::PlanReviewRequested {
+                    session_id: "s".into(),
+                    plan: json!({}),
+                },
+                "planReviewRequested",
+            ),
+            (
+                AgentEvent::PlanReviewResolved {
+                    session_id: "s".into(),
+                    plan_id: None,
+                    resolution: "approved".into(),
+                },
+                "planReviewResolved",
+            ),
+            (
+                AgentEvent::ClarificationRequested {
+                    session_id: "s".into(),
+                    clarification_id: "c".into(),
+                    question: "q".into(),
+                    i18n_key: None,
+                    options: None,
+                    allow_custom_answer: false,
+                    detail: None,
+                    detail_i18n_key: None,
+                },
+                "clarificationRequested",
+            ),
+            (
+                AgentEvent::ClarificationResolved {
+                    session_id: "s".into(),
+                    clarification_id: "c".into(),
+                },
+                "clarificationResolved",
+            ),
+            (
+                AgentEvent::BrowserActivityChanged {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    target: json!({}),
+                },
+                "browserActivityChanged",
+            ),
+            (
+                AgentEvent::PermissionRequested {
+                    session_id: "s".into(),
+                    permission_id: "p".into(),
+                    title: "t".into(),
+                    detail: "d".into(),
+                },
+                "permissionRequested",
+            ),
+            (
+                AgentEvent::FollowStateChanged {
+                    session_id: "s".into(),
+                    follow: json!({}),
+                },
+                "followStateChanged",
+            ),
+            (
+                AgentEvent::ProviderFault {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    fault: json!({}),
+                },
+                "providerFault",
+            ),
+            (
+                AgentEvent::RollbackStarted {
+                    session_id: "s".into(),
+                    message_id: "m".into(),
+                },
+                "rollbackStarted",
+            ),
+            (
+                AgentEvent::RollbackFinished {
+                    session_id: "s".into(),
+                    message_id: "m".into(),
+                    removed_message_count: 1,
+                    restored_file_count: 2,
+                },
+                "rollbackFinished",
+            ),
+            (
+                AgentEvent::RollbackFailed {
+                    session_id: "s".into(),
+                    message_id: "m".into(),
+                    message: "err".into(),
+                },
+                "rollbackFailed",
+            ),
+            (
+                AgentEvent::ProviderProtocolEvent {
+                    session_id: "s".into(),
+                    turn_id: "t".into(),
+                    detail: json!({}),
+                },
+                "providerProtocolEvent",
+            ),
         ];
 
         for (event, expected_kind) in cases {
             let json_val = serde_json::to_value(&event).unwrap();
-            assert_eq!(
-                json_val["kind"], expected_kind,
-                "kind mismatch for variant"
-            );
+            assert_eq!(json_val["kind"], expected_kind, "kind mismatch for variant");
         }
     }
 
@@ -307,16 +497,37 @@ mod tests {
     fn kind_values_match_ts_union() {
         let rust_kinds: Vec<&str> = {
             let cases = vec![
-                "sessionSnapshot", "messageCommitted", "messageDelta", "messageReasoningDelta",
-                "toolStarted", "toolFinished", "toolUpdated", "memoryUpdated",
-                "turnStarted", "turnStateChanged", "turnCompleted", "turnFinished",
-                "turnFailed", "turnInterrupted", "turnRecovered", "contextTrimmed",
-                "contextCompressionProgress", "todoUpdated", "projectTodoUpdated",
-                "planUpdated", "planReviewRequested", "planReviewResolved",
-                "clarificationRequested", "clarificationResolved",
-                "browserActivityChanged", "permissionRequested",
-                "followStateChanged", "providerFault",
-                "rollbackStarted", "rollbackFinished", "rollbackFailed",
+                "sessionSnapshot",
+                "messageCommitted",
+                "messageDelta",
+                "messageReasoningDelta",
+                "toolStarted",
+                "toolFinished",
+                "toolUpdated",
+                "memoryUpdated",
+                "turnStarted",
+                "turnStateChanged",
+                "turnCompleted",
+                "turnFinished",
+                "turnFailed",
+                "turnInterrupted",
+                "turnRecovered",
+                "contextTrimmed",
+                "contextCompressionProgress",
+                "todoUpdated",
+                "projectTodoUpdated",
+                "planUpdated",
+                "planReviewRequested",
+                "planReviewResolved",
+                "clarificationRequested",
+                "clarificationResolved",
+                "browserActivityChanged",
+                "permissionRequested",
+                "followStateChanged",
+                "providerFault",
+                "rollbackStarted",
+                "rollbackFinished",
+                "rollbackFailed",
                 "providerProtocolEvent",
             ];
             cases
@@ -346,7 +557,9 @@ mod tests {
 
     #[test]
     fn session_snapshot_serializes_correctly() {
-        let event = AgentEvent::SessionSnapshot { snapshot: json!({"id": "test"}) };
+        let event = AgentEvent::SessionSnapshot {
+            snapshot: json!({"id": "test"}),
+        };
         let val = serde_json::to_value(&event).unwrap();
         assert_eq!(val["kind"], "sessionSnapshot");
         assert_eq!(val["snapshot"]["id"], "test");

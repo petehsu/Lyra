@@ -8,10 +8,10 @@
 //! Synthesized edges carry provenance in `Edge.properties`:
 //!   `provenance: "heuristic"`, `synthesizedBy: "framework:<name>"`
 
-pub mod types;
-pub mod registry;
-pub mod helpers;
 pub mod frameworks;
+pub mod helpers;
+pub mod registry;
+pub mod types;
 
 pub use registry::FrameworkRegistry;
 pub use types::{FrameworkResolver, NodeInfo, ResolutionContext, ResolvedRef, UnresolvedRef};

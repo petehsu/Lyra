@@ -21,4 +21,17 @@ describe("AgentProviderBrandIcon", () => {
     expect(icon).toHaveAttribute("data-lyra-brand-luma", "light");
     expect(svg).toHaveStyle({ color: "#fff" });
   });
+
+  test("uses the site favicon for custom provider base URLs", () => {
+    const { container } = render(
+      <AgentProviderBrandIcon
+        baseUrl="https://api.example.com/v1"
+        providerId="custom_openai_compatible"
+        label="Custom"
+      />
+    );
+
+    const image = container.querySelector(".lyra-agent-provider-brand-icon-image");
+    expect(image).toHaveAttribute("src", "https://api.example.com/favicon.ico");
+  });
 });

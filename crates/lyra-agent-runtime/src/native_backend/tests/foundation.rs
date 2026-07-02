@@ -83,11 +83,13 @@ fn temporary_session_is_ephemeral_seeded_and_hidden() {
     {
         let state = state().lock().expect("state lock");
         assert_eq!(state.active_session_id.as_deref(), Some(parent_id.as_str()));
-        assert!(state
-            .sessions
-            .get(&temp_session_id)
-            .map(|session| session.ephemeral)
-            .unwrap_or(false));
+        assert!(
+            state
+                .sessions
+                .get(&temp_session_id)
+                .map(|session| session.ephemeral)
+                .unwrap_or(false)
+        );
     }
 
     // Ephemeral sessions never appear in the session list.
@@ -116,10 +118,7 @@ fn temporary_session_is_ephemeral_seeded_and_hidden() {
     }
 
     // Cleanup parent.
-    let _ = backend.call_agent_method(
-        "agent.session.delete",
-        json!({ "sessionId": parent_id }),
-    );
+    let _ = backend.call_agent_method("agent.session.delete", json!({ "sessionId": parent_id }));
 }
 
 #[test]
@@ -1175,15 +1174,12 @@ fn tool_activity_persists_tool_record_with_message_block() {
             })
         })
         .expect("message");
-    assert!(
-        message
-            .get("blocks")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .any(|block| block.get("toolId").and_then(Value::as_str)
-                == Some("call-persisted-tool"))
-    );
+    assert!(message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|block| block.get("toolId").and_then(Value::as_str) == Some("call-persisted-tool")));
 
     crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
 }
@@ -2145,9 +2141,11 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
                 turn_id: "turn-legacy".to_string(),
                 tool_call_id: "tool-legacy".to_string(),
                 question: "legacy clarification?".to_string(),
+                i18n_key: None,
                 options: Vec::new(),
                 allow_custom_answer: true,
                 detail: None,
+                detail_i18n_key: None,
                 status: "pending".to_string(),
                 answer: None,
                 selected_option: None,
@@ -2282,9 +2280,11 @@ fn native_state_persists_only_live_pending_requests() {
             turn_id: turn_id.to_string(),
             tool_call_id: "tool".to_string(),
             question: "question".to_string(),
+            i18n_key: None,
             options: Vec::new(),
             allow_custom_answer: true,
             detail: None,
+            detail_i18n_key: None,
             status: status.to_string(),
             answer: answer.clone(),
             selected_option: answer.clone(),
@@ -3578,12 +3578,7 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
 #[test]
 fn tool_filesystem_scene_uses_runtime_state_signals() {
     assert_eq!(
-        infer_tool_filesystem_scene(
-            Some("project-code"),
-            None,
-            &HashSet::new(),
-            &json!({})
-        ),
+        infer_tool_filesystem_scene(Some("project-code"), None, &HashSet::new(), &json!({})),
         "project-code"
     );
     assert_eq!(

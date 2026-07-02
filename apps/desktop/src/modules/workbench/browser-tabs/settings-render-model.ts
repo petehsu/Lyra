@@ -76,7 +76,7 @@ export type SettingsInlineStatusActionControlDescriptor = {
 
 export type SettingsAiCustomControlDescriptor = {
   readonly kind: "custom";
-  readonly customKind: "ai-models" | "ai-provider-settings";
+  readonly customKind: "ai-mcp" | "ai-models" | "ai-provider-settings" | "ai-skills";
   readonly labels: SettingsAiLabels;
   readonly model: SettingsAiModel;
   readonly openDialog: GlobalDialogModel["openDialog"];
@@ -345,6 +345,10 @@ const resolveCategoryHeading = (
       return props.aiCategoryLabel;
     case "models":
       return props.modelsCategoryLabel;
+    case "skills":
+      return props.skillsCategoryLabel;
+    case "mcp":
+      return props.mcpCategoryLabel;
     case "legal":
       return props.legalCategoryLabel;
     default:
@@ -685,6 +689,36 @@ const createSectionControl = (
           {
             kind: "custom",
             customKind: "ai-models",
+            labels: props.aiLabels,
+            model: props.aiModel,
+            openDialog: props.openDialog
+          }
+        ]
+      });
+    case "aiSkills":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.skillsCategoryLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "ai-skills",
+            labels: props.aiLabels,
+            model: props.aiModel,
+            openDialog: props.openDialog
+          }
+        ]
+      });
+    case "aiMcp":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.mcpCategoryLabel,
+        frame: "none",
+        controls: [
+          {
+            kind: "custom",
+            customKind: "ai-mcp",
             labels: props.aiLabels,
             model: props.aiModel,
             openDialog: props.openDialog

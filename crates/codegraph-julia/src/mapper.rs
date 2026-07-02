@@ -134,8 +134,7 @@ pub(crate) fn ir_to_graph(
             props = props.with("return_type", ret.clone());
         }
         if !func.parameters.is_empty() {
-            let param_names: Vec<String> =
-                func.parameters.iter().map(|p| p.name.clone()).collect();
+            let param_names: Vec<String> = func.parameters.iter().map(|p| p.name.clone()).collect();
             props = props.with("parameters", param_names);
         }
         if let Some(ref complexity) = func.complexity {

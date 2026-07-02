@@ -12,13 +12,15 @@ impl RuntimeEventMapper {
     ) -> crate::agent_event::AgentEvent {
         use crate::agent_event::AgentEvent;
         match event {
-            lyra_agent_kernel::KernelTurnEvent::MessageDelta { delta } => AgentEvent::MessageDelta {
-                session_id: session_id.to_string(),
-                message_id: String::new(),
-                block_id: None,
-                replace: None,
-                delta,
-            },
+            lyra_agent_kernel::KernelTurnEvent::MessageDelta { delta } => {
+                AgentEvent::MessageDelta {
+                    session_id: session_id.to_string(),
+                    message_id: String::new(),
+                    block_id: None,
+                    replace: None,
+                    delta,
+                }
+            }
             lyra_agent_kernel::KernelTurnEvent::ToolCall(call) => AgentEvent::ToolStarted {
                 session_id: session_id.to_string(),
                 message_id: None,

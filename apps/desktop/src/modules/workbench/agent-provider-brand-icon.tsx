@@ -31,9 +31,11 @@ import {
   Zhipu
 } from "@lobehub/icons/es/icons";
 import type { IconType } from "@lobehub/icons/es/types";
+import { useEffect, useState } from "react";
 import type { SVGProps } from "react";
 
 type AgentProviderBrandIconProps = {
+  readonly baseUrl?: string | null | undefined;
   readonly className?: string;
   readonly label?: string | null | undefined;
   readonly modelId?: string | null | undefined;
@@ -157,6 +159,53 @@ const getInitials = (label: string | null | undefined): string => {
   return [...trimmed].slice(0, 2).join("");
 };
 
+const isCustomProvider = ({
+  provider,
+  providerId,
+  routeId
+}: Pick<AgentProviderBrandIconProps, "provider" | "providerId" | "routeId">): boolean =>
+  [provider, providerId, routeId].some((value) =>
+    value?.toLocaleLowerCase().includes("custom") === true
+  );
+
+const withScheme = (value: string): string => {
+  if (value.includes("://")) {
+    return value;
+  }
+  const lower = value.toLocaleLowerCase();
+  return `${lower.startsWith("localhost") || lower.startsWith("127.") ? "http" : "https"}://${value}`;
+};
+
+const providerSiteOrigins = (baseUrl: string | null | undefined): readonly string[] => {
+  const trimmed = baseUrl?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return [];
+  }
+  try {
+    const url = new URL(withScheme(trimmed));
+    const origins = [url.origin];
+    const hostParts = url.hostname.split(".");
+    if (
+      hostParts.length > 2
+      && ["api", "gateway", "openai", "console", "app"].includes(hostParts[0] ?? "")
+    ) {
+      const siteUrl = new URL(url.toString());
+      siteUrl.hostname = hostParts.slice(1).join(".");
+      origins.push(siteUrl.origin);
+    }
+    return [...new Set(origins)];
+  } catch {
+    return [];
+  }
+};
+
+const providerIconCandidates = (baseUrl: string | null | undefined): readonly string[] =>
+  providerSiteOrigins(baseUrl).flatMap((origin) => [
+    `${origin}/favicon.ico`,
+    `${origin}/apple-touch-icon.png`,
+    `${origin}/apple-touch-icon-precomposed.png`,
+  ]);
+
 export const resolveAgentProviderBrandIcon = (
   props: AgentProviderBrandIconProps
 ): AgentProviderBrandIconSource | null => {
@@ -201,6 +250,7 @@ const resolveBrandLuma = (color: string | undefined): BrandLuma => {
 };
 
 export const AgentProviderBrandIcon = ({
+  baseUrl,
   className,
   label,
   modelId,
@@ -209,6 +259,12 @@ export const AgentProviderBrandIcon = ({
   routeId,
   size = 16,
 }: AgentProviderBrandIconProps) => {
+  const [siteIconIndex, setSiteIconIndex] = useState(0);
+  useEffect(() => {
+    setSiteIconIndex(0);
+  }, [baseUrl]);
+  const siteIconCandidates = providerIconCandidates(baseUrl);
+  const customProvider = isCustomProvider({ provider, providerId, routeId });
   const specialBrand = resolveSpecialBrand({
     label,
     modelId,
@@ -224,6 +280,22 @@ export const AgentProviderBrandIcon = ({
     routeId,
   });
   const classNames = ["lyra-agent-provider-brand-icon", className ?? ""].filter(Boolean).join(" ");
+
+  if (customProvider && siteIconIndex < siteIconCandidates.length) {
+    return (
+      <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
+        <img
+          alt=""
+          aria-hidden="true"
+          className="lyra-agent-provider-brand-icon-image"
+          src={siteIconCandidates[siteIconIndex]}
+          onError={() => {
+            setSiteIconIndex((index) => index + 1);
+          }}
+        />
+      </span>
+    );
+  }
 
   if (specialBrand === "mimo") {
     return (

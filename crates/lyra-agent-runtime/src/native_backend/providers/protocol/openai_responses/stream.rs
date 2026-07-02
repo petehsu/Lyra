@@ -13,7 +13,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
         provider::{ModelReply, ModelToolCall, TurnStopSignal},
-        turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
+        turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
@@ -47,6 +47,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ResponsesStreamState::default();
     let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
 
     for line in reader.lines() {
@@ -68,11 +69,13 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &event,
             &mut state,
             &mut ui_message_id,
+            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
     }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
     let replay_items = if state.output_items.is_empty() && !state.text.trim().is_empty() {
         vec![json!({
@@ -134,6 +137,7 @@ fn map_stream_event(
     event: &Value,
     state: &mut ResponsesStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -148,14 +152,7 @@ fn map_stream_event(
                 return Ok(());
             }
             if !buffer_assistant_text {
-                let message_id = ui_message_id
-                    .get_or_insert_with(|| {
-                        emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-                    })
-                    .clone();
-                if !message_id.is_empty() {
-                    append_assistant_delta(session_id, turn_id, &message_id, delta)?;
-                }
+                delta_batcher.push_visible(delta, ui_message_id, session_id, turn_id)?;
             }
             state.text.push_str(delta);
         }
@@ -170,6 +167,7 @@ fn map_stream_event(
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
                 draft.arguments.push_str(delta);
             }
+            delta_batcher.flush(ui_message_id, session_id, turn_id)?;
             let tool_call_id = draft
                 .call_id
                 .as_deref()

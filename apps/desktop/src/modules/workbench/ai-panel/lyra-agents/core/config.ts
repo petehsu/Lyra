@@ -23,10 +23,6 @@ export const APP_CONFIG = {
     atBottomThreshold: 8,
     /** Distance (px) from top that triggers loading older messages. */
     topLoadThreshold: 48,
-    /** Scroll delta (px) → full decision panel open/close transition. */
-    decisionPanelRange: 150,
-    /** Min delta to consider a scroll event (ignores layout jitter). */
-    ignoreDeltaBelow: 3,
   },
 
   /**

@@ -101,7 +101,8 @@ impl IndexState {
 
     /// Save current hashes to disk.
     pub fn save(&self) {
-        if self.hashes.is_empty() {
+        let path = self.state_path();
+        if self.hashes.is_empty() && !path.exists() {
             return;
         }
 
@@ -111,7 +112,6 @@ impl IndexState {
             .map(|(path, hash)| (path.display().to_string(), *hash))
             .collect();
 
-        let path = self.state_path();
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }

@@ -38,7 +38,10 @@ pub struct Report {
 
 impl Report {
     pub fn new(records: Vec<CaseRecord>, total_duration: Duration) -> Self {
-        Self { records, total_duration }
+        Self {
+            records,
+            total_duration,
+        }
     }
 
     pub fn passed(&self) -> usize {
@@ -95,12 +98,7 @@ impl Report {
             eprintln!();
             eprintln!("=== by family ===");
             for (fam, pass, fail) in &by_fam {
-                eprintln!(
-                    "  {:>14}  pass={:<3} fail={:<3}",
-                    fam.as_str(),
-                    pass,
-                    fail
-                );
+                eprintln!("  {:>14}  pass={:<3} fail={:<3}", fam.as_str(), pass, fail);
             }
         }
 
@@ -109,10 +107,8 @@ impl Report {
             eprintln!();
             eprintln!("=== coverage matrix (language × family) ===");
             // Collect all family columns that appear anywhere.
-            let mut families: Vec<&'static str> = matrix
-                .values()
-                .flat_map(|m| m.keys().copied())
-                .collect();
+            let mut families: Vec<&'static str> =
+                matrix.values().flat_map(|m| m.keys().copied()).collect();
             families.sort();
             families.dedup();
             // Header
@@ -179,8 +175,7 @@ impl Report {
             failed: self.failed(),
             cases,
         };
-        let yaml = serde_yaml::to_string(&snapshot)
-            .context("serialise coverage snapshot")?;
+        let yaml = serde_yaml::to_string(&snapshot).context("serialise coverage snapshot")?;
         std::fs::write(path, yaml).with_context(|| format!("write {}", path.display()))?;
         Ok(())
     }
@@ -193,11 +188,14 @@ impl Report {
         }
         let raw = std::fs::read_to_string(prev_path)
             .with_context(|| format!("read {}", prev_path.display()))?;
-        let prev: CoverageSnapshot = serde_yaml::from_str(&raw)
-            .with_context(|| format!("parse {}", prev_path.display()))?;
+        let prev: CoverageSnapshot =
+            serde_yaml::from_str(&raw).with_context(|| format!("parse {}", prev_path.display()))?;
         let mut drift = Drift::default();
-        let cur: BTreeMap<&str, bool> =
-            self.records.iter().map(|r| (r.id.as_str(), r.passed)).collect();
+        let cur: BTreeMap<&str, bool> = self
+            .records
+            .iter()
+            .map(|r| (r.id.as_str(), r.passed))
+            .collect();
         for (id, status) in &prev.cases {
             match cur.get(id.as_str()) {
                 None => drift.removed.push(id.clone()),
@@ -290,10 +288,7 @@ struct CaseStatus {
 }
 
 /// Build a `CaseRecord` from a `CaseResult` plus the case metadata.
-pub fn record_from_result(
-    case: &crate::case::TestCase,
-    result: &CaseResult,
-) -> CaseRecord {
+pub fn record_from_result(case: &crate::case::TestCase, result: &CaseResult) -> CaseRecord {
     CaseRecord {
         id: result.id.clone(),
         tool: case.invoke.tool.clone(),
@@ -321,7 +316,10 @@ fn language_from_fixture(fixture: &str) -> String {
         }
         if prev == "multifile" {
             // multifile/python_circular -> python
-            return p.split_once('_').map(|(l, _)| l.to_string()).unwrap_or_else(|| (*p).to_string());
+            return p
+                .split_once('_')
+                .map(|(l, _)| l.to_string())
+                .unwrap_or_else(|| (*p).to_string());
         }
         prev = p;
     }
@@ -334,14 +332,8 @@ mod tests {
 
     #[test]
     fn language_from_fixture_extracts_segment() {
-        assert_eq!(
-            language_from_fixture("languages/rust/basic.rs"),
-            "rust"
-        );
-        assert_eq!(
-            language_from_fixture("languages/python/foo.py"),
-            "python"
-        );
+        assert_eq!(language_from_fixture("languages/rust/basic.rs"), "rust");
+        assert_eq!(language_from_fixture("languages/python/foo.py"), "python");
         assert_eq!(language_from_fixture("misc/foo.txt"), "unknown");
     }
 
@@ -351,16 +343,10 @@ mod tests {
             language_from_fixture("multifile/python_circular/mod_a.py"),
             "python"
         );
-        assert_eq!(
-            language_from_fixture("multifile/rust_workspace"),
-            "rust"
-        );
+        assert_eq!(language_from_fixture("multifile/rust_workspace"), "rust");
         // Bare directory name without underscore — fall back to the
         // segment itself so the row is still informative.
-        assert_eq!(
-            language_from_fixture("multifile/python"),
-            "python"
-        );
+        assert_eq!(language_from_fixture("multifile/python"), "python");
     }
 
     #[test]

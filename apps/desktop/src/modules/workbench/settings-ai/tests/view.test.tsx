@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
-import { SettingsAiModelsView, SettingsAiView } from "../view";
+import { SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../view";
 import type { GlobalDialogOpenRequest } from "../../global-dialog";
 import type {
   SettingsAiLabels,
@@ -32,6 +32,30 @@ const labels: SettingsAiLabels = {
   modelsDeleteConfirmTitle: "Delete model?",
   modelsDeleteConfirmDescription: "Remove {model} from this provider.",
   modelsDeleteConfirmAction: "Delete model",
+  skillsTitle: "Skills",
+  skillsSearchPlaceholder: "Paste a GitHub URL or local path, or search skills",
+  skillsAddSkill: "Add",
+  skillsEmptyTitle: "No skills available",
+  skillsEmptyDescription: "Install a skill first.",
+  skillsSearching: "Searching skills...",
+  skillsLoadingMore: "Loading more skills...",
+  skillsUninstall: "Uninstall",
+  skillsActive: "Enabled",
+  skillsInactive: "Disabled",
+  skillsPermissionsLabel: "Permissions: ",
+  skillsToolsLabel: "Tools: ",
+  skillsResourceRootLabel: "Resources: ",
+  skillsPromptLabel: "Prompt: ",
+  mcpTitle: "MCP",
+  mcpSearchPlaceholder: "Paste config",
+  mcpAddServer: "Add",
+  mcpEmptyTitle: "No MCP servers",
+  mcpEmptyDescription: "Paste an MCP config.",
+  mcpToolsLabel: "Tools: ",
+  mcpConnected: "Connected",
+  mcpDisconnected: "Disconnected",
+  mcpFailed: "Failed",
+  mcpRemove: "Remove",
   providerTitle: "Provider",
   connectionTitle: "Connection",
   additionalFieldsTitle: "Additional fields",
@@ -512,6 +536,14 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
     verbosity: { current: null, options: [], supported: true },
     serviceTier: { current: null, options: [], supported: true },
   },
+  agentSkillCatalog: {
+    skills: [],
+    store: {
+      indexUrl: "lyra://skills/dynamic",
+      index: null,
+      lastError: null,
+    },
+  },
   setDefaultProfile: vi.fn(),
   refreshAgent: vi.fn(),
   openAgentConfigFile: vi.fn(),
@@ -522,6 +554,15 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
   setAgentModelEnabled: vi.fn(),
   deleteAgentModel: vi.fn(),
   switchAgentModel: vi.fn(),
+  refreshAgentSkills: vi.fn(),
+  refreshAgentSkillStore: vi.fn(),
+  updateAgentSkillStoreConfig: vi.fn(),
+  activateAgentSkill: vi.fn(),
+  deactivateAgentSkill: vi.fn(),
+  installAgentSkillFromLocal: vi.fn(),
+  installAgentSkillFromGit: vi.fn(),
+  installAgentSkillFromStore: vi.fn(),
+  uninstallAgentSkill: vi.fn(),
   startAgentAccountLogin: vi.fn(),
   completeAgentAccountLogin: vi.fn(),
   switchAgentAccount: vi.fn(),
@@ -530,6 +571,126 @@ const createModel = (overrides: Partial<SettingsAiModel> = {}): SettingsAiModel 
 });
 
 describe("SettingsAiView", () => {
+  test("renders installed skills and toggles activation", () => {
+    const activateAgentSkill = vi.fn();
+    const uninstallAgentSkill = vi.fn();
+    const model = createModel({
+      activateAgentSkill,
+      uninstallAgentSkill,
+      agentSkillCatalog: {
+        skills: [
+          {
+            id: "review-skill",
+            name: "Review Skill",
+            version: "1.0.0",
+            description: "Review code",
+            promptExcerpt: "Use the review checklist.",
+            promptHash: "hash",
+            permissions: ["files.read"],
+            toolPaths: ["/tools/codegraph/search"],
+            active: false,
+            source: { kind: "local", path: "/tmp/review-skill" },
+            packagePath: "/tmp/review-skill",
+            promptPath: "/tmp/review-skill/SKILL.md",
+            resourceRoot: "/tmp/review-skill",
+            sourceFingerprint: "fingerprint",
+            installedAt: "2026-07-02T00:00:00Z",
+            updatedAt: "2026-07-02T00:00:00Z",
+            lastError: null,
+          },
+        ],
+        store: {
+          indexUrl: "lyra://skills/dynamic",
+          index: null,
+          lastError: null,
+        },
+      },
+    });
+
+    render(<SettingsAiSkillsView labels={labels} model={model} />);
+
+    expect(screen.getByText("Review Skill")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Review Skill" }));
+    expect(activateAgentSkill).toHaveBeenCalledWith({ skillId: "review-skill" });
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall: Review Skill" }));
+    expect(uninstallAgentSkill).toHaveBeenCalledWith({ skillId: "review-skill" });
+  });
+
+  test("lists store skills and installs from the switch", () => {
+    const installAgentSkillFromStore = vi.fn();
+    const model = createModel({
+      installAgentSkillFromStore,
+      agentSkillCatalog: {
+        skills: [],
+        store: {
+          indexUrl: "lyra://skills/dynamic",
+          index: {
+            version: 1,
+            updatedAt: "2026-07-02T00:00:00Z",
+            skills: [
+              {
+                id: "store-skill",
+                name: "Store Skill",
+                version: "1.0.0",
+                description: "From Lyra Store",
+                source: {
+                  kind: "store",
+                  skillId: "store-skill",
+                  indexUrl: "lyra://skills/dynamic",
+                },
+                permissions: ["files.read"],
+                toolPaths: ["/tools/skills/list"],
+              },
+            ],
+          },
+          lastError: null,
+        },
+      },
+    });
+
+    render(<SettingsAiSkillsView labels={labels} model={model} />);
+
+    expect(screen.getByText("Store Skill")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/raw\.githubusercontent\.com/u)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Store Skill" }));
+
+    expect(installAgentSkillFromStore).toHaveBeenCalledWith({ skillId: "store-skill" });
+  });
+
+  test("adds skills from a single GitHub tree input", () => {
+    const installAgentSkillFromGit = vi.fn();
+    const model = createModel({ installAgentSkillFromGit });
+
+    render(<SettingsAiSkillsView labels={labels} model={model} />);
+
+    fireEvent.change(screen.getByLabelText("Skills"), {
+      target: { value: "https://github.com/acme/skill-pack/tree/main/skills/review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(installAgentSkillFromGit).toHaveBeenCalledWith({
+      url: "https://github.com/acme/skill-pack.git",
+      ref: "main",
+      subdir: "skills/review",
+    });
+  });
+
+  test("adds skills from a local path input", () => {
+    const installAgentSkillFromLocal = vi.fn();
+    const model = createModel({ installAgentSkillFromLocal });
+
+    render(<SettingsAiSkillsView labels={labels} model={model} />);
+
+    fireEvent.change(screen.getByLabelText("Skills"), {
+      target: { value: "/Users/petehsu/skills/review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(installAgentSkillFromLocal).toHaveBeenCalledWith({
+      sourcePath: "/Users/petehsu/skills/review",
+    });
+  });
+
   test("renders agent configuration without provider/model setup blocks", () => {
     const model = createModel();
 
@@ -548,10 +709,8 @@ describe("SettingsAiView", () => {
 
   test("renders models as a separate settings page and toggles model enablement", () => {
     const setAgentModelEnabled = vi.fn();
-    const refreshAgentModelCatalog = vi.fn();
     const model = createModel({
       setAgentModelEnabled,
-      refreshAgentModelCatalog,
     });
 
     render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
@@ -573,9 +732,6 @@ describe("SettingsAiView", () => {
       provider: "openai-compatible",
       enabled: false,
     });
-
-    fireEvent.click(screen.getByRole("button", { name: /Refresh/ }));
-    expect(refreshAgentModelCatalog).toHaveBeenCalledTimes(1);
   });
 
   test("confirms before deleting a configured model", () => {
@@ -711,7 +867,37 @@ describe("SettingsAiView", () => {
   });
 
   test("searches providers with Chinese aliases and cancels from the Add Model button", () => {
-    const model = createModel();
+    const baseModel = createModel();
+    const ollamaRoute = {
+      id: "ollama",
+      providerId: "ollama",
+      protocolId: "ollama_chat",
+      protocolFamily: "ollama_chat",
+      label: "Ollama",
+      description: "Local Ollama native chat route.",
+      defaultBaseUrl: "http://127.0.0.1:11434",
+      apiMethod: "chat",
+      authKind: "none_or_header",
+      runtimeSupported: true,
+      modelDiscoverySupported: true,
+      customHeadersSupported: true,
+      localBackend: "ollama",
+      catalogSection: "local",
+      quickSetupSupported: false,
+    } as const;
+    const model = createModel({
+      localRoutes: [
+        ...baseModel.localRoutes,
+        ollamaRoute,
+      ],
+      agentProviderCatalog: {
+        ...baseModel.agentProviderCatalog!,
+        routes: [
+          ...baseModel.agentProviderCatalog!.routes,
+          ollamaRoute,
+        ],
+      },
+    });
 
     render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
 
@@ -733,6 +919,12 @@ describe("SettingsAiView", () => {
     });
 
     expect(screen.getByRole("button", { name: /^NVIDIA NIM\b/u })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Select provider"), {
+      target: { value: "羊驼" },
+    });
+
+    expect(screen.getByRole("button", { name: /^Ollama\b/u })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 

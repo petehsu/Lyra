@@ -116,18 +116,14 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_kinds,
-        [
-            "messageCommitted",
-            "messageDelta",
-            "messageDelta",
-            "messageCommitted"
-        ]
+        ["messageCommitted", "messageDelta", "messageCommitted"]
     );
     let delta_events = session_events
         .iter()
         .filter(|event| event["kind"].as_str() == Some("messageDelta"))
         .collect::<Vec<_>>();
-    assert_eq!(delta_events.len(), 2);
+    assert_eq!(delta_events.len(), 1);
+    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
     assert!(
         delta_events
             .iter()
@@ -146,6 +142,71 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
     assert_eq!(final_commit["message"]["text"], "Hello");
     assert!(final_commit["message"].get("renderDocument").is_none());
     assert!(final_commit["message"].get("renderRevision").is_none());
+    backend.clear_event_callback();
+}
+
+#[test]
+fn streaming_parser_batches_single_character_deltas() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Stream Batch Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let events_for_callback = events.clone();
+    backend.register_event_callback(Arc::new(move |event| {
+        events_for_callback
+            .lock()
+            .expect("events lock")
+            .push(serde_json::from_str(&event).expect("event json"));
+    }));
+
+    let expected = "x".repeat(300);
+    let mut stream = String::new();
+    for _ in 0..300 {
+        stream.push_str("data: ");
+        stream.push_str(&json!({ "choices": [{ "delta": { "content": "x" } }] }).to_string());
+        stream.push_str("\n\n");
+    }
+    stream.push_str("data: [DONE]\n\n");
+
+    let reply = parse_streaming_response(
+        BufReader::new(stream.as_bytes()),
+        &session_id,
+        &turn_id,
+        &cancellation,
+        &model_tools(),
+    )
+    .expect("streaming reply");
+
+    assert_eq!(reply.content.as_deref(), Some(expected.as_str()));
+    let session_events = events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .filter(|event| event.get("sessionId").and_then(Value::as_str) == Some(&session_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let delta_events = session_events
+        .iter()
+        .filter(|event| event["kind"].as_str() == Some("messageDelta"))
+        .collect::<Vec<_>>();
+    let streamed_text = delta_events
+        .iter()
+        .filter_map(|event| event["delta"].as_str())
+        .collect::<Vec<_>>()
+        .join("");
+    assert_eq!(streamed_text, expected);
+    assert!(
+        delta_events.len() <= 4,
+        "expected batched deltas, got {}",
+        delta_events.len()
+    );
     backend.clear_event_callback();
 }
 
@@ -307,18 +368,14 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_kinds,
-        [
-            "messageCommitted",
-            "messageDelta",
-            "messageDelta",
-            "messageCommitted"
-        ]
+        ["messageCommitted", "messageDelta", "messageCommitted"]
     );
     let delta_events = session_events
         .iter()
         .filter(|event| event["kind"].as_str() == Some("messageDelta"))
         .collect::<Vec<_>>();
-    assert_eq!(delta_events.len(), 2);
+    assert_eq!(delta_events.len(), 1);
+    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
     assert!(
         delta_events
             .iter()
@@ -895,8 +952,10 @@ fn streaming_transport_error_is_safely_retried_when_nothing_committed() {
             })
             .cloned()
             .collect::<Vec<_>>();
-        panic!("safe retry should recover the turn: {error}\nattempts={}\nevents={captured:#?}",
-            attempts.load(Ordering::SeqCst));
+        panic!(
+            "safe retry should recover the turn: {error}\nattempts={}\nevents={captured:#?}",
+            attempts.load(Ordering::SeqCst)
+        );
     });
 
     assert_eq!(reply.content.as_deref(), Some("Recovered."));
@@ -928,11 +987,12 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
         // MAX_STREAM_TRANSPORT_RETRIES=2 ⇒ up to 3 streaming attempts, then 1
         // non-streaming fallback. Accept a few streaming conns then one non-streaming.
         for index in 0..=3 {
-            let (mut stream, _) = listener
-                .accept()
-                .expect("accept provider request");
+            let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
-            requests_for_server.lock().expect("requests").push(request.clone());
+            requests_for_server
+                .lock()
+                .expect("requests")
+                .push(request.clone());
             if index < 3 {
                 // Streaming attempt: non-committing chunk + truncated body ⇒ transport error.
                 let body = "data: {\"choices\":[]}\n\n";
@@ -1001,7 +1061,11 @@ fn streaming_failure_falls_back_to_non_streaming_when_uncommitted() {
     let captured = requests.lock().expect("requests").clone();
     // The last request must be the non-streaming fallback (stream == false).
     let last = captured.last().expect("at least one request");
-    assert_eq!(last["stream"], json!(false), "expected non-streaming fallback request, got {last}");
+    assert_eq!(
+        last["stream"],
+        json!(false),
+        "expected non-streaming fallback request, got {last}"
+    );
     server.join().expect("server join");
     backend.clear_event_callback();
 }
@@ -1028,9 +1092,7 @@ fn committed_stream_does_not_fall_back_to_non_streaming() {
     let server = thread::spawn(move || {
         // Only streaming attempts are expected; no non-streaming fallback.
         for _ in 0..3 {
-            let (mut stream, _) = listener
-                .accept()
-                .expect("accept provider request");
+            let (mut stream, _) = listener.accept().expect("accept provider request");
             let request = read_http_json_body(&mut stream);
             requests_for_server.lock().expect("requests").push(request);
             // Commit a partial delta, then truncate (content-length > body).
@@ -1132,9 +1194,7 @@ fn running_tool_marked_failed_on_transport_failure() {
     let addr = listener.local_addr().expect("local addr");
     let server = thread::spawn(move || {
         for _ in 0..3 {
-            let (mut stream, _) = listener
-                .accept()
-                .expect("accept provider request");
+            let (mut stream, _) = listener.accept().expect("accept provider request");
             let _ = read_http_json_body(&mut stream);
             // Commit a partial delta then truncate → irrecoverable (committed) failure.
             let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n";

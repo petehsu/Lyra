@@ -308,8 +308,8 @@ fn expand_tilde_prefix(raw: &str) -> Result<Cow<'_, str>, NativeToolFailure> {
         return Ok(Cow::Borrowed(raw));
     }
     let is_bare_home = trimmed == "~";
-    let is_slash_prefixed = trimmed.starts_with("~/")
-        || (cfg!(windows) && trimmed.starts_with("~\\"));
+    let is_slash_prefixed =
+        trimmed.starts_with("~/") || (cfg!(windows) && trimmed.starts_with("~\\"));
     if !is_bare_home && !is_slash_prefixed {
         // `~root`, `~+`, `~-`, `~1`, ... are not expandable by us and must not
         // fall through to the workspace-relative branch where they would create

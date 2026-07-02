@@ -110,7 +110,10 @@ pub(crate) fn apply_compression_to_session(
     let selected_indices: HashSet<usize> = selected.iter().map(|(i, _)| *i).collect();
     let mut compress_indices: Vec<usize> = Vec::new();
     for i in first_idx..=last_idx {
-        let role = messages.get(i).and_then(|m| m.get("role")).and_then(Value::as_str);
+        let role = messages
+            .get(i)
+            .and_then(|m| m.get("role"))
+            .and_then(Value::as_str);
         if selected_indices.contains(&i) || role == Some("tool") {
             compress_indices.push(i);
         }
@@ -165,8 +168,11 @@ pub(crate) fn apply_compression_to_session(
 
     // 6. Remove old messages, insert compression block at head
     let compress_ids_set: HashSet<String> = compressed_message_ids.iter().cloned().collect();
-    let last_compressed_ordinal =
-        compress_indices.iter().max().copied().unwrap_or(compressed_up_to);
+    let last_compressed_ordinal = compress_indices
+        .iter()
+        .max()
+        .copied()
+        .unwrap_or(compressed_up_to);
 
     if let Some(live_messages) = session
         .snapshot
@@ -355,9 +361,7 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
         if let Err(error) = result {
             // ponytail: 隐式重试 — 压缩失败时 active_compressions 已 remove，
             // 下轮 turn 若 token 仍 ≥30K 会重新触发。无显式重试队列，避免过度工程。
-            eprintln!(
-                "[lyra-agent-runtime] extract+compress failed for {session_id}: {error}"
-            );
+            eprintln!("[lyra-agent-runtime] extract+compress failed for {session_id}: {error}");
             emit_context_compression_progress(&session_id, "failed", None, None);
         }
     });

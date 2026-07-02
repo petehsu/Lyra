@@ -131,9 +131,8 @@ fn read_compressed_context(input: Value) -> AgentRuntimeResult<Value> {
         ));
     }
     let root = runtime_root_for_memory()?;
-    let session = load_session(&root, &session_id)?.ok_or_else(|| {
-        AgentRuntimeError::Core(format!("session not found: {session_id}"))
-    })?;
+    let session = load_session(&root, &session_id)?
+        .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
 
     let messages = session
         .snapshot
@@ -144,9 +143,7 @@ fn read_compressed_context(input: Value) -> AgentRuntimeResult<Value> {
 
     let mut blocks = Vec::new();
     for msg in &messages {
-        let kind = msg
-            .pointer("/metadata/kind")
-            .and_then(Value::as_str);
+        let kind = msg.pointer("/metadata/kind").and_then(Value::as_str);
         if kind != Some("compressed-context-block") {
             continue;
         }

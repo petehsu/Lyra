@@ -61,7 +61,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
           (() => {
             const normalizeText = (value) =>
               typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
-            const bodyText = normalizeText(document.body?.innerText ?? "");
+            const bodyText = normalizeText(document.body?.textContent ?? document.body?.innerText ?? "");
             const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
               .map((element) => normalizeText(element.textContent ?? ""))
               .filter(Boolean)
@@ -162,7 +162,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
                 .replace(/\\n{3,}/g, "\\n\\n")
                 .trim();
             };
-            const text = normalizeText(document.body?.innerText ?? document.body?.textContent ?? "");
+            const text = normalizeText(document.body?.textContent ?? document.body?.innerText ?? "");
             const totalChars = text.length;
             const startChar = Math.max(0, totalChars - ${limit});
             const slice = text.slice(startChar);

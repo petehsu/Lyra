@@ -5,7 +5,9 @@ import { BrowserSettingsSurface } from "../settings-surface";
 import { createBrowserSettingsSurfaceProps } from "./settings-test-helpers";
 
 vi.mock("../../settings-ai", () => ({
+  SettingsAiMcpView: () => <div aria-label="ai-mcp-settings" />,
   SettingsAiModelsView: () => <div aria-label="ai-models-settings" />,
+  SettingsAiSkillsView: () => <div aria-label="ai-skills-settings" />,
   SettingsAiView: () => <div aria-label="ai-provider-settings" />
 }));
 

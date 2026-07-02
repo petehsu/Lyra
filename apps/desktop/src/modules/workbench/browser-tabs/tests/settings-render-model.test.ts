@@ -28,6 +28,8 @@ describe("createSettingsSurfaceModel", () => {
       "search",
       "ai",
       "models",
+      "skills",
+      "mcp",
       "legal"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
@@ -40,6 +42,8 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("search"),
       buildSettingsCategoryDomId("ai"),
       buildSettingsCategoryDomId("models"),
+      buildSettingsCategoryDomId("skills"),
+      buildSettingsCategoryDomId("mcp"),
       buildSettingsCategoryDomId("legal")
     ]);
   });
@@ -77,6 +81,30 @@ describe("createSettingsSurfaceModel", () => {
     expect(section?.controls[0]).toMatchObject({
       kind: "custom",
       customKind: "ai-models"
+    });
+  });
+
+  test("keeps AI skills as a dedicated custom renderer passthrough", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
+    const section = findSection(model, "aiSkills");
+
+    expect(section?.frame).toBe("none");
+    expect(section?.controls).toHaveLength(1);
+    expect(section?.controls[0]).toMatchObject({
+      kind: "custom",
+      customKind: "ai-skills"
+    });
+  });
+
+  test("keeps MCP as a dedicated custom renderer passthrough", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
+    const section = findSection(model, "aiMcp");
+
+    expect(section?.frame).toBe("none");
+    expect(section?.controls).toHaveLength(1);
+    expect(section?.controls[0]).toMatchObject({
+      kind: "custom",
+      customKind: "ai-mcp"
     });
   });
 

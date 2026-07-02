@@ -54,7 +54,8 @@ pub(crate) fn run_memory_agent_extraction_for_event(
     parse_memory_agent_candidates(session_id, turn_id, Some(event_type), content)
 }
 
-pub(crate) fn memory_agent_provider_and_model() -> AgentRuntimeResult<(NativeProviderProfile, String)> {
+pub(crate) fn memory_agent_provider_and_model()
+-> AgentRuntimeResult<(NativeProviderProfile, String)> {
     let state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -653,6 +654,7 @@ fn create_memory_conflict_clarification(
                 tool_call_id: format!("memory-conflict-{}", candidate.id),
                 question: "Lyra found a possible memory conflict. Should it update the old memory?"
                     .to_string(),
+                i18n_key: None,
                 options: vec![
                     json!({
                         "label": "Update memory",
@@ -668,6 +670,7 @@ fn create_memory_conflict_clarification(
                 ],
                 allow_custom_answer: true,
                 detail: Some(format!("Old: {}\nNew: {}", conflict.fact, candidate.fact)),
+                detail_i18n_key: None,
                 status: "pending".to_string(),
                 answer: None,
                 selected_option: None,

@@ -8,9 +8,8 @@
 //! programs, packages, tasks, functions, instantiations, imports).
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, FunctionEntity,
-    ImportRelation, Parameter, BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics,
+    FunctionEntity, ImportRelation, Parameter, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -271,9 +270,7 @@ impl<'a> VerilogVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let entity = ClassEntity {
             name,
@@ -333,9 +330,7 @@ impl<'a> VerilogVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let func = FunctionEntity {
             name,
@@ -394,9 +389,7 @@ impl<'a> VerilogVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let func = FunctionEntity {
             name,

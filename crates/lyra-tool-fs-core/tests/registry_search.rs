@@ -21,7 +21,7 @@ fn registry_lists_root_and_pages_domain_tools() {
         !root
             .directories
             .iter()
-            .any(|entry| matches!(entry.name.as_str(), "filesystem" | "code" | "shell" | "git"))
+            .any(|entry| matches!(entry.name.as_str(), "filesystem" | "shell" | "git"))
     );
 
     let web = registry
@@ -241,7 +241,6 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
         edit.results
             .iter()
             .all(|result| !result.path.starts_with("/tools/filesystem/")
-                && !result.path.starts_with("/tools/code/")
                 && !result.path.starts_with("/tools/git/")
                 && !result.path.starts_with("/tools/shell/"))
     );
@@ -254,8 +253,7 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             .results
             .iter()
             .all(|result| !result.path.starts_with("/tools/shell/")
-                && !result.path.starts_with("/tools/filesystem/")
-                && !result.path.starts_with("/tools/code/"))
+                && !result.path.starts_with("/tools/filesystem/"))
     );
 
     let git = registry
@@ -436,7 +434,12 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("code search");
-    assert!(code.results.is_empty());
+    assert!(!code.results.is_empty());
+    assert!(
+        code.results
+            .iter()
+            .all(|result| result.path.starts_with("/tools/code/"))
+    );
 
     let grep = registry
         .search(
@@ -447,7 +450,12 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("grep search");
-    assert!(grep.results.is_empty());
+    assert!(!grep.results.is_empty());
+    assert!(
+        grep.results
+            .iter()
+            .all(|result| result.path.starts_with("/tools/code/"))
+    );
 
     let symbol = registry
         .search(
@@ -458,7 +466,13 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
             ToolScene::ProjectCode,
         )
         .expect("symbol search");
-    assert!(symbol.results.is_empty());
+    assert!(!symbol.results.is_empty());
+    assert!(
+        symbol
+            .results
+            .iter()
+            .all(|result| result.path.starts_with("/tools/code/"))
+    );
 }
 
 #[test]
@@ -505,9 +519,11 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("code edit search");
-    assert!(edit.results.iter().all(|result| {
-        !result.path.starts_with("/tools/filesystem/") && !result.path.starts_with("/tools/code/")
-    }));
+    assert!(
+        edit.results
+            .iter()
+            .all(|result| { !result.path.starts_with("/tools/filesystem/") })
+    );
 
     let file_search = registry
         .search(
@@ -518,9 +534,12 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
             ToolScene::ProjectCode,
         )
         .expect("file/code search");
-    assert!(file_search.results.iter().all(|result| {
-        !result.path.starts_with("/tools/filesystem/") && !result.path.starts_with("/tools/code/")
-    }));
+    assert!(
+        file_search
+            .results
+            .iter()
+            .all(|result| { !result.path.starts_with("/tools/filesystem/") })
+    );
 
     let git_diff = registry
         .search("查看 git diff 代码变更", None, 0, 5, ToolScene::Git)

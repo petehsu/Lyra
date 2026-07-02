@@ -252,6 +252,29 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
+    if tool_fs::runtime_registry()
+        .inspect_handle(&call.name)
+        .is_ok()
+    {
+        let tool_handle = call.name.clone();
+        let args = call.arguments.clone();
+        return tool_fs::execute_tool_fs_model_tool(
+            session_id,
+            turn_id,
+            dispatcher,
+            cancellation,
+            runtime,
+            ModelToolCall {
+                id: call.id,
+                name: lyra_tool_fs_core::TOOL_FS_RUN.to_string(),
+                arguments: json!({
+                    "toolHandle": tool_handle,
+                    "args": args,
+                }),
+            },
+            &started_at,
+        );
+    }
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),

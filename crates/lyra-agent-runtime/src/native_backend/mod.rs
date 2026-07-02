@@ -51,6 +51,7 @@ pub(crate) mod cut_store;
 pub mod file_citations;
 mod helpers;
 pub mod inline_images;
+mod mcp_catalog;
 mod memory;
 mod memory_audit_export;
 mod memory_autonomy;
@@ -85,6 +86,7 @@ mod session_runtime;
 mod session_store;
 pub(crate) mod session_trim;
 mod sessions;
+mod skill_catalog;
 mod state;
 mod streaming_preview_state;
 pub(crate) mod token_estimate;
@@ -100,14 +102,14 @@ mod tests;
 
 use self::{
     actions::*, activity::*, clarifications::*, context::*, file_citations::*, helpers::*,
-    inline_images::*, memory::*, memory_audit_export::*, memory_autonomy::*,
-    memory_compress::*, memory_derived_fields::*, memory_event_trigger::*, memory_layer::*, memory_layer_projection::*,
-    memory_retrieval_policy::*, memory_store::*, memory_sync::*,
+    inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*, memory_autonomy::*,
+    memory_compress::*, memory_derived_fields::*, memory_event_trigger::*, memory_layer::*,
+    memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, memory_sync::*,
     network::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
     plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
     session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
-    state::*, token_estimate::*, tool_protocol::*, tools::*, transcript_citations::*,
-    turn_tool_telemetry::*, turns::*, types::*,
+    skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
+    transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
 };
 
 impl AgentRuntimeBackend for LyraAgentBackend {
@@ -183,6 +185,25 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.models.enable" => set_model_enabled(payload),
             "agent.models.delete" => delete_model(payload),
             "agent.models.refresh" => refresh_models(payload),
+            "agent.skills.list" => skill_list(),
+            "agent.skills.inspect" => skill_inspect(payload),
+            "agent.skills.activate" => set_skill_active(payload, true),
+            "agent.skills.deactivate" => set_skill_active(payload, false),
+            "agent.skills.installFromLocal" => skill_install_from_local(payload),
+            "agent.skills.installFromGit" => skill_install_from_git(payload),
+            "agent.skills.installFromStore" => skill_install_from_store(payload),
+            "agent.skills.uninstall" => skill_uninstall(payload),
+            "agent.skills.refreshStore" => skill_refresh_store(payload),
+            "agent.skills.updateStoreConfig" => skill_update_store_config(payload),
+            "agent.mcp.list" => mcp_list(payload),
+            "agent.mcp.upsert" => mcp_server_upsert(payload),
+            "agent.mcp.remove" => mcp_server_remove(payload),
+            "agent.mcp.connect" => mcp_server_connect(payload),
+            "agent.mcp.disconnect" => mcp_server_disconnect(payload),
+            "agent.mcp.reload" => mcp_server_reload(payload),
+            "agent.mcp.discoverTools" => mcp_tool_discover(payload),
+            "agent.mcp.inspectTool" => mcp_tool_inspect(payload),
+            "agent.mcp.executeTool" => mcp_tool_execute(payload),
             "agent.accounts.list" => list_accounts(),
             "agent.accounts.login" => login_account(payload),
             "agent.accounts.loginProviders" => login_providers(),

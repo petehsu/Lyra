@@ -320,7 +320,9 @@ mod tests {
         use tree_sitter::Parser;
 
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_lua::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_lua::LANGUAGE.into())
+            .unwrap();
         let tree = parser.parse(source, None).unwrap();
 
         let mut visitor = LuaVisitor::new(source);

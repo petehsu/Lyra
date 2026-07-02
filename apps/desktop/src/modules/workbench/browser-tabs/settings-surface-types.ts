@@ -32,6 +32,8 @@ export type BrowserSettingsCategoryId =
   | "search"
   | "ai"
   | "models"
+  | "skills"
+  | "mcp"
   | "legal";
 
 export type BrowserSettingsCategoryFocusRequest = {
@@ -54,6 +56,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly workspaceCategoryLabel: string;
   readonly aiCategoryLabel: string;
   readonly modelsCategoryLabel: string;
+  readonly skillsCategoryLabel: string;
+  readonly mcpCategoryLabel: string;
   readonly notificationsCategoryLabel: string;
   readonly loginManagerCategoryLabel: string;
   readonly softwareStoreCategoryLabel: string;

@@ -18,8 +18,9 @@ pub(crate) struct ModelDevCapabilities {
 /// 键格式为 "provider/model-id"（如 "openai/o3"），全小写。
 /// 失败时返回空 map —— best-effort，不阻塞模型刷新流程。
 pub(crate) fn fetch_capability_map() -> HashMap<String, ModelDevCapabilities> {
-    let client = crate::native_backend::network::http_client_builder(std::time::Duration::from_secs(10))
-        .build();
+    let client =
+        crate::native_backend::network::http_client_builder(std::time::Duration::from_secs(10))
+            .build();
     let Ok(client) = client else {
         return HashMap::new();
     };
@@ -44,10 +45,7 @@ pub(crate) fn fetch_capability_map() -> HashMap<String, ModelDevCapabilities> {
                 .get("reasoning")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            Some((
-                id.to_ascii_lowercase(),
-                ModelDevCapabilities { reasoning },
-            ))
+            Some((id.to_ascii_lowercase(), ModelDevCapabilities { reasoning }))
         })
         .collect()
 }
@@ -141,7 +139,11 @@ mod tests {
     #[test]
     fn resolve_unknown_model_defaults_false() {
         let map = cap_map(&[("openai/o3", true)]);
-        assert!(!resolve_reasoning_capability("unknown-model", "openai", &map));
+        assert!(!resolve_reasoning_capability(
+            "unknown-model",
+            "openai",
+            &map
+        ));
     }
 
     #[test]

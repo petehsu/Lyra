@@ -37,6 +37,8 @@ export function DecisionPanel({
 
   const q = questions[currentIndex] ?? questions[0];
   if (q === undefined) return null;
+  const questionText = q.displayQuestion ?? q.question;
+  const detailText = q.displayDetail ?? q.detail;
   const hasMultipleQuestions = questions.length > 1;
   const canPrev = currentIndex > 0;
   const canNext = currentIndex < questions.length - 1;
@@ -90,8 +92,8 @@ export function DecisionPanel({
           <HelpCircle size={14} strokeWidth={2} />
         </span>
         <div className="lyra-agents-decision-title-block">
-          <p className="lyra-agents-decision-question">{q.question}</p>
-          {q.detail ? <p className="lyra-agents-decision-detail">{q.detail}</p> : null}
+          <p className="lyra-agents-decision-question">{questionText}</p>
+          {detailText ? <p className="lyra-agents-decision-detail">{detailText}</p> : null}
         </div>
         {hasMultipleQuestions ? (
           <div className="lyra-agents-decision-nav">
@@ -139,10 +141,10 @@ export function DecisionPanel({
                 className={`lyra-agents-decision-option ${selectedOption === opt.label && !isCustom ? "active" : ""}`}
                 onClick={() => selectOption(opt.label)}
               >
-                <span className="lyra-agents-decision-option-label">{opt.label}</span>
-                {opt.description ? (
+                <span className="lyra-agents-decision-option-label">{opt.displayLabel ?? opt.label}</span>
+                {(opt.displayDescription ?? opt.description) ? (
                   <AppTooltip
-                    content={opt.description}
+                    content={opt.displayDescription ?? opt.description}
                     contentClassName="lyra-agents-decision-option-tooltip"
                     delayDuration={160}
                     side="top"
@@ -150,7 +152,7 @@ export function DecisionPanel({
                   >
                     <span
                       className="lyra-agents-decision-option-info"
-                      aria-label={opt.description}
+                      aria-label={opt.displayDescription ?? opt.description ?? ""}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Info size={12} strokeWidth={2} aria-hidden="true" />

@@ -407,14 +407,18 @@ export interface DiffFileEntry {
 export interface DecisionOption {
   label: string;
   description?: string | null;
+  displayLabel?: string;
+  displayDescription?: string | null;
 }
 
 export interface DecisionQuestion {
   id: string;
   question: string;
+  displayQuestion?: string;
   options: DecisionOption[];
   allowCustomAnswer?: boolean;
   detail?: string | null;
+  displayDetail?: string | null;
 }
 
 export interface PermissionRequest {

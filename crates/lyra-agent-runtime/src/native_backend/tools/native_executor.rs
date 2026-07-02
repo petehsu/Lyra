@@ -550,6 +550,7 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "codegraph_callees" => tool_codegraph_callees(session_id, input),
         "codegraph_impact" => tool_codegraph_impact(session_id, input),
         "codegraph_context" => tool_codegraph_context(session_id, input),
+        "codegraph_server" => tool_codegraph_server(session_id, input),
         _ => Err(NativeToolFailure::new(
             "tool_not_found",
             format!("Unknown Lyra native tool: {tool_name}"),

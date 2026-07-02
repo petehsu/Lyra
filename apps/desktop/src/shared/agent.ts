@@ -461,9 +461,11 @@ export type AgentBrowserTargetProjection = Readonly<Record<string, unknown>>;
 export type AgentClarificationProjection = {
   readonly clarificationId?: string | null;
   readonly question?: string | null;
+  readonly i18nKey?: string | null;
   readonly options?: readonly AgentClarificationOption[];
   readonly allowCustomAnswer?: boolean | null;
   readonly detail?: string | null;
+  readonly detailI18nKey?: string | null;
 };
 
 export type AgentMemorySnapshot = {
@@ -845,6 +847,8 @@ export type AgentClarificationOption =
   | {
       readonly label: string;
       readonly description?: string | null;
+      readonly i18nKey?: string | null;
+      readonly descriptionI18nKey?: string | null;
     };
 
 export type AgentPermissionRespondRequest = {
@@ -983,9 +987,11 @@ export type AgentRuntimeEvent =
       readonly sessionId: string;
       readonly clarificationId: string;
       readonly question: string;
+      readonly i18nKey?: string | null;
       readonly options?: readonly AgentClarificationOption[];
       readonly allowCustomAnswer: boolean;
       readonly detail?: string | null;
+      readonly detailI18nKey?: string | null;
     }
   | {
       readonly kind: "clarificationResolved";
@@ -1330,7 +1336,257 @@ export type AgentCodegraphStatus = {
   readonly progress?: number;
   readonly fileCount?: number;
   readonly symbolCount?: number;
+  readonly scope?: {
+    readonly source?: string;
+    readonly strategy?: string;
+    readonly includedFileCount?: number;
+    readonly includedSamples?: readonly string[];
+    readonly excludedPathCount?: number;
+    readonly excludedPathSamples?: readonly string[];
+    readonly excludedReason?: string | null;
+  } | null;
+  readonly staleness?: {
+    readonly stale?: boolean;
+    readonly changedFiles?: readonly string[];
+    readonly checkedFiles?: number;
+  } | null;
   readonly error?: string;
+};
+
+export type AgentSkillSource =
+  | {
+      readonly kind: "local";
+      readonly path: string;
+    }
+  | {
+      readonly kind: "git";
+      readonly url: string;
+      readonly ref?: string | null;
+      readonly subdir?: string | null;
+    }
+  | {
+      readonly kind: "archive";
+      readonly url: string;
+    }
+  | {
+      readonly kind: "store";
+      readonly skillId: string;
+      readonly indexUrl: string;
+      readonly source?: AgentSkillSource | null;
+    };
+
+export type AgentSkillManifest = {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+  readonly prompt?: string | null;
+  readonly permissions: readonly string[];
+  readonly toolPaths: readonly string[];
+  readonly toolCapabilities?: readonly unknown[];
+};
+
+export type AgentInstalledSkill = {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+  readonly prompt?: string | null;
+  readonly promptExcerpt?: string | null;
+  readonly promptHash?: string | null;
+  readonly permissions: readonly string[];
+  readonly toolPaths: readonly string[];
+  readonly toolCapabilities?: readonly unknown[];
+  readonly active: boolean;
+  readonly source: AgentSkillSource;
+  readonly packagePath: string;
+  readonly promptPath: string;
+  readonly resourceRoot: string;
+  readonly sourceFingerprint: string;
+  readonly installedAt: string;
+  readonly updatedAt: string;
+  readonly lastError?: string | null;
+  readonly manifest?: AgentSkillManifest;
+};
+
+export type AgentSkillStoreEntry = {
+  readonly id: string;
+  readonly name: string;
+  readonly version?: string;
+  readonly description?: string;
+  readonly source: AgentSkillSource;
+  readonly permissions?: readonly string[];
+  readonly toolPaths?: readonly string[];
+  readonly sourceRegistry?: string | null;
+  readonly sourceUrl?: string | null;
+  readonly installs?: number | null;
+  readonly stars?: number | null;
+  readonly score?: number | null;
+};
+
+export type AgentSkillStoreIndex = {
+  readonly version: number;
+  readonly updatedAt: string;
+  readonly query?: string | null;
+  readonly hasMore?: boolean;
+  readonly skills: readonly AgentSkillStoreEntry[];
+};
+
+export type AgentSkillStoreSnapshot = {
+  readonly indexUrl: string;
+  readonly index?: AgentSkillStoreIndex | null;
+  readonly lastError?: string | null;
+};
+
+export type AgentSkillsListResponse = {
+  readonly skills: readonly AgentInstalledSkill[];
+  readonly store: AgentSkillStoreSnapshot;
+};
+
+export type AgentSkillInspectRequest = {
+  readonly skillId: string;
+};
+
+export type AgentSkillInspectResponse = {
+  readonly skill: AgentInstalledSkill;
+};
+
+export type AgentSkillActivationRequest = {
+  readonly skillId: string;
+};
+
+export type AgentSkillMutationResponse = {
+  readonly skill: AgentInstalledSkill;
+  readonly activeSkills?: readonly string[];
+};
+
+export type AgentSkillInstallFromLocalRequest = {
+  readonly sourcePath: string;
+};
+
+export type AgentSkillInstallFromGitRequest = {
+  readonly url: string;
+  readonly ref?: string | null;
+  readonly subdir?: string | null;
+};
+
+export type AgentSkillInstallFromStoreRequest = {
+  readonly skillId: string;
+  readonly indexUrl?: string | null;
+};
+
+export type AgentSkillUninstallRequest = {
+  readonly skillId: string;
+};
+
+export type AgentSkillUninstallResponse = {
+  readonly skillId: string;
+  readonly removed: boolean;
+};
+
+export type AgentSkillRefreshStoreRequest = {
+  readonly indexUrl?: string | null;
+  readonly query?: string | null;
+  readonly offset?: number;
+  readonly append?: boolean;
+};
+
+export type AgentSkillStoreResponse = {
+  readonly store: AgentSkillStoreSnapshot;
+};
+
+export type AgentMcpTransport =
+  | {
+      readonly kind: "stdio";
+      readonly command: string;
+      readonly args: readonly string[];
+      readonly env: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly kind: "http";
+      readonly url: string;
+      readonly headers: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly kind: "sse";
+      readonly url: string;
+      readonly headers: Readonly<Record<string, string>>;
+    };
+
+export type AgentMcpToolInfo = {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema?: unknown;
+  readonly outputSchema?: unknown;
+};
+
+export type AgentMcpServer = {
+  readonly id: string;
+  readonly name: string;
+  readonly transport: AgentMcpTransport;
+  readonly transportSummary?: string;
+  readonly enabled: boolean;
+  readonly state: "disconnected" | "connected" | "failed" | string;
+  readonly toolCount?: number;
+  readonly tools?: readonly AgentMcpToolInfo[];
+  readonly lastError?: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
+
+export type AgentMcpListResponse = {
+  readonly servers: readonly AgentMcpServer[];
+  readonly storageRoot?: string;
+};
+
+export type AgentMcpServerUpsertRequest = {
+  readonly input?: string | null;
+  readonly text?: string | null;
+  readonly config?: string | null;
+  readonly id?: string | null;
+  readonly serverId?: string | null;
+  readonly name?: string | null;
+  readonly transport?: string | null;
+  readonly command?: string | null;
+  readonly args?: readonly string[] | string | null;
+  readonly env?: Readonly<Record<string, string>> | string | null;
+  readonly url?: string | null;
+  readonly enabled?: boolean;
+  readonly server?: unknown;
+  readonly servers?: readonly unknown[];
+  readonly mcpServers?: unknown;
+};
+
+export type AgentMcpServerMutationResponse = {
+  readonly server?: AgentMcpServer | null;
+  readonly servers: readonly AgentMcpServer[];
+  readonly allServers?: readonly AgentMcpServer[];
+};
+
+export type AgentMcpServerRequest = {
+  readonly serverId: string;
+  readonly timeoutMs?: number;
+};
+
+export type AgentMcpServerRemoveResponse = {
+  readonly serverId: string;
+  readonly removed: boolean;
+  readonly servers: readonly AgentMcpServer[];
+};
+
+export type AgentMcpToolDiscoverRequest = {
+  readonly serverId?: string | null;
+  readonly query?: string | null;
+  readonly timeoutMs?: number;
+};
+
+export type AgentMcpToolDiscoverResponse = {
+  readonly query?: string;
+  readonly tools: readonly (AgentMcpToolInfo & {
+    readonly serverId: string;
+    readonly serverName?: string;
+  })[];
+  readonly servers: readonly AgentMcpServer[];
 };
 
 export type AgentApi = {
@@ -1434,6 +1690,53 @@ export type AgentApi = {
   readonly updateAgentProviderOptions: (
     request: AgentProviderOptionsUpdateRequest
   ) => Promise<AgentModelCatalogSnapshot>;
+  readonly listAgentSkills: () => Promise<AgentSkillsListResponse>;
+  readonly inspectAgentSkill: (
+    request: AgentSkillInspectRequest
+  ) => Promise<AgentSkillInspectResponse>;
+  readonly activateAgentSkill: (
+    request: AgentSkillActivationRequest
+  ) => Promise<AgentSkillMutationResponse>;
+  readonly deactivateAgentSkill: (
+    request: AgentSkillActivationRequest
+  ) => Promise<AgentSkillMutationResponse>;
+  readonly installAgentSkillFromLocal: (
+    request: AgentSkillInstallFromLocalRequest
+  ) => Promise<AgentSkillMutationResponse>;
+  readonly installAgentSkillFromGit: (
+    request: AgentSkillInstallFromGitRequest
+  ) => Promise<AgentSkillMutationResponse>;
+  readonly installAgentSkillFromStore: (
+    request: AgentSkillInstallFromStoreRequest
+  ) => Promise<AgentSkillMutationResponse>;
+  readonly uninstallAgentSkill: (
+    request: AgentSkillUninstallRequest
+  ) => Promise<AgentSkillUninstallResponse>;
+  readonly refreshAgentSkillStore: (
+    request?: AgentSkillRefreshStoreRequest
+  ) => Promise<AgentSkillStoreResponse>;
+  readonly updateAgentSkillStoreConfig: (
+    request: AgentSkillRefreshStoreRequest
+  ) => Promise<AgentSkillStoreResponse>;
+  readonly listMcpServers: () => Promise<AgentMcpListResponse>;
+  readonly upsertMcpServer: (
+    request: AgentMcpServerUpsertRequest
+  ) => Promise<AgentMcpServerMutationResponse>;
+  readonly removeMcpServer: (
+    request: AgentMcpServerRequest
+  ) => Promise<AgentMcpServerRemoveResponse>;
+  readonly connectMcpServer: (
+    request: AgentMcpServerRequest
+  ) => Promise<AgentMcpServerMutationResponse>;
+  readonly disconnectMcpServer: (
+    request: AgentMcpServerRequest
+  ) => Promise<AgentMcpServerMutationResponse>;
+  readonly reloadMcpServer: (
+    request: AgentMcpServerRequest
+  ) => Promise<AgentMcpServerMutationResponse>;
+  readonly discoverMcpTools: (
+    request?: AgentMcpToolDiscoverRequest
+  ) => Promise<AgentMcpToolDiscoverResponse>;
   readonly runImprove: (
     request?: AgentActionRunRequest
   ) => Promise<AgentTurnSendResponse>;

@@ -522,12 +522,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         },
         "systemRecall": system_recall_json(&system_recall_records)
     });
-    runtime_context["activeSkills"] = json!(active_skills.iter().cloned().collect::<Vec<_>>());
+    runtime_context["activeSkills"] = active_skill_context(&active_skills);
     // Phase 4.2: inject code-graph project context into the prompt.
     if let Some(dir) = working_dir.as_deref().filter(|d| !d.is_empty()) {
-        runtime_context["projectContext"] = tools::project_context_for_prompt(
-            std::path::Path::new(dir),
-        );
+        runtime_context["projectContext"] =
+            tools::project_context_for_prompt(std::path::Path::new(dir));
     }
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         model_tool_names()
@@ -672,8 +671,8 @@ fn first_user_message_exists(session: &NativeSession) -> bool {
         })
 }
 
-pub(crate) fn active_skill_prompt(_active_skills: &HashSet<String>) -> String {
-    String::new()
+pub(crate) fn active_skill_prompt(active_skills: &HashSet<String>) -> String {
+    active_skill_prompt_for(active_skills)
 }
 
 fn openai_responses_stateful_prompt_contract_enabled(configured: bool) -> bool {
@@ -934,20 +933,20 @@ fn ensure_existing_text_block(message: &mut Value, text: &str) {
 }
 
 fn append_reasoning_to_message(message: &mut Value, delta: &str, status: &str) -> String {
-    let existing = message
-        .get("reasoningContent")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    message["reasoningContent"] = json!(format!("{existing}{delta}"));
-    let existing_text = message
-        .get("text")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    append_string_field(message, "reasoningContent", delta);
+    let existing_text = missing_text_block(message).then(|| {
+        message
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    });
     if !message.get("blocks").is_some_and(Value::is_array) {
         message["blocks"] = json!([]);
     }
-    ensure_existing_text_block(message, &existing_text);
+    if let Some(existing_text) = existing_text {
+        ensure_existing_text_block(message, &existing_text);
+    }
     if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
         if let Some(block) = blocks
             .last_mut()
@@ -958,15 +957,7 @@ fn append_reasoning_to_message(message: &mut Value, delta: &str, status: &str) -
                 .and_then(Value::as_str)
                 .unwrap_or("thinking-0")
                 .to_string();
-            let text = format!(
-                "{}{}",
-                block
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-                delta
-            );
-            block["text"] = Value::String(text);
+            append_string_field(block, "text", delta);
             block["status"] = Value::String(status.to_string());
             return block_id;
         }
@@ -1178,6 +1169,116 @@ pub(crate) fn append_assistant_reasoning_delta(
     });
     emit_with_callback(&callback.0, event);
     Ok(())
+}
+
+pub(crate) struct StreamDeltaBatcher {
+    visible: String,
+    reasoning: String,
+    last_flush: Instant,
+}
+
+impl Default for StreamDeltaBatcher {
+    fn default() -> Self {
+        Self {
+            visible: String::new(),
+            reasoning: String::new(),
+            last_flush: Instant::now(),
+        }
+    }
+}
+
+impl StreamDeltaBatcher {
+    const MAX_BYTES: usize = 160;
+    const MAX_WAIT: Duration = Duration::from_millis(32);
+
+    pub(crate) fn push_visible(
+        &mut self,
+        delta: &str,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        let mut flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
+        self.visible.push_str(delta);
+        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
+        Ok(flushed)
+    }
+
+    pub(crate) fn push_reasoning(
+        &mut self,
+        delta: &str,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        let mut flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
+        self.reasoning.push_str(delta);
+        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
+        Ok(flushed)
+    }
+
+    pub(crate) fn flush(
+        &mut self,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        let visible_flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
+        let reasoning_flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
+        if visible_flushed || reasoning_flushed {
+            self.last_flush = Instant::now();
+        }
+        Ok(visible_flushed || reasoning_flushed)
+    }
+
+    fn flush_if_ready(
+        &mut self,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        if self.visible.len() + self.reasoning.len() < Self::MAX_BYTES
+            && self.last_flush.elapsed() < Self::MAX_WAIT
+        {
+            return Ok(false);
+        }
+        self.flush(ui_message_id, session_id, turn_id)
+    }
+
+    fn flush_visible(
+        &mut self,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        if self.visible.is_empty() {
+            return Ok(false);
+        }
+        let delta = std::mem::take(&mut self.visible);
+        let message_id = ui_message_id
+            .get_or_insert_with(|| {
+                emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
+            })
+            .clone();
+        if !message_id.is_empty() {
+            append_assistant_delta(session_id, turn_id, &message_id, &delta)?;
+        }
+        Ok(true)
+    }
+
+    fn flush_reasoning(
+        &mut self,
+        ui_message_id: &mut Option<String>,
+        session_id: &str,
+        turn_id: &str,
+    ) -> AgentRuntimeResult<bool> {
+        if self.reasoning.is_empty() {
+            return Ok(false);
+        }
+        let delta = std::mem::take(&mut self.reasoning);
+        append_reasoning_delta(&delta, ui_message_id, session_id, turn_id)?;
+        Ok(true)
+    }
 }
 
 /// Stream a reasoning delta to the UI, creating a placeholder message if needed.
@@ -1403,17 +1504,20 @@ fn prune_empty_assistant_messages(snapshot: &mut Value) -> usize {
 }
 
 pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String {
-    let previous_text = message
-        .get("text")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let next_text = format!("{previous_text}{delta}");
-    message["text"] = Value::String(next_text.clone());
+    let previous_text = missing_text_block(message).then(|| {
+        message
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    });
+    append_string_field(message, "text", delta);
     if !message.get("blocks").is_some_and(Value::is_array) {
         message["blocks"] = json!([{ "type": "text", "id": "text-0", "text": "" }]);
     }
-    ensure_existing_text_block(message, &previous_text);
+    if let Some(previous_text) = previous_text {
+        ensure_existing_text_block(message, &previous_text);
+    }
     if let Some(blocks) = message.get_mut("blocks").and_then(Value::as_array_mut) {
         if let Some(block) = blocks
             .last_mut()
@@ -1424,15 +1528,7 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String
                 .and_then(Value::as_str)
                 .unwrap_or("text-0")
                 .to_string();
-            let text = format!(
-                "{}{}",
-                block
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-                delta
-            );
-            block["text"] = Value::String(text);
+            append_string_field(block, "text", delta);
             return block_id;
         } else {
             let block_id = format!("text-{}", blocks.len());
@@ -1441,6 +1537,34 @@ pub(crate) fn append_text_to_message(message: &mut Value, delta: &str) -> String
         }
     }
     "text-0".to_string()
+}
+
+fn append_string_field(value: &mut Value, key: &str, delta: &str) {
+    match value.get_mut(key) {
+        Some(Value::String(text)) => text.push_str(delta),
+        _ => value[key] = Value::String(delta.to_string()),
+    }
+}
+
+fn missing_text_block(message: &Value) -> bool {
+    let Some(text) = message.get("text").and_then(Value::as_str) else {
+        return false;
+    };
+    if text.is_empty() {
+        return false;
+    }
+    !message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .is_some_and(|blocks| {
+            blocks.iter().any(|block| {
+                block.get("type").and_then(Value::as_str) == Some("text")
+                    && block
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|value| !value.is_empty())
+            })
+        })
 }
 
 pub(crate) fn finish_turn(

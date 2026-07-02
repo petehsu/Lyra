@@ -116,6 +116,8 @@ pub struct McpBackend {
     pub exclude_dirs: Vec<String>,
     /// Maximum number of files to index
     pub max_files: usize,
+    /// Explicit files to index when the host already resolved project scope.
+    pub scope_files: Option<Vec<PathBuf>>,
     /// Shared indexer for directory walking and file parsing
     pub indexer: Arc<Indexer>,
     /// Index state for hash persistence (shared with indexer)
@@ -243,10 +245,16 @@ impl McpBackend {
             project_slug: slug,
             exclude_dirs,
             max_files,
+            scope_files: None,
             indexer,
             index_state,
             graph_only: false,
         }
+    }
+
+    pub fn with_scope_files(mut self, files: Vec<PathBuf>) -> Self {
+        self.scope_files = Some(files);
+        self
     }
 
     /// Open the shared graph database with project-scoped namespacing.
@@ -945,10 +953,19 @@ impl McpBackend {
 
         // Delegate to the shared Indexer (handles dir walk, hashing, cross-file
         // imports, runtime deps, and index state persistence)
-        let result = self
-            .indexer
-            .index_workspace(&self.graph, &self.workspace_folders, &config)
-            .await;
+        let result = if let Some(files) = &self.scope_files {
+            {
+                let mut state = self.index_state.lock().await;
+                // Scope files are host-authoritative; stale hashes from an
+                // older whole-root index must not cause missing graph nodes.
+                state.clear();
+            }
+            self.indexer.index_files(&self.graph, files, &config).await
+        } else {
+            self.indexer
+                .index_workspace(&self.graph, &self.workspace_folders, &config)
+                .await
+        };
 
         // Persist graph to shared database
         {
@@ -1277,6 +1294,13 @@ impl McpServer {
     /// Avoids loading the ONNX model. For CI / one-shot runs.
     pub fn with_graph_only(mut self, graph_only: bool) -> Self {
         self.backend.graph_only = graph_only;
+        self
+    }
+
+    /// Use an explicit project file scope instead of recursively indexing every
+    /// workspace folder.
+    pub fn with_scope_files(mut self, files: Vec<PathBuf>) -> Self {
+        self.backend = self.backend.with_scope_files(files);
         self
     }
 

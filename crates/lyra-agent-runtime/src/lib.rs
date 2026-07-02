@@ -11,10 +11,10 @@ pub mod git_runtime;
 pub mod memory_service;
 pub mod native_backend;
 pub mod permission_service;
-pub mod protocol_contract;
 pub mod prompt_contract;
 pub mod prompt_policy;
 mod prompt_templates;
+pub mod protocol_contract;
 pub mod provider_service;
 pub mod recovery_service;
 pub mod retention_policy;
@@ -224,7 +224,8 @@ impl AgentRuntimeServices {
             | "agent.plan.delete"
             | "agent.plan.revise"
             | "agent.plan.review.respond"
-            | "agent.todo.read-project" => self.backend.call(method, payload),
+            | "agent.todo.read-project"
+            | "agent.codegraph.status" => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
                 self.backend.call(method, payload)
@@ -259,6 +260,25 @@ impl AgentRuntimeServices {
             "agent.memory.sync.reconcile" => self.memory.reconcile_sync(payload),
             "agent.memory.exportAudit" => self.memory.export_audit(payload),
             "agent.memory.exportLayerProjections" => self.memory.export_layer_projections(payload),
+            "agent.skills.list"
+            | "agent.skills.inspect"
+            | "agent.skills.activate"
+            | "agent.skills.deactivate"
+            | "agent.skills.installFromLocal"
+            | "agent.skills.installFromGit"
+            | "agent.skills.installFromStore"
+            | "agent.skills.uninstall"
+            | "agent.skills.refreshStore"
+            | "agent.skills.updateStoreConfig"
+            | "agent.mcp.list"
+            | "agent.mcp.upsert"
+            | "agent.mcp.remove"
+            | "agent.mcp.connect"
+            | "agent.mcp.disconnect"
+            | "agent.mcp.reload"
+            | "agent.mcp.discoverTools"
+            | "agent.mcp.inspectTool"
+            | "agent.mcp.executeTool" => self.backend.call(method, payload),
             "agent.rollback.preview" => self.backend.call(method, payload),
             "agent.message.resolve" => self.backend.call(method, payload),
             "agent.rollback.restore" => self.backend.call(method, payload),
@@ -431,9 +451,9 @@ mod tests {
     }
 
     #[test]
-    fn runtime_services_route_plan_mode_requests_to_backend() {
-        // Regression: handle_agent_request must forward the plan-mode method
-        // group to the backend. They were previously unrouted and surfaced as
+    fn runtime_services_route_backend_owned_requests_to_backend() {
+        // Regression: handle_agent_request must forward backend-owned methods.
+        // They were previously unrouted and surfaced as
         // "unknown agent runtime method: agent.plan.revise" to the desktop.
         let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
         for method in [
@@ -443,6 +463,7 @@ mod tests {
             "agent.plan.revise",
             "agent.plan.review.respond",
             "agent.todo.read-project",
+            "agent.codegraph.status",
             "agent.session.createTemporary",
         ] {
             let routed = services
@@ -453,7 +474,8 @@ mod tests {
     }
 
     #[test]
-    fn runtime_services_route_provider_catalog_requests_through_provider_service() {        let services = AgentRuntimeServices::default();
+    fn runtime_services_route_provider_catalog_requests_through_provider_service() {
+        let services = AgentRuntimeServices::default();
         let catalog = services
             .handle_agent_request("agent.provider.catalog.read", json!({}))
             .expect("provider catalog request should be routed");

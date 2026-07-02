@@ -149,117 +149,12 @@
   min-height: 0;
   width: 100%;
   height: 100%;
-  transition:
-    filter var(--lyra-agents-duration-fast) ease,
-    opacity var(--lyra-agents-duration-fast) ease;
 }
 
-.lyra-agents-app-drag-host[data-drag-attach-active="true"] .lyra-agents-app-drag-host-content {
-  filter: blur(var(--lyra-unit-3));
-  opacity: 0.72;
-  pointer-events: none;
-  user-select: none;
-}
-
-.lyra-ai-panel-drag-attach-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--lyra-unit-24);
-  background: color-mix(in srgb, var(--lyra-agents-content-bg) 52%, transparent);
-  -webkit-backdrop-filter: blur(var(--lyra-unit-2)) saturate(1.15);
-  backdrop-filter: blur(var(--lyra-unit-2)) saturate(1.15);
-  pointer-events: none;
-}
-
-.lyra-ai-panel-drag-attach-hint {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--lyra-unit-14);
-  text-align: center;
-  animation: lyra-ai-panel-drag-attach-hint-in var(--lyra-agents-duration-medium) cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-
-.lyra-ai-panel-drag-attach-icon-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--lyra-unit-88);
-  height: var(--lyra-unit-88);
-  border-radius: var(--lyra-radius-16);
-  border: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-accent) 28%, var(--lyra-border-subtle));
-  background:
-    radial-gradient(
-      circle at 30% 24%,
-      color-mix(in srgb, var(--lyra-accent) 14%, transparent),
-      transparent 58%
-    ),
-    color-mix(in srgb, var(--lyra-surface-raised) 92%, var(--lyra-accent) 8%);
-  box-shadow: var(--lyra-shadow-elevated-md);
-}
-
-.lyra-ai-panel-drag-attach-hub-back,
-.lyra-ai-panel-drag-attach-hub-mid {
-  stroke: color-mix(in srgb, var(--lyra-text-secondary) 42%, transparent);
-  stroke-width: 1.4;
-}
-
-.lyra-ai-panel-drag-attach-hub-back {
-  fill: color-mix(in srgb, var(--lyra-surface-raised) 52%, transparent);
-}
-
-.lyra-ai-panel-drag-attach-hub-mid {
-  fill: color-mix(in srgb, var(--lyra-surface-raised) 72%, transparent);
-}
-
-.lyra-ai-panel-drag-attach-hub-front {
-  fill: color-mix(in srgb, var(--lyra-surface-raised) 96%, var(--lyra-accent) 4%);
-  stroke: color-mix(in srgb, var(--lyra-text-primary) 72%, var(--lyra-border-subtle));
-  stroke-width: 1.6;
-}
-
-.lyra-ai-panel-drag-attach-hub-line,
-.lyra-ai-panel-drag-attach-hub-thumb-mark {
-  stroke: color-mix(in srgb, var(--lyra-text-secondary) 82%, transparent);
-}
-
-.lyra-ai-panel-drag-attach-hub-thumb {
-  fill: color-mix(in srgb, var(--lyra-accent) 18%, var(--lyra-surface-raised));
-  stroke: color-mix(in srgb, var(--lyra-accent) 42%, var(--lyra-border-subtle));
-  stroke-width: 1.2;
-}
-
-.lyra-ai-panel-drag-attach-hub-badge {
-  fill: color-mix(in srgb, var(--lyra-accent) 88%, var(--lyra-surface-raised));
-  stroke: color-mix(in srgb, var(--lyra-accent) 72%, var(--lyra-text-primary));
-  stroke-width: 1.4;
-}
-
-.lyra-ai-panel-drag-attach-hub-plus {
-  stroke: var(--lyra-surface-raised);
-}
-
-.lyra-ai-panel-drag-attach-label {
-  margin: 0;
-  font-size: var(--lyra-text-size-body);
-  font-weight: var(--lyra-font-weight-medium);
-  letter-spacing: 0.01em;
-  color: var(--lyra-text-primary);
-}
-
-@keyframes lyra-ai-panel-drag-attach-hint-in {
-  from {
-    opacity: 0;
-    transform: translateY(var(--lyra-unit-6)) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.lyra-agents-app-drag-host[data-drag-attach-active="true"] .lyra-agents-citation-composer-input {
+  outline: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-text-primary) 72%, transparent);
+  outline-offset: calc(-1 * var(--lyra-stroke-thin));
+  background: color-mix(in srgb, var(--lyra-text-primary) 5%, var(--lyra-app-surface-strong-bg));
 }
 
 /* -------- Selection policy --------
@@ -1935,12 +1830,12 @@
   opacity: 0;
 }
 
-.lyra-agents-tool-call.open .lyra-agents-icon-swap-tool,
+.lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-tool,
 .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-tool {
   opacity: 0;
 }
 
-.lyra-agents-tool-call.open .lyra-agents-icon-swap-chevron,
+.lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-chevron,
 .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-chevron {
   opacity: 1;
 }
@@ -5261,9 +5156,9 @@
 }
 
 .lyra-agents-citation-composer-input[data-drop-active="true"] {
-  outline: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-accent) 72%, transparent);
+  outline: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-text-primary) 72%, transparent);
   outline-offset: calc(-1 * var(--lyra-stroke-thin));
-  background: color-mix(in srgb, var(--lyra-accent) 8%, var(--lyra-app-surface-strong-bg));
+  background: color-mix(in srgb, var(--lyra-text-primary) 5%, var(--lyra-app-surface-strong-bg));
 }
 
 .lyra-agents-citation-chip {
@@ -6390,13 +6285,21 @@
     opacity: 0;
   }
 
-  .lyra-agents-tool-call.open .lyra-agents-icon-swap-tool,
+  .lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-tool,
   .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-tool {
+    opacity: 1;
+  }
+
+  .lyra-agents-tool-call-head.has-details:hover .lyra-agents-icon-swap-chevron,
+  .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-chevron {
     opacity: 0;
   }
 
-  .lyra-agents-tool-call.open .lyra-agents-icon-swap-chevron,
-  .lyra-agents-edit-card-head:hover .lyra-agents-icon-swap-chevron {
+  .lyra-agents-tool-call-head.has-details .lyra-agents-icon-swap-tool {
+    opacity: 0;
+  }
+
+  .lyra-agents-tool-call-head.has-details .lyra-agents-icon-swap-chevron {
     opacity: 1;
   }
 
@@ -6789,14 +6692,53 @@
   min-width: 0;
 }
 
-.lyra-agent-project-tree-twist {
+.lyra-agent-project-tree-icon-slot {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--lyra-unit-13);
-  height: var(--lyra-unit-13);
-  flex: 0 0 var(--lyra-unit-13);
+  width: var(--lyra-unit-16);
+  height: var(--lyra-unit-16);
+  flex: 0 0 var(--lyra-unit-16);
   color: var(--lyra-text-muted);
+}
+
+.lyra-agent-project-tree-entry-icon,
+.lyra-agent-project-tree-twist {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 120ms ease;
+}
+
+.lyra-agent-project-tree-entry-icon {
+  opacity: 1;
+}
+
+.lyra-agent-project-tree-twist {
+  opacity: 0;
+}
+
+.lyra-agent-project-tree-icon-slot .lyra-file-manager-icon-shell {
+  width: var(--lyra-unit-16);
+  height: var(--lyra-unit-16);
+  flex-basis: var(--lyra-unit-16);
+}
+
+.lyra-agent-project-tree-root-row:hover:not(:disabled) .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-entry-icon,
+.lyra-agent-project-tree-root-row:focus-visible .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-entry-icon,
+.lyra-agent-project-tree-row:hover:not(:disabled) .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-entry-icon,
+.lyra-agent-project-tree-row:focus-visible .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-entry-icon {
+  opacity: 0;
+}
+
+.lyra-agent-project-tree-root-row:hover:not(:disabled) .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-twist,
+.lyra-agent-project-tree-root-row:focus-visible .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-twist,
+.lyra-agent-project-tree-row:hover:not(:disabled) .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-twist,
+.lyra-agent-project-tree-row:focus-visible .lyra-agent-project-tree-icon-slot.has-twist .lyra-agent-project-tree-twist {
+  opacity: 1;
 }
 
 .lyra-agent-project-tree-name {
@@ -7196,8 +7138,20 @@
   color: var(--lyra-text-primary);
 }
 
-/* -------- Working-directory chip (outside the composer input, bottom-left) -------- */
-.lyra-agents-project-dir-chip-row,
+/* -------- ContextRing slot: absolute-positioned at composer bottom-right -------- */
+.lyra-agents-composer-context-ring-slot {
+  position: absolute;
+  bottom: var(--lyra-space-14);
+  right: var(--lyra-space-20);
+  height: var(--lyra-agents-composer-toolbar-control-size);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* -------- Working-directory chip row (outside the composer input, bottom-left) -------- */
+
 .lyra-agents-project-meta-row {
   pointer-events: auto;
   align-self: stretch;

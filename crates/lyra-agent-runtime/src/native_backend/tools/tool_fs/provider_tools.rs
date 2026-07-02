@@ -12,11 +12,11 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
     vec![
         function_tool(
             TOOL_FS_SEARCH,
-            "Search Lyra Tool Filesystem for capabilities such as CodeGraph navigation, browser, workbench, memory, software, hardware, web, todo, terminal, skills, or mcp. For project file reads, shell checks, git review, and file edits, keep using the direct code tools instead of Tool-FS.",
+            "Search Lyra Tool Filesystem for capabilities such as CodeGraph server analysis, browser, workbench, memory, software, hardware, web, todo, terminal, skills, or mcp. For project file reads, shell checks, git review, and file edits, keep using the direct code tools instead of Tool-FS.",
             json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as codegraph explore/callers/impact/context, read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
+                    "query": { "type": "string", "description": "Natural-language task or capability to find, such as codegraph dependency graph/complexity/security/docs/memory/PR context, read browser page, inspect workbench state, use memory, run terminal interaction, or operate software." },
                     "scene": { "type": "string", "enum": ["general", "project-code", "git", "terminal", "browser", "workbench", "automation"] },
                     "domain": { "type": "string", "description": "Optional Tool-FS domain filter such as browser, web, workbench, memory, todo, terminal, software, hardware, skills, or mcp." },
                     "page": { "type": "integer", "minimum": 0, "default": 0 },
@@ -61,7 +61,7 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
         ),
         function_tool(
             TOOL_FS_RUN,
-            "Run one Lyra Tool Filesystem target. Use it for CodeGraph navigation and non-code capabilities; do not use Tool-FS for project file reads, shell checks, git, or file edits.",
+            "Run one Lyra Tool Filesystem target. Use it for CodeGraph server tools and non-code capabilities; do not use Tool-FS for project file reads, shell checks, git, or file edits.",
             json!({
                 "type": "object",
                 "properties": {

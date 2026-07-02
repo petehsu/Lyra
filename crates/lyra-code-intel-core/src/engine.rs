@@ -7,20 +7,24 @@
 //! indexed first.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use codegraph::{CodeGraph, Node, NodeId, NodeType};
-use codegraph_server::ai_query::{CallInfo, SearchOptions};
 use codegraph_server::ai_query::QueryEngine;
-use codegraph_server::indexer::{IndexConfig, Indexer};
+use codegraph_server::ai_query::{CallInfo, SearchOptions, SymbolMatch};
 use codegraph_server::index_state::IndexState;
+use codegraph_server::indexer::{IndexConfig, Indexer};
+use codegraph_server::mcp::McpServer;
 use codegraph_server::parser_registry::ParserRegistry;
 use serde::Serialize;
+use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::context::ProjectContext;
+use crate::context::{ProjectContext, ProjectScopeSummary};
 use crate::explore::{ExploreResult, ExploreSymbol, SynthesizedEdge};
 use crate::status::IndexStatus;
 use crate::watcher::FileWatcher;
@@ -44,25 +48,30 @@ fn node_language(node: &Node) -> Option<String> {
 
 // ── Slug ──────────────────────────────────────────────────────────────
 // ponytail: codegraph-server's `memory::project_slug` is `pub(crate)`.
-// We replicate a sanitized-dirname approach. This slug drives IndexState
-// file paths only (not RocksDB persistence in this MVP). Upgrade path:
-// ask upstream to make `project_slug` pub.
+// Keep the same algorithm here so prompt injection and /tools/codegraph/*
+// address the same project namespace.
 
 fn project_slug(root: &Path) -> String {
-    let name = root
+    let canonical = normalize_project_root(root);
+    let name = canonical
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "project".to_string());
-    name.chars()
+    let base = name
+        .to_lowercase()
+        .chars()
         .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
+            if c.is_alphanumeric() || c == '-' {
                 c
             } else {
                 '-'
             }
         })
-        .collect::<String>()
-        .to_lowercase()
+        .collect::<String>();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    canonical.to_string_lossy().as_ref().hash(&mut hasher);
+    let hash = hasher.finish();
+    format!("{base}-{:04x}", hash & 0xFFFF)
 }
 
 fn normalize_project_root(root: &Path) -> PathBuf {
@@ -95,6 +104,139 @@ pub struct PendingFile {
     pub last_seen: Instant,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectScope {
+    files: Vec<PathBuf>,
+    file_set: HashSet<String>,
+    source: ScopeSource,
+    excluded_path_count: usize,
+    excluded_path_samples: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScopeSource {
+    Git,
+    WorkspaceManifest,
+    Recursive,
+}
+
+impl ScopeSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Git => "git",
+            Self::WorkspaceManifest => "workspaceManifest",
+            Self::Recursive => "recursive",
+        }
+    }
+
+    fn strategy(self) -> &'static str {
+        match self {
+            Self::Git => "tracked files plus structurally project-local untracked files",
+            Self::WorkspaceManifest => "workspace manifest roots plus root-level project files",
+            Self::Recursive => "recursive fallback under the bound project root",
+        }
+    }
+
+    fn excluded_reason(self) -> Option<&'static str> {
+        match self {
+            Self::Git => Some(
+                "Excluded indexable paths are Git-untracked paths outside the bound project/workspace structure. This is not directory-name filtering.",
+            ),
+            Self::WorkspaceManifest => Some(
+                "Excluded paths are outside workspace manifest roots. This is not directory-name filtering.",
+            ),
+            Self::Recursive => None,
+        }
+    }
+}
+
+impl ProjectScope {
+    pub(crate) fn discover(root: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> Self {
+        if let Some(scope) = git_scope(root, parsers, config) {
+            return scope;
+        }
+
+        let manifest_roots = workspace_member_roots(root);
+        if !manifest_roots.is_empty() {
+            let mut files = root_level_indexable_files(root, parsers, config);
+            for dir in &manifest_roots {
+                files.extend(recursive_indexable_files(dir, parsers, config));
+            }
+            if !files.is_empty() {
+                let (excluded_path_count, excluded_path_samples) =
+                    workspace_excluded_paths(root, &manifest_roots);
+                return Self::new(
+                    files,
+                    ScopeSource::WorkspaceManifest,
+                    excluded_path_count,
+                    excluded_path_samples,
+                );
+            }
+        }
+
+        Self::new(
+            recursive_indexable_files(root, parsers, config),
+            ScopeSource::Recursive,
+            0,
+            Vec::new(),
+        )
+    }
+
+    fn new(
+        files: Vec<PathBuf>,
+        source: ScopeSource,
+        excluded_path_count: usize,
+        excluded_path_samples: Vec<String>,
+    ) -> Self {
+        let mut seen = HashSet::new();
+        let mut deduped = Vec::new();
+        for path in files {
+            let key = normalize_index_path(&path);
+            if seen.insert(key) {
+                deduped.push(path);
+            }
+        }
+        deduped.sort();
+        let file_set = deduped
+            .iter()
+            .map(|path| normalize_index_path(path))
+            .collect::<HashSet<_>>();
+        Self {
+            files: deduped,
+            file_set,
+            source,
+            excluded_path_count,
+            excluded_path_samples,
+        }
+    }
+
+    pub(crate) fn contains_path_str(&self, path: &str) -> bool {
+        self.file_set
+            .contains(&normalize_index_path(Path::new(path)))
+    }
+
+    fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    fn summary(&self, root: &Path) -> ProjectScopeSummary {
+        ProjectScopeSummary {
+            source: self.source.as_str().to_string(),
+            strategy: self.source.strategy().to_string(),
+            included_file_count: self.files.len() as u64,
+            included_samples: self
+                .files
+                .iter()
+                .take(12)
+                .map(|path| relative_display(root, path))
+                .collect(),
+            excluded_path_count: self.excluded_path_count as u64,
+            excluded_path_samples: self.excluded_path_samples.clone(),
+            excluded_reason: self.source.excluded_reason().map(str::to_string),
+        }
+    }
+}
+
 // ── Entry per project ─────────────────────────────────────────────────
 
 struct ProjectEntry {
@@ -107,6 +249,13 @@ struct ProjectEntry {
     index_state: Arc<Mutex<IndexState>>,
     watcher: Arc<Mutex<Option<Arc<FileWatcher>>>>,
     pending_files: Arc<Mutex<HashMap<PathBuf, PendingFile>>>,
+    scope: Arc<RwLock<ProjectScope>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IndexMode {
+    Refresh,
+    Rebuild,
 }
 
 /// One engine serves all projects. Each project gets its own graph +
@@ -120,6 +269,7 @@ pub struct CodeGraphEngine {
     runtime: tokio::runtime::Runtime,
     parsers: Arc<ParserRegistry>,
     projects: RwLock<HashMap<PathBuf, Arc<ProjectEntry>>>,
+    mcp_servers: Mutex<HashMap<PathBuf, Arc<Mutex<McpServer>>>>,
     #[allow(dead_code)]
     storage_root: PathBuf,
 }
@@ -136,6 +286,7 @@ impl CodeGraphEngine {
             runtime,
             parsers: Arc::new(ParserRegistry::new()),
             projects: RwLock::new(HashMap::new()),
+            mcp_servers: Mutex::new(HashMap::new()),
             storage_root,
         }
     }
@@ -146,12 +297,35 @@ impl CodeGraphEngine {
         self.runtime.block_on(self.index_project(root))
     }
 
+    pub fn rebuild_project_sync(&self, root: PathBuf) -> Result<(), String> {
+        self.runtime.block_on(self.rebuild_project(root))
+    }
+
+    pub fn refresh_project_sync(&self, root: PathBuf) -> Result<(), String> {
+        self.runtime.block_on(self.refresh_project(root))
+    }
+
     pub fn status_sync(&self, root: &Path) -> IndexStatus {
         self.runtime.block_on(self.status(root))
     }
 
-    pub fn explore_sync(&self, root: &Path, query: &str, limit: usize) -> Result<ExploreResult, String> {
+    pub fn explore_sync(
+        &self,
+        root: &Path,
+        query: &str,
+        limit: usize,
+    ) -> Result<ExploreResult, String> {
         self.runtime.block_on(self.explore(root, query, limit))
+    }
+
+    pub fn search_symbols_sync(
+        &self,
+        root: &Path,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SymbolMatch>, String> {
+        self.runtime
+            .block_on(self.search_symbols(root, query, limit))
     }
 
     pub fn callers_sync(
@@ -195,6 +369,44 @@ impl CodeGraphEngine {
         self.runtime.block_on(self.staleness(root))
     }
 
+    pub fn run_mcp_tool_sync(
+        &self,
+        root: &Path,
+        tool_name: &str,
+        tool_args: Value,
+    ) -> Result<Value, String> {
+        self.runtime.block_on(async {
+            let root = normalize_project_root(root);
+            let server = {
+                let mut servers = self.mcp_servers.lock().await;
+                if let Some(server) = servers.get(&root) {
+                    server.clone()
+                } else {
+                    let config = IndexConfig::default();
+                    let scope = ProjectScope::discover(&root, &self.parsers, &config);
+                    let server = McpServer::new(
+                        vec![root.clone()],
+                        Vec::new(),
+                        config.max_files,
+                        codegraph_memory::CodeGraphEmbeddingModel::BgeSmall,
+                        true,
+                    )
+                    .with_graph_only(true)
+                    .with_scope_files(scope.files);
+                    let server = Arc::new(Mutex::new(server));
+                    servers.insert(root.clone(), server.clone());
+                    server
+                }
+            };
+            let result = server
+                .lock()
+                .await
+                .run_single_tool(tool_name, Some(tool_args))
+                .await;
+            result
+        })
+    }
+
     // ── Indexing ──────────────────────────────────────────────────────
 
     /// Kick off background indexing for `root`. Returns immediately;
@@ -210,29 +422,58 @@ impl CodeGraphEngine {
             return Err(message);
         }
         // 竞态 guard：已在索引则直接返回。
-        // Ready 时不 re-index，但需确保 watcher 启动（重启后从 RocksDB 恢复的场景）。
+        // Ready-from-persist needs a cheap coverage check; old partial DBs can
+        // otherwise stay "ready" forever.
         let current = entry.status.read().await.clone();
         match current {
             IndexStatus::Indexing { .. } => return Ok(()),
             IndexStatus::Ready { .. } => {
-                if entry.watcher.lock().await.is_none() {
-                    let parsers = Arc::clone(&self.parsers);
-                    let graph = Arc::clone(&entry.graph);
-                    let query_engine = Arc::clone(&entry.query_engine);
-                    let pending_files = Arc::clone(&entry.pending_files);
-                    let root_clone = root.clone();
-                    match FileWatcher::new(graph, parsers, query_engine, root_clone, pending_files) {
-                        Ok(fw) => *entry.watcher.lock().await = Some(Arc::new(fw)),
-                        Err(e) => {
-                            eprintln!("[codegraph] failed to start watcher (rebuild): {e}");
-                        }
-                    }
-                }
-                return Ok(());
+                let mode = if self.ready_needs_rebuild(&root, &entry).await {
+                    IndexMode::Rebuild
+                } else {
+                    IndexMode::Refresh
+                };
+                return self.start_index_task(root, entry, mode).await;
             }
             _ => {}
         }
+        self.start_index_task(root, entry, IndexMode::Refresh).await
+    }
+
+    /// Force a clear-and-reparse rebuild. Returns after spawning the work.
+    pub async fn rebuild_project(&self, root: PathBuf) -> Result<(), String> {
+        let root = normalize_project_root(&root);
+        let entry = self.get_or_create_entry(&root).await?;
+        self.start_index_task(root, entry, IndexMode::Rebuild).await
+    }
+
+    /// Incrementally scan for new/changed/deleted files. Returns after spawning.
+    pub async fn refresh_project(&self, root: PathBuf) -> Result<(), String> {
+        let root = normalize_project_root(&root);
+        let entry = self.get_or_create_entry(&root).await?;
+        self.start_index_task(root, entry, IndexMode::Refresh).await
+    }
+
+    async fn start_index_task(
+        &self,
+        root: PathBuf,
+        entry: Arc<ProjectEntry>,
+        mode: IndexMode,
+    ) -> Result<(), String> {
+        if !root.is_dir() {
+            let message = format!("Project root is not a directory: {}", root.display());
+            *entry.status.write().await = IndexStatus::Failed {
+                error: message.clone(),
+            };
+            return Err(message);
+        }
+        if matches!(&*entry.status.read().await, IndexStatus::Indexing { .. }) {
+            return Ok(());
+        }
+
         *entry.status.write().await = IndexStatus::Indexing { progress: 0.0 };
+        let _old_watcher = entry.watcher.lock().await.take();
+        self.mcp_servers.lock().await.remove(&root);
 
         let graph = entry.graph.clone();
         let indexer = entry.indexer.clone();
@@ -241,45 +482,63 @@ impl CodeGraphEngine {
         let last_indexed_at = entry.last_indexed_at.clone();
         let watcher_slot = entry.watcher.clone();
         let pending_files = entry.pending_files.clone();
+        let index_state = entry.index_state.clone();
         let parsers = Arc::clone(&self.parsers);
+        let config = IndexConfig::default();
+        let scope = ProjectScope::discover(&root, &self.parsers, &config);
+        *entry.scope.write().await = scope.clone();
+        let scope_slot = entry.scope.clone();
         let root_clone = root.clone();
 
         tokio::spawn(async move {
-            let result = indexer
-                .index_workspace(&graph, &[root_clone.clone()], &IndexConfig::default())
-                .await;
-
-            // Framework resolution pass — extract/resolve synthesized edges.
-            {
-                let mut g = graph.write().await;
-                crate::resolution::run_resolution_pass(&mut g, &root_clone);
+            if matches!(mode, IndexMode::Rebuild) {
+                {
+                    let mut g = graph.write().await;
+                    if let Err(e) = g.clear() {
+                        *status.write().await = IndexStatus::Failed {
+                            error: format!("clear graph: {e}"),
+                        };
+                        return;
+                    }
+                }
+                index_state.lock().await.clear();
+                pending_files.lock().await.clear();
             }
 
-            // Build caller/callee/text indexes from the freshly parsed graph.
+            let _result = indexer.index_files(&graph, &scope.files, &config).await;
+
+            {
+                let mut g = graph.write().await;
+                let current_scope = scope_slot.read().await.clone();
+                let removed_paths = prune_out_of_scope_file_nodes(&mut g, &current_scope);
+                crate::resolution::run_resolution_pass(&mut g, &root_clone);
+                if !removed_paths.is_empty() {
+                    let mut state = index_state.lock().await;
+                    for path in removed_paths {
+                        state.remove(Path::new(&path));
+                    }
+                    state.save();
+                }
+            }
+
             query_engine.build_indexes().await;
 
-            // Count symbols for the Ready status.
-            let symbol_count = {
+            let (file_count, symbol_count) = {
                 let g = graph.read().await;
-                g.iter_nodes().count() as u64
+                graph_counts(&g)
             };
 
-            *last_indexed_at.write().await = Some(SystemTime::now());
-            *status.write().await = IndexStatus::Ready {
-                file_count: result.total_files as u64,
-                symbol_count,
-            };
-            // Full index complete — clear the watcher-fed dirty set.
-            pending_files.lock().await.clear();
-
-            // Start file watcher for incremental updates.
             if watcher_slot.lock().await.is_none() {
                 match FileWatcher::new(
                     Arc::clone(&graph),
                     parsers,
                     Arc::clone(&query_engine),
                     root_clone,
+                    Arc::clone(&status),
+                    Arc::clone(&last_indexed_at),
+                    Arc::clone(&index_state),
                     Arc::clone(&pending_files),
+                    Arc::clone(&scope_slot),
                 ) {
                     Ok(fw) => *watcher_slot.lock().await = Some(Arc::new(fw)),
                     Err(e) => {
@@ -287,9 +546,50 @@ impl CodeGraphEngine {
                     }
                 }
             }
+
+            *last_indexed_at.write().await = Some(SystemTime::now());
+            *status.write().await = IndexStatus::Ready {
+                file_count,
+                symbol_count,
+            };
+            pending_files.lock().await.clear();
         });
 
         Ok(())
+    }
+
+    async fn ready_needs_rebuild(&self, root: &Path, entry: &ProjectEntry) -> bool {
+        let config = IndexConfig::default();
+        let scope = ProjectScope::discover(root, &self.parsers, &config);
+        let source_count = scope.len().min(config.max_files);
+        if source_count == 0 {
+            return false;
+        }
+        let (graph_file_count, outside_scope_count) = {
+            let graph = entry.graph.read().await;
+            let paths = graph_file_paths(&graph);
+            (
+                paths
+                    .iter()
+                    .filter(|path| scope.contains_path_str(path))
+                    .count(),
+                paths
+                    .iter()
+                    .filter(|path| !scope.contains_path_str(path))
+                    .count(),
+            )
+        };
+        if graph_file_count == 0 {
+            return true;
+        }
+        if obviously_smaller(graph_file_count, source_count) {
+            return true;
+        }
+        if outside_scope_count > graph_file_count {
+            return true;
+        }
+        let state_count = entry.index_state.lock().await.len();
+        state_count > 0 && obviously_smaller(graph_file_count, state_count)
     }
 
     // ── Queries ───────────────────────────────────────────────────────
@@ -347,6 +647,22 @@ impl CodeGraphEngine {
             elapsed_ms: search_result.query_time_ms,
             synthesized_edges,
         })
+    }
+
+    pub async fn search_symbols(
+        &self,
+        root: &Path,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SymbolMatch>, String> {
+        let root = normalize_project_root(root);
+        let entry = self.get_entry(&root).await?;
+        let options = SearchOptions::new().with_limit(limit.clamp(1, 100));
+        Ok(entry
+            .query_engine
+            .symbol_search(query, &options)
+            .await
+            .results)
     }
 
     /// Find all functions that call the given symbol (by name).
@@ -415,6 +731,7 @@ impl CodeGraphEngine {
         let entry = self.get_entry(&root).await?;
         let status = entry.status.read().await.clone();
         let graph = entry.graph.read().await;
+        let scope = entry.scope.read().await.clone();
 
         let mut file_paths: HashSet<String> = HashSet::new();
         let mut languages: HashSet<String> = HashSet::new();
@@ -422,11 +739,14 @@ impl CodeGraphEngine {
         let mut symbol_count = 0u64;
 
         for (_id, node) in graph.iter_nodes() {
-            symbol_count += 1;
             let path = node_path(node);
             if !path.is_empty() {
+                if !scope.contains_path_str(&path) {
+                    continue;
+                }
                 file_paths.insert(path);
             }
+            symbol_count += 1;
             if let Some(lang) = node_language(node) {
                 languages.insert(lang);
             }
@@ -451,6 +771,7 @@ impl CodeGraphEngine {
             frameworks,
             bridges,
             architecture,
+            scope: scope.summary(&root),
         })
     }
 
@@ -497,8 +818,10 @@ impl CodeGraphEngine {
             .into_iter()
             .map(|ext| ext.trim_start_matches('.').to_ascii_lowercase())
             .collect::<HashSet<_>>();
-        Ok(changed_files_since(
+        let scope = entry.scope.read().await.clone();
+        Ok(changed_scope_files_since(
             &root,
+            &scope,
             indexed_at,
             &supported_extensions,
             12,
@@ -523,9 +846,9 @@ impl CodeGraphEngine {
         }
 
         let slug = project_slug(root);
+        let scope = ProjectScope::discover(root, &self.parsers, &IndexConfig::default());
         let rocksdb_path = self.storage_root.join(&slug).join("rocksdb");
-        std::fs::create_dir_all(&rocksdb_path)
-            .map_err(|e| format!("create rocksdb dir: {e}"))?;
+        std::fs::create_dir_all(&rocksdb_path).map_err(|e| format!("create rocksdb dir: {e}"))?;
         let graph = Arc::new(RwLock::new(
             CodeGraph::open(&rocksdb_path).map_err(|e| format!("rocksdb open: {e}"))?,
         ));
@@ -537,13 +860,24 @@ impl CodeGraphEngine {
             g.iter_nodes().count() > 0
         };
         let initial_status = if has_existing_data {
-            // Count symbols for the Ready status.
-            let symbol_count = {
+            let (file_count, symbol_count) = {
                 let g = graph.read().await;
-                g.iter_nodes().count() as u64
+                let mut file_paths = HashSet::new();
+                let mut symbol_count = 0u64;
+                for (_id, node) in g.iter_nodes() {
+                    let path = node_path(node);
+                    if !path.is_empty() {
+                        if !scope.contains_path_str(&path) {
+                            continue;
+                        }
+                        file_paths.insert(path);
+                    }
+                    symbol_count += 1;
+                }
+                (file_paths.len() as u64, symbol_count)
             };
             IndexStatus::Ready {
-                file_count: 0, // ponytail: unknown after rebuild; will be refreshed on next index
+                file_count,
                 symbol_count,
             }
         } else {
@@ -563,12 +897,15 @@ impl CodeGraphEngine {
             graph,
             query_engine,
             indexer,
-            last_indexed_at: Arc::new(RwLock::new(
-                if has_existing_data { Some(SystemTime::now()) } else { None }
-            )),
+            last_indexed_at: Arc::new(RwLock::new(if has_existing_data {
+                Some(SystemTime::now())
+            } else {
+                None
+            })),
             index_state,
             watcher: Arc::new(Mutex::new(None)),
             pending_files: Arc::new(Mutex::new(HashMap::new())),
+            scope: Arc::new(RwLock::new(scope)),
         });
         projects.insert(root.to_path_buf(), entry.clone());
         Ok(entry)
@@ -576,10 +913,12 @@ impl CodeGraphEngine {
 
     async fn get_entry(&self, root: &Path) -> Result<Arc<ProjectEntry>, String> {
         let projects = self.projects.read().await;
-        projects
-            .get(root)
-            .cloned()
-            .ok_or_else(|| format!("Project not indexed: {}. Call index_project first.", root.display()))
+        projects.get(root).cloned().ok_or_else(|| {
+            format!(
+                "Project not indexed: {}. Call index_project first.",
+                root.display()
+            )
+        })
     }
 
     async fn find_symbol(&self, entry: &ProjectEntry, name: &str) -> Result<NodeId, String> {
@@ -595,6 +934,383 @@ impl CodeGraphEngine {
 }
 
 // ── Free helpers ───────────────────────────────────────────────────────
+
+fn normalize_index_path(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn git_scope(root: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> Option<ProjectScope> {
+    let repo_root = git_repo_root(root)?;
+    let tracked = git_files(root, false)?;
+    if tracked.is_empty() {
+        return None;
+    }
+
+    let mut tracked_paths = Vec::new();
+    let mut tracked_dirs = HashSet::new();
+    for rel in tracked {
+        let path = repo_root.join(rel);
+        if !path.starts_with(root) {
+            continue;
+        }
+        if is_indexable_file(&path, parsers, config) {
+            remember_project_ancestors(root, &path, &mut tracked_dirs);
+            tracked_paths.push(path);
+        }
+    }
+
+    let workspace_roots = workspace_member_roots(root)
+        .into_iter()
+        .filter(|path| path != root)
+        .collect::<Vec<_>>();
+    let mut files = tracked_paths;
+    let mut excluded_path_count = 0usize;
+    let mut excluded_path_samples = Vec::new();
+    for rel in git_files(root, true).unwrap_or_default() {
+        let path = repo_root.join(rel);
+        if !path.starts_with(root) || !is_indexable_file(&path, parsers, config) {
+            continue;
+        }
+        let parent_is_root = path.parent() == Some(root);
+        if parent_is_root
+            || is_under_any(&path, &workspace_roots)
+            || is_under_any_set(&path, &tracked_dirs)
+        {
+            files.push(path);
+        } else {
+            excluded_path_count += 1;
+            if excluded_path_samples.len() < 12 {
+                excluded_path_samples.push(relative_display(root, &path));
+            }
+        }
+    }
+
+    (!files.is_empty()).then(|| {
+        ProjectScope::new(
+            files,
+            ScopeSource::Git,
+            excluded_path_count,
+            excluded_path_samples,
+        )
+    })
+}
+
+fn git_repo_root(root: &Path) -> Option<PathBuf> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!path.is_empty()).then(|| normalize_project_root(Path::new(&path)))
+}
+
+fn git_files(root: &Path, untracked: bool) -> Option<Vec<PathBuf>> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(root)
+        .arg("ls-files")
+        .arg("--full-name");
+    if untracked {
+        command.arg("-o").arg("--exclude-standard");
+    }
+    command.arg("-z");
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(
+        output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|bytes| !bytes.is_empty())
+            .map(|bytes| PathBuf::from(String::from_utf8_lossy(bytes).to_string()))
+            .collect(),
+    )
+}
+
+fn remember_project_ancestors(root: &Path, file: &Path, dirs: &mut HashSet<PathBuf>) {
+    let mut current = file.parent();
+    while let Some(dir) = current {
+        if dir == root {
+            break;
+        }
+        dirs.insert(dir.to_path_buf());
+        current = dir.parent();
+    }
+}
+
+fn is_under_any(path: &Path, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
+}
+
+fn is_under_any_set(path: &Path, roots: &HashSet<PathBuf>) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
+}
+
+fn workspace_member_roots(root: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    roots.extend(cargo_workspace_roots(root));
+    roots.extend(pnpm_workspace_roots(root));
+    roots.extend(package_workspace_roots(root));
+    dedupe_existing_dirs(root, roots)
+}
+
+fn cargo_workspace_roots(root: &Path) -> Vec<PathBuf> {
+    let manifest = root.join("Cargo.toml");
+    let Ok(content) = std::fs::read_to_string(manifest) else {
+        return Vec::new();
+    };
+    let mut in_members = false;
+    let mut roots = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("members") && trimmed.contains('[') {
+            in_members = true;
+        }
+        if in_members {
+            roots.extend(
+                quoted_values(trimmed)
+                    .into_iter()
+                    .flat_map(|value| expand_workspace_pattern(root, &value)),
+            );
+            if trimmed.contains(']') {
+                in_members = false;
+            }
+        }
+    }
+    roots
+}
+
+fn pnpm_workspace_roots(root: &Path) -> Vec<PathBuf> {
+    let manifest = root.join("pnpm-workspace.yaml");
+    let Ok(content) = std::fs::read_to_string(manifest) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("- "))
+        .map(|value| value.trim().trim_matches('"').trim_matches('\''))
+        .filter(|value| !value.starts_with('!'))
+        .flat_map(|value| expand_workspace_pattern(root, value))
+        .collect()
+}
+
+fn package_workspace_roots(root: &Path) -> Vec<PathBuf> {
+    let manifest = root.join("package.json");
+    let Ok(content) = std::fs::read_to_string(manifest) else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&content) else {
+        return Vec::new();
+    };
+    let mut patterns = Vec::new();
+    match json.get("workspaces") {
+        Some(Value::Array(values)) => {
+            patterns.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
+        }
+        Some(Value::Object(map)) => {
+            if let Some(Value::Array(values)) = map.get("packages") {
+                patterns.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
+            }
+        }
+        _ => {}
+    }
+    patterns
+        .into_iter()
+        .filter(|value| !value.starts_with('!'))
+        .flat_map(|value| expand_workspace_pattern(root, &value))
+        .collect()
+}
+
+fn quoted_values(line: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut chars = line.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '"' && ch != '\'' {
+            continue;
+        }
+        let quote = ch;
+        let mut value = String::new();
+        for next in chars.by_ref() {
+            if next == quote {
+                break;
+            }
+            value.push(next);
+        }
+        if !value.is_empty() {
+            values.push(value);
+        }
+    }
+    values
+}
+
+fn expand_workspace_pattern(root: &Path, pattern: &str) -> Vec<PathBuf> {
+    if pattern.contains('*') {
+        let pattern = root.join(pattern).to_string_lossy().to_string();
+        return glob::glob(&pattern)
+            .ok()
+            .into_iter()
+            .flat_map(|paths| paths.flatten())
+            .collect();
+    }
+    vec![root.join(pattern)]
+}
+
+fn dedupe_existing_dirs(root: &Path, roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for path in roots {
+        let path = normalize_project_root(&path);
+        if path.is_dir() && path.starts_with(root) && seen.insert(normalize_index_path(&path)) {
+            out.push(path);
+        }
+    }
+    out
+}
+
+fn workspace_excluded_paths(root: &Path, workspace_roots: &[PathBuf]) -> (usize, Vec<String>) {
+    let mut count = 0usize;
+    let mut samples = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return (0, Vec::new());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') || workspace_roots.iter().any(|dir| dir == &path) {
+            continue;
+        }
+        if path.is_dir() {
+            count += 1;
+            if samples.len() < 12 {
+                samples.push(format!("{}/", relative_display(root, &path)));
+            }
+        }
+    }
+    (count, samples)
+}
+
+fn relative_display(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn root_level_indexable_files(
+    root: &Path,
+    parsers: &ParserRegistry,
+    config: &IndexConfig,
+) -> Vec<PathBuf> {
+    std::fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && is_indexable_file(path, parsers, config))
+        .collect()
+}
+
+fn recursive_indexable_files(
+    root: &Path,
+    parsers: &ParserRegistry,
+    config: &IndexConfig,
+) -> Vec<PathBuf> {
+    let exclude_dirs = config.exclude_dirs.iter().cloned().collect::<HashSet<_>>();
+    let mut queue = VecDeque::from([(root.to_path_buf(), 0u32)]);
+    let mut files = Vec::new();
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if depth > config.max_depth || files.len() >= config.max_files {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if files.len() >= config.max_files {
+                break;
+            }
+            let path = entry.path();
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if file_name.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                if exclude_dirs.contains(file_name) || is_generated_parser_dir(file_name) {
+                    continue;
+                }
+                queue.push_back((path, depth + 1));
+            } else if is_indexable_file(&path, parsers, config) {
+                files.push(path);
+            }
+        }
+    }
+
+    files
+}
+
+fn is_indexable_file(path: &Path, parsers: &ParserRegistry, config: &IndexConfig) -> bool {
+    path.is_file()
+        && parsers.can_parse(path)
+        && std::fs::metadata(path)
+            .map(|metadata| metadata.len() <= config.max_file_size_bytes)
+            .unwrap_or(false)
+}
+
+fn graph_counts(graph: &CodeGraph) -> (u64, u64) {
+    (
+        graph_file_paths(graph).len() as u64,
+        graph.iter_nodes().count() as u64,
+    )
+}
+
+fn graph_file_paths(graph: &CodeGraph) -> HashSet<String> {
+    graph
+        .iter_nodes()
+        .filter_map(|(_id, node)| {
+            let path = node_path(node);
+            (!path.is_empty()).then_some(path)
+        })
+        .collect()
+}
+
+fn prune_out_of_scope_file_nodes(graph: &mut CodeGraph, scope: &ProjectScope) -> Vec<String> {
+    let removed_paths = graph_file_paths(graph)
+        .into_iter()
+        .filter(|path| !Path::new(path).is_file() || !scope.contains_path_str(path))
+        .collect::<Vec<_>>();
+    for path in &removed_paths {
+        if let Ok(nodes) = graph.query().property("path", path.as_str()).execute() {
+            for node_id in nodes {
+                let _ = graph.delete_node(node_id);
+            }
+        }
+    }
+    removed_paths
+}
+
+fn obviously_smaller(indexed: usize, expected: usize) -> bool {
+    expected > indexed + 1 && indexed.saturating_mul(2) < expected
+}
+
+fn is_generated_parser_dir(name: &str) -> bool {
+    name.starts_with("tree-sitter-") && name.ends_with("-src")
+}
 
 fn is_entry_point(name: &str, node_type: &NodeType) -> bool {
     if !matches!(node_type, NodeType::Function) {
@@ -631,7 +1347,11 @@ fn detect_frameworks(paths: &HashSet<String>, languages: &HashSet<String>) -> Ve
         .collect::<Vec<_>>();
     let has_path = |needle: &str| lower_paths.iter().any(|path| path.contains(needle));
     let has_ext = |ext: &str| lower_paths.iter().any(|path| path.ends_with(ext));
-    let has_language = |language: &str| languages.iter().any(|value| value.eq_ignore_ascii_case(language));
+    let has_language = |language: &str| {
+        languages
+            .iter()
+            .any(|value| value.eq_ignore_ascii_case(language))
+    };
     let mut frameworks = Vec::new();
 
     let mut push = |name: &str, detected: bool| {
@@ -641,22 +1361,69 @@ fn detect_frameworks(paths: &HashSet<String>, languages: &HashSet<String>) -> Ve
     };
 
     push("React", has_ext(".tsx") || has_ext(".jsx"));
-    push("Express", has_path("/routes/") && has_language("javascript"));
-    push("NestJS", has_path(".controller.ts") || has_path("nest-cli.json"));
-    push("Laravel", has_path("/app/http/controllers/") || has_path("/routes/web.php") || has_path("/routes/api.php"));
-    push("Django", has_path("manage.py") || has_path("/urls.py") || has_path("/settings.py"));
+    push(
+        "Express",
+        has_path("/routes/") && has_language("javascript"),
+    );
+    push(
+        "NestJS",
+        has_path(".controller.ts") || has_path("nest-cli.json"),
+    );
+    push(
+        "Laravel",
+        has_path("/app/http/controllers/")
+            || has_path("/routes/web.php")
+            || has_path("/routes/api.php"),
+    );
+    push(
+        "Django",
+        has_path("manage.py") || has_path("/urls.py") || has_path("/settings.py"),
+    );
     push("Flask", has_path("flask") || has_path("/app.py"));
-    push("FastAPI", has_path("fastapi") || has_path("/api/") && has_language("python"));
-    push("Rails", has_path("/config/routes.rb") || has_path("/app/controllers/"));
-    push("Spring", has_path("/src/main/java/") && has_path("controller"));
-    push("Play", has_path("/conf/routes") || has_path("/app/controllers/") && has_language("scala"));
-    push("Gin", has_language("go") && (has_path("/router") || has_path("/routes") || has_path("/handler")));
-    push("GoFrame", has_path("goframe") || has_path("/internal/controller/"));
-    push("ASP.NET", has_ext(".csproj") || has_path("/controllers/") && has_language("csharp"));
-    push("Vapor", has_language("swift") && (has_path("/routes.swift") || has_path("/sources/app/")));
-    push("Drupal", has_ext(".module") || has_ext(".theme") || has_path("/drupal"));
-    push("React Native", has_path("/android/") && has_path("/ios/") && (has_ext(".tsx") || has_ext(".jsx")));
-    push("Expo", has_path("app.json") && (has_path("/app/") || has_path("expo")));
+    push(
+        "FastAPI",
+        has_path("fastapi") || has_path("/api/") && has_language("python"),
+    );
+    push(
+        "Rails",
+        has_path("/config/routes.rb") || has_path("/app/controllers/"),
+    );
+    push(
+        "Spring",
+        has_path("/src/main/java/") && has_path("controller"),
+    );
+    push(
+        "Play",
+        has_path("/conf/routes") || has_path("/app/controllers/") && has_language("scala"),
+    );
+    push(
+        "Gin",
+        has_language("go") && (has_path("/router") || has_path("/routes") || has_path("/handler")),
+    );
+    push(
+        "GoFrame",
+        has_path("goframe") || has_path("/internal/controller/"),
+    );
+    push(
+        "ASP.NET",
+        has_ext(".csproj") || has_path("/controllers/") && has_language("csharp"),
+    );
+    push(
+        "Vapor",
+        has_language("swift") && (has_path("/routes.swift") || has_path("/sources/app/")),
+    );
+    push(
+        "Drupal",
+        has_ext(".module") || has_ext(".theme") || has_path("/drupal"),
+    );
+    push(
+        "React Native",
+        has_path("/android/") && has_path("/ios/") && (has_ext(".tsx") || has_ext(".jsx")),
+    );
+    push(
+        "Expo",
+        has_path("app.json") && (has_path("/app/") || has_path("expo")),
+    );
 
     frameworks.sort();
     frameworks.dedup();
@@ -672,21 +1439,32 @@ fn detect_cross_language_bridges(
         .iter()
         .map(|path| path.replace('\\', "/").to_ascii_lowercase())
         .collect::<Vec<_>>();
-    let has_language = |language: &str| languages.iter().any(|value| value.eq_ignore_ascii_case(language));
+    let has_language = |language: &str| {
+        languages
+            .iter()
+            .any(|value| value.eq_ignore_ascii_case(language))
+    };
     let has_path = |needle: &str| lower_paths.iter().any(|path| path.contains(needle));
     let mut bridges = Vec::new();
 
     if has_language("swift") && (has_language("objc") || has_path(".m") || has_path(".mm")) {
         bridges.push("Swift ↔ ObjC".to_string());
     }
-    if frameworks.iter().any(|framework| framework == "React Native" || framework == "Expo") {
+    if frameworks
+        .iter()
+        .any(|framework| framework == "React Native" || framework == "Expo")
+    {
         bridges.push("React Native JS ↔ native".to_string());
     }
 
     bridges
 }
 
-fn describe_architecture(key_modules: &[String], frameworks: &[String], bridges: &[String]) -> Option<String> {
+fn describe_architecture(
+    key_modules: &[String],
+    frameworks: &[String],
+    bridges: &[String],
+) -> Option<String> {
     if frameworks.is_empty() && key_modules.is_empty() && bridges.is_empty() {
         return None;
     }
@@ -703,58 +1481,38 @@ fn describe_architecture(key_modules: &[String], frameworks: &[String], bridges:
     Some(parts.join("; "))
 }
 
-fn changed_files_since(
+fn changed_scope_files_since(
     root: &Path,
+    scope: &ProjectScope,
     since: SystemTime,
     supported_extensions: &HashSet<String>,
     limit: usize,
 ) -> StalenessInfo {
-    let mut queue = VecDeque::from([root.to_path_buf()]);
     let mut changed_files = Vec::new();
     let mut checked_files = 0u64;
-    let exclude_dirs = IndexConfig::default()
-        .exclude_dirs
-        .into_iter()
-        .collect::<HashSet<_>>();
 
-    while let Some(dir) = queue.pop_front() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+    for path in &scope.files {
+        if !is_supported_source_path(path, supported_extensions) {
             continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if path.is_dir() {
-                if file_name.starts_with('.') || exclude_dirs.contains(file_name) {
-                    continue;
-                }
-                queue.push_back(path);
-                continue;
-            }
-            if !is_supported_source_path(&path, supported_extensions) {
-                continue;
-            }
-            checked_files += 1;
-            let modified_after_index = std::fs::metadata(&path)
-                .and_then(|metadata| metadata.modified())
-                .map(|modified| modified > since)
-                .unwrap_or(false);
-            if modified_after_index {
-                changed_files.push(
-                    path.strip_prefix(root)
-                        .unwrap_or(path.as_path())
-                        .to_string_lossy()
-                        .to_string(),
-                );
-                if changed_files.len() >= limit {
-                    return StalenessInfo {
-                        stale: true,
-                        changed_files,
-                        checked_files,
-                    };
-                }
+        }
+        checked_files += 1;
+        let modified_after_index = std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .map(|modified| modified > since)
+            .unwrap_or(false);
+        if modified_after_index {
+            changed_files.push(
+                path.strip_prefix(root)
+                    .unwrap_or(path.as_path())
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            if changed_files.len() >= limit {
+                return StalenessInfo {
+                    stale: true,
+                    changed_files,
+                    checked_files,
+                };
             }
         }
     }
@@ -829,7 +1587,9 @@ mod tests {
     #[test]
     fn project_slug_sanitizes() {
         let slug = project_slug(Path::new("/Users/foo/My Project!"));
-        assert!(slug.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
+        assert!(slug
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
         assert!(slug.contains("my"));
     }
 

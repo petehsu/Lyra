@@ -41,7 +41,7 @@ import type {
   DiffFileEntry,
   PermissionRequest
 } from "./lyra-agents/core/types";
-import { setLocale, t, type Locale } from "@workbench/i18n";
+import { setLocale, t, type I18nKey, type Locale } from "@workbench/i18n";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
@@ -256,7 +256,15 @@ const applyEvent = (state: State, event: AgentRuntimeEvent): State => {
 };
 
 function normalizeClarificationOptions(
-  options: readonly (string | { readonly label: string; readonly description?: string | null })[]
+  options: readonly (
+    | string
+    | {
+        readonly label: string;
+        readonly description?: string | null;
+        readonly i18nKey?: string | null;
+        readonly descriptionI18nKey?: string | null;
+      }
+  )[]
 ): DecisionOption[] {
   const normalized: DecisionOption[] = [];
   for (const option of options) {
@@ -265,9 +273,22 @@ function normalizeClarificationOptions(
       typeof option === "string" ? null : normalizeOptionalText(option.description ?? null);
     if (label.length === 0 || isCustomOptionLabel(label)) continue;
     if (normalized.some((existing) => existing.label === label)) continue;
-    normalized.push({ label, description });
+    const item: DecisionOption = { label, description };
+    if (typeof option !== "string") {
+      const displayLabel = translateI18nKey(option.i18nKey);
+      const displayDescription = translateI18nKey(option.descriptionI18nKey);
+      if (displayLabel !== undefined) item.displayLabel = displayLabel;
+      if (displayDescription !== undefined) item.displayDescription = displayDescription;
+    }
+    normalized.push(item);
   }
   return normalized;
+}
+
+function translateI18nKey(key: string | null | undefined): string | undefined {
+  const normalized = key?.trim();
+  if (!normalized) return undefined;
+  return t(normalized as I18nKey);
 }
 
 function normalizeOptionalText(value: string | null): string | null {
@@ -546,14 +567,19 @@ export const useLyraAgentDataProvider = (
         return;
       }
       if (event.kind === "clarificationRequested") {
+        const question: DecisionQuestion = {
+          id: event.clarificationId,
+          question: event.question,
+          options: normalizeClarificationOptions(event.options ?? []),
+          allowCustomAnswer: event.allowCustomAnswer,
+          detail: event.detail ?? null
+        };
+        const displayQuestion = translateI18nKey(event.i18nKey);
+        const displayDetail = translateI18nKey(event.detailI18nKey);
+        if (displayQuestion !== undefined) question.displayQuestion = displayQuestion;
+        if (displayDetail !== undefined) question.displayDetail = displayDetail;
         setPendingClarifications((items) =>
-          upsertById(items, {
-            id: event.clarificationId,
-            question: event.question,
-            options: normalizeClarificationOptions(event.options ?? []),
-            allowCustomAnswer: event.allowCustomAnswer,
-            detail: event.detail ?? null
-          })
+          upsertById(items, question)
         );
       } else if (event.kind === "permissionRequested") {
         setPendingPermissions((items) =>

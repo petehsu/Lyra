@@ -275,10 +275,9 @@ pub(crate) fn create_temporary_session(payload: Value) -> AgentRuntimeResult<Val
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        let parent = state
-            .sessions
-            .get(&parent_session_id)
-            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {parent_session_id}")))?;
+        let parent = state.sessions.get(&parent_session_id).ok_or_else(|| {
+            AgentRuntimeError::Core(format!("session not found: {parent_session_id}"))
+        })?;
         let working_dir = parent
             .snapshot
             .get("workingDir")

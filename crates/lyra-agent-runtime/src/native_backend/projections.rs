@@ -3,9 +3,10 @@ use super::*;
 const REMOVED_LOGIN_PROVIDERS: &[&str] = &["gmail"];
 
 fn visible_default_provider(config: &NativeConfig) -> Option<&String> {
-    config.default_provider.as_ref().filter(|provider| {
-        !REMOVED_LOGIN_PROVIDERS.contains(&provider.as_str())
-    })
+    config
+        .default_provider
+        .as_ref()
+        .filter(|provider| !REMOVED_LOGIN_PROVIDERS.contains(&provider.as_str()))
 }
 
 pub(crate) fn user_message(text: String, images: Vec<Value>, created_at: String) -> Value {

@@ -192,9 +192,7 @@ pub fn ir_to_graph(
                 method_props = method_props.with("attributes", method.attributes.clone());
             }
             // Detect ASP.NET HTTP handler attributes on methods
-            if let Some((http_method, route)) =
-                detect_csharp_http_attribute(&method.attributes)
-            {
+            if let Some((http_method, route)) = detect_csharp_http_attribute(&method.attributes) {
                 method_props = method_props
                     .with("http_method", http_method)
                     .with("route", route)

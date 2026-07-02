@@ -11,10 +11,21 @@ import type {
   AgentAccountsSnapshot,
   AgentAccountRequest,
   AgentLoginProviderCatalogSnapshot,
+  AgentSkillActivationRequest,
+  AgentSkillInstallFromGitRequest,
+  AgentSkillInstallFromLocalRequest,
+  AgentSkillInstallFromStoreRequest,
+  AgentSkillRefreshStoreRequest,
+  AgentSkillsListResponse,
+  AgentSkillStoreResponse,
+  AgentSkillUninstallRequest,
   AgentModelCatalogSnapshot,
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
   AgentModelSwitchRequest,
+  AgentMcpListResponse,
+  AgentMcpServerRequest,
+  AgentMcpServerUpsertRequest,
   AgentProviderProfileSaveRequest,
 } from "../../../shared/desktop-bridge";
 
@@ -42,6 +53,30 @@ export type SettingsAiLabels = {
   readonly modelsDeleteConfirmTitle: string;
   readonly modelsDeleteConfirmDescription: string;
   readonly modelsDeleteConfirmAction: string;
+  readonly skillsTitle: string;
+  readonly skillsSearchPlaceholder: string;
+  readonly skillsAddSkill: string;
+  readonly skillsEmptyTitle: string;
+  readonly skillsEmptyDescription: string;
+  readonly skillsSearching: string;
+  readonly skillsLoadingMore: string;
+  readonly skillsUninstall: string;
+  readonly skillsActive: string;
+  readonly skillsInactive: string;
+  readonly skillsPermissionsLabel: string;
+  readonly skillsToolsLabel: string;
+  readonly skillsResourceRootLabel: string;
+  readonly skillsPromptLabel: string;
+  readonly mcpTitle: string;
+  readonly mcpSearchPlaceholder: string;
+  readonly mcpAddServer: string;
+  readonly mcpEmptyTitle: string;
+  readonly mcpEmptyDescription: string;
+  readonly mcpToolsLabel: string;
+  readonly mcpConnected: string;
+  readonly mcpDisconnected: string;
+  readonly mcpFailed: string;
+  readonly mcpRemove: string;
   readonly providerTitle: string;
   readonly connectionTitle: string;
   readonly additionalFieldsTitle: string;
@@ -145,6 +180,8 @@ export type SettingsAiModel = {
   readonly agentAccounts?: AgentAccountsSnapshot | null;
   readonly agentLoginProviders?: AgentLoginProviderCatalogSnapshot | null;
   readonly agentModelCatalog?: AgentModelCatalogSnapshot | null;
+  readonly agentSkillCatalog?: AgentSkillsListResponse | null;
+  readonly agentMcpCatalog?: AgentMcpListResponse | null;
   readonly agentProviderCatalog?: AgentProviderCatalogSnapshot | null;
   readonly setDefaultProfile: (profileId: string) => Promise<void>;
   readonly refreshAgent?: () => Promise<void>;
@@ -163,6 +200,44 @@ export type SettingsAiModel = {
   ) => Promise<void>;
   readonly switchAgentModel?: (
     request: AgentModelSwitchRequest
+  ) => Promise<void>;
+  readonly refreshAgentSkills?: () => Promise<void>;
+  readonly refreshAgentSkillStore?: (
+    request?: AgentSkillRefreshStoreRequest
+  ) => Promise<AgentSkillStoreResponse | null>;
+  readonly updateAgentSkillStoreConfig?: (
+    request: AgentSkillRefreshStoreRequest
+  ) => Promise<AgentSkillStoreResponse | null>;
+  readonly activateAgentSkill?: (
+    request: AgentSkillActivationRequest
+  ) => Promise<void>;
+  readonly deactivateAgentSkill?: (
+    request: AgentSkillActivationRequest
+  ) => Promise<void>;
+  readonly installAgentSkillFromLocal?: (
+    request: AgentSkillInstallFromLocalRequest
+  ) => Promise<void>;
+  readonly installAgentSkillFromGit?: (
+    request: AgentSkillInstallFromGitRequest
+  ) => Promise<void>;
+  readonly installAgentSkillFromStore?: (
+    request: AgentSkillInstallFromStoreRequest
+  ) => Promise<void>;
+  readonly uninstallAgentSkill?: (
+    request: AgentSkillUninstallRequest
+  ) => Promise<void>;
+  readonly refreshAgentMcp?: () => Promise<void>;
+  readonly upsertAgentMcpServer?: (
+    request: AgentMcpServerUpsertRequest
+  ) => Promise<void>;
+  readonly removeAgentMcpServer?: (
+    request: AgentMcpServerRequest
+  ) => Promise<void>;
+  readonly connectAgentMcpServer?: (
+    request: AgentMcpServerRequest
+  ) => Promise<void>;
+  readonly disconnectAgentMcpServer?: (
+    request: AgentMcpServerRequest
   ) => Promise<void>;
   readonly startAgentAccountLogin?: (
     request: AgentAccountLoginStartRequest

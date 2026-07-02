@@ -28,7 +28,7 @@ impl RuntimeToolManifestProvider {
         )];
         for (name, domains) in [
             ("terminal_action_specs", &["terminal"][..]),
-        ("skill_registry", &["skills"][..]),
+            ("skill_registry", &["skills"][..]),
             ("mcp_current_state", &["mcp"][..]),
             ("host_static_capabilities", &["workbench", "browser"][..]),
         ] {

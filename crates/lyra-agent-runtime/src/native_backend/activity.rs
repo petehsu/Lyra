@@ -962,82 +962,137 @@ pub(crate) fn format_tool_output(name: &str, action: &str, value: &Value) -> Str
 
 pub(crate) fn execute_skill_state_change(name: &str, input: &Value) -> Result<Value, String> {
     match name {
-        "skill_list" => {
-            let state = state()
-                .lock()
-                .map_err(|_| "agent runtime state lock failed".to_string())?;
-            Ok(json!({ "skills": native_skill_states(&state.active_skills) }))
+        "skill_list" => skill_list().map_err(|error| error.to_string()),
+        "skill_inspect" => skill_inspect(input.clone()).map_err(|error| error.to_string()),
+        "skill_activate" => {
+            set_skill_active(input.clone(), true).map_err(|error| error.to_string())
         }
-        "skill_inspect" => {
-            let skill_id =
-                string_opt(input, "skillId").ok_or_else(|| "skillId is required".to_string())?;
-            let state = state()
-                .lock()
-                .map_err(|_| "agent runtime state lock failed".to_string())?;
-            native_skill_state(&skill_id, &state.active_skills)
-                .map(|skill| json!({ "skill": skill }))
-                .ok_or_else(|| format!("Lyra skill is not registered: {skill_id}"))
+        "skill_deactivate" => {
+            set_skill_active(input.clone(), false).map_err(|error| error.to_string())
         }
-        "skill_activate" | "skill_deactivate" => {
-            let skill_id =
-                string_opt(input, "skillId").ok_or_else(|| "skillId is required".to_string())?;
-            let mut state = state()
-                .lock()
-                .map_err(|_| "agent runtime state lock failed".to_string())?;
-            if native_skill_state(&skill_id, &state.active_skills).is_none() {
-                return Err(format!("Lyra skill is not registered: {skill_id}"));
-            }
-            if name == "skill_activate" {
-                state.active_skills.insert(skill_id.clone());
-            } else {
-                state.active_skills.remove(&skill_id);
-            }
-            let skill = native_skill_state(&skill_id, &state.active_skills)
-                .ok_or_else(|| format!("Lyra skill is not registered: {skill_id}"))?;
-            state.save_state().map_err(|error| error.to_string())?;
-            Ok(
-                json!({ "skill": skill, "activeSkills": state.active_skills.iter().cloned().collect::<Vec<_>>() }),
-            )
+        "skill_install_local" => {
+            skill_install_from_local(input.clone()).map_err(|error| error.to_string())
         }
+        "skill_install_git" => {
+            skill_install_from_git(input.clone()).map_err(|error| error.to_string())
+        }
+        "skill_install_store" => {
+            skill_install_from_store(input.clone()).map_err(|error| error.to_string())
+        }
+        "skill_uninstall" => skill_uninstall(input.clone()).map_err(|error| error.to_string()),
         _ => Err(format!("Unknown Lyra skill tool: {name}")),
     }
-}
-
-pub(crate) fn native_skill_states(_active_skills: &HashSet<String>) -> Vec<Value> {
-    Vec::new()
-}
-
-pub(crate) fn native_skill_state(_skill_id: &str, _active_skills: &HashSet<String>) -> Option<Value> {
-    None
 }
 
 pub(crate) fn format_skill_output(action: &str, value: &Value) -> String {
     match action {
         "list" => {
-            let count = value
+            let skills = value
                 .get("skills")
                 .and_then(Value::as_array)
-                .map(Vec::len)
-                .unwrap_or(0);
-            format!("Listed {count} Lyra skills.")
+                .cloned()
+                .unwrap_or_default();
+            let lines = skills
+                .iter()
+                .take(8)
+                .map(format_skill_line)
+                .collect::<Vec<_>>();
+            if lines.is_empty() {
+                "No Lyra skills are installed.".to_string()
+            } else {
+                format!("Listed {} Lyra skills:\n{}", skills.len(), lines.join("\n"))
+            }
         }
         "inspect" => value
-            .pointer("/skill/name")
-            .and_then(Value::as_str)
-            .map(|name| format!("Inspected Lyra skill: {name}"))
+            .get("skill")
+            .map(format_skill_detail)
             .unwrap_or_else(|| "Inspected Lyra skill.".to_string()),
         "activate" => value
-            .pointer("/skill/id")
-            .and_then(Value::as_str)
-            .map(|id| format!("Activated Lyra skill: {id}"))
+            .get("skill")
+            .map(|skill| format!("Activated Lyra skill:\n{}", format_skill_detail(skill)))
             .unwrap_or_else(|| "Activated Lyra skill.".to_string()),
         "deactivate" => value
-            .pointer("/skill/id")
-            .and_then(Value::as_str)
-            .map(|id| format!("Deactivated Lyra skill: {id}"))
+            .get("skill")
+            .map(|skill| format!("Deactivated Lyra skill:\n{}", format_skill_detail(skill)))
             .unwrap_or_else(|| "Deactivated Lyra skill.".to_string()),
+        "install_local" | "install_git" | "install_store" => value
+            .get("skill")
+            .map(|skill| format!("Installed Lyra skill:\n{}", format_skill_detail(skill)))
+            .unwrap_or_else(|| "Installed Lyra skill.".to_string()),
+        "uninstall" => {
+            let skill_id = value
+                .get("skillId")
+                .and_then(Value::as_str)
+                .unwrap_or("skill");
+            let removed = value
+                .get("removed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            format!("Uninstalled Lyra skill {skill_id}: removed={removed}")
+        }
         _ => serde_json::to_string_pretty(value).unwrap_or_default(),
     }
+}
+
+fn format_skill_line(skill: &Value) -> String {
+    let id = skill.get("id").and_then(Value::as_str).unwrap_or("unknown");
+    let name = skill.get("name").and_then(Value::as_str).unwrap_or(id);
+    let active = if skill
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        "active"
+    } else {
+        "inactive"
+    };
+    let description = skill
+        .get("description")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("No description");
+    format!("- {id} ({name}) [{active}]: {description}")
+}
+
+fn format_string_array(value: &Value, pointer: &str) -> String {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn format_skill_detail(skill: &Value) -> String {
+    let id = skill.get("id").and_then(Value::as_str).unwrap_or("unknown");
+    let name = skill.get("name").and_then(Value::as_str).unwrap_or(id);
+    let active = skill
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let description = skill
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let prompt_excerpt = skill
+        .get("promptExcerpt")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let resource_root = skill
+        .get("resourceRoot")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    format!(
+        "{id} ({name}) active={active}\ndescription: {description}\npermissions: {}\ntoolPaths: {}\nresourceRoot: {resource_root}\npromptExcerpt: {prompt_excerpt}",
+        format_string_array(skill, "/permissions"),
+        format_string_array(skill, "/toolPaths")
+    )
 }
 
 pub(crate) fn format_memory_output(action: &str, value: &Value) -> String {

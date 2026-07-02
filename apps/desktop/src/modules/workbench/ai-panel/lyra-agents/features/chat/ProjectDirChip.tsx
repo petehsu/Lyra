@@ -19,10 +19,18 @@ const ICON_STROKE_WIDTH = 2;
 function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null }) {
   if (!status) return null;
   const pct = status.progress != null ? Math.round(status.progress * 100) : 0;
+  const title = status.error
+    ?? [
+      status.scope?.strategy,
+      status.scope?.excludedPathSamples?.length
+        ? `Excluded: ${status.scope.excludedPathSamples.join(", ")}`
+        : undefined,
+      status.scope?.excludedReason ?? undefined
+    ].filter(Boolean).join("\n");
   return (
     <div
       className="lyra-agents-codegraph-status-row"
-      title={status.error ?? ""}
+      title={title}
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", fontSize: 12, opacity: 0.85 }}
     >
       {status.state === "idle" ? (
@@ -90,7 +98,8 @@ export function ProjectDirChip({
     let active = true;
     let timer: ReturnType<typeof setInterval>;
     const poll = () => {
-      void desktopApi.agent!.codegraphStatus!({ sessionId: sessionId ?? undefined, workingDir }).then((s) => {
+      const request = sessionId ? { sessionId, workingDir } : { workingDir };
+      void desktopApi.agent!.codegraphStatus!(request).then((s) => {
         if (active) {
           setCgStatus(s);
           if (s.state === "ready" || s.state === "failed") {

@@ -819,7 +819,7 @@ fn browser_shared_control_interruption_requests_clarification_and_resolves_decis
         .call_agent_method(
             "agent.clarification.respond",
             json!({
-                "sessionId": session_id,
+                "sessionId": session_id.clone(),
                 "clarificationId": clarification_id,
                 "answer": "Continue Agent",
                 "selectedOption": "Continue Agent"
@@ -839,6 +839,10 @@ fn browser_shared_control_interruption_requests_clarification_and_resolves_decis
             .unwrap_or_default()
             .contains("shared_control_decision")
     );
+    let read = backend
+        .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
+        .expect("read session");
+    assert_eq!(read["tools"][0]["status"], "uncertain");
 }
 #[test]
 fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {

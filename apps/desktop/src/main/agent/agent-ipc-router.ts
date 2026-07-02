@@ -68,6 +68,13 @@ import type {
   AgentModelCatalogRequest,
   AgentModelCatalogSnapshot,
   AgentModelSwitchRequest,
+  AgentMcpListResponse,
+  AgentMcpServerMutationResponse,
+  AgentMcpServerRemoveResponse,
+  AgentMcpServerRequest,
+  AgentMcpServerUpsertRequest,
+  AgentMcpToolDiscoverRequest,
+  AgentMcpToolDiscoverResponse,
   AgentProviderOptionsUpdateRequest,
   AgentProviderProfileSaveRequest,
   AgentPokeRequest,
@@ -75,7 +82,19 @@ import type {
   AgentSessionSummary,
   AgentSessionListRequest,
   AgentSessionListResponse,
-  AgentProtocolContract
+  AgentProtocolContract,
+  AgentSkillActivationRequest,
+  AgentSkillInspectRequest,
+  AgentSkillInspectResponse,
+  AgentSkillInstallFromGitRequest,
+  AgentSkillInstallFromLocalRequest,
+  AgentSkillInstallFromStoreRequest,
+  AgentSkillMutationResponse,
+  AgentSkillRefreshStoreRequest,
+  AgentSkillsListResponse,
+  AgentSkillStoreResponse,
+  AgentSkillUninstallRequest,
+  AgentSkillUninstallResponse
 } from "../../shared/agent";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { materializeImageAttachment } from "./artifact-materializer";
@@ -535,6 +554,134 @@ export const createAgentIpcRouter = ({
         requestRuntime<AgentModelCatalogSnapshot>(
           "agent.provider.options.update",
           payload as AgentProviderOptionsUpdateRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillsList,
+      () => requestRuntime<AgentSkillsListResponse>("agent.skills.list")
+    ],
+    [
+      LYRA_CHANNELS.agentSkillInspect,
+      (_event, payload) =>
+        requestRuntime<AgentSkillInspectResponse>(
+          "agent.skills.inspect",
+          payload as AgentSkillInspectRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillActivate,
+      (_event, payload) =>
+        requestRuntime<AgentSkillMutationResponse>(
+          "agent.skills.activate",
+          payload as AgentSkillActivationRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillDeactivate,
+      (_event, payload) =>
+        requestRuntime<AgentSkillMutationResponse>(
+          "agent.skills.deactivate",
+          payload as AgentSkillActivationRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillInstallFromLocal,
+      (_event, payload) =>
+        requestRuntime<AgentSkillMutationResponse>(
+          "agent.skills.installFromLocal",
+          payload as AgentSkillInstallFromLocalRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillInstallFromGit,
+      (_event, payload) =>
+        requestRuntime<AgentSkillMutationResponse>(
+          "agent.skills.installFromGit",
+          payload as AgentSkillInstallFromGitRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillInstallFromStore,
+      (_event, payload) =>
+        requestRuntime<AgentSkillMutationResponse>(
+          "agent.skills.installFromStore",
+          payload as AgentSkillInstallFromStoreRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillUninstall,
+      (_event, payload) =>
+        requestRuntime<AgentSkillUninstallResponse>(
+          "agent.skills.uninstall",
+          payload as AgentSkillUninstallRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillRefreshStore,
+      (_event, payload) =>
+        requestRuntime<AgentSkillStoreResponse>(
+          "agent.skills.refreshStore",
+          (payload as AgentSkillRefreshStoreRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentSkillUpdateStoreConfig,
+      (_event, payload) =>
+        requestRuntime<AgentSkillStoreResponse>(
+          "agent.skills.updateStoreConfig",
+          (payload as AgentSkillRefreshStoreRequest | undefined) ?? {}
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpList,
+      () => requestRuntime<AgentMcpListResponse>("agent.mcp.list")
+    ],
+    [
+      LYRA_CHANNELS.agentMcpUpsert,
+      (_event, payload) =>
+        requestRuntime<AgentMcpServerMutationResponse>(
+          "agent.mcp.upsert",
+          payload as AgentMcpServerUpsertRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpRemove,
+      (_event, payload) =>
+        requestRuntime<AgentMcpServerRemoveResponse>(
+          "agent.mcp.remove",
+          payload as AgentMcpServerRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpConnect,
+      (_event, payload) =>
+        requestRuntime<AgentMcpServerMutationResponse>(
+          "agent.mcp.connect",
+          payload as AgentMcpServerRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpDisconnect,
+      (_event, payload) =>
+        requestRuntime<AgentMcpServerMutationResponse>(
+          "agent.mcp.disconnect",
+          payload as AgentMcpServerRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpReload,
+      (_event, payload) =>
+        requestRuntime<AgentMcpServerMutationResponse>(
+          "agent.mcp.reload",
+          payload as AgentMcpServerRequest
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentMcpDiscoverTools,
+      (_event, payload) =>
+        requestRuntime<AgentMcpToolDiscoverResponse>(
+          "agent.mcp.discoverTools",
+          (payload as AgentMcpToolDiscoverRequest | undefined) ?? {}
         )
     ],
     [

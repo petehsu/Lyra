@@ -4,10 +4,9 @@
 //! AST visitor for extracting Swift entities
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, FunctionEntity,
-    ImplementationRelation, ImportRelation, InheritanceRelation, Parameter, TraitEntity,
-    BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics,
+    FunctionEntity, ImplementationRelation, ImportRelation, InheritanceRelation, Parameter,
+    TraitEntity, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -140,9 +139,7 @@ impl<'a> SwiftVisitor<'a> {
         let body_prefix = body_node
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class_entity = ClassEntity {
@@ -201,9 +198,7 @@ impl<'a> SwiftVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class_entity = ClassEntity {
@@ -336,9 +331,7 @@ impl<'a> SwiftVisitor<'a> {
         }
         .and_then(|b| b.utf8_text(self.source).ok())
         .filter(|t| !t.is_empty())
-        .map(|t| {
-            truncate_body_prefix(t)
-        })
+        .map(|t| truncate_body_prefix(t))
         .map(|t| t.to_string());
 
         self.functions.push(func);
@@ -399,9 +392,7 @@ impl<'a> SwiftVisitor<'a> {
         }
         .and_then(|b| b.utf8_text(self.source).ok())
         .filter(|t| !t.is_empty())
-        .map(|t| {
-            truncate_body_prefix(t)
-        })
+        .map(|t| truncate_body_prefix(t))
         .map(|t| t.to_string());
 
         if self.has_modifier(node, "override") {
@@ -459,9 +450,7 @@ impl<'a> SwiftVisitor<'a> {
         }
         .and_then(|b| b.utf8_text(self.source).ok())
         .filter(|t| !t.is_empty())
-        .map(|t| {
-            truncate_body_prefix(t)
-        })
+        .map(|t| truncate_body_prefix(t))
         .map(|t| t.to_string());
         func.attributes.push("init".to_string());
 
@@ -512,9 +501,7 @@ impl<'a> SwiftVisitor<'a> {
         }
         .and_then(|b| b.utf8_text(self.source).ok())
         .filter(|t| !t.is_empty())
-        .map(|t| {
-            truncate_body_prefix(t)
-        })
+        .map(|t| truncate_body_prefix(t))
         .map(|t| t.to_string());
         func.attributes.push("deinit".to_string());
 
@@ -606,9 +593,7 @@ impl<'a> SwiftVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class_entity = ClassEntity {

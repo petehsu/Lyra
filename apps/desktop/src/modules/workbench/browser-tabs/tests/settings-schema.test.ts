@@ -12,6 +12,8 @@ const createSchemaInput = (
   softwareStoreCategoryLabel: "Lyra Software",
   aiCategoryLabel: "Lyra Agents",
   modelsCategoryLabel: "Models",
+  skillsCategoryLabel: "Skills",
+  mcpCategoryLabel: "MCP",
   languageLabel: "Language",
   themeLabel: "Theme",
   uiStyleLabel: "UI style",
@@ -58,6 +60,8 @@ describe("createWorkbenchSettingsSchema", () => {
       "search",
       "ai",
       "models",
+      "skills",
+      "mcp",
       "legal"
     ]);
     expect(schema.categories.map((category) => category.label)).toEqual([
@@ -71,6 +75,8 @@ describe("createWorkbenchSettingsSchema", () => {
       "Search",
       "Lyra Agents",
       "Models",
+      "Skills",
+      "MCP",
       "Legal"
     ]);
   });

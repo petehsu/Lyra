@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, FolderOpen, GitBranch, RefreshCw } from "lucide-react";
 
 import {
@@ -79,6 +79,15 @@ export const applyPatchToEntries = (
 const indentStyle = (depth: number, base: number): { readonly paddingLeft: string } => ({
   paddingLeft: `${Math.max(depth, 0) * 14 + base}px`
 });
+
+const renderTreeIconSlot = (icon: ReactNode, twist?: ReactNode): ReactNode => (
+  <span className={`lyra-agent-project-tree-icon-slot${twist === undefined ? "" : " has-twist"}`} aria-hidden="true">
+    <span className="lyra-agent-project-tree-entry-icon">{icon}</span>
+    {twist === undefined ? null : (
+      <span className="lyra-agent-project-tree-twist">{twist}</span>
+    )}
+  </span>
+);
 
 type DirectoryStateMap = Record<string, AgentProjectTreeDirectoryState | undefined>;
 
@@ -229,12 +238,12 @@ const TreeDirectory = ({
               aria-label={entry.path}
               title={(
                 <span className="lyra-agent-project-tree-label">
-                  <span className="lyra-agent-project-tree-twist" aria-hidden="true">
-                    {entry.kind === "directory"
+                  {renderTreeIconSlot(
+                    renderFileManagerEntryIcon(entry),
+                    entry.kind === "directory"
                       ? expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />
-                      : null}
-                  </span>
-                  {renderFileManagerEntryIcon(entry)}
+                      : undefined
+                  )}
                   <span className="lyra-agent-project-tree-name">{entry.name}</span>
                 </span>
               )}
@@ -458,10 +467,10 @@ export const AgentProjectTreeSurface = ({
           aria-label={state.rootPath}
           title={(
             <span className="lyra-agent-project-tree-label">
-              <span className="lyra-agent-project-tree-twist" aria-hidden="true">
-                {expandedPaths.has(state.rootPath) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              </span>
-              <FolderOpen size={14} aria-hidden="true" />
+              {renderTreeIconSlot(
+                <FolderOpen size={14} aria-hidden="true" />,
+                expandedPaths.has(state.rootPath) ? <ChevronDown size={13} /> : <ChevronRight size={13} />
+              )}
               <span className="lyra-agent-project-tree-name">{state.title}</span>
             </span>
           )}

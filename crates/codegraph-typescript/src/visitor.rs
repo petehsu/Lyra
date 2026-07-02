@@ -4,10 +4,9 @@
 //! AST visitor for extracting TypeScript/JavaScript entities
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, Field, FunctionEntity,
-    ImplementationRelation, ImportRelation, InheritanceRelation, Parameter, TraitEntity,
-    TypeReference, BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, Field,
+    FunctionEntity, ImplementationRelation, ImportRelation, InheritanceRelation, Parameter,
+    TraitEntity, TypeReference, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -170,9 +169,7 @@ impl<'a> TypeScriptVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let attributes = self.extract_decorators(node);
@@ -254,9 +251,7 @@ impl<'a> TypeScriptVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let func = FunctionEntity {
@@ -324,9 +319,7 @@ impl<'a> TypeScriptVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let attributes = self.extract_decorators(node);
@@ -383,9 +376,7 @@ impl<'a> TypeScriptVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class = ClassEntity {
@@ -558,9 +549,7 @@ impl<'a> TypeScriptVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class = ClassEntity {

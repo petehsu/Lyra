@@ -12,6 +12,8 @@ export const createBrowserSettingsSurfaceProps = (
   workspaceCategoryLabel: "Workspace",
   aiCategoryLabel: "Lyra Agents",
   modelsCategoryLabel: "Models",
+  skillsCategoryLabel: "Skills",
+  mcpCategoryLabel: "MCP",
   notificationsCategoryLabel: "Notifications",
   loginManagerCategoryLabel: "Login Manager",
   softwareStoreCategoryLabel: "Lyra Software",

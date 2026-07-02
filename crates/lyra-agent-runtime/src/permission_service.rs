@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::BackendHandle;
+use serde::{Deserialize, Serialize};
 
 /// Typed client→server permission decision message.
 ///
@@ -37,7 +37,10 @@ impl PermissionService {
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         let msg: PermissionResponse = serde_json::from_value(payload)
             .map_err(|e| crate::AgentRuntimeError::Serialization(e.to_string()))?;
-        self.backend.call("agent.permission.respond", serde_json::to_value(&msg).unwrap_or_default())
+        self.backend.call(
+            "agent.permission.respond",
+            serde_json::to_value(&msg).unwrap_or_default(),
+        )
     }
 
     pub fn respond(
@@ -46,7 +49,14 @@ impl PermissionService {
         permission_id: String,
         allowed: bool,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        let msg = PermissionResponse { session_id, permission_id, allowed };
-        self.backend.call("agent.permission.respond", serde_json::to_value(&msg).unwrap_or_default())
+        let msg = PermissionResponse {
+            session_id,
+            permission_id,
+            allowed,
+        };
+        self.backend.call(
+            "agent.permission.respond",
+            serde_json::to_value(&msg).unwrap_or_default(),
+        )
     }
 }

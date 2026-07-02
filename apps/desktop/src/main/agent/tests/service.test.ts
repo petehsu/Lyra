@@ -1518,6 +1518,18 @@ describe("Agent IPC bridge", () => {
     } as unknown as WorkbenchObservationService;
     const browserBridge = {
       readActiveTabId: vi.fn(() => "page-1"),
+      readPageState: vi.fn(() => ({
+        tabId: "page-1",
+        address: "https://example.com",
+        title: "Example",
+        isActive: true,
+        isVisible: true,
+        isLoading: false,
+        canGoBack: false,
+        canGoForward: false,
+        isHtmlFullscreen: false,
+        updatedAt: 1
+      })),
       observeAgentPage: vi.fn(async (
         _tabId: string,
         request: { readonly targetMode?: "isolated" | "live" }
@@ -1965,7 +1977,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       elementId: 3,
       interaction: "hover",
-      targetMode: "isolated"
+      targetMode: "isolated",
+      verification: "fast"
     });
     expect(
       electronMock.handlers.get(LYRA_CHANNELS.agentBrowserFollowUpdate)?.({}, { enabled: false })
@@ -2001,7 +2014,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenCalledWith("page-1", {
       elementId: 3,
       interaction: "hover",
-      targetMode: "live"
+      targetMode: "live",
+      verification: "fast"
     });
 
     await expect(
@@ -2016,7 +2030,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       targetRef: "lumen:stable-target",
       interaction: "click",
-      targetMode: "live"
+      targetMode: "live",
+      verification: "fast"
     });
 
     await expect(
@@ -2051,7 +2066,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentPoint).toHaveBeenCalledWith("page-1", {
       point: { x: 12, y: 34, reason: "vision fallback" },
       interaction: "click",
-      targetMode: "live"
+      targetMode: "live",
+      verification: "fast"
     });
 
     browserBridge.observeAgentPage.mockResolvedValueOnce({
@@ -2187,7 +2203,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       targetRef: "lumen:delete-target",
       interaction: "click",
-      targetMode: "live"
+      targetMode: "live",
+      verification: "fast"
     });
 
     await expect(
@@ -2200,7 +2217,8 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.typeIntoAgentElement).toHaveBeenCalledWith("page-1", {
       text: "hello focused editor",
       clear: false,
-      targetMode: "live"
+      targetMode: "live",
+      verification: "fast"
     });
 
     await expect(
@@ -2224,7 +2242,44 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "live"
+      targetMode: "live",
+      timeoutMs: 4000
+    });
+
+    browserBridge.readAgentPage.mockClear();
+    browserBridge.readAgentPage
+      .mockRejectedValueOnce(new Error("frame script timed out after 4000ms"))
+      .mockResolvedValueOnce({
+        tabId: "page-1",
+        targetMode: "live",
+        scope: "main",
+        text: "fallback page text",
+        content: "fallback page text",
+        truncated: false,
+        startChar: 0,
+        endChar: 18,
+        totalChars: 18,
+        hasMore: false,
+        extractionMethod: "lumen:dom-fallback"
+      });
+    await expect(
+      registered.get("lyraLumen.read")?.({})
+    ).resolves.toMatchObject({
+      kind: "lyraLumenRead",
+      strategy: "domFallback",
+      content: "fallback page text",
+      degraded: true,
+      warning: "frame script timed out after 4000ms"
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenNthCalledWith(1, "page-1", {
+      strategy: "focus",
+      targetMode: "live",
+      timeoutMs: 4000
+    });
+    expect(browserBridge.readAgentPage).toHaveBeenNthCalledWith(2, "page-1", {
+      strategy: "domFallback",
+      targetMode: "live",
+      timeoutMs: 4000
     });
 
     browserBridge.readAgentPage.mockClear();

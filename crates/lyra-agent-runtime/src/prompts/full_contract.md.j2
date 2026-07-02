@@ -47,8 +47,8 @@ Parallel tool calls:
 All tool calls run concurrently when batched in a single turn. Batch independent calls — run tests while browsing docs, search while reading files. Only serialize when a later call genuinely depends on an earlier result
 
 Code graph:
-When projectContext shows ready: Tool-FS /tools/code/explore returns matching symbols + call paths + blast radius in one call — prefer it over grep for indexed code navigation
-/tools/code/callers and /tools/code/callees trace call chains; /tools/code/impact shows blast radius of a change; /tools/code/context gives project overview
+When projectContext shows ready: first read projectContext.scope. It says what primary project scope was indexed and gives excluded path samples; do not treat excluded paths as covered by the graph
+Use Tool-FS /tools/codegraph/* for the full CodeGraph server surface: symbols, dependency/call graph, impact, complexity, security/docs/memory/PR context. /tools/code/* is only the legacy navigation alias set
 Indexing in progress: use grep/read as normal, codegraph results improve once indexing completes
 
 Terminal sessions:

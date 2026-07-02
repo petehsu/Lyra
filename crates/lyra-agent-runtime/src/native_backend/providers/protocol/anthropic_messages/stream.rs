@@ -13,7 +13,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
         provider::{ModelReply, ModelToolCall},
-        turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
+        turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
@@ -47,6 +47,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = AnthropicStreamState::default();
     let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
 
     for line in reader.lines() {
@@ -68,11 +69,13 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &event,
             &mut state,
             &mut ui_message_id,
+            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
     }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
     let mut tool_calls = tool_calls_from_drafts(state.tool_uses, tools)?;
     tool_calls.sort_by(|left, right| left.id.cmp(&right.id));
@@ -116,6 +119,7 @@ fn map_stream_event(
     event: &Value,
     state: &mut AnthropicStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -142,6 +146,7 @@ fn map_stream_event(
                             text,
                             state,
                             ui_message_id,
+                            delta_batcher,
                             buffer_assistant_text,
                             session_id,
                             turn_id,
@@ -151,8 +156,11 @@ fn map_stream_event(
                 Some("thinking") => {
                     if let Some(thinking) = block.get("thinking").and_then(Value::as_str) {
                         state.thinking.push_str(thinking);
-                        crate::native_backend::turns::append_reasoning_delta(
-                            thinking, ui_message_id, session_id, turn_id,
+                        delta_batcher.push_reasoning(
+                            thinking,
+                            ui_message_id,
+                            session_id,
+                            turn_id,
                         )?;
                     }
                 }
@@ -165,8 +173,11 @@ fn map_stream_event(
                 Some("thinking_delta") => {
                     if let Some(thinking) = delta.get("thinking").and_then(Value::as_str) {
                         state.thinking.push_str(thinking);
-                        crate::native_backend::turns::append_reasoning_delta(
-                            thinking, ui_message_id, session_id, turn_id,
+                        delta_batcher.push_reasoning(
+                            thinking,
+                            ui_message_id,
+                            session_id,
+                            turn_id,
                         )?;
                     }
                 }
@@ -179,6 +190,7 @@ fn map_stream_event(
                         text,
                         state,
                         ui_message_id,
+                        delta_batcher,
                         buffer_assistant_text,
                         session_id,
                         turn_id,
@@ -190,6 +202,7 @@ fn map_stream_event(
                     if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
                         draft.input_json.push_str(partial);
                     }
+                    delta_batcher.flush(ui_message_id, session_id, turn_id)?;
                     if let (Some(tool_call_id), Some(tool_name)) =
                         (draft.id.as_deref(), draft.name.as_deref())
                     {
@@ -227,6 +240,7 @@ fn append_text_delta(
     text: &str,
     state: &mut AnthropicStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -235,14 +249,7 @@ fn append_text_delta(
         return Ok(());
     }
     if !buffer_assistant_text {
-        let message_id = ui_message_id
-            .get_or_insert_with(|| {
-                emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-            })
-            .clone();
-        if !message_id.is_empty() {
-            append_assistant_delta(session_id, turn_id, &message_id, text)?;
-        }
+        delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
     }
     state.text.push_str(text);
     Ok(())

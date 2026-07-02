@@ -34,5 +34,37 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Deactivate one Lyra skill.",
             None,
         ),
+        super::s(
+            "/tools/skills/install_local",
+            "skills",
+            "install_local",
+            "Install local skill",
+            "Install a Lyra skill from a local folder, SKILL.md file, or zip archive.",
+            None,
+        ),
+        super::s(
+            "/tools/skills/install_git",
+            "skills",
+            "install_git",
+            "Install Git skill",
+            "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
+            None,
+        ),
+        super::s(
+            "/tools/skills/install_store",
+            "skills",
+            "install_store",
+            "Install store skill",
+            "Install a Lyra skill from the dynamic skill store by skillId.",
+            None,
+        ),
+        super::s(
+            "/tools/skills/uninstall",
+            "skills",
+            "uninstall",
+            "Uninstall skill",
+            "Uninstall one Lyra skill by skillId.",
+            None,
+        ),
     ]
 }

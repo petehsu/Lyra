@@ -20,10 +20,8 @@ import {
   subscribePageDragCitationSession
 } from "../../../../browser-tabs/page-drag-citation-session";
 import { getDesktopApi } from "../../../../shell/service";
-import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
 import { isAiPanelAttachDrag, resolveAiPanelDropEffect } from "./ai-panel-drag-attach";
-import { DragAttachHubIcon } from "./DragAttachHubIcon";
 
 type AiPanelDragAttachSurfaceProps = {
   readonly children: ReactNode;
@@ -213,20 +211,9 @@ export const AiPanelDragAttachSurface = ({ children }: AiPanelDragAttachSurfaceP
     >
       <div
         className="lyra-agents-app-drag-host-content lyra-agents-app"
-        aria-hidden={dragActive}
       >
         {children}
       </div>
-      {dragActive ? (
-        <div className="lyra-ai-panel-drag-attach-overlay" aria-hidden="true">
-          <div className="lyra-ai-panel-drag-attach-hint">
-            <div className="lyra-ai-panel-drag-attach-icon-mark" aria-hidden="true">
-              <DragAttachHubIcon />
-            </div>
-            <p className="lyra-ai-panel-drag-attach-label">{t("lyra-agents-composer.dragAttachRelease")}</p>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 };

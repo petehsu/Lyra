@@ -51,9 +51,11 @@ pub(crate) fn wait_for_automatic_user_action(
         turn_id: turn_id.to_string(),
         tool_call_id: tool_call_id.to_string(),
         question: question.to_string(),
+        i18n_key: None,
         options,
         allow_custom_answer: false,
         detail,
+        detail_i18n_key: None,
         status: "pending".to_string(),
         answer: None,
         selected_option: None,
@@ -77,6 +79,35 @@ pub(crate) fn shared_control_decision(label: &str) -> &'static str {
         "Cancel Task" => "cancel_task",
         _ => "user_takeover",
     }
+}
+
+fn shared_control_clarification(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+) -> AgentRuntimeResult<ClarificationRequest> {
+    wait_for_clarification(ClarificationRequest {
+        id: format!("clarification-{}", Uuid::new_v4()),
+        session_id: session_id.to_string(),
+        turn_id: turn_id.to_string(),
+        tool_call_id: tool_call_id.to_string(),
+        question: "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?".to_string(),
+        i18n_key: Some("decision.sharedControl.question".to_string()),
+        options: vec![
+            json!({ "label": "Continue Agent", "i18nKey": "decision.sharedControl.continueAgent", "description": "Resume Lyra Agent control from the latest browser recovery anchor.", "descriptionI18nKey": "decision.sharedControl.continueAgent.description" }),
+            json!({ "label": "Take Over", "i18nKey": "decision.sharedControl.takeOver", "description": "Leave the visible tab under user control until the user explicitly authorizes Agent again.", "descriptionI18nKey": "decision.sharedControl.takeOver.description" }),
+            json!({ "label": "Use Isolated", "i18nKey": "decision.sharedControl.useIsolated", "description": "Stop using the live tab and continue with isolated background browser state.", "descriptionI18nKey": "decision.sharedControl.useIsolated.description" }),
+            json!({ "label": "Cancel Task", "i18nKey": "decision.sharedControl.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.sharedControl.cancelTask.description" }),
+        ],
+        allow_custom_answer: false,
+        detail: Some("ControlHandoffEvent was emitted by live browser input arbitration.".to_string()),
+        detail_i18n_key: Some("decision.sharedControl.detail".to_string()),
+        status: "pending".to_string(),
+        answer: None,
+        selected_option: None,
+        created_at: now(),
+        responded_at: None,
+    })
 }
 
 pub(crate) fn permission_for_automatic_elevation(
@@ -154,19 +185,7 @@ pub(crate) fn resolve_shared_control_user_action(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
     let tab_id = user_action_tab_id(input, value, action);
-    let request = wait_for_automatic_user_action(
-        session_id,
-        turn_id,
-        tool_call_id,
-        "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?",
-        vec![
-            json!({ "label": "Continue Agent", "description": "Resume Lyra Agent control from the latest browser recovery anchor." }),
-            json!({ "label": "Take Over", "description": "Leave the visible tab under user control until the user explicitly authorizes Agent again." }),
-            json!({ "label": "Use Isolated", "description": "Stop using the live tab and continue with isolated background browser state." }),
-            json!({ "label": "Cancel Task", "description": "Cancel this browser task." }),
-        ],
-        Some("ControlHandoffEvent was emitted by live browser input arbitration.".to_string()),
-    );
+    let request = shared_control_clarification(session_id, turn_id, tool_call_id);
     match request {
         Ok(request) => {
             let label = selected_answer_label(&request);

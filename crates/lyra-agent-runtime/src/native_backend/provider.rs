@@ -99,9 +99,9 @@ pub(crate) struct ProviderStreamState {
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
-    /// True once this stream has committed any increment to session state — a
-    /// visible assistant delta (`append_assistant_delta`) or a streaming
-    /// tool-call preview (`maybe_emit_streaming_diff_previews_from_accumulators`).
+    /// True once this stream has committed any increment to session state — an
+    /// assistant delta or a streaming tool-call preview
+    /// (`maybe_emit_streaming_diff_previews_from_accumulators`).
     /// A transport failure before this point is safe to retry (replaying the
     /// turn duplicates nothing); a failure after it is not, because the
     /// partial assistant text / tool activity is already in the timeline.
@@ -1484,8 +1484,7 @@ fn call_model_once_inner(
                     // 来自已提交的 assistant text 或已 emit 的 diff preview（tool
                     // call 在流结束后才 finalize，不会在流中完成）。清除已提交的
                     // draft 后，non-streaming fallback 可安全重新生成完整回复。
-                    let can_fallback = if !stream_fallback_attempted
-                        && committed_any == Some(true)
+                    let can_fallback = if !stream_fallback_attempted && committed_any == Some(true)
                     {
                         clear_failed_assistant_draft(session_id, turn_id);
                         true
@@ -1534,7 +1533,10 @@ fn call_model_once_inner(
                     // Finalize any tool left running so the next round doesn't
                     // see "[Tool did not finish ...]" for this aborted attempt.
                     let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
-                    eprintln!("[DEBUG committed path] finish_done={} committed_any={:?}", _finish_ok, committed_any);
+                    eprintln!(
+                        "[DEBUG committed path] finish_done={} committed_any={:?}",
+                        _finish_ok, committed_any
+                    );
                     return Err(AgentRuntimeError::Core(format!(
                         "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
                         provider.route_id, error
@@ -2111,6 +2113,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
 
@@ -2144,6 +2147,7 @@ fn parse_streaming_response_with_commit<R: BufRead>(
             &value,
             &mut state,
             &mut ui_message_id,
+            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -2166,24 +2170,32 @@ fn parse_streaming_response_with_commit<R: BufRead>(
             .reasoning_chars
             .saturating_add(flushed.reasoning.chars().count());
         state.reasoning_content.push_str(&flushed.reasoning);
-        crate::native_backend::turns::append_reasoning_delta(
-            &flushed.reasoning, &mut ui_message_id, session_id, turn_id,
-        )?;
+        if delta_batcher.push_reasoning(
+            &flushed.reasoning,
+            &mut ui_message_id,
+            session_id,
+            turn_id,
+        )? {
+            state.committed_any = true;
+        }
     }
     if !flushed.visible.is_empty() {
         if !buffer_assistant_text {
-            let message_id = ui_message_id
-                .get_or_insert_with(|| {
-                    emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-                })
-                .clone();
-            if !message_id.is_empty() {
-                append_assistant_delta(session_id, turn_id, &message_id, &flushed.visible)?;
+            if delta_batcher.push_visible(
+                &flushed.visible,
+                &mut ui_message_id,
+                session_id,
+                turn_id,
+            )? {
                 state.committed_any = true;
             }
         }
         state.content.push_str(&flushed.visible);
     }
+    if delta_batcher.flush(&mut ui_message_id, session_id, turn_id)? {
+        state.committed_any = true;
+    }
+    *committed_any = state.committed_any;
 
     let mut tool_calls =
         openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
@@ -2238,6 +2250,7 @@ pub(crate) fn map_provider_stream_chunk(
     value: &Value,
     state: &mut ProviderStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -2269,9 +2282,14 @@ pub(crate) fn map_provider_stream_chunk(
                 .reasoning_chars
                 .saturating_add(scrubbed.reasoning.chars().count());
             state.reasoning_content.push_str(&scrubbed.reasoning);
-            crate::native_backend::turns::append_reasoning_delta(
-                &scrubbed.reasoning, ui_message_id, session_id, turn_id,
-            )?;
+            if delta_batcher.push_reasoning(
+                &scrubbed.reasoning,
+                ui_message_id,
+                session_id,
+                turn_id,
+            )? {
+                state.committed_any = true;
+            }
         }
         if !scrubbed.visible.is_empty() {
             let candidate = format!("{}{}", state.content, scrubbed.visible);
@@ -2282,13 +2300,12 @@ pub(crate) fn map_provider_stream_chunk(
                 ));
             }
             if !buffer_assistant_text {
-                let message_id = ui_message_id
-                    .get_or_insert_with(|| {
-                        emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-                    })
-                    .clone();
-                if !message_id.is_empty() {
-                    append_assistant_delta(session_id, turn_id, &message_id, &scrubbed.visible)?;
+                if delta_batcher.push_visible(
+                    &scrubbed.visible,
+                    ui_message_id,
+                    session_id,
+                    turn_id,
+                )? {
                     state.committed_any = true;
                 }
             }
@@ -2300,11 +2317,14 @@ pub(crate) fn map_provider_stream_chunk(
             .reasoning_chars
             .saturating_add(reasoning.chars().count());
         state.reasoning_content.push_str(&reasoning);
-        crate::native_backend::turns::append_reasoning_delta(
-            &reasoning, ui_message_id, session_id, turn_id,
-        )?;
+        if delta_batcher.push_reasoning(&reasoning, ui_message_id, session_id, turn_id)? {
+            state.committed_any = true;
+        }
     }
     if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
+        if delta_batcher.flush(ui_message_id, session_id, turn_id)? {
+            state.committed_any = true;
+        }
         for chunk in chunks {
             let index = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
             let accumulator = state.tool_calls.entry(index).or_default();

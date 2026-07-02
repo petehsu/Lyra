@@ -419,6 +419,96 @@ impl Indexer {
         result
     }
 
+    /// Index an explicit set of files, then run the same graph finalization as
+    /// workspace indexing. Used by hosts that already resolved project scope
+    /// structurally (for example from Git/workspace manifests).
+    pub async fn index_files(
+        &self,
+        graph: &Arc<RwLock<CodeGraph>>,
+        files: &[PathBuf],
+        config: &IndexConfig,
+    ) -> IndexResult {
+        let _phase = crate::crash_phase::enter("index_parse");
+        let exclude_set = config.build_exclude_set();
+        let supported_extensions = self.parsers.supported_extensions();
+        let mut result = IndexResult::default();
+
+        for path in files.iter().take(config.max_files) {
+            if !path.is_file() {
+                continue;
+            }
+            let path_str = path.to_string_lossy();
+            if exclude_set.is_match(path_str.as_ref()) {
+                continue;
+            }
+            if std::fs::metadata(path)
+                .map(|metadata| metadata.len() > config.max_file_size_bytes)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+                continue;
+            };
+            let ext_with_dot = format!(".{ext}");
+            let is_supported = supported_extensions
+                .iter()
+                .any(|e| *e == ext || *e == ext_with_dot);
+            if !is_supported {
+                continue;
+            }
+
+            let language = self
+                .parsers
+                .parser_for_path(path)
+                .map(|p| p.language().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            match self.index_file(graph, path).await {
+                Ok(was_parsed) => {
+                    result.total_files += 1;
+                    *result.by_language.entry(language).or_insert(0) += 1;
+                    if was_parsed {
+                        result.files_parsed += 1;
+                    } else {
+                        result.files_skipped += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to index {:?}: {}", path, e);
+                    *result
+                        .parser_errors_by_language
+                        .entry(language)
+                        .or_insert(0) += 1;
+                }
+            }
+        }
+
+        {
+            let mut g = graph.write().await;
+            GraphUpdater::resolve_cross_file_imports(&mut g);
+        }
+        {
+            let mut g = graph.write().await;
+            let routes = crate::runtime_deps::detect_route_handlers(&mut g);
+            let clients = crate::runtime_deps::detect_http_client_calls(&mut g);
+            if routes > 0 || clients > 0 {
+                let edges = crate::runtime_deps::create_runtime_call_edges(&mut g);
+                tracing::info!(
+                    "Runtime deps: {} routes, {} clients, {} edges",
+                    routes,
+                    clients,
+                    edges
+                );
+            }
+        }
+        {
+            let state = self.index_state.lock().await;
+            state.save();
+        }
+
+        result
+    }
+
     /// Recursively walk a directory and index supported files.
     ///
     /// Returns `(total_encountered, files_parsed, files_skipped)`.

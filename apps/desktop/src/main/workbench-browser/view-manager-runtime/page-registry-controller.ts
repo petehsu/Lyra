@@ -604,8 +604,12 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       const inputType =
         mouse.type === "mouseMove"
           ? "mouse_move"
-          : mouse.type === "mouseWheel" ? "wheel" : "mouse_down";
-      host.handleSharedControlInput(entry.tabId, inputType, event);
+          : mouse.type === "mouseWheel"
+            ? "wheel"
+            : mouse.type === "mouseDown" ? "mouse_down" : null;
+      if (inputType !== null) {
+        host.handleSharedControlInput(entry.tabId, inputType, event);
+      }
       if (mouse.type === "mouseDown" && mouse.button !== "right") {
         host.publishEvent({
           kind: "request-activate-tab",

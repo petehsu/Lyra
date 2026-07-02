@@ -29,6 +29,30 @@ const labels: SettingsAiLabels = {
   modelsDeleteConfirmTitle: "Delete model?",
   modelsDeleteConfirmDescription: "Remove {model} from this provider.",
   modelsDeleteConfirmAction: "Delete model",
+  skillsTitle: "Skills",
+  skillsSearchPlaceholder: "Paste a GitHub URL or local path, or search skills",
+  skillsAddSkill: "Add",
+  skillsEmptyTitle: "No skills available",
+  skillsEmptyDescription: "Install a skill first.",
+  skillsSearching: "Searching skills...",
+  skillsLoadingMore: "Loading more skills...",
+  skillsUninstall: "Uninstall",
+  skillsActive: "Enabled",
+  skillsInactive: "Disabled",
+  skillsPermissionsLabel: "Permissions: ",
+  skillsToolsLabel: "Tools: ",
+  skillsResourceRootLabel: "Resources: ",
+  skillsPromptLabel: "Prompt: ",
+  mcpTitle: "MCP",
+  mcpSearchPlaceholder: "Paste config",
+  mcpAddServer: "Add",
+  mcpEmptyTitle: "No MCP servers",
+  mcpEmptyDescription: "Paste an MCP config.",
+  mcpToolsLabel: "Tools: ",
+  mcpConnected: "Connected",
+  mcpDisconnected: "Disconnected",
+  mcpFailed: "Failed",
+  mcpRemove: "Remove",
   providerTitle: "Provider",
   connectionTitle: "Connection",
   additionalFieldsTitle: "Additional fields",
@@ -357,6 +381,20 @@ const agentModelCatalog = {
   serviceTier: { current: null, options: [], supported: true },
 };
 
+const agentSkillCatalog = {
+  skills: [],
+  store: {
+    indexUrl: "lyra://skills/dynamic",
+    index: null,
+    lastError: null,
+  },
+};
+
+const agentMcpCatalog = {
+  servers: [],
+  storageRoot: "/tmp/lyra/mcp",
+};
+
 const createDesktopApi = () => {
   const readAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const readAgentProviderCatalog = vi.fn(async () => agentProviderCatalog);
@@ -384,6 +422,22 @@ const createDesktopApi = () => {
   const updateAgentConfig = vi.fn(async () => agentConfigSnapshot);
   const saveAgentProviderProfile = vi.fn(async () => agentConfigSnapshot);
   const refreshAgentModels = vi.fn(async () => agentModelCatalog);
+  const listAgentSkills = vi.fn(async () => agentSkillCatalog);
+  const activateAgentSkill = vi.fn(async () => ({ skill: null }));
+  const deactivateAgentSkill = vi.fn(async () => ({ skill: null }));
+  const installAgentSkillFromLocal = vi.fn(async () => ({ skill: null }));
+  const installAgentSkillFromGit = vi.fn(async () => ({ skill: null }));
+  const installAgentSkillFromStore = vi.fn(async () => ({ skill: null }));
+  const uninstallAgentSkill = vi.fn(async () => ({ skillId: "skill", removed: true }));
+  const refreshAgentSkillStore = vi.fn(async () => ({ store: agentSkillCatalog.store }));
+  const updateAgentSkillStoreConfig = vi.fn(async () => ({ store: agentSkillCatalog.store }));
+  const listMcpServers = vi.fn(async () => agentMcpCatalog);
+  const upsertMcpServer = vi.fn(async () => ({ servers: [], allServers: [] }));
+  const removeMcpServer = vi.fn(async () => ({ serverId: "mcp", removed: true, servers: [] }));
+  const connectMcpServer = vi.fn(async () => ({ servers: [] }));
+  const disconnectMcpServer = vi.fn(async () => ({ servers: [] }));
+  const reloadMcpServer = vi.fn(async () => ({ servers: [] }));
+  const discoverMcpTools = vi.fn(async () => ({ query: "", tools: [], servers: [] }));
   const openExternal = vi.fn(async () => true);
 
   return {
@@ -403,6 +457,22 @@ const createDesktopApi = () => {
         setAgentModelEnabled,
         deleteAgentModel,
         refreshAgentModels,
+        listAgentSkills,
+        activateAgentSkill,
+        deactivateAgentSkill,
+        installAgentSkillFromLocal,
+        installAgentSkillFromGit,
+        installAgentSkillFromStore,
+        uninstallAgentSkill,
+        refreshAgentSkillStore,
+        updateAgentSkillStoreConfig,
+        listMcpServers,
+        upsertMcpServer,
+        removeMcpServer,
+        connectMcpServer,
+        disconnectMcpServer,
+        reloadMcpServer,
+        discoverMcpTools,
       },
     } as unknown as LyraDesktopApi,
     readAgentConfig,
@@ -419,6 +489,22 @@ const createDesktopApi = () => {
     updateAgentConfig,
     saveAgentProviderProfile,
     refreshAgentModels,
+    listAgentSkills,
+    activateAgentSkill,
+    deactivateAgentSkill,
+    installAgentSkillFromLocal,
+    installAgentSkillFromGit,
+    installAgentSkillFromStore,
+    uninstallAgentSkill,
+    refreshAgentSkillStore,
+    updateAgentSkillStoreConfig,
+    listMcpServers,
+    upsertMcpServer,
+    removeMcpServer,
+    connectMcpServer,
+    disconnectMcpServer,
+    reloadMcpServer,
+    discoverMcpTools,
   };
 };
 

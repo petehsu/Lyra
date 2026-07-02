@@ -19,6 +19,22 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             None,
         ),
         super::s(
+            "/tools/mcp/server_upsert",
+            "mcp",
+            "server_upsert",
+            "Add or update MCP server",
+            "Add or update an MCP server from pasted mcpServers JSON, command line, URL, or explicit fields.",
+            Some("mcp_server_upsert"),
+        ),
+        super::s(
+            "/tools/mcp/server_remove",
+            "mcp",
+            "server_remove",
+            "Remove MCP server",
+            "Remove a configured MCP server.",
+            None,
+        ),
+        super::s(
             "/tools/mcp/server_disconnect",
             "mcp",
             "server_disconnect",

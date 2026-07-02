@@ -1136,7 +1136,7 @@ impl SkillToolProvider {
 #[async_trait]
 impl ToolProvider for SkillToolProvider {
     fn id(&self) -> &str {
-        "lyra-skills"
+        "lyra-skill-tools"
     }
 
     fn capabilities(&self) -> Vec<ToolCapability> {

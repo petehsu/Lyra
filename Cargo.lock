@@ -3657,6 +3657,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "shlex",
  "tempfile",
@@ -3664,6 +3665,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -3687,7 +3689,9 @@ name = "lyra-code-intel-core"
 version = "0.1.0"
 dependencies = [
  "codegraph",
+ "codegraph-memory",
  "codegraph-server",
+ "glob",
  "notify",
  "regex",
  "serde",
@@ -3891,6 +3895,7 @@ dependencies = [
 name = "lyra-tool-fs-core"
 version = "0.1.0"
 dependencies = [
+ "codegraph-server",
  "insta",
  "regex",
  "serde",

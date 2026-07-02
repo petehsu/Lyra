@@ -808,36 +808,13 @@ pub(crate) fn apply_exact_replacement(
     })
 }
 
-/// Leading whitespace (indentation) of a single line.
-fn leading_whitespace(line: &str) -> &str {
-    &line[..line.len() - line.trim_start().len()]
-}
-
-/// Reindent the replacement lines so the block lands at the matched block's
-/// indentation. We replace the old block's first-line indentation with the
-/// target indentation on every line, preserving each line's *relative* depth.
-fn reindent_replacement(
-    new_lines: &[&str],
-    old_first_indent: &str,
-    base_indent: &str,
-) -> Vec<String> {
-    new_lines
-        .iter()
-        .map(|line| {
-            if line.trim().is_empty() {
-                return String::new();
-            }
-            let body = line
-                .strip_prefix(old_first_indent)
-                .unwrap_or_else(|| line.trim_start());
-            format!("{base_indent}{body}")
-        })
-        .collect()
-}
-
 /// Exact replacement first; on `edit_not_found`, fall back to a whitespace-
 /// tolerant line-based match. The fuzzy pass ignores per-line leading/trailing
-/// whitespace differences and reindents the replacement to the matched block.
+/// whitespace differences and inserts `new_string` **verbatim** at the matched
+/// block — no reindent. This is the same approach as Claude Code, Cline, and
+/// Codex: match loosely, insert verbatim. Reindenting was removed because it
+/// silently corrupted indentation when `new_string` lines had different
+/// relative depths than `old_string`'s first line.
 ///
 /// Safety: the fuzzy pass NEVER silently picks one of several candidates — more
 /// than one whitespace-insensitive match without `replaceAll` is reported as
@@ -897,8 +874,10 @@ pub(crate) fn apply_fuzzy_replacement(
         ));
     }
 
-    let new_lines: Vec<&str> = new_string.split('\n').collect();
-    let old_first_indent = leading_whitespace(old_lines[0]);
+    // ponytail: insert verbatim — no reindent. The fuzzy match only locates
+    // where to splice; new_string is inserted as-is so the model's intended
+    // indentation is preserved without silent corruption.
+    let new_lines: Vec<String> = new_string.split('\n').map(|s| s.to_string()).collect();
     let mut result_lines: Vec<String> =
         original_lines.iter().map(|line| line.to_string()).collect();
     let targets: Vec<usize> = if replace_all {
@@ -908,9 +887,7 @@ pub(crate) fn apply_fuzzy_replacement(
     };
     // Splice from the bottom up so earlier indices stay valid.
     for &start in targets.iter().rev() {
-        let base_indent = leading_whitespace(original_lines[start]);
-        let reindented = reindent_replacement(&new_lines, old_first_indent, base_indent);
-        result_lines.splice(start..start + window, reindented);
+        result_lines.splice(start..start + window, new_lines.clone());
     }
     Ok(result_lines.join("\n"))
 }
@@ -2422,21 +2399,26 @@ mod fuzzy_and_patch_tests {
     }
 
     #[test]
-    fn fuzzy_tolerates_indentation_and_reindents_replacement() {
-        // File indents the block with 4 spaces; model sent it with none.
+    fn fuzzy_tolerates_indentation_mismatch_verbatim_insert() {
+        // File indents the block with 4 spaces; model's oldString has 6 (exact
+        // match fails because 6-space prefix isn't a substring of 4-space line).
+        // Model's newString has the correct 4-space indent — inserted verbatim.
         let original = "fn main() {\n    let x = 1;\n}\n";
-        let updated = apply_fuzzy_replacement(original, "let x = 1;", "let x = 42;", false)
-            .expect("whitespace-insensitive hit");
-        // Replacement must land at the matched block's indentation.
+        let updated =
+            apply_fuzzy_replacement(original, "      let x = 1;", "    let x = 42;", false)
+                .expect("whitespace-insensitive hit");
+        // newString is inserted verbatim — no reindent, no corruption.
         assert_eq!(updated, "fn main() {\n    let x = 42;\n}\n");
     }
 
     #[test]
-    fn fuzzy_multiline_block_keeps_relative_indent() {
+    fn fuzzy_multiline_block_verbatim_insert() {
         let original = "class C:\n    def f(self):\n        return 1\n";
-        // Model omits the method body's leading whitespace entirely.
-        let old = "def f(self):\n    return 1";
-        let new = "def f(self):\n    return 2";
+        // Model's oldString has more indent than the file (6/10 vs 4/8) — exact
+        // match fails; fuzzy locates by trimmed content; newString (correct 4/8
+        // indent) is inserted verbatim.
+        let old = "      def f(self):\n          return 1";
+        let new = "    def f(self):\n        return 2";
         let updated = apply_fuzzy_replacement(original, old, new, false).expect("block hit");
         assert_eq!(updated, "class C:\n    def f(self):\n        return 2\n");
     }

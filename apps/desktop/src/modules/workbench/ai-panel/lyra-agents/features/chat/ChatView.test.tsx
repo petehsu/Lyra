@@ -70,6 +70,24 @@ function RenderBudgetChatHarness({
   );
 }
 
+function DecisionChatHarness() {
+  const data = createDataProviderValue({
+    session,
+    messages: allMessages.slice(-3),
+    decisions: [{
+      id: "decision-1",
+      question: "选择下一步？",
+      options: [{ label: "继续" }]
+    }]
+  });
+
+  return (
+    <DataContextProvider value={data}>
+      <ChatView showDecisions={true} showPermission={false} />
+    </DataContextProvider>
+  );
+}
+
 /**
  * Stamps each `[data-chat-message-id]` slot with sequential offsetTop/offsetHeight
  * so the DOM-based sticky anchor logic can resolve positions without a real layout engine.
@@ -240,5 +258,20 @@ describe("ChatView render-budget message window", () => {
     expect(anchorButton).not.toBeNull();
     fireEvent.click(anchorButton);
     expect(scrollTo).toHaveBeenCalledWith({ behavior: "smooth" });
+  });
+
+  test("keeps the decision panel expanded while scrolling", async () => {
+    const { container } = render(<DecisionChatHarness />);
+    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
+    const panelBody = container.querySelector(".lyra-agents-decision-body") as HTMLElement;
+    expect(scroll).not.toBeNull();
+    expect(panelBody).not.toBeNull();
+
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 900, scrollTop: 600 });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 900, scrollTop: 0 });
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    expect(panelBody.style.maxHeight).toBe("520px");
+    expect(panelBody.style.opacity).toBe("1");
   });
 });

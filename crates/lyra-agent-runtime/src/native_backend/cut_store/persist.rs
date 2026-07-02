@@ -246,10 +246,8 @@ pub(crate) fn read_cut_messages(
     }
     let manifest = load_manifest(root, session_id)?;
     let dir = cuts_dir(root, session_id);
-    let id_set: std::collections::HashSet<&str> =
-        msg_ids.iter().map(String::as_str).collect();
-    let mut found: std::collections::HashMap<String, Value> =
-        std::collections::HashMap::new();
+    let id_set: std::collections::HashSet<&str> = msg_ids.iter().map(String::as_str).collect();
+    let mut found: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
 
     for entry in &manifest.packs {
         if found.len() >= id_set.len() {
@@ -260,14 +258,9 @@ pub(crate) fn read_cut_messages(
             continue;
         }
         let conn = open_cut_pack(&pack_path)?;
-        let placeholders = msg_ids
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "SELECT msg_id, content_raw FROM cut_payload WHERE msg_id IN ({placeholders})"
-        );
+        let placeholders = msg_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql =
+            format!("SELECT msg_id, content_raw FROM cut_payload WHERE msg_id IN ({placeholders})");
         let params: Vec<&dyn rusqlite::ToSql> = msg_ids
             .iter()
             .map(|id| id as &dyn rusqlite::ToSql)
@@ -283,8 +276,7 @@ pub(crate) fn read_cut_messages(
             })
             .map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
         for row in rows {
-            let (msg_id, content_raw) =
-                row.map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
+            let (msg_id, content_raw) = row.map_err(|e| AgentRuntimeError::Core(e.to_string()))?;
             if !id_set.contains(msg_id.as_str()) {
                 continue;
             }

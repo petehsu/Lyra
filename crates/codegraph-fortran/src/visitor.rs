@@ -8,9 +8,8 @@
 //! relationships.
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, FunctionEntity,
-    ImportRelation, Parameter, BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics,
+    FunctionEntity, ImportRelation, Parameter, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -175,9 +174,7 @@ impl<'a> FortranVisitor<'a> {
             .or(Some(node))
             .and_then(|n| n.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let entity = ClassEntity {
             name,
@@ -216,9 +213,7 @@ impl<'a> FortranVisitor<'a> {
             .or(Some(node))
             .and_then(|n| n.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let entity = ClassEntity {
             name,
@@ -268,9 +263,7 @@ impl<'a> FortranVisitor<'a> {
             .or(Some(node))
             .and_then(|n| n.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let func = FunctionEntity {
             name,
@@ -328,9 +321,7 @@ impl<'a> FortranVisitor<'a> {
             .or(Some(node))
             .and_then(|n| n.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let func = FunctionEntity {
             name,

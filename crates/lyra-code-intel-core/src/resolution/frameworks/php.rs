@@ -12,14 +12,23 @@ use crate::resolution::types::{FrameworkResolver, ResolutionContext, ResolvedRef
 pub struct LaravelResolver;
 
 impl FrameworkResolver for LaravelResolver {
-    fn name(&self) -> &'static str { "laravel" }
+    fn name(&self) -> &'static str {
+        "laravel"
+    }
 
     fn detect(&self, ctx: &ResolutionContext) -> bool {
         ctx.file_exists("artisan") || ctx.file_exists("app/Http/Kernel.php")
     }
 
-    fn extract(&self, file_path: &Path, content: &str, graph: &mut codegraph::CodeGraph) -> Vec<UnresolvedRef> {
-        if file_path.extension().and_then(|e| e.to_str()) != Some("php") { return vec![]; }
+    fn extract(
+        &self,
+        file_path: &Path,
+        content: &str,
+        graph: &mut codegraph::CodeGraph,
+    ) -> Vec<UnresolvedRef> {
+        if file_path.extension().and_then(|e| e.to_str()) != Some("php") {
+            return vec![];
+        }
         let fp = file_path.to_string_lossy();
         let mut refs = Vec::new();
 
@@ -35,7 +44,13 @@ impl FrameworkResolver for LaravelResolver {
             let upper = method.to_uppercase();
             let node_id = make_route_node(graph, &fp, line, &upper, route_path, "php");
             if let Some(handler) = extract_laravel_handler(handler_expr) {
-                refs.push(make_ref(node_id, handler, EdgeType::References, file_path, line));
+                refs.push(make_ref(
+                    node_id,
+                    handler,
+                    EdgeType::References,
+                    file_path,
+                    line,
+                ));
             }
         }
 
@@ -46,28 +61,50 @@ impl FrameworkResolver for LaravelResolver {
         let name = &reference.reference_name;
 
         // Controller@method pattern
-        if let Some(cap) = regex::Regex::new(r"^(\w+)Controller@(\w+)$").unwrap().captures(name) {
+        if let Some(cap) = regex::Regex::new(r"^(\w+)Controller@(\w+)$")
+            .unwrap()
+            .captures(name)
+        {
             let controller = &cap[1];
             let method = &cap[2];
             let path = format!("app/Http/Controllers/{controller}.php");
             if ctx.file_exists(&path) {
                 let nodes = ctx.get_nodes_in_file(&path);
-                if let Some(n) = nodes.iter().find(|n| n.kind == "method" && n.name == method) {
-                    return Some(ResolvedRef { target_node_id: n.id, confidence: 0.9 });
+                if let Some(n) = nodes
+                    .iter()
+                    .find(|n| n.kind == "method" && n.name == method)
+                {
+                    return Some(ResolvedRef {
+                        target_node_id: n.id,
+                        confidence: 0.9,
+                    });
                 }
             }
             // Fallback: name-based lookup
-            for ctrl in ctx.get_nodes_by_name(controller).iter().filter(|n| n.kind == "class" && n.path.contains("Controllers")) {
+            for ctrl in ctx
+                .get_nodes_by_name(controller)
+                .iter()
+                .filter(|n| n.kind == "class" && n.path.contains("Controllers"))
+            {
                 let nodes = ctx.get_nodes_in_file(&ctrl.path);
-                if let Some(n) = nodes.iter().find(|n| n.kind == "method" && n.name == method) {
-                    return Some(ResolvedRef { target_node_id: n.id, confidence: 0.9 });
+                if let Some(n) = nodes
+                    .iter()
+                    .find(|n| n.kind == "method" && n.name == method)
+                {
+                    return Some(ResolvedRef {
+                        target_node_id: n.id,
+                        confidence: 0.9,
+                    });
                 }
             }
             return None;
         }
 
         // Model::method pattern
-        if let Some(cap) = regex::Regex::new(r"^([A-Z][a-zA-Z]+)::(\w+)$").unwrap().captures(name) {
+        if let Some(cap) = regex::Regex::new(r"^([A-Z][a-zA-Z]+)::(\w+)$")
+            .unwrap()
+            .captures(name)
+        {
             let class_name = &cap[1];
             let method_name = &cap[2];
             for model_path in &[
@@ -76,8 +113,14 @@ impl FrameworkResolver for LaravelResolver {
             ] {
                 if ctx.file_exists(model_path) {
                     let nodes = ctx.get_nodes_in_file(model_path);
-                    if let Some(n) = nodes.iter().find(|n| n.kind == "method" && n.name == method_name) {
-                        return Some(ResolvedRef { target_node_id: n.id, confidence: 0.85 });
+                    if let Some(n) = nodes
+                        .iter()
+                        .find(|n| n.kind == "method" && n.name == method_name)
+                    {
+                        return Some(ResolvedRef {
+                            target_node_id: n.id,
+                            confidence: 0.85,
+                        });
                     }
                 }
             }
@@ -90,17 +133,27 @@ impl FrameworkResolver for LaravelResolver {
 fn extract_laravel_handler(expr: &str) -> Option<String> {
     let trimmed = expr.trim();
     // [Class::class, 'method'] → Class@method
-    if let Some(cap) = regex::Regex::new(r#"^\[\s*([A-Za-z_\\][\w\\]*)::class\s*,\s*['\"]([^'\"]+)['\"]\s*\]"#).unwrap().captures(trimmed) {
+    if let Some(cap) =
+        regex::Regex::new(r#"^\[\s*([A-Za-z_\\][\w\\]*)::class\s*,\s*['\"]([^'\"]+)['\"]\s*\]"#)
+            .unwrap()
+            .captures(trimmed)
+    {
         let class = cap[1].rsplit('\\').next().unwrap_or(&cap[1]);
         return Some(format!("{class}@{}", &cap[2]));
     }
     // 'Controller@method'
-    if let Some(cap) = regex::Regex::new(r#"^['\"]([^'\"@]+)@([^'\"]+)['\"]$"#).unwrap().captures(trimmed) {
+    if let Some(cap) = regex::Regex::new(r#"^['\"]([^'\"@]+)@([^'\"]+)['\"]$"#)
+        .unwrap()
+        .captures(trimmed)
+    {
         let class = cap[1].rsplit('\\').next().unwrap_or(&cap[1]);
         return Some(format!("{class}@{}", &cap[2]));
     }
     // Class::class
-    if let Some(cap) = regex::Regex::new(r"^([A-Za-z_\\][\w\\]*)::class").unwrap().captures(trimmed) {
+    if let Some(cap) = regex::Regex::new(r"^([A-Za-z_\\][\w\\]*)::class")
+        .unwrap()
+        .captures(trimmed)
+    {
         return Some(cap[1].rsplit('\\').next().unwrap_or(&cap[1]).to_string());
     }
     None
@@ -111,23 +164,34 @@ fn extract_laravel_handler(expr: &str) -> Option<String> {
 pub struct DrupalResolver;
 
 impl FrameworkResolver for DrupalResolver {
-    fn name(&self) -> &'static str { "drupal" }
+    fn name(&self) -> &'static str {
+        "drupal"
+    }
 
     fn detect(&self, ctx: &ResolutionContext) -> bool {
         // composer.json with drupal/* or drupal-module type
         if let Some(c) = ctx.read_file("composer.json") {
-            if c.contains("drupal/") || c.contains("drupal-") { return true; }
+            if c.contains("drupal/") || c.contains("drupal-") {
+                return true;
+            }
         }
         // .info.yml + .routing.yml/.module
         let files = ctx.get_all_files();
         let has_info = files.iter().any(|f| f.ends_with(".info.yml"));
         if has_info {
-            return files.iter().any(|f| f.ends_with(".routing.yml") || f.ends_with(".module") || f.ends_with(".install"));
+            return files.iter().any(|f| {
+                f.ends_with(".routing.yml") || f.ends_with(".module") || f.ends_with(".install")
+            });
         }
         false
     }
 
-    fn extract(&self, file_path: &Path, content: &str, graph: &mut codegraph::CodeGraph) -> Vec<UnresolvedRef> {
+    fn extract(
+        &self,
+        file_path: &Path,
+        content: &str,
+        graph: &mut codegraph::CodeGraph,
+    ) -> Vec<UnresolvedRef> {
         let fp = file_path.to_string_lossy();
 
         // *.routing.yml — YAML route parsing
@@ -146,23 +210,46 @@ impl FrameworkResolver for DrupalResolver {
         let name = &reference.reference_name;
 
         // \Drupal\...\ClassName::method or ClassName:method
-        if let Some(cap) = regex::Regex::new(r"\\?(?:Drupal\\[^:]+\\)?([^\\:]+):{1,2}(\w+)$").unwrap().captures(name) {
+        if let Some(cap) = regex::Regex::new(r"\\?(?:Drupal\\[^:]+\\)?([^\\:]+):{1,2}(\w+)$")
+            .unwrap()
+            .captures(name)
+        {
             let class_name = &cap[1];
             let method_name = &cap[2];
-            for cls in ctx.get_nodes_by_name(class_name).iter().filter(|n| n.kind == "class") {
+            for cls in ctx
+                .get_nodes_by_name(class_name)
+                .iter()
+                .filter(|n| n.kind == "class")
+            {
                 let nodes = ctx.get_nodes_in_file(&cls.path);
-                if let Some(n) = nodes.iter().find(|n| n.kind == "method" && n.name == method_name) {
-                    return Some(ResolvedRef { target_node_id: n.id, confidence: 0.9 });
+                if let Some(n) = nodes
+                    .iter()
+                    .find(|n| n.kind == "method" && n.name == method_name)
+                {
+                    return Some(ResolvedRef {
+                        target_node_id: n.id,
+                        confidence: 0.9,
+                    });
                 }
-                return Some(ResolvedRef { target_node_id: cls.id, confidence: 0.7 });
+                return Some(ResolvedRef {
+                    target_node_id: cls.id,
+                    confidence: 0.7,
+                });
             }
         }
 
         // Bare FQCN (form/entity handler)
         if name.contains('\\') && !name.contains(':') {
             let class_name = name.rsplit('\\').next().unwrap_or(name);
-            for cls in ctx.get_nodes_by_name(class_name).iter().filter(|n| n.kind == "class") {
-                return Some(ResolvedRef { target_node_id: cls.id, confidence: 0.85 });
+            for cls in ctx
+                .get_nodes_by_name(class_name)
+                .iter()
+                .filter(|n| n.kind == "class")
+            {
+                return Some(ResolvedRef {
+                    target_node_id: cls.id,
+                    confidence: 0.85,
+                });
             }
         }
 
@@ -170,7 +257,11 @@ impl FrameworkResolver for DrupalResolver {
     }
 }
 
-fn extract_drupal_routes(content: &str, fp: &str, graph: &mut codegraph::CodeGraph) -> Vec<UnresolvedRef> {
+fn extract_drupal_routes(
+    content: &str,
+    fp: &str,
+    graph: &mut codegraph::CodeGraph,
+) -> Vec<UnresolvedRef> {
     let mut refs = Vec::new();
     let mut current_path: Option<String> = None;
     let mut handlers: Vec<String> = Vec::new();
@@ -178,7 +269,9 @@ fn extract_drupal_routes(content: &str, fp: &str, graph: &mut codegraph::CodeGra
 
     for (i, line) in content.lines().enumerate() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
 
         // Top-level route name: no leading whitespace, ends with `:`
         if !line.starts_with(' ') && !line.starts_with('\t') && trimmed.ends_with(':') {
@@ -199,7 +292,10 @@ fn extract_drupal_routes(content: &str, fp: &str, graph: &mut codegraph::CodeGra
             continue;
         }
 
-        if let Some(cap) = regex::Regex::new(r##"^path:\s*['"]?([^'"#\n]+?)['"]?"##).unwrap().captures(trimmed) {
+        if let Some(cap) = regex::Regex::new(r##"^path:\s*['"]?([^'"#\n]+?)['"]?"##)
+            .unwrap()
+            .captures(trimmed)
+        {
             current_path = Some(cap[1].trim().to_string());
             // Create the route node now that we have the path.
             let node_id = make_route_node(graph, fp, route_line, "", &cap[1].trim(), "yaml");
@@ -212,14 +308,29 @@ fn extract_drupal_routes(content: &str, fp: &str, graph: &mut codegraph::CodeGra
             // node and push refs with correct node_id as we go.
             // Actually let's simplify: just create the route node + refs here.
             for h in &handlers {
-                refs.push(make_ref(node_id, h.clone(), EdgeType::References, Path::new(fp), route_line));
+                refs.push(make_ref(
+                    node_id,
+                    h.clone(),
+                    EdgeType::References,
+                    Path::new(fp),
+                    route_line,
+                ));
             }
             handlers.clear();
             continue;
         }
 
-        for key in &["_controller:", "_form:", "_entity_form:", "_entity_list:", "_entity_view:"] {
-            if let Some(cap) = regex::Regex::new(&format!(r##"^{key}\s*['"]?([^'"#\n]+?)['"]?"##)).unwrap().captures(trimmed) {
+        for key in &[
+            "_controller:",
+            "_form:",
+            "_entity_form:",
+            "_entity_list:",
+            "_entity_view:",
+        ] {
+            if let Some(cap) = regex::Regex::new(&format!(r##"^{key}\s*['"]?([^'"#\n]+?)['"]?"##))
+                .unwrap()
+                .captures(trimmed)
+            {
                 handlers.push(cap[1].trim().to_string());
                 continue;
             }

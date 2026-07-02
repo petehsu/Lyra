@@ -349,7 +349,10 @@ mod tests {
             ..Default::default()
         };
         let merged = NormalizeOpts::merge(base, overlay);
-        assert_eq!(merged.extra_volatile, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(
+            merged.extra_volatile,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
     }
 
     #[test]

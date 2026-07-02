@@ -24,21 +24,26 @@ pub(crate) fn execute_mcp_tool_adapter(
         ),
         "toolStarted",
     );
-    let output = json!({
-        "content": "No Lyra MCP servers are configured in this native runtime instance. Use mcp_server_list to verify server availability, then connect or configure a server before execution.",
-        "error": {
-            "code": "no_configured_mcp_servers",
-            "message": "No Lyra MCP servers are configured in this native runtime instance.",
-        },
-        "raw": {
-            "ok": false,
-            "servers": [],
-            "tools": [],
-            "available": false,
-            "reason": "no_configured_mcp_servers",
-            "requestedTool": tool_name,
-        }
-    });
+    let raw_result = execute_mcp_state_change(tool_name, &arguments);
+    let (status, output) = match raw_result {
+        Ok(value) => (
+            "completed",
+            json!({
+                "content": format_mcp_output(action, &value),
+                "raw": value,
+            }),
+        ),
+        Err(error) => (
+            "failed",
+            json!({
+                "content": error.clone(),
+                "error": {
+                    "code": "mcpToolFailed",
+                    "message": error,
+                }
+            }),
+        ),
+    };
     record_tool_activity(
         session_id,
         turn_id,
@@ -46,7 +51,7 @@ pub(crate) fn execute_mcp_tool_adapter(
             tool_call_id,
             "mcp",
             &tool_label("mcp", action),
-            "failed",
+            status,
             arguments,
             Some(output.clone()),
             started_at,

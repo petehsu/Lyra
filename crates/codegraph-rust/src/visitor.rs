@@ -7,10 +7,9 @@
 //! and extracts functions, structs, enums, traits, and their relationships.
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, Field, FunctionEntity,
-    ImplementationRelation, ImportRelation, InheritanceRelation, Parameter, ParserConfig,
-    TraitEntity, TypeReference, BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, Field,
+    FunctionEntity, ImplementationRelation, ImportRelation, InheritanceRelation, Parameter,
+    ParserConfig, TraitEntity, TypeReference, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -319,9 +318,7 @@ impl<'a> RustVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let func = FunctionEntity {
@@ -412,9 +409,7 @@ impl<'a> RustVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class = ClassEntity {
@@ -455,9 +450,7 @@ impl<'a> RustVisitor<'a> {
             .child_by_field_name("body")
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class = ClassEntity {
@@ -628,9 +621,7 @@ impl<'a> RustVisitor<'a> {
                             .child_by_field_name("body")
                             .and_then(|b| b.utf8_text(self.source).ok())
                             .filter(|t| !t.is_empty())
-                            .map(|t| {
-                                truncate_body_prefix(t)
-                            })
+                            .map(|t| truncate_body_prefix(t))
                             .map(|t| t.to_string()),
                     };
 
@@ -1162,7 +1153,9 @@ mod tests {
 
     fn parse_and_visit(source: &str) -> RustVisitor<'_> {
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_rust::LANGUAGE.into()).unwrap();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
         let tree = parser.parse(source, None).unwrap();
 
         let mut visitor = RustVisitor::new(source.as_bytes(), ParserConfig::default());
@@ -1936,5 +1929,4 @@ fn add(a: i32, b: u64) -> f64 { 0.0 }
             visitor.type_references
         );
     }
-
 }

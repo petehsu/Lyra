@@ -52,7 +52,9 @@ impl<'a> PerlVisitor<'a> {
             "require_expression" => {
                 self.visit_require_expression(node);
             }
-            "call_expression_with_spaced_args" | "call_expression_with_bareword" | "method_call_expression" => {
+            "call_expression_with_spaced_args"
+            | "call_expression_with_bareword"
+            | "method_call_expression" => {
                 self.visit_call_expression(node);
             }
             _ => {}
@@ -242,7 +244,10 @@ impl<'a> PerlVisitor<'a> {
             && module != "parent"
         {
             self.imports.push(ImportRelation {
-                importer: self.current_package.clone().unwrap_or_else(|| "main".to_string()),
+                importer: self
+                    .current_package
+                    .clone()
+                    .unwrap_or_else(|| "main".to_string()),
                 imported: module,
                 symbols: Vec::new(),
                 is_wildcard: false,
@@ -253,7 +258,10 @@ impl<'a> PerlVisitor<'a> {
             let parent = self.extract_use_list(node);
             for p in parent {
                 self.imports.push(ImportRelation {
-                    importer: self.current_package.clone().unwrap_or_else(|| "main".to_string()),
+                    importer: self
+                        .current_package
+                        .clone()
+                        .unwrap_or_else(|| "main".to_string()),
                     imported: p,
                     symbols: Vec::new(),
                     is_wildcard: false,
@@ -291,8 +299,9 @@ impl<'a> PerlVisitor<'a> {
         let text = self.node_text(node);
         // Extract quoted strings from the statement
         for part in text.split_whitespace() {
-            let cleaned = part
-                .trim_matches(|c| c == '\'' || c == '"' || c == ',' || c == ';' || c == '(' || c == ')');
+            let cleaned = part.trim_matches(|c| {
+                c == '\'' || c == '"' || c == ',' || c == ';' || c == '(' || c == ')'
+            });
             if !cleaned.is_empty() && cleaned.contains("::") {
                 list.push(cleaned.to_string());
             }
@@ -311,7 +320,10 @@ impl<'a> PerlVisitor<'a> {
             .replace(".pm", "");
         if !module.is_empty() {
             self.imports.push(ImportRelation {
-                importer: self.current_package.clone().unwrap_or_else(|| "main".to_string()),
+                importer: self
+                    .current_package
+                    .clone()
+                    .unwrap_or_else(|| "main".to_string()),
                 imported: module,
                 symbols: Vec::new(),
                 is_wildcard: false,
@@ -397,16 +409,17 @@ impl<'a> PerlVisitor<'a> {
             "elsif_clause" | "else_clause" => {
                 builder.add_branch();
             }
-            "while_statement"
-            | "until_statement"
-            | "for_statement"
-            | "foreach_statement" => {
+            "while_statement" | "until_statement" | "for_statement" | "foreach_statement" => {
                 builder.add_loop();
                 builder.enter_scope();
             }
             "binary_expression" => {
                 let text = self.node_text(node);
-                if text.contains(" && ") || text.contains(" || ") || text.contains(" and ") || text.contains(" or ") {
+                if text.contains(" && ")
+                    || text.contains(" || ")
+                    || text.contains(" and ")
+                    || text.contains(" or ")
+                {
                     builder.add_logical_operator();
                 }
             }
@@ -419,12 +432,8 @@ impl<'a> PerlVisitor<'a> {
         }
 
         match node.kind() {
-            "if_statement"
-            | "unless_statement"
-            | "while_statement"
-            | "until_statement"
-            | "for_statement"
-            | "foreach_statement" => {
+            "if_statement" | "unless_statement" | "while_statement" | "until_statement"
+            | "for_statement" | "foreach_statement" => {
                 builder.exit_scope();
             }
             _ => {}

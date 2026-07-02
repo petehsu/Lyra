@@ -101,8 +101,8 @@ fn signal_kind_matches<const N: usize>(signals: &ToolSceneSignals, needles: [&st
 
 pub(crate) fn scene_domain_order(scene: ToolScene) -> Vec<&'static str> {
     match scene {
-        ToolScene::ProjectCode => vec!["terminal", "todo", "workbench"],
-        ToolScene::Git => vec!["terminal", "todo", "workbench"],
+        ToolScene::ProjectCode => vec!["codegraph", "code", "terminal", "todo", "workbench"],
+        ToolScene::Git => vec!["codegraph", "code", "terminal", "todo", "workbench"],
         ToolScene::Terminal => vec!["terminal", "todo", "workbench"],
         ToolScene::Browser => vec!["browser", "workbench", "web"],
         ToolScene::Workbench => vec!["workbench", "browser", "todo"],

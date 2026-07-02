@@ -486,9 +486,13 @@ pub(crate) struct ClarificationRequest {
     pub(crate) turn_id: String,
     pub(crate) tool_call_id: String,
     pub(crate) question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) i18n_key: Option<String>,
     pub(crate) options: Vec<Value>,
     pub(crate) allow_custom_answer: bool,
     pub(crate) detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) detail_i18n_key: Option<String>,
     pub(crate) status: String,
     pub(crate) answer: Option<String>,
     pub(crate) selected_option: Option<String>,

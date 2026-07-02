@@ -314,9 +314,9 @@ pub(crate) fn tool_filesystem_runtime_context(
         "presearchHints": Value::Array(Vec::new()),
         "presearchPolicy": {
             "source": "latestUserMessage",
-            "useWhen": "Use presearchHints for CodeGraph navigation and non-code tool domains. For project file reads, shell validation, git review, and edits, use the direct code tools.",
+            "useWhen": "Use presearchHints for CodeGraph server tools and non-code tool domains. For project file reads, shell validation, git review, and edits, use the direct code tools.",
             "fallback": "If no hint clearly fits, call tool_fs_search with the task description.",
-            "priority": "For exact code/file/shell/git/edit work, prefer direct Codex-style tools. For CodeGraph navigation and browser/workbench/memory/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
+            "priority": "For exact code/file/shell/git/edit work, prefer direct Codex-style tools. For CodeGraph server analysis and browser/workbench/memory/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
@@ -328,12 +328,12 @@ pub(crate) fn tool_filesystem_runtime_context(
         "policy": {
             "providerVisibleTools": model_tool_names(),
             "directLegacyToolNames": "disabled",
-            "codeToolContract": "For project code work: use direct file/search/shell/git/edit tools for exact inspection, validation, and every file mutation. Use Tool-FS only for indexed CodeGraph navigation under /tools/code/*: explore, callers, callees, impact, context.",
+            "codeToolContract": "For project code work: use direct file/search/shell/git/edit tools for exact inspection, validation, and every file mutation. Use Tool-FS for the complete CodeGraph server surface under /tools/codegraph/*; /tools/code/* remains as a small compatibility alias set for explore/callers/callees/impact/context.",
             "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
-            "sceneBehavior": "Scene changes reorder directories and pinned handles; filesystem edit/read and shell/git validation remain direct-tool workflows, while CodeGraph navigation is discoverable under /tools/code/*.",
+            "sceneBehavior": "Scene changes reorder directories and pinned handles; filesystem edit/read and shell/git validation remain direct-tool workflows, while complete CodeGraph server tools are discoverable under /tools/codegraph/*.",
             "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors. Never emit code or patch payloads as assistant text when a tool should be used."
         }
     })

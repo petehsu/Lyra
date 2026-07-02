@@ -14,8 +14,19 @@ import type {
   AgentModelDeleteRequest,
   AgentModelEnableRequest,
   AgentModelSwitchRequest,
+  AgentMcpListResponse,
+  AgentMcpServerRequest,
+  AgentMcpServerUpsertRequest,
   AgentProviderCatalogSnapshot,
   AgentProviderProfileSaveRequest,
+  AgentSkillActivationRequest,
+  AgentSkillInstallFromGitRequest,
+  AgentSkillInstallFromLocalRequest,
+  AgentSkillInstallFromStoreRequest,
+  AgentSkillRefreshStoreRequest,
+  AgentSkillsListResponse,
+  AgentSkillStoreResponse,
+  AgentSkillUninstallRequest,
   LyraDesktopApi,
 } from "../../../shared/desktop-bridge";
 import type {
@@ -37,6 +48,8 @@ type AgentRefreshSnapshot = {
   readonly accounts: AgentAccountsSnapshot;
   readonly loginProviders: AgentLoginProviderCatalogSnapshot;
   readonly modelCatalog: AgentModelCatalogSnapshot;
+  readonly skillCatalog: AgentSkillsListResponse;
+  readonly mcpCatalog: AgentMcpListResponse;
 };
 
 type AgentConfigProviderShape = {
@@ -81,6 +94,10 @@ export const useSettingsAiModel = ({
     useState<AgentLoginProviderCatalogSnapshot | null>(null);
   const [agentModelCatalog, setAgentModelCatalog] =
     useState<AgentModelCatalogSnapshot | null>(null);
+  const [agentSkillCatalog, setAgentSkillCatalog] =
+    useState<AgentSkillsListResponse | null>(null);
+  const [agentMcpCatalog, setAgentMcpCatalog] =
+    useState<AgentMcpListResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -96,18 +113,24 @@ export const useSettingsAiModel = ({
       accounts,
       loginProviders,
       modelCatalog,
+      skillCatalog,
+      mcpCatalog,
     ]: [
       AgentConfigSnapshot,
       AgentProviderCatalogSnapshot,
       AgentAccountsSnapshot,
       AgentLoginProviderCatalogSnapshot,
       AgentModelCatalogSnapshot,
+      AgentSkillsListResponse,
+      AgentMcpListResponse,
     ] = await Promise.all([
       desktopApi.agent.readAgentConfig(),
       desktopApi.agent.readAgentProviderCatalog(),
       desktopApi.agent.listAccounts(),
       desktopApi.agent.listLoginProviders(),
       desktopApi.agent.listAgentModels(),
+      desktopApi.agent.listAgentSkills(),
+      desktopApi.agent.listMcpServers(),
     ]);
 
     const snapshot: AgentRefreshSnapshot = {
@@ -116,6 +139,8 @@ export const useSettingsAiModel = ({
       accounts,
       loginProviders,
       modelCatalog,
+      skillCatalog,
+      mcpCatalog,
     };
 
     setAgentConfig(snapshot.config);
@@ -123,6 +148,8 @@ export const useSettingsAiModel = ({
     setAgentAccounts(snapshot.accounts);
     setAgentLoginProviders(snapshot.loginProviders);
     setAgentModelCatalog(snapshot.modelCatalog);
+    setAgentSkillCatalog(snapshot.skillCatalog);
+    setAgentMcpCatalog(snapshot.mcpCatalog);
     setErrorMessage(null);
   }, [desktopApi, labels.runtimeUnavailable]);
 
@@ -264,6 +291,214 @@ export const useSettingsAiModel = ({
     }
   }, [agentConfig, desktopApi, refreshAgent]);
 
+  const refreshAgentSkills = useCallback(async () => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const refreshAgentSkillStore = useCallback(async (
+    request?: AgentSkillRefreshStoreRequest,
+  ): Promise<AgentSkillStoreResponse | null> => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const response = await desktopApi.agent.refreshAgentSkillStore(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+      return response;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const updateAgentSkillStoreConfig = useCallback(async (
+    request: AgentSkillRefreshStoreRequest,
+  ): Promise<AgentSkillStoreResponse | null> => {
+    if (desktopApi?.agent === undefined) return null;
+    setIsSaving(true);
+    try {
+      const response = await desktopApi.agent.updateAgentSkillStoreConfig(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+      return response;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const activateAgentSkill = useCallback(async (request: AgentSkillActivationRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.activateAgentSkill(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const deactivateAgentSkill = useCallback(async (request: AgentSkillActivationRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.deactivateAgentSkill(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const installAgentSkillFromLocal = useCallback(async (
+    request: AgentSkillInstallFromLocalRequest,
+  ) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.installAgentSkillFromLocal(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const installAgentSkillFromGit = useCallback(async (
+    request: AgentSkillInstallFromGitRequest,
+  ) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.installAgentSkillFromGit(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const installAgentSkillFromStore = useCallback(async (
+    request: AgentSkillInstallFromStoreRequest,
+  ) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.installAgentSkillFromStore(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const uninstallAgentSkill = useCallback(async (request: AgentSkillUninstallRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.uninstallAgentSkill(request);
+      setAgentSkillCatalog(await desktopApi.agent.listAgentSkills());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const refreshAgentMcp = useCallback(async () => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const upsertAgentMcpServer = useCallback(async (request: AgentMcpServerUpsertRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.upsertMcpServer(request);
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const removeAgentMcpServer = useCallback(async (request: AgentMcpServerRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.removeMcpServer(request);
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const connectAgentMcpServer = useCallback(async (request: AgentMcpServerRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.connectMcpServer(request);
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
+  const disconnectAgentMcpServer = useCallback(async (request: AgentMcpServerRequest) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.disconnectMcpServer(request);
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }, [desktopApi]);
+
   const startAgentAccountLogin = useCallback(async (
     request: AgentAccountLoginStartRequest,
   ): Promise<AgentAccountLoginStartResponse | null> => {
@@ -392,6 +627,8 @@ export const useSettingsAiModel = ({
     agentAccounts,
     agentLoginProviders,
     agentModelCatalog,
+    agentSkillCatalog,
+    agentMcpCatalog,
     agentProviderCatalog,
     setDefaultProfile: async (profileId: string) => {
       const profile = profiles.find((entry) => entry.id === profileId) ?? null;
@@ -409,6 +646,20 @@ export const useSettingsAiModel = ({
     setAgentModelEnabled,
     deleteAgentModel,
     switchAgentModel,
+    refreshAgentSkills,
+    refreshAgentSkillStore,
+    updateAgentSkillStoreConfig,
+    activateAgentSkill,
+    deactivateAgentSkill,
+    installAgentSkillFromLocal,
+    installAgentSkillFromGit,
+    installAgentSkillFromStore,
+    uninstallAgentSkill,
+    refreshAgentMcp,
+    upsertAgentMcpServer,
+    removeAgentMcpServer,
+    connectAgentMcpServer,
+    disconnectAgentMcpServer,
     startAgentAccountLogin,
     completeAgentAccountLogin,
     switchAgentAccount,

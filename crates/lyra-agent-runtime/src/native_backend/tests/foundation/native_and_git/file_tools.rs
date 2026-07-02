@@ -331,7 +331,10 @@ fn native_file_tools_expand_tilde_and_reject_variants() {
     // ran the agent from ~ without picking a project). This keeps the test
     // independent of a synthetic tempdir-vs-home relationship.
     let created = backend
-        .call_agent_method("agent.session.create", json!({ "title": "Tilde Regression" }))
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Tilde Regression" }),
+        )
         .expect("create home-unbound session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
@@ -393,7 +396,8 @@ fn native_file_tools_expand_tilde_and_reject_variants() {
     let _ = fs::remove_file(&expected_path);
 
     // A bare `~` also expands to home itself.
-    let bare_result = tool_file_list(&session_id, &json!({ "path": "~" })).expect("bare ~ lists home");
+    let bare_result =
+        tool_file_list(&session_id, &json!({ "path": "~" })).expect("bare ~ lists home");
     assert!(
         !bare_result.content.is_empty(),
         "listing '~' should list the home directory contents"

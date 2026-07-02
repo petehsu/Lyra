@@ -13,7 +13,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
         provider::{ModelReply, TurnStopSignal},
-        turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
+        turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
@@ -39,6 +39,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = OllamaStreamState::default();
     let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
 
     for line in reader.lines() {
@@ -65,6 +66,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &value,
             &mut state,
             &mut ui_message_id,
+            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -74,6 +76,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             break;
         }
     }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
     let allowed_tool_names = tool_name_set(tools);
     let tool_calls = finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?
@@ -140,6 +143,7 @@ fn map_stream_chunk(
     value: &Value,
     state: &mut OllamaStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -150,14 +154,7 @@ fn map_stream_chunk(
         && !text.is_empty()
     {
         if !buffer_assistant_text {
-            let message_id = ui_message_id
-                .get_or_insert_with(|| {
-                    emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-                })
-                .clone();
-            if !message_id.is_empty() {
-                append_assistant_delta(session_id, turn_id, &message_id, text)?;
-            }
+            delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
         }
         state.content.push_str(text);
     }
@@ -166,6 +163,7 @@ fn map_stream_chunk(
             let accumulator = state.tool_calls.entry(index).or_default();
             merge_tool_call_chunk(accumulator, chunk);
         }
+        delta_batcher.flush(ui_message_id, session_id, turn_id)?;
         crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
             session_id,
             turn_id,

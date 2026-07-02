@@ -199,19 +199,11 @@ pub trait FrameworkResolver: Send + Sync {
 
     /// Per-file extraction: create framework-specific nodes (routes, etc.)
     /// and return unresolved references for the resolve pass.
-    fn extract(
-        &self,
-        file_path: &Path,
-        content: &str,
-        graph: &mut CodeGraph,
-    ) -> Vec<UnresolvedRef>;
+    fn extract(&self, file_path: &Path, content: &str, graph: &mut CodeGraph)
+        -> Vec<UnresolvedRef>;
 
     /// Resolve an unresolved ref to a target node using framework patterns.
-    fn resolve(
-        &self,
-        reference: &UnresolvedRef,
-        ctx: &ResolutionContext,
-    ) -> Option<ResolvedRef>;
+    fn resolve(&self, reference: &UnresolvedRef, ctx: &ResolutionContext) -> Option<ResolvedRef>;
 
     /// Cross-file finalization pass (e.g. NestJS route prefix propagation).
     /// Returns (node_id, node_type, updated_properties) for node updates.

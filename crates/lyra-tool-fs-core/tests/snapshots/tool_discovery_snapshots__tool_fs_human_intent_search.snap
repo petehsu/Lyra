@@ -185,31 +185,38 @@ expression: pretty(&snapshot)
         "title": "Batch fetch URLs"
       },
       {
-        "domain": "terminal",
-        "handle": "terminal_list",
-        "matchReason": "description fuzzy match",
+        "domain": "computer",
+        "handle": null,
+        "matchReason": "aliases fuzzy match; summary fuzzy match; description fuzzy match; schema fuzzy match",
         "matchedFields": [
-          "description"
+          "aliases",
+          "summary",
+          "description",
+          "schema"
         ],
         "miniSchemaParameterNames": [
-          "input",
-          "sessionId",
-          "timeoutMs"
+          "appRef",
+          "bundleId",
+          "lyraTabId",
+          "mode",
+          "pid",
+          "windowRef",
+          "windowTitle"
         ],
         "miniSchemaRequired": [],
-        "operation": "list",
-        "path": "/tools/terminal/list",
-        "runHint": "tool_fs_run with toolHandle: terminal_list; operation: list; provide args matching miniSchema.",
-        "score": 11.24,
-        "summary": "List terminal sessions",
-        "title": "List terminal sessions"
+        "operation": "focus",
+        "path": "/tools/computer/focus",
+        "runHint": "tool_fs_run with path: /tools/computer/focus; operation: focus; provide args matching miniSchema.",
+        "score": 10.49,
+        "summary": "Raise a native desktop app or window to the foreground (session-level focus). Distinct from computer.act(action: focus) which targets a single accessibility node. Shared mode only — background/isolated sessions refuse foreground steal.",
+        "title": "Focus desktop application or window"
       }
     ],
-    "total": 126
+    "total": 179
   },
   "git": {
     "domain": null,
-    "fallbackListPath": "/tools/computer",
+    "fallbackListPath": "/tools/codegraph",
     "query": "查看 git diff 代码变更",
     "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "git",
@@ -244,52 +251,50 @@ expression: pretty(&snapshot)
         "title": "Diff computer accessibility state"
       },
       {
-        "domain": "runtime",
-        "handle": "artifact_read",
-        "matchReason": "aliases fuzzy match; examples fuzzy match",
+        "domain": "skills",
+        "handle": null,
+        "matchReason": "path fuzzy match; title fuzzy match; aliases fuzzy match; examples fuzzy match; summary fuzzy match; description fuzzy match; tags fuzzy match",
         "matchedFields": [
+          "path",
+          "title",
           "aliases",
-          "examples"
+          "examples",
+          "summary",
+          "description",
+          "tags"
         ],
-        "miniSchemaParameterNames": [
-          "artifactId",
-          "path"
-        ],
+        "miniSchemaParameterNames": [],
         "miniSchemaRequired": [],
-        "operation": "read",
-        "path": "/tools/runtime/artifact_read",
-        "runHint": "tool_fs_run with toolHandle: artifact_read; operation: read; provide args matching miniSchema.",
-        "score": 6.5,
-        "summary": "Read a Lyra-owned artifact.",
-        "title": "Read artifact"
+        "operation": "install_git",
+        "path": "/tools/skills/install_git",
+        "runHint": "tool_fs_run with path: /tools/skills/install_git; operation: install_git; provide args matching miniSchema.",
+        "score": 29.7,
+        "summary": "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
+        "title": "Install Git skill"
       },
       {
-        "domain": "computer",
-        "handle": null,
-        "matchReason": "summary fuzzy match; description fuzzy match",
+        "domain": "codegraph",
+        "handle": "codegraph_pr_context",
+        "matchReason": "description fuzzy match; schema fuzzy match",
         "matchedFields": [
-          "summary",
-          "description"
+          "description",
+          "schema"
         ],
         "miniSchemaParameterNames": [
-          "osRef",
-          "action",
-          "mode",
-          "sensitiveValueRef",
-          "text"
+          "baseBranch",
+          "compact",
+          "format"
         ],
-        "miniSchemaRequired": [
-          "osRef"
-        ],
-        "operation": "act",
-        "path": "/tools/computer/act",
-        "runHint": "tool_fs_run with path: /tools/computer/act; operation: act; provide args matching miniSchema.",
-        "score": 6.41,
-        "summary": "Press, focus, set text, toggle, or select a desktop node by osRef; returns a before/after diff for verification.",
-        "title": "Act on computer node"
+        "miniSchemaRequired": [],
+        "operation": "pr_context",
+        "path": "/tools/codegraph/pr_context",
+        "runHint": "tool_fs_run with toolHandle: codegraph_pr_context; operation: pr_context; provide args matching miniSchema.",
+        "score": 12.78,
+        "summary": "Analyze the current branch's changes against the code graph",
+        "title": "Pr Context"
       }
     ],
-    "total": 27
+    "total": 30
   },
   "terminal": {
     "domain": null,

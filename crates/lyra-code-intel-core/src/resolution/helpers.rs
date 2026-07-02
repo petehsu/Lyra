@@ -60,7 +60,10 @@ pub fn make_route_node(
         .with("name", name.clone())
         .with("path", file_path)
         .with("language", language)
-        .with("qualifiedName", format!("{file_path}::{method}:{route_path}"))
+        .with(
+            "qualifiedName",
+            format!("{file_path}::{method}:{route_path}"),
+        )
         .with("startLine", line as i64)
         .with("endLine", line as i64);
     graph.add_node(NodeType::Generic, props).unwrap_or(0)

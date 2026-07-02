@@ -2578,6 +2578,52 @@ describe("AiPanelSurface", () => {
     expect(await screen.findByText("Which tone should I use?")).toBeInTheDocument();
   });
 
+  test("localizes shared-control clarification while submitting original option value", async () => {
+    const { api, emit } = createDesktopApi();
+    renderPanel(api, undefined, undefined, "zh-CN");
+
+    await screen.findByText("新会话");
+    act(() => {
+      emit({
+        kind: "clarificationRequested",
+        sessionId: "session-1",
+        clarificationId: "clar-live",
+        question: "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?",
+        i18nKey: "decision.sharedControl.question",
+        options: [
+          {
+            label: "Continue Agent",
+            i18nKey: "decision.sharedControl.continueAgent",
+            description: "Resume Lyra Agent control from the latest browser recovery anchor.",
+            descriptionI18nKey: "decision.sharedControl.continueAgent.description"
+          },
+          {
+            label: "Take Over",
+            i18nKey: "decision.sharedControl.takeOver",
+            description: "Leave the visible tab under user control until the user explicitly authorizes Agent again.",
+            descriptionI18nKey: "decision.sharedControl.takeOver.description"
+          }
+        ],
+        allowCustomAnswer: false,
+        detail: "ControlHandoffEvent was emitted by live browser input arbitration.",
+        detailI18nKey: "decision.sharedControl.detail"
+      });
+    });
+
+    expect(await screen.findByText("用户中断了 Lyra Agent 对当前浏览器标签的控制，现在由谁控制？")).toBeInTheDocument();
+    expect(screen.getByText("检测到用户正在操作当前浏览器，Agent 控制已暂停。")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("继续 Agent"));
+
+    await waitFor(() => {
+      expect(api.agent?.respondClarification).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        clarificationId: "clar-live",
+        answer: "Continue Agent",
+        selectedOption: "Continue Agent"
+      });
+    });
+  });
+
   test("does not turn plain assistant questions into a blocking question panel", async () => {
     const { api, emit } = createDesktopApi();
     renderPanel(api);

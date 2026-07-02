@@ -37,6 +37,8 @@ export type SettingsFieldId =
   | "aiRichRender"
   | "aiStopBehavior"
   | "aiModels"
+  | "aiSkills"
+  | "aiMcp"
   | "aiProviderSettings"
   | "legalNotices";
 
@@ -75,6 +77,8 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "workspaceCategoryLabel"
   | "aiCategoryLabel"
   | "modelsCategoryLabel"
+  | "skillsCategoryLabel"
+  | "mcpCategoryLabel"
   | "notificationsCategoryLabel"
   | "loginManagerCategoryLabel"
   | "softwareStoreCategoryLabel"
@@ -151,6 +155,8 @@ export const createWorkbenchSettingsSchema = (
     createField("aiStopBehavior", "ai", props.aiStopBehaviorLabel, "choice"),
     createField("aiProviderSettings", "ai", props.aiCategoryLabel, "custom"),
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
+    createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
+    createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
     createField("legalNotices", "legal", props.legalNoticesLabel, "custom")
   ];
 
@@ -212,6 +218,16 @@ export const createWorkbenchSettingsSchema = (
       id: "models",
       label: props.modelsCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "models").map((section) => section.id)
+    },
+    {
+      id: "skills",
+      label: props.skillsCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "skills").map((section) => section.id)
+    },
+    {
+      id: "mcp",
+      label: props.mcpCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "mcp").map((section) => section.id)
     },
     {
       id: "legal",

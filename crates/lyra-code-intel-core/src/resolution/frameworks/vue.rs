@@ -8,24 +8,51 @@ use crate::resolution::types::{FrameworkResolver, ResolutionContext, ResolvedRef
 pub struct VueResolver;
 
 const VUE_MACROS: &[&str] = &[
-    "defineProps", "defineEmits", "defineExpose", "defineOptions", "defineSlots", "defineModel", "withDefaults",
+    "defineProps",
+    "defineEmits",
+    "defineExpose",
+    "defineOptions",
+    "defineSlots",
+    "defineModel",
+    "withDefaults",
 ];
 
 const NUXT_AUTO_IMPORTS: &[&str] = &[
-    "useRoute", "useRouter", "navigateTo", "useFetch", "useAsyncData", "useState",
-    "useHead", "useRuntimeConfig", "useNuxtApp", "useCookie", "useError", "createError",
-    "definePageMeta", "defineNuxtConfig", "defineNuxtPlugin",
+    "useRoute",
+    "useRouter",
+    "navigateTo",
+    "useFetch",
+    "useAsyncData",
+    "useState",
+    "useHead",
+    "useRuntimeConfig",
+    "useNuxtApp",
+    "useCookie",
+    "useError",
+    "createError",
+    "definePageMeta",
+    "defineNuxtConfig",
+    "defineNuxtPlugin",
 ];
 
 impl FrameworkResolver for VueResolver {
-    fn name(&self) -> &'static str { "vue" }
+    fn name(&self) -> &'static str {
+        "vue"
+    }
 
     fn detect(&self, ctx: &ResolutionContext) -> bool {
-        if pkg_json_has_dep(ctx, |d| d == "vue" || d == "nuxt" || d == "@nuxt/kit") { return true; }
+        if pkg_json_has_dep(ctx, |d| d == "vue" || d == "nuxt" || d == "@nuxt/kit") {
+            return true;
+        }
         ctx.get_all_files().iter().any(|f| f.ends_with(".vue"))
     }
 
-    fn extract(&self, file_path: &Path, _content: &str, graph: &mut codegraph::CodeGraph) -> Vec<UnresolvedRef> {
+    fn extract(
+        &self,
+        file_path: &Path,
+        _content: &str,
+        graph: &mut codegraph::CodeGraph,
+    ) -> Vec<UnresolvedRef> {
         let fp = file_path.to_string_lossy();
         let norm = fp.replace('\\', "/");
 
@@ -54,7 +81,10 @@ impl FrameworkResolver for VueResolver {
 
         // Vue compiler macros — self-resolve.
         if VUE_MACROS.contains(&name.as_str()) || NUXT_AUTO_IMPORTS.contains(&name.as_str()) {
-            return Some(ResolvedRef { target_node_id: reference.from_node_id, confidence: 1.0 });
+            return Some(ResolvedRef {
+                target_node_id: reference.from_node_id,
+                confidence: 1.0,
+            });
         }
 
         // ponytail: Nuxt #imports and @/~ alias resolution skipped — requires
@@ -64,7 +94,10 @@ impl FrameworkResolver for VueResolver {
         // PascalCase component — delegate to name-based lookup.
         if is_pascal_case(name) {
             if let Some(id) = resolve_by_name_and_kind(name, &["component"], &[], _ctx) {
-                return Some(ResolvedRef { target_node_id: id, confidence: 0.8 });
+                return Some(ResolvedRef {
+                    target_node_id: id,
+                    confidence: 0.8,
+                });
             }
         }
 
@@ -75,10 +108,21 @@ impl FrameworkResolver for VueResolver {
 fn nuxt_route(after_pages: &str) -> Option<String> {
     let without_ext = after_pages.strip_suffix(".vue")?;
     let without_index = without_ext.strip_suffix("/index").unwrap_or(without_ext);
-    let route = without_index.replace("[...", "*").replace("[", ":").replace("]", "");
-    Some(if route.is_empty() { "/".to_string() } else { format!("/{route}") })
+    let route = without_index
+        .replace("[...", "*")
+        .replace("[", ":")
+        .replace("]", "");
+    Some(if route.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{route}")
+    })
 }
 
 fn is_pascal_case(s: &str) -> bool {
-    s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false) && s.chars().all(|c| c.is_ascii_alphanumeric())
+    s.chars()
+        .next()
+        .map(|c| c.is_ascii_uppercase())
+        .unwrap_or(false)
+        && s.chars().all(|c| c.is_ascii_alphanumeric())
 }

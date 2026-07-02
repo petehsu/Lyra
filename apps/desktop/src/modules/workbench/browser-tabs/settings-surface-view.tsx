@@ -12,8 +12,10 @@ import {
   ScrollText,
   Search,
   Settings2,
+  Sparkles,
   Sun,
   Terminal,
+  Webhook,
   type LucideIcon
 } from "lucide-react";
 
@@ -27,7 +29,7 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
-import { SettingsAiModelsView, SettingsAiView } from "../settings-ai";
+import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
 import type { SettingsCategoryId } from "./settings-schema";
@@ -64,9 +66,11 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   linux: Terminal,
   loginManager: KeyRound,
   models: Package,
+  mcp: Webhook,
   notifications: Bell,
   softwareStore: AppWindow,
   search: Search,
+  skills: Sparkles,
   workspace: Monitor
 };
 
@@ -404,6 +408,12 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
             openDialog={control.openDialog}
           />
         );
+      }
+      if (control.customKind === "ai-skills") {
+        return <SettingsAiSkillsView labels={control.labels} model={control.model} />;
+      }
+      if (control.customKind === "ai-mcp") {
+        return <SettingsAiMcpView labels={control.labels} model={control.model} />;
       }
       if (control.customKind === "legal-notices") {
         return <LegalNoticesView control={control} />;

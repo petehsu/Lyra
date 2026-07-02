@@ -98,6 +98,80 @@ fn browser_visual_tools_receive_model_image_capability() {
 }
 
 #[test]
+fn pinned_tool_handle_model_calls_dispatch_through_tool_fs() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Pinned Handle Dispatch Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+        let input: Value = serde_json::from_str(&payload).expect("payload json");
+        assert_eq!(method, "lyraLumen.locate");
+        assert_eq!(input["action"], "locate");
+        assert_eq!(input["query"], "install");
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "lyraLumenLocateResult",
+            "tabId": "browser-tab-1",
+            "targetMode": "live",
+            "matches": []
+        }))
+        .expect("json"))
+    });
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "direct-browser-locate".to_string(),
+            name: "browser_locate".to_string(),
+            arguments: json!({ "query": "install", "targetMode": "live" }),
+        },
+    );
+
+    assert_eq!(output["status"].as_str(), Some("completed"));
+    assert_eq!(output["toolPath"].as_str(), Some("/tools/browser/locate"));
+}
+
+#[test]
+fn direct_web_search_model_call_is_not_unknown_provider_tool() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Direct Web Search Dispatch Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+
+    let output = execute_model_tool(
+        &session_id,
+        &turn_id,
+        &None,
+        &Arc::new(AtomicBool::new(false)),
+        ModelToolCall {
+            id: "direct-web-search".to_string(),
+            name: "web_search".to_string(),
+            arguments: json!({}),
+        },
+    );
+
+    assert_eq!(output["status"].as_str(), Some("failed"));
+    assert_eq!(output["toolPath"].as_str(), Some("/tools/web/search"));
+    assert_ne!(
+        output.pointer("/error/code").and_then(Value::as_str),
+        Some("tool_not_found")
+    );
+}
+
+#[test]
 fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
     let backend = LyraAgentBackend;
     let created = backend

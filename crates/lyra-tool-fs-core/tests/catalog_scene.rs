@@ -90,7 +90,7 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         .expect("git tools root");
     assert_eq!(
         registry.root_summary_for_scene(ToolScene::Git)["domains"][0],
-        "terminal"
+        "codegraph"
     );
     let general_domains = general_root
         .directories
@@ -108,7 +108,7 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         project_root.directories[0].name
     );
 
-    for hidden_domain in ["filesystem", "code", "shell", "git"] {
+    for hidden_domain in ["filesystem", "shell", "git"] {
         assert!(
             registry
                 .list(

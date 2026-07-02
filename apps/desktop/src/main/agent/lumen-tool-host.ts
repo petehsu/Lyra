@@ -1,6 +1,7 @@
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
   WorkbenchBrowserAgentModeRequest,
+  WorkbenchBrowserAgentObserveStrategy,
   WorkbenchBrowserAgentScrollBlock,
   WorkbenchBrowserAgentScrollDirection,
   WorkbenchBrowserAgentTargetMode,
@@ -1491,40 +1492,86 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
-      const content = await browser.readAgentPage(tabId, {
-        strategy,
-        ...readLumenModeRequest(payload, targetMode),
-        ...(maxChars === undefined ? {} : { maxChars }),
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
-      });
-      if (strategy === "domFallback") {
+      const readTimeoutMs = Math.min(timeoutMs ?? 4_000, 4_000);
+      const modeRequest = readLumenModeRequest(payload, targetMode);
+      const readPage = (readStrategy: WorkbenchBrowserAgentObserveStrategy) =>
+        browser.readAgentPage(tabId, {
+          strategy: readStrategy,
+          ...modeRequest,
+          ...(maxChars === undefined ? {} : { maxChars }),
+          timeoutMs: readTimeoutMs
+        });
+      const formatRead = (
+        content: Awaited<ReturnType<typeof browser.readAgentPage>>,
+        readStrategy: WorkbenchBrowserAgentObserveStrategy,
+        degraded?: { readonly reason: string }
+      ) => {
+        if (readStrategy === "domFallback") {
+          return withLumenTargetIds({
+            ok: true,
+            kind: "lyraLumenRead",
+            tabId,
+            strategy: readStrategy,
+            targetMode,
+            ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
+            content: content.content,
+            summary: content,
+            truncated: "truncated" in content ? content.truncated : false,
+            ...(degraded === undefined ? {} : { degraded: true, warning: degraded.reason }),
+            nextRecommendedAction: "lyra_lumen.map"
+          }, tabId);
+        }
+        return withLumenTargetIds({
+          ok: true,
+          kind: "lyraLumenRead",
+          tabId,
+          strategy: readStrategy,
+          targetMode,
+          ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
+          content: content.content,
+          truncated: "truncated" in content ? content.truncated : false,
+          ...("startChar" in content ? { startChar: content.startChar } : {}),
+          ...("endChar" in content ? { endChar: content.endChar } : {}),
+          ...("totalChars" in content ? { totalChars: content.totalChars } : {}),
+          ...(degraded === undefined ? {} : { degraded: true, warning: degraded.reason }),
+          nextRecommendedAction: "lyra_lumen.map"
+        }, tabId);
+      };
+      try {
+        return formatRead(await readPage(strategy), strategy);
+      } catch (error) {
+        const handoff = isRecord(error) && isRecord(error.handoff) ? error.handoff : null;
+        if (handoff !== null && handoff.kind === "browser-shared-control-interrupted") {
+          throw error;
+        }
+        const reason = error instanceof Error ? error.message : String(error);
+        if (strategy !== "domFallback") {
+          try {
+            return formatRead(await readPage("domFallback"), "domFallback", { reason });
+          } catch {
+            // Fall through to a non-failing state-only result; the model can still map/see.
+          }
+        }
+        const state = browser.readPageState({ tabId });
         return withLumenTargetIds({
           ok: true,
           kind: "lyraLumenRead",
           tabId,
           strategy,
           targetMode,
-          ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
-          content: content.content,
-          summary: content,
-          truncated: "truncated" in content ? content.truncated : false,
+          content: "",
+          degraded: true,
+          warning: reason,
+          pageState: state === null
+            ? null
+            : {
+              address: state.address,
+              title: state.title,
+              isLoading: state.isLoading
+            },
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       }
-      return withLumenTargetIds({
-        ok: true,
-        kind: "lyraLumenRead",
-        tabId,
-        strategy,
-        targetMode,
-        ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
-        content: content.content,
-        truncated: "truncated" in content ? content.truncated : false,
-        ...("startChar" in content ? { startChar: content.startChar } : {}),
-        ...("endChar" in content ? { endChar: content.endChar } : {}),
-        ...("totalChars" in content ? { totalChars: content.totalChars } : {}),
-        nextRecommendedAction: "lyra_lumen.map"
-      }, tabId);
     }),
     "lyraLumen.see": withLyraLumenResult("lyraLumen.see", async (payload) => {
       const browser = getBrowserBridge();

@@ -1,6 +1,6 @@
 import { Check, ExternalLink, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { ComponentPropsWithoutRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentPropsWithoutRef, DragEvent as ReactDragEvent } from "react";
 
 import {
   AppButton,
@@ -12,9 +12,16 @@ import {
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
-import type { AgentModelEntry, AgentProviderRouteEntry } from "../../../shared/desktop-bridge";
+import type {
+  AgentInstalledSkill,
+  AgentMcpServer,
+  AgentModelEntry,
+  AgentProviderRouteEntry,
+  AgentSkillStoreEntry,
+} from "../../../shared/desktop-bridge";
 import { AgentProviderBrandIcon } from "../agent-provider-brand-icon";
 import type { GlobalDialogModel } from "../global-dialog";
+import { getDesktopApi } from "../shell/service";
 import type { SettingsAiLabels, SettingsAiModel } from "./types";
 
 type SettingsAiViewProps = {
@@ -25,6 +32,9 @@ type SettingsAiViewProps = {
 type SettingsAiModelsViewProps = SettingsAiViewProps & {
   readonly openDialog: GlobalDialogModel["openDialog"];
 };
+
+type SettingsAiSkillsViewProps = SettingsAiViewProps;
+type SettingsAiMcpViewProps = SettingsAiViewProps;
 
 type SettingsAiRenderedModelEntry = Pick<
   AgentModelEntry,
@@ -44,6 +54,7 @@ type SettingsAiRenderedModelEntry = Pick<
 >;
 
 const MODEL_PREVIEW_LIMIT = 9;
+const SKILL_PAGE_SIZE = 24;
 
 type AgentConfigShape = {
   readonly provider?: {
@@ -219,6 +230,22 @@ const PROVIDER_ROUTE_ALIASES: readonly {
     ],
   },
   {
+    match: (route) => route.providerId.includes("ollama") || route.id.includes("ollama"),
+    values: ["ollama", "llama", "llama3", "llama.cpp", "羊驼", "本地羊驼", "奥拉马"],
+  },
+  {
+    match: (route) => route.providerId.includes("llama") || route.id.includes("llama"),
+    values: ["llama", "llama.cpp", "羊驼", "本地推理"],
+  },
+  {
+    match: (route) => route.providerId.includes("lmstudio") || route.id.includes("lmstudio"),
+    values: ["lmstudio", "lm studio", "studio", "工作室", "本地工作室"],
+  },
+  {
+    match: (route) => route.providerId.includes("vllm") || route.id.includes("vllm"),
+    values: ["vllm", "v llm", "本地部署", "推理服务"],
+  },
+  {
     match: (route) => route.providerId === "mimo" || route.id.includes("mimo"),
     values: [
       "mimo",
@@ -235,6 +262,10 @@ const PROVIDER_ROUTE_ALIASES: readonly {
   {
     match: (route) => route.providerId === "openai" || route.id.includes("openai"),
     values: ["openai", "chatgpt", "gpt", "开放人工智能", "开放ai"],
+  },
+  {
+    match: (route) => route.providerId.includes("openrouter") || route.id.includes("openrouter"),
+    values: ["openrouter", "open router", "router", "模型路由", "开放路由"],
   },
   {
     match: (route) => route.providerId.includes("google") || route.label.toLocaleLowerCase().includes("gemini"),
@@ -263,6 +294,10 @@ const PROVIDER_ROUTE_ALIASES: readonly {
   {
     match: (route) => route.providerId.includes("nvidia") || route.label.toLocaleLowerCase().includes("nvidia"),
     values: ["nvidia", "nim", "nvidia nim", "英伟达"],
+  },
+  {
+    match: (route) => route.providerId.includes("bedrock") || route.label.toLocaleLowerCase().includes("bedrock"),
+    values: ["bedrock", "aws", "amazon", "亚马逊", "云模型"],
   },
   {
     match: (route) => route.providerId.includes("baidu") || route.label.toLocaleLowerCase().includes("wenxin"),
@@ -369,6 +404,19 @@ const modelProviderKeys = (entry: SettingsAiRenderedModelEntry): readonly string
     return trimmed.length === 0 ? [] : [trimmed];
   });
 
+type AgentProviderConfigShape = NonNullable<AgentConfigShape["providers"]>[string];
+
+const configForModelEntry = (
+  entry: SettingsAiRenderedModelEntry,
+  config: AgentConfigShape
+): AgentProviderConfigShape | null => {
+  const providers = config.providers ?? {};
+  return modelProviderKeys(entry)
+    .map((key) => providers[key])
+    .find((provider): provider is AgentProviderConfigShape => provider !== undefined)
+    ?? null;
+};
+
 const modelMatchesSelectedProvider = (
   entry: AgentModelEntry,
   profileName: string,
@@ -464,6 +512,778 @@ const formatSettingsAiLabel = (
     template
   );
 
+const skillSearchText = (skill: AgentInstalledSkill | AgentSkillStoreEntry): string =>
+  [
+    skill.id,
+    skill.name,
+    skill.version ?? "",
+    skill.description ?? "",
+    "sourceRegistry" in skill ? skill.sourceRegistry ?? "" : "",
+    ...(skill.permissions ?? []),
+    ...(skill.toolPaths ?? []),
+  ].join(" ").toLocaleLowerCase();
+
+const compareSkillName = (
+  left: AgentInstalledSkill | AgentSkillStoreEntry,
+  right: AgentInstalledSkill | AgentSkillStoreEntry,
+): number => left.name.localeCompare(right.name);
+
+const filterAndSortSkills = <T extends AgentInstalledSkill | AgentSkillStoreEntry>(
+  skills: readonly T[],
+  query: string,
+): T[] => {
+  if (query.length === 0) return [...skills];
+  return skills
+    .map((skill) => ({ skill, score: fuzzyScore(skillSearchText(skill), query) }))
+    .filter((entry) => entry.score > Number.NEGATIVE_INFINITY)
+    .sort((left, right) => right.score - left.score || compareSkillName(left.skill, right.skill))
+    .map((entry) => entry.skill);
+};
+
+const installedStoreSkillIds = (skills: readonly AgentInstalledSkill[]): ReadonlySet<string> =>
+  new Set(skills.flatMap((skill) => {
+    if (skill.source.kind === "store") {
+      return [skill.id, skill.source.skillId];
+    }
+    return [skill.id];
+  }));
+
+const shouldRefreshSkillSearch = (query: string): boolean => {
+  const input = query.trim();
+  if (input.length === 0) return true;
+  if (input.length < 2) return false;
+  return !(
+    input.startsWith("/") ||
+    input.startsWith("./") ||
+    input.startsWith("../") ||
+    input.startsWith("file:") ||
+    input.startsWith("git@") ||
+    /^https?:\/\//iu.test(input)
+  );
+};
+
+const renderSkillMeta = (
+  labels: SettingsAiLabels,
+  permissions: readonly string[],
+  toolPaths: readonly string[]
+) => (
+  <div className="lyra-settings-ai-skill-meta">
+    {permissions.length === 0 ? null : (
+      <span>
+        <strong>{labels.skillsPermissionsLabel}</strong>
+        {permissions.join(", ")}
+      </span>
+    )}
+    {toolPaths.length === 0 ? null : (
+      <span>
+        <strong>{labels.skillsToolsLabel}</strong>
+        {toolPaths.join(", ")}
+      </span>
+    )}
+  </div>
+);
+
+type ParsedSkillInstallInput =
+  | {
+    readonly kind: "git";
+    readonly ref: string | null;
+    readonly subdir: string | null;
+    readonly url: string;
+  }
+  | {
+    readonly kind: "local";
+    readonly sourcePath: string;
+  };
+
+const decodeSkillPathPart = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const trimNullable = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
+};
+
+const skillUrlParam = (url: URL, key: string): string | null => {
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  const hashParams = hash.includes("=") ? new URLSearchParams(hash) : null;
+  return trimNullable(url.searchParams.get(key) ?? hashParams?.get(key) ?? null);
+};
+
+const stripSkillUrlMetadata = (url: URL): string => {
+  const clone = new URL(url.href);
+  clone.search = "";
+  clone.hash = "";
+  return clone.toString();
+};
+
+const parseSkillInstallInput = (value: string): ParsedSkillInstallInput | null => {
+  const input = value.trim().replace(/^['"]|['"]$/gu, "");
+  if (input.length === 0) return null;
+
+  if (/^[\w.-]+\/[\w.-]+$/u.test(input)) {
+    const parts = input.split("/");
+    const owner = parts[0] ?? "";
+    const repo = parts[1] ?? "";
+    return {
+      kind: "git",
+      url: `https://github.com/${owner}/${repo.replace(/\.git$/u, "")}.git`,
+      ref: null,
+      subdir: null,
+    };
+  }
+
+  const urlInput = input.startsWith("github.com/") ? `https://${input}` : input;
+  try {
+    const url = new URL(urlInput);
+    if (url.protocol === "file:") {
+      return {
+        kind: "local",
+        sourcePath: decodeSkillPathPart(url.pathname),
+      };
+    }
+    if (url.hostname === "github.com" || url.hostname.endsWith(".github.com")) {
+      const parts = url.pathname.split("/").filter(Boolean).map(decodeSkillPathPart);
+      const owner = parts[0] ?? "";
+      const repo = (parts[1] ?? "").replace(/\.git$/u, "");
+      if (owner.length > 0 && repo.length > 0) {
+        const sourceIndex = parts.findIndex((part) => part === "tree" || part === "blob");
+        const ref = sourceIndex >= 0
+          ? trimNullable(parts[sourceIndex + 1])
+          : skillUrlParam(url, "ref");
+        const subdirParts = sourceIndex >= 0 ? parts.slice(sourceIndex + 2) : [];
+        if (subdirParts.at(-1)?.toLocaleLowerCase() === "skill.md") {
+          subdirParts.pop();
+        }
+        const subdir = sourceIndex >= 0
+          ? trimNullable(subdirParts.join("/"))
+          : skillUrlParam(url, "subdir") ?? skillUrlParam(url, "path");
+        return {
+          kind: "git",
+          url: `https://github.com/${owner}/${repo}.git`,
+          ref,
+          subdir,
+        };
+      }
+    }
+
+    return {
+      kind: "git",
+      url: stripSkillUrlMetadata(url),
+      ref: skillUrlParam(url, "ref"),
+      subdir: skillUrlParam(url, "subdir") ?? skillUrlParam(url, "path"),
+    };
+  } catch {
+    if (/^(git@|ssh:\/\/|git:\/\/)/iu.test(input) || /\.git(?:$|[?#/])/iu.test(input)) {
+      return {
+        kind: "git",
+        url: input,
+        ref: null,
+        subdir: null,
+      };
+    }
+  }
+
+  return {
+    kind: "local",
+    sourcePath: input,
+  };
+};
+
+type SettingsAiSkillCardProps = {
+  readonly labels: SettingsAiLabels;
+  readonly onToggle: (skill: AgentInstalledSkill, active: boolean) => void;
+  readonly onUninstall: (skill: AgentInstalledSkill) => void;
+  readonly pending: boolean;
+  readonly skill: AgentInstalledSkill;
+};
+
+const SettingsAiSkillCard = ({
+  labels,
+  onToggle,
+  onUninstall,
+  pending,
+  skill,
+}: SettingsAiSkillCardProps) => (
+  <div className="lyra-settings-ai-skill-card" data-pending={pending ? "true" : undefined}>
+    <div className="lyra-settings-ai-skill-main">
+      <div className="lyra-settings-ai-skill-title-row">
+        <div>
+          <h3>{skill.name}</h3>
+          <p>{skill.id} · {skill.version}</p>
+        </div>
+      </div>
+      {skill.description.length === 0 ? null : (
+        <p className="lyra-settings-ai-skill-description">{skill.description}</p>
+      )}
+      {renderSkillMeta(labels, skill.permissions, skill.toolPaths)}
+    </div>
+    <div className="lyra-settings-ai-skill-actions">
+      <AppSwitch
+        checked={skill.active}
+        aria-label={skill.name}
+        onCheckedChange={(active) => {
+          onToggle(skill, active);
+        }}
+      />
+      <AppIconButton
+        aria-label={`${labels.skillsUninstall}: ${skill.name}`}
+        title={labels.skillsUninstall}
+        tone="danger"
+        className="lyra-settings-ai-row-delete"
+        onClick={() => {
+          onUninstall(skill);
+        }}
+      >
+        <Trash2 size={14} aria-hidden="true" />
+      </AppIconButton>
+    </div>
+  </div>
+);
+
+type SettingsAiStoreSkillCardProps = {
+  readonly entry: AgentSkillStoreEntry;
+  readonly labels: SettingsAiLabels;
+  readonly onInstall: (entry: AgentSkillStoreEntry) => void;
+  readonly pending: boolean;
+};
+
+const SettingsAiStoreSkillCard = ({
+  entry,
+  labels,
+  onInstall,
+  pending,
+}: SettingsAiStoreSkillCardProps) => (
+  <div className="lyra-settings-ai-skill-card" data-pending={pending ? "true" : undefined}>
+    <div className="lyra-settings-ai-skill-main">
+      <div className="lyra-settings-ai-skill-title-row">
+        <div>
+          <h3>{entry.name}</h3>
+          <p>
+            {[entry.sourceRegistry ?? entry.id, entry.version ?? ""].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      </div>
+      {entry.description === undefined || entry.description.length === 0 ? null : (
+        <p className="lyra-settings-ai-skill-description">{entry.description}</p>
+      )}
+      {renderSkillMeta(labels, entry.permissions ?? [], entry.toolPaths ?? [])}
+    </div>
+    <div className="lyra-settings-ai-skill-actions">
+      <AppSwitch
+        checked={false}
+        aria-label={entry.name}
+        onCheckedChange={(checked) => {
+          if (!checked) return;
+          onInstall(entry);
+        }}
+      />
+    </div>
+  </div>
+);
+
+const mcpTransportText = (server: AgentMcpServer): string =>
+  server.transportSummary
+  ?? (server.transport.kind === "stdio"
+    ? [server.transport.command, ...server.transport.args].filter(Boolean).join(" ")
+    : server.transport.url);
+
+const mcpSearchText = (server: AgentMcpServer): string =>
+  [
+    server.id,
+    server.name,
+    server.state,
+    mcpTransportText(server),
+    ...(server.tools ?? []).flatMap((tool) => [tool.name, tool.description ?? ""]),
+  ].join(" ").toLocaleLowerCase();
+
+const mcpStateLabel = (labels: SettingsAiLabels, state: string): string => {
+  if (state === "connected") return labels.mcpConnected;
+  if (state === "failed") return labels.mcpFailed;
+  return labels.mcpDisconnected;
+};
+
+type SettingsAiMcpServerCardProps = {
+  readonly labels: SettingsAiLabels;
+  readonly onRemove: (server: AgentMcpServer) => void;
+  readonly onToggle: (server: AgentMcpServer, active: boolean) => void;
+  readonly pending: boolean;
+  readonly server: AgentMcpServer;
+};
+
+const SettingsAiMcpServerCard = ({
+  labels,
+  onRemove,
+  onToggle,
+  pending,
+  server,
+}: SettingsAiMcpServerCardProps) => {
+  const active = server.enabled && server.state === "connected";
+  const baseUrl = server.transport.kind === "stdio" ? null : server.transport.url;
+  const toolCount = server.toolCount ?? server.tools?.length ?? 0;
+  return (
+    <div className="lyra-settings-ai-skill-card" data-pending={pending ? "true" : undefined}>
+      <div className="lyra-settings-ai-skill-main">
+        <div className="lyra-settings-ai-skill-title-row">
+          <div className="lyra-settings-ai-mcp-title">
+            <span className="lyra-settings-ai-mcp-icon" aria-hidden="true">
+              <AgentProviderBrandIcon
+                baseUrl={baseUrl}
+                label={server.name}
+                modelId={mcpTransportText(server)}
+                provider={server.id}
+                providerId={server.id}
+                size={16}
+              />
+            </span>
+            <span>
+              <h3>{server.name}</h3>
+              <p>{server.id} · {mcpStateLabel(labels, server.state)}</p>
+            </span>
+          </div>
+        </div>
+        <p className="lyra-settings-ai-skill-description">{mcpTransportText(server)}</p>
+        <div className="lyra-settings-ai-skill-meta">
+          <span><strong>{labels.mcpToolsLabel}</strong>{toolCount}</span>
+          {server.lastError === undefined || server.lastError === null || server.lastError.length === 0 ? null : (
+            <span>{server.lastError}</span>
+          )}
+        </div>
+      </div>
+      <div className="lyra-settings-ai-skill-actions">
+        <AppSwitch
+          checked={active}
+          aria-label={server.name}
+          onCheckedChange={(checked) => {
+            onToggle(server, checked);
+          }}
+        />
+        <AppIconButton
+          aria-label={`${labels.mcpRemove}: ${server.name}`}
+          title={labels.mcpRemove}
+          tone="danger"
+          className="lyra-settings-ai-row-delete"
+          onClick={() => {
+            onRemove(server);
+          }}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </AppIconButton>
+      </div>
+    </div>
+  );
+};
+
+export const SettingsAiMcpView = ({ labels, model }: SettingsAiMcpViewProps) => {
+  const [query, setQuery] = useState("");
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set());
+  const servers = model.agentMcpCatalog?.servers ?? [];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredServers = normalizedQuery.length === 0
+    ? [...servers]
+    : servers
+      .map((server) => ({ server, score: fuzzyScore(mcpSearchText(server), normalizedQuery) }))
+      .filter((entry) => entry.score > Number.NEGATIVE_INFINITY)
+      .sort((left, right) => right.score - left.score || left.server.name.localeCompare(right.server.name))
+      .map((entry) => entry.server);
+
+  const runMcpOperation = useCallback(async (
+    pendingId: string,
+    operation: () => Promise<void> | void,
+  ): Promise<void> => {
+    setPendingIds((current) => new Set(current).add(pendingId));
+    try {
+      await operation();
+    } finally {
+      setPendingIds((current) => {
+        const next = new Set(current);
+        next.delete(pendingId);
+        return next;
+      });
+    }
+  }, []);
+
+  const addServer = useCallback((): void => {
+    const input = query.trim();
+    if (input.length === 0) return;
+    void runMcpOperation("input", async () => {
+      await model.upsertAgentMcpServer?.({ input });
+      setQuery("");
+    });
+  }, [model.upsertAgentMcpServer, query, runMcpOperation]);
+
+  const toggleServer = useCallback((server: AgentMcpServer, active: boolean): void => {
+    void runMcpOperation(`server:${server.id}`, async () => {
+      if (active) {
+        await model.connectAgentMcpServer?.({ serverId: server.id });
+      } else {
+        await model.disconnectAgentMcpServer?.({ serverId: server.id });
+      }
+    });
+  }, [model.connectAgentMcpServer, model.disconnectAgentMcpServer, runMcpOperation]);
+
+  const removeServer = useCallback((server: AgentMcpServer): void => {
+    void runMcpOperation(`server:${server.id}`, async () => {
+      await model.removeAgentMcpServer?.({ serverId: server.id });
+    });
+  }, [model.removeAgentMcpServer, runMcpOperation]);
+
+  return (
+    <section className="lyra-settings-ai-stack lyra-settings-ai-skills-page">
+      <div className="lyra-settings-ai-models-panel">
+        <form
+          className="lyra-settings-ai-page-header"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addServer();
+          }}
+        >
+          <AppSearchField
+            ariaLabel={labels.mcpTitle}
+            className="lyra-settings-ai-model-search"
+            placeholder={labels.mcpSearchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <AppButton
+            type="submit"
+            variant="default"
+            size="sm"
+            className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+            disabled={query.trim().length === 0}
+          >
+            <Plus size={14} aria-hidden="true" />
+            {labels.mcpAddServer}
+          </AppButton>
+        </form>
+
+        {model.errorMessage === null ? null : (
+          <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
+            {model.errorMessage}
+          </AppStatusMessage>
+        )}
+
+        {filteredServers.length === 0 ? (
+          <div className="lyra-settings-ai-empty-panel" role="status">
+            <strong>{servers.length === 0 ? labels.mcpEmptyTitle : labels.mcpDisconnected}</strong>
+            <span>{labels.mcpEmptyDescription}</span>
+          </div>
+        ) : (
+          <div className="lyra-settings-ai-skill-list">
+            {filteredServers.map((server) => (
+              <SettingsAiMcpServerCard
+                key={server.id}
+                labels={labels}
+                onRemove={removeServer}
+                onToggle={toggleServer}
+                pending={pendingIds.has(`server:${server.id}`)}
+                server={server}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+export const SettingsAiSkillsView = ({ labels, model }: SettingsAiSkillsViewProps) => {
+  const [query, setQuery] = useState("");
+  const [visibleSkillLimit, setVisibleSkillLimit] = useState(SKILL_PAGE_SIZE);
+  const [isSearchingSkills, setIsSearchingSkills] = useState(false);
+  const [isLoadingMoreSkills, setIsLoadingMoreSkills] = useState(false);
+  const [pendingSkillIds, setPendingSkillIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [skillDropActive, setSkillDropActive] = useState(false);
+  const searchSequenceRef = useRef(0);
+  const skillDropDepthRef = useRef(0);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const catalog = model.agentSkillCatalog ?? null;
+  const skills = catalog?.skills ?? [];
+  const store = catalog?.store ?? null;
+  const installedSkillIds = useMemo(() => installedStoreSkillIds(skills), [skills]);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const refreshSkillStore = model.refreshAgentSkillStore;
+
+  const runSkillOperation = useCallback(async (
+    pendingId: string,
+    operation: () => Promise<void> | void,
+  ): Promise<void> => {
+    setPendingSkillIds((current) => new Set(current).add(pendingId));
+    try {
+      await operation();
+    } finally {
+      setPendingSkillIds((current) => {
+        const next = new Set(current);
+        next.delete(pendingId);
+        return next;
+      });
+    }
+  }, []);
+
+  const installSkillValue = useCallback(async (value: string): Promise<void> => {
+    const parsed = parseSkillInstallInput(value);
+    if (parsed === null) return;
+    setQuery(value);
+    await runSkillOperation("input", async () => {
+      if (parsed.kind === "git") {
+        await model.installAgentSkillFromGit?.({
+          url: parsed.url,
+          ref: parsed.ref,
+          subdir: parsed.subdir,
+        });
+      } else {
+        await model.installAgentSkillFromLocal?.({ sourcePath: parsed.sourcePath });
+      }
+      setQuery("");
+    });
+  }, [
+    model.installAgentSkillFromGit,
+    model.installAgentSkillFromLocal,
+    runSkillOperation,
+  ]);
+
+  useEffect(() => {
+    setVisibleSkillLimit(SKILL_PAGE_SIZE);
+    if (!shouldRefreshSkillSearch(query) || refreshSkillStore === undefined) {
+      setIsSearchingSkills(false);
+      return;
+    }
+    const sequence = searchSequenceRef.current + 1;
+    searchSequenceRef.current = sequence;
+    setIsSearchingSkills(true);
+    const timer = window.setTimeout(() => {
+      void refreshSkillStore({ query: query.trim(), offset: 0, append: false })
+        .finally(() => {
+          if (searchSequenceRef.current === sequence) {
+            setIsSearchingSkills(false);
+          }
+        });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query, refreshSkillStore]);
+
+  const filteredSkills = filterAndSortSkills(skills, normalizedQuery);
+  const storeSkills = store?.index?.skills ?? [];
+  const filteredStoreSkills = filterAndSortSkills(storeSkills, normalizedQuery);
+  const allVisibleStoreSkills = filteredStoreSkills.filter((entry) => !installedSkillIds.has(entry.id));
+  const visibleStoreSkills = allVisibleStoreSkills.slice(0, visibleSkillLimit);
+  const hasVisibleSkills = filteredSkills.length > 0 || visibleStoreSkills.length > 0;
+  const hasMoreLocalStoreSkills = allVisibleStoreSkills.length > visibleStoreSkills.length;
+  const hasMoreRemoteStoreSkills = store?.index?.hasMore === true;
+
+  const loadMoreSkills = useCallback(async (): Promise<void> => {
+    if (isLoadingMoreSkills) return;
+    if (hasMoreLocalStoreSkills) {
+      setVisibleSkillLimit((current) => current + SKILL_PAGE_SIZE);
+      return;
+    }
+    if (!hasMoreRemoteStoreSkills || refreshSkillStore === undefined || !shouldRefreshSkillSearch(query)) {
+      return;
+    }
+    setIsLoadingMoreSkills(true);
+    try {
+      await refreshSkillStore({
+        query: query.trim(),
+        offset: storeSkills.length,
+        append: true,
+      });
+    } finally {
+      setIsLoadingMoreSkills(false);
+    }
+  }, [
+    hasMoreLocalStoreSkills,
+    hasMoreRemoteStoreSkills,
+    isLoadingMoreSkills,
+    query,
+    refreshSkillStore,
+    storeSkills.length,
+  ]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (target === null || !hasVisibleSkills || (!hasMoreLocalStoreSkills && !hasMoreRemoteStoreSkills)) {
+      return;
+    }
+    if (typeof window.IntersectionObserver !== "function") {
+      return;
+    }
+    const observer = new window.IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void loadMoreSkills();
+      }
+    }, { rootMargin: "160px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMoreLocalStoreSkills, hasMoreRemoteStoreSkills, hasVisibleSkills, loadMoreSkills]);
+
+  const installSkillInput = (): void => {
+    void installSkillValue(query);
+  };
+
+  const toggleInstalledSkill = useCallback((skill: AgentInstalledSkill, active: boolean): void => {
+    void runSkillOperation(`skill:${skill.id}`, async () => {
+      if (active) {
+        await model.activateAgentSkill?.({ skillId: skill.id });
+      } else {
+        await model.deactivateAgentSkill?.({ skillId: skill.id });
+      }
+    });
+  }, [model.activateAgentSkill, model.deactivateAgentSkill, runSkillOperation]);
+
+  const uninstallInstalledSkill = useCallback((skill: AgentInstalledSkill): void => {
+    void runSkillOperation(`skill:${skill.id}`, async () => {
+      await model.uninstallAgentSkill?.({ skillId: skill.id });
+    });
+  }, [model.uninstallAgentSkill, runSkillOperation]);
+
+  const installStoreSkill = useCallback((entry: AgentSkillStoreEntry): void => {
+    void runSkillOperation(`store:${entry.id}`, async () => {
+      await model.installAgentSkillFromStore?.({ skillId: entry.id });
+    });
+  }, [model.installAgentSkillFromStore, runSkillOperation]);
+
+  const resolveDroppedSkillInput = (event: ReactDragEvent<HTMLElement>): string | null => {
+    for (const file of Array.from(event.dataTransfer.files)) {
+      const fromBridge = getDesktopApi()?.files.getPathForFile?.(file)?.trim();
+      if (fromBridge !== undefined && fromBridge.length > 0) return fromBridge;
+      const legacy = (file as File & { readonly path?: string }).path?.trim();
+      if (legacy !== undefined && legacy.length > 0) return legacy;
+    }
+    return (event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain")).trim() || null;
+  };
+
+  const skillDragLooksInstallable = (event: ReactDragEvent<HTMLElement>): boolean =>
+    event.dataTransfer.files.length > 0
+    || Array.from(event.dataTransfer.types).includes("text/uri-list")
+    || Array.from(event.dataTransfer.types).includes("text/plain");
+
+  const handleSkillDragEnter = (event: ReactDragEvent<HTMLFormElement>): void => {
+    if (!skillDragLooksInstallable(event)) return;
+    event.preventDefault();
+    skillDropDepthRef.current += 1;
+    setSkillDropActive(true);
+  };
+
+  const handleSkillDragOver = (event: ReactDragEvent<HTMLFormElement>): void => {
+    if (!skillDragLooksInstallable(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setSkillDropActive(true);
+  };
+
+  const handleSkillDragLeave = (event: ReactDragEvent<HTMLFormElement>): void => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    skillDropDepthRef.current = Math.max(0, skillDropDepthRef.current - 1);
+    if (skillDropDepthRef.current === 0) {
+      setSkillDropActive(false);
+    }
+  };
+
+  const handleSkillDrop = (event: ReactDragEvent<HTMLFormElement>): void => {
+    if (!skillDragLooksInstallable(event)) return;
+    event.preventDefault();
+    skillDropDepthRef.current = 0;
+    setSkillDropActive(false);
+    const input = resolveDroppedSkillInput(event);
+    if (input !== null) {
+      void installSkillValue(input);
+    }
+  };
+
+  return (
+    <section className="lyra-settings-ai-stack lyra-settings-ai-skills-page">
+      <div className="lyra-settings-ai-models-panel">
+        <form
+          className="lyra-settings-ai-page-header"
+          data-drop-active={skillDropActive ? "true" : undefined}
+          onDragEnter={handleSkillDragEnter}
+          onDragOver={handleSkillDragOver}
+          onDragLeave={handleSkillDragLeave}
+          onDrop={handleSkillDrop}
+          onSubmit={(event) => {
+            event.preventDefault();
+            installSkillInput();
+          }}
+        >
+          <AppSearchField
+            ariaLabel={labels.skillsTitle}
+            className="lyra-settings-ai-model-search"
+            placeholder={labels.skillsSearchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <AppButton
+            type="submit"
+            variant="default"
+            size="sm"
+            className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+            disabled={query.trim().length === 0 || pendingSkillIds.has("input")}
+          >
+            <Plus size={14} aria-hidden="true" />
+            {labels.skillsAddSkill}
+          </AppButton>
+        </form>
+
+        {model.errorMessage === null ? null : (
+          <AppStatusMessage className="lyra-settings-ai-error" tone="error" role="alert">
+            {model.errorMessage}
+          </AppStatusMessage>
+        )}
+
+        {isSearchingSkills && !hasVisibleSkills ? (
+          <div className="lyra-settings-ai-empty-panel" role="status">
+            <strong>{labels.skillsSearching}</strong>
+            <span>{labels.skillsEmptyDescription}</span>
+          </div>
+        ) : !hasVisibleSkills ? (
+          <div className="lyra-settings-ai-empty-panel" role="status">
+            <strong>{labels.skillsEmptyTitle}</strong>
+            <span>{store?.lastError ?? labels.skillsEmptyDescription}</span>
+          </div>
+        ) : (
+          <div className="lyra-settings-ai-skill-list">
+            {isSearchingSkills ? (
+              <div className="lyra-settings-ai-skill-status" role="status">
+                {labels.skillsSearching}
+              </div>
+            ) : null}
+            {filteredSkills.map((skill) => (
+              <SettingsAiSkillCard
+                key={skill.id}
+                labels={labels}
+                onToggle={toggleInstalledSkill}
+                onUninstall={uninstallInstalledSkill}
+                pending={pendingSkillIds.has(`skill:${skill.id}`)}
+                skill={skill}
+              />
+            ))}
+            {visibleStoreSkills.map((entry) => (
+              <SettingsAiStoreSkillCard
+                key={entry.id}
+                entry={entry}
+                labels={labels}
+                onInstall={installStoreSkill}
+                pending={pendingSkillIds.has(`store:${entry.id}`)}
+              />
+            ))}
+            <div ref={loadMoreRef} className="lyra-settings-ai-skill-load-more" aria-hidden="true" />
+            {isLoadingMoreSkills ? (
+              <div className="lyra-settings-ai-skill-status" role="status">
+                {labels.skillsLoadingMore}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
 export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiModelsViewProps) => {
   const [query, setQuery] = useState("");
   const [showAllModels, setShowAllModels] = useState(false);
@@ -529,6 +1349,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const activeSearchPlaceholder = isProviderSearchMode ? labels.selectProviderLabel : labels.modelsSearchPlaceholder;
   const activeSearchLeading = isProviderSearchMode && selectedProviderRoute !== null ? (
     <AgentProviderBrandIcon
+      baseUrl={providerBaseUrl || selectedProviderRoute.defaultBaseUrl}
       label={selectedProviderRoute.label}
       providerId={selectedProviderRoute.providerId}
       routeId={selectedProviderRoute.id}
@@ -799,18 +1620,6 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
             onValueChange={updateActiveSearch}
           />
           <AppButton
-            variant="outline"
-            size="sm"
-            className="lyra-settings-ai-action"
-            disabled={model.isSaving}
-            onClick={() => {
-              void model.refreshAgentModelCatalog?.();
-            }}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-            {labels.refreshAgent}
-          </AppButton>
-          <AppButton
             variant={isAddingModel ? "outline" : "default"}
             size="sm"
             className={[
@@ -998,6 +1807,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                           className="lyra-settings-ai-model-option lyra-settings-ai-model-option-static"
                           icon={(
                             <AgentProviderBrandIcon
+                              baseUrl={providerBaseUrl || selectedProviderRoute.defaultBaseUrl}
                               label={selectedProviderRoute.label}
                               modelId={id}
                               providerId={selectedProviderRoute.providerId}
@@ -1032,6 +1842,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
               {visibleModels.map((entry) => {
                 const active = isCurrentModelEntry(entry, model, config);
                 const disabled = model.isSaving || !entry.available;
+                const providerConfig = configForModelEntry(entry, config);
                 const description = [
                   entry.providerLabel ?? entry.providerKey ?? entry.provider ?? labels.noDefaultProvider,
                   entry.detail ?? "",
@@ -1050,10 +1861,12 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     ].filter(Boolean).join(" ")}
                     icon={(
                       <AgentProviderBrandIcon
+                        baseUrl={providerConfig?.baseUrl ?? null}
                         label={entry.providerLabel ?? entry.label}
                         modelId={entry.model}
                         provider={entry.provider}
                         providerId={entry.providerId}
+                        routeId={entry.routeId}
                       />
                     )}
                     title={entry.label}

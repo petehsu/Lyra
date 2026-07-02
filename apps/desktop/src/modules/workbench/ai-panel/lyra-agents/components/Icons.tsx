@@ -39,7 +39,6 @@ import {
   Link2,
   RadioTower,
   ScrollText,
-  BrainCircuit,
   Target,
   Workflow,
   Puzzle,
@@ -88,7 +87,7 @@ export const ToolIcon = ({ kind }: { kind: ToolCall["kind"] }) => {
     case "workbench":
       return <AppWindow {...props} />;
     case "thought":
-      return <BrainCircuit {...props} />;
+      return <Clock3 {...props} />;
     case "plan":
       return <BookText {...props} />;
     case "task":
@@ -303,7 +302,7 @@ export const ToolCallIcon = ({ call }: { call: ToolCall }) => {
   }
   if (call.kind === "search") return <Search {...props} />;
   if (call.kind === "shell") return <SquareTerminal {...props} />;
-  if (call.kind === "thought") return <BrainCircuit {...props} />;
+  if (call.kind === "thought") return <Clock3 {...props} />;
   if (call.kind === "plan") return <BookText {...props} />;
   if (call.kind === "create") return <FilePlus {...props} />;
   if (call.kind === "task") return <ListChecks {...props} />;

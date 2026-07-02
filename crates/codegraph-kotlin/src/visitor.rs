@@ -4,10 +4,9 @@
 //! AST visitor for extracting Kotlin entities
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics, FunctionEntity,
-    ImplementationRelation, ImportRelation, InheritanceRelation, Parameter, TraitEntity,
-    BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityBuilder, ComplexityMetrics,
+    FunctionEntity, ImplementationRelation, ImportRelation, InheritanceRelation, Parameter,
+    TraitEntity, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -224,9 +223,7 @@ impl<'a> KotlinVisitor<'a> {
         let body_prefix = class_body_node
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let class_entity = ClassEntity {
@@ -294,9 +291,7 @@ impl<'a> KotlinVisitor<'a> {
         let body_prefix = class_body_node
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let object_entity = ClassEntity {
@@ -403,9 +398,7 @@ impl<'a> KotlinVisitor<'a> {
         let body_prefix = class_body_node
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let enum_entity = ClassEntity {
@@ -536,9 +529,7 @@ impl<'a> KotlinVisitor<'a> {
         let body_prefix = func_body_node
             .and_then(|b| b.utf8_text(self.source).ok())
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
 
         let func = FunctionEntity {
@@ -1121,9 +1112,7 @@ mod tests {
         use tree_sitter::Parser;
 
         let mut parser = Parser::new();
-        parser
-            .set_language(&crate::ts_kotlin::language())
-            .unwrap();
+        parser.set_language(&crate::ts_kotlin::language()).unwrap();
         let tree = parser.parse(source, None).unwrap();
 
         let mut visitor = KotlinVisitor::new(source);

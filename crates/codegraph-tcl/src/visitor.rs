@@ -9,9 +9,8 @@
 //! names, so all dispatch code sees resolved kinds — never "ERROR".
 
 use codegraph_parser_api::{
-    CallRelation, ClassEntity, ComplexityMetrics, FunctionEntity, ImportRelation, Parameter,
-    BODY_PREFIX_MAX_CHARS,
-    truncate_body_prefix,
+    truncate_body_prefix, CallRelation, ClassEntity, ComplexityMetrics, FunctionEntity,
+    ImportRelation, Parameter, BODY_PREFIX_MAX_CHARS,
 };
 use tree_sitter::Node;
 
@@ -470,9 +469,7 @@ impl<'a> TclVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         self.functions.push(func);
 
@@ -537,9 +534,7 @@ impl<'a> TclVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let class = ClassEntity {
             name: full_ns,
@@ -681,9 +676,7 @@ impl<'a> TclVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         self.functions.push(func);
 
@@ -854,9 +847,7 @@ impl<'a> TclVisitor<'a> {
             .utf8_text(self.source)
             .ok()
             .filter(|t| !t.is_empty())
-            .map(|t| {
-                truncate_body_prefix(t)
-            })
+            .map(|t| truncate_body_prefix(t))
             .map(|t| t.to_string());
         let class = ClassEntity {
             name: full_ns,

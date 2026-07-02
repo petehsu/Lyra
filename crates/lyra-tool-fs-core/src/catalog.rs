@@ -10,6 +10,7 @@ mod browser;
 mod browser_ax;
 mod clarification;
 mod code;
+mod codegraph_server;
 mod computer;
 mod design;
 mod filesystem;
@@ -151,6 +152,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(design::manifests());
     entries.extend(filesystem::manifests());
     entries.extend(code::manifests());
+    entries.extend(codegraph_server::manifests());
     entries.extend(shell::manifests());
     entries.extend(git::manifests());
     entries.extend(hardware::manifests());
@@ -1035,6 +1037,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
             "computer" => vec!["desktop", "accessibility", "computer-use"],
+            "codegraph" => vec!["code", "graph", "symbol"],
             "workbench" => vec!["workspace", "tabs", "state"],
             "web" => vec!["network", "url", "internet"],
             "memory" => vec!["memory", "preference", "profile"],
@@ -1081,9 +1084,11 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
         ) => "memory_mutation",
         ("todo", "write") => "mutation",
         ("skills", "activate" | "deactivate") => "runtime_mutation",
-        ("mcp", "server_connect" | "server_disconnect" | "server_reload" | "tool_execute") => {
-            "external"
-        }
+        (
+            "mcp",
+            "server_connect" | "server_upsert" | "server_remove" | "server_disconnect"
+            | "server_reload" | "tool_execute",
+        ) => "external",
         ("workbench", "remove_favorite") => "runtime_mutation",
         ("software", "invoke_capability") => "external",
         _ => "read",
@@ -1175,7 +1180,9 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "brand",
-                    string("Brand name to read (required when action=read). Call action=list first to see available brands."),
+                    string(
+                        "Brand name to read (required when action=read). Call action=list first to see available brands.",
+                    ),
                 ),
             ],
             &[],
@@ -1321,7 +1328,9 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 (
                     "query",
-                    string("Symbol, function, class, component, module, route, or concept to search in the CodeGraph index."),
+                    string(
+                        "Symbol, function, class, component, module, route, or concept to search in the CodeGraph index.",
+                    ),
                 ),
                 (
                     "limit",
@@ -1333,8 +1342,16 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ("code", "callers" | "callees") => {
             let mut schema = object_schema(
                 [
-                    ("symbol", string("Symbol name to inspect in the CodeGraph index.")),
-                    ("query", string("Alias for symbol when called from generic Tool-FS search/run flows.")),
+                    (
+                        "symbol",
+                        string("Symbol name to inspect in the CodeGraph index."),
+                    ),
+                    (
+                        "query",
+                        string(
+                            "Alias for symbol when called from generic Tool-FS search/run flows.",
+                        ),
+                    ),
                     (
                         "depth",
                         json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 1 }),
@@ -1357,8 +1374,16 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ("code", "impact") => {
             let mut schema = object_schema(
                 [
-                    ("symbol", string("Symbol name to inspect in the CodeGraph index.")),
-                    ("query", string("Alias for symbol when called from generic Tool-FS search/run flows.")),
+                    (
+                        "symbol",
+                        string("Symbol name to inspect in the CodeGraph index."),
+                    ),
+                    (
+                        "query",
+                        string(
+                            "Alias for symbol when called from generic Tool-FS search/run flows.",
+                        ),
+                    ),
                     (
                         "depth",
                         json!({ "type": "integer", "minimum": 1, "maximum": 4, "default": 2 }),
@@ -1379,12 +1404,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             schema
         }
         ("code", "context") => object_schema(
-            [
-                (
-                    "includeStaleness",
-                    json!({ "type": "boolean", "default": true, "description": "Include changed-file staleness metadata when the index is older than source files." }),
-                ),
-            ],
+            [(
+                "includeStaleness",
+                json!({ "type": "boolean", "default": true, "description": "Include changed-file staleness metadata when the index is older than source files." }),
+            )],
             &[],
         ),
         ("code", _) => object_schema(
@@ -2507,7 +2530,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             &["question"],
         ),
         ("workbench", "remove_favorite") => object_schema(
-            [("id", string("Favorite id returned by /tools/workbench/list_favorites."))],
+            [(
+                "id",
+                string("Favorite id returned by /tools/workbench/list_favorites."),
+            )],
             &["id"],
         ),
         ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
@@ -2547,7 +2573,7 @@ Lyra browser / Lumen (interactive pages)
 
 Project / code
 - Repo survey, exact text search, shell validation, git review, or file mutation → use direct exec_command/apply_patch flow.
-- Indexed symbol navigation, callers/callees, impact, or project architecture overview → run /tools/code/explore, /tools/code/callers, /tools/code/callees, /tools/code/impact, or /tools/code/context through Tool-FS.
+- Complete CodeGraph server analysis, dependency/call graph, complexity, security/docs/memory/PR context → search/list /tools/codegraph/* and run the selected tool through Tool-FS. /tools/code/* is only the legacy alias set for explore/callers/callees/impact/context.
 
 Do not flatten these into interchangeable tools: map before blind fetch/crawl; interact before many separate navigate/wait/act/read calls when the flow is short."#
 }
@@ -2555,6 +2581,7 @@ Do not flatten these into interchangeable tools: map before blind fetch/crawl; i
 pub fn domain_summary(domain: &str) -> &'static str {
     match domain {
         "runtime" => "Runtime and artifact utilities.",
+        "codegraph" => "Complete CodeGraph server tools for indexed code intelligence.",
         "memory" => "Lyra long-term memory search and mutation tools.",
         "clarification" => "Structured user clarification through the Lyra decision panel.",
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",

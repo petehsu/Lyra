@@ -188,5 +188,3 @@ fn is_file_change_tool(name: &str) -> bool {
             | "tool_fs_run"
     )
 }
-
-

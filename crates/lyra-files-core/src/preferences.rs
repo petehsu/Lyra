@@ -354,8 +354,14 @@ mod tests {
 
         assert_eq!(sanitized.favorites.len(), 2);
         assert_eq!(sanitized.favorites[0].kind.as_deref(), Some("web"));
-        assert_eq!(sanitized.favorites[0].url.as_deref(), Some("https://example.com/"));
-        assert_eq!(sanitized.favorites[1].kind.as_deref(), Some("agent-session"));
+        assert_eq!(
+            sanitized.favorites[0].url.as_deref(),
+            Some("https://example.com/")
+        );
+        assert_eq!(
+            sanitized.favorites[1].kind.as_deref(),
+            Some("agent-session")
+        );
         assert_eq!(sanitized.favorites[1].session_id.as_deref(), Some("abc"));
     }
 

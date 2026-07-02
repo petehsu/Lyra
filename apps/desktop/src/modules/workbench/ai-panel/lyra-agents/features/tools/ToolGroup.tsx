@@ -69,7 +69,7 @@ export function ToolGroupBlock({
   }, [isLiveEditGroup, currentCall?.details]);
 
   return (
-    <div className={`lyra-agents-tool-group ${open ? "open" : ""} mode-${mode}`}>
+    <div className={`lyra-agents-tool-group ${open ? "open" : ""} lyra-agents-mode-${mode}`}>
       <AppButton variant="ghost" size="sm"
         type="button"
         className="lyra-agents-tool-group-head"
@@ -167,7 +167,7 @@ function ToolCallRow({ call, groupOpen }: { call: ToolCall; groupOpen: boolean }
   }, [isLiveEdit, call.details]);
 
   return (
-    <div className={`lyra-agents-tool-call ${open ? "open" : ""} status-${call.status}`}>
+    <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${call.status}`}>
       <AppButton variant="ghost" size="sm"
         type="button"
         className={`lyra-agents-tool-call-head ${hasDetails ? "has-details" : ""}`}
@@ -266,16 +266,18 @@ function ToolCallHeadLabel({
 
 function ThinkingRow({ entry }: { entry: ThinkingEntry }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const anchorVisible = useFoldAnchorVisible(anchorRef);
   const isRunning = entry.status === "running";
   return (
-    <div className={`lyra-agents-tool-call ${open ? "open" : ""} status-${entry.status}`}>
+    <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${entry.status}`}>
       <AppButton variant="ghost" size="sm"
         type="button"
         className="lyra-agents-tool-call-head has-details"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <span className="lyra-agents-icon-swap">
+        <span ref={anchorRef} className="lyra-agents-icon-swap">
           <span className="lyra-agents-icon-swap-tool">
             <ToolIcon kind="thought" />
           </span>
@@ -291,6 +293,14 @@ function ThinkingRow({ entry }: { entry: ThinkingEntry }) {
           </span>
         </span>
       </AppButton>
+      {open && !anchorVisible && (
+        <AppButton variant="ghost" size="sm"
+          type="button"
+          className="lyra-agents-fold-line lyra-agents-fold-line-call"
+          onClick={() => setOpen(false)}
+          aria-label={t("tool.collapseCall")}
+        />
+      )}
       <div className="lyra-agents-collapse" data-open={open}>
         <div className="lyra-agents-collapse-inner">
           <div className="lyra-agents-tool-call-body">

@@ -76,6 +76,13 @@ import {
   type AgentModelCatalogRequest,
   type AgentModelCatalogSnapshot,
   type AgentModelSwitchRequest,
+  type AgentMcpListResponse,
+  type AgentMcpServerMutationResponse,
+  type AgentMcpServerRemoveResponse,
+  type AgentMcpServerRequest,
+  type AgentMcpServerUpsertRequest,
+  type AgentMcpToolDiscoverRequest,
+  type AgentMcpToolDiscoverResponse,
   type AgentProviderOptionsUpdateRequest,
   type AgentProviderProfileSaveRequest,
   type AgentPokeRequest,
@@ -84,6 +91,18 @@ import {
   type AgentSessionListRequest,
   type AgentSessionListResponse,
   type AgentProtocolContract,
+  type AgentSkillActivationRequest,
+  type AgentSkillInspectRequest,
+  type AgentSkillInspectResponse,
+  type AgentSkillInstallFromGitRequest,
+  type AgentSkillInstallFromLocalRequest,
+  type AgentSkillInstallFromStoreRequest,
+  type AgentSkillMutationResponse,
+  type AgentSkillRefreshStoreRequest,
+  type AgentSkillsListResponse,
+  type AgentSkillStoreResponse,
+  type AgentSkillUninstallRequest,
+  type AgentSkillUninstallResponse,
   type DownloadManagerBatchRequest,
   type DownloadManagerEnqueueRequest,
   type DownloadManagerEvent,
@@ -1574,6 +1593,85 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentProviderOptionsUpdate,
         request
       ) as Promise<AgentModelCatalogSnapshot>,
+    listAgentSkills: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentSkillsList) as Promise<AgentSkillsListResponse>,
+    inspectAgentSkill: (request: AgentSkillInspectRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillInspect,
+        request
+      ) as Promise<AgentSkillInspectResponse>,
+    activateAgentSkill: (request: AgentSkillActivationRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillActivate,
+        request
+      ) as Promise<AgentSkillMutationResponse>,
+    deactivateAgentSkill: (request: AgentSkillActivationRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillDeactivate,
+        request
+      ) as Promise<AgentSkillMutationResponse>,
+    installAgentSkillFromLocal: (request: AgentSkillInstallFromLocalRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillInstallFromLocal,
+        request
+      ) as Promise<AgentSkillMutationResponse>,
+    installAgentSkillFromGit: (request: AgentSkillInstallFromGitRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillInstallFromGit,
+        request
+      ) as Promise<AgentSkillMutationResponse>,
+    installAgentSkillFromStore: (request: AgentSkillInstallFromStoreRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillInstallFromStore,
+        request
+      ) as Promise<AgentSkillMutationResponse>,
+    uninstallAgentSkill: (request: AgentSkillUninstallRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillUninstall,
+        request
+      ) as Promise<AgentSkillUninstallResponse>,
+    refreshAgentSkillStore: (request?: AgentSkillRefreshStoreRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillRefreshStore,
+        request ?? {}
+      ) as Promise<AgentSkillStoreResponse>,
+    updateAgentSkillStoreConfig: (request: AgentSkillRefreshStoreRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentSkillUpdateStoreConfig,
+        request
+      ) as Promise<AgentSkillStoreResponse>,
+    listMcpServers: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentMcpList) as Promise<AgentMcpListResponse>,
+    upsertMcpServer: (request: AgentMcpServerUpsertRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpUpsert,
+        request
+      ) as Promise<AgentMcpServerMutationResponse>,
+    removeMcpServer: (request: AgentMcpServerRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpRemove,
+        request
+      ) as Promise<AgentMcpServerRemoveResponse>,
+    connectMcpServer: (request: AgentMcpServerRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpConnect,
+        request
+      ) as Promise<AgentMcpServerMutationResponse>,
+    disconnectMcpServer: (request: AgentMcpServerRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpDisconnect,
+        request
+      ) as Promise<AgentMcpServerMutationResponse>,
+    reloadMcpServer: (request: AgentMcpServerRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpReload,
+        request
+      ) as Promise<AgentMcpServerMutationResponse>,
+    discoverMcpTools: (request?: AgentMcpToolDiscoverRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentMcpDiscoverTools,
+        request ?? {}
+      ) as Promise<AgentMcpToolDiscoverResponse>,
     runImprove: (request?: AgentActionRunRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentImproveRun,

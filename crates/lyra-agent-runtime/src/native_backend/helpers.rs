@@ -54,7 +54,8 @@ pub(crate) fn touch_snapshot(snapshot: &mut Value) {
         .unwrap_or(Value::Null);
     snapshot["memory"] = memory;
     if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
-        snapshot["tokenEstimate"] = json!(super::token_estimate::estimate_messages_tokens(messages));
+        snapshot["tokenEstimate"] =
+            json!(super::token_estimate::estimate_messages_tokens(messages));
     }
 }
 

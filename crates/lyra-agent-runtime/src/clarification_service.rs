@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::BackendHandle;
+use serde::{Deserialize, Serialize};
 
 /// Typed client→server clarification response message.
 ///
@@ -39,7 +39,10 @@ impl ClarificationService {
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
         let msg: ClarificationResponse = serde_json::from_value(payload)
             .map_err(|e| crate::AgentRuntimeError::Serialization(e.to_string()))?;
-        self.backend.call("agent.clarification.respond", serde_json::to_value(&msg).unwrap_or_default())
+        self.backend.call(
+            "agent.clarification.respond",
+            serde_json::to_value(&msg).unwrap_or_default(),
+        )
     }
 
     pub fn respond(
@@ -48,7 +51,15 @@ impl ClarificationService {
         clarification_id: String,
         answer: String,
     ) -> crate::AgentRuntimeResult<serde_json::Value> {
-        let msg = ClarificationResponse { session_id, clarification_id, answer, selected_option: None };
-        self.backend.call("agent.clarification.respond", serde_json::to_value(&msg).unwrap_or_default())
+        let msg = ClarificationResponse {
+            session_id,
+            clarification_id,
+            answer,
+            selected_option: None,
+        };
+        self.backend.call(
+            "agent.clarification.respond",
+            serde_json::to_value(&msg).unwrap_or_default(),
+        )
     }
 }

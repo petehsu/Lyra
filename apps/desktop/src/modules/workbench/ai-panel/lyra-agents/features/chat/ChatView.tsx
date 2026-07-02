@@ -147,7 +147,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
-  const [panelProgress, setPanelProgress] = useState(1);
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
 
   const hasPendingClarification = showDecisions && decisions.length > 0;
@@ -175,14 +174,11 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     : messages.find((message) => message.id === stickyMessageId) ?? null;
   const stickyMessagePreview = stickyMessage === null ? "" : textPreviewForMessage(stickyMessage);
 
-  const lastScrollTop = useRef(0);
-  const rafId = useRef(0);
-  const accumulatedDelta = useRef(0);
   const loadingEarlierRef = useRef(false);
   const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
 
-  // --- Scroll handler: bottom detection, sticky anchor, decision panel progress ---
+  // --- Scroll handler: bottom detection, sticky anchor, history loading ---
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -219,33 +215,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         loadingEarlierRef.current = false;
       });
     }
-
-    // Decision panel progress
-    const currentTop = el.scrollTop;
-    const delta = currentTop - lastScrollTop.current;
-    lastScrollTop.current = currentTop;
-
-    if (Math.abs(delta) < APP_CONFIG.scroll.ignoreDeltaBelow) return;
-
-    accumulatedDelta.current += delta;
-
-    if (!rafId.current) {
-      rafId.current = requestAnimationFrame(() => {
-        const totalDelta = accumulatedDelta.current;
-        accumulatedDelta.current = 0;
-        rafId.current = 0;
-
-        if (Math.abs(totalDelta) < APP_CONFIG.scroll.ignoreDeltaBelow) return;
-
-        setPanelProgress((prev) => {
-          const change = totalDelta / APP_CONFIG.scroll.decisionPanelRange;
-          const next = prev + change;
-          if (next <= 0.03) return 0;
-          if (next >= 0.97) return 1;
-          return Math.max(0, Math.min(1, next));
-        });
-      });
-    }
   }, [loadEarlierMessages, messageWindow.canLoadEarlier]);
 
   // --- Scroll position maintenance on messages change ---
@@ -256,7 +225,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
     const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
     el.scrollTop = nextScrollTop;
-    lastScrollTop.current = nextScrollTop;
     const atBottom =
       el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom(atBottom);
@@ -281,12 +249,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       });
     }
   }, [citationScrollTarget, reportCitationScrollFinished]);
-
-  useEffect(() => {
-    if (decisions.length > 0 || permissions.length > 0) {
-      setPanelProgress(1);
-    }
-  }, [decisions.length, permissions.length]);
 
   useEffect(() => {
     if (stickyMessageId !== null && !messages.some((message) => message.id === stickyMessageId)) {
@@ -505,8 +467,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             requests={permissions}
             onApprove={approvePermission}
             onDeny={denyPermission}
-            progress={panelProgress}
-            onTap={() => setPanelProgress(1)}
+            progress={1}
+            onTap={() => undefined}
           />
         )}
 
@@ -515,8 +477,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             questions={decisions}
             onSubmit={submitDecisions}
             onDismiss={() => undefined}
-            progress={panelProgress}
-            onTap={() => setPanelProgress(1)}
+            progress={1}
+            onTap={() => undefined}
           />
         )}
 
@@ -639,7 +601,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               ) : null}
             </AppButton>
           ) : null}
-                  </div>
+        </div>
         <div className="lyra-agents-composer-context-ring-slot">
           <ContextRing />
         </div>

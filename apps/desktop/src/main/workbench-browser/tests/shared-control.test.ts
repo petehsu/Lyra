@@ -69,6 +69,27 @@ describe("shared browser control state machine", () => {
     expect(transition.snapshot.state).toBe("user_interrupted");
   });
 
+  test("passive pointer input does not pause Agent control", () => {
+    const active = transitionSharedControlForAgentAction(
+      createIdleSharedControlSnapshot("tab-1", "follow-1", 100),
+      {
+        action: "read",
+        criticalInput: false,
+        at: 110
+      }
+    ).snapshot;
+
+    for (const inputType of ["mouse_move", "wheel"] as const) {
+      const transition = transitionSharedControlForUserInput(active, {
+        inputType,
+        synthetic: false,
+        at: 120
+      });
+      expect(transition.interrupted).toBe(false);
+      expect(transition.snapshot.state).toBe("agent_active");
+    }
+  });
+
   test("continue decision resumes before returning to idle", () => {
     const active = transitionSharedControlForAgentAction(
       createIdleSharedControlSnapshot("tab-1", "follow-1", 100),

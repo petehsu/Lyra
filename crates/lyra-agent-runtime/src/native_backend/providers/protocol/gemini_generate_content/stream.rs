@@ -13,7 +13,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
         provider::{ModelReply, ModelToolCall},
-        turns::{append_assistant_delta, emit_assistant_message_placeholder, turn_was_cancelled},
+        turns::{StreamDeltaBatcher, turn_was_cancelled},
     },
 };
 
@@ -40,6 +40,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = GeminiStreamState::default();
     let mut ui_message_id: Option<String> = None;
+    let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
 
     for line in reader.lines() {
@@ -61,12 +62,14 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &chunk,
             &mut state,
             &mut ui_message_id,
+            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
             tools,
         )?;
     }
+    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
 
     if state.text.trim().is_empty() && state.tool_calls.is_empty() {
         if state.finish_reason.as_deref() == Some("MAX_TOKENS") {
@@ -108,6 +111,7 @@ fn map_stream_chunk(
     chunk: &Value,
     state: &mut GeminiStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -139,6 +143,7 @@ fn map_stream_chunk(
                 &text,
                 state,
                 ui_message_id,
+                delta_batcher,
                 buffer_assistant_text,
                 session_id,
                 turn_id,
@@ -162,6 +167,7 @@ fn append_text_delta(
     text: &str,
     state: &mut GeminiStreamState,
     ui_message_id: &mut Option<String>,
+    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -170,14 +176,7 @@ fn append_text_delta(
         return Ok(());
     }
     if !buffer_assistant_text {
-        let message_id = ui_message_id
-            .get_or_insert_with(|| {
-                emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-            })
-            .clone();
-        if !message_id.is_empty() {
-            append_assistant_delta(session_id, turn_id, &message_id, text)?;
-        }
+        delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
     }
     state.text.push_str(text);
     Ok(())

@@ -37,6 +37,13 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             action_id,
         });
     }
+    if manifest.domain == "codegraph" {
+        return Some(RuntimeToolTarget::NativeAdapter {
+            tool_name: "codegraph_server",
+            display_name: "codegraph",
+            action: "run",
+        });
+    }
     if manifest.domain == "terminal"
         && let Some(spec) = terminal_action_spec(&manifest.operation)
     {
@@ -224,8 +231,14 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/skills/inspect" => skill("skill_inspect", "inspect"),
         "/tools/skills/activate" => skill("skill_activate", "activate"),
         "/tools/skills/deactivate" => skill("skill_deactivate", "deactivate"),
+        "/tools/skills/install_local" => skill("skill_install_local", "install_local"),
+        "/tools/skills/install_git" => skill("skill_install_git", "install_git"),
+        "/tools/skills/install_store" => skill("skill_install_store", "install_store"),
+        "/tools/skills/uninstall" => skill("skill_uninstall", "uninstall"),
         "/tools/mcp/server_list" => mcp("mcp_server_list", "server_list"),
         "/tools/mcp/server_connect" => mcp("mcp_server_connect", "server_connect"),
+        "/tools/mcp/server_upsert" => mcp("mcp_server_upsert", "server_upsert"),
+        "/tools/mcp/server_remove" => mcp("mcp_server_remove", "server_remove"),
         "/tools/mcp/server_disconnect" => mcp("mcp_server_disconnect", "server_disconnect"),
         "/tools/mcp/server_reload" => mcp("mcp_server_reload", "server_reload"),
         "/tools/mcp/tool_discover" => mcp("mcp_tool_discover", "tool_discover"),
@@ -293,7 +306,10 @@ pub(super) fn validate_workspace_scope_for_manifest(
 }
 
 pub(super) fn manifest_requires_workspace_scope(manifest: &ToolManifest) -> bool {
-    matches!(manifest.domain.as_str(), "filesystem" | "code" | "git")
+    matches!(
+        manifest.domain.as_str(),
+        "filesystem" | "code" | "codegraph" | "git"
+    )
 }
 
 pub(super) fn validate_runtime_turn_for_operation(

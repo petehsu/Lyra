@@ -557,7 +557,7 @@ export const createLyraRuntimeClient = (
 
       for (let attempt = 0; attempt < 40; attempt += 1) {
         try {
-          await connectRuntimeDaemon(false);
+          await connectRuntimeDaemon(true);
           return;
         } catch (error) {
           lastError = error;
