@@ -1,10 +1,14 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type {
   LoginManagerCredential,
   LoginManagerSession
 } from "../../shared/desktop-bridge";
+import {
+  quarantineCorruptFileSync,
+  readJsonFileSync,
+  writeFileAtomicSync
+} from "../persistence";
 
 export const STORE_VERSION = 1 as const;
 export const STORE_FILE_NAME = "login-manager.v1.json";
@@ -44,33 +48,28 @@ const sanitizeStoredCredential = (credential: unknown): StoredCredential => {
 
 export const readLoginManagerStore = (storageRoot: string): LoginManagerStore => {
   const filePath = path.join(storageRoot, STORE_FILE_NAME);
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Partial<LoginManagerStore>;
-    if (
-      parsed.version !== STORE_VERSION
-      || Array.isArray(parsed.sessions) === false
-      || Array.isArray(parsed.credentials) === false
-    ) {
-      return emptyLoginManagerStore();
-    }
-    return {
-      version: STORE_VERSION,
-      sessions: parsed.sessions,
-      credentials: parsed.credentials.map(sanitizeStoredCredential)
-    };
-  } catch (_error) {
+  const parsed = readJsonFileSync(filePath, "lyra-login-manager") as Partial<LoginManagerStore> | null;
+  if (parsed === null) {
     return emptyLoginManagerStore();
   }
+  if (
+    parsed.version !== STORE_VERSION
+    || Array.isArray(parsed.sessions) === false
+    || Array.isArray(parsed.credentials) === false
+  ) {
+    quarantineCorruptFileSync(filePath, "invalid login manager store schema", "lyra-login-manager");
+    return emptyLoginManagerStore();
+  }
+  return {
+    version: STORE_VERSION,
+    sessions: parsed.sessions,
+    credentials: parsed.credentials.map(sanitizeStoredCredential)
+  };
 };
 
 export const writeLoginManagerStore = (
   storageRoot: string,
   store: LoginManagerStore
 ): void => {
-  mkdirSync(storageRoot, { recursive: true });
-  writeFileSync(
-    path.join(storageRoot, STORE_FILE_NAME),
-    JSON.stringify(store, null, 2),
-    "utf8"
-  );
+  writeFileAtomicSync(path.join(storageRoot, STORE_FILE_NAME), JSON.stringify(store, null, 2));
 };

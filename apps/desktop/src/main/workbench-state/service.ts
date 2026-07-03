@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from "electron";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -8,6 +8,10 @@ import {
   type WorkbenchStateKey,
   type WorkbenchStateSnapshot
 } from "../../shared/desktop-bridge";
+import {
+  quarantineCorruptFile,
+  writeFileAtomic
+} from "../persistence";
 
 const WORKBENCH_STATE_FILENAMES: Readonly<Record<WorkbenchStateKey, string>> = {
   preferences: "preferences.v1.json",
@@ -72,22 +76,34 @@ const createEmptySnapshot = (): Record<WorkbenchStateKey, string | null> => ({
   location: null
 });
 
+const readStateFile = async (filePath: string): Promise<string | null> => {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === "ENOENT") {
+      return null;
+    }
+    console.error(`[lyra-workbench-state] failed to read ${filePath}: ${toErrorMessage(error)}`);
+    throw error;
+  }
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch (error) {
+    await quarantineCorruptFile(filePath, toErrorMessage(error), "lyra-workbench-state");
+    return null;
+  }
+};
+
 const loadSnapshot = async (storageRoot: string): Promise<Record<WorkbenchStateKey, string | null>> => {
   await mkdir(storageRoot, { recursive: true });
   const snapshot = createEmptySnapshot();
   await Promise.all(
     WORKBENCH_STATE_KEYS.map(async (key) => {
       const filePath = resolveStateFilePath(storageRoot, key);
-      try {
-        snapshot[key] = await readFile(filePath, "utf8");
-      } catch (error) {
-        const nodeError = error as NodeJS.ErrnoException;
-        if (nodeError.code === "ENOENT") {
-          snapshot[key] = null;
-          return;
-        }
-        throw error;
-      }
+      snapshot[key] = await readStateFile(filePath);
     })
   );
   return snapshot;
@@ -158,7 +174,7 @@ export const createWorkbenchStateIpcBridge = async (
     stateSnapshot[key] = normalizedJson;
     publish(key, normalizedJson);
     await enqueueDiskWrite(key, async () => {
-      await writeFile(filePath, normalizedJson, "utf8");
+      await writeFileAtomic(filePath, normalizedJson);
     });
   };
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -62,5 +62,17 @@ describe("Workbench state IPC bridge", () => {
     const reloadedBridge = await createWorkbenchStateIpcBridge(storageRoot);
     expect(reloadedBridge.readState("browser-session")).toBe(snapshot);
     reloadedBridge.dispose();
+  });
+
+  test("quarantines corrupt state files instead of silently reusing them", async () => {
+    const filePath = path.join(storageRoot, "browser-session.v1.json");
+    writeFileSync(filePath, "{ not-json", "utf8");
+
+    const bridge = await createWorkbenchStateIpcBridge(storageRoot);
+
+    expect(bridge.readState("browser-session")).toBeNull();
+    expect(existsSync(filePath)).toBe(false);
+    expect(readFileSync(`${filePath}.corrupt`, "utf8")).toBe("{ not-json");
+    bridge.dispose();
   });
 });

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -284,6 +284,18 @@ describe("Login Manager IPC bridge", () => {
     expect(store.credentials[0]).not.toHaveProperty("hasPassword");
     expect(store.credentials[0]).not.toHaveProperty("passwordAvailable");
     expect(store.credentials[0]).not.toHaveProperty("passwordRef");
+  });
+
+  test("store reader quarantines corrupt JSON instead of silently dropping it", () => {
+    mkdirSync(storageRoot, { recursive: true });
+    const storePath = path.join(storageRoot, STORE_FILE_NAME);
+    writeFileSync(storePath, "{ not-json", "utf8");
+
+    const store = readLoginManagerStore(storageRoot);
+
+    expect(store).toEqual({ version: 1, sessions: [], credentials: [] });
+    expect(existsSync(storePath)).toBe(false);
+    expect(readFileSync(`${storePath}.corrupt`, "utf8")).toBe("{ not-json");
   });
 
   test("password vault reports unavailable safeStorage without encrypting plaintext", () => {

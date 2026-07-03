@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 pub(crate) static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
 pub(crate) const TOOL_RUNTIME_SCHEMA_VERSION: u32 = 4;
@@ -370,8 +371,24 @@ pub(crate) fn runtime_root() -> PathBuf {
 }
 
 pub(crate) fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
-    let data = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
+    let data = match fs::read_to_string(path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            eprintln!(
+                "[lyra-agent-runtime] failed to read JSON {}: {error}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    match serde_json::from_str(&data) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            quarantine_corrupt_json(path, &error.to_string());
+            None
+        }
+    }
 }
 
 pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> AgentRuntimeResult<()> {
@@ -380,7 +397,99 @@ pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> AgentRuntimeRe
     }
     let data = serde_json::to_vec_pretty(value)
         .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
-    fs::write(path, data).map_err(|error| AgentRuntimeError::Core(error.to_string()))
+    write_bytes_atomic(path, &data).map_err(|error| AgentRuntimeError::Core(error.to_string()))
+}
+
+fn temp_json_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("state.json");
+    path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ))
+}
+
+fn corrupt_json_path(path: &Path) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(".corrupt");
+    PathBuf::from(value)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let temp_path = temp_json_path(path);
+    let result = (|| -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+
+        #[cfg(windows)]
+        {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+
+        fs::rename(&temp_path, path)?;
+        sync_parent_directory(path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
+}
+
+fn quarantine_corrupt_json(path: &Path, reason: &str) {
+    if !path.exists() {
+        return;
+    }
+    let corrupt_path = corrupt_json_path(path);
+    let _ = fs::remove_file(&corrupt_path);
+    match fs::rename(path, &corrupt_path) {
+        Ok(()) => {
+            eprintln!(
+                "[lyra-agent-runtime] quarantined corrupt JSON {} -> {}: {reason}",
+                path.display(),
+                corrupt_path.display()
+            );
+        }
+        Err(rename_error) => match fs::copy(path, &corrupt_path) {
+            Ok(_) => {
+                let _ = fs::remove_file(path);
+                eprintln!(
+                    "[lyra-agent-runtime] copied corrupt JSON {} -> {} after rename failed ({rename_error}): {reason}",
+                    path.display(),
+                    corrupt_path.display()
+                );
+            }
+            Err(copy_error) => {
+                eprintln!(
+                    "[lyra-agent-runtime] failed to quarantine corrupt JSON {}: rename failed ({rename_error}); copy failed ({copy_error}); {reason}",
+                    path.display()
+                );
+            }
+        },
+    }
 }
 
 pub(crate) fn install_default_providers(config: &mut NativeConfig) {
@@ -686,5 +795,43 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+
+    #[test]
+    fn write_json_persists_readable_json() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("state.json");
+        let value = json!({ "activeSessionId": "session-1" });
+
+        write_json(&path, &value).expect("write json");
+
+        let reloaded = read_json::<Value>(&path).expect("read json");
+        assert_eq!(reloaded["activeSessionId"], "session-1");
+        let leftover_temp = fs::read_dir(temp.path())
+            .expect("read tempdir")
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains(".tmp-"));
+        assert!(!leftover_temp);
+    }
+
+    #[test]
+    fn read_json_quarantines_corrupt_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("state.json");
+        fs::write(&path, "{ not json").expect("write corrupt json");
+
+        let reloaded = read_json::<Value>(&path);
+
+        assert!(reloaded.is_none());
+        assert!(!path.exists());
+        assert_eq!(
+            fs::read_to_string(temp.path().join("state.json.corrupt")).expect("corrupt backup"),
+            "{ not json"
+        );
     }
 }
