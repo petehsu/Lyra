@@ -14,6 +14,8 @@ lyra-performance-core = { path = "../lyra-performance-core" }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
 rayon = "1.10.0"
+fs2.workspace = true
+libc.workspace = true
 reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 scraper = "0.24.0"
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }

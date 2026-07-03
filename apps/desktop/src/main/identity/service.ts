@@ -80,6 +80,8 @@ const SEARCH_DIRS = [
   path.join("app", "assets")
 ];
 
+type FilePreviewUrlFactory = (filePath: string, mimeType: string) => string;
+
 const toFilePreviewUrl = (filePath: string, mimeType: string): string =>
   `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(mimeType)}`;
 
@@ -111,7 +113,8 @@ const pathExists = async (filePath: string): Promise<boolean> => {
 const fileIconSnapshot = async (
   filePath: string,
   source: IdentityIconSnapshot["source"],
-  label?: string
+  label?: string,
+  createPreviewUrl: FilePreviewUrlFactory = toFilePreviewUrl
 ): Promise<IdentityIconSnapshot | null> => {
   const mimeType = mimeTypeForPath(filePath);
   if (mimeType === null) return null;
@@ -121,7 +124,7 @@ const fileIconSnapshot = async (
     const maxBytes = mimeType === "image/svg+xml" ? MAX_SVG_BYTES : MAX_ICON_BYTES;
     if (details.size <= 0 || details.size > maxBytes) return null;
     return {
-      url: toFilePreviewUrl(filePath, mimeType),
+      url: createPreviewUrl(filePath, mimeType),
       source,
       ...(label === undefined ? {} : { label }),
       path: filePath,
@@ -402,14 +405,21 @@ export type IdentityIpcBridge = {
   ) => Promise<ProjectIdentitySnapshot | null>;
 };
 
-export const createIdentityIpcBridge = (storageRoot: string): IdentityIpcBridge => {
+export const createIdentityIpcBridge = (
+  storageRoot: string,
+  options: {
+    readonly createPreviewUrl?: FilePreviewUrlFactory;
+    readonly addAllowedRoot?: (rootPath: string) => void;
+  } = {}
+): IdentityIpcBridge => {
   let userIconPromise: Promise<IdentityIconSnapshot | null> | null = null;
   const projectCache = new Map<string, Promise<ProjectIdentitySnapshot | null>>();
+  const createPreviewUrl = options.createPreviewUrl ?? toFilePreviewUrl;
 
   const readUserIcon = async (): Promise<IdentityIconSnapshot | null> => {
     userIconPromise ??= (async () => {
       const iconPath = await readUserIconPath(storageRoot);
-      return iconPath === null ? null : fileIconSnapshot(iconPath, "user");
+      return iconPath === null ? null : fileIconSnapshot(iconPath, "user", undefined, createPreviewUrl);
     })();
     return userIconPromise;
   };
@@ -422,6 +432,7 @@ export const createIdentityIpcBridge = (storageRoot: string): IdentityIpcBridge 
     if (inputPath === null) return null;
     const rootPath = await findProjectRoot(inputPath);
     if (rootPath === null) return null;
+    options.addAllowedRoot?.(rootPath);
     const key = createHash("sha256").update(rootPath).digest("hex");
     let cached = projectCache.get(key);
     if (cached === undefined) {
@@ -429,7 +440,7 @@ export const createIdentityIpcBridge = (storageRoot: string): IdentityIpcBridge 
         const name = projectNameFromRoot(rootPath);
         const explicitIcon = await resolveManifestIconPath(rootPath);
         const logoPath = explicitIcon ?? await scanForLogo(rootPath);
-        const logo = logoPath === null ? null : await fileIconSnapshot(logoPath, "project", name);
+        const logo = logoPath === null ? null : await fileIconSnapshot(logoPath, "project", name, createPreviewUrl);
         return {
           rootPath,
           name,

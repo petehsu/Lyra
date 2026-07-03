@@ -119,6 +119,7 @@ export type FileManagerDirectoryEntry = FileManagerBaseEntry & {
 
 export type FileManagerFileEntry = FileManagerBaseEntry & {
   readonly kind: "file";
+  readonly previewUrl?: string;
 };
 
 export type FileManagerEntry = FileManagerDirectoryEntry | FileManagerFileEntry;
@@ -133,6 +134,7 @@ export type FileManagerTrashEntry = {
   readonly extension?: string;
   readonly isHidden: boolean;
   readonly folderState?: FileManagerFolderState;
+  readonly previewUrl?: string;
   readonly sizeBytes?: number;
   readonly deletedAt?: string;
 };

@@ -20,6 +20,7 @@ import {
   normalizeBrowserAgentModeRequest,
   wantsLiveLoginState
 } from "./agent-target-runtime";
+import { isSafeExternalUrl } from "../../security";
 import {
   isSupportedWebUrl,
   normalizeAddress,
@@ -105,7 +106,7 @@ export const createAgentShadowController = ({
           shadow.title = normalizeString(webContents.getTitle()) ?? shadow.address;
           shadow.detached = true;
         });
-      } else {
+      } else if (isSafeExternalUrl(url)) {
         void shell.openExternal(url).catch(() => undefined);
       }
       return { action: "deny" };

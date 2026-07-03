@@ -3900,6 +3900,7 @@ name = "lyrad"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "fs2",
  "futures",
  "http",
  "icu_calendar",
@@ -3916,6 +3917,7 @@ dependencies = [
  "icu_properties_data",
  "icu_provider",
  "ixdtf",
+ "libc",
  "lyra-agent-runtime",
  "lyra-code-intel-core",
  "lyra-download-core",

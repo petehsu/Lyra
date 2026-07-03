@@ -43,6 +43,14 @@ const resolvePreviewPath = (entry: PreviewableEntry): string | null => {
   return null;
 };
 
+const resolvePreviewUrl = (entry: PreviewableEntry): string | null => {
+  if (entry.kind === "file" && typeof entry.previewUrl === "string" && entry.previewUrl.length > 0) {
+    return entry.previewUrl;
+  }
+  const previewPath = resolvePreviewPath(entry);
+  return previewPath === null ? null : toFilePreviewUrl(previewPath);
+};
+
 export const isPreviewableImageEntry = (entry: PreviewableEntry): boolean =>
   entry.kind === "file" &&
   PREVIEWABLE_IMAGE_EXTENSIONS.has(normalizeExtension(entry.extension));
@@ -54,10 +62,9 @@ export const FileManagerImagePreview = ({
   readonly entry: PreviewableEntry;
   readonly className?: string;
 }) => {
-  const previewPath = resolvePreviewPath(entry);
   const src = useMemo(
-    () => (previewPath === null ? null : toFilePreviewUrl(previewPath)),
-    [previewPath]
+    () => resolvePreviewUrl(entry),
+    [entry]
   );
   const [hasError, setHasError] = useState(false);
 

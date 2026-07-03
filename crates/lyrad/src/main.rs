@@ -7,7 +7,17 @@ use std::collections::HashMap;
 #[cfg(any(unix, windows))]
 use std::env;
 #[cfg(unix)]
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
+#[cfg(unix)]
+use std::io;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream as StdUnixStream;
+#[cfg(unix)]
+use std::path::{Path, PathBuf};
 #[cfg(any(unix, windows))]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(any(unix, windows))]
@@ -15,6 +25,8 @@ use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 #[cfg(any(unix, windows))]
 use std::time::Duration;
 
+#[cfg(unix)]
+use fs2::FileExt;
 #[cfg(any(unix, windows))]
 use lyra_agent_runtime::{
     clear_host_capability_dispatcher as clear_agent_host_capability_dispatcher,
@@ -235,20 +247,170 @@ fn host_capability_timeout(payload: &Value) -> Duration {
 }
 
 #[cfg(unix)]
-async fn run_unix_runtime() {
-    let socket_path = resolve_socket_path();
-    if let Some(parent) = socket_path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
+struct UnixRuntimeGuard {
+    socket_path: PathBuf,
+    lock_file: File,
+}
+
+#[cfg(unix)]
+impl Drop for UnixRuntimeGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.socket_path);
+        let _ = self.lock_file.unlock();
+    }
+}
+
+#[cfg(unix)]
+fn chmod_path(path: &Path, mode: u32) -> io::Result<()> {
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(mode);
+    std::fs::set_permissions(path, permissions)
+}
+
+#[cfg(unix)]
+fn acquire_unix_runtime_guard(socket_path: &Path) -> UnixRuntimeGuard {
+    let Some(parent) = socket_path.parent() else {
+        eprintln!(
+            "runtime socket path has no parent: {}",
+            socket_path.display()
+        );
+        std::process::exit(1);
+    };
+    if let Err(error) = std::fs::create_dir_all(parent) {
+        eprintln!(
+            "failed to create socket directory {}: {error}",
+            parent.display()
+        );
+        std::process::exit(1);
+    }
+    if let Err(error) = chmod_path(parent, 0o700) {
+        eprintln!(
+            "failed to secure socket directory {}: {error}",
+            parent.display()
+        );
+        std::process::exit(1);
+    }
+
+    let lock_path = socket_path.with_extension("sock.lock");
+    let lock_file = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
             eprintln!(
-                "failed to create socket directory {}: {error}",
-                parent.display()
+                "failed to open runtime lock {}: {error}",
+                lock_path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+    match lock_file.try_lock_exclusive() {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            eprintln!(
+                "{RUNTIME_NAME} is already running for socket {}",
+                socket_path.display()
+            );
+            std::process::exit(0);
+        }
+        Err(error) => {
+            eprintln!(
+                "failed to lock runtime socket {}: {error}",
+                socket_path.display()
             );
             std::process::exit(1);
         }
     }
+
     if socket_path.exists() {
-        let _ = std::fs::remove_file(&socket_path);
+        if StdUnixStream::connect(socket_path).is_ok() {
+            eprintln!(
+                "{RUNTIME_NAME} is already serving socket {}",
+                socket_path.display()
+            );
+            std::process::exit(0);
+        }
+        if let Err(error) = std::fs::remove_file(socket_path) {
+            eprintln!(
+                "failed to remove stale runtime socket {}: {error}",
+                socket_path.display()
+            );
+            std::process::exit(1);
+        }
     }
+
+    UnixRuntimeGuard {
+        socket_path: socket_path.to_path_buf(),
+        lock_file,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn peer_uid(stream: &UnixStream) -> io::Result<libc::uid_t> {
+    let mut credentials = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut credentials_len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    let result = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut credentials as *mut libc::ucred).cast(),
+            &mut credentials_len,
+        )
+    };
+    if result == 0 {
+        Ok(credentials.uid)
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+fn peer_uid(stream: &UnixStream) -> io::Result<libc::uid_t> {
+    let mut uid: libc::uid_t = 0;
+    let mut gid: libc::gid_t = 0;
+    let result = unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) };
+    if result == 0 {
+        Ok(uid)
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+)))]
+fn peer_uid(_stream: &UnixStream) -> io::Result<libc::uid_t> {
+    Ok(unsafe { libc::geteuid() })
+}
+
+#[cfg(unix)]
+fn is_authorized_unix_peer(stream: &UnixStream) -> io::Result<bool> {
+    Ok(peer_uid(stream)? == unsafe { libc::geteuid() })
+}
+
+#[cfg(unix)]
+async fn run_unix_runtime() {
+    let socket_path = resolve_socket_path();
+    let _guard = acquire_unix_runtime_guard(&socket_path);
 
     let listener = match UnixListener::bind(&socket_path) {
         Ok(listener) => listener,
@@ -260,12 +422,30 @@ async fn run_unix_runtime() {
             std::process::exit(1);
         }
     };
+    if let Err(error) = chmod_path(&socket_path, 0o600) {
+        eprintln!(
+            "failed to secure runtime socket {}: {error}",
+            socket_path.display()
+        );
+        std::process::exit(1);
+    }
 
     let sessions = DaemonSessionManager::default();
     register_runtime_hooks(&sessions);
     loop {
         match listener.accept().await {
             Ok((stream, _addr)) => {
+                match is_authorized_unix_peer(&stream) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        eprintln!("rejected runtime connection from another local user");
+                        continue;
+                    }
+                    Err(error) => {
+                        eprintln!("failed to verify runtime peer credentials: {error}");
+                        continue;
+                    }
+                }
                 let sessions = sessions.clone();
                 tokio::spawn(async move {
                     if let Err(error) = serve_connection(stream, sessions).await {
@@ -276,7 +456,7 @@ async fn run_unix_runtime() {
             Err(error) => {
                 eprintln!("failed to accept runtime connection: {error}");
                 shutdown_runtime_modules();
-                std::process::exit(1);
+                break;
             }
         }
     }
@@ -607,6 +787,22 @@ mod tests {
             handle_runtime_request("runtime.reload", serde_json::json!({})).expect("reload route");
 
         assert_eq!(result["status"], "reloaded");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn chmod_path_sets_unix_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        crate::chmod_path(temp.path(), 0o700).expect("chmod path");
+
+        let mode = std::fs::metadata(temp.path())
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     #[test]

@@ -55,6 +55,7 @@ import type {
 import { executePageContextAction } from "./page-context-actions";
 import type { BrowserContextMenuLocale } from "../../../shared/browser-context-menu-labels";
 import { showNativePageContextMenu } from "./page-context-menu-native";
+import { isSafeExternalUrl } from "../../security";
 
 import { resolvePageElementContextAtPoint } from "../page-element-context-resolver";
 import type { BrowserPageEntry, BrowserPageTombstone } from "./types";
@@ -417,7 +418,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         });
         return { action: "deny" };
       }
-      void shell.openExternal(url).catch(() => undefined);
+      if (isSafeExternalUrl(url)) {
+        void shell.openExternal(url).catch(() => undefined);
+      }
       return { action: "deny" };
     });
 

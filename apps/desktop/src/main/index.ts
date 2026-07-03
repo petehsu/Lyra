@@ -13,10 +13,11 @@ import {
 } from "electron";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { hostname, userInfo, platform, homedir } from "node:os";
-import { exec, execSync } from "node:child_process";
-import { dirname, extname, join, resolve } from "node:path";
+import { hostname, userInfo, platform, homedir, tmpdir } from "node:os";
+import { execFile, execSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import {
   LYRA_APP_NAME,
@@ -47,6 +48,10 @@ import { resolveCurrentDesktopTarget } from "./platform-target";
 import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
+import {
+  createLyraFileAccessController,
+  isSafeExternalUrl
+} from "./security";
 import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
@@ -89,6 +94,7 @@ import {
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const LYRA_FILE_SCHEME = "lyra-file";
+const execFileAsync = promisify(execFile);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -153,6 +159,12 @@ const LYRA_MAC_TITLEBAR_OVERLAY_HEIGHT = 34;
 const storageRoots = resolveLyraStorageRoots();
 ensureLyraStorageRoots(storageRoots);
 applyElectronStoragePaths(storageRoots);
+const lyraFileAccess = createLyraFileAccessController([
+  join(storageRoots.modules.identity, "identity-icons"),
+  join(storageRoots.modules.loginManager, "favicons"),
+  storageRoots.modules.imageViewer,
+  join(tmpdir(), "lyra-screenshot-preview")
+]);
 
 const focusExistingMainWindow = (): void => {
   if (mainWindow === null || mainWindow.isDestroyed()) {
@@ -586,75 +598,20 @@ const registerWorkbenchInputShortcuts = (): void => {
   });
 };
 
-const resolveLyraFilePath = (requestUrl: string): string | null => {
-  try {
-    const parsedUrl = new URL(requestUrl);
-    const queryPath = parsedUrl.searchParams.get("path");
-
-    if (typeof queryPath === "string" && queryPath.length > 0) {
-      if (process.platform === "win32") {
-        return queryPath.replace(/^\/([A-Za-z]:[\\/])/, "$1");
-      }
-      return queryPath;
-    }
-
-    const decodedPathname = decodeURIComponent(parsedUrl.pathname);
-    const decodedHost = decodeURIComponent(parsedUrl.hostname);
-    const joinedPath =
-      decodedHost.length > 0
-        ? `/${decodedHost}${decodedPathname}`
-        : decodedPathname;
-
-    if (joinedPath.length === 0) {
-      return null;
-    }
-
-    if (process.platform === "win32") {
-      return joinedPath.replace(/^\/([A-Za-z]:[\\/])/, "$1");
-    }
-    return joinedPath;
-  } catch (_error) {
-    return null;
-  }
-};
-
-const resolvePreviewMimeType = (filePath: string, contentType: string | null = null): string => {
-  if (
-    contentType !== null
-    && /^image\/[a-z0-9.+-]+$/iu.test(contentType)
-  ) {
-    return contentType;
-  }
-  const extension = extname(filePath).replace(/^\./, "").toLowerCase();
-  if (extension === "png") return "image/png";
-  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
-  if (extension === "webp") return "image/webp";
-  if (extension === "gif") return "image/gif";
-  if (extension === "svg") return "image/svg+xml";
-  if (extension === "bmp") return "image/bmp";
-  if (extension === "ico") return "image/x-icon";
-  if (extension === "avif") return "image/avif";
-  if (extension === "tiff" || extension === "tif") return "image/tiff";
-  if (extension === "heic" || extension === "heif") return "image/heif";
-  if (extension === "jxl") return "image/jxl";
-  return "application/octet-stream";
-};
-
 const registerLyraFileProtocol = (): void => {
   protocol.handle(LYRA_FILE_SCHEME, async (request) => {
-    const filePath = resolveLyraFilePath(request.url);
-    if (filePath === null) {
+    const resolved = await lyraFileAccess.resolveRequest(request.url);
+    if (resolved === null) {
       return new Response(new Uint8Array(), {
-        status: 400
+        status: 403
       });
     }
     try {
-      const contentType = new URL(request.url).searchParams.get("contentType");
-      const fileBuffer = await readFile(filePath);
+      const fileBuffer = await readFile(resolved.path);
       return new Response(fileBuffer, {
         status: 200,
         headers: {
-          "content-type": resolvePreviewMimeType(filePath, contentType),
+          "content-type": resolved.contentType,
           "cache-control": "private, max-age=30"
         }
       });
@@ -1069,13 +1026,20 @@ const installLyraDockIconThemeSync = (): (() => void) | null => {
 };
 
 const registerIpcHandlers = async (): Promise<void> => {
-  const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager);
+  const filesBridge = createFilesIpcBridge(storageRoots.modules.fileManager, {
+    createPreviewUrl: lyraFileAccess.createPreviewUrl
+  });
   console.info(`[lyra-files] native loaded: ${filesBridge.loadResult.loadedFrom}`);
   disposeFilesBridge = filesBridge.dispose;
-  const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer);
+  const imageViewerBridge = createImageViewerIpcBridge(storageRoots.modules.imageViewer, {
+    createPreviewUrl: lyraFileAccess.createPreviewUrl
+  });
   console.info(`[lyra-image-viewer] native loaded: ${imageViewerBridge.loadResult.loadedFrom}`);
   disposeImageViewerBridge = imageViewerBridge.dispose;
-  const identityBridge = createIdentityIpcBridge(storageRoots.modules.identity);
+  const identityBridge = createIdentityIpcBridge(storageRoots.modules.identity, {
+    createPreviewUrl: lyraFileAccess.createPreviewUrl,
+    addAllowedRoot: lyraFileAccess.addAllowedRoot
+  });
   disposeIdentityBridge = identityBridge.dispose;
   const runtimeClient = createLyraRuntimeClient({
     storageRoot: storageRoots.modules.runtime,
@@ -1147,6 +1111,7 @@ const registerIpcHandlers = async (): Promise<void> => {
     getBrowserBridge: () => workbenchBrowserBridge,
     getWorkbenchObservationService: () => workbenchObservationService,
     workbenchState: workbenchStateBridge,
+    addAllowedPreviewRoot: lyraFileAccess.addAllowedRoot,
     resolveSensitiveValueForFill: sensitiveValuesBridge.resolveForAgentFill
   });
   disposeAgentBridge = agentBridge.dispose;
@@ -1293,7 +1258,7 @@ const registerIpcHandlers = async (): Promise<void> => {
   );
 
   ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> => {
-    if (typeof url !== "string" || url.length === 0) {
+    if (typeof url !== "string" || url.length === 0 || isSafeExternalUrl(url) === false) {
       return false;
     }
     try {
@@ -1368,14 +1333,19 @@ const registerIpcHandlers = async (): Promise<void> => {
     if (!request || typeof request.editorId !== "string" || typeof request.path !== "string") {
       return false;
     }
+    const targetPath = request.path.trim();
+    if (targetPath.length === 0) {
+      return false;
+    }
     const ed = KNOWN_EDITORS.find((e) => e.id === request.editorId);
     if (ed === undefined) return false;
     const plat = platform();
     try {
+      await stat(targetPath);
       if (plat === "darwin" && ed.bundle) {
-        exec(`open -a "${ed.bundle.replace(/\.app$/u, "")}" "${request.path}"`);
+        await execFileAsync("open", ["-a", ed.bundle.replace(/\.app$/u, ""), targetPath]);
       } else if (ed.cmd) {
-        exec(`${ed.cmd} "${request.path}"`);
+        await execFileAsync(ed.cmd, [targetPath]);
       } else {
         return false;
       }
@@ -1386,12 +1356,14 @@ const registerIpcHandlers = async (): Promise<void> => {
   });
 
   ipcMain.handle(LYRA_CHANNELS.revealInFolder, async (_event, path: string): Promise<boolean> => {
-    if (typeof path !== "string" || path.length === 0) {
+    const targetPath = typeof path === "string" ? path.trim() : "";
+    if (targetPath.length === 0) {
       return false;
     }
     try {
-      const error = await shell.openPath(path);
-      return error.length === 0;
+      await stat(targetPath);
+      shell.showItemInFolder(targetPath);
+      return true;
     } catch {
       return false;
     }

@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
 
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 
@@ -7,6 +7,8 @@ import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
+  FileManagerDirectorySnapshot,
+  FileManagerEntry,
   FileManagerEjectDeviceRequest,
   FileManagerFavoritesPayload,
   FileManagerDirectoryPatch,
@@ -16,8 +18,11 @@ import type {
   FileManagerMountDeviceRequest,
   FileManagerMoveToTrashRequest,
   FileManagerReadDirectoryRequest,
+  FileManagerReadDirectoryResponse,
+  FileManagerReadTrashResponse,
   FileManagerRecentLocationsPayload,
   FileManagerRestoreFromTrashRequest,
+  FileManagerTrashEntry,
   FileWriteTextRequest
 } from "../../shared/file-manager";
 import {
@@ -29,6 +34,23 @@ import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
 
 const DIRECTORY_PATCH_THROTTLE_MS = 75;
 const DIRECTORY_PATCH_MAX_QUEUE_SIZE = 1024;
+const PREVIEWABLE_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".bmp",
+  ".ico",
+  ".avif",
+  ".tiff",
+  ".tif",
+  ".heic",
+  ".heif"
+]);
+
+type FilePreviewUrlFactory = (filePath: string, mimeType?: string | null) => string;
 
 const normalizePath = (value: string): string => {
   const trimmed = value.trim();
@@ -140,6 +162,71 @@ const normalizeReadTextRequest = (
 const isVirtualToolPath = (filePath: string): boolean =>
   filePath === "/tools" || filePath.startsWith("/tools/");
 
+const isPreviewableImagePath = (filePath: string): boolean =>
+  PREVIEWABLE_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase());
+
+const withEntryPreviewUrl = (
+  entry: FileManagerEntry,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerEntry => {
+  if (entry.kind !== "file" || isPreviewableImagePath(entry.path) === false) {
+    return entry;
+  }
+  return {
+    ...entry,
+    previewUrl: createPreviewUrl(entry.path)
+  };
+};
+
+const withTrashEntryPreviewUrl = (
+  entry: FileManagerTrashEntry,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerTrashEntry => {
+  const previewPath = entry.trashedPath ?? entry.originalPath;
+  if (entry.kind !== "file" || previewPath === undefined || isPreviewableImagePath(previewPath) === false) {
+    return entry;
+  }
+  return {
+    ...entry,
+    previewUrl: createPreviewUrl(previewPath)
+  };
+};
+
+const withDirectoryPreviewUrls = (
+  response: FileManagerReadDirectoryResponse,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerReadDirectoryResponse => ({
+  ...response,
+  entries: response.entries.map((entry) => withEntryPreviewUrl(entry, createPreviewUrl))
+});
+
+const withDirectorySnapshotPreviewUrls = (
+  snapshot: FileManagerDirectorySnapshot,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerDirectorySnapshot => ({
+  ...withDirectoryPreviewUrls(snapshot, createPreviewUrl),
+  generation: snapshot.generation
+});
+
+const withDirectoryPatchPreviewUrl = (
+  patch: FileManagerDirectoryPatch,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerDirectoryPatch => ({
+  ...patch,
+  ...(patch.entry === undefined ? {} : { entry: withEntryPreviewUrl(patch.entry, createPreviewUrl) }),
+  ...(patch.snapshot === undefined
+    ? {}
+    : { snapshot: withDirectorySnapshotPreviewUrls(patch.snapshot, createPreviewUrl) })
+});
+
+const withTrashPreviewUrls = (
+  response: FileManagerReadTrashResponse,
+  createPreviewUrl: FilePreviewUrlFactory
+): FileManagerReadTrashResponse => ({
+  ...response,
+  entries: response.entries.map((entry) => withTrashEntryPreviewUrl(entry, createPreviewUrl))
+});
+
 const unsupportedReadResult = (
   filePath: string,
   reason: string,
@@ -227,7 +314,12 @@ export type FilesIpcBridge = {
   readonly nativeBindings: FilesNativeBindings;
 };
 
-export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
+export const createFilesIpcBridge = (
+  storageRoot: string,
+  options: {
+    readonly createPreviewUrl?: FilePreviewUrlFactory;
+  } = {}
+): FilesIpcBridge => {
   const loadResult = loadFilesNativeBindings();
   if (loadResult.ok === false) {
     throw new Error(
@@ -235,6 +327,8 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     );
   }
   const bindings = loadResult.bindings;
+  const createPreviewUrl = options.createPreviewUrl ?? ((filePath: string) =>
+    `lyra-file://preview?path=${encodeURIComponent(filePath)}`);
   let patchPoller: ReturnType<typeof setInterval> | null = null;
   const subscriptionsByWebContents = new Map<number, Set<string>>();
 
@@ -253,7 +347,10 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
         if (subscriptions === undefined || subscriptions.has(patch.subscriptionId) === false) {
           continue;
         }
-        window.webContents.send(LYRA_CHANNELS.filesDirectoryPatch, patch);
+        window.webContents.send(
+          LYRA_CHANNELS.filesDirectoryPatch,
+          withDirectoryPatchPreviewUrl(patch, createPreviewUrl)
+        );
       }
     },
     onError: (error) => {
@@ -338,7 +435,10 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     [
       LYRA_CHANNELS.filesReadDirectory,
       (_event, payload) =>
-        bindings.readDirectory(normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest))
+        withDirectoryPreviewUrls(
+          bindings.readDirectory(normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)),
+          createPreviewUrl
+        )
     ],
     [
       LYRA_CHANNELS.filesSubscribeDirectory,
@@ -347,7 +447,10 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
           normalizeDirectoryRequest(payload as FileManagerReadDirectoryRequest)
         );
         trackDirectorySubscription(event, response.subscriptionId);
-        return response;
+        return {
+          ...response,
+          snapshot: withDirectorySnapshotPreviewUrls(response.snapshot, createPreviewUrl)
+        };
       }
     ],
     [
@@ -362,7 +465,7 @@ export const createFilesIpcBridge = (storageRoot: string): FilesIpcBridge => {
     ],
     [
       LYRA_CHANNELS.filesReadTrash,
-      () => bindings.readTrash({ storageRoot })
+      () => withTrashPreviewUrls(bindings.readTrash({ storageRoot }), createPreviewUrl)
     ],
     [
       LYRA_CHANNELS.filesCreateFile,

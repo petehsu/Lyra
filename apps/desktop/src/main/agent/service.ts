@@ -31,7 +31,8 @@ export const createAgentIpcBridge = ({
   getBrowserBridge,
   getWorkbenchObservationService,
   workbenchState,
-  resolveSensitiveValueForFill
+  resolveSensitiveValueForFill,
+  addAllowedPreviewRoot
 }: {
   readonly runtimeClient: LyraRuntimeClient;
   readonly storageRoot: string;
@@ -43,6 +44,7 @@ export const createAgentIpcBridge = ({
   readonly resolveSensitiveValueForFill?: (
     ref: LyraSensitiveValueRef
   ) => Promise<string>;
+  readonly addAllowedPreviewRoot?: (rootPath: string) => void;
 }): AgentIpcBridge => {
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
     runtimeClient.request<T>(method, payload);
@@ -176,6 +178,7 @@ export const createAgentIpcBridge = ({
     storageRoot,
     browserFollowMode,
     getBrowserBridge,
+    ...(addAllowedPreviewRoot === undefined ? {} : { addAllowedPreviewRoot }),
     closePrivateTerminalsForSession: terminalToolHost.closePrivateTerminalsForSession,
     listPrivateTerminalsForSession: terminalToolHost.listPrivateTerminalsForSession,
     closePrivateTerminalSession: terminalToolHost.closePrivateTerminalSession

@@ -112,6 +112,7 @@ export const createAgentIpcRouter = ({
   storageRoot,
   browserFollowMode,
   getBrowserBridge,
+  addAllowedPreviewRoot,
   closePrivateTerminalsForSession,
   listPrivateTerminalsForSession,
   closePrivateTerminalSession
@@ -120,6 +121,7 @@ export const createAgentIpcRouter = ({
   readonly storageRoot: string;
   readonly browserFollowMode: AgentBrowserFollowModeController;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
+  readonly addAllowedPreviewRoot?: (rootPath: string) => void;
   readonly closePrivateTerminalsForSession: (agentSessionId: string) => Promise<void>;
   readonly listPrivateTerminalsForSession: (agentSessionId: string) => readonly {
     readonly sessionId: string;
@@ -210,11 +212,20 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentSessionBindProject,
-      (_event, payload) =>
-        requestRuntime<AgentSessionSnapshot>(
+      async (_event, payload) => {
+        const snapshot = await requestRuntime<AgentSessionSnapshot>(
           "agent.session.bindProject",
           payload as AgentSessionBindProjectRequest
-        )
+        );
+        if (
+          snapshot.workingDirIsHome !== true &&
+          typeof snapshot.workingDir === "string" &&
+          snapshot.workingDir.trim().length > 0
+        ) {
+          addAllowedPreviewRoot?.(snapshot.workingDir);
+        }
+        return snapshot;
+      }
     ],
     [
       LYRA_CHANNELS.agentCodegraphStatus,

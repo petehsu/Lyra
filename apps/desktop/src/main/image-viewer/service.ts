@@ -44,6 +44,8 @@ const normalizeOptionalString = (value: unknown, fieldName: string): string | un
 const toFilePreviewUrl = (filePath: string, mimeType: string): string =>
   `lyra-file://preview?path=${encodeURIComponent(filePath)}&contentType=${encodeURIComponent(mimeType)}`;
 
+type FilePreviewUrlFactory = (filePath: string, mimeType: string) => string;
+
 const normalizeOpenRequest = (request: ImageViewerOpenRequest): ImageViewerOpenRequest => ({
   path: normalizeString(request.path, "path")
 });
@@ -67,11 +69,14 @@ const normalizeCloseSessionRequest = (
   sessionId: normalizeString(request.sessionId, "sessionId")
 });
 
-const withSourceUrl = (result: ImageViewerOpenResult): ImageViewerOpenResult => ({
+const withSourceUrl = (
+  result: ImageViewerOpenResult,
+  createPreviewUrl: FilePreviewUrlFactory
+): ImageViewerOpenResult => ({
   ...result,
   sourceUrl: result.sourceUrl.trim().length > 0
     ? result.sourceUrl
-    : toFilePreviewUrl(result.path, result.mimeType)
+    : createPreviewUrl(result.path, result.mimeType)
 });
 
 const publishImageViewerEvent = (event: ImageViewerEvent): void => {
@@ -83,7 +88,12 @@ const publishImageViewerEvent = (event: ImageViewerEvent): void => {
   }
 };
 
-export const createImageViewerIpcBridge = (storageRoot: string): ImageViewerIpcBridge => {
+export const createImageViewerIpcBridge = (
+  storageRoot: string,
+  options: {
+    readonly createPreviewUrl?: FilePreviewUrlFactory;
+  } = {}
+): ImageViewerIpcBridge => {
   const loadResult = loadImageViewerNativeBindings();
   if (loadResult.ok === false) {
     throw new Error(
@@ -91,13 +101,17 @@ export const createImageViewerIpcBridge = (storageRoot: string): ImageViewerIpcB
     );
   }
   const bindings = loadResult.bindings;
+  const createPreviewUrl = options.createPreviewUrl ?? toFilePreviewUrl;
 
   const handlers = [
     [
       LYRA_CHANNELS.imageViewerOpenImage,
       async (_event: IpcMainInvokeEvent, payload: unknown) => {
         const request = normalizeOpenRequest(payload as ImageViewerOpenRequest);
-        const openResult = withSourceUrl(await bindings.openImage({ ...request, storageRoot }));
+        const openResult = withSourceUrl(
+          await bindings.openImage({ ...request, storageRoot }),
+          createPreviewUrl
+        );
         publishImageViewerEvent({
           kind: "session-status",
           sessionId: openResult.sessionId,
