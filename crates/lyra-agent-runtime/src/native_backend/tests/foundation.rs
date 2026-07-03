@@ -954,6 +954,7 @@ fn list_models_falls_back_to_state_file_when_state_lock_is_busy() {
                 route_id: providers::routes::local_openai_compatible::ROUTE_ID.to_string(),
                 base_url: Some("http://127.0.0.1:8765/v1".to_string()),
                 default_model: Some(model_id.clone()),
+                api_key_ref: None,
                 api_key: None,
                 api_key_env: None,
                 auth_header: None,
@@ -2042,6 +2043,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         active_compressions: HashSet::new(),
         event_callback: None,
         host_dispatcher: None,
+        legacy_plaintext_provider_keys: HashSet::new(),
     };
     state.save_state().expect("save state");
     assert_eq!(
@@ -2070,6 +2072,7 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
         route_id: "custom_openai_compatible".to_string(),
         base_url: Some("http://localhost:8787/v1".to_string()),
         default_model: Some("custom-model".to_string()),
+        api_key_ref: None,
         api_key: Some("secret".to_string()),
         api_key_env: None,
         auth_header: None,
@@ -2341,6 +2344,7 @@ fn native_state_persists_only_live_pending_requests() {
         active_compressions: HashSet::new(),
         event_callback: None,
         host_dispatcher: None,
+        legacy_plaintext_provider_keys: HashSet::new(),
     };
     assert!(state.prune_non_live_pending());
     state.save_state().expect("save state");
@@ -3035,6 +3039,7 @@ fn model_catalog_uses_structured_provider_capabilities() {
             route_id: "custom_openai_compatible".to_string(),
             base_url: Some("http://localhost:8787/v1".to_string()),
             default_model: Some("custom-model".to_string()),
+            api_key_ref: None,
             api_key: Some("sk-test".to_string()),
             api_key_env: None,
             auth_header: None,
@@ -3136,6 +3141,7 @@ fn save_provider_profile_preserves_omitted_secret_and_models() {
                 route_id: "custom_openai_compatible".to_string(),
                 base_url: Some("https://old.example.com/v1".to_string()),
                 default_model: Some(original_model.clone()),
+                api_key_ref: None,
                 api_key: Some("sk-preserve".to_string()),
                 api_key_env: Some("LYRA_PRESERVE_API_KEY".to_string()),
                 auth_header: Some("api-key".to_string()),
@@ -3243,6 +3249,7 @@ fn model_catalog_keeps_disabled_models_out_of_routes() {
             route_id: "custom_openai_compatible".to_string(),
             base_url: Some("http://localhost:8787/v1".to_string()),
             default_model: Some("enabled-model".to_string()),
+            api_key_ref: None,
             api_key: Some("sk-test".to_string()),
             api_key_env: None,
             auth_header: None,

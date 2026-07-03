@@ -124,6 +124,7 @@ mod tests {
             route_id: route_id.to_string(),
             base_url: Some("https://example.com/v1".to_string()),
             default_model: Some("gpt-test".to_string()),
+            api_key_ref: None,
             api_key: Some("sk-test".to_string()),
             api_key_env: None,
             auth_header: auth_header.map(str::to_string),

@@ -176,6 +176,7 @@ mod tests {
             route_id: "google_gemini".to_string(),
             base_url: Some("https://generativelanguage.googleapis.com/v1beta".to_string()),
             default_model: Some("gemini-2.5-flash".to_string()),
+            api_key_ref: None,
             api_key: Some("gemini-key".to_string()),
             api_key_env: None,
             auth_header: auth_header.map(str::to_string),

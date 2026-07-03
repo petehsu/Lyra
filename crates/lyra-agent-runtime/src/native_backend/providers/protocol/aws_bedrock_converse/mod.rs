@@ -210,6 +210,7 @@ mod tests {
             route_id: "aws_bedrock".to_string(),
             base_url: Some(base_url.to_string()),
             default_model: Some("anthropic.claude-3-5-sonnet-20241022-v2:0".to_string()),
+            api_key_ref: None,
             api_key: Some("AKIATEST".to_string()),
             api_key_env: None,
             auth_header: None,

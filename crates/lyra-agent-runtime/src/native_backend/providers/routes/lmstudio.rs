@@ -144,6 +144,7 @@ mod tests {
             route_id: ROUTE_ID.to_string(),
             base_url: Some(base_url.to_string()),
             default_model: None,
+            api_key_ref: None,
             api_key: None,
             api_key_env: None,
             auth_header: None,

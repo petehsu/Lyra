@@ -1112,7 +1112,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     getWorkbenchObservationService: () => workbenchObservationService,
     workbenchState: workbenchStateBridge,
     addAllowedPreviewRoot: lyraFileAccess.addAllowedRoot,
-    resolveSensitiveValueForFill: sensitiveValuesBridge.resolveForAgentFill
+    resolveSensitiveValueForFill: sensitiveValuesBridge.resolveForAgentFill,
+    storeSensitiveValue: sensitiveValuesBridge.store
   });
   disposeAgentBridge = agentBridge.dispose;
   const disposeGeolocationPermissionHandler = configureGeolocationPermissionHandler(

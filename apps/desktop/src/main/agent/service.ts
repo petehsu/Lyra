@@ -15,7 +15,11 @@ import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
-import type { LyraSensitiveValueRef } from "../../shared/sensitive-value";
+import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
+import type {
+  LyraSensitiveValueStoreRequest,
+  LyraSensitiveValueStoreResponse
+} from "../../shared/desktop-bridge";
 import type { AgentHostCapabilityHandlers } from "./host-payload";
 import { isRecord } from "./host-payload";
 
@@ -32,6 +36,7 @@ export const createAgentIpcBridge = ({
   getWorkbenchObservationService,
   workbenchState,
   resolveSensitiveValueForFill,
+  storeSensitiveValue,
   addAllowedPreviewRoot
 }: {
   readonly runtimeClient: LyraRuntimeClient;
@@ -44,6 +49,9 @@ export const createAgentIpcBridge = ({
   readonly resolveSensitiveValueForFill?: (
     ref: LyraSensitiveValueRef
   ) => Promise<string>;
+  readonly storeSensitiveValue?: (
+    request: LyraSensitiveValueStoreRequest
+  ) => Promise<LyraSensitiveValueStoreResponse>;
   readonly addAllowedPreviewRoot?: (rootPath: string) => void;
 }): AgentIpcBridge => {
   const requestRuntime = async <T>(method: string, payload: object = {}): Promise<T> =>
@@ -166,7 +174,36 @@ export const createAgentIpcBridge = ({
     ...terminalToolHost.handlers,
     ...softwareCapabilityHost.handlers,
     ...favoritesToolHost.handlers,
-    ...createHostPersonaContextHandlers(workbenchState)
+    ...createHostPersonaContextHandlers(workbenchState),
+    ...(storeSensitiveValue === undefined
+      ? {}
+      : {
+          "sensitiveValues.storeForAgentUse": async (payload: unknown) => {
+            if (!isRecord(payload) || typeof payload.value !== "string" || typeof payload.label !== "string") {
+              throw new Error("sensitive value and label are required");
+            }
+            return storeSensitiveValue({
+              label: payload.label,
+              value: payload.value,
+              capabilities: ["list_metadata", "use"],
+              ...(payload.owner === "ai-provider" ? { owner: "ai-provider" as const } : {}),
+              ...(payload.valueKind === "api_key" ? { valueKind: "api_key" as const } : {}),
+              ...(typeof payload.description === "string" ? { description: payload.description } : {})
+            });
+          }
+        }),
+    ...(resolveSensitiveValueForFill === undefined
+      ? {}
+      : {
+          "sensitiveValues.resolveForAgentUse": async (payload: unknown) => {
+            if (!isRecord(payload) || !isLyraSensitiveValueRef(payload.ref)) {
+              throw new Error("sensitive value ref is required");
+            }
+            return {
+              value: await resolveSensitiveValueForFill(payload.ref)
+            };
+          }
+        })
   };
 
   for (const [method, handler] of Object.entries(hostCapabilityHandlers)) {
@@ -178,6 +215,7 @@ export const createAgentIpcBridge = ({
     storageRoot,
     browserFollowMode,
     getBrowserBridge,
+    ...(storeSensitiveValue === undefined ? {} : { storeSensitiveValue }),
     ...(addAllowedPreviewRoot === undefined ? {} : { addAllowedPreviewRoot }),
     closePrivateTerminalsForSession: terminalToolHost.closePrivateTerminalsForSession,
     listPrivateTerminalsForSession: terminalToolHost.listPrivateTerminalsForSession,

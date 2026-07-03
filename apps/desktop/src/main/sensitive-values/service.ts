@@ -216,7 +216,8 @@ export const createSensitiveValuesIpcBridge = ({
       return revealed.password;
     }
     const current = readStore();
-    const record = current.values.find((entry) => entry.id === ref.id);
+    const recordId = ref.ownerRef.kind === "opaque" ? ref.ownerRef.valueId : ref.id;
+    const record = current.values.find((entry) => entry.id === recordId);
     if (record === undefined) {
       throw new Error(`Sensitive value not found: ${ref.id}`);
     }

@@ -124,6 +124,7 @@ mod tests {
             route_id: ANTHROPIC_ROUTE_ID.to_string(),
             base_url: Some(ANTHROPIC_BASE_URL.to_string()),
             default_model: None,
+            api_key_ref: None,
             api_key: Some("sk-test".to_string()),
             api_key_env: None,
             auth_header: None,

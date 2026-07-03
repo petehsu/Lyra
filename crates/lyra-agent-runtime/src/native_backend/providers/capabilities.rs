@@ -15,7 +15,7 @@ pub(crate) fn provider_profile_available(
     provider: &NativeProviderProfile,
     route: &ProviderRouteDescriptor,
 ) -> bool {
-    transport::auth::resolve_api_key(provider).is_some()
+    transport::auth::has_configured_api_key(provider)
         || (route.auth_kind.contains("none") && provider_base_url_configured(provider))
 }
 
@@ -23,7 +23,7 @@ pub(crate) fn provider_requires_api_key(
     provider: &NativeProviderProfile,
     route: &ProviderRouteDescriptor,
 ) -> bool {
-    transport::auth::resolve_api_key(provider).is_none() && !route.auth_kind.contains("none")
+    !transport::auth::has_configured_api_key(provider) && !route.auth_kind.contains("none")
 }
 
 fn provider_base_url_configured(provider: &NativeProviderProfile) -> bool {

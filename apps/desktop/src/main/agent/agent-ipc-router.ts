@@ -2,6 +2,10 @@ import { ipcMain, type IpcMainInvokeEvent } from "electron";
 
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
 import type {
+  LyraSensitiveValueStoreRequest,
+  LyraSensitiveValueStoreResponse
+} from "../../shared/desktop-bridge";
+import type {
   AgentClarificationRespondRequest,
   AgentGitDiffRequest,
   AgentGitDiffResponse,
@@ -113,6 +117,7 @@ export const createAgentIpcRouter = ({
   browserFollowMode,
   getBrowserBridge,
   addAllowedPreviewRoot,
+  storeSensitiveValue,
   closePrivateTerminalsForSession,
   listPrivateTerminalsForSession,
   closePrivateTerminalSession
@@ -122,6 +127,9 @@ export const createAgentIpcRouter = ({
   readonly browserFollowMode: AgentBrowserFollowModeController;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly addAllowedPreviewRoot?: (rootPath: string) => void;
+  readonly storeSensitiveValue?: (
+    request: LyraSensitiveValueStoreRequest
+  ) => Promise<LyraSensitiveValueStoreResponse>;
   readonly closePrivateTerminalsForSession: (agentSessionId: string) => Promise<void>;
   readonly listPrivateTerminalsForSession: (agentSessionId: string) => readonly {
     readonly sessionId: string;
@@ -133,6 +141,30 @@ export const createAgentIpcRouter = ({
   }[];
   readonly closePrivateTerminalSession: (agentSessionId: string, terminalSessionId: string) => Promise<void>;
 }): { readonly dispose: () => void } => {
+  const secureProviderApiKey = async <
+    T extends AgentProviderProfileSaveRequest | AgentAccountLoginCompleteRequest
+  >(request: T): Promise<T> => {
+    const apiKey = request.apiKey?.trim() ?? "";
+    if (apiKey.length === 0 || storeSensitiveValue === undefined) {
+      return request;
+    }
+    const providerId = request.profileName?.trim()
+      || ("provider" in request ? request.provider : request.routeId);
+    const stored = await storeSensitiveValue({
+      owner: "ai-provider",
+      valueKind: "api_key",
+      label: `API key for ${providerId}`,
+      description: `Stored API key for Lyra provider ${providerId}`,
+      value: apiKey,
+      capabilities: ["list_metadata", "use"]
+    });
+    const { apiKey: _apiKey, ...rest } = request;
+    return {
+      ...rest,
+      apiKeyRef: stored.ref
+    } as T;
+  };
+
   const handlers: Array<readonly [string, (_event: IpcMainInvokeEvent, payload?: unknown) => unknown]> = [
     [
       LYRA_CHANNELS.agentSessionCreate,
@@ -513,10 +545,10 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentProviderProfileSave,
-      (_event, payload) =>
+      async (_event, payload) =>
         requestRuntime<AgentConfigSnapshot>(
           "agent.provider.profile.save",
-          payload as AgentProviderProfileSaveRequest
+          await secureProviderApiKey(payload as AgentProviderProfileSaveRequest)
         )
     ],
     [
@@ -761,10 +793,10 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentAccountsLoginComplete,
-      (_event, payload) =>
+      async (_event, payload) =>
         requestRuntime<AgentAccountLoginCompleteResponse>(
           "agent.accounts.loginComplete",
-          payload as AgentAccountLoginCompleteRequest
+          await secureProviderApiKey(payload as AgentAccountLoginCompleteRequest)
         )
     ],
     [

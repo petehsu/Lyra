@@ -20,6 +20,25 @@ impl NativeRuntimeState {
 
         let state_file = read_json::<NativeStateFile>(&root.join("state.json"));
         let _ = ensure_memory_store(&root);
+        let legacy_plaintext_provider_keys = state_file
+            .as_ref()
+            .map(|state| {
+                state
+                    .config
+                    .providers
+                    .iter()
+                    .filter(|(_, profile)| {
+                        profile.api_key_ref.is_none()
+                            && profile
+                                .api_key
+                                .as_ref()
+                                .is_some_and(|value| !value.trim().is_empty())
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default();
+
         let mut config = state_file
             .as_ref()
             .map(|state| state.config.clone())
@@ -113,6 +132,7 @@ impl NativeRuntimeState {
             active_ui_message_by_turn: HashMap::new(),
             event_callback: None,
             host_dispatcher: None,
+            legacy_plaintext_provider_keys,
             active_compressions: HashSet::new(),
         };
         let pruned_pending = loaded.prune_non_live_pending();
@@ -206,6 +226,111 @@ impl NativeRuntimeState {
         self.save_state()?;
         Ok(id)
     }
+}
+
+#[derive(Clone)]
+struct LegacyProviderApiKeyMigration {
+    id: String,
+    label: String,
+    api_key: String,
+}
+
+fn legacy_provider_api_key_migrations(
+    state: &NativeRuntimeState,
+) -> Vec<LegacyProviderApiKeyMigration> {
+    state
+        .legacy_plaintext_provider_keys
+        .iter()
+        .filter_map(|id| {
+            let profile = state.config.providers.get(id)?;
+            if profile.api_key_ref.is_some() {
+                return None;
+            }
+            let api_key = profile
+                .api_key
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())?
+                .clone();
+            Some(LegacyProviderApiKeyMigration {
+                id: id.clone(),
+                label: profile.label.clone(),
+                api_key,
+            })
+        })
+        .collect()
+}
+
+fn store_legacy_provider_api_key_refs(
+    dispatcher: &Arc<HostCapabilityDispatcher>,
+    migrations: &[LegacyProviderApiKeyMigration],
+) -> AgentRuntimeResult<Vec<(String, Value)>> {
+    migrations
+        .iter()
+        .map(|migration| {
+            let payload = serde_json::to_string(&json!({
+                "owner": "ai-provider",
+                "valueKind": "api_key",
+                "label": format!("API key for {}", migration.label),
+                "description": format!("Migrated API key for Lyra provider {}", migration.label),
+                "value": migration.api_key,
+                "capabilities": ["list_metadata", "use"],
+            }))
+            .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
+            let output = dispatcher("sensitiveValues.storeForAgentUse".to_string(), payload)
+                .map_err(AgentRuntimeError::HostCapability)?;
+            let stored: Value = serde_json::from_str(&output)
+                .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
+            let api_key_ref = stored
+                .get("ref")
+                .filter(|value| value.is_object())
+                .cloned()
+                .ok_or_else(|| {
+                    AgentRuntimeError::Core(format!(
+                        "secure storage did not return an API key reference for provider {}",
+                        migration.label
+                    ))
+                })?;
+            Ok((migration.id.clone(), api_key_ref))
+        })
+        .collect()
+}
+
+fn apply_legacy_provider_api_key_refs(
+    state: &mut NativeRuntimeState,
+    refs: Vec<(String, Value)>,
+) -> bool {
+    let mut changed = false;
+    for (id, api_key_ref) in refs {
+        if let Some(profile) = state.config.providers.get_mut(&id) {
+            profile.api_key_ref = Some(api_key_ref);
+            profile.api_key = None;
+            changed = true;
+        }
+        state.legacy_plaintext_provider_keys.remove(&id);
+    }
+    changed
+}
+
+pub(crate) fn migrate_legacy_provider_api_keys_to_secure_storage(
+    dispatcher: Arc<HostCapabilityDispatcher>,
+) -> AgentRuntimeResult<()> {
+    let migrations = {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        legacy_provider_api_key_migrations(&state)
+    };
+    if migrations.is_empty() {
+        return Ok(());
+    }
+    let refs = store_legacy_provider_api_key_refs(&dispatcher, &migrations)?;
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    if apply_legacy_provider_api_key_refs(&mut state, refs) {
+        state.save_state()?;
+    }
+    Ok(())
 }
 
 fn clear_session_files(sessions_dir: &Path, from_schema_version: u32) -> Vec<Value> {
@@ -514,6 +639,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 .ok()
                 .or_else(|| Some(providers::routes::openai::DEFAULT_BASE_URL.to_string())),
             default_model: config.default_model.clone(),
+            api_key_ref: None,
             api_key: openai_key,
             api_key_env: Some("OPENAI_API_KEY".to_string()),
             auth_header: None,
@@ -531,6 +657,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 .ok()
                 .or_else(|| Some(providers::routes::openrouter::DEFAULT_BASE_URL.to_string())),
             default_model: env::var("OPENROUTER_MODEL").ok(),
+            api_key_ref: None,
             api_key: env::var("OPENROUTER_API_KEY").ok(),
             api_key_env: Some("OPENROUTER_API_KEY".to_string()),
             auth_header: None,
@@ -551,6 +678,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                 .ok()
                 .filter(|value| !value.trim().is_empty())
                 .or_else(|| Some("gpt-oss:120b".to_string())),
+            api_key_ref: None,
             api_key: env::var("OLLAMA_API_KEY").ok(),
             api_key_env: Some("OLLAMA_API_KEY".to_string()),
             auth_header: None,
@@ -570,6 +698,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("DEEPSEEK_MODEL")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            api_key_ref: None,
             api_key: env::var("DEEPSEEK_API_KEY").ok(),
             api_key_env: Some("DEEPSEEK_API_KEY".to_string()),
             auth_header: None,
@@ -589,6 +718,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("GLM_MODEL")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            api_key_ref: None,
             api_key: env::var("GLM_API_KEY")
                 .ok()
                 .or_else(|| env::var("ZHIPU_API_KEY").ok())
@@ -611,6 +741,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("MOONSHOT_MODEL")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            api_key_ref: None,
             api_key: env::var("MOONSHOT_API_KEY").ok(),
             api_key_env: Some("MOONSHOT_API_KEY".to_string()),
             auth_header: None,
@@ -630,6 +761,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("NVIDIA_MODEL")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            api_key_ref: None,
             api_key: env::var("NVIDIA_API_KEY").ok(),
             api_key_env: Some("NVIDIA_API_KEY".to_string()),
             auth_header: None,
@@ -652,6 +784,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     .ok()
                     .or_else(|| Some(providers::routes::anthropic::DEFAULT_BASE_URL.to_string())),
                 default_model: Some(default_model.clone()),
+                api_key_ref: None,
                 api_key: env::var("ANTHROPIC_API_KEY").ok(),
                 api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
                 auth_header: None,
@@ -675,6 +808,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     Some(providers::routes::google_gemini::DEFAULT_BASE_URL.to_string())
                 }),
                 default_model: Some(default_model.clone()),
+                api_key_ref: None,
                 api_key: env::var("GEMINI_API_KEY").ok(),
                 api_key_env: Some("GEMINI_API_KEY".to_string()),
                 auth_header: None,
@@ -708,6 +842,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
                     ))
                 }),
                 default_model: Some(default_model.clone()),
+                api_key_ref: None,
                 api_key: env::var("AWS_ACCESS_KEY_ID").ok(),
                 api_key_env: Some("AWS_ACCESS_KEY_ID".to_string()),
                 auth_header: None,
@@ -728,6 +863,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("MIMO_MODEL")
                 .ok()
                 .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key_ref: None,
             api_key: env::var("MIMO_API_KEY").ok(),
             api_key_env: Some("MIMO_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
@@ -747,6 +883,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
                 .ok()
                 .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key_ref: None,
             api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
@@ -766,6 +903,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
                 .ok()
                 .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key_ref: None,
             api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
@@ -785,6 +923,7 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             default_model: env::var("MIMO_TOKEN_PLAN_MODEL")
                 .ok()
                 .or_else(|| Some("mimo-v2.5-pro".to_string())),
+            api_key_ref: None,
             api_key: env::var("MIMO_TOKEN_PLAN_API_KEY").ok(),
             api_key_env: Some("MIMO_TOKEN_PLAN_API_KEY".to_string()),
             auth_header: Some("api-key".to_string()),
@@ -832,6 +971,136 @@ mod persistence_tests {
         assert_eq!(
             fs::read_to_string(temp.path().join("state.json.corrupt")).expect("corrupt backup"),
             "{ not json"
+        );
+    }
+
+    #[test]
+    fn state_json_does_not_serialize_provider_api_key_plaintext() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("state.json");
+        let mut config = NativeConfig::default();
+        config.providers.insert(
+            "openai".to_string(),
+            NativeProviderProfile {
+                id: "openai".to_string(),
+                label: "OpenAI".to_string(),
+                route_id: providers::routes::openai::ROUTE_ID.to_string(),
+                base_url: Some(providers::routes::openai::DEFAULT_BASE_URL.to_string()),
+                default_model: Some("gpt-test".to_string()),
+                api_key: Some("sk-plaintext-secret".to_string()),
+                api_key_ref: Some(json!({
+                    "kind": "lyra-sensitive-value-ref",
+                    "id": "ai-provider:opaque:secret-id"
+                })),
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: Vec::new(),
+            },
+        );
+        let state = NativeStateFile {
+            tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+            tool_runtime_migration_diagnostics: Vec::new(),
+            tool_usage_cache: HashMap::new(),
+            active_session_id: None,
+            config,
+            active_skills: HashSet::new(),
+            pending_permissions: HashMap::new(),
+            pending_clarifications: HashMap::new(),
+        };
+
+        write_json(&path, &state).expect("write state");
+
+        let raw = fs::read_to_string(path).expect("read state");
+        assert!(!raw.contains("sk-plaintext-secret"));
+        assert!(raw.contains("apiKeyRef"));
+        assert!(raw.contains("ai-provider:opaque:secret-id"));
+    }
+
+    #[test]
+    fn legacy_provider_api_key_is_migrated_to_secure_storage_ref() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut config = NativeConfig::default();
+        config.providers.insert(
+            "openai".to_string(),
+            NativeProviderProfile {
+                id: "openai".to_string(),
+                label: "OpenAI".to_string(),
+                route_id: providers::routes::openai::ROUTE_ID.to_string(),
+                base_url: Some(providers::routes::openai::DEFAULT_BASE_URL.to_string()),
+                default_model: Some("gpt-test".to_string()),
+                api_key: Some("sk-legacy-secret".to_string()),
+                api_key_ref: None,
+                api_key_env: None,
+                auth_header: None,
+                embedding_model: None,
+                models: Vec::new(),
+            },
+        );
+        let mut state = NativeRuntimeState {
+            root: temp.path().to_path_buf(),
+            tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION,
+            tool_runtime_migration_diagnostics: Vec::new(),
+            tool_usage_cache: HashMap::new(),
+            sessions: HashMap::new(),
+            active_session_id: None,
+            config,
+            active_skills: HashSet::new(),
+            pending_permissions: HashMap::new(),
+            pending_clarifications: HashMap::new(),
+            cancelled_turns: HashSet::new(),
+            active_cancellations: HashMap::new(),
+            suppressed_tool_usage_by_turn: HashMap::new(),
+            inspected_tool_descriptors_by_session: HashMap::new(),
+            active_ui_message_by_turn: HashMap::new(),
+            event_callback: None,
+            host_dispatcher: None,
+            legacy_plaintext_provider_keys: HashSet::from(["openai".to_string()]),
+            active_compressions: HashSet::new(),
+        };
+        let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
+            assert_eq!(method, "sensitiveValues.storeForAgentUse");
+            let request: Value = serde_json::from_str(&payload).expect("store payload");
+            assert_eq!(request["value"], "sk-legacy-secret");
+            Ok(json!({
+                "ref": {
+                    "kind": "lyra-sensitive-value-ref",
+                    "id": "ai-provider:opaque:stored-openai",
+                    "owner": "ai-provider",
+                    "valueKind": "api_key",
+                    "ownership": "user_owned",
+                    "label": "API key for OpenAI",
+                    "displayHint": "API key for OpenAI",
+                    "ownerRef": {
+                        "kind": "opaque",
+                        "owner": "ai-provider",
+                        "valueId": "stored-openai"
+                    },
+                    "capabilities": ["list_metadata", "use"],
+                    "modelVisibility": "metadata_only",
+                    "plaintextVisibility": "user_reveal_only"
+                }
+            })
+            .to_string())
+        });
+
+        let migrations = legacy_provider_api_key_migrations(&state);
+        let refs = store_legacy_provider_api_key_refs(&dispatcher, &migrations).expect("store ref");
+        assert!(apply_legacy_provider_api_key_refs(&mut state, refs));
+        state.save_state().expect("save migrated state");
+
+        let raw = fs::read_to_string(temp.path().join("state.json")).expect("read state");
+        assert!(!raw.contains("sk-legacy-secret"));
+        assert!(raw.contains("apiKeyRef"));
+        assert!(raw.contains("stored-openai"));
+        assert!(
+            state
+                .config
+                .providers
+                .get("openai")
+                .expect("provider")
+                .api_key
+                .is_none()
         );
     }
 }

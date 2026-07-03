@@ -20,6 +20,7 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) active_ui_message_by_turn: HashMap<String, String>,
     pub(crate) event_callback: Option<Arc<EventCallback>>,
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
+    pub(crate) legacy_plaintext_provider_keys: HashSet<String>,
     pub(crate) active_compressions: HashSet<String>,
 }
 
@@ -172,7 +173,10 @@ pub(crate) struct NativeProviderProfile {
     pub(crate) route_id: String,
     pub(crate) base_url: Option<String>,
     pub(crate) default_model: Option<String>,
+    #[serde(default, skip_serializing)]
     pub(crate) api_key: Option<String>,
+    #[serde(default)]
+    pub(crate) api_key_ref: Option<Value>,
     pub(crate) api_key_env: Option<String>,
     pub(crate) auth_header: Option<String>,
     pub(crate) embedding_model: Option<String>,

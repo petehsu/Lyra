@@ -1,3 +1,5 @@
+import type { LyraSensitiveValueRef } from "./sensitive-value";
+
 export type AgentRole = "user" | "assistant" | "system";
 export type AgentTurnStatus = "idle" | "running" | "cancelled" | "saved" | "archived" | "failed" | "deleted";
 export type AgentTurnFinishStatus = "finished" | "cancelled";
@@ -714,6 +716,7 @@ export type AgentAccountLoginCompleteRequest = {
   readonly label?: string | null;
   readonly callbackInput?: string | null;
   readonly apiKey?: string | null;
+  readonly apiKeyRef?: LyraSensitiveValueRef | null;
   readonly profileName?: string | null;
   readonly baseUrl?: string | null;
   readonly defaultModel?: string | null;
@@ -1163,6 +1166,7 @@ export type AgentProviderProfileSaveRequest = {
   readonly baseUrl: string;
   readonly defaultModel?: string | null;
   readonly apiKey?: string | null;
+  readonly apiKeyRef?: LyraSensitiveValueRef | null;
   readonly apiKeyEnv?: string | null;
   readonly envFile?: string | null;
   readonly auth?: "bearer" | "header" | "none";

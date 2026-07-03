@@ -277,6 +277,9 @@ pub(crate) fn provider_label(config: &NativeConfig) -> Option<String> {
 }
 
 pub(crate) fn provider_api_key(provider: &NativeProviderProfile) -> Option<String> {
+    if provider.api_key_ref.is_some() {
+        return Some("stored-sensitive-value".to_string());
+    }
     provider
         .api_key
         .clone()

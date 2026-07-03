@@ -133,10 +133,22 @@ pub(crate) fn save_provider_profile(payload: Value) -> AgentRuntimeResult<Value>
         }),
         api_key: if payload.get("apiKey").is_some() {
             string_opt(&payload, "apiKey")
+        } else if payload.get("apiKeyRef").is_some() {
+            None
         } else {
             existing_profile
                 .as_ref()
                 .and_then(|profile| profile.api_key.clone())
+        },
+        api_key_ref: if payload.get("apiKeyRef").is_some() {
+            payload
+                .get("apiKeyRef")
+                .filter(|value| value.is_object())
+                .cloned()
+        } else {
+            existing_profile
+                .as_ref()
+                .and_then(|profile| profile.api_key_ref.clone())
         },
         api_key_env: if payload.get("apiKeyEnv").is_some() {
             string_opt(&payload, "apiKeyEnv")
@@ -429,15 +441,22 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
     let Some(provider_id) = provider_id else {
         return list_models(payload);
     };
-    let provider = {
+    let (provider, host_dispatcher) = {
         let state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        state.config.providers.get(&provider_id).cloned()
+        (
+            state.config.providers.get(&provider_id).cloned(),
+            state.host_dispatcher.clone(),
+        )
     };
     let Some(provider) = provider else {
         return list_models(payload);
     };
+    let provider = providers::transport::auth::provider_with_resolved_api_key(
+        provider,
+        host_dispatcher.as_ref(),
+    )?;
     let route = providers::registry::require_route(&provider.route_id)?;
     if !route.model_discovery_supported {
         return list_models(payload);
@@ -587,6 +606,7 @@ pub(crate) fn complete_account_login(payload: Value) -> AgentRuntimeResult<Value
         "baseUrl": string_opt(&payload, "baseUrl"),
         "defaultModel": string_opt(&payload, "defaultModel"),
         "apiKey": string_opt(&payload, "apiKey"),
+        "apiKeyRef": payload.get("apiKeyRef").cloned().unwrap_or(Value::Null),
         "authHeader": string_opt(&payload, "authHeader"),
         "setDefault": payload.get("setDefault").and_then(Value::as_bool).unwrap_or(true)
     }));
@@ -637,6 +657,7 @@ mod tests {
             base_url: Some("https://example.com/v1".to_string()),
             default_model: None,
             api_key: None,
+            api_key_ref: None,
             api_key_env: None,
             auth_header: None,
             embedding_model: None,

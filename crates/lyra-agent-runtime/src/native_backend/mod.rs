@@ -235,7 +235,10 @@ impl AgentRuntimeBackend for LyraAgentBackend {
 
     fn register_host_capability_dispatcher(&self, dispatcher: Arc<HostCapabilityDispatcher>) {
         if let Ok(mut state) = state().lock() {
-            state.host_dispatcher = Some(dispatcher);
+            state.host_dispatcher = Some(dispatcher.clone());
+        }
+        if let Err(error) = migrate_legacy_provider_api_keys_to_secure_storage(dispatcher) {
+            eprintln!("Failed to migrate legacy provider API keys to secure storage: {error}");
         }
     }
 

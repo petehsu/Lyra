@@ -374,6 +374,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             state.config.openai_responses_stateful_prompt_contract,
         )
     };
+    let provider = providers::transport::auth::provider_with_resolved_api_key(
+        provider,
+        host_dispatcher.as_ref(),
+    )?;
     let prompt_delivery_mode =
         prompt_policy::PromptDeliveryMode::resolve(configured_prompt_delivery_mode.as_deref());
     let latest_user = latest_user_text(&session_messages);
