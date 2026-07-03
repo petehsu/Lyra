@@ -20,6 +20,8 @@ import {
 import type { FileEditorModel } from "../file-editor";
 import { readBrowserFollowModeEnabled } from "../workspace-tabs/tab-activation-coordinator";
 import type { WorkbenchOpenFileFromManager } from "./use-workbench-file-actions";
+import { reportWorkbenchError } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 
 type UseAgentEditFollowParams = {
   readonly desktopApi: LyraDesktopApi | null;
@@ -246,7 +248,9 @@ export const useAgentEditFollow = ({
         // preview bookkeeping so a later edit re-captures a fresh disk baseline.
         diskBaselineRef.current.delete(followed.editorInstanceId);
         previewAppliedRef.current.delete(followed.editorInstanceId);
-        void fileEditorModel.openFile(followed.editorInstanceId, followed.filePath).catch(() => undefined);
+        void fileEditorModel.openFile(followed.editorInstanceId, followed.filePath).catch((error: unknown) => {
+          reportWorkbenchError(error, t("appStatus.openFileFailed"));
+        });
         if (location !== undefined) {
           fileEditorModel.revealLocation(followed.editorInstanceId, location);
         }
@@ -271,7 +275,7 @@ export const useAgentEditFollow = ({
       handleToolEvent(event);
     });
 
-    void desktopApi.agent.readSession({ sessionId: activeSessionId ?? undefined })
+    void desktopApi.agent.readSession({ sessionId: activeSessionId })
       .then((snapshot) => {
         sessionCacheRef.current.set(snapshot.id, snapshot);
       })

@@ -6,7 +6,8 @@ import {
   AppMenuContent,
   AppMenuItem,
   AppMenuSeparator,
-  AppMenuTrigger
+  AppMenuTrigger,
+  reportWorkbenchError
 } from "@renderer/ui/components";
 import { LyraLogo } from "@renderer/ui/app";
 import type { AgentCodegraphStatus, DetectedEditor, LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
@@ -162,10 +163,18 @@ export function ProjectDirChip({
   }
 
   const reveal = () => {
-    if (workingDir) void desktopApi?.revealInFolder(workingDir).catch(() => undefined);
+    if (workingDir) {
+      void desktopApi?.revealInFolder(workingDir).catch((error: unknown) => {
+        reportWorkbenchError(error, t("appStatus.revealPathFailed"));
+      });
+    }
   };
   const openEditor = (editorId: string) => {
-    if (workingDir) void desktopApi?.openInEditor({ editorId, path: workingDir }).catch(() => undefined);
+    if (workingDir) {
+      void desktopApi?.openInEditor({ editorId, path: workingDir }).catch((error: unknown) => {
+        reportWorkbenchError(error, t("appStatus.openEditorFailed"));
+      });
+    }
   };
   const codegraphStatus = !isHome && workingDir ? cgStatus ?? { state: "idle" as const } : null;
 

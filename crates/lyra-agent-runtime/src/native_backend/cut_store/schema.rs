@@ -1,4 +1,5 @@
 use super::{AgentRuntimeError, AgentRuntimeResult, iso_ms, now};
+use crate::native_backend::open_sqlite_connection;
 use rusqlite::Connection;
 use std::{fs, path::Path};
 
@@ -8,8 +9,7 @@ pub(crate) fn open_cut_pack(path: &Path) -> AgentRuntimeResult<Connection> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
-    let conn =
-        Connection::open(path).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let conn = open_sqlite_connection(path)?;
     init_cut_pack_schema(&conn)?;
     Ok(conn)
 }

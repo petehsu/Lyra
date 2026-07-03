@@ -9,6 +9,8 @@ import {
   type FileManagerEntryDragPayload,
   writeFileManagerEntryDragPayload
 } from "./drag-transfer";
+import { reportWorkbenchError } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 import { resolveFileManagerEntryIconKind } from "./entry-icon-classifier";
 import type {
   FileManagerEntry,
@@ -296,7 +298,9 @@ export const useFileManagerSurfaceActions = ({
             }
             void model.submitDownloadText(instanceId, text);
           })
-          .catch(() => undefined);
+          .catch((error: unknown) => {
+            reportWorkbenchError(error, t("appStatus.operationFailed"));
+          });
       },
       onImportExternalBrowserDownloads: () => {
         void model.importExternalBrowserDownloads(instanceId);

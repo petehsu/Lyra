@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "node-api")]
 use napi::bindgen_prelude::*;
@@ -53,6 +53,14 @@ type RustEventCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 static SERVERS: Lazy<Mutex<HashMap<String, Arc<LspServerRuntime>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 static RUST_EVENT_CALLBACK: Lazy<Mutex<Option<RustEventCallback>>> = Lazy::new(|| Mutex::new(None));
+static RESTART_BACKOFFS: Lazy<Mutex<HashMap<String, Instant>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+const LSP_RESTART_BACKOFF: Duration = Duration::from_secs(2);
+const LSP_KILL_GRACE: Duration = Duration::from_millis(1_500);
+const LSP_STDERR_WINDOW: Duration = Duration::from_secs(5);
+const MAX_LSP_STDERR_EVENTS_PER_WINDOW: usize = 20;
+const MAX_LSP_STDERR_LINE_BYTES: usize = 4 * 1024;
 
 #[derive(Clone)]
 struct ServerCommandSpec {
@@ -64,6 +72,8 @@ struct LspServerRuntime {
     key: String,
     language_id: String,
     project_root: String,
+    child_pid: u32,
+    stopping: AtomicBool,
     writer: Arc<Mutex<ChildStdin>>,
     child: Arc<Mutex<Child>>,
     next_request_id: AtomicU64,
@@ -397,6 +407,99 @@ fn parse_lsp_message<R: Read>(reader: &mut BufReader<R>) -> std::io::Result<Opti
 
 fn dispatch_lsp_notification(_runtime: &Arc<LspServerRuntime>, _message: &Value) {}
 
+fn server_key(language_id: &str, project_root: &Path) -> String {
+    format!("{language_id}::{}", project_root.to_string_lossy())
+}
+
+fn record_restart_backoff(key: &str) {
+    if let Ok(mut guard) = RESTART_BACKOFFS.lock() {
+        guard.insert(key.to_string(), Instant::now() + LSP_RESTART_BACKOFF);
+    }
+}
+
+fn restart_backoff_remaining(key: &str) -> Option<Duration> {
+    let mut guard = RESTART_BACKOFFS.lock().ok()?;
+    let until = *guard.get(key)?;
+    let now = Instant::now();
+    if until <= now {
+        guard.remove(key);
+        None
+    } else {
+        Some(until.saturating_duration_since(now))
+    }
+}
+
+fn emit_lsp_stderr(runtime: &LspServerRuntime, message: String) {
+    emit_event(LspRuntimeEvent {
+        kind: "error".to_string(),
+        session_id: None,
+        file_path: None,
+        language_id: Some(runtime.language_id.clone()),
+        project_root: Some(runtime.project_root.clone()),
+        status: None,
+        message: Some(message),
+    });
+}
+
+fn read_bounded_stderr_line<R: BufRead>(
+    reader: &mut R,
+    buffer: &mut Vec<u8>,
+) -> std::io::Result<Option<(String, bool)>> {
+    buffer.clear();
+    let mut truncated = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if buffer.is_empty() {
+                return Ok(None);
+            }
+            let text = String::from_utf8_lossy(buffer).trim().to_string();
+            return Ok(Some((text, truncated)));
+        }
+
+        if let Some(newline_index) = available.iter().position(|byte| *byte == b'\n') {
+            let line_bytes = &available[..newline_index];
+            let remaining = MAX_LSP_STDERR_LINE_BYTES.saturating_sub(buffer.len());
+            let append_len = line_bytes.len().min(remaining);
+            buffer.extend_from_slice(&line_bytes[..append_len]);
+            truncated |= append_len < line_bytes.len();
+            reader.consume(newline_index + 1);
+            let text = String::from_utf8_lossy(buffer).trim().to_string();
+            return Ok(Some((text, truncated)));
+        }
+
+        let remaining = MAX_LSP_STDERR_LINE_BYTES.saturating_sub(buffer.len());
+        if remaining == 0 {
+            let text = String::from_utf8_lossy(buffer).trim().to_string();
+            return Ok(Some((text, true)));
+        }
+        let append_len = available.len().min(remaining);
+        buffer.extend_from_slice(&available[..append_len]);
+        reader.consume(append_len);
+        if buffer.len() >= MAX_LSP_STDERR_LINE_BYTES {
+            let text = String::from_utf8_lossy(buffer).trim().to_string();
+            return Ok(Some((text, true)));
+        }
+    }
+}
+
+fn format_stderr_message(text: String, truncated: bool) -> String {
+    if truncated {
+        format!("{text} [truncated]")
+    } else {
+        text
+    }
+}
+
+fn emit_dropped_stderr(runtime: &LspServerRuntime, dropped: usize) {
+    if dropped > 0 {
+        emit_lsp_stderr(
+            runtime,
+            format!("suppressed {dropped} language-server stderr messages"),
+        );
+    }
+}
+
 fn spawn_server_threads(
     runtime: Arc<LspServerRuntime>,
     mut stdout: impl Read + Send + 'static,
@@ -438,29 +541,34 @@ fn spawn_server_threads(
     let stderr_runtime = Arc::clone(&runtime);
     thread::spawn(move || {
         let mut reader = BufReader::new(&mut stderr);
-        let mut line = String::new();
+        let mut line = Vec::with_capacity(MAX_LSP_STDERR_LINE_BYTES);
+        let mut window_started_at = Instant::now();
+        let mut emitted_in_window = 0_usize;
+        let mut dropped_in_window = 0_usize;
         loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => break,
-                Ok(_) => {
-                    let text = line.trim();
+            if window_started_at.elapsed() >= LSP_STDERR_WINDOW {
+                emit_dropped_stderr(&stderr_runtime, dropped_in_window);
+                window_started_at = Instant::now();
+                emitted_in_window = 0;
+                dropped_in_window = 0;
+            }
+            match read_bounded_stderr_line(&mut reader, &mut line) {
+                Ok(None) => break,
+                Ok(Some((text, truncated))) => {
                     if text.is_empty() {
                         continue;
                     }
-                    emit_event(LspRuntimeEvent {
-                        kind: "error".to_string(),
-                        session_id: None,
-                        file_path: None,
-                        language_id: Some(stderr_runtime.language_id.clone()),
-                        project_root: Some(stderr_runtime.project_root.clone()),
-                        status: None,
-                        message: Some(text.to_string()),
-                    });
+                    if emitted_in_window < MAX_LSP_STDERR_EVENTS_PER_WINDOW {
+                        emit_lsp_stderr(&stderr_runtime, format_stderr_message(text, truncated));
+                        emitted_in_window += 1;
+                    } else {
+                        dropped_in_window += 1;
+                    }
                 }
                 Err(_) => break,
             }
         }
+        emit_dropped_stderr(&stderr_runtime, dropped_in_window);
     });
 
     let wait_runtime = Arc::clone(&runtime);
@@ -471,8 +579,12 @@ fn spawn_server_threads(
             .ok()
             .and_then(|mut child| child.wait().ok());
 
+        let was_stopping = wait_runtime.stopping.load(Ordering::Relaxed);
         if let Ok(mut guard) = SERVERS.lock() {
             guard.remove(&wait_runtime.key);
+        }
+        if !was_stopping && !wait_result.as_ref().is_some_and(|status| status.success()) {
+            record_restart_backoff(&wait_runtime.key);
         }
 
         let status_text = wait_result
@@ -527,11 +639,13 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
         .take()
         .ok_or_else(|| to_error("failed to capture language server stderr"))?;
 
-    let key = format!("{language_id}::{}", project_root.to_string_lossy());
+    let key = server_key(language_id, project_root);
     let runtime = Arc::new(LspServerRuntime {
         key,
         language_id: language_id.to_string(),
         project_root: project_root.to_string_lossy().into_owned(),
+        child_pid,
+        stopping: AtomicBool::new(false),
         writer: Arc::new(Mutex::new(stdin)),
         child: Arc::new(Mutex::new(child)),
         next_request_id: AtomicU64::new(1),
@@ -573,6 +687,7 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
     );
 
     if let Err(error) = initialize_result {
+        runtime.stopping.store(true, Ordering::Relaxed);
         lyra_process_lifecycle_core::terminate_process_tree(child_pid, true);
         if let Ok(mut child) = runtime.child.lock() {
             let _ = child.kill();
@@ -585,6 +700,17 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
     Ok(runtime)
 }
 
+fn stop_runtime(runtime: Arc<LspServerRuntime>) {
+    runtime.stopping.store(true, Ordering::Relaxed);
+    let _ = send_notification(&runtime, "shutdown", json!({}));
+    let _ = send_notification(&runtime, "exit", json!({}));
+    lyra_process_lifecycle_core::terminate_process_tree(runtime.child_pid, false);
+    thread::spawn(move || {
+        thread::sleep(LSP_KILL_GRACE);
+        lyra_process_lifecycle_core::terminate_process_tree(runtime.child_pid, true);
+    });
+}
+
 fn get_or_create_server(
     language_id: &str,
     file_path: &Path,
@@ -593,16 +719,18 @@ fn get_or_create_server(
     let normalized_language = normalize_language_id(language_id)
         .ok_or_else(|| to_error(format!("language not supported: {language_id}")))?;
     let resolved_root = normalize_project_root(project_root, file_path);
-    let key = format!(
-        "{}::{}",
-        normalized_language,
-        resolved_root.to_string_lossy()
-    );
+    let key = server_key(normalized_language, &resolved_root);
 
     if let Ok(guard) = SERVERS.lock() {
         if let Some(runtime) = guard.get(&key) {
             return Ok(Arc::clone(runtime));
         }
+    }
+    if let Some(remaining) = restart_backoff_remaining(&key) {
+        return Err(to_error(format!(
+            "language server is restarting; retry in {} ms",
+            remaining.as_millis().max(1)
+        )));
     }
 
     emit_event(LspRuntimeEvent {
@@ -616,6 +744,7 @@ fn get_or_create_server(
     });
 
     let runtime = start_server(normalized_language, &resolved_root).map_err(|error| {
+        record_restart_backoff(&key);
         emit_event(LspRuntimeEvent {
             kind: "server-status".to_string(),
             session_id: None,
@@ -1115,12 +1244,7 @@ pub fn shutdown() -> Result<()> {
     };
 
     for runtime in runtimes {
-        let _ = send_notification(&runtime, "shutdown", json!({}));
-        let _ = send_notification(&runtime, "exit", json!({}));
-        if let Ok(mut child) = runtime.child.lock() {
-            lyra_process_lifecycle_core::terminate_process_tree(child.id(), false);
-            let _ = child.kill();
-        }
+        stop_runtime(runtime);
     }
 
     if let Ok(mut guard) = SERVERS.lock() {
@@ -1128,4 +1252,43 @@ pub fn shutdown() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn stderr_reader_splits_overlong_lines_without_unbounded_buffer() {
+        let input = vec![b'a'; MAX_LSP_STDERR_LINE_BYTES + 12];
+        let mut reader = BufReader::new(Cursor::new(input));
+        let mut buffer = Vec::new();
+
+        let (first, first_truncated) = read_bounded_stderr_line(&mut reader, &mut buffer)
+            .expect("read first")
+            .expect("first chunk");
+        let (second, second_truncated) = read_bounded_stderr_line(&mut reader, &mut buffer)
+            .expect("read second")
+            .expect("second chunk");
+
+        assert_eq!(first.len(), MAX_LSP_STDERR_LINE_BYTES);
+        assert!(first_truncated);
+        assert_eq!(second.len(), 12);
+        assert!(!second_truncated);
+    }
+
+    #[test]
+    fn stderr_reader_trims_newline_and_marks_truncated() {
+        let input = format!("{}\n", "b".repeat(MAX_LSP_STDERR_LINE_BYTES + 1));
+        let mut reader = BufReader::new(Cursor::new(input.into_bytes()));
+        let mut buffer = Vec::new();
+
+        let (line, truncated) = read_bounded_stderr_line(&mut reader, &mut buffer)
+            .expect("read")
+            .expect("line");
+
+        assert_eq!(line.len(), MAX_LSP_STDERR_LINE_BYTES);
+        assert!(truncated);
+    }
 }

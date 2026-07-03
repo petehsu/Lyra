@@ -190,7 +190,6 @@ export const FileEditorSurfaceView = ({
         <section className="lyra-file-editor-empty-state">
           <AppEmptyState
             density="compact"
-            icon={<AlertTriangle size={16} />}
             title={body.message}
             actions={(
               <AppButton

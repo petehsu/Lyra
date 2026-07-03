@@ -22,6 +22,22 @@ describe("renderMarkdown", () => {
     expect(result.html).not.toContain('href="javascript:');
   });
 
+  it("blocks remote images while keeping local image sources", () => {
+    const result = renderMarkdown(
+      [
+        "![remote](https://example.test/leak.png)",
+        "![local](lyra-file://preview?path=%2Ftmp%2Fshot.png)",
+        '<img src="https://example.test/raw.png" srcset="https://example.test/2x.png 2x">'
+      ].join("\n"),
+      { mode: "final" }
+    );
+
+    expect(result.html).not.toContain("https://example.test");
+    expect(result.html).toContain("remote");
+    expect(result.html).toContain("lyra-file://preview");
+    expect(result.html).not.toContain("srcset=");
+  });
+
   it("keeps math plain while streaming and renders katex after final", () => {
     const streaming = renderMarkdown("Inline $x^2$.\n\n$$x^2$$", { mode: "streaming" });
     const final = renderMarkdown("Inline $x^2$.\n\n$$x^2$$", { mode: "final" });

@@ -2055,17 +2055,16 @@ fn native_state_save_only_rewrites_dirty_sessions() {
 }
 
 #[test]
-fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
+fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
     let temp = tempfile::tempdir().expect("tempdir");
     let sessions_dir = temp.path().join("sessions");
     fs::create_dir_all(&sessions_dir).expect("sessions dir");
-    let legacy_session = new_session(Some("Legacy".to_string()), None, "normal");
+    let mut legacy_session = new_session(Some("Legacy".to_string()), None, "normal");
     let legacy_session_id = legacy_session.id.clone();
-    write_json(
-        &sessions_dir.join(format!("{legacy_session_id}.json")),
-        &legacy_session,
-    )
-    .expect("write legacy session");
+    legacy_session.dirty = false;
+    save_session(temp.path(), &legacy_session).expect("write legacy session");
+    let legacy_json_path = sessions_dir.join("legacy-json-session.json");
+    write_json(&legacy_json_path, &json!({ "legacy": true })).expect("write legacy json");
     let custom_provider = NativeProviderProfile {
         id: "custom-provider".to_string(),
         label: "Custom Provider".to_string(),
@@ -2161,13 +2160,16 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
 
     let loaded = NativeRuntimeState::load_from_root(temp.path().to_path_buf());
 
-    assert!(loaded.sessions.is_empty());
+    assert!(loaded.sessions.contains_key(&legacy_session_id));
     assert_eq!(
         loaded.tool_runtime_schema_version,
         TOOL_RUNTIME_SCHEMA_VERSION
     );
     assert!(loaded.tool_runtime_migration_diagnostics.is_empty());
-    assert_eq!(loaded.active_session_id, None);
+    assert_eq!(
+        loaded.active_session_id.as_deref(),
+        Some(legacy_session_id.as_str())
+    );
     assert!(loaded.pending_permissions.is_empty());
     assert!(loaded.pending_clarifications.is_empty());
     assert_eq!(
@@ -2186,7 +2188,29 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
     )
     .expect("read memory after schema upgrade");
     assert_eq!(memory_records.len(), 1);
-    assert!(!session_dir(&temp.path(), &legacy_session_id).exists());
+    assert!(session_db_path(temp.path(), &legacy_session_id).is_file());
+    assert!(legacy_json_path.is_file());
+    let backup_root = temp.path().join("migration-backups");
+    let backup_dir = fs::read_dir(&backup_root)
+        .expect("backup root")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.is_dir())
+        .expect("schema backup dir");
+    assert!(backup_dir.join("manifest.json").is_file());
+    assert!(
+        backup_dir
+            .join("sessions")
+            .join(&legacy_session_id)
+            .join("session.sqlite")
+            .is_file()
+    );
+    assert!(
+        backup_dir
+            .join("sessions")
+            .join("legacy-json-session.json")
+            .is_file()
+    );
     let persisted =
         read_json::<NativeStateFile>(&temp.path().join("state.json")).expect("persisted state");
     assert_eq!(
@@ -2202,21 +2226,17 @@ fn native_state_schema_upgrade_clears_legacy_tool_sessions() {
 }
 
 #[test]
-fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
-    use std::os::unix::fs::PermissionsExt;
-
+fn native_state_schema_upgrade_keeps_old_version_when_snapshot_fails() {
     let temp = tempfile::tempdir().expect("tempdir");
-    let sessions_dir = temp.path().join("sessions");
-    fs::create_dir_all(&sessions_dir).expect("sessions dir");
-    let blocked_path = sessions_dir.join("blocked");
-    fs::create_dir_all(&blocked_path).expect("blocked dir");
-    fs::set_permissions(&blocked_path, fs::Permissions::from_mode(0o000))
-        .expect("lock blocked dir");
+    let session = new_session(Some("Snapshot".to_string()), None, "normal");
+    let session_id = session.id.clone();
+    save_session(temp.path(), &session).expect("write session");
+    fs::write(temp.path().join("migration-backups"), "not a directory").expect("block backup root");
     let state_file = NativeStateFile {
         tool_runtime_schema_version: TOOL_RUNTIME_SCHEMA_VERSION - 1,
         tool_runtime_migration_diagnostics: Vec::new(),
         tool_usage_cache: HashMap::new(),
-        active_session_id: Some("blocked".to_string()),
+        active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
         active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
@@ -2226,7 +2246,7 @@ fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
 
     let loaded = NativeRuntimeState::load_from_root(temp.path().to_path_buf());
 
-    assert!(loaded.sessions.is_empty());
+    assert!(loaded.sessions.contains_key(&session_id));
     assert_eq!(
         loaded.tool_runtime_schema_version,
         TOOL_RUNTIME_SCHEMA_VERSION - 1
@@ -2234,9 +2254,8 @@ fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
     assert_eq!(loaded.tool_runtime_migration_diagnostics.len(), 1);
     assert_eq!(
         loaded.tool_runtime_migration_diagnostics[0]["code"],
-        "tool_runtime_session_delete_failed"
+        "tool_runtime_schema_snapshot_failed"
     );
-    assert!(blocked_path.exists());
     let persisted =
         read_json::<NativeStateFile>(&temp.path().join("state.json")).expect("persisted state");
     assert_eq!(
@@ -2244,7 +2263,10 @@ fn native_state_schema_upgrade_keeps_old_version_when_session_delete_fails() {
         TOOL_RUNTIME_SCHEMA_VERSION - 1
     );
     assert_eq!(persisted.tool_runtime_migration_diagnostics.len(), 1);
-    assert_eq!(persisted.active_session_id, None);
+    assert_eq!(
+        persisted.active_session_id.as_deref(),
+        Some(session_id.as_str())
+    );
     assert!(persisted.pending_permissions.is_empty());
     assert!(persisted.pending_clarifications.is_empty());
 }

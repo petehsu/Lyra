@@ -10,6 +10,7 @@ import {
   AppStatusMessage,
   AppTabs,
   AppTextarea,
+  reportWorkbenchError,
   type AppBadgeTone,
   type AppSelectOption,
   type AppTabOption
@@ -58,7 +59,7 @@ import type {
   LoginManagerSnapshot
 } from "../../../shared/desktop-bridge";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
-import { formatMediumDateTime } from "@workbench/i18n";
+import { formatMediumDateTime, t } from "@workbench/i18n";
 import type { LoginManagerSurfaceProps } from "./types";
 
 type TabMode = "sessions" | "credentials" | "review";
@@ -428,7 +429,9 @@ export const LoginManagerSurface = ({
     setBusyKey(`session:${session.id}`);
     try {
       await desktopApi.loginManager.clearSite({ sessionId: session.id });
-      await desktopApi.workbenchBrowser?.clearSiteData?.({ origin: session.origin }).catch(() => undefined);
+      await desktopApi.workbenchBrowser?.clearSiteData?.({ origin: session.origin }).catch((error: unknown) => {
+        reportWorkbenchError(error, t("appStatus.clearSiteDataFailed"));
+      });
       await refresh();
     } catch (clearError: unknown) {
       setError(clearError instanceof Error ? clearError.message : String(clearError));

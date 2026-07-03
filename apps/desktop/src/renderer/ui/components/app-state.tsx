@@ -1,4 +1,3 @@
-import { CircleAlert, Loader2 } from "lucide-react";
 import {
   forwardRef,
   type ForwardedRef,
@@ -6,13 +5,14 @@ import {
   type ReactNode
 } from "react";
 
+import { LyraLogo } from "../app";
 import { cn } from "../utils";
 
 export type AppStateDensity = "compact" | "default" | "spacious";
 export type AppStateAlign = "start" | "center";
 export type AppStateTone = "neutral" | "info" | "success" | "warning" | "error";
 
-type AppStateProps = HTMLAttributes<HTMLDivElement> & {
+type AppStateProps = Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
   readonly actions?: ReactNode;
   readonly align?: AppStateAlign;
   readonly density?: AppStateDensity;
@@ -21,6 +21,8 @@ type AppStateProps = HTMLAttributes<HTMLDivElement> & {
   readonly title: ReactNode;
   readonly tone?: AppStateTone;
 };
+
+const LYRA_STATE_LOGO = <LyraLogo className="lyra-app-state-logo" alt="" />;
 
 export type AppEmptyStateProps = AppStateProps;
 export type AppLoadingStateProps = Omit<AppStateProps, "tone"> & {
@@ -80,7 +82,7 @@ const renderState = (
 };
 
 export const AppEmptyState = forwardRef<HTMLDivElement, AppEmptyStateProps>((props, ref) =>
-  renderState("empty", null, props, ref)
+  renderState("empty", LYRA_STATE_LOGO, props, ref)
 );
 
 AppEmptyState.displayName = "AppEmptyState";
@@ -91,7 +93,7 @@ export const AppLoadingState = forwardRef<HTMLDivElement, AppLoadingStateProps>(
 }, ref) =>
   renderState(
     "loading",
-    <Loader2 aria-hidden="true" />,
+    LYRA_STATE_LOGO,
     {
       "aria-busy": true,
       tone,
@@ -107,7 +109,7 @@ export const AppErrorState = forwardRef<HTMLDivElement, AppErrorStateProps>(({
   tone = "error",
   ...props
 }, ref) =>
-  renderState("error", <CircleAlert aria-hidden="true" />, { tone, ...props }, ref)
+  renderState("error", LYRA_STATE_LOGO, { tone, ...props }, ref)
 );
 
 AppErrorState.displayName = "AppErrorState";

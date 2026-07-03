@@ -26,10 +26,15 @@ export const createWorkspaceSurfaceRenderModel = (
 
   if (tab.pageKind === "page") {
     const selection = resolveTabSearchSelection(tab);
+    const pageRuntimeState = context.activePageRuntimeState?.tabId === tab.id
+      ? context.activePageRuntimeState
+      : null;
     return {
       kind: "browserPage",
       props: {
         tabId: tab.id,
+        isLoading: pageRuntimeState?.isLoading === true,
+        loadingLabel: context.i18n.channelLoading,
         ...(tab.searchQuery === undefined
           ? {}
           : {

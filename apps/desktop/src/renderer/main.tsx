@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 
 import { WorkbenchShell } from "@workbench/shell";
+import { t } from "@workbench/i18n";
+import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
 
 import "@fontsource/geist-sans/latin.css";
 import "@fontsource/geist-mono/latin.css";
@@ -13,5 +15,13 @@ if (rootElement === null) {
 }
 
 createRoot(rootElement).render(
-  <WorkbenchShell />
+  <AppStatusProvider>
+    <AppErrorBoundary
+      className="lyra-app-root-error"
+      title={t("appStatus.unexpectedErrorTitle")}
+      description={t("appStatus.unexpectedErrorDescription")}
+    >
+      <WorkbenchShell />
+    </AppErrorBoundary>
+  </AppStatusProvider>
 );

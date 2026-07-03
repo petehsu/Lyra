@@ -3638,6 +3638,7 @@ dependencies = [
  "chrono",
  "diffy",
  "dirs",
+ "fs2",
  "futures",
  "glob",
  "hmac",
@@ -3951,6 +3952,7 @@ dependencies = [
  "toml",
  "url",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use super::*;
+use fs2::FileExt;
 use std::io::Write;
 
 pub(crate) static STATE: OnceLock<Mutex<NativeRuntimeState>> = OnceLock::new();
@@ -49,41 +50,45 @@ impl NativeRuntimeState {
             .as_ref()
             .map(|state| state.tool_runtime_schema_version)
             .unwrap_or_default();
-        let reset_tool_sessions =
-            previous_tool_runtime_schema_version < TOOL_RUNTIME_SCHEMA_VERSION;
+        let schema_upgrade = previous_tool_runtime_schema_version < TOOL_RUNTIME_SCHEMA_VERSION;
         let mut tool_runtime_migration_diagnostics = state_file
             .as_ref()
             .map(|state| state.tool_runtime_migration_diagnostics.clone())
             .unwrap_or_default();
-        if reset_tool_sessions {
-            tool_runtime_migration_diagnostics =
-                clear_session_files(&sessions_dir, previous_tool_runtime_schema_version);
-        }
-        let tool_runtime_schema_version =
-            if reset_tool_sessions && !tool_runtime_migration_diagnostics.is_empty() {
-                previous_tool_runtime_schema_version
-            } else {
-                TOOL_RUNTIME_SCHEMA_VERSION
-            };
+        let snapshot_failed = if schema_upgrade {
+            let diagnostics = snapshot_schema_migration(
+                &root,
+                &sessions_dir,
+                previous_tool_runtime_schema_version,
+            );
+            let failed = !diagnostics.is_empty();
+            tool_runtime_migration_diagnostics.extend(diagnostics);
+            failed
+        } else {
+            false
+        };
+        let tool_runtime_schema_version = if schema_upgrade && snapshot_failed {
+            previous_tool_runtime_schema_version
+        } else {
+            TOOL_RUNTIME_SCHEMA_VERSION
+        };
 
         let mut sessions = HashMap::new();
-        if !reset_tool_sessions {
-            for session_id in list_session_ids(&root).unwrap_or_default() {
-                if let Ok(Some(mut session)) = load_session(&root, &session_id) {
-                    if resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty {
-                        let _ = save_session(&root, &session);
-                        session.dirty = false;
-                    }
-                    if reconcile_orphan_running_turn(&mut session, false, "runtime_startup") {
-                        let _ = save_session(&root, &session);
-                        session.dirty = false;
-                    }
-                    sessions.insert(session.id.clone(), session);
+        for session_id in list_session_ids(&root).unwrap_or_default() {
+            if let Ok(Some(mut session)) = load_session(&root, &session_id) {
+                if resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty {
+                    let _ = save_session(&root, &session);
+                    session.dirty = false;
                 }
+                if reconcile_orphan_running_turn(&mut session, false, "runtime_startup") {
+                    let _ = save_session(&root, &session);
+                    session.dirty = false;
+                }
+                sessions.insert(session.id.clone(), session);
             }
         }
 
-        let pending_permissions = if reset_tool_sessions {
+        let pending_permissions = if schema_upgrade {
             HashMap::new()
         } else {
             state_file
@@ -91,7 +96,7 @@ impl NativeRuntimeState {
                 .map(|state| state.pending_permissions.clone())
                 .unwrap_or_default()
         };
-        let pending_clarifications = if reset_tool_sessions {
+        let pending_clarifications = if schema_upgrade {
             HashMap::new()
         } else {
             state_file
@@ -104,6 +109,10 @@ impl NativeRuntimeState {
             .map(|state| state.tool_usage_cache.clone())
             .unwrap_or_default();
         prune_tool_usage_cache(&mut tool_usage_cache, Utc::now());
+        let active_session_id = state_file
+            .as_ref()
+            .and_then(|state| state.active_session_id.clone())
+            .filter(|session_id| sessions.contains_key(session_id));
 
         let mut loaded = Self {
             root,
@@ -111,13 +120,7 @@ impl NativeRuntimeState {
             tool_runtime_migration_diagnostics,
             tool_usage_cache,
             sessions,
-            active_session_id: if reset_tool_sessions {
-                None
-            } else {
-                state_file
-                    .as_ref()
-                    .and_then(|state| state.active_session_id.clone())
-            },
+            active_session_id,
             config,
             active_skills: state_file
                 .as_ref()
@@ -136,13 +139,14 @@ impl NativeRuntimeState {
             active_compressions: HashSet::new(),
         };
         let pruned_pending = loaded.prune_non_live_pending();
-        if pruned_pending || reset_tool_sessions {
+        if pruned_pending || schema_upgrade {
             let _ = loaded.save_state();
         }
         loaded
     }
 
     pub(crate) fn save_state(&mut self) -> AgentRuntimeResult<()> {
+        let _lock = lock_path_exclusive(&self.root.join(".state.lock"))?;
         fs::create_dir_all(self.root.join("sessions"))
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         prune_tool_usage_cache(&mut self.tool_usage_cache, Utc::now());
@@ -333,32 +337,93 @@ pub(crate) fn migrate_legacy_provider_api_keys_to_secure_storage(
     Ok(())
 }
 
-fn clear_session_files(sessions_dir: &Path, from_schema_version: u32) -> Vec<Value> {
+fn snapshot_schema_migration(
+    root: &Path,
+    sessions_dir: &Path,
+    from_schema_version: u32,
+) -> Vec<Value> {
     let mut diagnostics = Vec::new();
-    let Ok(entries) = fs::read_dir(sessions_dir) else {
+    if !sessions_dir.exists() && !root.join("state.json").exists() {
         return diagnostics;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let result = if path.is_dir() {
-            fs::remove_dir_all(&path)
-        } else if path.extension().and_then(|value| value.to_str()) == Some("json") {
-            fs::remove_file(&path)
-        } else {
-            continue;
-        };
-        if let Err(error) = result {
-            diagnostics.push(json!({
-                "code": "tool_runtime_session_delete_failed",
-                "message": "Failed to delete an incompatible Agent session during runtime schema migration.",
-                "path": path.display().to_string(),
-                "fromSchemaVersion": from_schema_version,
-                "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
-                "error": error.to_string(),
-            }));
-        }
+    }
+    let backup_dir = root.join("migration-backups").join(format!(
+        "tool-runtime-v{from_schema_version}-to-v{}-{}",
+        TOOL_RUNTIME_SCHEMA_VERSION,
+        Utc::now().format("%Y%m%d%H%M%S%3f")
+    ));
+    if let Err(error) = fs::create_dir_all(&backup_dir) {
+        diagnostics.push(schema_snapshot_diagnostic(
+            &backup_dir,
+            from_schema_version,
+            error,
+        ));
+        return diagnostics;
+    }
+    let state_path = root.join("state.json");
+    if state_path.exists()
+        && let Err(error) = fs::copy(&state_path, backup_dir.join("state.json"))
+    {
+        diagnostics.push(schema_snapshot_diagnostic(
+            &state_path,
+            from_schema_version,
+            error,
+        ));
+    }
+    if sessions_dir.exists()
+        && let Err(error) = copy_dir_all(sessions_dir, &backup_dir.join("sessions"))
+    {
+        diagnostics.push(schema_snapshot_diagnostic(
+            sessions_dir,
+            from_schema_version,
+            error,
+        ));
+    }
+    let manifest = json!({
+        "fromSchemaVersion": from_schema_version,
+        "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
+        "createdAt": now(),
+    });
+    if let Err(error) = write_json(&backup_dir.join("manifest.json"), &manifest) {
+        diagnostics.push(json!({
+            "code": "tool_runtime_schema_snapshot_failed",
+            "message": "Failed to write an Agent session schema migration snapshot manifest.",
+            "path": backup_dir.join("manifest.json").display().to_string(),
+            "fromSchemaVersion": from_schema_version,
+            "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
+            "error": error.to_string(),
+        }));
     }
     diagnostics
+}
+
+fn schema_snapshot_diagnostic(
+    path: &Path,
+    from_schema_version: u32,
+    error: std::io::Error,
+) -> Value {
+    json!({
+        "code": "tool_runtime_schema_snapshot_failed",
+        "message": "Failed to snapshot Agent sessions before runtime schema migration.",
+        "path": path.display().to_string(),
+        "fromSchemaVersion": from_schema_version,
+        "toSchemaVersion": TOOL_RUNTIME_SCHEMA_VERSION,
+        "error": error.to_string(),
+    })
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 fn prune_tool_usage_cache(
@@ -520,9 +585,31 @@ pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> AgentRuntimeRe
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
+    let _lock = lock_path_exclusive(&json_lock_path(path))?;
     let data = serde_json::to_vec_pretty(value)
         .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
     write_bytes_atomic(path, &data).map_err(|error| AgentRuntimeError::Core(error.to_string()))
+}
+
+fn json_lock_path(path: &Path) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(".lock");
+    PathBuf::from(value)
+}
+
+fn lock_path_exclusive(path: &Path) -> AgentRuntimeResult<fs::File> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    }
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    file.lock_exclusive()
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    Ok(file)
 }
 
 fn temp_json_path(path: &Path) -> PathBuf {

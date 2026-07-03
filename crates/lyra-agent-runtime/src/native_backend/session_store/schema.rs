@@ -7,7 +7,7 @@ pub(crate) fn open_connection(path: &Path) -> AgentRuntimeResult<Connection> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
-    Connection::open(path).map_err(|error| AgentRuntimeError::Core(error.to_string()))
+    open_sqlite_connection(path)
 }
 
 pub(crate) fn init_schema(conn: &Connection) -> AgentRuntimeResult<()> {

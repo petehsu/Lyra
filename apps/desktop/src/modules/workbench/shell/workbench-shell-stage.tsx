@@ -231,6 +231,7 @@ export const WorkbenchShellStage = ({
 
   const workspaceSurfaceProps = useWorkspaceSurfaceRouterProps({
     activeTab,
+    activePageRuntimeState,
     tabsModel,
     browserSearchModel,
     searchEngines: searchSettingsFacade.registeredSearchEngines,

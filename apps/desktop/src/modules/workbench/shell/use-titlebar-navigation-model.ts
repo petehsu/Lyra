@@ -20,6 +20,8 @@ import { resolveWebSearchTarget } from "../browser-search/service";
 import { filterBrowserHistoryEntries, readBrowserHistoryEntries } from "../browser-history/service";
 import { resolveWorkbenchNavigationInput } from "./navigation-input";
 import type { TitlebarNavigationPrimaryActionKind } from "./titlebar-navigation";
+import { reportWorkbenchError } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 
 export type OmniboxSuggestion = {
   readonly value: string;
@@ -466,7 +468,9 @@ export const useTitlebarNavigationModel = ({
         const written = await desktopApi.files.writeFavorites({ favorites: nextFavorites });
         setFavorites(written.favorites);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        reportWorkbenchError(error);
+      });
   }, [activePageRuntimeState, activeWebFavoriteUrl, desktopApi]);
 
   const closePageFind = useCallback((): void => {

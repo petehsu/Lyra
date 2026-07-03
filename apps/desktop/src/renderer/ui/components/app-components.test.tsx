@@ -9,6 +9,7 @@ import {
   AppCommandMenu,
   AppDataTable,
   AppDialog,
+  AppErrorBoundary,
   AppEmptyState,
   AppErrorState,
   AppIconButton,
@@ -162,6 +163,42 @@ describe("Lyra App UI components", () => {
 
     fireEvent.click(row);
     expect(onOpen).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(row, { key: " " });
+    expect(onOpen).toHaveBeenCalledTimes(3);
+  });
+
+  test("renders unified app states with the Lyra logo", () => {
+    render(
+      <>
+        <AppEmptyState title="No files" />
+        <AppLoadingState title="Loading files" />
+        <AppErrorState title="Could not load" />
+      </>
+    );
+
+    expect(document.querySelectorAll(".lyra-app-state-logo")).toHaveLength(3);
+    expect(screen.getByText("No files")).toBeInTheDocument();
+    expect(screen.getByText("Loading files").closest(".lyra-app-state")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Could not load")).toBeInTheDocument();
+  });
+
+  test("renders app error boundary fallback", () => {
+    const Broken = () => {
+      throw new Error("boom");
+    };
+
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <AppErrorBoundary title="Interface error">
+        <Broken />
+      </AppErrorBoundary>
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Interface error");
+    expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    consoleError.mockRestore();
   });
 
   test("renders tooltips through the Lyra wrapper surface", async () => {

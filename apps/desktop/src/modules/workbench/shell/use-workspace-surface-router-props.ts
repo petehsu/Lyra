@@ -1,4 +1,7 @@
-import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type {
+  LyraDesktopApi,
+  WorkbenchBrowserPageRuntimeState
+} from "../../../shared/desktop-bridge";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import type {
@@ -31,6 +34,7 @@ export type WorkspaceSurfaceRouterCoreProps = Omit<
 
 type UseWorkspaceSurfaceRouterPropsParams = {
   readonly activeTab: WorkspaceTab | undefined;
+  readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
   readonly tabsModel: WorkspaceTabsModel;
   readonly browserSearchModel: BrowserSearchModel;
   readonly searchEngines: readonly SearchEngineDefinition[];
@@ -90,6 +94,7 @@ type UseWorkspaceSurfaceRouterPropsParams = {
 
 export const useWorkspaceSurfaceRouterProps = ({
   activeTab,
+  activePageRuntimeState,
   tabsModel,
   browserSearchModel,
   searchEngines,
@@ -132,6 +137,7 @@ export const useWorkspaceSurfaceRouterProps = ({
 
   return {
     activeTab,
+    activePageRuntimeState,
     tabsModel,
     logoUrl: LOGO_URL,
     browserSearchModel,

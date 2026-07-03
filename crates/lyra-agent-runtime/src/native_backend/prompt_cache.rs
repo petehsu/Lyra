@@ -206,7 +206,7 @@ pub(crate) fn export_dynamic_prompt_cache_markdown(root: &Path) -> AgentRuntimeR
 
 fn open_prompt_cache_connection(root: &Path) -> AgentRuntimeResult<Connection> {
     fs::create_dir_all(root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    Connection::open(prompt_cache_path(root)).map_err(prompt_cache_sql_error)
+    open_sqlite_connection(&prompt_cache_path(root))
 }
 
 fn init_prompt_cache_schema(conn: &Connection) -> AgentRuntimeResult<()> {

@@ -41,6 +41,41 @@ const escapeHtml = (value: string): string =>
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;");
 
+const isSafeMarkdownImageSrc = (value: string): boolean => {
+  const src = value.trim();
+  if (src.length === 0 || src.startsWith("//")) {
+    return false;
+  }
+  if (/^data:/iu.test(src)) {
+    return /^data:image\/[a-z0-9.+-]+;base64,/iu.test(src);
+  }
+  const protocolMatch = /^([a-z][a-z0-9+.-]*):/iu.exec(src);
+  if (protocolMatch === null) {
+    return true;
+  }
+  return ["file", "lyra-file", "blob"].includes(protocolMatch[1]?.toLowerCase() ?? "");
+};
+
+let domPurifyImageHookInstalled = false;
+
+const installDomPurifyImageHook = (): void => {
+  if (domPurifyImageHookInstalled || typeof DOMPurify.addHook !== "function") {
+    return;
+  }
+  DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+    if (node.nodeName.toLowerCase() !== "img") {
+      return;
+    }
+    if (data.attrName === "src" && !isSafeMarkdownImageSrc(data.attrValue)) {
+      data.keepAttr = false;
+    }
+    if (data.attrName === "srcset") {
+      data.keepAttr = false;
+    }
+  });
+  domPurifyImageHookInstalled = true;
+};
+
 export const markdownRenderSourceHash = (source: string): string => {
   let hash = 0x811c9dc5;
   for (let index = 0; index < source.length; index += 1) {
@@ -94,7 +129,15 @@ const createMarkdownIt = (mode: MarkdownRenderMode): MarkdownIt => {
   };
 
   md.renderer.rules.image = (tokens, index, rendererOptions, env, self) => {
-    tokens[index]?.attrJoin("class", "lyra-agents-md-image");
+    const token = tokens[index];
+    const src = token?.attrGet("src") ?? "";
+    if (!isSafeMarkdownImageSrc(src)) {
+      const alt = token?.content ?? token?.attrGet("alt") ?? "";
+      return alt.trim().length > 0
+        ? `<span class="lyra-agents-md-blocked-image">${escapeHtml(alt)}</span>`
+        : "";
+    }
+    token?.attrJoin("class", "lyra-agents-md-image");
     return self.renderToken(tokens, index, rendererOptions);
   };
 
@@ -119,11 +162,14 @@ const sanitizeHtml = (html: string): string => {
   if (typeof DOMPurify.sanitize !== "function") {
     return html;
   }
+  installDomPurifyImageHook();
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ["math", "semantics", "annotation", "mrow", "mi", "mn", "mo", "msup", "msub", "msubsup", "mfrac", "msqrt", "mroot", "mtext", "mtable", "mtr", "mtd", "munderover", "munder", "mover", "mpadded", "mspace"],
-    ADD_ATTR: ["target", "rel", "data-mermaid-id", "data-mermaid-hash", "aria-hidden", "aria-label", "encoding", "xmlns", "display", "mathvariant", "accent", "stretchy", "fence", "separator", "lspace", "rspace", "width", "height", "viewBox", "checked", "disabled", "type"],
+    ADD_ATTR: ["target", "rel", "data-language", "data-mermaid-id", "data-mermaid-hash", "aria-hidden", "aria-label", "encoding", "xmlns", "display", "mathvariant", "accent", "stretchy", "fence", "separator", "lspace", "rspace", "width", "height", "viewBox", "checked", "disabled", "type"],
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "button", "textarea", "select"],
-    ALLOW_DATA_ATTR: true
+    FORBID_ATTR: ["srcset"],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|file|lyra-file|blob):|data:image\/[a-z0-9.+-]+;base64,|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/iu,
+    ALLOW_DATA_ATTR: false
   });
 };
 

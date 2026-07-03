@@ -60,6 +60,76 @@ const normalizeString = (value: unknown, fieldName: string): string => {
   return value.trim();
 };
 
+const normalizeSafeSubdir = (
+  sourceRoot: string,
+  value: unknown,
+  fieldName: string
+): string | null => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  const subdir = value.trim();
+  if (path.isAbsolute(subdir) || subdir.includes("\0")) {
+    throw new Error(`${fieldName} must be a relative path inside the package`);
+  }
+  const root = path.resolve(sourceRoot);
+  const resolved = path.resolve(root, subdir);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`${fieldName} must stay inside the package`);
+  }
+  return resolved;
+};
+
+const normalizeGitUrl = (value: unknown): string => {
+  const url = normalizeString(value, "git url");
+  if (/[\0\r\n]/u.test(url)) {
+    throw new Error("git url contains invalid characters");
+  }
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s]+$/u.test(url)) {
+    return url;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("git url must be https:// or ssh://");
+  }
+  if (!["https:", "ssh:", "git+ssh:"].includes(parsed.protocol)) {
+    throw new Error("git url protocol must be https:// or ssh://");
+  }
+  if (parsed.hostname.trim().length === 0) {
+    throw new Error("git url host is required");
+  }
+  return url;
+};
+
+const normalizeNpmPackageName = (value: unknown): string => {
+  const packageName = normalizeString(value, "npm package name");
+  if (
+    packageName.length > 214 ||
+    !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(packageName)
+  ) {
+    throw new Error("npm package name is invalid");
+  }
+  return packageName;
+};
+
+const normalizeNpmVersion = (value: unknown): string | null => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  const version = value.trim();
+  if (
+    version.length > 128 ||
+    /[\0\r\n]/u.test(version) ||
+    /^(?:file|link|workspace|http|https|git|github|git\+ssh):/iu.test(version) ||
+    !/^[A-Za-z0-9._~^*<>=|-]+$/u.test(version)
+  ) {
+    throw new Error("npm version is invalid");
+  }
+  return version;
+};
+
 const updatePreferencePackId = (
   workbenchStateBridge: WorkbenchStateIpcBridge,
   packId: string
@@ -107,7 +177,7 @@ const installGitSource = async (
   storageRoot: string,
   request: UiuxInstallFromGitRequest
 ): Promise<InstalledUiuxPack> => {
-  const url = normalizeString(request.url, "git url");
+  const url = normalizeGitUrl(request.url);
   const sourceRoot = path.join(storageRoot, "sources", "git", hashSource(request));
   rmSync(sourceRoot, { recursive: true, force: true });
   mkdirSync(path.dirname(sourceRoot), { recursive: true });
@@ -121,11 +191,11 @@ const installGitSource = async (
     url,
     sourceRoot
   ];
-  await execFileAsync("git", args, { timeout: 120_000 });
-  const packageRoot =
-    typeof request.subdir === "string" && request.subdir.trim().length > 0
-      ? path.join(sourceRoot, request.subdir.trim())
-      : sourceRoot;
+  await execFileAsync("git", args, {
+    timeout: 120_000,
+    env: { ...process.env, GIT_ALLOW_PROTOCOL: "https:ssh:git+ssh" }
+  });
+  const packageRoot = normalizeSafeSubdir(sourceRoot, request.subdir, "git subdir") ?? sourceRoot;
   return installUiuxPackageFromRoot({
     storageRoot,
     sourceRoot: packageRoot,
@@ -146,14 +216,12 @@ const installNpmSource = async (
   storageRoot: string,
   request: UiuxInstallFromNpmRequest
 ): Promise<InstalledUiuxPack> => {
-  const packageName = normalizeString(request.packageName, "npm package name");
+  const packageName = normalizeNpmPackageName(request.packageName);
   const sourceRoot = path.join(storageRoot, "sources", "npm", hashSource(request));
   rmSync(sourceRoot, { recursive: true, force: true });
   mkdirSync(sourceRoot, { recursive: true });
-  const spec =
-    typeof request.version === "string" && request.version.trim().length > 0
-      ? `${packageName}@${request.version.trim()}`
-      : packageName;
+  const version = normalizeNpmVersion(request.version);
+  const spec = version === null ? packageName : `${packageName}@${version}`;
   await execFileAsync(
     "npm",
     ["install", "--prefix", sourceRoot, "--ignore-scripts", "--no-audit", "--no-fund", spec],
@@ -161,18 +229,14 @@ const installNpmSource = async (
   );
   const packageRoot = path.join(sourceRoot, "node_modules", ...packageName.split("/"));
   const sourcePackageRoot =
-    typeof request.subdir === "string" && request.subdir.trim().length > 0
-      ? path.join(packageRoot, request.subdir.trim())
-      : packageRoot;
+    normalizeSafeSubdir(packageRoot, request.subdir, "npm subdir") ?? packageRoot;
   return installUiuxPackageFromRoot({
     storageRoot,
     sourceRoot: sourcePackageRoot,
     source: {
       kind: "npm",
       packageName,
-      ...(typeof request.version === "string" && request.version.trim().length > 0
-        ? { version: request.version.trim() }
-        : {}),
+      ...(version === null ? {} : { version }),
       ...(typeof request.subdir === "string" && request.subdir.trim().length > 0
         ? { subdir: request.subdir.trim() }
         : {})

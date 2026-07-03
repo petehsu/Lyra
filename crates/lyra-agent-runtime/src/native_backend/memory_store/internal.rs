@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) fn open_memory_connection(root: &Path) -> AgentRuntimeResult<Connection> {
     fs::create_dir_all(root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    Connection::open(memory_store_path(root)).map_err(sql_error)
+    open_sqlite_connection(&memory_store_path(root))
 }
 
 pub(crate) fn init_memory_schema(conn: &Connection) -> AgentRuntimeResult<()> {

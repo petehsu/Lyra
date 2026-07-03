@@ -1549,7 +1549,15 @@ fn call_model_once_inner(
         // the fallback case we must surface the original streaming transport
         // error if the non-streaming attempt also fails, instead of masking it.
         if stream_fallback_attempted {
-            let mut reply = match call_model_once_non_streaming(provider, model, messages, tools) {
+            let mut reply = match call_model_once_non_streaming_checked(
+                session_id,
+                turn_id,
+                provider,
+                model,
+                messages,
+                tools,
+                cancellation,
+            ) {
                 Ok(reply) => reply,
                 Err(non_streaming_error) => {
                     // Before failing the turn, finalize any tool left running by
@@ -1574,7 +1582,15 @@ fn call_model_once_inner(
             return Ok(reply);
         }
     }
-    let mut reply = call_model_once_non_streaming(provider, model, messages, tools)?;
+    let mut reply = call_model_once_non_streaming_checked(
+        session_id,
+        turn_id,
+        provider,
+        model,
+        messages,
+        tools,
+        cancellation,
+    )?;
     normalize_model_reply_protocol(&mut reply, tools)?;
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
@@ -1609,6 +1625,25 @@ fn finish_running_tools_for_failed_turn(session_id: &str, turn_id: &str) -> bool
         }),
     );
     true
+}
+
+fn call_model_once_non_streaming_checked(
+    session_id: &str,
+    turn_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelReply> {
+    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+    }
+    let reply = call_model_once_non_streaming(provider, model, messages, tools)?;
+    if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+        return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+    }
+    Ok(reply)
 }
 
 pub(crate) fn call_model_once_non_streaming(
@@ -2116,11 +2151,16 @@ fn parse_streaming_response_with_commit<R: BufRead>(
     let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
+    let started_at = Instant::now();
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
             *committed_any = state.committed_any;
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+        }
+        if provider_streaming_total_deadline_exceeded(started_at) {
+            *committed_any = state.committed_any;
+            return Err(provider_streaming_total_timeout_error());
         }
         // A stall here (provider keeps the socket open but stops sending) is
         // bounded by the client's per-operation idle timeout configured in
@@ -2244,6 +2284,20 @@ fn parse_streaming_response_with_commit<R: BufRead>(
         reply.ui_message_id = streamed_message_id;
     }
     Ok(reply)
+}
+
+pub(crate) fn provider_streaming_total_deadline_exceeded(started_at: Instant) -> bool {
+    started_at.elapsed() > streaming_total_timeout()
+}
+
+pub(crate) fn provider_streaming_total_timeout_error() -> AgentRuntimeError {
+    AgentRuntimeError::ProviderTransport {
+        kind: ProviderTransportKind::Timeout,
+        detail: format!(
+            "provider streaming response exceeded total deadline of {} seconds",
+            streaming_total_timeout().as_secs()
+        ),
+    }
 }
 
 pub(crate) fn map_provider_stream_chunk(

@@ -34,6 +34,7 @@ import type { TerminalDockLabels, TerminalDockModel } from "../terminal-dock/typ
 import type { WorkbenchSurfaceAdapters } from "../ui-platform/surface-types";
 import type { WorkspaceTab, WorkspaceTabsModel } from "../workspace-tabs/types";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { WorkbenchBrowserPageRuntimeState } from "../../../shared/workbench-browser";
 import type { BrowserSearchModel } from "../browser-search";
 import {
   createWorkspaceSurfaceRenderModel,
@@ -69,6 +70,7 @@ export type WorkspaceSurfaceI18nProps = {
 export type WorkspaceSurfaceRouterProps = {
   readonly surfaceAdapters: WorkbenchSurfaceAdapters;
   readonly activeTab: WorkspaceTab | undefined;
+  readonly activePageRuntimeState: WorkbenchBrowserPageRuntimeState | null;
   readonly tabsModel: WorkspaceTabsModel;
   readonly logoUrl: string;
   readonly browserSearchModel: BrowserSearchModel;

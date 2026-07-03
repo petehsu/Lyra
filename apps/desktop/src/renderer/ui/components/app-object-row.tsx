@@ -2,6 +2,7 @@ import {
   forwardRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
+  type KeyboardEvent,
   type Ref,
   type ReactNode
 } from "react";
@@ -29,6 +30,20 @@ export type AppObjectRowDivProps = AppObjectRowBaseProps &
   };
 
 export type AppObjectRowProps = AppObjectRowButtonProps | AppObjectRowDivProps;
+
+const activateDivButton = (
+  event: KeyboardEvent<HTMLDivElement>
+): void => {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  const target = event.currentTarget;
+  if (target.getAttribute("aria-disabled") === "true") {
+    return;
+  }
+  event.preventDefault();
+  target.click();
+};
 
 export const AppObjectRow = forwardRef<HTMLButtonElement | HTMLDivElement, AppObjectRowProps>(({
   active = false,
@@ -78,6 +93,11 @@ export const AppObjectRow = forwardRef<HTMLButtonElement | HTMLDivElement, AppOb
 
   if (as === "div") {
     const divProps = props as Omit<HTMLAttributes<HTMLDivElement>, "title">;
+    const {
+      onKeyDown,
+      role,
+      ...restDivProps
+    } = divProps;
     return (
       <div
         ref={ref as Ref<HTMLDivElement>}
@@ -85,7 +105,14 @@ export const AppObjectRow = forwardRef<HTMLButtonElement | HTMLDivElement, AppOb
         data-active={active ? "true" : undefined}
         data-has-actions={actions === undefined ? undefined : "true"}
         data-has-icon={icon === undefined ? undefined : "true"}
-        {...divProps}
+        role={role}
+        onKeyDown={(event) => {
+          onKeyDown?.(event);
+          if (!event.defaultPrevented && role === "button") {
+            activateDivButton(event);
+          }
+        }}
+        {...restDivProps}
       >
         {content}
       </div>

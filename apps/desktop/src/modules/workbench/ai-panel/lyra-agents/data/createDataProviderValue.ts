@@ -30,6 +30,7 @@ import type {
   DataProviderValue,
   MessageWindowState
 } from "./DataProvider";
+import { reportWorkbenchError } from "@renderer/ui/components";
 
 export interface CreateDataProviderValueInput {
   session: SessionMeta;
@@ -125,6 +126,18 @@ export interface CreateDataProviderValueInput {
 }
 
 const resolved = Promise.resolve();
+
+const visibleFailure = <T extends readonly unknown[]>(
+  title: string,
+  action: (...args: T) => Promise<void>
+) => async (...args: T): Promise<void> => {
+  try {
+    await action(...args);
+  } catch (error) {
+    reportWorkbenchError(error, title);
+    throw error;
+  }
+};
 
 export function createDataProviderValue({
   session,
@@ -231,16 +244,16 @@ export function createDataProviderValue({
     aiRichRenderingEnabled,
     browserFollowModeEnabled,
     setBrowserFollowMode,
-    openUrlInWorkbench,
-    openFileInWorkbench,
-    revealPathInWorkbench,
+    openUrlInWorkbench: visibleFailure(t("appStatus.openUrlFailed"), openUrlInWorkbench),
+    openFileInWorkbench: visibleFailure(t("appStatus.openFileFailed"), openFileInWorkbench),
+    revealPathInWorkbench: visibleFailure(t("appStatus.revealPathFailed"), revealPathInWorkbench),
     openInFileManager,
     openPlanReview,
     openProjectTodo,
     openProjectPlanManager,
     respondPlanReview,
     openTerminalLiveSession,
-    openImageInWorkbench,
+    openImageInWorkbench: visibleFailure(t("appStatus.openFileFailed"), openImageInWorkbench),
     canOpenImageInWorkbench,
     revealSensitiveValueToUser,
     sendMessage,

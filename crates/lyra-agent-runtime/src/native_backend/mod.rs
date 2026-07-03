@@ -38,6 +38,7 @@ const MAX_SEARCH_FILES: usize = 10_000;
 const DEFAULT_COMMAND_TIMEOUT_MS: u64 = 30_000;
 const MAX_COMMAND_TIMEOUT_MS: u64 = 120_000;
 const DEFAULT_COMMAND_OUTPUT_BYTES: usize = 20_000;
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DEFAULT_SESSION_TITLE: &str = "新会话";
 pub(crate) const LEGACY_DEFAULT_SESSION_TITLE: &str = "Lyra Agent";
 pub struct LyraAgentBackend;
@@ -112,6 +113,16 @@ use self::{
     skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
     transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
 };
+
+fn open_sqlite_connection(path: &Path) -> AgentRuntimeResult<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open(path)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    conn.busy_timeout(SQLITE_BUSY_TIMEOUT)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    conn.pragma_update(None, "busy_timeout", 5_000_i64)
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    Ok(conn)
+}
 
 impl AgentRuntimeBackend for LyraAgentBackend {
     fn call_agent_method(&self, method: &str, payload: Value) -> AgentRuntimeResult<Value> {

@@ -5,6 +5,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Instant,
 };
 
 use serde_json::Value;
@@ -41,6 +42,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
     let mut ui_message_id: Option<String> = None;
     let mut delta_batcher = StreamDeltaBatcher::default();
     let buffer_assistant_text = false;
+    let started_at = Instant::now();
 
     for line in reader.lines() {
         if cancellation.load(Ordering::SeqCst)
@@ -49,6 +51,9 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
                 && turn_was_cancelled(session_id, turn_id))
         {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+        }
+        if crate::native_backend::provider::provider_streaming_total_deadline_exceeded(started_at) {
+            return Err(crate::native_backend::provider::provider_streaming_total_timeout_error());
         }
         let line = line.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         let trimmed = line.trim();

@@ -20,6 +20,10 @@ export {
   type AppDialogTriggerProps
 } from "./app-dialog";
 export {
+  AppErrorBoundary,
+  type AppErrorBoundaryProps
+} from "./app-error-boundary";
+export {
   AppEmptyState,
   AppErrorState,
   AppLoadingState,
@@ -83,6 +87,11 @@ export { AppSelect, type AppSelectOption, type AppSelectProps } from "./app-sele
 export { AppSettingsRow, type AppSettingsRowProps } from "./app-settings-row";
 export { AppSettingsSection, type AppSettingsSectionProps } from "./app-settings-section";
 export { AppStatusMessage, type AppStatusMessageProps, type AppStatusMessageTone } from "./app-status-message";
+export {
+  AppStatusProvider,
+  reportWorkbenchError,
+  reportWorkbenchStatus
+} from "./app-status-host";
 export { AppSurfaceHeader, type AppSurfaceHeaderProps } from "./app-surface-header";
 export { AppSwitch, type AppSwitchProps } from "./app-switch";
 export { AppTabs, type AppTabOption, type AppTabsProps } from "./app-tabs";

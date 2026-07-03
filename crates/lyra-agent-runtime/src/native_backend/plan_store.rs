@@ -78,8 +78,7 @@ pub(crate) fn open_project_plan_store(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     }
-    let conn =
-        Connection::open(path).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let conn = open_sqlite_connection(&path)?;
     init_project_plan_schema(&conn)?;
     Ok(conn)
 }

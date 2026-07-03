@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 
-import { AppButton } from "@renderer/ui/components";
+import { AppButton, AppLoadingState } from "@renderer/ui/components";
 import { useWorkbenchTitlebarContribution } from "../shell/titlebar-context";
 import type { SearchEngineDefinition } from "../browser-search/types";
 import { resolveNextSearchEngineSelection } from "../browser-search/service";
@@ -21,6 +21,8 @@ export type BrowserPageSurfaceProps = {
       readonly engineIds: readonly string[];
     }
   ) => void;
+  readonly isLoading?: boolean;
+  readonly loadingLabel: string;
   readonly onHostChange?: (tabId: string, element: HTMLElement | null) => void;
 };
 
@@ -35,6 +37,8 @@ export const BrowserPageSurface = ({
   autoSearchLabel,
   webTabLabel,
   onSearchEngineSelectionChange,
+  isLoading = false,
+  loadingLabel,
   onHostChange
 }: BrowserPageSurfaceProps) => {
   const handleHostRef = useCallback(
@@ -122,6 +126,13 @@ export const BrowserPageSurface = ({
       aria-label="page-surface"
       data-browser-page-host="true"
       data-tab-id={tabId}
-    />
+    >
+      {isLoading ? (
+        <AppLoadingState
+          className="lyra-page-loading-state"
+          title={loadingLabel}
+        />
+      ) : null}
+    </section>
   );
 };

@@ -6,9 +6,13 @@ mod router;
 use std::collections::HashMap;
 #[cfg(any(unix, windows))]
 use std::env;
+#[cfg(windows)]
+use std::ffi::c_void;
 #[cfg(unix)]
 use std::fs::{File, OpenOptions};
 #[cfg(unix)]
+use std::io;
+#[cfg(windows)]
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -67,6 +71,19 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use tokio::net::{UnixListener, UnixStream};
 #[cfg(any(unix, windows))]
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, GetLastError, LocalFree, HANDLE},
+    Security::Authorization::{
+        ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+        SDDL_REVISION_1,
+    },
+    Security::{
+        GetTokenInformation, OpenProcessToken, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+        TOKEN_USER,
+    },
+    System::Threading::GetCurrentProcess,
+};
 
 pub(crate) const RUNTIME_NAME: &str = "lyrad";
 #[cfg(any(unix, windows))]
@@ -87,6 +104,8 @@ const DEFAULT_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(any(unix, windows))]
 const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
+#[cfg(any(unix, windows))]
+const MAX_RUNTIME_FRAME_BYTES: usize = 8 * 1024 * 1024;
 
 fn main() {
     #[cfg(any(unix, windows))]
@@ -473,10 +492,21 @@ async fn run_unix_runtime() {
 async fn run_windows_runtime() {
     let _job_guard = lyra_process_lifecycle_core::install_windows_kill_on_close_job().ok();
     let pipe_name = resolve_pipe_name();
+    let mut pipe_security = match WindowsPipeSecurity::current_user() {
+        Ok(security) => security,
+        Err(error) => {
+            eprintln!("failed to prepare runtime named pipe security: {error}");
+            shutdown_runtime_modules();
+            std::process::exit(1);
+        }
+    };
     let sessions = DaemonSessionManager::default();
     register_runtime_hooks(&sessions);
     loop {
-        let server = match ServerOptions::new().create(&pipe_name) {
+        let server = match unsafe {
+            ServerOptions::new()
+                .create_with_security_attributes_raw(&pipe_name, pipe_security.as_mut_ptr())
+        } {
             Ok(server) => server,
             Err(error) => {
                 eprintln!("failed to create runtime named pipe {pipe_name}: {error}");
@@ -522,6 +552,121 @@ fn resolve_pipe_name() -> String {
         }
     }
     panic!("missing required --socket argument");
+}
+
+#[cfg(windows)]
+struct WindowsPipeSecurity {
+    descriptor: *mut c_void,
+    attrs: SECURITY_ATTRIBUTES,
+}
+
+#[cfg(windows)]
+impl WindowsPipeSecurity {
+    fn current_user() -> io::Result<Self> {
+        let user_sid = current_user_sid_string()?;
+        let sddl = format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{user_sid})");
+        let mut descriptor = std::ptr::null_mut();
+        let wide = wide_null(&sddl);
+        let ok = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                wide.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Self {
+            descriptor,
+            attrs: SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: descriptor,
+                bInheritHandle: 0,
+            },
+        })
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut c_void {
+        (&mut self.attrs as *mut SECURITY_ATTRIBUTES).cast()
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsPipeSecurity {
+    fn drop(&mut self) {
+        if !self.descriptor.is_null() {
+            unsafe {
+                let _ = LocalFree(self.descriptor);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn current_user_sid_string() -> io::Result<String> {
+    let mut token: HANDLE = std::ptr::null_mut();
+    let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) };
+    if opened == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let result = current_user_sid_string_from_token(token);
+    unsafe {
+        let _ = CloseHandle(token);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn current_user_sid_string_from_token(token: HANDLE) -> io::Result<String> {
+    let mut needed = 0_u32;
+    unsafe {
+        let _ = GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &mut needed);
+    }
+    if needed == 0 {
+        return Err(io::Error::from_raw_os_error(unsafe {
+            GetLastError() as i32
+        }));
+    }
+    let mut buffer = vec![0_u8; needed as usize];
+    let ok = unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let token_user = unsafe { &*(buffer.as_ptr().cast::<TOKEN_USER>()) };
+    let mut sid_string = std::ptr::null_mut();
+    let ok = unsafe { ConvertSidToStringSidW(token_user.User.Sid, &mut sid_string) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let value = unsafe { wide_ptr_to_string(sid_string) };
+    unsafe {
+        let _ = LocalFree(sid_string.cast());
+    }
+    Ok(value)
+}
+
+#[cfg(windows)]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+unsafe fn wide_ptr_to_string(value: *const u16) -> String {
+    let mut len = 0_usize;
+    while *value.add(len) != 0 {
+        len += 1;
+    }
+    String::from_utf16_lossy(std::slice::from_raw_parts(value, len))
 }
 
 #[cfg(any(unix, windows))]
@@ -688,14 +833,10 @@ where
     };
 
     let writer_task = tokio::spawn(write_loop(writer, receiver));
-    let mut lines = BufReader::new(reader).lines();
+    let mut reader = BufReader::new(reader);
 
     let result = async {
-        while let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|error| router::runtime_error("SOCKET_READ_FAILED", error.to_string()))?
-        {
+        while let Some(line) = read_runtime_frame(&mut reader).await? {
             if line.trim().is_empty() {
                 continue;
             }
@@ -744,6 +885,47 @@ where
     writer_task.abort();
     sessions.unregister(connection_id);
     result
+}
+
+#[cfg(any(unix, windows))]
+async fn read_runtime_frame<R>(reader: &mut BufReader<R>) -> Result<Option<String>, RuntimeError>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut buffer = Vec::new();
+    loop {
+        let read = reader
+            .read_until(b'\n', &mut buffer)
+            .await
+            .map_err(|error| router::runtime_error("SOCKET_READ_FAILED", error.to_string()))?;
+        if buffer.len() > MAX_RUNTIME_FRAME_BYTES {
+            return Err(router::runtime_error(
+                "PROTOCOL_FRAME_TOO_LARGE",
+                format!(
+                    "runtime protocol frame exceeded {} bytes",
+                    MAX_RUNTIME_FRAME_BYTES
+                ),
+            ));
+        }
+        if read == 0 {
+            if buffer.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        if buffer.last() == Some(&b'\n') {
+            break;
+        }
+    }
+    if buffer.last() == Some(&b'\n') {
+        buffer.pop();
+    }
+    if buffer.last() == Some(&b'\r') {
+        buffer.pop();
+    }
+    String::from_utf8(buffer)
+        .map(Some)
+        .map_err(|error| router::runtime_error("PROTOCOL_DECODE_FAILED", error.to_string()))
 }
 
 #[cfg(test)]
@@ -795,6 +977,28 @@ mod tests {
             handle_runtime_request("runtime.reload", serde_json::json!({})).expect("reload route");
 
         assert_eq!(result["status"], "reloaded");
+    }
+
+    #[tokio::test]
+    async fn runtime_frame_reader_rejects_oversized_lines() {
+        let data = vec![b'a'; crate::MAX_RUNTIME_FRAME_BYTES + 1];
+        let mut reader = tokio::io::BufReader::new(data.as_slice());
+        let error = crate::read_runtime_frame(&mut reader)
+            .await
+            .expect_err("oversized frame");
+
+        assert_eq!(error.code, "PROTOCOL_FRAME_TOO_LARGE");
+    }
+
+    #[tokio::test]
+    async fn runtime_frame_reader_accepts_newline_delimited_json() {
+        let mut reader = tokio::io::BufReader::new(br#"{"kind":"Event"}"#.as_slice());
+        let line = crate::read_runtime_frame(&mut reader)
+            .await
+            .expect("read frame")
+            .expect("line");
+
+        assert_eq!(line, r#"{"kind":"Event"}"#);
     }
 
     #[cfg(unix)]

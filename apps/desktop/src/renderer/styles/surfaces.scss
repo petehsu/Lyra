@@ -2915,6 +2915,15 @@
   border-radius: inherit;
 }
 
+.lyra-page-loading-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  place-content: center;
+  background: color-mix(in srgb, var(--lyra-app-panel-bg) 82%, transparent);
+  pointer-events: none;
+}
+
 @keyframes lyra-skeleton-loading {
   0% {
     background-position: 220% 0;

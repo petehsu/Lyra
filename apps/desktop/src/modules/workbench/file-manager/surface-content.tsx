@@ -1,4 +1,4 @@
-import { AppErrorState } from "@renderer/ui/components";
+import { AppErrorState, AppLoadingState } from "@renderer/ui/components";
 
 import { FileManagerDirectoryContent } from "./surface-directory";
 import { FileManagerDownloadsContent } from "./surface-downloads";
@@ -23,11 +23,17 @@ export const FileManagerContent = ({
     }}
   >
     {renderModel.body.kind === "loading" ? (
-      <FileManagerLoadingSkeleton
-        viewKind={renderModel.viewKind}
-        presentationMode={renderModel.presentationMode}
-        slots={renderModel.body.skeletonSlots}
-      />
+      <>
+        <AppLoadingState
+          className="lyra-file-manager-empty-state"
+          title={labels.loading}
+        />
+        <FileManagerLoadingSkeleton
+          viewKind={renderModel.viewKind}
+          presentationMode={renderModel.presentationMode}
+          slots={renderModel.body.skeletonSlots}
+        />
+      </>
     ) : null}
 
     {renderModel.body.kind === "error" ? (
