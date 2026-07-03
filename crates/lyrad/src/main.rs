@@ -89,6 +89,13 @@ const MAX_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(120);
 const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 
 fn main() {
+    #[cfg(any(unix, windows))]
+    if let Some(code) =
+        lyra_process_lifecycle_core::run_parent_watcher_from_args(std::env::args().skip(1))
+    {
+        std::process::exit(code);
+    }
+
     run();
 }
 
@@ -464,6 +471,7 @@ async fn run_unix_runtime() {
 
 #[cfg(windows)]
 async fn run_windows_runtime() {
+    let _job_guard = lyra_process_lifecycle_core::install_windows_kill_on_close_job().ok();
     let pipe_name = resolve_pipe_name();
     let sessions = DaemonSessionManager::default();
     register_runtime_hooks(&sessions);

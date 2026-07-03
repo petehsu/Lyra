@@ -33,6 +33,11 @@ export type AppModelMenuSubmenu<TValue extends string = string> = {
   readonly value: TValue;
 };
 
+export type AppModelMenuGroup<TValue extends string = string> = {
+  readonly label: ReactNode;
+  readonly options: readonly AppModelMenuOption<TValue>[];
+};
+
 export type AppModelMenuProps<TModelValue extends string = string> = {
   readonly ariaLabel: string;
   readonly className?: string;
@@ -40,6 +45,7 @@ export type AppModelMenuProps<TModelValue extends string = string> = {
   readonly collisionPadding?: DropdownMenuContentProps["collisionPadding"];
   readonly contentClassName?: string;
   readonly disabled?: boolean;
+  readonly groups?: readonly AppModelMenuGroup<TModelValue>[];
   readonly onModelChange: (value: TModelValue) => void;
   readonly options: readonly AppModelMenuOption<TModelValue>[];
   readonly placeholder?: ReactNode;
@@ -57,6 +63,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
   collisionPadding = 8,
   contentClassName,
   disabled = false,
+  groups,
   onModelChange,
   options,
   placeholder,
@@ -65,10 +72,56 @@ export const AppModelMenu = <TModelValue extends string = string>({
 }: AppModelMenuProps<TModelValue>) => {
   const [open, setOpen] = useState(false);
   const [openSubmenuId, setOpenSubmenuId] = useState<string | null>(null);
-  const selectedOption = options.find((option) => option.value === value);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(() => new Set());
+  const allOptions = groups !== undefined
+    ? groups.flatMap((group) => group.options)
+    : options;
+  const selectedOption = allOptions.find((option) => option.value === value);
   const triggerLabel = selectedOption?.label ?? placeholder ?? ariaLabel;
   const triggerIcon = selectedOption?.icon;
   const enabledSubmenus = submenus.filter((submenu) => submenu.options.length > 0);
+  const hasGroups = groups !== undefined && groups.length > 0;
+
+  const renderOption = (option: AppModelMenuOption<TModelValue>) => {
+    const active = option.value === value;
+    const textValue = labelText(option.label);
+    const disabledProps = option.disabled === undefined
+      ? {}
+      : { disabled: option.disabled };
+    const textValueProps = textValue === undefined
+      ? {}
+      : { textValue };
+
+    return (
+      <DropdownMenuItem
+        key={option.value}
+        className={cn(
+          "lyra-app-model-menu-item",
+          option.icon === undefined ? "" : "lyra-app-model-menu-item-with-icon"
+        )}
+        data-active={active ? "true" : undefined}
+        onSelect={() => {
+          onModelChange(option.value);
+          setOpenSubmenuId(null);
+          setOpen(false);
+        }}
+        {...disabledProps}
+        {...textValueProps}
+      >
+        {option.icon === undefined ? null : (
+          <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
+            {option.icon}
+          </span>
+        )}
+        <span className="lyra-app-model-menu-item-label">
+          {option.label}
+        </span>
+        {active ? (
+          <Check className="lyra-ui-menu-check" aria-hidden="true" />
+        ) : null}
+      </DropdownMenuItem>
+    );
+  };
 
   return (
     <DropdownMenu
@@ -84,7 +137,7 @@ export const AppModelMenu = <TModelValue extends string = string>({
       <DropdownMenuTrigger
         className={cn("lyra-ui-select-trigger lyra-app-model-menu-trigger", className)}
         aria-label={ariaLabel}
-        disabled={disabled || options.length === 0}
+        disabled={disabled || allOptions.length === 0}
         data-has-icon={triggerIcon === undefined ? undefined : "true"}
         onClick={() => {
           setOpen(true);
@@ -106,48 +159,46 @@ export const AppModelMenu = <TModelValue extends string = string>({
         collisionBoundary={collisionBoundary}
         collisionPadding={collisionPadding}
       >
-        <DropdownMenuGroup>
-          {options.map((option) => {
-            const active = option.value === value;
-            const textValue = labelText(option.label);
-            const disabledProps = option.disabled === undefined
-              ? {}
-              : { disabled: option.disabled };
-            const textValueProps = textValue === undefined
-              ? {}
-              : { textValue };
-
-            return (
-              <DropdownMenuItem
-                key={option.value}
-                className={cn(
-                  "lyra-app-model-menu-item",
-                  option.icon === undefined ? "" : "lyra-app-model-menu-item-with-icon"
-                )}
-                data-active={active ? "true" : undefined}
-                onSelect={() => {
-                  onModelChange(option.value);
-                  setOpenSubmenuId(null);
-                  setOpen(false);
-                }}
-                {...disabledProps}
-                {...textValueProps}
-              >
-                {option.icon === undefined ? null : (
-                  <span className="lyra-app-model-menu-option-icon" aria-hidden="true">
-                    {option.icon}
-                  </span>
-                )}
-                <span className="lyra-app-model-menu-item-label">
-                  {option.label}
-                </span>
-                {active ? (
-                  <Check className="lyra-ui-menu-check" aria-hidden="true" />
-                ) : null}
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
+        {hasGroups ? (
+          <DropdownMenuGroup>
+            {groups.map((group, groupIndex) => {
+              const isCollapsed = collapsedGroups.has(groupIndex);
+              return (
+                <DropdownMenuGroup key={groupIndex}>
+                  <DropdownMenuItem
+                    className="lyra-app-model-menu-group-header"
+                    data-collapsed={isCollapsed ? "true" : undefined}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setCollapsedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(groupIndex)) next.delete(groupIndex);
+                        else next.add(groupIndex);
+                        return next;
+                      });
+                    }}
+                  >
+                    <span className="lyra-app-model-menu-group-line" aria-hidden="true" />
+                    <span className="lyra-app-model-menu-group-label">
+                      {group.label}
+                      <ChevronDown
+                        className="lyra-app-model-menu-group-chevron"
+                        data-collapsed={isCollapsed ? "true" : undefined}
+                        aria-hidden="true"
+                      />
+                    </span>
+                    <span className="lyra-app-model-menu-group-line" aria-hidden="true" />
+                  </DropdownMenuItem>
+                  {isCollapsed ? null : group.options.map(renderOption)}
+                </DropdownMenuGroup>
+              );
+            })}
+          </DropdownMenuGroup>
+        ) : (
+          <DropdownMenuGroup>
+            {options.map(renderOption)}
+          </DropdownMenuGroup>
+        )}
         {enabledSubmenus.length > 0 ? (
           <>
             <DropdownMenuSeparator />

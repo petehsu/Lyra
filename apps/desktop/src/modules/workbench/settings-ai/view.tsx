@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ExternalLink, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, DragEvent as ReactDragEvent } from "react";
 
@@ -1499,6 +1499,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const [query, setQuery] = useState("");
   const [showAllModels, setShowAllModels] = useState(false);
   const [isAddingModel, setIsAddingModel] = useState(false);
+  const [drilledProviderKey, setDrilledProviderKey] = useState<string | null>(null);
   const [providerQuery, setProviderQuery] = useState("");
   const [selectedProviderRouteId, setSelectedProviderRouteId] = useState("");
   const [providerBaseUrl, setProviderBaseUrl] = useState("");
@@ -1554,6 +1555,30 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     (model.agentModelCatalog?.models ?? []).filter((entry) => entry.available),
   [model.agentModelCatalog?.models]);
   const hasConfiguredModels = renderedModels.length > 0;
+
+  // 按 providerKey 聚合成服务商分组，供服务商列表视图使用
+  const providerGroups = useMemo(() => {
+    const groups = new Map<string, {
+      readonly key: string;
+      readonly label: string;
+      readonly entries: SettingsAiRenderedModelEntry[];
+    }>();
+    for (const entry of renderedModels) {
+      const key = modelProviderKeys(entry)[0] ?? entry.routeId ?? entry.id;
+      const existing = groups.get(key);
+      if (existing !== undefined) {
+        existing.entries.push(entry);
+      } else {
+        groups.set(key, {
+          key,
+          label: entry.providerLabel ?? entry.providerKey ?? entry.provider ?? key,
+          entries: [entry],
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [renderedModels]);
+
   const isProviderSearchMode = isAddingModel || !hasConfiguredModels;
   const activeSearchValue = isProviderSearchMode ? providerQuery : query;
   const activeSearchLabel = isProviderSearchMode ? labels.selectProviderLabel : labels.modelsTitle;
@@ -1585,6 +1610,76 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     ? filteredModels
     : filteredModels.slice(0, MODEL_PREVIEW_LIMIT);
   const canShowAllModels = !showAllModels && filteredModels.length > MODEL_PREVIEW_LIMIT;
+
+  // 服务商列表态：按搜索词过滤服务商分组
+  const filteredProviderGroups = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (normalizedQuery.length === 0) return providerGroups;
+    return providerGroups.filter((group) =>
+      group.label.toLocaleLowerCase().includes(normalizedQuery)
+    );
+  }, [providerGroups, query]);
+
+  // 子页面态：当前钻入的服务商分组
+  const drilledProviderGroup = useMemo(
+    () => providerGroups.find((group) => group.key === drilledProviderKey) ?? null,
+    [drilledProviderKey, providerGroups],
+  );
+  const drilledModelEntries = useMemo(() => {
+    if (drilledProviderGroup === null) return [];
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (normalizedQuery.length === 0) return drilledProviderGroup.entries;
+    return drilledProviderGroup.entries.filter((entry) =>
+      [entry.label, entry.model, entry.detail ?? ""].some((value) =>
+        value.toLocaleLowerCase().includes(normalizedQuery),
+      ),
+    );
+  }, [drilledProviderGroup, query]);
+  const visibleDrilledModels = showAllModels
+    ? drilledModelEntries
+    : drilledModelEntries.slice(0, MODEL_PREVIEW_LIMIT);
+  const canShowAllDrilledModels =
+    !showAllModels && drilledModelEntries.length > MODEL_PREVIEW_LIMIT;
+
+  // 批量切换某服务商下所有模型的 enabled 状态
+  const setProviderGroupEnabled = (group: { readonly entries: readonly SettingsAiRenderedModelEntry[] }, enabled: boolean): void => {
+    for (const entry of group.entries) {
+      if (entry.enabled !== enabled) {
+        setModelEnabled(entry, enabled);
+      }
+    }
+  };
+  const confirmDeleteProviderGroup = (group: { readonly key: string; readonly label: string; readonly entries: readonly SettingsAiRenderedModelEntry[] }): void => {
+    openDialog({
+      title: labels.modelsDeleteConfirmTitle,
+      description: formatSettingsAiLabel(labels.modelsDeleteConfirmDescription, {
+        model: group.label,
+      }),
+      source: {
+        title: group.label,
+        subtitle: `${group.entries.length} ${labels.modelsTitle}`,
+        iconLabel: "AI",
+        iconTone: "danger",
+      },
+      actions: [
+        { id: "cancel", label: labels.cancel },
+        {
+          id: "delete",
+          label: labels.modelsDeleteConfirmAction,
+          tone: "danger",
+          onSelect: () => {
+            for (const entry of group.entries) {
+              const provider = modelProviderKeys(entry)[0] ?? "";
+              if (provider.length > 0) {
+                void model.deleteAgentModel?.({ provider, model: entry.model });
+              }
+            }
+          },
+        },
+      ],
+    });
+  };
+
   const providerRouteMatches = useMemo(() => {
     if (providerQuery.trim().length === 0) {
       return [];
@@ -2047,10 +2142,86 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           </div>
         ) : null}
 
-        {hasConfiguredModels && !isProviderSearchMode && filteredModels.length > 0 ? (
+        {hasConfiguredModels && !isProviderSearchMode && drilledProviderGroup === null && filteredProviderGroups.length > 0 ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface">
             <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
-              {visibleModels.map((entry) => {
+              {filteredProviderGroups.map((group) => {
+                const allEnabled = group.entries.length > 0 && group.entries.every((entry) => entry.enabled);
+                const someEnabled = group.entries.some((entry) => entry.enabled);
+                const firstEntry = group.entries[0] ?? null;
+                const providerConfig = firstEntry === null ? null : configForModelEntry(firstEntry, config);
+
+                return (
+                  <AppObjectRow
+                    key={group.key}
+                    as="div"
+                    role="listitem"
+                    active={false}
+                    className="lyra-settings-ai-model-option lyra-settings-ai-provider-group-row"
+                    icon={(
+                      <AgentProviderBrandIcon
+                        baseUrl={providerConfig?.baseUrl ?? null}
+                        label={group.label}
+                        providerId={firstEntry?.providerId}
+                        routeId={firstEntry?.routeId}
+                      />
+                    )}
+                    title={group.label}
+                    description={`${group.entries.length} ${labels.modelsTitle}`}
+                    onClick={() => {
+                      setDrilledProviderKey(group.key);
+                      setQuery("");
+                      setShowAllModels(false);
+                    }}
+                    actions={(
+                      <span className="lyra-settings-ai-model-actions">
+                        <AppIconButton
+                          aria-label={`${labels.modelsDeleteLabel}: ${group.label}`}
+                          title={labels.modelsDeleteLabel}
+                          tone="danger"
+                          className="lyra-settings-ai-row-delete"
+                          disabled={model.isSaving}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            confirmDeleteProviderGroup(group);
+                          }}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </AppIconButton>
+                        <AppSwitch
+                          checked={allEnabled}
+                          aria-label={group.label}
+                          onCheckedChange={(checked) => {
+                            setProviderGroupEnabled(group, checked);
+                          }}
+                        />
+                      </span>
+                    )}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {hasConfiguredModels && !isProviderSearchMode && drilledProviderGroup !== null ? (
+          <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
+            <AppButton
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="lyra-settings-ai-provider-back"
+              onClick={() => {
+                setDrilledProviderKey(null);
+                setQuery("");
+                setShowAllModels(false);
+              }}
+            >
+              <ChevronLeft size={14} aria-hidden="true" />
+              {drilledProviderGroup.label}
+            </AppButton>
+            <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
+              {visibleDrilledModels.map((entry) => {
                 const active = isCurrentModelEntry(entry, model, config);
                 const disabled = model.isSaving || !entry.available;
                 const providerConfig = configForModelEntry(entry, config);
@@ -2110,7 +2281,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                   />
                 );
               })}
-              {canShowAllModels ? (
+              {canShowAllDrilledModels ? (
                 <AppButton
                   variant="ghost"
                   size="sm"

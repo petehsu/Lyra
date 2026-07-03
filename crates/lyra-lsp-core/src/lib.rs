@@ -502,6 +502,7 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .current_dir(project_root);
+    lyra_process_lifecycle_core::configure_daemon_child_command(&mut command);
 
     let child = command.spawn().map_err(|error| {
         to_error(format!(
@@ -511,6 +512,8 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
     })?;
 
     let mut child = child;
+    let child_pid = child.id();
+    lyra_process_lifecycle_core::spawn_parent_death_watcher(child_pid, true);
     let stdin = child
         .stdin
         .take()
@@ -570,6 +573,7 @@ fn start_server(language_id: &str, project_root: &Path) -> Result<Arc<LspServerR
     );
 
     if let Err(error) = initialize_result {
+        lyra_process_lifecycle_core::terminate_process_tree(child_pid, true);
         if let Ok(mut child) = runtime.child.lock() {
             let _ = child.kill();
         }
@@ -1114,6 +1118,7 @@ pub fn shutdown() -> Result<()> {
         let _ = send_notification(&runtime, "shutdown", json!({}));
         let _ = send_notification(&runtime, "exit", json!({}));
         if let Ok(mut child) = runtime.child.lock() {
+            lyra_process_lifecycle_core::terminate_process_tree(child.id(), false);
             let _ = child.kill();
         }
     }

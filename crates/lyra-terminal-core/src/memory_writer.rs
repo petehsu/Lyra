@@ -7,6 +7,7 @@
 
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -30,6 +31,7 @@ pub(crate) enum TerminalMemoryTask {
     ProcessSignal(memory::ProcessSignalInput),
     Exit(i32),
     Error(String),
+    Flush(mpsc::Sender<()>),
 }
 
 impl TerminalMemoryWriter {
@@ -48,6 +50,13 @@ impl TerminalMemoryWriter {
 
     pub(crate) fn enqueue(&self, task: TerminalMemoryTask) {
         let _ = self.sender.send(task);
+    }
+
+    pub(crate) fn flush(&self, timeout: Duration) {
+        let (sender, receiver) = mpsc::channel();
+        if self.sender.send(TerminalMemoryTask::Flush(sender)).is_ok() {
+            let _ = receiver.recv_timeout(timeout);
+        }
     }
 }
 
@@ -124,6 +133,9 @@ fn run_terminal_memory_writer(
             }
             TerminalMemoryTask::Error(error) => {
                 let _ = memory::record_error(&context, &error);
+            }
+            TerminalMemoryTask::Flush(sender) => {
+                let _ = sender.send(());
             }
         }
     }

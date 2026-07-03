@@ -449,7 +449,10 @@ export const createLyraRuntimeClient = (
     child = spawn(binaryPath, ["--socket", socketPath], {
       cwd: resolveRuntimeWorkingDirectory(),
       stdio: "pipe",
-      env: buildRuntimeDaemonEnv(process.env, options, process.execPath)
+      env: {
+        ...buildRuntimeDaemonEnv(process.env, options, process.execPath),
+        LYRA_DAEMON_WATCHER_BIN: binaryPath
+      }
     });
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString().trim();

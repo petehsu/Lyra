@@ -24,6 +24,7 @@ members = [
   "crates/lyra-download-napi",
   "crates/lyra-accessibility-napi",
   "crates/lyra-performance-core",
+  "crates/lyra-process-lifecycle-core",
   "crates/lyra-computer-use-core",
   # CodeGraph engine (ported from codegraph-ai)
   "crates/codegraph",
@@ -100,6 +101,7 @@ lyra-docs-core = { path = "crates/lyra-docs-core" }
 lyra-tool-fs-core = { path = "crates/lyra-tool-fs-core" }
 lyra-code-intel-core = { path = "crates/lyra-code-intel-core" }
 lyra-performance-core = { path = "crates/lyra-performance-core" }
+lyra-process-lifecycle-core = { path = "crates/lyra-process-lifecycle-core" }
 
 # CodeGraph internal crates (ported from codegraph-ai)
 codegraph = { path = "crates/codegraph" }

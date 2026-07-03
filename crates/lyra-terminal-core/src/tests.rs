@@ -1,6 +1,9 @@
-use crate::live_output::Utf8StreamDecoder;
+use crate::live_output::{
+    append_output, live_output_projection, new_running_state, Utf8StreamDecoder,
+};
 use crate::memory;
 use crate::pty_io::normalize_terminal_cwd;
+use crate::MAX_SESSION_BUFFER_BYTES;
 
 use super::{
     close_observer_session, close_session, create_observer_session, create_session, read_screen,
@@ -38,6 +41,24 @@ fn utf8_stream_decoder_replaces_invalid_bytes_without_poisoning_next_text() {
     let mut decoder = Utf8StreamDecoder::default();
     assert_eq!(decoder.decode(&[0xFF, b'a']), "\u{FFFD}a");
     assert_eq!(decoder.decode("中文".as_bytes()), "中文");
+}
+
+#[test]
+fn live_output_buffers_are_bounded() {
+    let state = new_running_state();
+    let data = vec![b'a'; MAX_SESSION_BUFFER_BYTES + 1024];
+    append_output(&state, &data);
+
+    let guard = state.0.lock().expect("lock state");
+    assert_eq!(guard.buffer.len(), MAX_SESSION_BUFFER_BYTES);
+    assert_eq!(guard.text_buffer.len(), MAX_SESSION_BUFFER_BYTES);
+    assert_eq!(guard.retained_start, 1024);
+    assert_eq!(guard.text_retained_start, 1024);
+    assert_eq!(guard.total_bytes, data.len() as u64);
+    assert_eq!(guard.total_text_bytes, data.len() as u64);
+    let (_, output, truncated) = live_output_projection(&guard, 0, 16);
+    assert_eq!(output, "aaaaaaaaaaaaaaaa");
+    assert!(truncated);
 }
 
 #[test]

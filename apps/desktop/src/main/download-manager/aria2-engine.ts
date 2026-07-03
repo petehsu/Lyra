@@ -1,9 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
 import type { Dirent } from "node:fs";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { spawnManagedChildProcess, terminateManagedChildProcess } from "../process-lifecycle";
 
 const PROGRESS_INTERVAL_MS = 1000;
 const RPC_READY_TIMEOUT_MS = 4000;
@@ -263,7 +265,9 @@ export class Aria2DownloadController {
     }
     this.paused = true;
     void this.shutdown().finally(() => {
-      this.process?.kill("SIGTERM");
+      if (this.process !== null) {
+        terminateManagedChildProcess(this.process);
+      }
     });
     this.stopProgress();
     this.options.onPaused();
@@ -275,7 +279,9 @@ export class Aria2DownloadController {
     }
     this.canceled = true;
     void this.shutdown().finally(() => {
-      this.process?.kill("SIGTERM");
+      if (this.process !== null) {
+        terminateManagedChildProcess(this.process);
+      }
     });
     this.stopProgress();
     this.options.onCanceled();
@@ -288,7 +294,7 @@ export class Aria2DownloadController {
       this.rpcSecret = randomRpcSecret();
       this.lastBytes = await getDirectorySize(this.options.directory);
       this.lastProgressAt = Date.now();
-      const child = spawn(
+      const child = spawnManagedChildProcess(
         this.options.binaryPath,
         buildAria2Args({
           ...this.options,

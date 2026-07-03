@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
+
+import { spawnManagedChildProcess, terminateManagedChildProcess } from "../process-lifecycle";
 
 export type ExternalBrowserDownloadCandidate = {
   readonly browser: string;
@@ -109,7 +110,7 @@ const runProcess = async (
 ): Promise<string> => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   return await new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
+    const child = spawnManagedChildProcess(command, [...args], {
       cwd: options.cwd,
       env: options.env,
       stdio: ["ignore", "pipe", "pipe"]
@@ -133,21 +134,21 @@ const runProcess = async (
     };
     const timeoutHandle = typeof options.timeoutMs === "number" && options.timeoutMs > 0
       ? setTimeout(() => {
-          child.kill();
+          terminateManagedChildProcess(child, true);
           finish(new Error(`${command} timed out after ${options.timeoutMs}ms`));
         }, options.timeoutMs)
       : null;
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString("utf8");
       if (stdout.length > MAX_STDIO_BYTES) {
-        child.kill();
+        terminateManagedChildProcess(child, true);
         finish(new Error(`${command} stdout exceeded ${MAX_STDIO_BYTES} bytes`));
       }
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf8");
       if (stderr.length > MAX_STDIO_BYTES) {
-        child.kill();
+        terminateManagedChildProcess(child, true);
         finish(new Error(`${command} stderr exceeded ${MAX_STDIO_BYTES} bytes`));
       }
     });

@@ -3650,6 +3650,7 @@ dependencies = [
  "lyra-agent-reader",
  "lyra-code-intel-core",
  "lyra-hardware-core",
+ "lyra-process-lifecycle-core",
  "lyra-tool-fs-core",
  "minijinja",
  "regex",
@@ -3835,6 +3836,7 @@ dependencies = [
 name = "lyra-lsp-core"
 version = "0.1.0"
 dependencies = [
+ "lyra-process-lifecycle-core",
  "napi",
  "napi-build",
  "napi-derive",
@@ -3857,6 +3859,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-process-lifecycle-core"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "lyra-runtime-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3869,6 +3879,7 @@ name = "lyra-terminal-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "lyra-process-lifecycle-core",
  "napi",
  "napi-build",
  "napi-derive",
@@ -3923,6 +3934,7 @@ dependencies = [
  "lyra-download-core",
  "lyra-lsp-core",
  "lyra-performance-core",
+ "lyra-process-lifecycle-core",
  "lyra-runtime-protocol",
  "lyra-terminal-core",
  "rayon",

@@ -5684,6 +5684,71 @@
   color: var(--lyra-text-primary);
 }
 
+/* ---- Composer 模型菜单触发器（与 permission mode select 同排） ---- */
+
+.lyra-agents-composer-model-picker {
+  flex: 0 0 auto;
+}
+
+/* ---- 下拉菜单内服务商分组折叠头（细线样式，复用 message-process-fold 视觉语言） ---- */
+
+.lyra-app-model-menu-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--lyra-unit-8);
+  padding: var(--lyra-unit-4) var(--lyra-unit-8);
+  color: var(--lyra-text-muted);
+  font-size: var(--lyra-unit-11);
+  user-select: none;
+}
+
+.lyra-app-model-menu-group-header:hover {
+  background: transparent;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-app-model-menu-group-header:focus-visible {
+  outline: var(--lyra-stroke-strong) solid var(--lyra-app-focus);
+  outline-offset: var(--lyra-space-2);
+}
+
+.lyra-app-model-menu-group-line {
+  height: var(--lyra-unit-1);
+  flex: 1 1 var(--lyra-unit-40);
+  min-width: var(--lyra-unit-16);
+  border-radius: var(--lyra-radius-pill);
+  background: color-mix(in srgb, var(--lyra-app-border) 68%, transparent);
+  transition: background 140ms ease;
+}
+
+.lyra-app-model-menu-group-header:hover .lyra-app-model-menu-group-line {
+  background: color-mix(in srgb, var(--lyra-text-muted) 52%, transparent);
+}
+
+.lyra-app-model-menu-group-label {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-unit-4);
+  color: var(--lyra-text-muted);
+  white-space: nowrap;
+  transition: color 140ms ease;
+}
+
+.lyra-app-model-menu-group-header:hover .lyra-app-model-menu-group-label {
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-app-model-menu-group-chevron {
+  flex: 0 0 auto;
+  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.lyra-app-model-menu-group-chevron[data-collapsed="true"] {
+  transform: rotate(-90deg);
+}
+
 .lyra-agents-composer-action {
   flex: 0 0 var(--lyra-agents-composer-toolbar-control-size);
   width: var(--lyra-agents-composer-toolbar-control-size);

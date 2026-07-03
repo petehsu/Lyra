@@ -787,16 +787,17 @@ describe("SettingsAiView", () => {
 
     render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
 
+    // 服务商分组列表：初始看到服务商名，不直接看到模型
     expect(screen.getByLabelText("Models")).toHaveValue("");
-    expect(screen.getByText("mimo-v2.5-pro")).toBeInTheDocument();
-    expect(screen.getByText("gpt-5")).toBeInTheDocument();
-    expect(screen.getByText("Current model")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Models"), {
-      target: { value: "gpt" },
-    });
-
+    expect(screen.getByText("MiMo Token Plan")).toBeInTheDocument();
+    expect(screen.getByText("Custom OpenAI-Compatible")).toBeInTheDocument();
     expect(screen.queryByText("mimo-v2.5-pro")).not.toBeInTheDocument();
+    expect(screen.queryByText("gpt-5")).not.toBeInTheDocument();
+
+    // 点击进入 "Custom OpenAI-Compatible" 子页面
+    fireEvent.click(screen.getByText("Custom OpenAI-Compatible"));
+
+    expect(screen.getByText("gpt-5")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "gpt-5" }));
 
     expect(setAgentModelEnabled).toHaveBeenCalledWith({
@@ -814,6 +815,9 @@ describe("SettingsAiView", () => {
     const model = createModel({ deleteAgentModel });
 
     render(<SettingsAiModelsView labels={labels} model={model} openDialog={openDialog} />);
+
+    // 先进入 "Custom OpenAI-Compatible" 子页面才能看到 gpt-5 的删除按钮
+    fireEvent.click(screen.getByText("Custom OpenAI-Compatible"));
 
     fireEvent.click(screen.getByRole("button", { name: "Delete model: gpt-5" }));
 
@@ -1313,6 +1317,14 @@ describe("SettingsAiView", () => {
     });
 
     render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+
+    // 初始看到服务商行，不直接看到模型
+    const providerRow = screen.getByText("OpenAI", { selector: ".lyra-app-object-row-title" });
+    expect(providerRow).toBeInTheDocument();
+    expect(screen.queryByText("model-1")).not.toBeInTheDocument();
+
+    // 点击进入服务商子页面
+    fireEvent.click(providerRow);
 
     expect(screen.getByText("model-1")).toBeInTheDocument();
     expect(screen.getByText("model-9")).toBeInTheDocument();

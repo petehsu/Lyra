@@ -2,9 +2,6 @@ use super::*;
 
 use std::sync::mpsc;
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const OUTPUT_KILL_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -120,6 +117,7 @@ pub(crate) fn tool_shell_run(
         )
     })?;
     let child_process_id = child.id();
+    lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
     let stdout = child
         .stdout
         .take()
@@ -370,10 +368,7 @@ fn shell_command_builder(command: &str) -> Command {
 }
 
 fn configure_shell_child(command: &mut Command) {
-    #[cfg(unix)]
-    {
-        command.process_group(0);
-    }
+    lyra_process_lifecycle_core::configure_daemon_child_command(command);
 }
 
 fn terminate_shell_process_group(process_id: u32, force: bool) -> bool {

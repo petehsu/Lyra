@@ -32,6 +32,7 @@ import {
   AppMenuTrigger,
   AppModelMenu,
   AppSelect,
+  type AppModelMenuGroup,
   type AppModelMenuSubmenu
 } from "@renderer/ui/components";
 import {
@@ -149,7 +150,6 @@ export function Composer({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendLogoVisible, setSendLogoVisible] = useState(false);
-  const [modelMenuBoundary, setModelMenuBoundary] = useState<HTMLElement | null>(null);
   const composerRootRef = useRef<HTMLFormElement>(null);
   const composerInputRef = useRef<CitationComposerInputHandle>(null);
   const sendInFlightRef = useRef(false);
@@ -301,11 +301,6 @@ export function Composer({
     }
   }, []);
 
-  useEffect(() => {
-    const panel = composerRootRef.current?.closest(".lyra-panel-left-content");
-    setModelMenuBoundary(panel instanceof HTMLElement ? panel : null);
-  }, []);
-
   const canSend = disabledReason === undefined && !sendBusy && hasComposerContent(segments);
   const hasDraft = hasComposerContent(segments);
   const showPauseButton = isTurnRunning && !hasDraft;
@@ -332,7 +327,6 @@ export function Composer({
       />
     )
   }));
-  const selectedModelValue = selectedModel?.id ?? modelPickerOptions[0]?.value ?? "";
   const permissionModeOptions = permissionModeControls === null || permissionModeControls === undefined
     ? []
     : [
@@ -411,6 +405,22 @@ export function Composer({
             }]
           : [])
       ];
+
+  // ponytail: O(n) grouping via Map — models are <50 so even O(n²) would be fine
+  const modelPickerGroups: readonly AppModelMenuGroup[] = (() => {
+    const map = new Map<string, AppModelMenuGroup>();
+    configuredModels.forEach((model, i) => {
+      const key = model.providerKey ?? model.providerId ?? model.provider ?? model.id;
+      const existing = map.get(key);
+      const option = modelPickerOptions[i];
+      if (existing) {
+        map.set(key, { ...existing, options: [...existing.options, option] });
+      } else {
+        map.set(key, { label: model.provider ?? model.providerId ?? key, options: [option] });
+      }
+    });
+    return [...map.values()];
+  })();
 
   return (
     <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>
@@ -584,20 +594,20 @@ export function Composer({
           <div className="lyra-agents-composer-model-controls">
             {modelPickerOptions.length > 0 ? (
               <AppModelMenu
+                ariaLabel={t("lyra-agents-composer.modelControls")}
                 className="lyra-agents-composer-model-picker"
                 contentClassName="lyra-agents-composer-select-content"
-                collisionBoundary={modelMenuBoundary ?? undefined}
-                ariaLabel={t("lyra-agents-composer.modelControls")}
-                value={selectedModelValue}
-                placeholder={selectedModel?.label ?? modelPickerOptions[0]?.label ?? ""}
                 options={modelPickerOptions}
-                disabled={modelControls.isSwitching}
-                submenus={modelParameterSubmenus}
-                onModelChange={(nextModel) => {
-                  void modelControls.switchModel(nextModel);
+                groups={modelPickerGroups}
+                value={selectedModel?.id ?? ""}
+                onModelChange={(modelId) => {
+                  void modelControls.switchModel(modelId);
                 }}
+                submenus={modelParameterSubmenus}
+                disabled={modelControls.isSwitching}
               />
-            ) : (
+            ) : null}
+            {modelPickerOptions.length === 0 ? (
               <AppButton variant="ghost" size="sm"
                 type="button"
                 className="lyra-agents-composer-model-settings-button"
@@ -610,7 +620,7 @@ export function Composer({
                 <CircleAlert size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
                 <span>{t("lyra-agents-composer.configureModel")}</span>
               </AppButton>
-            )}
+            ) : null}
             {permissionModeControls !== null && permissionModeControls !== undefined ? (
               <AppSelect<PermissionPickerValue>
                 className="lyra-agents-composer-permission-mode-picker"

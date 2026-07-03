@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -7,6 +6,7 @@ import type {
   DownloadManagerPostProcessingSettings,
   DownloadManagerTask
 } from "../../shared/download-manager";
+import { spawnManagedChildProcess } from "../process-lifecycle";
 
 export type DownloadPostProcessingResult = {
   readonly state: "idle" | "completed" | "warning" | "failed";
@@ -201,11 +201,11 @@ export const planArchiveExtraction = (
 
 const runCommand = (command: string, args: readonly string[]): Promise<void> =>
   new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const child = spawnManagedChildProcess(command, args, {
       stdio: ["ignore", "ignore", "pipe"]
     });
     let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
     child.once("error", reject);

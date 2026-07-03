@@ -764,14 +764,14 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("keeps model runtime parameters inside nested model menu items", async () => {
+  test("keeps model runtime parameters inside inline model parameter buttons", async () => {
     const { api } = createDesktopApi();
     renderPanel(api);
 
+    // 参数通过子菜单渲染：每次选择后菜单关闭，需重新打开
     await openModelControlsMenu();
-
-    const reasoningItem = await screen.findByRole("menuitem", { name: /Reasoning effort low/u });
-    fireEvent.pointerMove(reasoningItem, { pointerType: "mouse" });
+    const reasoningSubTrigger = screen.getByRole("menuitem", { name: /Reasoning effort/i });
+    fireEvent.mouseEnter(reasoningSubTrigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "medium" }));
 
     await waitFor(() => {
@@ -782,9 +782,8 @@ describe("AiPanelSurface", () => {
     });
 
     await openModelControlsMenu();
-
-    const verbosityItem = await screen.findByRole("menuitem", { name: /Verbosity medium/u });
-    fireEvent.pointerMove(verbosityItem, { pointerType: "mouse" });
+    const verbositySubTrigger = screen.getByRole("menuitem", { name: /Verbosity/i });
+    fireEvent.mouseEnter(verbositySubTrigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "high" }));
 
     await waitFor(() => {
@@ -795,9 +794,8 @@ describe("AiPanelSurface", () => {
     });
 
     await openModelControlsMenu();
-
-    const serviceTierItem = await screen.findByRole("menuitem", { name: /Fast mode priority/u });
-    fireEvent.pointerMove(serviceTierItem, { pointerType: "mouse" });
+    const fastModeSubTrigger = screen.getByRole("menuitem", { name: /Fast mode/i });
+    fireEvent.mouseEnter(fastModeSubTrigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "flex" }));
 
     await waitFor(() => {
@@ -2236,7 +2234,7 @@ describe("AiPanelSurface", () => {
       .toHaveAttribute("aria-selected", "true");
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
+    fireEvent.click(screen.getByRole("button", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
@@ -2262,7 +2260,7 @@ describe("AiPanelSurface", () => {
     });
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
+    fireEvent.click(screen.getByRole("button", { name: "gpt-5 · OpenAI" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({

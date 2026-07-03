@@ -6345,3 +6345,38 @@
     transform: rotate(360deg);
   }
 }
+
+/* 服务商分组行 + 子页面 */
+.lyra-settings-ai-provider-group-row {
+  cursor: pointer;
+}
+
+.lyra-settings-ai-provider-group-row:hover {
+  background: color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
+}
+
+.lyra-settings-ai-provider-group-row .lyra-settings-ai-model-actions {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.lyra-settings-ai-provider-group-row:hover .lyra-settings-ai-model-actions,
+.lyra-settings-ai-provider-group-row:focus-within .lyra-settings-ai-model-actions {
+  opacity: 1;
+}
+
+.lyra-settings-ai-provider-drill-in {
+  gap: var(--lyra-space-8);
+}
+
+.lyra-settings-ai-provider-back {
+  align-self: flex-start;
+  gap: var(--lyra-space-2);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-body);
+  font-weight: 600;
+}
+
+.lyra-settings-ai-provider-back:hover {
+  color: var(--lyra-text-primary);
+}

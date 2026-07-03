@@ -57,6 +57,7 @@ export {
 } from "./app-menu";
 export {
   AppModelMenu,
+  type AppModelMenuGroup,
   type AppModelMenuOption,
   type AppModelMenuProps,
   type AppModelMenuSubmenu

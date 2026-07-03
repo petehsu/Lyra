@@ -1,7 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { spawnManagedChildProcess, terminateManagedChildProcess } from "../process-lifecycle";
 import { toHttpDownloadTransportUrl } from "./transport-url";
 
 const PROGRESS_INTERVAL_MS = 500;
@@ -72,7 +73,9 @@ export class CurlDownloadController {
       return;
     }
     this.paused = true;
-    this.process?.kill("SIGTERM");
+    if (this.process !== null) {
+      terminateManagedChildProcess(this.process);
+    }
     this.stopProgress();
     this.options.onPaused();
   }
@@ -82,7 +85,9 @@ export class CurlDownloadController {
       return;
     }
     this.canceled = true;
-    this.process?.kill("SIGTERM");
+    if (this.process !== null) {
+      terminateManagedChildProcess(this.process);
+    }
     this.stopProgress();
     this.options.onCanceled();
   }
@@ -93,7 +98,7 @@ export class CurlDownloadController {
       this.lastBytes = await getFileSize(this.options.savePath);
       this.lastProgressAt = Date.now();
       this.startProgress();
-      const child = spawn("curl", buildCurlArgs(this.options), {
+      const child = spawnManagedChildProcess("curl", buildCurlArgs(this.options), {
         stdio: ["ignore", "pipe", "pipe"]
       });
       this.process = child;

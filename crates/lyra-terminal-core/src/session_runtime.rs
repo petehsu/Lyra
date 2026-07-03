@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
@@ -19,14 +18,22 @@ use crate::memory;
 use crate::memory_writer::{TerminalMemoryTask, TerminalMemoryWriter};
 use crate::protocol::*;
 use crate::pty_io::{
-    compose_write_payload, normalize_terminal_cwd, spawn_io_threads, spawn_pty, SpawnedPty,
+    compose_write_payload, normalize_terminal_cwd, parse_exit_code, spawn_io_threads, spawn_pty,
+    SpawnedPty,
 };
 use crate::screen;
 use crate::shell_integration;
 use crate::shell_integration::ShellIntegrationEventKind;
+use crate::signals;
 use crate::{
     to_error, Result, DEFAULT_READ_MAX_BYTES, DEFAULT_READ_WAIT_MS, MAX_SESSION_BUFFER_BYTES,
 };
+
+const MAX_EXITED_SESSION_CACHE: usize = 32;
+const CLOSE_INTERRUPT_WAIT_MS: u64 = 250;
+const CLOSE_TERM_WAIT_MS: u64 = 750;
+const CLOSE_KILL_WAIT_MS: u64 = 750;
+const MEMORY_READ_FLUSH_WAIT_MS: u64 = 250;
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
 static SESSIONS: Lazy<Mutex<HashMap<String, Arc<SessionRuntime>>>> =
@@ -43,11 +50,13 @@ pub(crate) struct SessionRuntime {
     pub(crate) cols: u16,
     pub(crate) rows: u16,
     pub(crate) created_at: String,
+    created_at_instant: Instant,
     pub(crate) source: String,
     pub(crate) mode: String,
     pub(crate) command: Option<String>,
     pub(crate) persist: bool,
     pub(crate) storage_root: Option<String>,
+    pub(crate) process_id: Option<u32>,
     pub(crate) writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub(crate) master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub(crate) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
@@ -144,6 +153,105 @@ pub(crate) fn output_state(
         .map_err(|_| to_error("failed to lock session state"))
 }
 
+fn session_running(runtime: &SessionRuntime) -> Option<bool> {
+    runtime.state.0.lock().ok().map(|state| state.running)
+}
+
+fn wait_for_state_exit(state_handle: &SessionStateHandle, timeout: Duration) -> bool {
+    let (lock, condvar) = &**state_handle;
+    let Ok(mut state) = lock.lock() else {
+        return false;
+    };
+    if !state.running {
+        return true;
+    }
+    let deadline = Instant::now() + timeout;
+    while state.running {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let Ok((next_state, _)) =
+            condvar.wait_timeout(state, deadline.saturating_duration_since(now))
+        else {
+            return false;
+        };
+        state = next_state;
+    }
+    !state.running
+}
+
+fn refresh_child_exit(runtime: &SessionRuntime) -> bool {
+    if !session_running(runtime).unwrap_or(false) {
+        return false;
+    }
+    let Ok(mut child) = runtime.child.try_lock() else {
+        return true;
+    };
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            mark_session_exit(&runtime.state, parse_exit_code(status));
+            false
+        }
+        Ok(None) => true,
+        Err(_) => true,
+    }
+}
+
+fn send_named_signal(runtime: &SessionRuntime, name: &str) {
+    if !refresh_child_exit(runtime) {
+        return;
+    }
+    let Some(process_id) = runtime.process_id else {
+        return;
+    };
+    match name {
+        "SIGTERM" => lyra_process_lifecycle_core::terminate_process_tree(process_id, false),
+        "SIGKILL" => lyra_process_lifecycle_core::terminate_process_tree(process_id, true),
+        _ => {
+            if let Some(signal) = signals::parse_signal(name) {
+                let _ = signals::send_signal(process_id, &signal);
+            }
+        }
+    }
+}
+
+fn prune_exited_sessions_locked(sessions: &mut HashMap<String, Arc<SessionRuntime>>) {
+    let mut exited = sessions
+        .iter()
+        .filter_map(|(session_id, runtime)| {
+            if session_running(runtime)? {
+                return None;
+            }
+            Some((session_id.clone(), runtime.created_at_instant))
+        })
+        .collect::<Vec<_>>();
+    if exited.len() <= MAX_EXITED_SESSION_CACHE {
+        return;
+    }
+    exited.sort_by_key(|(_, created_at)| *created_at);
+    let excess = exited.len() - MAX_EXITED_SESSION_CACHE;
+    for (session_id, _) in exited.into_iter().take(excess) {
+        sessions.remove(&session_id);
+    }
+}
+
+fn prune_session_cache() {
+    if let Ok(mut sessions) = SESSIONS.lock() {
+        prune_exited_sessions_locked(&mut sessions);
+    }
+}
+
+fn handle_runtime_exit(_session_id: String) {
+    prune_session_cache();
+}
+
+fn flush_runtime_memory_writer(runtime: &SessionRuntime) {
+    if let Some(writer) = runtime.memory_writer.as_ref() {
+        writer.flush(Duration::from_millis(MEMORY_READ_FLUSH_WAIT_MS));
+    }
+}
+
 fn snapshot_from_runtime(runtime: &SessionRuntime) -> Result<TerminalSessionSnapshot> {
     let state = output_state(runtime)?;
     let current_cwd = runtime
@@ -237,28 +345,46 @@ fn snapshot_from_observed_runtime(
 }
 
 fn run_close_session(session_id: &str) {
-    let runtime = if let Ok(mut sessions) = SESSIONS.lock() {
-        sessions.remove(session_id)
+    let runtime = if let Ok(sessions) = SESSIONS.lock() {
+        sessions.get(session_id).cloned()
     } else {
         None
     };
 
     if let Some(runtime) = runtime {
-        if let Ok(state) = output_state(&runtime) {
-            if !state.running {
-                return;
+        if !refresh_child_exit(&runtime) {
+            if let Ok(mut sessions) = SESSIONS.lock() {
+                sessions.remove(session_id);
+                prune_exited_sessions_locked(&mut sessions);
             }
+            return;
         }
         if let Ok(mut writer) = runtime.writer.lock() {
             let _ = writer.write_all(&[3_u8]);
             let _ = writer.flush();
-        }
-        let child = Arc::clone(&runtime.child);
-        thread::spawn(move || {
-            if let Ok(mut child_guard) = child.lock() {
-                let _ = child_guard.kill();
+            if wait_for_state_exit(
+                &runtime.state,
+                Duration::from_millis(CLOSE_INTERRUPT_WAIT_MS),
+            ) {
+                if let Ok(mut sessions) = SESSIONS.lock() {
+                    sessions.remove(session_id);
+                    prune_exited_sessions_locked(&mut sessions);
+                }
+                return;
             }
-        });
+        }
+        if runtime.process_id.is_some() {
+            send_named_signal(&runtime, "SIGTERM");
+            if !wait_for_state_exit(&runtime.state, Duration::from_millis(CLOSE_TERM_WAIT_MS)) {
+                send_named_signal(&runtime, "SIGKILL");
+                let _ =
+                    wait_for_state_exit(&runtime.state, Duration::from_millis(CLOSE_KILL_WAIT_MS));
+            }
+        }
+        if let Ok(mut sessions) = SESSIONS.lock() {
+            sessions.remove(session_id);
+            prune_exited_sessions_locked(&mut sessions);
+        }
     }
 }
 
@@ -346,11 +472,13 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
         cols,
         rows,
         created_at: now_iso_like(),
+        created_at_instant: Instant::now(),
         source: source.clone(),
         mode: mode.clone(),
         command: command_text.clone(),
         persist,
         storage_root: storage_root.clone(),
+        process_id,
         writer: Arc::new(Mutex::new(writer)),
         master: Arc::new(Mutex::new(master)),
         child: Arc::new(Mutex::new(child)),
@@ -361,6 +489,7 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
 
     if let Ok(mut sessions) = SESSIONS.lock() {
         sessions.insert(session_id.clone(), Arc::clone(&runtime));
+        prune_exited_sessions_locked(&mut sessions);
     }
 
     let snapshot = snapshot_from_runtime(&runtime)?;
@@ -395,7 +524,7 @@ fn create_runtime(request: TerminalCreateRequest) -> Result<TerminalSessionSnaps
             correlation_json: request.correlation_json.clone(),
         });
     }
-    spawn_io_threads(session_id, runtime, reader);
+    spawn_io_threads(session_id, runtime, reader, Box::new(handle_runtime_exit));
     Ok(snapshot)
 }
 
@@ -519,11 +648,7 @@ pub(crate) fn runtime_for_session(session_id: &str) -> Option<Arc<SessionRuntime
 }
 
 pub(crate) fn runtime_process_id(runtime: &SessionRuntime) -> Option<u32> {
-    runtime
-        .child
-        .lock()
-        .ok()
-        .and_then(|child| child.process_id())
+    runtime.process_id
 }
 
 pub(crate) fn record_observer_input(request: TerminalObserverInputRequest) -> Result<()> {
@@ -979,6 +1104,7 @@ pub(crate) fn read_session(request: TerminalReadRequest) -> Result<TerminalReadR
     } else {
         "timeout"
     };
+    flush_runtime_memory_writer(&runtime);
     let memory = request
         .storage_root
         .as_deref()

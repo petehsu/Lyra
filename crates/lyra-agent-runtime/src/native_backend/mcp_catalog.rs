@@ -109,6 +109,7 @@ struct HttpMcpClient {
 
 impl Drop for StdioMcpClient {
     fn drop(&mut self) {
+        lyra_process_lifecycle_core::terminate_process_tree(self.child.id(), false);
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -128,14 +129,19 @@ impl StdioMcpClient {
                 server.id
             )));
         }
-        let mut child = Command::new(command)
+        let mut command_builder = Command::new(command);
+        command_builder
             .args(args)
             .envs(env)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        lyra_process_lifecycle_core::configure_daemon_child_command(&mut command_builder);
+        let mut child = command_builder
             .spawn()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let child_pid = child.id();
+        lyra_process_lifecycle_core::spawn_parent_death_watcher(child_pid, true);
         let stdin = child
             .stdin
             .take()

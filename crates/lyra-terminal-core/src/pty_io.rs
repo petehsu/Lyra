@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
@@ -20,6 +22,8 @@ use crate::shell::{
 use crate::shell_integration;
 use crate::shell_integration::ShellIntegrationEventKind;
 use crate::{to_error, Result};
+
+const EXIT_READER_DRAIN_WAIT_MS: u64 = 1_000;
 
 pub(crate) struct SpawnedPty {
     pub(crate) shell: String,
@@ -70,7 +74,6 @@ pub(crate) fn spawn_pty(
             configure_command_mode(&mut builder, &shell, command);
         }
         apply_requested_env(&mut builder, env);
-
         let child = match pair.slave.spawn_command(builder) {
             Ok(v) => v,
             Err(error) => {
@@ -79,6 +82,9 @@ pub(crate) fn spawn_pty(
             }
         };
         let process_id = child.process_id();
+        if let Some(process_id) = process_id {
+            lyra_process_lifecycle_core::spawn_parent_death_watcher(process_id, true);
+        }
 
         let writer = pair
             .master
@@ -102,7 +108,7 @@ pub(crate) fn spawn_pty(
     Err(to_error(format!("failed to spawn shell: {spawn_error}")))
 }
 
-fn parse_exit_code(status: portable_pty::ExitStatus) -> i32 {
+pub(crate) fn parse_exit_code(status: portable_pty::ExitStatus) -> i32 {
     if let Some(code) = status.code() {
         return code;
     }
@@ -120,6 +126,7 @@ pub(crate) fn spawn_io_threads(
     session_id: String,
     runtime: Arc<SessionRuntime>,
     mut reader: Box<dyn Read + Send>,
+    on_exit: Box<dyn FnOnce(String) + Send>,
 ) {
     let session_id_for_reader = session_id.clone();
     let source_for_reader = runtime.source.clone();
@@ -128,6 +135,8 @@ pub(crate) fn spawn_io_threads(
     let screen_for_reader = Arc::clone(&runtime.screen);
     let current_cwd_for_reader = Arc::clone(&runtime.current_cwd);
     let memory_writer_for_reader = runtime.memory_writer.clone();
+    let reader_done = Arc::new(AtomicBool::new(false));
+    let reader_done_for_reader = Arc::clone(&reader_done);
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
         let mut shell_parser = shell_integration::ShellIntegrationParser::new();
@@ -156,6 +165,15 @@ pub(crate) fn spawn_io_threads(
                 Ok(size) => {
                     let chunk = &buffer[..size];
                     let shell_events = shell_parser.feed(chunk);
+                    if let Some(writer) = memory_writer_for_reader.as_ref() {
+                        for event in shell_events
+                            .iter()
+                            .filter(|event| event.kind != ShellIntegrationEventKind::CommandEnd)
+                        {
+                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
+                        }
+                        writer.enqueue(TerminalMemoryTask::Output(chunk.to_vec()));
+                    }
                     append_output(&state_for_reader, chunk);
                     let data = event_decoder.decode(chunk);
                     if !data.is_empty() {
@@ -197,13 +215,6 @@ pub(crate) fn spawn_io_threads(
                     if let Some(writer) = memory_writer_for_reader.as_ref() {
                         for event in shell_events
                             .iter()
-                            .filter(|event| event.kind != ShellIntegrationEventKind::CommandEnd)
-                        {
-                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
-                        }
-                        writer.enqueue(TerminalMemoryTask::Output(chunk.to_vec()));
-                        for event in shell_events
-                            .iter()
                             .filter(|event| event.kind == ShellIntegrationEventKind::CommandEnd)
                         {
                             writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
@@ -237,24 +248,29 @@ pub(crate) fn spawn_io_threads(
                 }
             }
         }
+        reader_done_for_reader.store(true, Ordering::Release);
     });
 
     let source_for_exit = runtime.source.clone();
     let mode_for_exit = runtime.mode.clone();
     let state_for_exit = Arc::clone(&runtime.state);
     let memory_writer_for_exit = runtime.memory_writer.clone();
+    let child_for_exit = Arc::clone(&runtime.child);
+    let reader_done_for_exit = Arc::clone(&reader_done);
     thread::spawn(move || {
-        let exit_code = if let Ok(mut child) = runtime.child.lock() {
+        let exit_code = if let Ok(mut child) = child_for_exit.lock() {
             child.wait().ok().map(parse_exit_code).unwrap_or(1)
         } else {
             1
         };
 
+        wait_for_reader_drain(&reader_done_for_exit);
         if let Some(writer) = memory_writer_for_exit.as_ref() {
             writer.enqueue(TerminalMemoryTask::Exit(exit_code));
         }
         mark_session_exit(&state_for_exit, exit_code);
 
+        let session_id_for_callback = session_id.clone();
         emit_event(NativeEvent {
             kind: "exit".to_string(),
             session_id,
@@ -268,7 +284,15 @@ pub(crate) fn spawn_io_threads(
             command_id: None,
             command: None,
         });
+        on_exit(session_id_for_callback);
     });
+}
+
+fn wait_for_reader_drain(reader_done: &AtomicBool) {
+    let deadline = Instant::now() + Duration::from_millis(EXIT_READER_DRAIN_WAIT_MS);
+    while !reader_done.load(Ordering::Acquire) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn apply_shell_cwd(command: &mut CommandBuilder, cwd: Option<&str>) {
