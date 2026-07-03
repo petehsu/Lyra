@@ -60,34 +60,36 @@ export type NativeWorkbenchCollectedFilePath = {
 };
 
 export type FilesNativeBindings = {
-  readonly readHome: (request: StorageRootRequest) => FileManagerReadHomeResponse;
-  readonly readDirectory: (request: NativeReadDirectoryRequest) => FileManagerReadDirectoryResponse;
+  readonly readHome: (request: StorageRootRequest) => Promise<FileManagerReadHomeResponse>;
+  readonly readDirectory: (request: NativeReadDirectoryRequest) => Promise<FileManagerReadDirectoryResponse>;
   readonly subscribeDirectory: (
     request: NativeSubscribeDirectoryRequest
-  ) => FileManagerSubscribeDirectoryResponse;
-  readonly unsubscribeDirectory: (request: NativeUnsubscribeDirectoryRequest) => boolean;
-  readonly pollDirectoryPatches: () => readonly FileManagerDirectoryPatch[];
-  readonly readTrash: (request: StorageRootRequest) => FileManagerReadTrashResponse;
-  readonly createFile: (request: NativeCreateFileRequest) => FileManagerDirectoryMutationResponse;
-  readonly createFolder: (request: NativeCreateFolderRequest) => FileManagerDirectoryMutationResponse;
-  readonly moveToTrash: (request: NativeMoveToTrashRequest) => void;
-  readonly restoreFromTrash: (request: NativeRestoreFromTrashRequest) => void;
-  readonly emptyTrash: (request: StorageRootRequest) => void;
-  readonly mountDevice: (request: NativeMountDeviceRequest) => FileManagerMountDeviceResult;
-  readonly ejectDevice: (request: NativeEjectDeviceRequest) => FileManagerEjectDeviceResult;
-  readonly readFavorites: (request: StorageRootRequest) => FileManagerFavoritesPayload;
-  readonly writeFavorites: (request: StorageRootRequest & FileManagerFavoritesPayload) => FileManagerFavoritesPayload;
-  readonly readRecentLocations: (request: StorageRootRequest) => FileManagerRecentLocationsPayload;
-  readonly writeRecentLocations: (request: StorageRootRequest & FileManagerRecentLocationsPayload) => FileManagerRecentLocationsPayload;
-  readonly readTextFile: (request: NativeReadTextFileRequest) => FileReadResult;
-  readonly writeTextFile: (request: NativeWriteTextFileRequest) => FileWriteResult;
-  readonly statFile: (request: NativeStatFileRequest) => FileStatResult;
+  ) => Promise<FileManagerSubscribeDirectoryResponse>;
+  readonly unsubscribeDirectory: (request: NativeUnsubscribeDirectoryRequest) => Promise<boolean>;
+  readonly pollDirectoryPatches: () => Promise<readonly FileManagerDirectoryPatch[]>;
+  readonly readTrash: (request: StorageRootRequest) => Promise<FileManagerReadTrashResponse>;
+  readonly createFile: (request: NativeCreateFileRequest) => Promise<FileManagerDirectoryMutationResponse>;
+  readonly createFolder: (request: NativeCreateFolderRequest) => Promise<FileManagerDirectoryMutationResponse>;
+  readonly moveToTrash: (request: NativeMoveToTrashRequest) => Promise<void>;
+  readonly restoreFromTrash: (request: NativeRestoreFromTrashRequest) => Promise<void>;
+  readonly emptyTrash: (request: StorageRootRequest) => Promise<void>;
+  readonly mountDevice: (request: NativeMountDeviceRequest) => Promise<FileManagerMountDeviceResult>;
+  readonly ejectDevice: (request: NativeEjectDeviceRequest) => Promise<FileManagerEjectDeviceResult>;
+  readonly readFavorites: (request: StorageRootRequest) => Promise<FileManagerFavoritesPayload>;
+  readonly writeFavorites: (request: StorageRootRequest & FileManagerFavoritesPayload) => Promise<FileManagerFavoritesPayload>;
+  readonly readRecentLocations: (request: StorageRootRequest) => Promise<FileManagerRecentLocationsPayload>;
+  readonly writeRecentLocations: (
+    request: StorageRootRequest & FileManagerRecentLocationsPayload
+  ) => Promise<FileManagerRecentLocationsPayload>;
+  readonly readTextFile: (request: NativeReadTextFileRequest) => Promise<FileReadResult>;
+  readonly writeTextFile: (request: NativeWriteTextFileRequest) => Promise<FileWriteResult>;
+  readonly statFile: (request: NativeStatFileRequest) => Promise<FileStatResult>;
   readonly probeWorkbenchPath: (
     request: NativeWorkbenchPathProbeRequest
-  ) => NativeWorkbenchPathProbeResult;
+  ) => Promise<NativeWorkbenchPathProbeResult>;
   readonly collectWorkbenchFilePaths: (
     request: NativeWorkbenchCollectFilePathsRequest
-  ) => readonly NativeWorkbenchCollectedFilePath[];
+  ) => Promise<readonly NativeWorkbenchCollectedFilePath[]>;
 };
 
 export type FilesNativeLoadResult =

@@ -8,7 +8,7 @@ import type {
 } from "../files/types";
 
 export type WorkbenchFsPort = {
-  readonly probePath: (value: string | undefined) => NativeWorkbenchPathProbeResult | undefined;
+  readonly probePath: (value: string | undefined) => Promise<NativeWorkbenchPathProbeResult | undefined>;
   readonly collectFilePaths: (
     rootPath: string,
     basePath?: string
@@ -20,7 +20,7 @@ const toPathCandidate = (value: string): string => path.resolve(value);
 export const createWorkbenchFsPort = (
   nativeBindings: FilesNativeBindings
 ): WorkbenchFsPort => ({
-  probePath: (value) => {
+  probePath: async (value) => {
     const trimmed = value?.trim();
     if (trimmed === undefined || trimmed.length === 0) {
       return undefined;
@@ -30,7 +30,7 @@ export const createWorkbenchFsPort = (
   collectFilePaths: async (rootPath, basePath) => {
     const trimmedRootPath = rootPath.trim();
     const trimmedBasePath = basePath?.trim();
-    const result = nativeBindings.collectWorkbenchFilePaths({
+    const result = await nativeBindings.collectWorkbenchFilePaths({
       rootPath: trimmedRootPath,
       ...(trimmedBasePath === undefined || trimmedBasePath.length === 0
         ? {}
