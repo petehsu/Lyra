@@ -16,6 +16,7 @@ pub mod prompt_policy;
 mod prompt_templates;
 pub mod protocol_contract;
 pub mod provider_service;
+mod recovering_mutex;
 pub mod recovery_service;
 pub mod retention_policy;
 pub mod session_service;
@@ -26,9 +27,10 @@ pub mod turn_runner;
 
 use lyra_agent_plugins::SkillRegistry;
 use serde_json::Value;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use thiserror::Error;
 
+use crate::recovering_mutex::RecoveringMutex as Mutex;
 pub use native_backend::LyraAgentBackend;
 
 pub type EventCallback = dyn Fn(String) + Send + Sync + 'static;

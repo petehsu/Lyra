@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -26,6 +26,7 @@ use crate::{
     HostCapabilityDispatcher, ProviderTransportKind,
     context_builder::{ContextBuilder, ProviderContextOptions},
     prompt_policy::{self, PersonaContext, PromptAccounting, PromptPolicyInput},
+    recovering_mutex::RecoveringMutex as Mutex,
 };
 
 const DEFAULT_TOOL_CONTENT_CHARS: usize = 16_000;

@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     mpsc::{self, Receiver, Sender},
 };
 
@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::BackendHandle;
 use crate::agent_event::AgentEvent;
+use crate::recovering_mutex::RecoveringMutex as Mutex;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeEventBus {
