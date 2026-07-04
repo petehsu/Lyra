@@ -31,27 +31,27 @@ function CodegraphStatusRow({ status }: { status: AgentCodegraphStatus | null })
   return (
     <div
       className="lyra-agents-codegraph-status-row"
+      data-state={status.state}
       title={title}
-      style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", fontSize: 12, opacity: 0.85 }}
     >
       {status.state === "idle" ? (
         <>
-          <CircleAlert size={12} style={{ color: "var(--app-color-muted, #9ca3af)" }} aria-hidden="true" />
+          <CircleAlert size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
           <span>{t("header.codegraphIdle")}</span>
         </>
       ) : status.state === "indexing" ? (
         <>
-          <Loader2 size={12} className="lyra-agents-codegraph-spinner" style={{ animation: "spin 1s linear infinite" }} aria-hidden="true" />
+          <Loader2 size={12} className="lyra-agents-codegraph-status-icon lyra-agents-codegraph-spinner" aria-hidden="true" />
           <span>{formatMessage("header.codegraphIndexing", { progress: pct })}</span>
         </>
       ) : status.state === "ready" ? (
         <>
-          <CheckCircle size={12} style={{ color: "var(--app-color-success, #22c55e)" }} aria-hidden="true" />
+          <CheckCircle size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
           <span>{formatMessage("header.codegraphReady", { fileCount: status.fileCount ?? 0 })}</span>
         </>
       ) : status.state === "failed" ? (
         <>
-          <CircleAlert size={12} style={{ color: "var(--app-color-error, #ef4444)" }} aria-hidden="true" />
+          <CircleAlert size={12} className="lyra-agents-codegraph-status-icon" aria-hidden="true" />
           <span>{t("header.codegraphFailed")}</span>
         </>
       ) : null}

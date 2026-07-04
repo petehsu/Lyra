@@ -256,4 +256,6 @@ export type SettingsAiModel = {
   ) => Promise<AgentAccountLoginCompleteResponse | null>;
   readonly switchAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
   readonly removeAgentAccount?: (request: AgentAccountRequest) => Promise<void>;
+  // Open verification URL in a workbench browser tab instead of Electron window
+  readonly openPageInNewTab?: (url: string, title?: string) => void;
 };

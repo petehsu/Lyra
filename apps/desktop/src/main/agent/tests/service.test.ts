@@ -480,6 +480,13 @@ describe("Agent IPC bridge", () => {
       tab: tabs.tabs[0],
       observation: expect.objectContaining({ kind: "tab-summary" })
     });
+    await expect(registered.get("workbench.readTab")?.({})).resolves.toEqual({
+      tab: tabs.tabs[0],
+      observation: expect.objectContaining({ kind: "tab-summary" })
+    });
+    expect(observationService.readTab).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tabId: "settings-1" })
+    );
     await expect(registered.get("workbench.readWorkspace")?.({ detail: "summary" })).resolves.toEqual({
       layoutMode: "single",
       activeTabId: "settings-1",
@@ -489,10 +496,19 @@ describe("Agent IPC bridge", () => {
     await expect(registered.get("workbench.extractTabText")?.({ tabId: "settings-1" })).resolves.toEqual(
       expect.objectContaining({ text: "settings" })
     );
+    await expect(registered.get("workbench.extractTabText")?.({})).resolves.toEqual(
+      expect.objectContaining({ text: "settings" })
+    );
+    expect(observationService.extractTabText).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tabId: "settings-1" })
+    );
     await expect(registered.get("workbench.activateTab")?.({ tabId: "settings-1" })).resolves.toEqual({
       tabId: "settings-1",
       activeTabId: "settings-1"
     });
+    await expect(registered.get("workbench.closeTab")?.({})).rejects.toThrow(
+      "tabId must be a non-empty string"
+    );
 
     bridge.dispose();
   });

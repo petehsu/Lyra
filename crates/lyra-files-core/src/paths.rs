@@ -193,3 +193,65 @@ pub fn folder_state_from_path(path: &Path) -> String {
         Err(_) => "unknown".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lexical_normalize_removes_current_and_parent_segments() {
+        let normalized = lexical_normalize_path(Path::new("/tmp/lyra/./project/../file.txt"));
+
+        assert_eq!(normalized, PathBuf::from("/tmp/lyra/file.txt"));
+    }
+
+    #[test]
+    fn normalize_name_rejects_path_separators() {
+        assert!(normalize_name("notes.md").is_ok());
+        assert!(normalize_name("../secret").is_err());
+        assert!(normalize_name("folder\\secret").is_err());
+    }
+
+    #[test]
+    fn location_keys_normalize_slashes() {
+        assert_eq!(
+            location_path_key(Path::new("folder\\child\\file.txt")),
+            "folder/child/file.txt"
+        );
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn location_keys_fold_case_on_case_insensitive_platforms() {
+        assert_eq!(
+            location_path_key(Path::new("/Users/Tester/Project/File.TXT")),
+            "/users/tester/project/file.txt"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_directory_keys_normalize_drive_letters_and_segments() {
+        let key = directory_key(Path::new(r"C:\Users\Tester\..\Project\.\File.TXT"));
+
+        assert_eq!(key, "c:/users/project/file.txt");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_directory_keys_normalize_unc_paths() {
+        let key = directory_key(Path::new(r"\\Server\Share\Folder\File.TXT"));
+
+        assert_eq!(key, "//server/share/folder/file.txt");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_verbatim_paths_are_slash_normalized_and_case_folded() {
+        let key = directory_key(Path::new(r"\\?\C:\Users\Tester\File.TXT"));
+
+        assert!(!key.contains('\\'));
+        assert_eq!(key, key.to_lowercase());
+        assert!(key.contains("file.txt"));
+    }
+}

@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ExternalLink, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, DragEvent as ReactDragEvent } from "react";
 
@@ -10,6 +10,7 @@ import {
   AppSearchField,
   AppSelect,
   AppStatusMessage,
+  AppSubPageBack,
   AppSwitch,
   AppTextarea
 } from "@renderer/ui/components";
@@ -1552,7 +1553,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     ? false
     : !selectedProviderRoute.authKind.startsWith("none");
   const renderedModels = useMemo<readonly SettingsAiRenderedModelEntry[]>(() =>
-    (model.agentModelCatalog?.models ?? []).filter((entry) => entry.available),
+    (model.agentModelCatalog?.models ?? [])
+      .filter((entry) => entry.available),
   [model.agentModelCatalog?.models]);
   const hasConfiguredModels = renderedModels.length > 0;
 
@@ -2142,10 +2144,10 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           </div>
         ) : null}
 
-        {hasConfiguredModels && !isProviderSearchMode && drilledProviderGroup === null && filteredProviderGroups.length > 0 ? (
+        {!isAddingModel && drilledProviderGroup === null ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface">
             <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
-              {filteredProviderGroups.map((group) => {
+              {hasConfiguredModels ? filteredProviderGroups.map((group) => {
                 const allEnabled = group.entries.length > 0 && group.entries.every((entry) => entry.enabled);
                 const someEnabled = group.entries.some((entry) => entry.enabled);
                 const firstEntry = group.entries[0] ?? null;
@@ -2199,27 +2201,22 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     )}
                   />
                 );
-              })}
+              })
+              : null}
             </div>
           </div>
         ) : null}
 
-        {hasConfiguredModels && !isProviderSearchMode && drilledProviderGroup !== null ? (
+        {hasConfiguredModels && !isAddingModel && drilledProviderGroup !== null ? (
           <div className="lyra-settings-ai-model-flow lyra-settings-ai-models-surface lyra-settings-ai-provider-drill-in">
-            <AppButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="lyra-settings-ai-provider-back"
+            <AppSubPageBack
+              label={drilledProviderGroup.label}
               onClick={() => {
                 setDrilledProviderKey(null);
                 setQuery("");
                 setShowAllModels(false);
               }}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-              {drilledProviderGroup.label}
-            </AppButton>
+            />
             <div className="lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
               {visibleDrilledModels.map((entry) => {
                 const active = isCurrentModelEntry(entry, model, config);

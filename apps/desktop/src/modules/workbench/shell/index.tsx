@@ -379,7 +379,8 @@ resolvedThemeId,
     fileManagerModel,
     fileEditorModel,
     labels,
-    onOpenAgentConfigFile
+    onOpenAgentConfigFile,
+    onOpenSite: tabsModel.openPageInNewTab,
   });
   const settingsSurfaceProps = useWorkbenchSettingsSurfaceProps({
     labels,

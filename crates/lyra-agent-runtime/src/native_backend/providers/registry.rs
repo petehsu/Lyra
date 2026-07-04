@@ -40,6 +40,18 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::llama_cpp_server::descriptor(),
         routes::vllm::descriptor(),
     ]);
+    routes.extend([
+        routes::xai::descriptor(),
+        routes::mistral::descriptor(),
+        routes::groq::descriptor(),
+        routes::cerebras::descriptor(),
+        routes::cohere::descriptor(),
+        routes::togetherai::descriptor(),
+        routes::perplexity::descriptor(),
+        routes::alibaba::descriptor(),
+        routes::deepinfra::descriptor(),
+        routes::venice::descriptor(),
+    ]);
     routes
 }
 
@@ -104,6 +116,16 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "kimi" | "moonshot" => Some(routes::moonshot::ROUTE_ID),
         "nvidia" | "nim" => Some(routes::nvidia::ROUTE_ID),
         "ollama_cloud" | "ollama-cloud" => Some(routes::ollama::CLOUD_ROUTE_ID),
+        "xai" | "grok" => Some(routes::xai::ROUTE_ID),
+        "mistral" => Some(routes::mistral::ROUTE_ID),
+        "groq" => Some(routes::groq::ROUTE_ID),
+        "cerebras" => Some(routes::cerebras::ROUTE_ID),
+        "cohere" => Some(routes::cohere::ROUTE_ID),
+        "togetherai" | "together" => Some(routes::togetherai::ROUTE_ID),
+        "perplexity" => Some(routes::perplexity::ROUTE_ID),
+        "alibaba" | "dashscope" | "qwen" => Some(routes::alibaba::ROUTE_ID),
+        "deepinfra" => Some(routes::deepinfra::ROUTE_ID),
+        "venice" => Some(routes::venice::ROUTE_ID),
         _ => None,
     }
 }

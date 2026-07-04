@@ -83,6 +83,7 @@ export {
   type AppSidebarProps,
   type AppSidebarSectionProps
 } from "./app-sidebar";
+export { AppSubPageBack, type AppSubPageBackProps } from "./app-sub-page-back";
 export { AppSelect, type AppSelectOption, type AppSelectProps } from "./app-select";
 export { AppSettingsRow, type AppSettingsRowProps } from "./app-settings-row";
 export { AppSettingsSection, type AppSettingsSectionProps } from "./app-settings-section";

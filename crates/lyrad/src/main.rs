@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::env;
 #[cfg(windows)]
 use std::ffi::c_void;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::fs::{File, OpenOptions};
 #[cfg(unix)]
 use std::io;
@@ -20,7 +20,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream as StdUnixStream;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::path::{Path, PathBuf};
 #[cfg(any(unix, windows))]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,7 +29,7 @@ use std::sync::{mpsc as std_mpsc, Arc, Mutex};
 #[cfg(any(unix, windows))]
 use std::time::Duration;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use fs2::FileExt;
 #[cfg(any(unix, windows))]
 use lyra_agent_runtime::{
@@ -293,6 +293,71 @@ fn chmod_path(path: &Path, mode: u32) -> io::Result<()> {
     std::fs::set_permissions(path, permissions)
 }
 
+#[cfg(windows)]
+struct WindowsRuntimeGuard {
+    lock_file: File,
+}
+
+#[cfg(windows)]
+impl Drop for WindowsRuntimeGuard {
+    fn drop(&mut self) {
+        let _ = self.lock_file.unlock();
+    }
+}
+
+#[cfg(windows)]
+fn windows_runtime_lock_path(pipe_name: &str) -> PathBuf {
+    let sanitized = pipe_name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>();
+    std::env::temp_dir()
+        .join("lyra-runtime")
+        .join(format!("{sanitized}.lock"))
+}
+
+#[cfg(windows)]
+fn acquire_windows_runtime_guard(pipe_name: &str) -> WindowsRuntimeGuard {
+    let lock_path = windows_runtime_lock_path(pipe_name);
+    if let Some(parent) = lock_path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "failed to create runtime lock directory {}: {error}",
+                parent.display()
+            );
+            std::process::exit(1);
+        }
+    }
+    let lock_file = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!(
+                "failed to open runtime lock {}: {error}",
+                lock_path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+    match lock_file.try_lock_exclusive() {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+            eprintln!("{RUNTIME_NAME} is already running for pipe {pipe_name}");
+            std::process::exit(0);
+        }
+        Err(error) => {
+            eprintln!("failed to lock runtime pipe {pipe_name}: {error}");
+            std::process::exit(1);
+        }
+    }
+    WindowsRuntimeGuard { lock_file }
+}
+
 #[cfg(unix)]
 fn acquire_unix_runtime_guard(socket_path: &Path) -> UnixRuntimeGuard {
     let Some(parent) = socket_path.parent() else {
@@ -492,6 +557,7 @@ async fn run_unix_runtime() {
 async fn run_windows_runtime() {
     let _job_guard = lyra_process_lifecycle_core::install_windows_kill_on_close_job().ok();
     let pipe_name = resolve_pipe_name();
+    let _guard = acquire_windows_runtime_guard(&pipe_name);
     let mut pipe_security = match WindowsPipeSecurity::current_user() {
         Ok(security) => security,
         Err(error) => {
@@ -1015,6 +1081,25 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o700);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_runtime_lock_path_is_stable_for_pipe_name() {
+        let path = crate::windows_runtime_lock_path(r"\\.\pipe\lyra-runtime-test");
+
+        assert!(path.to_string_lossy().contains("lyra-runtime"));
+        assert!(path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|name| name.ends_with(".lock") && !name.contains('\\')));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_pipe_security_descriptor_can_be_created_for_current_user() {
+        let _security =
+            crate::WindowsPipeSecurity::current_user().expect("current-user pipe security");
     }
 
     #[test]

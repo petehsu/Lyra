@@ -1,4 +1,17 @@
 use super::*;
+use std::time::Instant;
+
+const DEFAULT_PERMISSION_WAIT_TIMEOUT_MS: u64 = 10 * 60 * 1000;
+const PERMISSION_WAIT_POLL_MS: u64 = 25;
+
+fn permission_wait_timeout() -> Duration {
+    std::env::var("LYRA_PERMISSION_WAIT_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| Duration::from_millis(DEFAULT_PERMISSION_WAIT_TIMEOUT_MS))
+}
 
 pub(crate) fn permission_request_for_tool(
     session_id: &str,
@@ -391,9 +404,26 @@ pub(crate) fn wait_for_permission_with_cancellation(
     wait_for_permission_internal(request, Some(cancellation))
 }
 
+#[cfg(test)]
+pub(crate) fn wait_for_permission_with_timeout_for_tests(
+    request: PermissionRequest,
+    cancellation: &Arc<AtomicBool>,
+    timeout: Duration,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal_with_timeout(request, Some(cancellation), timeout)
+}
+
 fn wait_for_permission_internal(
     request: PermissionRequest,
     cancellation: Option<&Arc<AtomicBool>>,
+) -> AgentRuntimeResult<bool> {
+    wait_for_permission_internal_with_timeout(request, cancellation, permission_wait_timeout())
+}
+
+fn wait_for_permission_internal_with_timeout(
+    request: PermissionRequest,
+    cancellation: Option<&Arc<AtomicBool>>,
+    timeout: Duration,
 ) -> AgentRuntimeResult<bool> {
     let request_id = request.id.clone();
     let session_id = request.session_id.clone();
@@ -455,7 +485,13 @@ fn wait_for_permission_internal(
         emit_with_callback(&callback, event);
     }
 
-    wait_for_permission_decision_with_cancellation(&session_id, &turn_id, &request_id, cancellation)
+    wait_for_permission_decision_with_timeout(
+        &session_id,
+        &turn_id,
+        &request_id,
+        cancellation,
+        timeout,
+    )
 }
 
 pub(crate) fn wait_for_permission_decision_with_cancellation(
@@ -464,7 +500,24 @@ pub(crate) fn wait_for_permission_decision_with_cancellation(
     request_id: &str,
     cancellation: Option<&Arc<AtomicBool>>,
 ) -> AgentRuntimeResult<bool> {
-    for _ in 0..24_000 {
+    wait_for_permission_decision_with_timeout(
+        session_id,
+        turn_id,
+        request_id,
+        cancellation,
+        permission_wait_timeout(),
+    )
+}
+
+fn wait_for_permission_decision_with_timeout(
+    session_id: &str,
+    turn_id: &str,
+    request_id: &str,
+    cancellation: Option<&Arc<AtomicBool>>,
+    timeout: Duration,
+) -> AgentRuntimeResult<bool> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
         if cancellation.is_some_and(|cancellation| cancellation.load(Ordering::SeqCst))
             || turn_was_cancelled(session_id, turn_id)
         {
@@ -481,8 +534,9 @@ pub(crate) fn wait_for_permission_decision_with_cancellation(
             state.save_state()?;
             return Ok(allowed);
         }
-        thread::sleep(Duration::from_millis(25));
+        thread::sleep(Duration::from_millis(PERMISSION_WAIT_POLL_MS));
     }
+    remove_pending_permission(request_id)?;
     Err(AgentRuntimeError::Core(
         "permission request timed out".to_string(),
     ))

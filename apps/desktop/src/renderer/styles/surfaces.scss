@@ -6364,15 +6364,8 @@
   background: color-mix(in srgb, var(--lyra-app-border) 40%, transparent);
 }
 
-.lyra-settings-ai-provider-group-row .lyra-settings-ai-model-actions {
-  opacity: 0;
-  transition: opacity 140ms ease;
-}
+// ponytail: 删掉整行 hover 隐藏——开关常显，只有 .lyra-settings-ai-row-delete（删除按钮）受全局 hover 规则控制
 
-.lyra-settings-ai-provider-group-row:hover .lyra-settings-ai-model-actions,
-.lyra-settings-ai-provider-group-row:focus-within .lyra-settings-ai-model-actions {
-  opacity: 1;
-}
 
 .lyra-settings-ai-provider-drill-in {
   gap: var(--lyra-space-8);
@@ -6389,3 +6382,4 @@
 .lyra-settings-ai-provider-back:hover {
   color: var(--lyra-text-primary);
 }
+

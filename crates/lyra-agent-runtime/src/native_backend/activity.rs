@@ -505,6 +505,9 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
 }
 
 fn tool_ui_message_id(session_id: &str, turn_id: &str, tool: &Value) -> Option<String> {
+    if tool.get("name").and_then(Value::as_str) == Some("clarification") {
+        return None;
+    }
     crate::native_backend::turns::active_ui_message_id(session_id, turn_id).or_else(|| {
         (tool.get("status").and_then(Value::as_str) == Some("running"))
             .then(|| {

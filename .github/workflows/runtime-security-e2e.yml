@@ -1,0 +1,58 @@
+name: Runtime Security E2E
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  runtime-security-e2e:
+    name: runtime-security-e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev xvfb
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run runtime and path Rust tests
+        run: cargo test -p lyra-files-core -p lyrad
+
+      - name: Run Tool-FS catalog tests
+        run: cargo test -p lyra-tool-fs-core
+
+      - name: Run permission timeout regression
+        run: cargo test -p lyra-agent-runtime permission
+
+      - name: Run desktop runtime/security tests
+        run: pnpm --filter @lyra/desktop test -- runtime-client security
+
+      - name: Build desktop shell for E2E
+        run: pnpm --filter @lyra/desktop exec electron-vite build
+
+      - name: Run Electron E2E smoke
+        if: runner.os != 'Linux'
+        run: pnpm --filter @lyra/desktop test:e2e
+
+      - name: Run Electron E2E smoke (xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm --filter @lyra/desktop test:e2e

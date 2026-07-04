@@ -34,6 +34,7 @@
     "i18n:export": "python3 ../../tools/i18n-export.py",
     "i18n:import": "python3 ../../tools/i18n-import.py",
     "test": "vitest run",
+    "test:e2e": "node e2e/runtime-smoke.mjs",
     "test:watch": "vitest",
     "icon:app": "node --import tsx ../../scripts/desktop/generate-app-icons.ts",
     "icon:mac": "npm run icon:app"

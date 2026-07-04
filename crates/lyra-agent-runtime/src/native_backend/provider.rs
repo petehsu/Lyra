@@ -17,7 +17,6 @@ const MAX_CONTINUATION_RETRIES: u8 = 4;
 /// attempted when the route's parser confirms nothing was committed; a
 /// mid-stream failure after a committed delta is never replayed.
 const MAX_STREAM_TRANSPORT_RETRIES: u8 = 2;
-const MAX_MODEL_LOOP_STEPS: u32 = 60;
 const MAX_PROVIDER_IMAGE_TOOL_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_TOKENS_CONTINUATION_PROMPT: &str = "Previous response was cut off by output token limit, not finished. Continue the same response exactly where it stopped. Do not repeat, restart, apologize, or re-introduce. Output only continuation.";
 const MAX_TOKENS_EXHAUSTED_VISIBLE_NOTE: &str =
@@ -295,31 +294,12 @@ pub(crate) fn run_model_loop(
     let mut transient_provider_retries = 0_u8;
     let mut continuation_retries = 0_u8;
     let mut truncated_prefix: Option<String> = None;
-    let mut loop_steps = 0_u32;
     let mut progress_guard = ModelLoopProgressGuard::default();
     let mut provider_transcript = Vec::new();
     let mut provider_replay_items = Vec::new();
     loop {
         if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
-        }
-        loop_steps = loop_steps.saturating_add(1);
-        if loop_steps > MAX_MODEL_LOOP_STEPS {
-            return synthesize_after_progress_guard(
-                session_id,
-                turn_id,
-                &request,
-                messages,
-                provider_transcript,
-                cancellation,
-                "max_model_loop_steps",
-                MAX_MODEL_LOOP_STEPS as usize,
-            )
-            .or_else(|_| {
-                Err(AgentRuntimeError::Core(format!(
-                    "Maximum model loop steps ({MAX_MODEL_LOOP_STEPS}) exhausted before the assistant produced a final answer."
-                )))
-            });
         }
         emit_turn_state(
             session_id,

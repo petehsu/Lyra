@@ -5133,7 +5133,7 @@
   font: inherit;
   font-size: var(--lyra-text-size-14);
   padding: var(--lyra-space-10) var(--lyra-space-10);
-  line-height: 1.55;
+  line-height: var(--lyra-text-line-24);
   min-height: calc(var(--lyra-space-64) + var(--lyra-space-8));
   max-height: calc((var(--lyra-space-64) + var(--lyra-space-8)) * 4);
   box-shadow: none;
@@ -5162,22 +5162,22 @@
 }
 
 .lyra-agents-citation-chip {
-  --lyra-agents-citation-chip-bg: color-mix(in srgb, var(--lyra-text-secondary) 10%, var(--lyra-app-surface-strong-bg));
-  --lyra-agents-citation-chip-border: color-mix(in srgb, var(--lyra-text-secondary) 28%, transparent);
+  --lyra-agents-citation-chip-bg: color-mix(in srgb, var(--lyra-text-secondary) 7%, transparent);
+  --lyra-agents-citation-chip-border: color-mix(in srgb, var(--lyra-text-secondary) 22%, transparent);
   display: inline-flex;
   align-items: center;
-  gap: var(--lyra-space-4);
-  max-width: min(13.5rem, 100%);
-  min-height: calc(var(--lyra-space-14) + var(--lyra-space-4));
-  margin: 0 var(--lyra-space-1);
-  padding: var(--lyra-space-2) var(--lyra-space-6);
-  border-radius: var(--lyra-radius-pill);
+  gap: var(--lyra-space-2);
+  max-width: min(11.5rem, 100%);
+  min-height: var(--lyra-space-20);
+  margin: var(--lyra-space-1) var(--lyra-space-1);
+  padding: 0 var(--lyra-space-6);
+  border-radius: var(--lyra-radius-6);
   border: var(--lyra-stroke-thin) solid var(--lyra-agents-citation-chip-border);
   background: var(--lyra-agents-citation-chip-bg);
   color: var(--lyra-text-primary);
   font-size: var(--lyra-text-size-12);
-  line-height: 1.35;
-  vertical-align: middle;
+  line-height: var(--lyra-text-line-18);
+  vertical-align: -0.18em;
   cursor: pointer;
   user-select: none;
   box-sizing: border-box;
@@ -5191,19 +5191,15 @@
 
 .lyra-agents-citation-composer-input .lyra-agents-citation-chip {
   -webkit-user-modify: read-only;
-  font-size: var(--lyra-text-size-13);
-  line-height: 1.45;
-  min-height: 0;
-  padding-block: var(--lyra-space-1);
-  vertical-align: -0.06em;
+  min-height: var(--lyra-space-20);
 }
 
 .lyra-agents-message-text .lyra-agents-citation-chip {
-  font-size: inherit;
-  line-height: inherit;
-  min-height: 0;
+  font-size: var(--lyra-text-size-12);
+  line-height: var(--lyra-text-line-18);
+  min-height: var(--lyra-space-18);
   padding-block: 0;
-  vertical-align: -0.06em;
+  vertical-align: -0.18em;
 }
 
 .lyra-agents-citation-chip[role="button"]:hover,
@@ -5291,43 +5287,14 @@
   white-space: nowrap;
 }
 
-.lyra-agents-citation-chip-preview-wrap::before,
-.lyra-agents-citation-chip-preview-wrap::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: var(--lyra-space-10);
-  pointer-events: none;
-  z-index: 1;
-}
-
-.lyra-agents-citation-chip-preview-wrap::before {
-  left: 0;
-  background: linear-gradient(
-    to right,
-    var(--lyra-agents-citation-chip-bg) 0%,
-    transparent 100%
-  );
-}
-
-.lyra-agents-citation-chip-preview-wrap::after {
-  right: 0;
-  background: linear-gradient(
-    to left,
-    var(--lyra-agents-citation-chip-bg) 0%,
-    transparent 100%
-  );
-}
-
 .lyra-agents-citation-chip-preview {
   display: block;
   overflow: hidden;
   white-space: nowrap;
   word-break: normal;
   overflow-wrap: normal;
-  text-overflow: clip;
-  padding: 0 var(--lyra-space-2);
+  text-overflow: ellipsis;
+  padding: 0;
 }
 
 .lyra-agents-message-citation-target {
@@ -7332,6 +7299,37 @@
 .lyra-agents-project-todo-chip svg,
 .lyra-agents-project-plan-chip svg {
   flex: 0 0 auto;
+}
+
+.lyra-agents-codegraph-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-space-6);
+  padding: var(--lyra-space-6) var(--lyra-space-10);
+  font-size: var(--lyra-text-size-12);
+  opacity: 0.85;
+}
+
+.lyra-agents-codegraph-status-icon {
+  color: var(--lyra-text-muted);
+}
+
+.lyra-agents-codegraph-status-row[data-state="ready"] .lyra-agents-codegraph-status-icon {
+  color: var(--lyra-status-success);
+}
+
+.lyra-agents-codegraph-status-row[data-state="failed"] .lyra-agents-codegraph-status-icon {
+  color: var(--lyra-status-error);
+}
+
+.lyra-agents-codegraph-spinner {
+  animation: lyra-agents-codegraph-spin 1s linear infinite;
+}
+
+@keyframes lyra-agents-codegraph-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .lyra-agents-editor-menu-row {

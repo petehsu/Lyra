@@ -1762,7 +1762,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     readProtocolContract: () =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentProtocolContract
-      ) as Promise<AgentProtocolContract>
+      ) as Promise<AgentProtocolContract>,
   },
   workbenchObservation: {
     registerHandler: (handler) => {

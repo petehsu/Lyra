@@ -40,6 +40,7 @@ type UseSettingsAiModelOptions = {
   readonly onOpenAgentConfigFile?:
     | ((filePath: string) => void | Promise<void>)
     | undefined;
+  readonly onOpenSite?: (url: string, title?: string) => void;
 };
 
 type AgentRefreshSnapshot = {
@@ -85,6 +86,7 @@ export const useSettingsAiModel = ({
   desktopApi,
   labels,
   onOpenAgentConfigFile,
+  onOpenSite,
 }: UseSettingsAiModelOptions): SettingsAiModel => {
   const [agentConfig, setAgentConfig] = useState<AgentConfigSnapshot | null>(null);
   const [agentProviderCatalog, setAgentProviderCatalog] =
@@ -664,5 +666,6 @@ export const useSettingsAiModel = ({
     completeAgentAccountLogin,
     switchAgentAccount,
     removeAgentAccount,
+    openPageInNewTab: onOpenSite,
   };
 };

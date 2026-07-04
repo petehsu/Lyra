@@ -13,6 +13,7 @@ const HANDSHAKE_METHOD = "runtime.handshake";
 const MIN_HOST_REQUEST_TIMEOUT_MS = 250;
 const DEFAULT_HOST_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_HOST_REQUEST_TIMEOUT_MS = 120_000;
+const MAX_RUNTIME_FRAME_BYTES = 8 * 1024 * 1024;
 
 type RuntimeError = {
   readonly code: string;
@@ -51,6 +52,7 @@ export type RuntimeRequestHandler = (payload: unknown) => Promise<unknown> | unk
 export type LyraRuntimeClientOptions = {
   readonly storageRoot: string;
   readonly agentStorageRoot: string;
+  readonly maxRuntimeFrameBytes?: number;
 };
 
 export type LyraRuntimeClient = {
@@ -258,6 +260,7 @@ export const createLyraRuntimeClient = (
   const pending = new Map<string, PendingRequest>();
   const listeners = new Set<RuntimeEventListener>();
   const requestHandlers = new Map<string, RuntimeRequestHandler>();
+  const maxRuntimeFrameBytes = options.maxRuntimeFrameBytes ?? MAX_RUNTIME_FRAME_BYTES;
   let socket: net.Socket | null = null;
   let child: ChildProcessWithoutNullStreams | null = null;
   let buffer = "";
@@ -416,11 +419,23 @@ export const createLyraRuntimeClient = (
         if (part.trim().length === 0) {
           continue;
         }
+        if (Buffer.byteLength(part, "utf8") > maxRuntimeFrameBytes) {
+          rejectAllPending("Lyra runtime protocol frame too large");
+          connected.destroy();
+          return;
+        }
         try {
           handleEnvelope(JSON.parse(part) as RuntimeEnvelope);
         } catch (error) {
           console.warn("[lyra-runtime] failed to decode runtime envelope", error);
+          rejectAllPending("Lyra runtime protocol decode failed");
+          connected.destroy();
+          return;
         }
+      }
+      if (Buffer.byteLength(buffer, "utf8") > maxRuntimeFrameBytes) {
+        rejectAllPending("Lyra runtime protocol frame too large");
+        connected.destroy();
       }
     });
     connected.on("close", () => {
@@ -624,5 +639,6 @@ export const runtimeClientInternalsForTests = {
   resolveLyraDesignPlaywrightBrowsersPath,
   resolveAgentRuntimeDir,
   resolveSocketPath,
-  resolveRuntimeHostRequestTimeoutMs
+  resolveRuntimeHostRequestTimeoutMs,
+  MAX_RUNTIME_FRAME_BYTES
 };

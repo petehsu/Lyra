@@ -30,6 +30,12 @@ import { configureBrowserIdentityCompatibility } from "./browser-identity-compat
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { createAutoUpdateService } from "./auto-update/service";
 import { loadDocsNativeBindings } from "./documents/native-loader";
+import {
+  KNOWN_EDITORS,
+  openExternalUrl,
+  openInKnownEditor,
+  revealPathInFolder
+} from "./editor-actions";
 import { createAgentIpcBridge } from "./agent";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
@@ -50,7 +56,6 @@ import { createSearchIpcBridge } from "./search";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
 import {
   createLyraFileAccessController,
-  isSafeExternalUrl
 } from "./security";
 import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
@@ -1258,40 +1263,9 @@ const registerIpcHandlers = async (): Promise<void> => {
     readThirdPartyNoticesDocument
   );
 
-  ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> => {
-    if (typeof url !== "string" || url.length === 0 || isSafeExternalUrl(url) === false) {
-      return false;
-    }
-    try {
-      await shell.openExternal(url);
-      return true;
-    } catch (_error) {
-      return false;
-    }
-  });
-
-  const KNOWN_EDITORS: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-    readonly bundle?: string;
-    readonly cmd?: string;
-  }> = [
-    { id: "vscode", label: "VS Code", bundle: "Visual Studio Code.app", cmd: "code" },
-    { id: "vscode-insiders", label: "VS Code Insiders", bundle: "VS Code - Insiders.app", cmd: "code-insiders" },
-    { id: "cursor", label: "Cursor", bundle: "Cursor.app", cmd: "cursor" },
-    { id: "windsurf", label: "Windsurf", bundle: "Windsurf.app", cmd: "windsurf" },
-    { id: "zed", label: "Zed", bundle: "Zed.app", cmd: "zed" },
-    { id: "sublime", label: "Sublime Text", bundle: "Sublime Text.app", cmd: "subl" },
-    { id: "xcode", label: "Xcode", bundle: "Xcode.app" },
-    { id: "nova", label: "Nova", bundle: "Nova.app" },
-    { id: "webstorm", label: "WebStorm", bundle: "WebStorm.app", cmd: "webstorm" },
-    { id: "intellij", label: "IntelliJ IDEA", bundle: "IntelliJ IDEA.app", cmd: "idea" },
-    { id: "goland", label: "GoLand", bundle: "GoLand.app", cmd: "goland" },
-    { id: "pycharm", label: "PyCharm", bundle: "PyCharm.app", cmd: "pycharm" },
-    { id: "phpstorm", label: "PhpStorm", bundle: "PhpStorm.app", cmd: "phpstorm" },
-    { id: "android-studio", label: "Android Studio", bundle: "Android Studio.app", cmd: "studio" },
-    { id: "coderunner", label: "CodeRunner", bundle: "CodeRunner.app" },
-  ];
+  ipcMain.handle(LYRA_CHANNELS.openExternal, async (_event, url: string): Promise<boolean> =>
+    openExternalUrl(url, { openExternal: shell.openExternal })
+  );
 
   ipcMain.handle(LYRA_CHANNELS.detectEditors, async (): Promise<DetectedEditor[]> => {
     const plat = platform();
@@ -1331,43 +1305,15 @@ const registerIpcHandlers = async (): Promise<void> => {
   });
 
   ipcMain.handle(LYRA_CHANNELS.openInEditor, async (_event, request: OpenInEditorRequest): Promise<boolean> => {
-    if (!request || typeof request.editorId !== "string" || typeof request.path !== "string") {
-      return false;
-    }
-    const targetPath = request.path.trim();
-    if (targetPath.length === 0) {
-      return false;
-    }
-    const ed = KNOWN_EDITORS.find((e) => e.id === request.editorId);
-    if (ed === undefined) return false;
-    const plat = platform();
-    try {
-      await stat(targetPath);
-      if (plat === "darwin" && ed.bundle) {
-        await execFileAsync("open", ["-a", ed.bundle.replace(/\.app$/u, ""), targetPath]);
-      } else if (ed.cmd) {
-        await execFileAsync(ed.cmd, [targetPath]);
-      } else {
-        return false;
-      }
-      return true;
-    } catch {
-      return false;
-    }
+    return openInKnownEditor(request, {
+      execFile: execFileAsync,
+      platform: platform(),
+      stat,
+    });
   });
 
   ipcMain.handle(LYRA_CHANNELS.revealInFolder, async (_event, path: string): Promise<boolean> => {
-    const targetPath = typeof path === "string" ? path.trim() : "";
-    if (targetPath.length === 0) {
-      return false;
-    }
-    try {
-      await stat(targetPath);
-      shell.showItemInFolder(targetPath);
-      return true;
-    } catch {
-      return false;
-    }
+    return revealPathInFolder(path, { showItemInFolder: shell.showItemInFolder, stat });
   });
 
   ipcMain.handle(

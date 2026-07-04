@@ -67,6 +67,16 @@ const findActiveWorkbenchTab = (
   ?? tabs.find((tab) => tab.active)
   ?? null;
 
+const findDefaultWorkbenchReadTab = (
+  tabs: readonly WorkbenchObservedTabDescriptor[],
+  activeTabId: string | null
+): WorkbenchObservedTabDescriptor | null =>
+  tabs.find((tab) => tab.focusedPane)
+  ?? findActiveWorkbenchTab(tabs, activeTabId)
+  ?? tabs.find((tab) => tab.visible)
+  ?? tabs[0]
+  ?? null;
+
 const createTabSummaryObservation = (
   tab: WorkbenchObservedTabDescriptor,
   reason: string
@@ -132,6 +142,25 @@ export const createWorkbenchObservationAdapter = ({
     };
   };
 
+  const normalizeWorkbenchReadPayload = async (
+    payload: unknown,
+    service: WorkbenchObservationService
+  ): Promise<Record<string, unknown>> => {
+    const request = await normalizeWorkbenchTabPayload(payload, service);
+    if (readTabId(request) !== null) {
+      return request;
+    }
+    const listed = await service.listTabs({ scope: "all", includeUnsupported: true });
+    const tab = findDefaultWorkbenchReadTab(listed.tabs, listed.activeTabId);
+    if (tab === null) {
+      throw new Error("No active Workbench tab is available");
+    }
+    return {
+      ...request,
+      tabId: tab.tabId
+    };
+  };
+
   const readWorkbenchTabWithSummaryFallback = async (
     payload: unknown
   ): Promise<unknown> => {
@@ -139,7 +168,7 @@ export const createWorkbenchObservationAdapter = ({
     if (service === null) {
       throw new Error("Workbench observation capability is not available");
     }
-    const request = await normalizeWorkbenchTabPayload(payload, service) as WorkbenchTabReadRequest;
+    const request = await normalizeWorkbenchReadPayload(payload, service) as WorkbenchTabReadRequest;
     try {
       return await service.readTab(request);
     } catch (error) {
@@ -405,7 +434,7 @@ export const createWorkbenchObservationAdapter = ({
         throw new Error("Workbench observation capability is not available");
       }
       return await service.extractTabText(
-        await normalizeWorkbenchTabPayload(payload, service) as WorkbenchTabExtractTextRequest
+        await normalizeWorkbenchReadPayload(payload, service) as WorkbenchTabExtractTextRequest
       );
     },
     "workbench.browser.readSessionSnapshot": () => {

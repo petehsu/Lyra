@@ -340,6 +340,9 @@ fn description_for(
         ("computer", "see") => {
             "Use only as a visual fallback when semantic control fails: computer.map returned nothing usable, the control has no accessibility node, or you must read image/canvas content. Screenshots the screen or focused window for the vision model; it does not act or steal focus. Prefer semantic map/find/act whenever the node exists."
         }
+        ("workbench", "read_tab") => {
+            "Use when the agent needs to read one Lyra workbench tab. Omit tabId to read the current focused/active tab; pass tabId from page citations or list_tabs to read a specific tab."
+        }
         ("workbench", _) => {
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
         }
@@ -858,6 +861,14 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             ("todo", "read") => vec!["read todo", "task list", "待办", "任务列表"],
             ("todo", "write") => vec!["update todo", "checklist", "更新待办", "计划"],
             ("software", _) => vec!["app capability", "software adapter", "应用能力"],
+            ("skills", "activate") => vec!["enable skill", "turn on skill", "启用技能", "开启技能"],
+            ("skills", "deactivate") => {
+                vec!["disable skill", "turn off skill", "停用技能", "关闭技能"]
+            }
+            ("skills", "install_local" | "install_git" | "install_store") => {
+                vec!["install skill", "add skill", "安装技能", "添加技能"]
+            }
+            ("skills", "uninstall") => vec!["remove skill", "delete skill", "卸载技能", "删除技能"],
             ("skills", _) => vec!["skill", "plugin skill", "技能"],
             ("mcp", _) => vec!["mcp", "external tool", "外部工具"],
             ("runtime", "read") => vec!["read artifact", "open artifact", "查看产物", "大输出"],
@@ -2535,6 +2546,41 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 string("Favorite id returned by /tools/workbench/list_favorites."),
             )],
             &["id"],
+        ),
+        ("workbench", "read_tab") => object_schema(
+            [
+                (
+                    "tabId",
+                    string(
+                        "Optional Lyra workbench tab id. Omit to read the current focused/active tab. Values from page citations, list_tabs, and short browser-tab suffixes are accepted.",
+                    ),
+                ),
+                (
+                    "detail",
+                    json!({
+                        "type": "string",
+                        "enum": ["summary", "full"],
+                        "default": "summary",
+                        "description": "summary returns compact tab state; full returns more detailed readable content when supported."
+                    }),
+                ),
+                ("maxChars", json!({ "type": "number", "minimum": 1 })),
+                ("maxEntries", json!({ "type": "number", "minimum": 1 })),
+                ("maxBytes", json!({ "type": "number", "minimum": 1 })),
+                (
+                    "paneId",
+                    string("Optional terminal pane id for terminal tabs."),
+                ),
+                (
+                    "includeVisual",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include visual evidence when supported."
+                    }),
+                ),
+            ],
+            &[],
         ),
         ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
             [

@@ -478,6 +478,53 @@ fn permission_wait_cancellation_returns_cancelled_envelope_and_clears_pending_re
 }
 
 #[test]
+fn permission_wait_timeout_returns_error_and_clears_pending_request() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Permission Timeout Test" }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let request = PermissionRequest {
+        id: format!("permission-test-{}", Uuid::new_v4()),
+        session_id: session_id.clone(),
+        turn_id,
+        tool_call_id: "tool-permission-timeout".to_string(),
+        action: "submit".to_string(),
+        risk: "browser_interact".to_string(),
+        summary: "Submit browser form".to_string(),
+        why: "Testing timeout cleanup".to_string(),
+        title: "Browser interaction".to_string(),
+        detail: "targetMode=live".to_string(),
+        status: "pending".to_string(),
+        allowed: None,
+        created_at: now(),
+        responded_at: None,
+    };
+    let permission_id = request.id.clone();
+
+    let error = wait_for_permission_with_timeout_for_tests(
+        request,
+        &Arc::new(AtomicBool::new(false)),
+        Duration::from_millis(50),
+    )
+    .expect_err("permission wait should time out");
+
+    assert!(error.to_string().contains("permission request timed out"));
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_permissions
+            .get(&permission_id)
+            .is_none()
+    );
+}
+
+#[test]
 fn model_tool_execution_bridges_lumen_and_software_tools() {
     let backend = LyraAgentBackend;
     let created = backend

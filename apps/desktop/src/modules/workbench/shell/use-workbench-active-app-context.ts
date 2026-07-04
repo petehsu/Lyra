@@ -12,6 +12,7 @@ type UseWorkbenchActiveAppContextParams = {
   readonly fileEditorModel: FileEditorModel;
   readonly labels: WorkbenchLabels;
   readonly onOpenAgentConfigFile?: (filePath: string) => void | Promise<void>;
+  readonly onOpenSite?: (url: string, title?: string) => void;
 };
 
 export const useWorkbenchActiveAppContext = ({
@@ -20,7 +21,8 @@ export const useWorkbenchActiveAppContext = ({
   fileManagerModel,
   fileEditorModel,
   labels,
-  onOpenAgentConfigFile
+  onOpenAgentConfigFile,
+  onOpenSite,
 }: UseWorkbenchActiveAppContextParams) => {
   const activeFileManagerState =
     activeTab?.pageKind === "app" &&
@@ -37,7 +39,8 @@ export const useWorkbenchActiveAppContext = ({
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
     labels: labels.settingsAi,
-    onOpenAgentConfigFile
+    onOpenAgentConfigFile,
+    onOpenSite,
   });
 
   return {

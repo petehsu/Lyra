@@ -9,6 +9,7 @@ import {
   Moon,
   Package,
   Palette,
+  Boxes,
   ScrollText,
   Search,
   Settings2,
@@ -71,6 +72,7 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   softwareStore: AppWindow,
   search: Search,
   skills: Sparkles,
+  connector: Boxes,
   workspace: Monitor
 };
 
