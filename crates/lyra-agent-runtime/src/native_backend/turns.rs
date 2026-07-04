@@ -36,6 +36,14 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
         .get("uiHidden")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let only_if_idle = payload
+        .get("onlyIfIdle")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let goal_continuation = payload
+        .get("goalContinuation")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let requested_session = string_opt(&payload, "sessionId");
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
@@ -51,6 +59,22 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let session_id = state.resolve_session_id(requested_session)?;
+        if only_if_idle {
+            let turn_status = state
+                .sessions
+                .get(&session_id)
+                .and_then(|s| s.snapshot.get("turnStatus").and_then(Value::as_str))
+                .unwrap_or("idle");
+            if turn_status != "idle" {
+                return Ok(json!({
+                    "sessionId": session_id,
+                    "turnId": Value::Null,
+                    "status": "idle",
+                    "sent": false,
+                    "reason": "session_not_idle"
+                }));
+            }
+        }
         let interrupted_turn_id = state
             .sessions
             .get(&session_id)
@@ -121,7 +145,11 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             apply_inline_images_to_user_message(&mut user_message, &inline_images);
         }
         if ui_hidden {
-            user_message["metadata"] = json!({ "uiHidden": true });
+            let mut meta = json!({ "uiHidden": true });
+            if goal_continuation {
+                meta["goalContinuation"] = json!(true);
+            }
+            user_message["metadata"] = meta;
             user_message["rollback"] = json!({
                 "available": false,
                 "unavailableReason": "Rollback is unavailable for menu action turns."
@@ -225,7 +253,9 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
                 None,
                 metadata,
                 None,
-            )
+            );
+            // goal continuation: 只在成功 turn 后触发，错误/取消 turn 不继续
+            evaluate_goal_continuation(&session_id, &turn_id);
         }
         Err(error) => {
             let failure_message = error.to_string();
@@ -1655,6 +1685,7 @@ pub(crate) fn finish_turn_with_metadata(
                     update_runtime_turn(session, turn_id, status);
                     let _ = prune_empty_assistant_messages(&mut session.snapshot);
                     let retention_metrics = prune_transient_tool_outputs(session);
+                    prune_goal_continuation_messages(&mut session.snapshot);
                     touch_session(session);
                     recall_index_job = Some((root.clone(), session.clone()));
                     events.push(json!({
@@ -2027,6 +2058,198 @@ pub(crate) fn cancel_turn(payload: Value) -> AgentRuntimeResult<Value> {
     }))
 }
 
+// ── Goal continuation ───────────────────────────────────────────────────
+// turn 成功结束后，系统评估是否需要自动继续推进 goal。
+// 判定信号：plan 处于 executing_todo 阶段 + 未完成 todo + CodeGraph staleness。
+// 触发方式：send_turn(uiHidden=true, goalContinuation=true, onlyIfIdle=true)。
+// continuation prompt 在 turn 结束后被 prune_goal_continuation_messages 剪除，
+// 不保留在会话历史，不持续占用 model context。
+
+/// 从 messages 中移除 metadata.goalContinuation == true 的 user 消息。
+/// 这些是系统自动发送的 continuation prompt，turn 结束后不保留在会话历史。
+fn prune_goal_continuation_messages(snapshot: &mut Value) {
+    let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    messages.retain(|msg| {
+        !(msg.get("role").and_then(Value::as_str) == Some("user")
+            && msg.pointer("/metadata/goalContinuation") == Some(&Value::Bool(true)))
+    });
+}
+
+/// CodeGraph 信号：是否需要因为未验证的文件变更而继续。
+enum CodeGraphSignal {
+    /// 未就绪 / 超时 / 无项目 — 跳过 CodeGraph 判定，仅用 todo 判定
+    Skip,
+    /// Ready 且无 stale 文件
+    Fresh,
+    /// Ready 但有未验证的变更文件
+    Stale(Vec<String>),
+}
+
+/// 等待 CodeGraph 索引就绪，最多等 timeout。
+/// 如果当前 Idle，先触发索引再等。
+fn wait_codegraph_ready(working_dir: &Path, timeout: Duration) -> lyra_code_intel_core::IndexStatus {
+    let start = Instant::now();
+    let mut status = index_status(working_dir);
+    if matches!(status, lyra_code_intel_core::IndexStatus::Idle) {
+        trigger_indexing(working_dir);
+        status = index_status(working_dir);
+    }
+    while matches!(status, lyra_code_intel_core::IndexStatus::Indexing { .. }) {
+        if start.elapsed() >= timeout {
+            return status;
+        }
+        thread::sleep(Duration::from_millis(200));
+        status = index_status(working_dir);
+    }
+    status
+}
+
+/// 检查 CodeGraph 信号：等待就绪 → 查 staleness。
+/// working_dir 为 None 时直接返回 Skip。
+fn check_codegraph_signal(working_dir: Option<&str>) -> CodeGraphSignal {
+    let Some(dir) = working_dir else {
+        return CodeGraphSignal::Skip;
+    };
+    let path = Path::new(dir);
+    let status = wait_codegraph_ready(path, Duration::from_secs(10));
+    match status {
+        lyra_code_intel_core::IndexStatus::Ready { .. } => {
+            match codegraph_staleness(path) {
+                Ok(info) if info.stale && !info.changed_files.is_empty() => {
+                    CodeGraphSignal::Stale(info.changed_files)
+                }
+                _ => CodeGraphSignal::Fresh,
+            }
+        }
+        _ => CodeGraphSignal::Skip,
+    }
+}
+
+/// 动态拼装 continuation prompt。
+/// 根据触发的信号（未完成 todo / CodeGraph stale）组合不同内容。
+fn build_continuation_prompt(incomplete: &[&Value], codegraph: &CodeGraphSignal) -> String {
+    let mut sections = Vec::new();
+    sections.push("[Goal Continuation] 当前 plan 仍处于执行阶段，需要继续推进。".to_string());
+
+    if !incomplete.is_empty() {
+        sections.push(format!("\n未完成 todo（{} 个）：", incomplete.len()));
+        for todo in incomplete {
+            let status = todo
+                .pointer("/status")
+                .and_then(Value::as_str)
+                .unwrap_or("pending");
+            let content = todo
+                .pointer("/content")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let id = todo
+                .pointer("/id")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            sections.push(format!("  - [{}] [{}] {}", id, status, content));
+        }
+    }
+
+    if let CodeGraphSignal::Stale(files) = codegraph {
+        sections.push("\nCodeGraph 检测到以下文件已修改但尚未完成索引验证：".to_string());
+        for file in files.iter().take(10) {
+            sections.push(format!("  - {}", file));
+        }
+        if files.len() > 10 {
+            sections.push(format!("  ... 及其他 {} 个文件", files.len() - 10));
+        }
+        if incomplete.is_empty() {
+            sections.push("所有 todo 已完成，请检查这些文件的变更是否正确完整。".to_string());
+        }
+    }
+
+    if !incomplete.is_empty() {
+        sections.push("\n请继续推进未完成的工作。".to_string());
+    }
+    sections.join("\n")
+}
+
+/// turn 成功结束后，评估是否需要 goal continuation。
+/// 满足条件时通过 send_turn 发送一条 uiHidden + goalContinuation 的隐式 prompt。
+fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
+    // 1. 持锁读取 session 状态
+    let (incomplete, working_dir) = {
+        let Ok(mut state) = state().lock() else {
+            return;
+        };
+        let Some(session) = state.sessions.get(session_id) else {
+            return;
+        };
+
+        // plan 不在执行阶段 → 无活跃 goal
+        let phase = session
+            .snapshot
+            .pointer("/plan/phase")
+            .and_then(Value::as_str);
+        if phase != Some(PLAN_PHASE_EXECUTING_TODO) {
+            return;
+        }
+
+        // turnStatus 非 idle → 用户已发新消息，不抢夺
+        let turn_status = session
+            .snapshot
+            .get("turnStatus")
+            .and_then(Value::as_str)
+            .unwrap_or("idle");
+        if turn_status != "idle" {
+            return;
+        }
+
+        let todos = session.snapshot.get("todos").and_then(Value::as_array);
+        let incomplete: Vec<Value> = todos
+            .map(|arr| {
+                arr.iter()
+                    .filter(|t| {
+                        let s = t
+                            .pointer("/status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        s == "pending" || s == "in_progress"
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let working_dir = session
+            .snapshot
+            .get("workingDir")
+            .and_then(Value::as_str)
+            .map(String::from);
+        (incomplete, working_dir)
+    }; // 锁释放
+
+    // 2. 检查 CodeGraph（锁外，最多等 10s）
+    let codegraph = check_codegraph_signal(working_dir.as_deref());
+
+    // 3. 判定
+    let todo_incomplete = !incomplete.is_empty();
+    let codegraph_has_issues = matches!(&codegraph, CodeGraphSignal::Stale(f) if !f.is_empty());
+    if !todo_incomplete && !codegraph_has_issues {
+        return; // 目标完成
+    }
+
+    // 4. 动态拼装 prompt
+    let incomplete_refs: Vec<&Value> = incomplete.iter().collect();
+    let prompt = build_continuation_prompt(&incomplete_refs, &codegraph);
+
+    // 5. 发送 continuation turn（uiHidden + goalContinuation + onlyIfIdle）
+    let _ = send_turn(json!({
+        "sessionId": session_id,
+        "text": prompt,
+        "uiHidden": true,
+        "goalContinuation": true,
+        "onlyIfIdle": true
+    }));
+}
+
 #[cfg(test)]
 mod narration_tests {
     use super::*;
@@ -2113,5 +2336,107 @@ mod narration_tests {
                 { "type": "thinking", "id": "thinking-1", "text": "中间思考。", "status": "thinking" }
             ])
         );
+    }
+}
+
+#[cfg(test)]
+mod goal_continuation_tests {
+    use super::*;
+
+    #[test]
+    fn prompt_with_incomplete_todos_only() {
+        let todos = vec![
+            json!({ "id": "todo-1", "status": "in_progress", "content": "实现核心逻辑" }),
+            json!({ "id": "todo-2", "status": "pending", "content": "编写测试" }),
+        ];
+        let refs: Vec<&Value> = todos.iter().collect();
+        let prompt = build_continuation_prompt(&refs, &CodeGraphSignal::Skip);
+
+        assert!(prompt.contains("[Goal Continuation]"));
+        assert!(prompt.contains("未完成 todo（2 个）"));
+        assert!(prompt.contains("[todo-1] [in_progress] 实现核心逻辑"));
+        assert!(prompt.contains("[todo-2] [pending] 编写测试"));
+        assert!(prompt.contains("请继续推进未完成的工作。"));
+        assert!(!prompt.contains("CodeGraph"));
+    }
+
+    #[test]
+    fn prompt_with_codegraph_stale_only() {
+        let files = vec!["src/main.rs".to_string(), "src/lib.rs".to_string()];
+        let prompt = build_continuation_prompt(&[], &CodeGraphSignal::Stale(files));
+
+        assert!(prompt.contains("[Goal Continuation]"));
+        assert!(!prompt.contains("未完成 todo"));
+        assert!(prompt.contains("CodeGraph 检测到以下文件已修改但尚未完成索引验证"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("src/lib.rs"));
+        assert!(prompt.contains("所有 todo 已完成，请检查这些文件的变更是否正确完整。"));
+    }
+
+    #[test]
+    fn prompt_with_both_signals() {
+        let todos = vec![json!({ "id": "todo-1", "status": "pending", "content": "收尾" })];
+        let refs: Vec<&Value> = todos.iter().collect();
+        let files = vec!["src/main.rs".to_string()];
+        let prompt = build_continuation_prompt(&refs, &CodeGraphSignal::Stale(files));
+
+        assert!(prompt.contains("未完成 todo（1 个）"));
+        assert!(prompt.contains("[todo-1] [pending] 收尾"));
+        assert!(prompt.contains("CodeGraph 检测到以下文件已修改"));
+        assert!(prompt.contains("请继续推进未完成的工作。"));
+        assert!(!prompt.contains("所有 todo 已完成"));
+    }
+
+    #[test]
+    fn prune_removes_only_goal_continuation_user_messages() {
+        let mut snapshot = json!({
+            "messages": [
+                {
+                    "role": "user",
+                    "text": "用户原始消息",
+                    "id": "msg-1"
+                },
+                {
+                    "role": "user",
+                    "text": "[Goal Continuation] ...",
+                    "id": "msg-2",
+                    "metadata": { "uiHidden": true, "goalContinuation": true }
+                },
+                {
+                    "role": "assistant",
+                    "text": "我来继续工作。",
+                    "id": "msg-3"
+                },
+                {
+                    "role": "user",
+                    "text": "另一个普通 uiHidden 消息",
+                    "id": "msg-4",
+                    "metadata": { "uiHidden": true }
+                }
+            ]
+        });
+
+        prune_goal_continuation_messages(&mut snapshot);
+
+        let messages = snapshot["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0]["id"], "msg-1");
+        assert_eq!(messages[1]["id"], "msg-3");
+        assert_eq!(messages[2]["id"], "msg-4");
+    }
+
+    #[test]
+    fn prune_preserves_messages_without_metadata() {
+        let mut snapshot = json!({
+            "messages": [
+                { "role": "user", "text": "hello", "id": "a" },
+                { "role": "assistant", "text": "hi", "id": "b" }
+            ]
+        });
+
+        prune_goal_continuation_messages(&mut snapshot);
+
+        let messages = snapshot["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
     }
 }

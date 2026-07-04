@@ -406,6 +406,14 @@ pub(crate) fn index_status(working_dir: &Path) -> lyra_code_intel_core::IndexSta
     engine().status_sync(working_dir)
 }
 
+/// Check CodeGraph staleness for a working directory (sync).
+/// Used by goal continuation evaluation to detect un-indexed file changes.
+pub(crate) fn codegraph_staleness(
+    working_dir: &Path,
+) -> Result<lyra_code_intel_core::StalenessInfo, String> {
+    engine().staleness_sync(working_dir)
+}
+
 /// Build the `projectContext` JSON for prompt injection.
 /// When the index is Ready, includes the full summary (entry points,
 /// key modules, languages). Otherwise, returns just the status.
