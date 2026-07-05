@@ -1,0 +1,20 @@
+// ponytail: image-viewer surface — en-US 字典片段，按 key 前缀切割自原单文件
+export const imageViewer = {
+  "imageViewer.loading": "Loading image",
+  "imageViewer.unavailable": "Image viewer unavailable",
+  "imageViewer.unsupported": "This image format is not supported by native tiling.",
+  "imageViewer.retry": "Retry",
+  "imageViewer.fit": "Fit",
+  "imageViewer.actualSize": "100%",
+  "imageViewer.zoomIn": "Zoom in",
+  "imageViewer.zoomOut": "Zoom out",
+  "imageViewer.reset": "Reset",
+  "imageViewer.rotateLeft": "Rotate left",
+  "imageViewer.rotateRight": "Rotate right",
+  "imageViewer.background": "Background",
+  "imageViewer.previous": "Previous image",
+  "imageViewer.next": "Next image",
+  "imageViewer.nativeTiles": "Native tiles",
+  "imageViewer.sourceOnly": "Original source",
+  "imageViewer.metadata": "Metadata",
+} as const;

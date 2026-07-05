@@ -1,0 +1,19 @@
+// ponytail: shared surface — en-US 字典片段，按 key 前缀切割自原单文件
+export const shared = {
+  "appStatus.unexpectedErrorTitle": "Interface error",
+  "appStatus.unexpectedErrorDescription": "Lyra kept the window open. Reopen this area to continue.",
+  "appStatus.operationFailed": "Operation failed",
+  "appStatus.openFileFailed": "Could not open file",
+  "appStatus.openUrlFailed": "Could not open page",
+  "appStatus.revealPathFailed": "Could not reveal location",
+  "appStatus.openEditorFailed": "Could not open editor",
+  "appStatus.clearSiteDataFailed": "Could not clear site data",
+  "dialog.copyAction": "Copy",
+  "dialog.copiedAction": "Copied",
+  "dialog.cancel": "Cancel",
+  "dialog.savingAction": "Saving...",
+  "gateway.summaryUrl": "Opened target address and prepared DOM context: {value}",
+  "gateway.summaryFile": "Located file and synced to editor: {value}",
+  "gateway.summaryCommand": "Prepared terminal command for execution: {value}",
+  "gateway.summaryTask": "Task entered Agent orchestration: {value}",
+} as const;

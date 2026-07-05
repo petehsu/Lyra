@@ -3,18 +3,26 @@ import { initReactI18next } from "react-i18next";
 
 import { EN_US_DICTIONARY } from "./locales/en-US";
 import { ZH_CN_DICTIONARY } from "./locales/zh-CN";
+import { createStaticBundleSource } from "./translation-source";
 import type { WorkbenchLocale } from "./types";
 
 export const I18N_FALLBACK = "en-US" as const;
 
 const isDev = import.meta.env?.DEV ?? false;
 
+// ponytail: 核心翻译源 — StaticBundleSource 同步加载内置字典
+// 未来异步 source（LocalFile/Remote/PluginBundle）在 pack 激活时通过 addResourceBundle 合并
+const coreSource = createStaticBundleSource("core", {
+  "zh-CN": ZH_CN_DICTIONARY,
+  "en-US": EN_US_DICTIONARY,
+});
+
 // ponytail: 单 translation namespace — agent keys 已合并进 en-US/zh-CN 字典
 // ponytail: plural rules 依赖 i18next 内置 Intl.PluralRules — zh-CN/en-US 均为 CLDR 原生支持
 void i18n.use(initReactI18next).init({
   resources: {
-    "zh-CN": { translation: ZH_CN_DICTIONARY },
-    "en-US": { translation: EN_US_DICTIONARY },
+    "zh-CN": { translation: coreSource.loadBundle("zh-CN") },
+    "en-US": { translation: coreSource.loadBundle("en-US") },
   },
   lng: "zh-CN",
   fallbackLng: I18N_FALLBACK,

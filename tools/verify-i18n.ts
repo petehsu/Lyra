@@ -40,6 +40,35 @@ function scanDir(dir: string, exts: string[]): string[] {
 // ponytail: 正则匹配 t("key") / formatMessage("key", ...) / t('key') — 不匹配动态变量 key
 const KEY_CALL_RE = /\b(?:t|formatMessage)\s*\(\s*["'`]([^"'`]+)["'`]/g;
 
+// ponytail: surface 文件列表 — 与 locales/{locale}/index.ts 中的 import 顺序一致
+const SURFACE_FILES = [
+  "shared", "shell", "file-manager", "file-editor", "image-viewer",
+  "agent-project-tree", "agent-plan-board", "agent-git", "agent-session-history",
+  "login-manager", "software-store", "notifications", "ai-panel", "location",
+] as const;
+
+const LOCALES_DIR = path.join(ROOT, "apps/desktop/src/modules/workbench/i18n/locales");
+
+// ponytail: 从 surface 文件源码中提取 key — 匹配 "some.key": 模式
+const SURFACE_KEY_RE = /^\s*"([^"]+)"\s*:/gm;
+
+function extractSurfaceKeys(locale: string): Map<string, string[]> {
+  const surfaceKeys = new Map<string, string[]>();
+  for (const surface of SURFACE_FILES) {
+    const filePath = path.join(LOCALES_DIR, locale, `${surface}.ts`);
+    if (!fs.existsSync(filePath)) continue;
+    const src = fs.readFileSync(filePath, "utf-8");
+    const keys: string[] = [];
+    let match: RegExpExecArray | null;
+    SURFACE_KEY_RE.lastIndex = 0;
+    while ((match = SURFACE_KEY_RE.exec(src)) !== null) {
+      keys.push(match[1]);
+    }
+    surfaceKeys.set(surface, keys);
+  }
+  return surfaceKeys;
+}
+
 function extractUsedKeys(files: string[]): Set<string> {
   const used = new Set<string>();
   for (const file of files) {
@@ -59,7 +88,7 @@ function extractUsedKeys(files: string[]): Set<string> {
 
 // --- Reporting ---
 
-type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key";
+type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key" | "duplicate-key";
 const issues: { kind: IssueKind; key: string }[] = [];
 
 // 1. Main namespace parity
@@ -77,6 +106,22 @@ for (const k of usedKeys) {
 if (REPORT_UNUSED) {
   for (const k of allDefinedKeys) {
     if (!usedKeys.has(k)) issues.push({ kind: "unused-key", key: k });
+  }
+}
+
+// 4. Surface file key overlap — spread 合并时后者覆盖前者，应避免
+for (const locale of ["en-US", "zh-CN"] as const) {
+  const surfaceKeys = extractSurfaceKeys(locale);
+  const seen = new Map<string, string>();
+  for (const [surface, keys] of surfaceKeys) {
+    for (const key of keys) {
+      const prev = seen.get(key);
+      if (prev) {
+        issues.push({ kind: "duplicate-key", key: `[${locale}] ${key} (in ${prev} and ${surface})` });
+      } else {
+        seen.set(key, surface);
+      }
+    }
   }
 }
 
@@ -99,6 +144,7 @@ const LABELS: Record<IssueKind, string> = {
   "missing-in-zh": "Main: key in en-US but missing in zh-CN",
   "undefined-key": "Code uses key not defined in any dictionary",
   "unused-key": "Dictionary key not used in code",
+  "duplicate-key": "Key duplicated across surface files (spread merge silently overwrites)",
 };
 
 for (const [kind, keys] of grouped) {

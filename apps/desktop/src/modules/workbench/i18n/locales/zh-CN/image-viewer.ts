@@ -1,0 +1,20 @@
+// ponytail: image-viewer surface — zh-CN 字典片段，按 key 前缀切割自原单文件
+export const imageViewer = {
+  "imageViewer.loading": "正在加载图片",
+  "imageViewer.unavailable": "图片查看器不可用",
+  "imageViewer.unsupported": "当前图片格式不支持原生瓦片渲染。",
+  "imageViewer.retry": "重试",
+  "imageViewer.fit": "适应窗口",
+  "imageViewer.actualSize": "100%",
+  "imageViewer.zoomIn": "放大",
+  "imageViewer.zoomOut": "缩小",
+  "imageViewer.reset": "重置",
+  "imageViewer.rotateLeft": "向左旋转",
+  "imageViewer.rotateRight": "向右旋转",
+  "imageViewer.background": "背景",
+  "imageViewer.previous": "上一张图片",
+  "imageViewer.next": "下一张图片",
+  "imageViewer.nativeTiles": "原生瓦片",
+  "imageViewer.sourceOnly": "原始图片",
+  "imageViewer.metadata": "元数据",
+} as const;

@@ -1,0 +1,23 @@
+// ponytail: location surface — zh-CN 字典片段，按 key 前缀切割自原单文件
+export const location = {
+  "location.unlocated": "未定位",
+  "location.located": "已定位",
+  "location.authorize": "授权定位",
+  "location.locating": "定位中",
+  "location.currentPosition": "当前位置",
+  "location.authDialogTitle": "允许 Lyra 获取你的位置？",
+  "location.authDialogDescription": "Lyra 会尝试浏览器和系统物理定位，并显示可读地址。位置只用于界面展示，不会发送给 Agent。",
+  "location.authDialogSourceTitle": "Lyra 位置权限",
+  "location.authDialogSourceSubtitle": "可随时在 AI 输入框右下角撤销",
+  "location.authDialogDeny": "暂不允许",
+  "location.authDialogAllow": "允许定位",
+  "location.revokeDialogTitle": "取消位置授权？",
+  "location.revokeDialogDescription": "取消后 Lyra 会清除缓存的位置名称和坐标。以后仍可点击定位按钮重新授权。",
+  "location.revokeDialogSubtitle": "位置不会发送给 Agent",
+  "location.revokeDialogKeep": "保留",
+  "location.revokeDialogConfirm": "取消授权",
+  "location.chipTitleLocated": "{label}。点击取消位置授权",
+  "location.chipTitleRetry": "重新获取当前位置",
+  "location.chipTitleAuthorize": "授权 Lyra 获取当前位置",
+  "location.chipTitleUnavailable": "未定位。请在系统设置 → 隐私与安全性 → 定位服务中允许 Lyra，然后点击重试",
+} as const;

@@ -14,6 +14,7 @@ export type PluginManifest = {
   readonly id: string;
   readonly version: string;
   readonly entry: string;
+  readonly l10n?: string;
   readonly title?: string;
   readonly description?: string;
   readonly permissions: readonly string[];

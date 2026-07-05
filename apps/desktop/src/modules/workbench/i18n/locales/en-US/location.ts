@@ -1,0 +1,23 @@
+// ponytail: location surface — en-US 字典片段，按 key 前缀切割自原单文件
+export const location = {
+  "location.unlocated": "Not located",
+  "location.located": "Located",
+  "location.authorize": "Enable location",
+  "location.locating": "Locating…",
+  "location.currentPosition": "Current location",
+  "location.authDialogTitle": "Allow Lyra to use your location?",
+  "location.authDialogDescription": "Lyra will try browser and system physical location, then show a readable place name. Location is shown in the UI only and is not sent to the Agent.",
+  "location.authDialogSourceTitle": "Lyra location permission",
+  "location.authDialogSourceSubtitle": "You can revoke this anytime from the AI panel",
+  "location.authDialogDeny": "Not now",
+  "location.authDialogAllow": "Allow location",
+  "location.revokeDialogTitle": "Revoke location access?",
+  "location.revokeDialogDescription": "Lyra will clear the cached place name and coordinates. You can re-enable location later from the AI panel.",
+  "location.revokeDialogSubtitle": "Location is not sent to the Agent",
+  "location.revokeDialogKeep": "Keep",
+  "location.revokeDialogConfirm": "Revoke",
+  "location.chipTitleLocated": "{label}. Click to revoke location access",
+  "location.chipTitleRetry": "Refresh current location",
+  "location.chipTitleAuthorize": "Allow Lyra to access your location",
+  "location.chipTitleUnavailable": "Not located. Allow Lyra under System Settings → Privacy & Security → Location Services, then retry",
+} as const;

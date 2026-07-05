@@ -27,6 +27,7 @@ export type UiuxPackManifest = {
   readonly description: string;
   readonly entry: string;
   readonly css?: string;
+  readonly l10n?: string;
   readonly workbenchUiApi: "1";
   readonly permissions: readonly string[];
   readonly software: readonly LyraSoftwareManifest[];
