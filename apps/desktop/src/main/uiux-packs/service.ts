@@ -1,6 +1,6 @@
 import { ipcMain, protocol } from "electron";
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -157,6 +157,45 @@ const clearExternalActivation = (storageRoot: string): void => {
   });
 };
 
+// ponytail: 从 l10n 目录加载所有 {locale}.json — 文件名即 locale，内容即 bundle
+// ceiling: 不递归子目录；locale 文件名须匹配 /^[a-z]{2,3}-[A-Z]{2,3}$/ 或 BCP-47 子集
+const loadL10nBundles = (
+  l10nPath: string | undefined
+): Record<string, Record<string, string>> | undefined => {
+  if (l10nPath === undefined) {
+    return undefined;
+  }
+  let entries: readonly string[];
+  try {
+    entries = readdirSync(l10nPath);
+  } catch {
+    return undefined;
+  }
+  const bundles: Record<string, Record<string, string>> = {};
+  for (const fileName of entries) {
+    if (fileName.endsWith(".json") === false) {
+      continue;
+    }
+    const locale = fileName.slice(0, -5);
+    try {
+      const parsed = JSON.parse(readFileSync(path.join(l10nPath, fileName), "utf-8")) as Record<string, unknown>;
+      // ponytail: 只接受 Record<string, string> 结构 — 深层嵌套或非字符串值跳过
+      const bundle: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === "string") {
+          bundle[key] = value;
+        }
+      }
+      if (Object.keys(bundle).length > 0) {
+        bundles[locale] = bundle;
+      }
+    } catch {
+      // ponytail: 损坏的 JSON 文件静默跳过 — 不阻塞 pack 加载
+    }
+  }
+  return Object.keys(bundles).length > 0 ? bundles : undefined;
+};
+
 const createRuntimeForPack = (
   storageRoot: string,
   packId: string
@@ -165,11 +204,13 @@ const createRuntimeForPack = (
   if (pack === null) {
     return null;
   }
+  const l10nBundles = loadL10nBundles(pack.l10nPath);
   return {
     packId,
     entryUrl: createPackAssetUrl(packId, "entry.js"),
     ...(pack.cssPath === undefined ? {} : { cssUrl: createPackAssetUrl(packId, "style.css") }),
-    software: pack.manifest.software
+    software: pack.manifest.software,
+    ...(l10nBundles === undefined ? {} : { l10nBundles })
   };
 };
 

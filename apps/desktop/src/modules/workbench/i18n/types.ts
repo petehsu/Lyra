@@ -1,6 +1,7 @@
 import type { EN_US_DICTIONARY } from "./locales/en-US";
 
-export type WorkbenchLocale = "zh-CN" | "en-US";
+// ponytail: 放宽为 string — 动态 locale 从磁盘发现（IPC），key 安全仍由 I18nKey 保证
+export type WorkbenchLocale = string;
 
 // ponytail: I18nKey 从 en-US 字典推导，不再手动维护 1100+ key union；en-US.ts 去掉类型标注让推导生效
 export type I18nKey = keyof typeof EN_US_DICTIONARY;

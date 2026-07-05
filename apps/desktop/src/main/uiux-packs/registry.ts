@@ -69,6 +69,7 @@ type UiuxDeclarationRecord = {
   readonly description?: unknown;
   readonly entry?: unknown;
   readonly css?: unknown;
+  readonly l10n?: unknown;
   readonly workbenchUiApi?: unknown;
   readonly apiVersion?: unknown;
   readonly permissions?: unknown;
@@ -307,6 +308,7 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
   const id = normalizePackId(declaration.id ?? pluginJson.id);
   const entry = normalizeRelativePath(declaration.entry ?? pluginJson.entry, "entry");
   const css = asString(declaration.css);
+  const l10n = asString(declaration.l10n);
   const workbenchUiApi =
     declaration.workbenchUiApi
     ?? declaration.apiVersion
@@ -332,6 +334,7 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
       ?? "External Lyra UIUX pack.",
     entry,
     ...(css === undefined ? {} : { css: normalizeRelativePath(css, "css") }),
+    ...(l10n === undefined ? {} : { l10n: normalizeRelativePath(l10n, "l10n") }),
     workbenchUiApi: "1",
     permissions: uniqueStrings([
       ...asStringArray(pluginJson.permissions),
@@ -341,22 +344,38 @@ export const parseUiuxPackManifest = (packageRoot: string): UiuxPackManifest => 
   };
 };
 
+// ponytail: 解析 entry/css/l10n 路径 — l10n 为目录路径，不存在时静默跳过（可选字段）
 export const resolveUiuxPackRuntimePaths = (
   packageRoot: string,
   manifest: UiuxPackManifest
-): Pick<InstalledUiuxPack, "entryPath" | "cssPath"> => {
+): Pick<InstalledUiuxPack, "entryPath" | "cssPath" | "l10nPath"> => {
   const entryPath = resolveInsideRoot(packageRoot, manifest.entry);
   if (existsSync(entryPath) === false) {
     throw new Error(`UIUX pack entry not found: ${manifest.entry}`);
   }
-  if (manifest.css === undefined) {
-    return { entryPath };
-  }
-  const cssPath = resolveInsideRoot(packageRoot, manifest.css);
-  if (existsSync(cssPath) === false) {
+  const cssPath =
+    manifest.css === undefined
+      ? undefined
+      : resolveInsideRoot(packageRoot, manifest.css);
+  if (cssPath !== undefined && existsSync(cssPath) === false) {
     throw new Error(`UIUX pack CSS not found: ${manifest.css}`);
   }
-  return { entryPath, cssPath };
+  const l10nPath =
+    manifest.l10n === undefined
+      ? undefined
+      : resolveInsideRoot(packageRoot, manifest.l10n);
+  if (l10nPath !== undefined && existsSync(l10nPath) === false) {
+    // ponytail: l10n 目录不存在时静默跳过 — pack 可声明 l10n 但不提供文件
+    return {
+      entryPath,
+      ...(cssPath === undefined ? {} : { cssPath })
+    };
+  }
+  return {
+    entryPath,
+    ...(cssPath === undefined ? {} : { cssPath }),
+    ...(l10nPath === undefined ? {} : { l10nPath })
+  };
 };
 
 export const createUiuxSourceFingerprint = (

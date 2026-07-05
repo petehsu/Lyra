@@ -1,6 +1,7 @@
 // verify-i18n.ts — 翻译完整性校验
 // 检查: 1) locale 间 key 一致性  2) 代码中使用的 key 是否在字典中定义  3) 字典中的 key 是否被使用
-// 运行: node --import tsx tools/verify-i18n.ts [--report-unused]
+//       4) surface 文件间 key 重复  5) 未外化的用户可见字符串（opt-in）
+// 运行: node --import tsx tools/verify-i18n.ts [--report-unused] [--check-unexternalized]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +14,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
 const WORKBENCH_SRC = path.join(ROOT, "apps/desktop/src/modules/workbench");
 const REPORT_UNUSED = process.argv.includes("--report-unused");
+const CHECK_UNEXTERNALIZED = process.argv.includes("--check-unexternalized");
 
 // --- Key set extraction ---
 
@@ -86,9 +88,61 @@ function extractUsedKeys(files: string[]): Set<string> {
   return used;
 }
 
+// --- Unexternalized string detection ---
+// ponytail: 正则启发式 — 不做 AST 解析，有已知误报风险（品牌名、SVG title），靠 lint-ignore 行内豁免处理
+// 升级路径：换 @typescript-eslint 自定义规则做 AST 级精度
+
+// ponytail: JSX 文本节点 — >text</ 要求闭合标签 </，排除 TS 泛型 >Promise<Param> 误匹配
+const JSX_TEXT_RE = />([^<{}]+)<\//g;
+
+// ponytail: 白名单属性字符串字面量 — title/aria-label/placeholder/label/alt = "..."
+const PROP_STRING_RE = /\b(?:title|aria-label|placeholder|label|alt)\s*=\s*"([^"]+)"/g;
+
+// ponytail: aria-label kebab-case 单标识符豁免 — 纯标识符无空格，是内部 landmark 标识
+const KEBAB_ID_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+// ponytail: HTML 实体 — &nbsp; &amp; 等不需要外化
+const HTML_ENTITY_RE = /^&[a-zA-Z]+;$/;
+
+const HAS_ALPHA_RE = /[a-zA-Z]/;
+
+function extractUnexternalizedStrings(files: string[]): { file: string; line: number; kind: "jsx-text" | "prop-string"; text: string }[] {
+  const violations: { file: string; line: number; kind: "jsx-text" | "prop-string"; text: string }[] = [];
+  for (const file of files) {
+    // ponytail: 跳过测试文件 — 测试中的硬编码字符串不算生产违规
+    if (file.endsWith(".test.ts") || file.endsWith(".test.tsx")) continue;
+    const src = fs.readFileSync(file, "utf-8");
+    const lines = src.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // ponytail: 行内豁免
+      if (line.includes("// lint-ignore-unexternalized")) continue;
+
+      JSX_TEXT_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = JSX_TEXT_RE.exec(line)) !== null) {
+        const text = m[1].trim();
+        if (!text || !HAS_ALPHA_RE.test(text)) continue;
+        if (HTML_ENTITY_RE.test(text)) continue;
+        violations.push({ file: path.relative(ROOT, file), line: i + 1, kind: "jsx-text", text });
+      }
+
+      PROP_STRING_RE.lastIndex = 0;
+      while ((m = PROP_STRING_RE.exec(line)) !== null) {
+        const text = m[1];
+        if (!text || !HAS_ALPHA_RE.test(text)) continue;
+        // ponytail: aria-label kebab-case 单标识符豁免 — 无空格的纯标识符是内部 landmark
+        if (KEBAB_ID_RE.test(text) && !text.includes(" ")) continue;
+        violations.push({ file: path.relative(ROOT, file), line: i + 1, kind: "prop-string", text });
+      }
+    }
+  }
+  return violations;
+}
+
 // --- Reporting ---
 
-type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key" | "duplicate-key";
+type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key" | "duplicate-key" | "unexternalized-string";
 const issues: { kind: IssueKind; key: string }[] = [];
 
 // 1. Main namespace parity
@@ -125,6 +179,15 @@ for (const locale of ["en-US", "zh-CN"] as const) {
   }
 }
 
+// 5. Unexternalized strings (opt-in) — 只扫描 .tsx 文件，检测 JSX 文本节点和白名单属性字面量
+if (CHECK_UNEXTERNALIZED) {
+  const tsxFiles = srcFiles.filter((f) => f.endsWith(".tsx"));
+  const unexternalized = extractUnexternalizedStrings(tsxFiles);
+  for (const v of unexternalized) {
+    issues.push({ kind: "unexternalized-string", key: `${v.file}:${v.line} [${v.kind}] "${v.text}"` });
+  }
+}
+
 // --- Output ---
 
 if (issues.length === 0) {
@@ -145,6 +208,7 @@ const LABELS: Record<IssueKind, string> = {
   "undefined-key": "Code uses key not defined in any dictionary",
   "unused-key": "Dictionary key not used in code",
   "duplicate-key": "Key duplicated across surface files (spread merge silently overwrites)",
+  "unexternalized-string": "User-visible string not externalized via t() / formatMessage()",
 };
 
 for (const [kind, keys] of grouped) {

@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import i18n from "../i18n/i18n-instance";
 import { CLASSIC_WORKBENCH_UI_PACK } from "./classic";
 import type { createTranslator } from "../i18n";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
@@ -246,5 +247,15 @@ export const loadExternalWorkbenchUiPack = async ({
   if (validation.valid === false) {
     throw new Error(`Invalid external UIUX pack ${packId}: ${validation.errors.join("; ")}`);
   }
+
+  // ponytail: 合并 pack l10n bundles 到 i18next — deep+overwrite 让插件 key 覆盖核心同名 key
+  // ceiling: 不实现卸载 — removeResourceBundle 移除整个 translation namespace 会破坏核心翻译；
+  // pack 切换时新 bundle 覆盖旧 key，旧 pack 独有 key 残留但不影响功能
+  if (runtime.l10nBundles !== undefined) {
+    for (const [locale, bundle] of Object.entries(runtime.l10nBundles)) {
+      i18n.addResourceBundle(locale, "translation", bundle, true, true);
+    }
+  }
+
   return trustedPack;
 };

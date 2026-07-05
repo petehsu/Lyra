@@ -11,7 +11,7 @@ import {
   protocol,
   shell
 } from "electron";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { hostname, userInfo, platform, homedir, tmpdir } from "node:os";
 import { execFile, execSync } from "node:child_process";
@@ -1336,6 +1336,30 @@ const registerIpcHandlers = async (): Promise<void> => {
     LYRA_CHANNELS.linuxCompatRestart,
     (_event, request?: LinuxCompatRestartRequest): LinuxCompatRestartResponse =>
       linuxCompatBridge.requestRestart(app, request)
+  );
+
+  // ponytail: i18n local bundles — 扫描 ~/.lyra/locales/{locale}.json，返回 {locale: bundle} 映射
+  // 渲染器 init 后调用此 API，通过 addResourceBundle 合并到 i18next 实例
+  ipcMain.handle(
+    LYRA_CHANNELS.i18nReadLocalBundles,
+    (): Readonly<Record<string, Record<string, string>>> => {
+      const localesDir = join(homedir(), ".lyra", "locales");
+      if (!existsSync(localesDir)) return {};
+      const bundles: Record<string, Record<string, string>> = {};
+      for (const file of readdirSync(localesDir)) {
+        if (!file.endsWith(".json")) continue;
+        const locale = file.slice(0, -".json".length);
+        try {
+          const bundle = JSON.parse(readFileSync(join(localesDir, file), "utf-8"));
+          if (typeof bundle === "object" && bundle !== null) {
+            bundles[locale] = bundle as Record<string, string>;
+          }
+        } catch {
+          // ponytail: 损坏的 JSON 文件跳过，不影响其他 locale
+        }
+      }
+      return bundles;
+    }
   );
 
 };

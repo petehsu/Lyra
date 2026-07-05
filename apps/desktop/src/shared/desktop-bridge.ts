@@ -741,6 +741,7 @@ export const LYRA_CHANNELS = {
   screenshotPreviewPresent: "lyra:screenshot-preview/present",
   screenshotPreviewDismiss: "lyra:screenshot-preview/dismiss",
   screenshotPreviewEvent: "lyra:screenshot-preview/event",
+  i18nReadLocalBundles: "lyra:i18n/read-local-bundles",
 } as const;
 
 export type WindowStatePayload = {
@@ -2568,6 +2569,11 @@ export type LegalApi = {
 export type DetectedEditor = { id: string; label: string; icon?: string };
 export type OpenInEditorRequest = { editorId: string; path: string };
 
+// ponytail: I18nApi — 渲染器通过 IPC 从主进程获取本地 locale bundles（~/.lyra/locales/）
+export type I18nApi = {
+  readonly readLocalBundles: () => Promise<Readonly<Record<string, Record<string, string>>>>;
+};
+
 export type LyraDesktopApi = {
   readonly windowControls: WindowControlsApi;
   readonly appMeta: AppMetaPayload;
@@ -2596,4 +2602,5 @@ export type LyraDesktopApi = {
   readonly uiux: UiuxPacksApi;
   readonly workbenchState: WorkbenchStateApi;
   readonly location?: LocationApi;
+  readonly i18n: I18nApi;
 };

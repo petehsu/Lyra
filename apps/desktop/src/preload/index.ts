@@ -1842,6 +1842,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         ipcRenderer.removeListener(LYRA_CHANNELS.workbenchStateChanged, wrappedListener);
       };
     }
+  },
+  i18n: {
+    readLocalBundles: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.i18nReadLocalBundles) as Promise<
+        Readonly<Record<string, Record<string, string>>>
+      >
   }
 });
 

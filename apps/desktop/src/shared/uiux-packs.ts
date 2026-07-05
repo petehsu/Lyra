@@ -40,6 +40,7 @@ export type InstalledUiuxPack = {
   readonly packagePath: string;
   readonly entryPath: string;
   readonly cssPath?: string;
+  readonly l10nPath?: string;
   readonly sourceFingerprint: string;
   readonly trustState: UiuxPackTrustState;
   readonly installedAt: string;
@@ -58,6 +59,7 @@ export type UiuxPackRuntime = {
   readonly entryUrl: string;
   readonly cssUrl?: string;
   readonly software: readonly LyraSoftwareManifest[];
+  readonly l10nBundles?: Record<string, Record<string, string>>;
 };
 
 export type UiuxListPacksResponse = {
