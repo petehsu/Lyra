@@ -21,7 +21,10 @@ use super::{
     budgeted_tool_output, diff_text, resolve_missing_ok_workspace_path, resolve_workspace_path,
 };
 
-const PREVIEW_THROTTLE: Duration = Duration::from_millis(32);
+// 150ms ≈ smooth-enough live diff for a human eye. The throttle gates parse +
+// file read + diff + two NAPI events per frame, all paid on the provider
+// stream thread — 32ms made the preview path dominate stream consumption.
+const PREVIEW_THROTTLE: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Debug)]
 struct MutationToolTarget {
@@ -463,6 +466,29 @@ fn build_tool_input(partial_arguments: &str, tool_path: &str) -> Value {
     json!({ "path": tool_path, "args": {} })
 }
 
+/// Cap what a single preview frame puts on the wire. Frames repeat every
+/// PREVIEW_THROTTLE, so an unbounded diff multiplies serialization, event and
+/// snapshot cost by the frame count. Keeps the diff header plus the newest
+/// tail — the tail is where the model is currently "typing", which is exactly
+/// what a live preview needs to show.
+const MAX_PREVIEW_TRANSPORT_BYTES: usize = 16 * 1024;
+
+fn truncate_preview_diff(diff: &str) -> String {
+    if diff.len() <= MAX_PREVIEW_TRANSPORT_BYTES {
+        return diff.to_string();
+    }
+    let mut start = diff.len() - MAX_PREVIEW_TRANSPORT_BYTES;
+    while !diff.is_char_boundary(start) {
+        start += 1;
+    }
+    // Resync to a line boundary so the frame never shows a torn diff line.
+    if let Some(offset) = diff[start..].find('\n') {
+        start += offset + 1;
+    }
+    let header = diff.lines().take(2).collect::<Vec<_>>().join("\n");
+    format!("{header}\n… (streaming preview truncated) …\n{}", &diff[start..])
+}
+
 fn emit_preview_tool_activity(
     session_id: &str,
     turn_id: &str,
@@ -476,6 +502,13 @@ fn emit_preview_tool_activity(
     started_at: &str,
     first_emit: bool,
 ) {
+    // Preview frames are transient and re-emitted every PREVIEW_THROTTLE while
+    // the model streams arguments. Routing them through budgeted_tool_output
+    // wrote a fresh artifact file to disk for every oversized frame; truncate
+    // inline instead and let the final (real) tool output carry the full diff
+    // and artifacts once.
+    let truncated = diff.len() > MAX_PREVIEW_TRANSPORT_BYTES;
+    let display_diff = truncate_preview_diff(diff);
     let raw = json!({
         "changedFiles": [{
             "path": relative_path,
@@ -483,19 +516,27 @@ fn emit_preview_tool_activity(
             "beforeExists": true,
             "afterExists": true,
         }],
-        "diff": diff,
+        "diff": display_diff,
         "activityKind": "edit",
         "rendererHint": "edit",
         "preview": true,
     });
-    let output = budgeted_tool_output(
-        session_id,
-        turn_id,
-        tool_call_id,
-        format!("Editing {relative_path}\n{diff}"),
-        raw,
-        None,
-    );
+    let output = json!({
+        "content": format!("Editing {relative_path}\n{display_diff}"),
+        "raw": raw,
+        "truncated": truncated,
+        "artifactRef": Value::Null,
+        "rawArtifactRef": Value::Null,
+        "truncatedReason": if truncated {
+            json!("streaming preview diff truncated for transport")
+        } else {
+            Value::Null
+        },
+        "rawTruncatedReason": Value::Null,
+        "recommendedNextAction": Value::Null,
+        "activityKind": "edit",
+        "rendererHint": "edit",
+    });
     let activity = tool_activity(
         tool_call_id,
         tool_name,
@@ -753,6 +794,30 @@ mod tests {
             }
             other => panic!("expected Patch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn truncate_preview_diff_keeps_header_and_newest_tail() {
+        let small = "--- a\n+++ b\n+line";
+        assert_eq!(truncate_preview_diff(small), small);
+
+        let body = (0..4000)
+            .map(|index| format!("+line {index} 有中文内容"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let big = format!("--- index.html\n+++ index.html\n{body}");
+        let truncated = truncate_preview_diff(&big);
+        assert!(truncated.len() <= MAX_PREVIEW_TRANSPORT_BYTES + 256);
+        assert!(truncated.starts_with("--- index.html\n+++ index.html\n"));
+        assert!(truncated.contains("… (streaming preview truncated) …"));
+        // The newest (tail) content survives — that is what a live preview shows.
+        assert!(truncated.contains("+line 3999 有中文内容"));
+        // Resynced to a line boundary: no torn line right after the marker.
+        let after_marker = truncated
+            .split("… (streaming preview truncated) …\n")
+            .nth(1)
+            .expect("tail");
+        assert!(after_marker.starts_with("+line "));
     }
 
     #[test]

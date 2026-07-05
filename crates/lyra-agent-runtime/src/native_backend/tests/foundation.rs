@@ -1479,6 +1479,92 @@ fn running_tool_without_active_anchor_reuses_message_for_later_assistant_text() 
 }
 
 #[test]
+fn commit_marks_streamed_reasoning_done_for_tool_call_only_reply() {
+    // Providers that stream thinking deltas return reasoning_content: None at
+    // commit time. A tool-call-only reply (no visible text) must still flip the
+    // streamed reasoning from "thinking" to "done" — this used to stick forever.
+    let mut session = new_session(
+        Some(format!("Reasoning Done {}", Uuid::new_v4())),
+        None,
+        "normal",
+    );
+    let session_id = session.id.clone();
+    let turn_id = format!("turn-reasoning-done-{}", Uuid::new_v4());
+    let message_id = format!("message-reasoning-{}", Uuid::new_v4());
+    session.snapshot["turnStatus"] = Value::String("running".to_string());
+    session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
+    session.snapshot["follow"] = json!({ "running": true, "activity": "calling_model" });
+    session.runtime_turns.push(runtime_turn(
+        &turn_id,
+        &session_id,
+        "calling_model",
+        None,
+        None,
+    ));
+    let mut message = assistant_message_with_id(message_id.clone(), String::new());
+    message["reasoningContent"] = json!("先想清楚页面布局。");
+    message["reasoningStatus"] = json!("thinking");
+    message["blocks"] = json!([
+        { "type": "thinking", "id": "thinking-0", "text": "先想清楚页面布局。", "status": "thinking" }
+    ]);
+    push_array(&mut session.snapshot, "messages", message);
+    {
+        let mut state = state().lock().expect("state lock");
+        session.dirty = true;
+        state.sessions.insert(session_id.clone(), session);
+        state.save_state().expect("save state");
+    }
+    crate::native_backend::turns::set_active_ui_message_id(&session_id, &turn_id, &message_id);
+
+    let mut reply = ModelReply {
+        content: None,
+        reasoning_content: None,
+        tool_calls: vec![ModelToolCall {
+            id: "call-reasoning-done-tool".to_string(),
+            name: "write_file".to_string(),
+            arguments: json!({ "path": "index.html" }),
+        }],
+        ui_message_id: None,
+        provider_replay_items: Vec::new(),
+        stop_signal: TurnStopSignal::ToolUse,
+    };
+    assert!(
+        crate::native_backend::turns::commit_visible_assistant_reply(
+            &session_id,
+            &turn_id,
+            &mut reply,
+            &Some(message_id.clone()),
+        )
+    );
+
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    let message = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|message| message.get("id").and_then(Value::as_str) == Some(message_id.as_str()))
+        .expect("assistant message");
+    assert_eq!(
+        message.get("reasoningStatus").and_then(Value::as_str),
+        Some("done")
+    );
+    let thinking_status = message
+        .get("blocks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
+        .and_then(|block| block.get("status").and_then(Value::as_str));
+    assert_eq!(thinking_status, Some("done"));
+    drop(state);
+
+    crate::native_backend::turns::clear_active_ui_message_id(&session_id, &turn_id);
+}
+
+#[test]
 fn running_tool_after_cleared_anchor_starts_a_new_message() {
     let mut session = new_session(
         Some(format!("Tool New Anchor {}", Uuid::new_v4())),

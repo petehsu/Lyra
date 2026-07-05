@@ -511,6 +511,8 @@ export const useLyraAgentDataProvider = (
   // oldest entry is evicted first. Upgrade path: track last-accessed timestamps
   // if cache hit rate degrades with many concurrent sessions.
   const sessionCacheRef = useRef<Map<string, AgentSessionSnapshot>>(new Map());
+  // Deduplicates in-flight backing session creation between prewarm and sendMessage.
+  const backingSessionPromiseRef = useRef<Promise<AgentSessionSnapshot> | null>(null);
   const modelConfigSignature = useMemo(() => {
     const config = settingsAiModel?.agentConfig?.config as {
       provider?: unknown;
@@ -738,16 +740,35 @@ export const useLyraAgentDataProvider = (
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
     if (desktopApi?.agent === undefined) return null;
     if (state.session !== null) return state.session;
+    // If prewarm is in flight, await the same promise instead of creating a duplicate.
+    if (backingSessionPromiseRef.current !== null) {
+      return backingSessionPromiseRef.current;
+    }
     const request = createSessionRequest();
-    const snapshot = await (
+    const createPromise = Promise.resolve(
       onCreateSessionTab === undefined
         ? desktopApi.agent.createSession(request)
         : onCreateSessionTab(request)
     );
-    currentSessionIdRef.current = snapshot.id;
-    dispatch({ type: "snapshot", snapshot });
-    return snapshot;
+    const promise = createPromise.then((snapshot) => {
+      currentSessionIdRef.current = snapshot.id;
+      dispatch({ type: "snapshot", snapshot });
+      return snapshot;
+    });
+    backingSessionPromiseRef.current = promise;
+    promise.finally(() => { backingSessionPromiseRef.current = null; });
+    return promise;
   }, [createSessionRequest, desktopApi, onCreateSessionTab, state.session]);
+
+  // Prewarm backing session for draft tabs — creates the session in the
+  // background so the first message doesn't wait for IPC round-trip.
+  useEffect(() => {
+    if (!deferInitialSessionCreation) return;
+    if (activeSessionId !== null) return;
+    if (state.session !== null) return;
+    if (desktopApi?.agent === undefined) return;
+    void ensureBackingSession();
+  }, [deferInitialSessionCreation, activeSessionId, state.session?.id, desktopApi, ensureBackingSession]);
 
   const sendMessage = useCallback(async (
     text: string,

@@ -355,6 +355,7 @@ export interface ModelOption {
   available: boolean;
   enabled: boolean;
   contextWindow?: number | null;
+  sourceLabel?: string | null;
 }
 
 export interface ProviderOptionControl {

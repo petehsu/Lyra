@@ -1017,6 +1017,142 @@ pub(crate) fn install_default_providers(config: &mut NativeConfig) {
             embedding_model: Some("lyra-hash-embedding-v1".to_string()),
             models: Vec::new(),
         });
+    // ponytail: 免费模型 provider，api_key="public" 通过 provider_profile_available 检查
+    // api_key 标了 skip_serializing，从 state.json 读回时为 None，需在 and_modify 中补回
+    config
+        .providers
+        .entry("opencode-free".to_string())
+        .and_modify(|p| {
+            if p.api_key.is_none() {
+                p.api_key = Some("public".to_string());
+            }
+        })
+        .or_insert_with(|| NativeProviderProfile {
+            id: "opencode-free".to_string(),
+            label: "OpenCode Free".to_string(),
+            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("https://opencode.ai/zen/v1".to_string()),
+            default_model: Some("big-pickle".to_string()),
+            api_key: Some("public".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: vec![
+                NativeProviderModel {
+                    id: "big-pickle".to_string(),
+                    label: Some("Big Pickle".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "deepseek-v4-flash-free".to_string(),
+                    label: Some("DeepSeek V4 Flash Free".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "mimo-v2.5-free".to_string(),
+                    label: Some("MiMo-V2.5 Free".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "north-mini-code-free".to_string(),
+                    label: Some("North Mini Code Free".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "nemotron-3-ultra-free".to_string(),
+                    label: Some("Nemotron 3 Ultra Free".to_string()),
+                    context_window: None,
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+            ],
+        });
+    config
+        .providers
+        .entry("mimo-free".to_string())
+        .and_modify(|p| {
+            if p.api_key.is_none() {
+                p.api_key = Some("public".to_string());
+            }
+        })
+        .or_insert_with(|| NativeProviderProfile {
+            id: "mimo-free".to_string(),
+            label: "MiMo Free".to_string(),
+            route_id: providers::routes::custom_openai_compatible::ROUTE_ID.to_string(),
+            base_url: Some("https://api.xiaomimimo.com/v1".to_string()),
+            default_model: Some("mimo-auto".to_string()),
+            api_key: Some("public".to_string()),
+            api_key_ref: None,
+            api_key_env: None,
+            auth_header: None,
+            embedding_model: Some("lyra-hash-embedding-v1".to_string()),
+            models: vec![
+                NativeProviderModel {
+                    id: "mimo-auto".to_string(),
+                    label: Some("MiMo Auto (Free)".to_string()),
+                    context_window: Some(1_048_576),
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "mimo-v2-omni-free".to_string(),
+                    label: Some("MiMo V2 Omni Free".to_string()),
+                    context_window: Some(262_144),
+                    supports_image_input: true,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "mimo-v2-pro-free".to_string(),
+                    label: Some("MiMo V2 Pro Free".to_string()),
+                    context_window: Some(1_048_576),
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+                NativeProviderModel {
+                    id: "mimo-v2-flash-free".to_string(),
+                    label: Some("MiMo V2 Flash Free".to_string()),
+                    context_window: Some(262_144),
+                    supports_image_input: false,
+                    supports_tool_calling: true,
+                    supports_streaming: true,
+                    supports_reasoning_effort: None,
+                    enabled: true,
+                },
+            ],
+        });
     for provider in config.providers.values_mut() {
         if provider.embedding_model.is_none() {
             provider.embedding_model = Some("lyra-hash-embedding-v1".to_string());

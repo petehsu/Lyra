@@ -180,6 +180,13 @@ const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
   return (metadata as { readonly uiHidden?: boolean }).uiHidden === true;
 };
 
+// Backend compression inserts a role:"system" message whose text is a JSON
+// payload (summary, compressedMessageIds, …). The chat UI must never render it.
+const isCompressedContextBlock = (metadata: unknown): boolean => {
+  if (metadata === null || typeof metadata !== "object") return false;
+  return (metadata as { readonly kind?: string }).kind === "compressed-context-block";
+};
+
 const isApiErrorAgentMessage = (metadata: unknown): boolean => {
   if (metadata === null || typeof metadata !== "object") return false;
   return (metadata as { readonly isApiError?: boolean }).isApiError === true;
@@ -411,6 +418,9 @@ export const agentSessionToChatMessages = (
   const timedMessages = sourceMessages
     .flatMap((message, index) => {
       if (isUiHiddenAgentMessage(message.metadata)) {
+        return [];
+      }
+      if (isCompressedContextBlock(message.metadata)) {
         return [];
       }
       const originalIndex = sourceMessageStartIndex + index;

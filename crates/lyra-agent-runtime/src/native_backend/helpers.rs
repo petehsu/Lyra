@@ -47,15 +47,37 @@ pub(crate) fn set_bool(value: &mut Value, key: &str, next: bool) {
 pub(crate) fn touch_snapshot(snapshot: &mut Value) {
     super::pinned_context::stamp_snapshot_timestamps(snapshot);
     set_string(snapshot, "updatedAt", now());
-    let memory = snapshot
-        .get("memory")
-        .cloned()
-        .filter(|value| !value.is_null())
-        .unwrap_or(Value::Null);
-    snapshot["memory"] = memory;
+    if snapshot.get("memory").is_none() {
+        snapshot["memory"] = Value::Null;
+    }
+    refresh_token_estimate_if_stale(snapshot);
+}
+
+/// How stale the UI context meter may get before we re-run the tokenizer.
+const TOKEN_ESTIMATE_REFRESH_MS: i64 = 5_000;
+
+/// tokenEstimate feeds the UI context-usage meter only — the model-call path
+/// computes its own estimate at request time (provider.rs). Recomputing it here
+/// used to clone + serialize + BPE-encode the ENTIRE conversation on every
+/// touch, and touch_session runs on every streamed progress frame: profiling
+/// showed the provider stream thread spending its time inside tiktoken instead
+/// of reading the socket, throttling code generation to a crawl. A time gate
+/// keeps the meter fresh enough (5s) while making the hot path O(1).
+fn refresh_token_estimate_if_stale(snapshot: &mut Value) {
+    let now_ms = Utc::now().timestamp_millis();
+    let stamped_at = snapshot
+        .get("tokenEstimateAtMs")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if snapshot.get("tokenEstimate").is_some()
+        && now_ms.saturating_sub(stamped_at) < TOKEN_ESTIMATE_REFRESH_MS
+    {
+        return;
+    }
     if let Some(messages) = snapshot.get("messages").and_then(Value::as_array) {
-        snapshot["tokenEstimate"] =
-            json!(super::token_estimate::estimate_messages_tokens(messages));
+        let estimate = super::token_estimate::estimate_messages_tokens(messages);
+        snapshot["tokenEstimate"] = json!(estimate);
+        snapshot["tokenEstimateAtMs"] = json!(now_ms);
     }
 }
 

@@ -913,6 +913,34 @@ pub(crate) fn run_model_loop(
             );
         }
 
+        // microCompact + MidTurn 压缩 — 在 model loop 中间减小 context。
+        // 两级阈值：先 microCompact 清理旧工具结果（不调 LLM），
+        // 如果 token 仍超限，MidTurn 用非损 checkpoint 替换旧消息（不调 LLM）。
+        let current_tokens = estimate_messages_tokens(&messages);
+        if current_tokens > MICRO_COMPACT_THRESHOLD {
+            let cleared = micro_compact_messages(&mut messages, MICRO_COMPACT_KEEP_RECENT);
+            if cleared > 0 {
+                emit_context_trimmed(
+                    session_id,
+                    json!({
+                        "reason": "micro_compact",
+                        "clearedToolResults": cleared,
+                        "tokensBefore": current_tokens,
+                    }),
+                );
+            }
+            if let Some((before, after)) = midturn_compact_messages(&mut messages) {
+                emit_context_trimmed(
+                    session_id,
+                    json!({
+                        "reason": "midturn_compress",
+                        "tokensBefore": before,
+                        "tokensAfter": after,
+                    }),
+                );
+            }
+        }
+
         if let Some(nudge) = progress_guard
             .browser_loop_detector
             .observe_browser_tools(&browser_tool_calls, &browser_tool_outputs)

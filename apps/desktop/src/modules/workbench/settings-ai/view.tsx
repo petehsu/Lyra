@@ -54,6 +54,8 @@ type SettingsAiRenderedModelEntry = Pick<
   | "protocolId"
   | "protocolFamily"
   | "enabled"
+  | "free"
+  | "sourceLabel"
 >;
 
 const MODEL_PREVIEW_LIMIT = 9;

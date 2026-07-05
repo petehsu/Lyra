@@ -106,5 +106,6 @@ export const agentModelsToModelOptions = (
       providerKey: model.providerKey ?? null,
       detail: model.detail ?? model.apiMethod ?? null,
       available: model.available,
-      enabled: model.enabled
+      enabled: model.enabled,
+      sourceLabel: model.sourceLabel ?? null
     }));

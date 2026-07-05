@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lyra — The AI Agent Platform That Works the Way You Do</title>
+  <meta name="description" content="Lyra is an open-source AI agent desktop platform. Multi-agent collaboration, code intelligence, browser automation, and more.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lucide-icons/0.263.0/lucide.css">
+  <style>
+    /* =============================================
+       RESET & BASE
+    ============================================= */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0A0A0F;
+      color: #E8E8F0;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+    ::selection { background: rgba(108, 92, 231, 0.4); color: #fff; }
+    a { color: #a29bfe; text-decoration: none; transition: color 0.2s; }
+    a:hover { color: #6C5CE7; }
+    img { max-width: 100%; height: auto; display: block; }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* =============================================
+       PARTICLES CANVAS
+    ============================================= */
+    #particles-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* =============================================
+       NAV
+    ============================================= */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 24px;
+      background: rgba(10, 10, 15, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(108, 92, 231, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    nav .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: #fff;
+    }
+    nav .logo svg { width: 28px; height: 28px; }
+    nav .logo span { background: linear-gradient(135deg, #6C5CE7, #a29bfe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    nav .nav-links { display: flex; align-items: center; gap: 32px; }
+    nav .nav-links a { font-size: 0.875rem; font-weight: 500; color: #9898A8; }
+    nav .nav-links a:hover { color: #fff; }
+    nav .nav-cta {
+      background: linear-gradient(135deg, #6C5CE7, #a29bfe);
+      color: #fff !important;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    nav .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
+    }
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+
+    /* =============================================
+       HERO
+    ============================================= */
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: url('images/hero-bg.jpg') center/cover no-repeat;
+      opacity: 0.12;
+      mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+      -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 100px;
+      background: rgba(108, 92, 231, 0.15);
+      border: 1px solid rgba(108, 92, 231, 0.25);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: #a29bfe;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s ease-out;
+    }
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #00D2D3;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .hero .ascii-logo {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(0.45rem, 1.2vw, 0.8rem);
+      line-height: 1.1;
+      color: rgba(108, 92, 231, 0.3);
+      white-space: pre;
+      margin-bottom: 32px;
+      animation: fadeInUp 0.8s ease-out 0.1s both;
+      user-select: none;
+      pointer-events: none;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.8s ease-out 0.2s both;
+    }
+    .hero h1 .gradient-text {
+      background: linear-gradient(135deg, #6C5CE7, #a29bfe, #00D2D3);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: clamp(1rem, 1.8vw, 1.25rem);
+      color: #9898A8;
+      max-width: 640px;
+      margin-bottom: 40px;
+      animation: fadeInUp 0.8s ease-out 0.3s both;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      animation: fadeInUp 0.8s ease-out 0.4s both;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #6C5CE7, #a29bfe);
+      color: #fff;
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(108, 92, 231, 0.5);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      color: #E8E8F0;
+      font-weight: 600;
+      font-size: 1rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(108, 92, 231, 0.4);
+    }
+    .hero-stats {
+      display: flex;
+      gap: 48px;
+      margin-top: 60px;
+      animation: fadeInUp 0.8s ease-out 0.5s both;
+    }
+    .hero-stat { text-align: center; }
+    .hero-stat .num {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #6C5CE7, #a29bfe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-stat .label { font-size: 0.8125rem; color: #6868A0; margin-top: 4px; }
+
+    /* =============================================
+       SCROLL INDICATOR
+    ============================================= */
+    .scroll-indicator {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: #6868A0;
+      font-size: 0.75rem;
+      animation: bounce 2s infinite;
+    }
+    .scroll-indicator .mouse {
+      width: 20px;
+      height: 30px;
+      border: 2px solid #6868A0;
+      border-radius: 10px;
+      position: relative;
+    }
+    .scroll-indicator .mouse::after {
+      content: '';
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 3px;
+      height: 8px;
+      background: #a29bfe;
+      border-radius: 2px;
+      animation: scrollAnim 2s infinite;
+    }
+    @keyframes scrollAnim { 0% { opacity: 1; transform: translateX(-50%) translateY(0); } 100% { opacity: 0; transform: translateX(-50%) translateY(12px); } }
+    @keyframes bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(6px); } }
+
+    /* =============================================
+       SECTION COMMON
+    ============================================= */
+    section { position: relative; z-index: 1; padding: 100px 0; }
+    .section-label {
+      display: inline-block;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #a29bfe;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .section-subtitle {
+      font-size: 1.125rem;
+      color: #9898A8;
+      max-width: 600px;
+    }
+
+    /* =============================================
+       FEATURES GRID
+    ============================================= */
+    .features-header { text-align: center; margin-bottom: 64px; }
+    .features-header .section-subtitle { margin: 0 auto; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .feature-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 32px;
+      transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #6C5CE7, transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(108, 92, 231, 0.3);
+      box-shadow: 0 20px 60px rgba(108, 92, 231, 0.1);
+    }
+    .feature-card .icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(108, 92, 231, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .feature-card .icon-wrap svg {
+      width: 24px;
+      height: 24px;
+      color: #a29bfe;
+      stroke-width: 1.5;
+    }
+    .feature-card h3 { font-size: 1.125rem; font-weight: 700; margin-bottom: 10px; }
+    .feature-card p { font-size: 0.9375rem; color: #9898A8; line-height: 1.7; }
+    .feature-card .feature-img {
+      margin-top: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.02);
+    }
+    .feature-card .feature-img img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      opacity: 0.7;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .feature-card:hover .feature-img img {
+      opacity: 1;
+      transform: scale(1.02);
+    }
+
+    /* =============================================
+       ARCHITECTURE
+    ============================================= */
+    .arch-header { text-align: center; margin-bottom: 64px; }
+    .arch-header .section-subtitle { margin: 0 auto; }
+    .arch-flow {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 20px;
+      padding: 48px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .arch-flow .arch-bg {
+      position: absolute;
+      inset: 0;
+      background: url('images/arch-flow.jpg') center/cover no-repeat;
+      opacity: 0.06;
+      z-index: 0;
+    }
+    .arch-flow-content { position: relative; z-index: 1; }
+    .arch-flow h3 { text-align: center; margin-bottom: 32px; font-size: 1.25rem; color: #a29bfe; font-weight: 600; }
+    .arch-diagram {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+    }
+    .arch-node {
+      background: rgba(108, 92, 231, 0.1);
+      border: 1px solid rgba(108, 92, 231, 0.2);
+      border-radius: 12px;
+      padding: 20px 24px;
+      text-align: center;
+      min-width: 120px;
+      transition: background 0.3s, border-color 0.3s, transform 0.3s;
+    }
+    .arch-node:hover {
+      background: rgba(108, 92, 231, 0.18);
+      border-color: rgba(108, 92, 231, 0.4);
+      transform: translateY(-2px);
+    }
+    .arch-node .node-icon { font-size: 1.5rem; margin-bottom: 6px; }
+    .arch-node .node-label { font-size: 0.8125rem; font-weight: 600; color: #E8E8F0; }
+    .arch-node .node-desc { font-size: 0.75rem; color: #6868A0; margin-top: 4px; }
+    .arch-arrow {
+      color: #6C5CE7;
+      font-size: 1.5rem;
+      padding: 0 12px;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+    .arch-flow-desc {
+      text-align: center;
+      margin-top: 32px;
+      color: #9898A8;
+      font-size: 0.9375rem;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* =============================================
+       CODE DEMO
+    ============================================= */
+    .code-header { text-align: center; margin-bottom: 64px; }
+    .code-header .section-subtitle { margin: 0 auto; }
+    .code-demo {
+      background: #0D0D14;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      overflow: hidden;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .code-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.02);
+    }
+    .code-tab {
+      padding: 12px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+      color: #6868A0;
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .code-tab.active { color: #a29bfe; border-bottom-color: #6C5CE7; }
+    .code-tab:hover { color: #E8E8F0; }
+    .code-body {
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .code-body pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.8;
+      color: #C8C8D8;
+    }
+    .code-body .comment { color: #6A6A8A; }
+    .code-body .keyword { color: #a29bfe; }
+    .code-body .string { color: #00D2D3; }
+    .code-body .func { color: #FFD32A; }
+    .code-body .type { color: #6C5CE7; }
+    .code-body .number { color: #FF7675; }
+    .code-body .dim { opacity: 0.4; }
+    .code-copy {
+      display: flex;
+      justify-content: flex-end;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.02);
+      border-top: 1px solid rgba(255,255,255,0.04);
+    }
+    .code-copy button {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #9898A8;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .code-copy button:hover { color: #a29bfe; border-color: rgba(108, 92, 231, 0.4); }
+
+    /* =============================================
+       STATS SECTION
+    ============================================= */
+    .stats-section {
+      background: linear-gradient(180deg, #0A0A0F, #0D0D1A);
+    }
+    .stats-header { text-align: center; margin-bottom: 56px; }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+    .stat-card {
+      text-align: center;
+      padding: 40px 24px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .stat-card:hover {
+      border-color: rgba(108, 92, 231, 0.3);
+      transform: translateY(-4px);
+    }
+    .stat-card .stat-icon {
+      font-size: 2rem;
+      margin-bottom: 12px;
+    }
+    .stat-card .stat-num {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #6C5CE7, #a29bfe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-card .stat-label { font-size: 0.9375rem; color: #9898A8; margin-top: 8px; }
+
+    /* =============================================
+       OPEN SOURCE CTA
+    ============================================= */
+    .oss-cta {
+      text-align: center;
+      padding: 100px 24px;
+      background: linear-gradient(180deg, #0D0D1A, #0A0A0F);
+      border-top: 1px solid rgba(255,255,255,0.04);
+    }
+    .oss-cta h2 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 800;
+      margin-bottom: 16px;
+    }
+    .oss-cta p {
+      color: #9898A8;
+      font-size: 1.125rem;
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+    .oss-cta .oss-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .oss-cta .oss-stars {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 24px;
+      font-size: 0.9375rem;
+      color: #6868A0;
+    }
+    .oss-cta .oss-stars svg { color: #FFD32A; width: 18px; height: 18px; }
+
+    /* =============================================
+       FOOTER
+    ============================================= */
+    footer {
+      border-top: 1px solid rgba(255,255,255,0.04);
+      padding: 48px 24px;
+      background: #0A0A0F;
+    }
+    footer .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    footer .footer-brand p {
+      color: #6868A0;
+      font-size: 0.875rem;
+      margin-top: 12px;
+      max-width: 280px;
+    }
+    footer h4 { font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #C8C8D8; margin-bottom: 16px; }
+    footer ul { list-style: none; }
+    footer ul li { margin-bottom: 10px; }
+    footer ul li a { font-size: 0.875rem; color: #6868A0; }
+    footer ul li a:hover { color: #a29bfe; }
+    footer .footer-bottom {
+      text-align: center;
+      padding-top: 32px;
+      margin-top: 32px;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.8125rem;
+      color: #58587A;
+    }
+
+    /* =============================================
+       ANIMATIONS
+    ============================================= */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+
+    /* =============================================
+       RESPONSIVE
+    ============================================= */
+    @media (max-width: 1024px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      footer .footer-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 768px) {
+      nav .nav-links { display: none; }
+      .mobile-menu-btn { display: block; }
+      .hero { padding: 100px 20px 60px; }
+      .hero-stats { gap: 24px; flex-wrap: wrap; justify-content: center; }
+      .features-grid { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .arch-diagram { flex-direction: column; gap: 12px; }
+      .arch-arrow { transform: rotate(90deg); padding: 8px 0; }
+      footer .footer-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      nav { padding: 12px 16px; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .hero-actions .btn-primary, .hero-actions .btn-secondary { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============ PARTICLES ============ -->
+  <canvas id="particles-canvas"></canvas>
+
+  <!-- ============ NAV ============ -->
+  <nav>
+    <div class="logo">
+      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="14" cy="14" r="12" stroke="url(#logoGrad)" stroke-width="2.5"/>
+        <path d="M10 18V10l6 4-6 4z" fill="url(#logoGrad)"/>
+        <defs>
+          <linearGradient id="logoGrad" x1="2" y1="2" x2="26" y2="26">
+            <stop stop-color="#6C5CE7"/>
+            <stop offset="1" stop-color="#a29bfe"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>Lyra</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#code-demo">Code</a>
+      <a href="#stats">Stats</a>
+      <a href="https://github.com/petehsu/LLM-Docs" target="_blank">GitHub</a>
+      <a href="#get-started" class="nav-cta">Get Started</a>
+    </div>
+    <button class="mobile-menu-btn" onclick="alert('Navigation menu coming soon')">☰</button>
+  </nav>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" id="hero">
+    <div class="hero-bg"></div>
+
+    <div class="hero-badge">
+      <span class="dot"></span>
+      v0.1.0 — Now in Public Beta
+    </div>
+
+    <div class="ascii-logo" aria-hidden="true">
+      ██╗  ██╗   ██╗██████╗ ██████╗
+      ██║ ██╔╝   ██║██╔══██╗██╔══██╗
+      █████╔╝    ██║██████╔╝██████╔╝
+      ██╔═██╗    ██║██╔══██╗██╔══██╗
+      ██║  ██╗██╗██║██║  ██║██║  ██║
+      ╚═╝  ╚═╝╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+    </div>
+
+    <h1>
+      The <span class="gradient-text">AI Agent Platform</span><br>
+      That Works the Way You Do
+    </h1>
+    <p>
+      An open-source desktop platform for multi-agent collaboration, code intelligence, 
+      browser automation, and tool orchestration — all in one unified workspace.
+    </p>
+
+    <div class="hero-actions">
+      <a href="#get-started" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Get Started Free
+      </a>
+      <a href="https://github.com/petehsu/LLM-Docs" target="_blank" class="btn-secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="num">10+</div>
+        <div class="label">LLM Vendors</div>
+      </div>
+      <div class="hero-stat">
+        <div class="num">500+</div>
+        <div class="label">Deployments</div>
+      </div>
+      <div class="hero-stat">
+        <div class="num">100%</div>
+        <div class="label">Open Source</div>
+      </div>
+    </div>
+
+    <div class="scroll-indicator">
+      <div class="mouse"></div>
+      <span>Scroll</span>
+    </div>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section id="features">
+    <div class="container">
+      <div class="features-header reveal">
+        <span class="section-label">Features</span>
+        <h2 class="section-title">Everything You Need in One Platform</h2>
+        <p class="section-subtitle">From multi-agent orchestration to desktop integration — Lyra brings together every tool you need to build with AI.</p>
+      </div>
+
+      <div class="features-grid">
+        <!-- Card 1: Multi-Agent Collaboration -->
+        <div class="feature-card reveal reveal-delay-1">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <h3>Multi-Agent Collaboration</h3>
+          <p>Orchestrate multiple AI agents working together on complex tasks. Each agent brings specialized capabilities — coding, browsing, research, and more.</p>
+          <div class="feature-img">
+            <img src="images/feature-ai.jpg" alt="Multi-Agent Collaboration" loading="lazy">
+          </div>
+        </div>
+
+        <!-- Card 2: Code Intelligence -->
+        <div class="feature-card reveal reveal-delay-2">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <h3>Code Intelligence</h3>
+          <p>Full code understanding across your entire codebase. Edit, refactor, and generate code with precision using context-aware AI.</p>
+          <div class="feature-img">
+            <img src="images/feature-code.jpg" alt="Code Intelligence" loading="lazy">
+          </div>
+        </div>
+
+        <!-- Card 3: Browser Automation -->
+        <div class="feature-card reveal reveal-delay-3">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <h3>Browser Automation</h3>
+          <p>Agents that can browse the web, interact with pages, extract data, and fill forms — all under your supervision and control.</p>
+          <div class="feature-img">
+            <img src="images/feature-browser.jpg" alt="Browser Automation" loading="lazy">
+          </div>
+        </div>
+
+        <!-- Card 4: Tool Chain -->
+        <div class="feature-card reveal reveal-delay-1">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          </div>
+          <h3>Extensible Tool Chain</h3>
+          <p>Connect any API, CLI, or service as a tool. Lyra's plugin architecture lets you extend agent capabilities with minimal code.</p>
+          <div class="feature-img">
+            <img src="images/feature-integration.jpg" alt="Tool Chain" loading="lazy">
+          </div>
+        </div>
+
+        <!-- Card 5: Security Sandbox -->
+        <div class="feature-card reveal reveal-delay-2">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>Security Sandbox</h3>
+          <p>Every agent runs in an isolated sandbox with granular permissions. Review, approve, or deny each action — you stay in control.</p>
+          <div class="feature-img">
+            <img src="images/feature-ai.jpg" alt="Security Sandbox" loading="lazy">
+          </div>
+        </div>
+
+        <!-- Card 6: Desktop Integration -->
+        <div class="feature-card reveal reveal-delay-3">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3>Desktop Integration</h3>
+          <p>Native macOS, Linux, and Windows support. Agents can interact with your file system, terminal, and desktop applications.</p>
+          <div class="feature-img">
+            <img src="images/feature-browser.jpg" alt="Desktop Integration" loading="lazy">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section id="architecture" style="background: linear-gradient(180deg, #0A0A0F, #0D0D1A);">
+    <div class="container">
+      <div class="arch-header reveal">
+        <span class="section-label">Architecture</span>
+        <h2 class="section-title">How Lyra Works</h2>
+        <p class="section-subtitle">A clean, layered architecture that separates agent reasoning from tool execution.</p>
+      </div>
+
+      <div class="arch-flow reveal">
+        <div class="arch-bg"></div>
+        <div class="arch-flow-content">
+          <h3>System Architecture</h3>
+          <div class="arch-diagram">
+            <div class="arch-node">
+              <div class="node-icon">🎯</div>
+              <div class="node-label">User Input</div>
+              <div class="node-desc">CLI / GUI / API</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-node">
+              <div class="node-icon">🧠</div>
+              <div class="node-label">Agent Core</div>
+              <div class="node-desc">LLM + Reasoning</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-node">
+              <div class="node-icon">🔧</div>
+              <div class="node-label">Tool Router</div>
+              <div class="node-desc">Permission & Dispatch</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-node">
+              <div class="node-icon">⚙️</div>
+              <div class="node-label">Executors</div>
+              <div class="node-desc">Code / Browser / Shell</div>
+            </div>
+          </div>
+          <p class="arch-flow-desc">
+            User requests flow through the Agent Core where an LLM plans and reasons, then the Tool Router dispatches 
+            actions to sandboxed executors — all with transparent permission controls and real-time observability.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CODE DEMO ============ -->
+  <section id="code-demo">
+    <div class="container">
+      <div class="code-header reveal">
+        <span class="section-label">Code Demo</span>
+        <h2 class="section-title">See It in Action</h2>
+        <p class="section-subtitle">A simple multi-agent workflow — Lyra handles the orchestration, you get the result.</p>
+      </div>
+
+      <div class="code-demo reveal">
+        <div class="code-tabs">
+          <button class="code-tab active" data-tab="python">Python</button>
+          <button class="code-tab" data-tab="typescript">TypeScript</button>
+          <button class="code-tab" data-tab="config">Config</button>
+        </div>
+        <div class="code-body">
+          <pre id="code-content"><span class="dim"># create_agent.py</span>
+
+<span class="keyword">from</span> lyra <span class="keyword">import</span> Agent, ToolSet
+
+<span class="comment"># Define a research agent with code + browser tools</span>
+agent = Agent(
+    name=<span class="string">"research-bot"</span>,
+    model=<span class="string">"claude-3-opus"</span>,
+    tools=ToolSet(
+        code_edit=<span class="k">True</span>,
+        browser=<span class="k">True</span>,
+        terminal=<span class="k">True</span>,
+        filesystem=<span class="string">"~/projects/*"</span>
+    ),
+    instructions=<span class="string">"You are a research engineer. Browse docs, write code, and run tests."</span>
+)
+
+<span class="comment"># Run the agent with a complex task</span>
+result = agent.run(
+    <span class="string">"Find the latest API docs for OpenAI GPT-4o, write a summary, and save it to README.md"</span>
+)
+
+<span class="keyword">print</span>(result.summary)
+<span class="comment"># → "Browser searched docs, extracted key changes, wrote README.md"</span></pre>
+        </div>
+        <div class="code-copy">
+          <button onclick="copyCode()">📋 Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section id="stats" class="stats-section">
+    <div class="container">
+      <div class="stats-header reveal">
+        <span class="section-label">Performance</span>
+        <h2 class="section-title">Built for Speed & Scale</h2>
+        <p class="section-subtitle">Production-tested across thousands of deployments.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card reveal reveal-delay-1">
+          <div class="stat-icon">⚡</div>
+          <div class="stat-num">500+</div>
+          <div class="stat-label">Production Deployments</div>
+        </div>
+        <div class="stat-card reveal reveal-delay-2">
+          <div class="stat-icon">🔌</div>
+          <div class="stat-num">10+</div>
+          <div class="stat-label">LLM Vendors Supported</div>
+        </div>
+        <div class="stat-card reveal reveal-delay-3">
+          <div class="stat-icon">📄</div>
+          <div class="stat-num">50K+</div>
+          <div class="stat-label">Docs Pages Indexed</div>
+        </div>
+        <div class="stat-card reveal reveal-delay-4">
+          <div class="stat-icon">🌍</div>
+          <div class="stat-num">3</div>
+          <div class="stat-label">Languages (EN / ZH / JA)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OPEN SOURCE CTA ============ -->
+  <section id="get-started" class="oss-cta">
+    <div class="container">
+      <div class="reveal">
+        <h2>Open Source. <span class="gradient-text" style="background:linear-gradient(135deg,#6C5CE7,#a29bfe,#00D2D3);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Community Driven.</span></h2>
+        <p>Lyra is MIT-licensed and built in public. Join the community, contribute code, or just star the repo.</p>
+        <div class="oss-actions">
+          <a href="https://github.com/petehsu/LLM-Docs" target="_blank" class="btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            View on GitHub
+          </a>
+          <a href="#" class="btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Read the Docs
+          </a>
+        </div>
+        <div class="oss-stars">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          Star us on GitHub — it helps!
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="logo" style="display:flex;align-items:center;gap:8px;font-weight:700;">
+          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:22px;height:22px;">
+            <circle cx="14" cy="14" r="12" stroke="url(#logoGrad2)" stroke-width="2.5"/>
+            <path d="M10 18V10l6 4-6 4z" fill="url(#logoGrad2)"/>
+            <defs>
+              <linearGradient id="logoGrad2" x1="2" y1="2" x2="26" y2="26">
+                <stop stop-color="#6C5CE7"/>
+                <stop offset="1" stop-color="#a29bfe"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span style="background:linear-gradient(135deg,#6C5CE7,#a29bfe);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Lyra</span>
+        </div>
+        <p>An open-source AI agent platform. MIT license. Built with ❤️ by the Lyra team and contributors worldwide.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#code-demo">Code Demo</a></li>
+          <li><a href="#stats">Performance</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/petehsu/LLM-Docs" target="_blank">GitHub</a></li>
+          <li><a href="#">Documentation</a></li>
+          <li><a href="#">Discord</a></li>
+          <li><a href="#">Twitter / X</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="#">API Reference</a></li>
+          <li><a href="#">Examples</a></li>
+          <li><a href="#">Changelog</a></li>
+          <li><a href="#">FAQ</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      &copy; 2026 Lyra. Released under the MIT License.
+    </div>
+  </footer>
+
+  <!-- ============ JAVASCRIPT ============ -->
+  <script>
+    /* ========== PARTICLES ========== */
+    (function initParticles() {
+      const canvas = document.getElementById('particles-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let particles = [];
+      let mouse = { x: null, y: null, rx: null, ry: null };
+      let animId;
+
+      function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      class Particle {
+        constructor() { this.reset(); }
+        reset() {
+          this.x = Math.random() * canvas.width;
+          this.y = Math.random() * canvas.height;
+          this.size = Math.random() * 2 + 0.5;
+          this.speedX = (Math.random() - 0.5) * 0.3;
+          this.speedY = (Math.random() - 0.5) * 0.3;
+          this.opacity = Math.random() * 0.6 + 0.1;
+        }
+        update() {
+          this.x += this.speedX;
+          this.y += this.speedY;
+          if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
+          if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
+          // Mouse interaction
+          if (mouse.rx !== null && mouse.ry !== null) {
+            const dx = this.x - mouse.rx;
+            const dy = this.y - mouse.ry;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const maxDist = 120;
+            if (dist < maxDist) {
+              const force = (maxDist - dist) / maxDist;
+              this.x += dx * force * 0.02;
+              this.y += dy * force * 0.02;
+            }
+          }
+        }
+        draw() {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(162, 155, 254, ${this.opacity})`;
+          ctx.fill();
+        }
+      }
+
+      const particleCount = Math.min(Math.floor((canvas.width * canvas.height) / 8000), 120);
+      for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle());
+      }
+
+      function drawLines() {
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist < 150) {
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.strokeStyle = `rgba(108, 92, 231, ${(1 - dist/150) * 0.15})`;
+              ctx.lineWidth = 0.5;
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => { p.update(); p.draw(); });
+        drawLines();
+        animId = requestAnimationFrame(animate);
+      }
+      animate();
+
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.rx = e.clientX - rect.left;
+        mouse.ry = e.clientY - rect.top;
+        // Also track for page scroll-adjusted coordinates
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+      });
+      canvas.addEventListener('mouseleave', () => { mouse.rx = null; mouse.ry = null; });
+
+      // Cleanup
+      window.addEventListener('beforeunload', () => { if (animId) cancelAnimationFrame(animId); });
+    })();
+
+    /* ========== SCROLL REVEAL ========== */
+    (function initReveal() {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+          }
+        });
+      }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+      document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+    })();
+
+    /* ========== CODE TABS ========== */
+    (function initCodeTabs() {
+      const tabs = document.querySelectorAll('.code-tab');
+      const content = document.getElementById('code-content');
+      const codeSamples = {
+        python: `<span class="dim"># create_agent.py</span>
+
+<span class="keyword">from</span> lyra <span class="keyword">import</span> Agent, ToolSet
+
+<span class="comment"># Define a research agent with code + browser tools</span>
+agent = Agent(
+    name=<span class="string">"research-bot"</span>,
+    model=<span class="string">"claude-3-opus"</span>,
+    tools=ToolSet(
+        code_edit=<span class="k">True</span>,
+        browser=<span class="k">True</span>,
+        terminal=<span class="k">True</span>,
+        filesystem=<span class="string">"~/projects/*"</span>
+    ),
+    instructions=<span class="string">"You are a research engineer. Browse docs, write code, and run tests."</span>
+)
+
+<span class="comment"># Run the agent with a complex task</span>
+result = agent.run(
+    <span class="string">"Find the latest API docs for OpenAI GPT-4o, write a summary, and save it to README.md"</span>
+)
+
+<span class="keyword">print</span>(result.summary)
+<span class="comment"># → "Browser searched docs, extracted key changes, wrote README.md"</span>`,
+        typescript: `<span class="dim">// create_agent.ts</span>
+
+<span class="keyword">import</span> { Agent, ToolSet } <span class="keyword">from</span> <span class="string">"lyra"</span>;
+
+<span class="comment">// Define a research agent with code + browser tools</span>
+<span class="keyword">const</span> agent = <span class="keyword">new</span> Agent({
+  name: <span class="string">"research-bot"</span>,
+  model: <span class="string">"claude-3-opus"</span>,
+  tools: <span class="keyword">new</span> ToolSet({
+    codeEdit: <span class="k">true</span>,
+    browser: <span class="k">true</span>,
+    terminal: <span class="k">true</span>,
+    filesystem: <span class="string">"~/projects/*"</span>,
+  }),
+  instructions:
+    <span class="string">"You are a research engineer. Browse docs, write code, and run tests."</span>,
+});
+
+<span class="comment">// Run the agent with a complex task</span>
+<span class="keyword">const</span> result = await agent.run(
+  <span class="string">"Find the latest API docs for OpenAI GPT-4o, write a summary, and save it to README.md"</span>
+);
+
+<span class="keyword">console</span>.log(result.summary);
+<span class="comment">// → "Browser searched docs, extracted key changes, wrote README.md"</span>`,
+        config: `<span class="dim"># lyra.yaml</span>
+
+<span class="type">name</span>: research-workflow
+<span class="type">version</span>: <span class="string">"1.0"</span>
+
+<span class="type">agents</span>:
+  - <span class="type">name</span>: <span class="string">research-bot</span>
+    <span class="type">model</span>: <span class="string">claude-3-opus</span>
+    <span class="type">instructions</span>: <span class="string">"You are a research engineer."</span>
+    <span class="type">tools</span>:
+      <span class="type">code_edit</span>: <span class="k">true</span>
+      <span class="type">browser</span>: <span class="k">true</span>
+      <span class="type">terminal</span>: <span class="k">true</span>
+    <span class="type">sandbox</span>:
+      <span class="type">allowed_paths</span>: [<span class="string">"~/projects/*"</span>]
+      <span class="type">confirm_actions</span>: [<span class="string">"write"</span>, <span class="string">"execute"</span>]
+
+<span class="type">workflow</span>:
+  - <span class="type">step</span>: research
+    <span class="type">agent</span>: research-bot
+    <span class="type">prompt</span>: <span class="string">"Find the latest API docs for OpenAI GPT-4o and write a summary."</span>
+  - <span class="type">step</span>: save
+    <span class="type">agent</span>: research-bot
+    <span class="type">prompt</span>: <span class="string">"Save the summary to README.md"</span>`
+      };
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          const lang = tab.dataset.tab;
+          if (lang && codeSamples[lang]) {
+            content.innerHTML = codeSamples[lang];
+          }
+        });
+      });
+    })();
+
+    /* ========== COPY CODE ========== */
+    function copyCode() {
+      const el = document.getElementById('code-content');
+      const text = el.textContent || el.innerText;
+      navigator.clipboard.writeText(text.trim()).then(() => {
+        const btn = document.querySelector('.code-copy button');
+        const orig = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }).catch(() => {
+        alert('Failed to copy');
+      });
+    }
+  </script>
+</body>
+</html>

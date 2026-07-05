@@ -5,6 +5,7 @@
 ## 目录职责
 1. `web/docs`：官方文档站（优先建设）。
 2. `web/shared`：跨网页资产复用的品牌与内容组件资源。
+3. `web/site`：Lyra 官网落地页（静态 `index.html` + 图片素材）。
 
 ## 边界规则
 1. 网页代码不要放到 `apps/desktop`。

@@ -354,12 +354,18 @@ const cleanupUnhealthyDocsLock = async (): Promise<DocsDevServer | null> => {
     process.stdout,
     `[docs] found unhealthy existing Next dev server pid ${lock.pid} on port ${lock.port}; stopping stale docs server\n`
   );
-  for (const pid of targets) {
-    await terminateProcess(pid);
+  // ponytail: pid may have been recycled by the OS to a process we don't own
+  // (EPERM). The lock is stale either way — delete it and move on instead of crashing.
+  try {
+    for (const pid of targets) {
+      await terminateProcess(pid);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") {
+      throw error;
+    }
   }
-  if (!processExists(lock.pid)) {
-    fs.rmSync(docsDevLockPath, { force: true });
-  }
+  fs.rmSync(docsDevLockPath, { force: true });
   return null;
 };
 

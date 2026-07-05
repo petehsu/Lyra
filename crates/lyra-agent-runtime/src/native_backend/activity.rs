@@ -478,7 +478,13 @@ pub(crate) fn record_tool_progress(session_id: &str, turn_id: &str, tool: Value)
                 });
                 touch_session(session);
             }
-            let _ = state.save_state();
+            // Progress frames are transient and can arrive many times per second
+            // while the model streams tool arguments (write_file/edit_file live
+            // previews). Persisting the full session (state.json + session.sqlite
+            // with every message and tool payload) on each frame ran synchronously
+            // on the provider stream thread and throttled token consumption to a
+            // crawl. Durable saves happen at the tool boundaries instead:
+            // record_tool_activity persists on toolStarted/toolFinished.
             (callback, committed_message)
         }
         Err(_) => return,

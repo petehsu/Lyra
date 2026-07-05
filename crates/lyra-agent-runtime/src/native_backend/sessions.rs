@@ -338,15 +338,16 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
                 .get(&id)
                 .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {id}")))?;
             let snapshot = session.snapshot.clone();
-            let session_dirty = session.dirty || reconciled;
-            // A pure read changes nothing on disk, so skip the state-file write this path
-            // used to perform on every UI poll. Persist only when there is something to
-            // persist: this session is dirty (reconciliation, or unsaved prior writes), or
-            // resolve_session_id switched the active session. save_state already skips
-            // unchanged session files; this additionally skips the redundant state.json
-            // write on idle reads while preserving every write the old code would make for
-            // this session.
-            if session_dirty || state.active_session_id != active_before {
+            // A pure read must not write. `session.dirty` is the normal state
+            // while a turn is streaming (every progress frame touches the
+            // session), so saving dirty sessions here made each UI poll pay a
+            // full state.json + session.sqlite write while holding the state
+            // lock — starving the provider stream thread that needs the same
+            // lock. Dirty sessions are persisted at real boundaries instead
+            // (tool started/finished, message commit, turn finish). Persist here
+            // only when the read itself mutated something: reconciliation fixed
+            // orphan state, or resolve_session_id switched the active session.
+            if reconciled || state.active_session_id != active_before {
                 state.save_state()?;
             }
             (root, id, snapshot)

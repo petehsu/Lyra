@@ -1,10 +1,28 @@
 use super::*;
 use crate::native_backend::token_estimate::{estimate_message_tokens, estimate_messages_tokens};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) const EXTRACT_COMPRESS_THRESHOLD: usize = 30_000;
 pub(crate) const EXTRACT_INPUT_TARGET: usize = 10_000;
 pub(crate) const EXTRACT_INPUT_MAX: usize = 15_000;
+
+/// 非损 checkpoint 引用块中每条消息的摘要字符上限
+const CHECKPOINT_EXTRACT_CHARS: usize = 200;
+
+// ── MidTurn 压缩 + microCompact 阈值 ──────────────────────────────────
+//
+// 两级阈值：microCompact 先清理旧工具结果（轻量、不调 LLM），
+// 如果 token 仍超限，MidTurn 用非损 checkpoint 替换旧消息（不调 LLM）。
+// 插入点：run_model_loop 中 tool_results_ready 之后、progress_guard 之前。
+
+/// microCompact 触发阈值（token）— 轻度超限时清理旧工具结果
+pub(crate) const MICRO_COMPACT_THRESHOLD: usize = 80_000;
+/// microCompact 保留最近的 tool 消息数量（保护 cache prefix）
+pub(crate) const MICRO_COMPACT_KEEP_RECENT: usize = 10;
+/// MidTurn 压缩触发阈值（token）— 重度超限时用 checkpoint 替换旧消息
+pub(crate) const MIDTURN_COMPRESS_THRESHOLD: usize = 120_000;
+/// MidTurn 压缩保留最近的消息数量（含 assistant+tool 对）
+pub(crate) const MIDTURN_KEEP_RECENT: usize = 6;
 
 const EXTRACT_AND_COMPRESS_SYSTEM_PROMPT: &str = r#"You are Lyra's background context compression and memory maintenance agent.
 
@@ -44,6 +62,565 @@ Rules:
 - Ignore secrets, passwords, API keys, tokens in both candidates and summary.
 - Do not include transient command output or one-off task details in candidates.
 "#;
+
+// ── 非损 checkpoint 重建 ──────────────────────────────────────────────
+//
+// mimo-code 首选策略：用归档引用块替代 LLM 摘要。原消息归档到 cut_store
+// （可恢复），live context 中只留一个轻量引用块 + 每条消息的简要摘录。
+// 模型需要细节时通过 lyra_session_read_message 工具按需取回。
+//
+// 优势：零信息损失、不依赖 LLM 可用性、不消耗 API 配额。
+// 适用场景：工具调用密集的会话（模型可按需检索）。
+
+fn extract_message_brief(msg: &Value) -> String {
+    let role = msg.get("role").and_then(Value::as_str).unwrap_or("?");
+    match role {
+        "user" => {
+            let text = msg
+                .get("text")
+                .or_else(|| msg.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let text = text.trim();
+            if text.is_empty() {
+                return "(image/attachment)".to_string();
+            }
+            truncate(text, CHECKPOINT_EXTRACT_CHARS)
+        }
+        "assistant" => {
+            let text = msg
+                .get("text")
+                .or_else(|| msg.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let text = text.trim();
+            if text.is_empty() {
+                // 可能是纯 tool_call 的 assistant 消息
+                let tool_names: Vec<&str> = msg
+                    .get("toolCalls")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|tc| tc.pointer("/function/name").and_then(Value::as_str))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if tool_names.is_empty() {
+                    return "(empty)".to_string();
+                }
+                format!("called: {}", tool_names.join(", "))
+            } else {
+                truncate(text, CHECKPOINT_EXTRACT_CHARS)
+            }
+        }
+        "tool" => {
+            let name = msg
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("tool");
+            let content = msg
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            format!("[{name}] {}", truncate(content, 80))
+        }
+        _ => format!("({role})"),
+    }
+}
+
+fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let truncated: String = s.chars().take(max_chars).collect();
+    format!("{truncated}…")
+}
+
+/// 构建非损 checkpoint 引用块。
+///
+/// 返回的 JSON 与 LLM 压缩返回的结构兼容（含 compressedContext），
+/// 但 summary 是确定性摘录而非 LLM 摘要。candidates 为空（不做记忆提取）。
+fn build_checkpoint_rebuild_block(
+    selected: &[(usize, Value)],
+    messages: &[Value],
+) -> AgentRuntimeResult<Value> {
+    let compress_indices: Vec<usize> = {
+        let first_idx = selected.first().unwrap().0;
+        let last_idx = selected.last().unwrap().0;
+        let selected_set: HashSet<usize> = selected.iter().map(|(i, _)| *i).collect();
+        (first_idx..=last_idx)
+            .filter(|i| selected_set.contains(i) || messages.get(*i)
+                .and_then(|m| m.get("role"))
+                .and_then(Value::as_str) == Some("tool"))
+            .collect()
+    };
+
+    let briefs: Vec<String> = compress_indices
+        .iter()
+        .filter_map(|&i| messages.get(i))
+        .map(|msg| {
+            let ordinal = msg
+                .get("ordinal")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let id = msg
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let brief = extract_message_brief(msg);
+            format!("  [{ordinal}] {id} ({brief})")
+        })
+        .collect();
+
+    let compressed_ids: Vec<String> = compress_indices
+        .iter()
+        .filter_map(|&i| {
+            messages.get(i)
+                .and_then(|m| m.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+
+    let msg_count = compressed_ids.len();
+    let summary = format!(
+        "Non-loss checkpoint: {msg_count} messages archived to cut_store and retrievable via lyra_session_read_message tool.\n\
+         Message briefs (use lyra_session_read_message with the message ID to retrieve full content):\n\
+         {briefs}",
+        briefs = briefs.join("\n  ")
+    );
+
+    let token_estimate = estimate_tokens(&summary);
+
+    Ok(json!({
+        "candidates": [],
+        "compressedContext": {
+            "summary": summary,
+            "keyDecisions": [],
+            "projectState": "(archived — use lyra_session_read_message to retrieve)",
+            "compressedMessageIds": compressed_ids,
+            "tokenEstimate": token_estimate,
+        }
+    }))
+}
+
+// ── 静态 fallback 摘要 ────────────────────────────────────────────────
+//
+// hermes 的 _build_static_fallback_summary 策略：LLM 不可用时，
+// 本地提取关键信息生成确定性摘要。不调 LLM，不消耗 API 配额。
+
+fn build_static_fallback_summary(
+    selected: &[(usize, Value)],
+    messages: &[Value],
+) -> Value {
+    let mut user_requests: Vec<String> = Vec::new();
+    let mut tool_actions: Vec<String> = Vec::new();
+    let mut assistant_responses: Vec<String> = Vec::new();
+    let mut file_paths: HashSet<String> = HashSet::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    let first_idx = selected.first().unwrap().0;
+    let last_idx = selected.last().unwrap().0;
+    let selected_set: HashSet<usize> = selected.iter().map(|(i, _)| *i).collect();
+
+    for i in first_idx..=last_idx {
+        let Some(msg) = messages.get(i) else { continue };
+        let role = msg.get("role").and_then(Value::as_str).unwrap_or("");
+        if !selected_set.contains(&i) && role != "tool" {
+            continue;
+        }
+        match role {
+            "user" => {
+                let text = msg
+                    .get("text")
+                    .or_else(|| msg.get("content"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !text.trim().is_empty() {
+                    user_requests.push(truncate(text.trim(), 300));
+                }
+            }
+            "assistant" => {
+                let text = msg
+                    .get("text")
+                    .or_else(|| msg.get("content"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !text.trim().is_empty() {
+                    assistant_responses.push(truncate(text.trim(), 200));
+                }
+                // Extract tool call names
+                if let Some(tool_calls) = msg.get("toolCalls").and_then(Value::as_array) {
+                    for tc in tool_calls {
+                        let name = tc
+                            .pointer("/function/name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("tool");
+                        let args_str = tc
+                            .pointer("/function/arguments")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        // Extract file paths from arguments
+                        extract_file_paths(args_str, &mut file_paths);
+                        tool_actions.push(format!(
+                            "{name}({})",
+                            truncate(args_str, 100)
+                        ));
+                    }
+                }
+            }
+            "tool" => {
+                let content = msg
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                // Detect errors in tool output
+                if content.contains("error") || content.contains("Error") || content.contains("failed") {
+                    let error_snippet = content
+                        .lines()
+                        .find(|line| {
+                            line.contains("error")
+                                || line.contains("Error")
+                                || line.contains("failed")
+                        })
+                        .unwrap_or("");
+                    if !error_snippet.is_empty() {
+                        errors.push(truncate(error_snippet, 150));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut summary_parts: Vec<String> = Vec::new();
+
+    if !user_requests.is_empty() {
+        summary_parts.push(format!(
+            "User requests:\n{}",
+            user_requests
+                .iter()
+                .enumerate()
+                .map(|(i, r)| format!("  {}. {r}", i + 1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !tool_actions.is_empty() {
+        // ponytail: 限制工具动作列表长度，避免 fallback 摘要过大。
+        // 上限 20 条，超出时只保留首尾。
+        let actions = if tool_actions.len() > 20 {
+            let head = &tool_actions[..10];
+            let tail = &tool_actions[tool_actions.len() - 10..];
+            let mut combined = head.to_vec();
+            combined.push(format!("  ... ({} more) ...", tool_actions.len() - 20));
+            combined.extend(tail.to_vec());
+            combined
+        } else {
+            tool_actions.clone()
+        };
+        summary_parts.push(format!(
+            "Tool actions:\n{}",
+            actions
+                .iter()
+                .map(|a| format!("  - {a}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !file_paths.is_empty() {
+        let paths: Vec<&String> = file_paths.iter().take(15).collect();
+        summary_parts.push(format!(
+            "Files touched:\n{}",
+            paths
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !errors.is_empty() {
+        summary_parts.push(format!(
+            "Errors encountered:\n{}",
+            errors
+                .iter()
+                .take(5)
+                .map(|e| format!("  - {e}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    if !assistant_responses.is_empty() {
+        summary_parts.push(format!(
+            "Key assistant responses:\n{}",
+            assistant_responses
+                .iter()
+                .take(5)
+                .enumerate()
+                .map(|(i, r)| format!("  {}. {r}", i + 1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    let summary = if summary_parts.is_empty() {
+        "(no extractable content in compressed window)".to_string()
+    } else {
+        format!(
+            "Static fallback summary (LLM compression was unavailable):\n\n{}",
+            summary_parts.join("\n\n")
+        )
+    };
+
+    let compressed_ids: Vec<String> = (first_idx..=last_idx)
+        .filter_map(|i| {
+            messages.get(i)
+                .and_then(|m| m.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+
+    json!({
+        "candidates": [],
+        "compressedContext": {
+            "summary": summary,
+            "keyDecisions": [],
+            "projectState": "(static fallback — limited context available)",
+            "compressedMessageIds": compressed_ids,
+            "tokenEstimate": estimate_tokens(&summary),
+        }
+    })
+}
+
+fn extract_file_paths(text: &str, paths: &mut HashSet<String>) {
+    // ponytail: 简单正则匹配文件路径 — 覆盖常见格式，不追求完美。
+    // 上限：只收集前 20 个唯一路径，避免大参数爆发。
+    for (idx, word) in text.split_whitespace().enumerate() {
+        if paths.len() >= 20 {
+            break;
+        }
+        if (word.starts_with('/') || word.starts_with("./") || word.starts_with("../"))
+            && (word.contains('.') || word.contains('/'))
+        {
+            let clean = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '/' && c != '.' && c != '-' && c != '_');
+            if clean.len() > 3 {
+                paths.insert(clean.to_string());
+            }
+        }
+        if idx > 500 {
+            break;
+        }
+    }
+}
+
+fn estimate_tokens(text: &str) -> usize {
+    crate::native_backend::token_estimate::estimate_tokens(text)
+}
+
+// ── LLM 压缩 ──────────────────────────────────────────────────────────
+
+fn try_llm_compression(
+    session_id: &str,
+    turn_id: &str,
+    selected: &[(usize, Value)],
+) -> AgentRuntimeResult<Value> {
+    let (provider, model) = memory_agent_provider_and_model()?;
+    let input_messages_json: Vec<Value> =
+        selected.iter().map(|(_, msg)| msg.clone()).collect();
+    let llm_messages = vec![
+        json!({
+            "role": "system",
+            "content": EXTRACT_AND_COMPRESS_SYSTEM_PROMPT,
+        }),
+        json!({
+            "role": "user",
+            "content": json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "messages": input_messages_json,
+            }).to_string(),
+        }),
+    ];
+    let reply = call_model_once_non_streaming(&provider, &model, &llm_messages, &[])?;
+    let content = reply.content.as_deref().ok_or_else(|| {
+        AgentRuntimeError::Core("compression agent returned no content".to_string())
+    })?;
+    parse_memory_agent_json(content)
+}
+
+// ── microCompact (Claude Code 风格) ───────────────────────────────────
+//
+// 不调 LLM，把旧 transient 工具结果的 content 替换为占位符。
+// 保留最近 keep_recent 条 tool 消息不动，保护 cache prefix。
+// 参考实现：Claude Code src/services/compact/microCompact.ts
+
+/// 可清理工具名集合 — 这些工具的旧结果在后续轮次中不太可能还需要。
+/// 高价值工具（file_write, file_edit, memory, clarification 等）不在此列。
+const COMPACTABLE_TOOL_NAMES: &[&str] = &[
+    "file_read",
+    "file_list",
+    "file_glob",
+    "project_search",
+    "code_search_text",
+    "code_search_symbol",
+    "code_graph_expand",
+    "lsp_query",
+    "web_search",
+    "web_fetch",
+    "lyra_lumen",
+];
+
+fn is_compactable_tool_name(name: &str) -> bool {
+    COMPACTABLE_TOOL_NAMES.contains(&name)
+}
+
+/// microCompact：不调 LLM，清理旧 transient 工具结果。
+///
+/// 遍历 messages 中的 tool 消息，关联到 assistant 消息中的 tool_calls
+/// 获取工具名，只清理可清理工具的旧结果。保留最近 `keep_recent` 条
+/// 可清理的 tool 消息不动（保护 cache prefix）。
+///
+/// 返回被清理的 tool 消息数量。
+pub(crate) fn micro_compact_messages(messages: &mut [Value], keep_recent: usize) -> usize {
+    // 1. 构建 tool_call_id → tool_name 映射
+    // ponytail: 只按工具名判断，不解析 arguments 中的 action。
+    // lyra_lumen 的 high-value 操作（act/type/press）结果通常很小，
+    // 即使被清理也不丢失关键信息；transient 操作（map/read/scroll）
+    // 结果很大，是清理的主要目标。
+    let mut tool_names: HashMap<String, String> = HashMap::new();
+    for msg in messages.iter() {
+        if msg.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        if let Some(tool_calls) = msg.get("tool_calls").and_then(Value::as_array) {
+            for tc in tool_calls {
+                let id = tc.get("id").and_then(Value::as_str).unwrap_or("");
+                let name = tc
+                    .pointer("/function/name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if !id.is_empty() && !name.is_empty() {
+                    tool_names.insert(id.to_string(), name.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. 收集可清理的 tool 消息索引
+    let mut compactable_indices: Vec<usize> = Vec::new();
+    for (i, msg) in messages.iter().enumerate() {
+        if msg.get("role").and_then(Value::as_str) != Some("tool") {
+            continue;
+        }
+        let tool_call_id = msg
+            .get("tool_call_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let is_compactable = tool_names
+            .get(tool_call_id)
+            .map(|name| is_compactable_tool_name(name))
+            .unwrap_or(false);
+        if is_compactable {
+            compactable_indices.push(i);
+        }
+    }
+
+    if compactable_indices.len() <= keep_recent {
+        return 0;
+    }
+
+    // 3. 保留最近 keep_recent 条，清理更早的
+    let clear_count = compactable_indices.len() - keep_recent;
+    let mut cleared = 0;
+    for &i in &compactable_indices[..clear_count] {
+        let already_cleared = messages[i]
+            .get("content")
+            .and_then(Value::as_str)
+            .map(|c| c.contains("[Old tool result content cleared]"))
+            .unwrap_or(false);
+        if !already_cleared {
+            messages[i]["content"] = json!("[Old tool result content cleared]");
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
+// ── MidTurn 压缩 (codex 风格) ─────────────────────────────────────────
+//
+// 在 model loop 中间触发，用非损 checkpoint 块替换旧消息。
+// 不写回 session（model loop 中间没有 session 锁），只修改局部 messages。
+// session 的持久化压缩仍由 turn 结束后的 spawn_extract_and_compress 负责。
+// 参考实现：codex-rs/core/src/session/turn.rs MidTurn 分支
+
+/// MidTurn 压缩：用非损 checkpoint 块替换旧消息。
+///
+/// 在 microCompact 之后调用。如果 token 仍然超限（> MIDTURN_COMPRESS_THRESHOLD），
+/// 将旧消息替换为一个 checkpoint 引用块 + 每条消息的简要摘录。
+/// 保留最近 MIDTURN_KEEP_RECENT 条消息不动。
+///
+/// 返回 (tokens_before, tokens_after)，如果未触发则返回 None。
+pub(crate) fn midturn_compact_messages(messages: &mut Vec<Value>) -> Option<(usize, usize)> {
+    let tokens_before = estimate_messages_tokens(messages);
+    if tokens_before <= MIDTURN_COMPRESS_THRESHOLD {
+        return None;
+    }
+
+    // 找到可压缩的范围：跳过开头的 system 消息，保留最近 KEEP_RECENT 条
+    let first_non_system = messages
+        .iter()
+        .position(|m| m.get("role").and_then(Value::as_str) != Some("system"))
+        .unwrap_or(0);
+    let compress_end = messages.len().saturating_sub(MIDTURN_KEEP_RECENT);
+    if compress_end <= first_non_system {
+        return None;
+    }
+
+    // 收集可压缩的 user/assistant 消息
+    let selected: Vec<(usize, Value)> = (first_non_system..compress_end)
+        .filter(|&i| {
+            matches!(
+                messages.get(i).and_then(|m| m.get("role")).and_then(Value::as_str),
+                Some("user") | Some("assistant")
+            )
+        })
+        .map(|i| (i, messages[i].clone()))
+        .collect();
+
+    if selected.is_empty() {
+        return None;
+    }
+
+    // 用 build_checkpoint_rebuild_block 生成压缩块（不调 LLM、不写 cut_store）
+    let checkpoint = build_checkpoint_rebuild_block(&selected, messages).ok()?;
+
+    let summary = checkpoint
+        .pointer("/compressedContext/summary")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if summary.is_empty() {
+        return None;
+    }
+
+    // 构建新 messages：开头 system 消息 + checkpoint 块 + 保留的最近消息
+    let mut new_messages: Vec<Value> = messages[..first_non_system].to_vec();
+    new_messages.push(json!({
+        "role": "system",
+        "content": summary,
+    }));
+    new_messages.extend(messages[compress_end..].to_vec());
+
+    let tokens_after = estimate_messages_tokens(&new_messages);
+    *messages = new_messages;
+    Some((tokens_before, tokens_after))
+}
+
+// ── 压缩应用核心 ──────────────────────────────────────────────────────
 
 /// Apply a parsed compression response to a session in-place.
 ///
@@ -286,31 +863,34 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
 
             let token_before = estimate_messages_tokens(&messages);
 
-            let (provider, model) = memory_agent_provider_and_model()?;
-            let input_messages_json: Vec<Value> =
-                selected.iter().map(|(_, msg)| msg.clone()).collect();
+            // 降级链路：非损 checkpoint → LLM 压缩 → 静态 fallback
+            //
+            // 1. 非损 checkpoint（首选）：归档到 cut_store，用引用块替代。
+            //    零信息损失，不依赖 LLM，不消耗 API 配额。
+            // 2. LLM 压缩：调 LLM 生成摘要 + 提取记忆候选。
+            //    更紧凑的上下文，但需要 LLM 可用。
+            // 3. 静态 fallback：本地提取关键信息，确定性摘要。
+            //    LLM 不可用时的最后保障。
 
-            let llm_messages = vec![
-                json!({
-                    "role": "system",
-                    "content": EXTRACT_AND_COMPRESS_SYSTEM_PROMPT,
-                }),
-                json!({
-                    "role": "user",
-                    "content": json!({
-                        "sessionId": session_id,
-                        "turnId": turn_id,
-                        "messages": input_messages_json,
-                    }).to_string(),
-                }),
-            ];
-
-            let reply = call_model_once_non_streaming(&provider, &model, &llm_messages, &[])?;
-            let content = reply.content.as_deref().ok_or_else(|| {
-                AgentRuntimeError::Core("compression agent returned no content".to_string())
-            })?;
-
-            let parsed = parse_memory_agent_json(content)?;
+            let parsed = match build_checkpoint_rebuild_block(&selected, &messages) {
+                Ok(checkpoint) => checkpoint,
+                Err(checkpoint_err) => {
+                    eprintln!(
+                        "[lyra-agent-runtime] checkpoint rebuild failed for {session_id}: {checkpoint_err}, falling back to LLM"
+                    );
+                    // 尝试 LLM 压缩
+                    match try_llm_compression(&session_id, &turn_id, &selected) {
+                        Ok(llm_result) => llm_result,
+                        Err(llm_err) => {
+                            eprintln!(
+                                "[lyra-agent-runtime] LLM compression also failed for {session_id}: {llm_err}, using static fallback"
+                            );
+                            // 最后保障：静态 fallback
+                            build_static_fallback_summary(&selected, &messages)
+                        }
+                    }
+                }
+            };
 
             let token_after;
             {

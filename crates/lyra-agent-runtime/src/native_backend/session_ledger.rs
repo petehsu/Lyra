@@ -14,7 +14,53 @@ pub(crate) fn ledger_dir(root: &Path, session_id: &str) -> PathBuf {
     session_dir(root, session_id).join(".ledger")
 }
 
+/// (len, mtime-ms) fingerprint of a ledger file; changes whenever the file does.
+fn file_stamp(path: &Path) -> (u64, u128) {
+    fs::metadata(path)
+        .map(|meta| {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0);
+            (meta.len(), mtime)
+        })
+        .unwrap_or((0, 0))
+}
+
+type LedgerSummaryCache = HashMap<String, ((u64, u128), (u64, u128), Value)>;
+static LEDGER_SUMMARY_CACHE: std::sync::LazyLock<std::sync::Mutex<LedgerSummaryCache>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
 pub(crate) fn session_ledger_summary(root: &Path, session_id: &str) -> Value {
+    // The summary shells out to git several times (rev-parse, rev-list, log)
+    // and the UI asks for it on every session poll. The ledger only changes
+    // when record_event appends + commits, which always touches events.jsonl,
+    // so a (events, diagnostics) file-stamp key keeps polls fork-free.
+    // ponytail: stamp granularity is fs mtime; a same-millisecond rewrite with
+    // identical length would serve one stale poll — harmless for a UI summary.
+    let dir = ledger_dir(root, session_id);
+    let events_stamp = file_stamp(&dir.join("events.jsonl"));
+    let diagnostics_stamp = file_stamp(&dir.join("diagnostics.jsonl"));
+    if let Ok(cache) = LEDGER_SUMMARY_CACHE.lock()
+        && let Some((cached_events, cached_diagnostics, summary)) = cache.get(session_id)
+        && *cached_events == events_stamp
+        && *cached_diagnostics == diagnostics_stamp
+    {
+        return summary.clone();
+    }
+    let summary = compute_session_ledger_summary(root, session_id);
+    if let Ok(mut cache) = LEDGER_SUMMARY_CACHE.lock() {
+        cache.insert(
+            session_id.to_string(),
+            (events_stamp, diagnostics_stamp, summary.clone()),
+        );
+    }
+    summary
+}
+
+fn compute_session_ledger_summary(root: &Path, session_id: &str) -> Value {
     let dir = ledger_dir(root, session_id);
     let mut diagnostics = read_recent_jsonl(&dir.join("diagnostics.jsonl"), DIAGNOSTIC_LIMIT);
     let enabled = dir.join(".git").is_dir();

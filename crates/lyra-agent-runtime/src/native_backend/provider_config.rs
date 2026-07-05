@@ -265,6 +265,11 @@ pub(crate) fn model_catalog_for_config(
         if !available || provider.models.is_empty() {
             continue;
         }
+        let (free, source_label) = match provider.id.as_str() {
+            "opencode-free" => (true, Some("OpenCode".to_string())),
+            "mimo-free" => (true, Some("MiMo".to_string())),
+            _ => (false, None),
+        };
         for model in provider.models.clone() {
             let selected = provider.id == current_provider && model.id == current_model;
             if selected {
@@ -293,6 +298,8 @@ pub(crate) fn model_catalog_for_config(
                 "available": available,
                 "enabled": model.enabled,
                 "selected": selected,
+                "free": free,
+                "sourceLabel": source_label,
             }));
             if model.enabled {
                 routes.push(json!({

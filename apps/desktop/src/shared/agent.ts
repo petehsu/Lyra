@@ -1255,6 +1255,8 @@ export type AgentModelEntry = {
   readonly supportsReasoningEffort?: boolean | null;
   readonly available: boolean;
   readonly enabled: boolean;
+  readonly free?: boolean;
+  readonly sourceLabel?: string | null;
 };
 
 export type AgentProviderOptionState = {

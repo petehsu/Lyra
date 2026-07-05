@@ -186,6 +186,31 @@ describe("agentSessionToChatMessages", () => {
     expect(messages[0]?.workDurationMs).toBe(5_000);
   });
 
+  it("filters out compressed-context-block system messages", () => {
+    const messages = agentSessionToChatMessages(session({
+      turnStatus: "idle",
+      follow: { running: false, activity: null },
+      messages: [
+        {
+          id: "compress-block-1",
+          role: "system",
+          text: '{"summary":"checkpoint","compressedMessageIds":["msg-a"]}',
+          metadata: { kind: "compressed-context-block" },
+          createdAt: "2026-06-20T00:00:00.000Z"
+        },
+        {
+          id: "user-1",
+          role: "user",
+          text: "你好",
+          createdAt: "2026-06-20T00:00:01.000Z"
+        }
+      ]
+    }));
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.id).toBe("user-1");
+  });
+
   it("renders thinking blocks in their factual block order", () => {
     const messages = agentSessionToChatMessages(session({
       turnStatus: "idle",

@@ -26,6 +26,7 @@ __pycache__/
 .idea/
 .tmp/
 .codex
+.kilo/
 
 # OS
 .DS_Store

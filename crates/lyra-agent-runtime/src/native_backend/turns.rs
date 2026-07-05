@@ -1034,34 +1034,64 @@ fn finish_reasoning_blocks(message: &mut Value, reasoning: &str) {
 
 /// Stamp `reasoningContent` onto a UI assistant message and mark status as done.
 fn stamp_reasoning_content(session_id: &str, message_id: &str, reasoning: Option<&str>) {
-    let Some(reasoning) = reasoning.filter(|r| !r.trim().is_empty()) else {
-        return;
+    let (callback, committed_message) = {
+        let Ok(mut state) = state().lock() else {
+            return;
+        };
+        let callback = state.event_callback.clone();
+        let Some(session) = state.sessions.get_mut(session_id) else {
+            return;
+        };
+        let Some(messages) = session
+            .snapshot
+            .get_mut("messages")
+            .and_then(Value::as_array_mut)
+        else {
+            return;
+        };
+        let Some(message) = messages
+            .iter_mut()
+            .rev()
+            .find(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
+        else {
+            return;
+        };
+        // Providers that stream thinking deltas hand back reasoning_content: None
+        // at commit time — the reasoning already lives on the message from the
+        // delta path. Fall back to it so the status still flips to "done" instead
+        // of sticking on "thinking" forever.
+        let reasoning = reasoning
+            .filter(|r| !r.trim().is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                message
+                    .get("reasoningContent")
+                    .and_then(Value::as_str)
+                    .filter(|r| !r.trim().is_empty())
+                    .map(str::to_string)
+            });
+        let Some(reasoning) = reasoning else {
+            return;
+        };
+        message["reasoningContent"] = json!(reasoning);
+        message["reasoningStatus"] = json!("done");
+        finish_reasoning_blocks(message, &reasoning);
+        let committed_message = message.clone();
+        touch_session(session);
+        let _ = state.save_state();
+        (callback, committed_message)
     };
-    let Ok(mut state) = state().lock() else {
-        return;
-    };
-    let Some(session) = state.sessions.get_mut(session_id) else {
-        return;
-    };
-    let Some(messages) = session
-        .snapshot
-        .get_mut("messages")
-        .and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    let Some(message) = messages
-        .iter_mut()
-        .rev()
-        .find(|m| m.get("id").and_then(Value::as_str) == Some(message_id))
-    else {
-        return;
-    };
-    message["reasoningContent"] = json!(reasoning);
-    message["reasoningStatus"] = json!("done");
-    finish_reasoning_blocks(message, reasoning);
-    touch_session(session);
-    let _ = state.save_state();
+    // Tool-call-only replies never reach commit_assistant_message, so without
+    // this event the renderer keeps showing the thinking spinner even though
+    // the snapshot already says "done".
+    emit_with_callback(
+        &callback,
+        json!({
+            "kind": "messageCommitted",
+            "sessionId": session_id,
+            "message": committed_message,
+        }),
+    );
 }
 
 pub(crate) fn emit_assistant_message_placeholder(
