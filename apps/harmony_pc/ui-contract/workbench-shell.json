@@ -1,0 +1,97 @@
+{
+  "contractId": "lyra-workbench-shell-v1",
+  "sourceHashes": {
+    "apps/desktop/src/modules/workbench/shell/workbench-chrome.tsx": "787f2a4fe273dbfcc9e3dc0984212cd97d81bf975022ac697a9ed925c6ad94b7",
+    "apps/desktop/src/modules/workbench/shell/use-workbench-shell-adapter-props.ts": "ab1333bb988b80f922e31b6e594771b49a42633aae0faee0235fe77e34536dda",
+    "apps/desktop/src/modules/workbench/shell/use-workbench-shell-slots.tsx": "c1751b4bcd341dcc167254aec5e95bea50bec70dd46a4b1b9ce9e15ad54b015c",
+    "apps/desktop/src/modules/workbench/theme/foundation.ts": "81320d38d21311ff84c6927b2175c43504fc32647860764a5f6958c777710054",
+    "apps/desktop/src/modules/workbench/theme/semantic.ts": "22214d39da469b2c08342e53757d00f7ab3f1b4235666dd6c6bd941658e5e2db",
+    "apps/desktop/src/modules/workbench/theme/presets/lyra.ts": "11237924f4ab2f503528c4aca3508d1e9e27f9337623aec4d48a97ea935adf5a",
+    "apps/desktop/src/renderer/styles/shell.scss": "dbb7802391f2056129f62c67f8e3ddbbf873181b2b9b7113c579150a6b1964c0",
+    "apps/desktop/src/renderer/styles/tokens.css": "a50f52a5db33ff8d2af238ae73c8e00b8b58d1b706c1ca744fdcfd13004fb94c",
+    "apps/desktop/src/renderer/assets/brand/lyra-mark.svg": "3f5a1db80df7accd382ed69c8e8e4aa50bf463e11370202e054df048a13ae193",
+    "apps/desktop/resources/icons/app/lyra-app-icon-light-1024.png": "07510af13198e9dbfec0d326e204c262eb78a997de3a3cae626158ec6fe91c74"
+  },
+  "brandAssets": {
+    "appIcon": "AppScope/resources/base/media/app_icon.png",
+    "entryIcon": "entry/src/main/resources/base/media/app_icon.png",
+    "desktopSourceIcon": "apps/desktop/resources/icons/app/lyra-app-icon-light-1024.png",
+    "desktopSourceMark": "apps/desktop/src/renderer/assets/brand/lyra-mark.svg"
+  },
+  "tokens": {
+    "light": {
+      "--lyra-app-bg": "#f6f5f6",
+      "--lyra-app-sidebar-bg": "#ebebea",
+      "--lyra-app-panel-bg": "#f6f5f6",
+      "--lyra-app-surface-bg": "#edeced",
+      "--lyra-app-surface-strong-bg": "#f3f2f3",
+      "--lyra-app-muted-bg": "#ebebea",
+      "--lyra-app-row-hover-bg": "#e4e3e4",
+      "--lyra-app-row-active-bg": "#dcdbdc",
+      "--lyra-app-input-bg": "#f3f2f3",
+      "--lyra-app-input-border": "#dedddd",
+      "--lyra-app-border": "#dedddd",
+      "--lyra-app-border-strong": "#c5c7c7",
+      "--lyra-app-primary-button": "#2f3033",
+      "--lyra-app-primary-button-fg": "#ffffff",
+      "--lyra-text-primary": "#242529",
+      "--lyra-text-secondary": "#4f5054",
+      "--lyra-text-muted": "#6f7074",
+      "--lyra-status-success": "#669f59",
+      "--lyra-status-warning": "#a48819",
+      "--lyra-status-error": "#d36151"
+    },
+    "dark": {
+      "--lyra-app-bg": "#191919",
+      "--lyra-app-sidebar-bg": "#1c1c1c",
+      "--lyra-app-panel-bg": "#191919",
+      "--lyra-app-surface-bg": "#1c1c1c",
+      "--lyra-app-surface-strong-bg": "#222221",
+      "--lyra-app-muted-bg": "#202020",
+      "--lyra-app-row-hover-bg": "#222221",
+      "--lyra-app-row-active-bg": "#2b2b2a",
+      "--lyra-app-input-bg": "#1c1c1c",
+      "--lyra-app-input-border": "#303031",
+      "--lyra-app-border": "#303031",
+      "--lyra-app-border-strong": "#424445",
+      "--lyra-app-primary-button": "#d7d7d8",
+      "--lyra-app-primary-button-fg": "#181818",
+      "--lyra-text-primary": "#dedede",
+      "--lyra-text-secondary": "#b6b6b6",
+      "--lyra-text-muted": "#8e8f90",
+      "--lyra-status-success": "#a1c181",
+      "--lyra-status-warning": "#dec184",
+      "--lyra-status-error": "#d07277"
+    }
+  },
+  "chrome": {
+    "layout": {
+      "titlebarHeight": 34,
+      "titlebarNavigationHeight": 28,
+      "aiPanelWidth": 320,
+      "terminalHeight": 180,
+      "browserTabbarHeight": 34,
+      "radius": 8,
+      "gap": 10
+    },
+    "titlebarActions": [
+      "history",
+      "terminal",
+      "settings",
+      "store",
+      "files",
+      "ai"
+    ],
+    "workspaceTabs": [
+      "Search",
+      "Files",
+      "Agent"
+    ],
+    "panels": [
+      "ai",
+      "workspace",
+      "terminal"
+    ]
+  },
+  "contractHash": "05711a821378d9ebcc7dd6e694b95416f51eebea2bc25393af46eb9d11edbf32"
+}

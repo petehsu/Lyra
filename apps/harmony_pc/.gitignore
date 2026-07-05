@@ -1,0 +1,14 @@
+/.hvigor/
+/.codex/
+/.cursor/
+/.opencode/
+/.mcp.json
+/build/
+/entry/build/
+/oh_modules/
+/entry/oh_modules/
+/oh-package-lock.json5
+*.hap
+*.hsp
+*.app
+*.har

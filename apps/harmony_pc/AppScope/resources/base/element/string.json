@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "Lyra"
+    },
+    {
+      "name": "app_description",
+      "value": "Lyra desktop AI workbench."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Lyra desktop AI workbench."
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Lyra desktop AI workbench."
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Lyra"
+    }
+  ]
+}
