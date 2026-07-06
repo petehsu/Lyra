@@ -50,7 +50,7 @@ const MAX_MEMORY_HITS: usize = 3;
 
 /// CodeGraph signals derived deterministically from the latest user message
 /// and session state. Drives the P6 `codegraph_fragments` prompt section.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CodeGraphSignals {
     /// Candidate symbol names extracted from the user message (pre-resolution).
@@ -84,6 +84,29 @@ pub(crate) struct CodeGraphSignals {
     pub file_symbols: Vec<FileSymbolSummary>,
     /// CodeGraph memory search hits (debug/architecture/explore intent).
     pub memory_hits: Vec<MemoryHit>,
+}
+
+impl Default for CodeGraphSignals {
+    fn default() -> Self {
+        Self {
+            mentioned_symbols: Vec::new(),
+            resolved_neighborhoods: Vec::new(),
+            stale_files_relevant: Vec::new(),
+            graph_state: String::new(),
+            queries_executed: Vec::new(),
+            cache_hits: 0,
+            cache_misses: 0,
+            intent: MessageIntent::Other.as_str().to_string(),
+            impact_analysis: None,
+            related_tests: Vec::new(),
+            circular_deps: Vec::new(),
+            dead_imports: Vec::new(),
+            hot_paths: Vec::new(),
+            pattern_matches: Vec::new(),
+            file_symbols: Vec::new(),
+            memory_hits: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
