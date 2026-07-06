@@ -22,6 +22,7 @@ const defaults: WorkbenchPreferences = {
   aiRichRenderingEnabled: true,
   aiStopBehavior: "turn_only",
   preventSleepEnabled: true,
+  editorGpuAcceleration: "off",
   searchWebEngineIds: ["bing", "brave", "duckduckgo"],
   searchResultsSourceFilter: "all",
   omniboxNonBrowserSubmitTarget: "new_tab",

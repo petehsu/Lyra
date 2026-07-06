@@ -6,6 +6,7 @@ import type {
   FileEditorModel,
   FileEditorSurfaceVariant
 } from "./types";
+import type { WorkbenchEditorGpuAcceleration } from "../preferences";
 
 export type FileEditorSurfaceProps = {
   readonly state: FileEditorAppState | null;
@@ -15,6 +16,7 @@ export type FileEditorSurfaceProps = {
   readonly surfaceVariant?: FileEditorSurfaceVariant;
   readonly controlMode?: FileEditorControlMode;
   readonly contributeTitlebar?: boolean;
+  readonly gpuAcceleration?: WorkbenchEditorGpuAcceleration;
   readonly editorWorkAcceptLabel?: string;
   readonly editorWorkRejectLabel?: string;
   readonly editorWorkUndoLabel?: string;

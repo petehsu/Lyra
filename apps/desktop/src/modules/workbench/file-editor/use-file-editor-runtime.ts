@@ -44,6 +44,7 @@ type UseFileEditorRuntimeInput = {
   readonly model: FileEditorModel;
   readonly controlMode: FileEditorControlMode;
   readonly activeEditorWorkItem?: FileEditorChangeReviewItem | undefined;
+  readonly gpuAcceleration?: "off" | "auto";
 };
 
 export const useFileEditorRuntime = ({
@@ -51,13 +52,15 @@ export const useFileEditorRuntime = ({
   themeSignature,
   model,
   controlMode,
-  activeEditorWorkItem
+  activeEditorWorkItem,
+  gpuAcceleration = "off"
 }: UseFileEditorRuntimeInput): FileEditorRuntimeState => {
   const hydrateIfNeeded = model.hydrateIfNeeded;
   const touchInstance = model.touchInstance;
   const setContent = model.setContent;
   const save = model.save;
   const requestCompletion = model.requestCompletion;
+  const isAiOnly = controlMode === "ai_only";
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const diffHostRef = useRef<HTMLDivElement | null>(null);
@@ -66,8 +69,15 @@ export const useFileEditorRuntime = ({
   const diffEditorRef = useRef<Monaco.editor.IStandaloneDiffEditor | null>(null);
   const textModelRef = useRef<Monaco.editor.ITextModel | null>(null);
   const diffOriginalModelRef = useRef<Monaco.editor.ITextModel | null>(null);
+  const contentChangeDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const gpuOverlayRef = useRef<{ detach: () => void } | null>(null);
   const applyingStateRef = useRef(false);
   const latestStateRef = useRef<FileEditorAppState | null>(state);
+  const currentInstanceIdRef = useRef<string>("");
+  const isAiOnlyRef = useRef(isAiOnly);
+  const requestCompletionRef = useRef(requestCompletion);
+  const saveRef = useRef(save);
+  const setContentRef = useRef(setContent);
   const [editorReady, setEditorReady] = useState(false);
   const [isDiffMode, setIsDiffMode] = useState(false);
   const [diffBaseline, setDiffBaseline] = useState<{
@@ -75,8 +85,6 @@ export const useFileEditorRuntime = ({
     readonly content: string;
   } | null>(null);
 
-  const isAiOnly = controlMode === "ai_only";
-  const stateId = state?.instanceId ?? "";
   const canShowEditor =
     state !== null &&
     state.status !== "unsupported" &&
@@ -105,9 +113,12 @@ export const useFileEditorRuntime = ({
     latestStateRef.current = state;
   }, [state]);
 
-  useEffect(() => {
-    setIsDiffMode(false);
-  }, [stateId]);
+  // Keep callback refs in sync so the create/dispose effect (runs once) always
+  // calls the latest closures without re-triggering editor creation.
+  useEffect(() => { isAiOnlyRef.current = isAiOnly; }, [isAiOnly]);
+  useEffect(() => { requestCompletionRef.current = requestCompletion; }, [requestCompletion]);
+  useEffect(() => { saveRef.current = save; }, [save]);
+  useEffect(() => { setContentRef.current = setContent; }, [setContent]);
 
   useEffect(() => {
     if (activeEditorWorkItem === undefined || state === null) {
@@ -181,6 +192,7 @@ export const useFileEditorRuntime = ({
         }
         const textModel = acquireFileEditorTextModel(monaco, latestState);
         textModelRef.current = textModel;
+        currentInstanceIdRef.current = latestState.instanceId;
         const editor = monaco.editor.create(host, {
           model: textModel,
           automaticLayout: false,
@@ -194,30 +206,60 @@ export const useFileEditorRuntime = ({
             top: MONACO_PADDING,
             bottom: MONACO_PADDING
           },
-          readOnly: latestState.isReadOnly || isAiOnly,
+          readOnly: latestState.isReadOnly || isAiOnlyRef.current,
           colorDecorators: true,
           "semanticHighlighting.enabled": true
         });
         editorRef.current = editor;
         setEditorReady(true);
 
+        // GPU overlay: feature flag === "auto" 时尝试启用 WebGPU 渲染
+        if (gpuAcceleration === "auto") {
+          void import("@renderer/gpu/gpu-overlay")
+            .then(({ createGpuOverlay, shouldEnableGpuAcceleration }) => {
+              if (disposed || !shouldEnableGpuAcceleration(gpuAcceleration)) {
+                return;
+              }
+              const host = hostRef.current;
+              if (host === null) return;
+              const overlay = createGpuOverlay({
+                editor,
+                hostElement: host,
+                fontConfig: {
+                  fontFamily: "var(--lyra-font-mono)",
+                  fontSize: MONACO_FONT_SIZE,
+                  fontWeight: "normal",
+                  fontStyle: "normal",
+                  fontVariantSettings: ""
+                },
+                textColor: { r: 0.9, g: 0.9, b: 0.9, a: 1 }
+              });
+              gpuOverlayRef.current = overlay;
+              void overlay.attach();
+            })
+            .catch((_error) => {
+              // GPU overlay 加载失败，静默回退到 DOM
+            });
+        }
+
         disposables.push(
-          textModel.onDidChangeContent(() => {
+          editor.onDidChangeModelContent(() => {
             const latestState = latestStateRef.current;
             if (applyingStateRef.current || latestState === null) {
               return;
             }
-            if (isFileEditorTextModelDisposed(textModel)) {
+            const currentModel = editor.getModel();
+            if (currentModel === null || isFileEditorTextModelDisposed(currentModel)) {
               return;
             }
-            setContent(latestState.instanceId, textModel.getValue());
+            setContentRef.current(latestState.instanceId, currentModel.getValue());
           }),
           editor.onDidBlurEditorWidget(() => {
             const latestState = latestStateRef.current;
             if (latestState === null) {
               return;
             }
-            void save(latestState.instanceId, "blur");
+            void saveRef.current(latestState.instanceId, "blur");
           }),
           ...["typescript", "javascript", "rust", "python"].map((languageId) =>
             monaco.languages.registerCompletionItemProvider(languageId, {
@@ -244,7 +286,7 @@ export const useFileEditorRuntime = ({
                   word.endColumn
                 );
 
-                const entries = await requestCompletion(
+                const entries = await requestCompletionRef.current(
                   latestState.instanceId,
                   Math.max(0, position.lineNumber - 1),
                   Math.max(0, position.column - 1)
@@ -285,7 +327,7 @@ export const useFileEditorRuntime = ({
           if (latestState === null) {
             return;
           }
-          void save(latestState.instanceId, "manual");
+          void saveRef.current(latestState.instanceId, "manual");
         });
       })
       .catch((_error) => {
@@ -295,6 +337,8 @@ export const useFileEditorRuntime = ({
     return () => {
       disposed = true;
       setEditorReady(false);
+      gpuOverlayRef.current?.detach();
+      gpuOverlayRef.current = null;
       for (const disposable of disposables) {
         disposable.dispose();
       }
@@ -304,6 +348,7 @@ export const useFileEditorRuntime = ({
       editorRef.current = null;
       diffEditorRef.current = null;
       textModelRef.current = null;
+      currentInstanceIdRef.current = "";
       diffOriginalModelRef.current = null;
       diffEditor?.setModel(null);
       diffEditor?.dispose();
@@ -311,7 +356,7 @@ export const useFileEditorRuntime = ({
       editor?.dispose();
       diffOriginalModel?.dispose();
     };
-  }, [canShowEditor, isAiOnly, requestCompletion, save, setContent, stateId]);
+  }, [canShowEditor]);
 
   useEffect(() => {
     const monaco = monacoRef.current;
@@ -331,12 +376,27 @@ export const useFileEditorRuntime = ({
     }
     touchInstance(state.instanceId);
     const editor = editorRef.current;
-    let textModel = textModelRef.current;
     const monaco = monacoRef.current;
-    if (editor === null || textModel === null || monaco === null) {
+    if (editor === null || monaco === null) {
       return;
     }
-    if (isFileEditorTextModelDisposed(textModel)) {
+
+    // Model swap: instanceId changed → acquire new model, swap it into the
+    // shared editor. acquireFileEditorTextModel already syncs content/language.
+    if (currentInstanceIdRef.current !== state.instanceId) {
+      applyingStateRef.current = true;
+      const newModel = acquireFileEditorTextModel(monaco, state);
+      textModelRef.current = newModel;
+      currentInstanceIdRef.current = state.instanceId;
+      editor.setModel(newModel);
+      editor.updateOptions({ readOnly: state.isReadOnly || isAiOnlyRef.current });
+      applyingStateRef.current = false;
+      setIsDiffMode(false);
+      return;
+    }
+
+    let textModel = textModelRef.current;
+    if (textModel === null || isFileEditorTextModelDisposed(textModel)) {
       textModel = acquireFileEditorTextModel(monaco, state);
       textModelRef.current = textModel;
       editor.setModel(textModel);

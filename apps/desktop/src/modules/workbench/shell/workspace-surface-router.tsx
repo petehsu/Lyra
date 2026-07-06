@@ -41,6 +41,7 @@ import {
   type WorkspaceSurfaceRenderModel
 } from "./workspace-surface-render-model";
 import { WorkbenchTitlebarScopeProvider } from "./titlebar-context";
+import { isFileEditorAppId } from "../workspace-apps";
 
 export type WorkspaceSurfaceSettingsProps = BrowserSettingsSurfaceProps;
 
@@ -154,6 +155,12 @@ export type WorkspaceSurfaceRouterProps = {
 /** Max number of tab surfaces kept alive (mounted but hidden) for instant switching. */
 const MAX_KEPT_ALIVE_TABS = 6;
 
+// ponytail: file-editor tabs use a separate persistent surface (below) so
+// they are excluded from the keepalive pool. Switching between file-editor
+// tabs swaps the monaco model (setModel) instead of creating new editors.
+const isFileEditorTab = (tab: WorkspaceTab): boolean =>
+  tab.appId !== undefined && isFileEditorAppId(tab.appId);
+
 const renderSurfaceModel = (
   model: WorkspaceSurfaceRenderModel,
   surfaceAdapters: WorkbenchSurfaceAdapters
@@ -250,6 +257,7 @@ export const WorkspaceSurfaceRouter = ({
   // Track the order in which tabs were activated so we can keep the most
   // recently used ones mounted (display:none) and evict the stalest.
   const lruRef = useRef<readonly string[]>([]);
+  const lastFileEditorTabIdRef = useRef<string | undefined>(undefined);
   const activeId = activeTab?.id ?? visibleLayout.activeTabId;
 
   // Update LRU during render: move activeId to the end (most recently used).
@@ -260,10 +268,15 @@ export const WorkspaceSurfaceRouter = ({
     }
   }
 
-  // Compute which tabs to keep alive: filter closed tabs, cap to MAX.
+  // Compute which tabs to keep alive: filter closed tabs and file-editor
+  // tabs (file-editor uses a persistent single-instance surface), cap to MAX.
   const keptAliveTabIds = useMemo(() => {
     const existing = new Set(tabsModel.tabs.map((tab) => tab.id));
-    const lru = lruRef.current.filter((id) => existing.has(id));
+    const lru = lruRef.current.filter((id) => {
+      if (!existing.has(id)) return false;
+      const tab = tabById.get(id);
+      return tab !== undefined && !isFileEditorTab(tab);
+    });
     return lru.slice(-MAX_KEPT_ALIVE_TABS);
   }, [tabsModel.tabs]);
 
@@ -310,6 +323,26 @@ export const WorkspaceSurfaceRouter = ({
 
   const targetTab = activeTab ?? tabById.get(visibleLayout.activeTabId);
 
+  // --- Persistent file-editor surface (single-instance) ---
+  // A single FileEditorSurface (key="file-editor-persistent") is always
+  // mounted when a file-editor tab exists. Switching between file-editor
+  // tabs updates the state prop, triggering a model swap in
+  // useFileEditorRuntime rather than a full create/dispose cycle.
+  const activeFileEditorTab =
+    targetTab !== undefined && isFileEditorTab(targetTab) ? targetTab : undefined;
+  if (activeFileEditorTab !== undefined) {
+    lastFileEditorTabIdRef.current = activeFileEditorTab.id;
+  }
+  const persistentFileEditorTab =
+    lastFileEditorTabIdRef.current !== undefined
+      ? tabById.get(lastFileEditorTabIdRef.current)
+      : undefined;
+  const shouldRenderPersistentEditor =
+    persistentFileEditorTab !== undefined && isFileEditorTab(persistentFileEditorTab);
+  if (!shouldRenderPersistentEditor && lastFileEditorTabIdRef.current !== undefined) {
+    lastFileEditorTabIdRef.current = undefined;
+  }
+
   return (
     <div className="lyra-workspace-surface-single">
       {keptAliveTabIds.map((tabId) => {
@@ -326,6 +359,15 @@ export const WorkspaceSurfaceRouter = ({
           </div>
         );
       })}
+      {shouldRenderPersistentEditor && persistentFileEditorTab !== undefined && (
+        <div
+          key="file-editor-persistent"
+          className="lyra-workspace-surface-keepalive"
+          style={activeFileEditorTab !== undefined ? undefined : { display: "none" }}
+        >
+          {renderTabSurface(persistentFileEditorTab)}
+        </div>
+      )}
     </div>
   );
 };

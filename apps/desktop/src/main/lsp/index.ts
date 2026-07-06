@@ -1,1 +1,1 @@
-export { createLspIpcBridge, type LspIpcBridge } from "./service";
+export { createLspIpcBridge, configureLanguageServerEnvironment, type LspIpcBridge } from "./service";

@@ -6,6 +6,7 @@ export {
 } from "./service";
 export type {
   WorkbenchAiStopBehavior,
+  WorkbenchEditorGpuAcceleration,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,

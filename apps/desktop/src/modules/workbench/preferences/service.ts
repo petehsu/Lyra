@@ -12,6 +12,7 @@ import { resolveWorkbenchUiPackId } from "../ui-platform";
 import type { WorkbenchUiPackId } from "../ui-platform";
 import type {
   WorkbenchAiStopBehavior,
+  WorkbenchEditorGpuAcceleration,
   WorkbenchOmniboxNonBrowserSubmitTarget,
   WorkbenchPreferences,
   WorkbenchPreferencesModel,
@@ -46,6 +47,8 @@ const isSplitOverflowPolicy = (value: unknown): value is WorkbenchSplitOverflowP
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isWorkbenchAiStopBehavior = (value: unknown): value is WorkbenchAiStopBehavior =>
   value === "turn_only" || value === "turn_and_background";
+const isEditorGpuAcceleration = (value: unknown): value is WorkbenchEditorGpuAcceleration =>
+  value === "off" || value === "auto";
 const isSearchResultsSourceFilter = (value: unknown): value is WorkbenchSearchResultsSourceFilter =>
   value === "all" || value === "web";
 const isWorkbenchOmniboxNonBrowserSubmitTarget = (
@@ -87,7 +90,8 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       readonly aiRichRenderingEnabled?: unknown;
       readonly aiStopBehavior?: unknown;
       readonly preventSleepEnabled?: unknown;
-	      readonly searchWebEngineIds?: unknown;
+      readonly editorGpuAcceleration?: unknown;
+      readonly searchWebEngineIds?: unknown;
 	      readonly searchSearxngEndpoint?: unknown;
 	      readonly searchResultsSourceFilter?: unknown;
       readonly omniboxNonBrowserSubmitTarget?: unknown;
@@ -127,6 +131,9 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       preventSleepEnabled: isBoolean(parsed.preventSleepEnabled)
         ? parsed.preventSleepEnabled
         : defaults.preventSleepEnabled,
+      editorGpuAcceleration: isEditorGpuAcceleration(parsed.editorGpuAcceleration)
+        ? parsed.editorGpuAcceleration
+        : defaults.editorGpuAcceleration,
       searchWebEngineIds: asStringArray(parsed.searchWebEngineIds),
 	      ...(normalizedSearxngEndpoint === undefined
 	        ? {}
@@ -230,6 +237,12 @@ export const useWorkbenchPreferencesModel = (
       commit((current) => ({
         ...current,
         preventSleepEnabled
+      }));
+    },
+    setEditorGpuAcceleration: (editorGpuAcceleration) => {
+      commit((current) => ({
+        ...current,
+        editorGpuAcceleration
       }));
     },
     setSearchWebEngineIds: (searchWebEngineIds) => {

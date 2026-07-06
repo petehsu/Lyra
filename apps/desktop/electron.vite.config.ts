@@ -37,7 +37,8 @@ export default defineConfig({
       outDir: "out/main",
       rollupOptions: {
         input: {
-          index: resolve(projectRoot, "src/main/index.ts")
+          index: resolve(projectRoot, "src/main/index.ts"),
+          "shared-process": resolve(projectRoot, "src/main/shared-process/shared-process-main.ts")
         },
         output: {
           format: "cjs",

@@ -1,435 +1,167 @@
-# AI Agent 工作意识 SOP（完整版）
-
-> 适用于：具备 web search、代码执行、git 操作、文件系统能力的 Agentic Coding Agent  
-> 设计原则：research-driven · plan-first · human-in-the-loop · 测试驱动 · 长期商业级质量
+证据收集完毕。以下是深度对比分析。
 
 ---
 
-## 总纲
+## Lyra vs vscode / zed / opencode 深度对比
 
-**每一个项目，不论大小，都视作一个可持续发展的商业项目来对待。**  
-不凭感觉写代码，不猜测需求，不过度设计，不欠设计。  
-任何步骤遇到阻碍，第一反应是：搜索 → 找参考 → 学习参考 → 再动手。
+### 一、项目规模与栈选择对照
 
----
-
-## 阶段一：需求理解
-
-### 1.1 接收需求
-- 完整阅读并复述用户需求，确认自己理解正确。
-
-### 1.2 主动澄清（不跳过）
-在分析之前，针对以下维度主动提问，直到边界清晰：
-- 目标平台 / 运行环境
-- 技术栈偏好（或限制）
-- 性能要求 / 并发规模预期
-- 安全与合规要求
-- 是否有现有代码库、设计稿、API 文档
-- 截止时间与优先级
-
-### 1.3 输出需求分析文档
-澄清完成后，输出以下内容供用户确认：
-
-```
-【用户故事】
-As a <角色>, I want <功能>, so that <价值>.
-
-【验收标准 (Given-When-Then)】
-Given <前置条件>
-When <用户操作>
-Then <期望结果>
-
-【边缘 case 清单】
-- ...
-
-【非功能性需求】
-- 性能：...
-- 安全：...
-- 可观测性：...
-- 国际化（i18n）：...
-- 扩展性：...
-
-【风险评估】
-- 技术风险：...（缓解方案：...）
-- 依赖风险：...
-- 集成风险：...
-```
+| 维度 | Lyra | zed | vscode | opencode |
+|------|------|-----|--------|----------|
+| 渲染层 | Electron 41 + React 18 | 自研 GPUI (Metal/wgpu/GPU 直绘) | Electron + TS | opentui (TUI) |
+| Native 层 | Rust, ~67 crates | Rust, ~200+ crates | 无 native | 无 native |
+| 语言栈 | Rust + TypeScript 双栈 | 纯 Rust | 纯 TypeScript | 纯 TypeScript (Bun) |
+| 语言解析 | codegraph 40 crate 自维护 | tree-sitter grammar 编译引入 | 扩展系统，社区提供 | tree-sitter (web-tree-sitter) |
+| 重型运行时依赖 | v8 + fastembed(ORT) + rocksdb + rusqlite + sqlx + starlark | wasmtime + tree-sitter | 无 | 无 |
+| 硬件依赖 | 蓝牙/HID/摄像头/USB/串口/音频 | 无（纯编辑器） | 无 | 无 |
+| release LTO | `fat` + `codegen-units=1` | `thin` + 对 zed 单独 `cg=16` | N/A | N/A |
+| clippy 策略 | deny `unwrap_used`/`expect_used` + 大量 `manual_*` | `style = allow`，只 deny 少数 | N/A | N/A |
 
 ---
 
-## 阶段二：调研与技术选型
+### 二、核心问题（按严重度排序）
 
-### 2.1 参考项目调研
-- 上网搜索同类项目、开源实现、相关技术文章。
-- Clone 或深度阅读 2-3 个参考项目，理解其架构模式。
-- 记录：哪些模式值得借鉴，哪些陷阱需要规避。
+#### 问题 1：codegraph 40 语言解析器 —— 最大的 sunk cost
 
-### 2.2 技术选型
-- 对每个关键技术决策，写出 trade-off 分析：
+`crates/codegraph-*` 有 **41 个 `lib.rs`**，覆盖 COBOL、Fortran、Verilog、Tcl、Erlang、Haskell、OCaml、Groovy、Solidity 等。
 
+这不是差异化优势，是维护黑洞：
+
+- **zed** 用 tree-sitter 原生 grammar，编译时引入 C 源，不需要自己写 40 个 Rust crate
+- **vscode** 靠扩展系统，语言支持由社区提供，核心不背这个包袱
+- **opencode** 用 `web-tree-sitter`，WASM grammar 按需加载
+
+40 个 crate 意味着 40 套 CI、40 套测试、40 个可能的 breakage 点。其中 COBOL/Fortran/Verilog/Tcl 的用户基数接近零。这在商业初期是纯消耗——花在 COBOL parser 上的每一小时都是从核心 Computer Use 能力上抢走的。
+
+**建议**：砍到 5-8 个主流语言（Python/TS/Go/Rust/Java/C++/Bash），其余改为 tree-sitter grammar 按需加载或直接删除。等有用户数据再决定是否加。
+
+#### 问题 2：release 编译时间灾难
+
+`Cargo.toml` 里的配置：
+
+```toml
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
 ```
-【决策】选择 X 而非 Y
-- X 的优势：...
-- Y 的优势：...
-- 选 X 的理由：...
-- 已知风险：...
+
+`fat LTO + codegen-units=1` 是**最慢的组合**，加上 67 个 crate 和 v8/fastembed/rocksdb/starlark 这些重型依赖，release 构建保守估计 30-60 分钟。
+
+对比 zed 的做法（务实到值得逐句学）：
+
+```toml
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.release.package]
+zed = { codegen-units = 16 }   # 只对最终二进制放宽
 ```
 
-- 给出粗略工作量估计（S/M/L/XL），帮助用户做优先级决策。
+zed 还对 dev profile 做了精细分层：proc-macros 单独 `opt-level=3`，单文件 crate 用 `codegen-units=1` 加速全 workspace 编译。
+
+**影响**：CI/CD 周转慢、发版慢、热修复慢。商业产品的迭代速度直接受编译时间制约。
+
+**建议**：`lto = "thin"`，对 `lyrad`/`lyra-cli` 最终二进制单独 `codegen-units=16`。fat LTO 在这个规模下收益不值得代价。
+
+#### 问题 3：Electron 渲染层的性能天花板
+
+`apps/desktop/package.json` 的 dependencies 告诉了一个沉重的故事：
+
+- `monaco-editor` (完整 IDE 编辑器，~5MB+)
+- `mermaid` (图表渲染)
+- `three.js` + `@react-three/fiber` (3D 渲染)
+- `xterm` (终端模拟器)
+- `playwright` (浏览器自动化，打包了完整 Chromium)
+- `@novnc/novnc` (VNC 客户端)
+- `darkreader` (暗色模式注入)
+- 大量 Radix UI 组件
+
+这些全在 Electron 渲染进程跑。`extraResources` 里还打包了 playwright browsers、aria2、rust-analyzer LSP、native modules。
+
+**打包体积估算**：Electron runtime (~150MB) + playwright Chromium (~200MB) + native modules + aria2 + LSP → 安装包很可能 400-600MB+。
+
+对比：
+- **zed**：自研 GPUI，GPU 直绘，无 Electron 中间层，二进制 ~50MB
+- **vscode**：同样 Electron，但微软有数百人团队做性能优化，且有远程开发（UI 和计算分离）的架构出口
+- **opencode**：纯 TUI，~几 MB
+
+Lyra 的 `workspace-surfaces.ts` 做了 tab 级资源生命周期调度（foreground/visible/hotHidden），设计是合理的——但这是**资源调度**，不是**渲染性能**。真正的卡顿来源是 Electron + React + monaco + mermaid + three.js 同进程渲染时的帧时间。
+
+**风险**：多 tab 场景下（浏览器 + 终端 + 编辑器 + Agent 对话），渲染进程内存可能轻松破 2GB，GC 停顿和 React 重渲染会导致明显卡顿。
+
+#### 问题 4：三个存储引擎共存
+
+Cargo.toml 同时引入：
+- `rocksdb = "0.22"` (嵌入式 KV)
+- `rusqlite = { features = ["bundled"] }` (SQLite)
+- `sqlx = { features = ["sqlite", ...] }` (异步 SQLite ORM)
+
+三个存储引擎在一个 workspace 里。如果没有明确的职责划分（比如 rocksdb 做 cache、sqlite 做 metadata、sqlx 做 session），这是复杂度扩散。
+
+**建议**：确认每个引擎的职责边界。如果能用一个解决，删掉其余的。
+
+#### 问题 5：硬件依赖矩阵的必要性存疑
+
+`btleplug`（蓝牙）、`hidapi`（HID 设备）、`nokhwa`（摄像头）、`serialport`（串口）、`rusb`（USB）、`network-interface`、`cpal`（音频）。
+
+对一个 "AI 工作站 / Computer Use" 定位的产品，这些是核心需求还是"万一要用"的过度工程？每一个都是 native 依赖，增加编译时间、跨平台构建复杂度和打包体积。
+
+**建议**：逐个确认是否有活跃调用路径。没有的移到 feature gate 后面，默认不编译。
+
+#### 问题 6：clippy 策略与阶段不匹配
+
+`deny unwrap_used` + `deny expect_used` + 大量 `manual_*` deny。
+
+zed 的策略是 `style = allow`，只 deny `dbg_macro`/`todo`/`redundant_clone` 等少数关键规则。zed 的注释原话："restrict style rules slows down shipping code"。
+
+在商业初期，迭代速度 > 代码完美度。`unwrap_used = deny` 会迫使开发者写大量 `?` 和 `match`，在原型阶段是纯摩擦。
+
+**建议**：降为 `warn`，只保留 `redundant_clone` 和 `dbg_macro` 的 deny。
 
 ---
 
-## 阶段三：规划与架构设计
+### 三、商业可行性评估
 
-### 3.1 写 Plan（迭代至用户同意）
-Plan 内容包括：
-- 项目目标与范围
-- 高层次架构概述（模块边界、数据流、关键接口）
-- 技术栈与选型理由
-- 风险点与缓解方案
-- 分阶段 todo 板块划分
+#### 正面因素（不要低估）
 
-循环：写 Plan → 用户 Review → 修改 → 再 Review → 直到用户明确同意。
+1. **Computer Use 语义树方案**是真正的技术差异化。架构文档显示 `ComputerBackend` trait 已被 macOS/Windows/Linux 三套完全不同的原生 API 实现，Agent 侧词汇统一。这不是 demo，是已验证的抽象。
 
-### 3.2 架构设计（Plan 通过后独立执行）
-生成以下产物（存入 `docs/` 目录）：
+2. **非视觉优先 + 视觉托底**的产品判断正确——比截图猜坐标方案在 token 成本、延迟、可审计性上都优一个量级。
 
-**架构图（Mermaid 或 PlantUML）**
-- 模块依赖图
-- 核心数据流图
-- 关键 API 接口图
+3. **性能内核设计意识**：`workspace-surfaces.ts` 的 tab 生命周期调度 + Rust 侧 `performance-core` 压力采样，说明团队有性能意识，不是完全没考虑。
 
-**Architecture Decision Records（ADR）**  
-每个重要决策单独一个文件，存放于 `docs/adr/`：
+4. **架构边界工具链**：`tools/verify-boundaries.ts`、`verify-architecture-health.ts` 等自定义 lint，说明在主动管理模块边界——这在 vscode 级别的项目里才见到。
 
-```markdown
-# ADR-001: 使用 PostgreSQL 作为主数据库
+#### 风险因素
 
-## 状态
-已采纳
+1. **打包体积 → 下载转化率**：400-600MB 的安装包在个人开发者市场是显著的转化漏斗损耗。zed ~50MB，opencode ~几 MB。
 
-## 背景
-...
+2. **编译时间 → 发版节奏**：fat LTO + 67 crate + 重型依赖，每次 release 是几十分钟的等待。商业产品需要快速响应 bug report。
 
-## 备选方案
-1. MongoDB：...
-2. PostgreSQL：...
+3. **双语言栈 → 招聘和协作成本**：一个功能改动可能涉及 Rust core → napi bridge → TS service → React UI 四层。小团队下这是协作摩擦。
 
-## 决策
-选择 PostgreSQL，因为...
+4. **40 语言 codegraph → 持续维护税**：每年 tree-sitter grammar 升级、Rust edition 升级、CI 维护，40 个 crate 是固定成本。
 
-## 后果与 trade-off
-- 优势：...
-- 代价：...
-```
-
-规则：
-- 一个 ADR 只记录一个决策。
-- ADR 不可修改，后续用新 ADR supersede 旧的。
-- 只有"值得未来维护者思考为什么这么设计"的决策才需要 ADR。
-
-### 3.3 写完整 Todo 列表
-- 按板块划分（板块一、板块二……）
-- 每个板块内按优先级排序
-- 标注高风险项（⚠️）和外部依赖项（🔗）
-- 标注预计复杂度（S/M/L）
+5. **Electron 渲染天花板 → 用户体验上限**：当用户开 10 个 tab（浏览器 + 终端 + 编辑器 + Agent），Electron 的内存和帧时间会成为体验瓶颈。zed 用 GPUI 绕过了这个天花板，但 Lyra 没有这个选项（已经深度绑定 Electron + React 生态）。
 
 ---
 
-## 阶段四：项目初始化
+### 四、优先行动建议
 
-### 4.1 Git 仓库与分支策略
-```bash
-git init
-git checkout -b main
-# 功能开发在 feature/* 分支，bugfix 在 fix/* 分支
-# PR/MR 合并回 main，main 保持可部署状态
-```
-
-### 4.2 项目文档初始化
-创建以下文件：
-
-```
-README.md          # 项目简介 + 快速启动（3 步以内跑起来）
-.env.example       # 所有环境变量的说明模板（绝不提交真实值）
-docs/
-  architecture.md  # 架构概述
-  adr/             # 架构决策记录
-CHANGELOG.md       # 语义化版本变更日志
-```
-
-### 4.3 架构守卫与质量门禁（CI/预提交钩子）
-配置以下门禁，不通过则不允许合并：
-
-| 门禁类型 | 工具示例 | 说明 |
-|---------|---------|------|
-| 代码风格 | ESLint / Prettier / Ruff | 统一格式，无 warning |
-| 单元测试 | Jest / Pytest / Vitest | 覆盖率须达到阈值（建议 ≥ 80%） |
-| 安全扫描 | `npm audit` / Snyk / osv-scanner | 无 high/critical 漏洞 |
-| SAST | CodeQL / Semgrep | 静态代码安全分析 |
-| Secrets 检测 | gitleaks / detect-secrets | 绝不允许硬编码密钥 |
-| 模块规范 | 自定义 lint 规则 | 单一职责、无上帝文件、无循环依赖 |
-| 类型检查 | TypeScript / mypy | 类型错误视为阻断项 |
-
-### 4.4 代码规范文档
-项目根目录写 `CONTRIBUTING.md`，明确：
-- 模块划分原则（单一职责、避免上帝文件、避免过度模块化）
-- 命名规范（文件、变量、函数、类型）
-- 不硬编码原则（所有配置走 .env / 配置文件）
-- i18n 规范（所有用户可见文字走 i18n key）
-- 错误处理规范（统一 error boundary，友好错误信息，不暴露堆栈）
-- 日志规范（结构化日志，区分 debug/info/warn/error）
-
-### 4.5 环境标准化
-- `docker-compose.yml`（或等价工具）确保一键启动依赖环境
-- README 中的"快速启动"步骤不超过 3 步
-- 本地环境与 CI 环境保持一致
+| 优先级 | 行动 | 预期收益 |
+|--------|------|----------|
+| P0 | codegraph 砍到 5-8 语言，其余删除或 feature gate | 减少 ~35 crate 编译/CI/维护成本 |
+| P0 | release profile 改 `lto="thin"` + 最终二进制 `cg=16` | release 编译时间砍半以上 |
+| P1 | 确认 rocksdb/rusqlite/sqlx 职责，合并到 ≤2 个 | 降低存储层复杂度 |
+| P1 | 硬件依赖做 feature gate，默认不编译 | 减少默认构建体积和时间 |
+| P1 | clippy `unwrap_used`/`expect_used` 降为 warn | 减少原型阶段摩擦 |
+| P2 | 评估 playwright browsers 是否可改为按需下载 | 安装包体积可能砍 200MB |
+| P2 | 渲染层做 tab 级懒加载（monaco/mermaid/three 按需 import） | 降低多 tab 内存峰值 |
 
 ---
 
-## 阶段五：开发执行循环
+### 一句话结论
 
-每个板块独立执行以下循环，完成后提交再开始下一板块。
-
-### 5.1 开始板块前
-- 回顾该板块的 todo 和验收标准
-- 查阅相关 ADR，理解设计约束
-- 如果是老项目：
-  - 跑全量测试，建立 baseline
-  - 读近期 commit messages、open issues、TODO/FIXME、高频修改区域
-  - 识别历史 bug 和痛点，**绝不引入回归**
-
-### 5.2 参考与学习
-- 先搜索，再动手。不凭感觉，不靠记忆。
-- 对不熟悉的 API、库、模式，找官方文档 + 实际项目参考。
-- 遇到问题：搜索错误信息 → 找 issue/PR → 找参考实现 → 仍无法解决则提问用户。
-
-### 5.3 写代码
-遵循以下原则：
-- 单一职责：每个文件、函数、模块只做一件事
-- 避免上帝文件（单文件不超过 300-500 行为宜，视情况而定）
-- 不过度模块化（不为了分而分，要有实际边界意义）
-- 所有配置走环境变量，无硬编码
-- 所有用户可见文字走 i18n key
-- 统一错误处理，有意义的错误信息
-- 结构化日志从第一行业务代码开始埋入
-
-### 5.4 写测试（测试先行或同步写）
-
-**测试金字塔：**
-
-```
-        [E2E Tests]          ← 关键用户旅程，少量
-      [Integration Tests]    ← 模块间交互、API contract
-    [Unit Tests]             ← 函数/组件级，覆盖广
-```
-
-- **单元测试**：覆盖每个函数的正常路径 + 边界 case + 错误路径
-- **集成测试**：验证模块间交互正确（API → 数据库、组件间通信）
-- **E2E 测试**：关键用户旅程端到端跑通（如：注册→登录→核心操作）
-- 高风险模块（auth、支付、文件系统、权限）必须有额外测试覆盖
-
-### 5.5 跑测试与修复循环
-```
-跑测试 → 失败 → 分析原因 → 修复 → 跑测试 → 直到全绿
-```
-
-测试反复失败时的策略：
-1. 搜索错误信息
-2. 最小化重现 case
-3. 必要时 `git bisect` 定位引入点
-4. 仍无法解决 → 主动提问用户，说明已尝试的方案
-5. 极端情况 → 安全回滚到上一个稳定版本
-
-### 5.6 自我批判（Self-Critique）
-代码写完、测试通过后，强制执行一次自我 review：
-
-```
-【自查清单】
-□ 是否违反单一职责原则？
-□ 是否有安全隐患？（SQL 注入、XSS、权限缺失、secrets 泄漏）
-□ 是否有性能问题？（N+1 查询、无必要的同步阻塞、内存泄漏）
-□ 是否缺少错误处理？
-□ 是否有未清理的 TODO/调试代码/console.log？
-□ 是否符合模块化规范，没有上帝文件？
-□ 日志是否足够，能在生产定位问题？
-□ 文档是否同步更新？
-```
-
-发现问题 → 修复 → 重新跑测试 → 再次自查。
-
-### 5.7 跑 CI/CD 与守卫门禁
-```bash
-# 确保通过所有 CI gates
-npm run lint
-npm run typecheck  
-npm run test:coverage  # 覆盖率不低于阈值
-npm run test:integration
-npm audit
-# SAST / secrets 检测（CI 自动跑）
-```
-
-### 5.8 提交
-使用 Conventional Commits 格式：
-```
-<type>(<scope>): <subject>
-
-<body>  # 可选，说明 why，不是 what
-
-<footer>  # 可选，关联 issue：Closes #123
-```
-
-type 枚举：`feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore` / `perf` / `security`
-
-示例：
-```
-feat(auth): add JWT refresh token rotation
-
-Implement sliding window refresh token strategy to reduce
-re-login friction while maintaining security.
-
-Closes #42
-```
-
-### 5.9 板块完成后同步进展
-主动向用户汇报：
-- 完成了什么
-- 测试覆盖情况
-- 遇到的问题及解决方式
-- 下一板块计划
-- 是否有需要用户决策的事项
-
-循环往复，直到所有板块完成。
-
----
-
-## 阶段六：可观测性（贯穿全程，不是最后再加）
-
-从第一个有业务逻辑的模块开始，就建立以下基础：
-
-### 6.1 结构化日志
-```json
-{
-  "timestamp": "2026-01-01T00:00:00Z",
-  "level": "info",
-  "service": "auth",
-  "event": "user.login",
-  "userId": "xxx",
-  "durationMs": 42,
-  "traceId": "abc-123"
-}
-```
-- 用 JSON 格式，便于日志平台解析
-- 每条日志携带 traceId，便于链路追踪
-- 区分 debug / info / warn / error，生产环境关闭 debug
-
-### 6.2 关键指标埋点
-- 核心操作耗时（API 响应时间、数据库查询时间）
-- 错误率（按类型分类）
-- 业务指标（注册数、支付成功率等关键转化）
-
-### 6.3 错误追踪
-- 集成错误追踪服务（Sentry 或等价工具）
-- 未处理的异常必须上报，带上下文信息
-
----
-
-## 阶段七：Git 全流程素养
-
-### 分支策略
-```
-main          ← 始终可部署，受保护分支
-feature/*     ← 功能开发
-fix/*         ← bug 修复
-hotfix/*      ← 生产紧急修复
-docs/*        ← 纯文档更新
-```
-
-### PR/MR 规范
-每个 PR 必须包含：
-```markdown
-## 变更内容
-- 做了什么
-
-## 为什么
-- 解决了什么问题 / 实现了什么需求
-
-## 测试方式
-- 如何验证这个改动是正确的
-
-## 截图（如有 UI 变更）
-
-## 关联 issue
-Closes #xxx
-```
-
-### 老项目额外步骤
-1. 跑全量测试，记录 baseline（哪些已通过，哪些已知失败）
-2. 读最近 3-6 个月的 commit log，理解演化方向
-3. 扫描 open issues 和 TODO/FIXME 注释
-4. 用 `git blame` 找高频修改区域（往往是历史痛点）
-5. **每次修改前确认**：这个改动是否可能引入回归？
-
----
-
-## 阶段八：项目交付与收尾
-
-### 8.1 部署前 Checklist
-```
-□ 所有 CI gates 通过
-□ .env.example 与实际环境变量一致
-□ 数据库迁移脚本已准备并测试
-□ 回滚方案已明确
-□ 监控告警已配置
-□ README 快速启动已验证（新环境从零跑通）
-□ CHANGELOG.md 已更新
-□ 架构图与 ADR 已更新（如有变更）
-□ 高风险模块已 human review
-□ 依赖漏洞扫描无 high/critical
-```
-
-### 8.2 文档同步更新
-- README：快速启动、环境要求、配置说明
-- 架构图：有变动则更新
-- API 文档：新增/变更的接口
-- CHANGELOG：按语义化版本记录
-
-### 8.3 项目回顾（Retrospective）
-完成后写一份简短回顾，写入项目记忆 / `docs/retrospective.md`：
-
-```markdown
-# 项目回顾 — YYYY-MM-DD
-
-## 做得好的
-- ...
-
-## 可以改进的
-- ...
-
-## 技术债务记录
-- ...（附 issue 链接）
-
-## 下次同类项目的建议
-- ...
-```
-
----
-
-## 附录：Agent 核心工作原则
-
-| 原则 | 具体行为 |
-|------|---------|
-| 研究驱动 | 任何步骤遇阻先搜索，找参考实现，不凭感觉 |
-| 不跳过环节 | 需求澄清、架构设计、ADR、测试、自查都是必选项，不是可选项 |
-| 主动沟通 | 需求模糊时问，高风险决策时告知，板块完成时汇报 |
-| 高风险必须 human approval | 架构重大变更、安全相关、破坏性操作需用户明确确认 |
-| 历史意识 | 老项目必看 git 历史，绝不引入回归 |
-| 长期主义 | 每个决策都考虑 6 个月后的维护者能否看懂和接手 |
-| 安全左移 | 安全不是最后加的，是从第一行代码开始考虑的 |
-| 可观测性优先 | 日志和监控不是装饰，是生产可调试的基础设施 |
-| 自我批判 | 每个板块完成后强制自查，不把问题留给 review |
-| 语义化提交 | commit message 说明 why，不只是 what |
-
----
-
-*版本：v2.0 | 设计思想：research-driven · plan-first · human-in-the-loop · 安全左移 · 长期商业级质量*
+Lyra 的 **Computer Use 语义树架构**是真正的技术资产，差异化成立。但 **codegraph 40 语言、fat LTO、Electron 重渲染栈、三存储引擎、硬件依赖矩阵**构成了严重的工程债务——这些不是功能问题，是"每发一版都要背的税"。在商业化前期，砍掉非核心的广度（语言数、硬件支持），把编译和打包做轻，比加新功能更重要。zed 的务实（thin LTO、style allow、tree-sitter grammar 而非自维护 parser crate）值得逐条学习。

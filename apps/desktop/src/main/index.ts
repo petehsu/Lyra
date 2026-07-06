@@ -44,20 +44,20 @@ import { createImageViewerIpcBridge } from "./image-viewer";
 import { createIdentityIpcBridge } from "./identity";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLocationIpcBridge } from "./location";
-import { createLspIpcBridge } from "./lsp";
+import { createLspIpcBridge, configureLanguageServerEnvironment } from "./lsp";
 import { createLinuxCompatBridge } from "./linux-compat";
 import {
   createLyraPerformanceResourceScheduler,
   createLyraWorkspaceSurfacePerformanceSync
 } from "./performance";
 import { resolveCurrentDesktopTarget } from "./platform-target";
-import { createLyraRuntimeClient } from "./runtime-client";
 import { createSearchIpcBridge } from "./search";
 import { createSensitiveValuesIpcBridge } from "./sensitive-values";
 import {
   createLyraFileAccessController,
 } from "./security";
 import { createScreenshotPreviewIpcBridge } from "./screenshot-preview/service";
+import { createSharedProcessClient } from "./shared-process/shared-process-client";
 import { createSystemNotificationsIpcBridge } from "./system-notifications/service";
 import {
   applyElectronStoragePaths,
@@ -1046,7 +1046,11 @@ const registerIpcHandlers = async (): Promise<void> => {
     addAllowedRoot: lyraFileAccess.addAllowedRoot
   });
   disposeIdentityBridge = identityBridge.dispose;
-  const runtimeClient = createLyraRuntimeClient({
+  // LSP server 路径必须在 fork utility process 之前写入 process.env，
+  // 否则 lyrad 从 utility process spawn LSP daemon 时看不到这些变量。
+  configureLanguageServerEnvironment();
+  const runtimeClient = createSharedProcessClient({
+    modulePath: join(currentDir, "shared-process.cjs"),
     storageRoot: storageRoots.modules.runtime,
     agentStorageRoot: storageRoots.modules.agent
   });

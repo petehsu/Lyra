@@ -7,7 +7,7 @@
     "outDir": "dist/types",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["node", "electron", "vite/client", "vitest/globals"],
+    "types": ["node", "electron", "vite/client", "vitest/globals", "@webgpu/types"],
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "baseUrl": ".",

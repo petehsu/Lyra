@@ -74,6 +74,7 @@ export const FileEditorSurface = ({
   surfaceVariant = "full",
   controlMode = "human_takeover",
   contributeTitlebar = true,
+  gpuAcceleration = "off",
   editorWorkAcceptLabel,
   editorWorkRejectLabel,
   editorWorkUndoLabel,
@@ -96,7 +97,8 @@ export const FileEditorSurface = ({
     themeSignature,
     model,
     controlMode,
-    activeEditorWorkItem
+    activeEditorWorkItem,
+    gpuAcceleration
   });
   const renderModel = createFileEditorRenderModel({
     state,

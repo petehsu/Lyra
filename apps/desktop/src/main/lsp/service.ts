@@ -97,7 +97,7 @@ const setEnvIfResolved = (
   console.info(`[lyra-lsp] ${envKey}=${resolved}`);
 };
 
-const configureLanguageServerEnvironment = (): void => {
+export const configureLanguageServerEnvironment = (): void => {
   const roots = resolveSearchRoots();
   const rustAnalyzerCandidates = resolveBundledRustAnalyzerCandidates(
     roots,
