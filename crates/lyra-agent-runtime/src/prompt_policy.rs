@@ -578,15 +578,36 @@ fn extract_codegraph_fragment_report(
     if !signals.has_content() {
         return None;
     }
+    let intent_queries_executed = signals.queries_executed.iter().filter(|q| !q.tool.is_empty()).count();
+    let estimated_tokens = signals.estimated_fragment_tokens();
+    let dropped_symbols: Vec<String> = signals.mentioned_symbols.iter().filter(|s| !signals.resolved_neighborhoods.iter().any(|nb| &nb.name == *s)).cloned().collect();
+    let impact_attached = signals.impact_analysis.is_some();
+    let tests_attached = !signals.related_tests.is_empty();
+    let circular_deps_attached = !signals.circular_deps.is_empty();
+    let dead_imports_attached = !signals.dead_imports.is_empty();
+    let hot_paths_attached = !signals.hot_paths.is_empty();
+    let pattern_matches_attached = !signals.pattern_matches.is_empty();
+    let file_symbols_attached = !signals.file_symbols.is_empty();
+    let memory_hits_attached = !signals.memory_hits.is_empty();
     Some(CodeGraphFragmentReport {
         signals_attached: true,
         symbols_resolved: signals.resolved_neighborhoods.len(),
         queries_executed: signals.queries_executed,
         cache_hits: signals.cache_hits,
         cache_misses: signals.cache_misses,
-        estimated_tokens: signals.estimated_fragment_tokens(),
+        estimated_tokens,
         budget_tokens: crate::native_backend::tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
-        dropped_symbols: signals.mentioned_symbols.iter().filter(|s| !signals.resolved_neighborhoods.iter().any(|nb| &nb.name == *s)).cloned().collect(),
+        dropped_symbols,
+        intent: signals.intent.clone(),
+        intent_queries_executed,
+        impact_attached,
+        tests_attached,
+        circular_deps_attached,
+        dead_imports_attached,
+        hot_paths_attached,
+        pattern_matches_attached,
+        file_symbols_attached,
+        memory_hits_attached,
     })
 }
 

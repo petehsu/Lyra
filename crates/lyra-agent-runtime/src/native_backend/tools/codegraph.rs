@@ -9,7 +9,7 @@ use lyra_code_intel_core::CodeGraphEngine;
 /// can drive async queries via `*_sync` wrappers without a runtime context.
 static CODEGRAPH_ENGINE: OnceLock<CodeGraphEngine> = OnceLock::new();
 
-fn engine() -> &'static CodeGraphEngine {
+pub(crate) fn engine() -> &'static CodeGraphEngine {
     CODEGRAPH_ENGINE.get_or_init(|| {
         let storage_root = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("~/.local/share"))

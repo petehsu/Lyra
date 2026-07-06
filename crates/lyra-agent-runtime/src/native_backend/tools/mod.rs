@@ -19,7 +19,7 @@ mod browser_adapter;
 mod browser_concurrency;
 mod browser_interact;
 mod clarification_adapter;
-mod codegraph;
+pub(crate) mod codegraph;
 mod codegraph_signals;
 mod design_reference;
 mod dispatcher;

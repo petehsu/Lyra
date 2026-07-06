@@ -93,7 +93,7 @@ mod state;
 mod streaming_preview_state;
 pub(crate) mod token_estimate;
 pub(crate) mod tool_protocol;
-mod tools;
+pub(crate) mod tools;
 mod transcript_citations;
 mod turn_tool_telemetry;
 mod turns;

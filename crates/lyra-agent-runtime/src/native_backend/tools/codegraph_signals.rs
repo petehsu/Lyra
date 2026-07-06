@@ -224,7 +224,7 @@ impl MessageIntent {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct QueryRecord {
     pub tool: String,
@@ -234,7 +234,7 @@ pub(crate) struct QueryRecord {
 }
 
 /// Observability report persisted into `session.snapshot.promptDelivery`.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CodeGraphFragmentReport {
     pub signals_attached: bool,
@@ -632,7 +632,8 @@ fn extract_mentioned_files(text: &str) -> Vec<String> {
 /// Hash the (working_dir, normalized message) pair for cache hit detection.
 fn message_signature(working_dir: &Path, text: &str) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
-    let dir_bytes = working_dir.to_string_lossy().as_bytes();
+    let dir_string = working_dir.to_string_lossy();
+    let dir_bytes = dir_string.as_bytes();
     for &b in dir_bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000001b3);
@@ -662,7 +663,7 @@ pub(crate) fn codegraph_signals_for_prompt(
     _session_id: Option<&str>,
     budget_tokens: usize,
 ) -> CodeGraphSignals {
-    let Some(working_dir) = working_dir.filter(|d| !d.as_os_str().is_empty()) {
+    let Some(working_dir) = working_dir.filter(|d| !d.as_os_str().is_empty()) else {
         return CodeGraphSignals::default();
     };
 
@@ -697,7 +698,7 @@ pub(crate) fn codegraph_signals_for_prompt(
         // would be empty).
         return CodeGraphSignals {
             graph_state: graph_state.to_string(),
-            cache_hits: cache.cache_hits,
+            cache_hits: 1,
             ..Default::default()
         };
     }
@@ -1015,7 +1016,7 @@ fn run_mcp_tool(
                 .unwrap_or(0);
             queries.push(QueryRecord {
                 tool: tool_name.to_string(),
-                query: short_query_desc(&result),
+                query: short_query_desc(v),
                 elapsed_ms: elapsed,
                 result_count: count,
             });
