@@ -562,6 +562,45 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         runtime_context["projectContext"] =
             tools::project_context_for_prompt(std::path::Path::new(dir));
     }
+    // Phase 6: inject CodeGraph signal-driven fragments + presearch hints.
+    // Runs deterministic symbol resolution + neighborhood pre-fetch (no LLM,
+    // μs-ms level). Falls back gracefully to empty signals when the graph is
+    // not Ready — the P6 prompt section is skipped in that case.
+    if let Some(dir) = working_dir.as_deref().filter(|d| !d.is_empty()) {
+        // Sync the embedding toggle from the host before running signals.
+        // This controls whether run_mcp_tool_sync creates McpServer with or
+        // without graph_only mode (enables memory search / semantic search).
+        if let Some(ref dispatcher) = host_dispatcher {
+            if let Ok(value) = super::activity::invoke_host_capability(
+                dispatcher,
+                "agent.readCodeGraphEmbeddingEnabled",
+                json!({}),
+            ) {
+                let enabled = value.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+                tools::codegraph::engine().set_embeddings_enabled(enabled);
+            }
+        }
+        let signals = tools::codegraph_signals_for_prompt(
+            Some(std::path::Path::new(dir)),
+            &latest_user_text,
+            Some(&session_id),
+            tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
+        );
+        let extra_hints = tools::codegraph_presearch_hints_from_signals(&signals);
+        runtime_context["codegraphSignals"] =
+            tools::codegraph_signals_to_runtime_value(&signals);
+        // Extend presearchHints with codegraph tool entries so the model can
+        // discover the pre-fetched tools without an extra search round.
+        if !extra_hints.is_empty() {
+            if let Some(arr) = runtime_context
+                .get_mut("toolFilesystem")
+                .and_then(|tf| tf.get_mut("presearchHints"))
+                .and_then(Value::as_array_mut)
+            {
+                arr.extend(extra_hints);
+            }
+        }
+    }
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         model_tool_names()
     } else {
@@ -623,6 +662,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 "missedModuleRecovery": prompt_report.missed_module_recovery,
                 "sectionHashes": prompt_report.section_hashes,
                 "contextTrimmed": request_context_trimmed,
+                "codegraphFragmentReport": prompt_report.codegraph_fragment_report,
             });
             touch_session(session);
             state.save_state()?;

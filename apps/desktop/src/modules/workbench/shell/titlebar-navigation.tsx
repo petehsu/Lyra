@@ -15,7 +15,7 @@ import {
   AlertTriangle,
   Star
 } from "lucide-react";
-import type { CSSProperties, ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type {
   WorkbenchBrowserChromePopoverRequest,
   WorkbenchBrowserEvent,
@@ -156,17 +156,13 @@ export const TitlebarNavigation = ({
   const hasTrailingControl = trailingControl !== undefined && trailingControl !== null;
   const hasFavoriteButton = favoriteButton?.visible === true;
   const pageFindMode = mode === "page-find";
-  const actionSlots = pageFindMode
-    ? 1
-    : 1 + (hasValue ? 1 : 0) + (hasTrailingControl ? 1 : 0) + (hasFavoriteButton ? 1 : 0);
-  const shellStyle = {
-    "--lyra-titlebar-navigation-action-slots": actionSlots
-  } as CSSProperties;
+  const hasExternalActions = hasTrailingControl || hasFavoriteButton || hasValue;
   const primaryActionLabel =
     primaryActionKind === "reload" ? reloadLabel : submitLabel;
 
   // SSL security state management
   const [showSecurityPopover, setShowSecurityPopover] = useState(false);
+  const [reloadAnimating, setReloadAnimating] = useState(false);
   const navigationRef = useRef<HTMLFormElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const securityButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -234,8 +230,26 @@ export const TitlebarNavigation = ({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    if (primaryActionKind === "reload") {
+      setReloadAnimating(false);
+      window.requestAnimationFrame(() => {
+        setReloadAnimating(true);
+      });
+    }
     void onSubmit();
   };
+
+  useEffect(() => {
+    if (!reloadAnimating) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      setReloadAnimating(false);
+    }, 650);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [reloadAnimating]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     onChange(event.target.value);
@@ -716,137 +730,146 @@ export const TitlebarNavigation = ({
 
   return (
     <>
-      <form ref={navigationRef} className="lyra-titlebar-navigation lyra-no-drag" onSubmit={handleSubmit}>
-        <div
-          className={
-            isContextualAddress
-              ? "lyra-titlebar-navigation-shell lyra-titlebar-navigation-shell-contextual"
-              : "lyra-titlebar-navigation-shell"
-          }
-          data-has-value={hasValue ? "true" : "false"}
-          data-has-trailing-control={hasTrailingControl ? "true" : "false"}
-          data-has-favorite-control={hasFavoriteButton ? "true" : "false"}
-          data-suggestions-open={navigationShellExpanded ? "true" : "false"}
-          data-mode={pageFindMode ? "page-find" : "normal"}
-          data-native-find-open="false"
-          style={shellStyle}
-        >
-          {pageFindResultsList}
-          {inlineSuggestionPanelOpen ? suggestionsList : null}
-          <div className="lyra-titlebar-navigation-row">
-            <AppIconButton
-              ref={securityButtonRef}
-              className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
-              active={showSecurityPopover}
-              aria-label={securityLabels.ariaLabel}
-              onClick={() => {
-                if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
-                  setShowSecurityPopover(false);
-                  hideNativeSecurityPopover();
-                  return;
-                }
-                if (canUseNativeSecurityPopover && showNativeSecurityPopover()) {
+      <div className="lyra-titlebar-navigation lyra-no-drag">
+        <form ref={navigationRef} className="lyra-titlebar-navigation-form" onSubmit={handleSubmit}>
+          <div
+            className={
+              isContextualAddress
+                ? "lyra-titlebar-navigation-shell lyra-titlebar-navigation-shell-contextual"
+                : "lyra-titlebar-navigation-shell"
+            }
+            data-has-value={hasValue ? "true" : "false"}
+            data-has-trailing-control={hasTrailingControl ? "true" : "false"}
+            data-has-favorite-control={hasFavoriteButton ? "true" : "false"}
+            data-suggestions-open={navigationShellExpanded ? "true" : "false"}
+            data-mode={pageFindMode ? "page-find" : "normal"}
+            data-native-find-open="false"
+          >
+            {pageFindResultsList}
+            {inlineSuggestionPanelOpen ? suggestionsList : null}
+            <div className="lyra-titlebar-navigation-row">
+              <AppIconButton
+                ref={securityButtonRef}
+                className={`lyra-titlebar-navigation-security-btn lyra-security-${securityLevel}`}
+                active={showSecurityPopover}
+                aria-label={securityLabels.ariaLabel}
+                onClick={() => {
+                  if (showSecurityPopover || nativeSecurityPopoverTabIdRef.current !== null) {
+                    setShowSecurityPopover(false);
+                    hideNativeSecurityPopover();
+                    return;
+                  }
+                  if (canUseNativeSecurityPopover && showNativeSecurityPopover()) {
+                    setShowSecurityPopover(true);
+                    return;
+                  }
                   setShowSecurityPopover(true);
-                  return;
-                }
-                setShowSecurityPopover(true);
-              }}
-              title={securityLabels.title}
-            >
-              {renderSecurityIcon()}
-            </AppIconButton>
+                }}
+                title={securityLabels.title}
+              >
+                {renderSecurityIcon()}
+              </AppIconButton>
 
-            <AppInput
-              ref={inputRef}
-              className="lyra-titlebar-navigation-input"
-              type="text"
-              value={value}
-              placeholder={placeholder}
-              aria-label={ariaLabel}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              onChange={handleChange}
-              onFocus={onFocus}
-              onBlur={onBlur}
-              onKeyDown={onKeyDown}
-            />
-            <span className="lyra-titlebar-navigation-actions">
-              {trailingControl}
-              {hasFavoriteButton ? (
-                <AppIconButton
-                  className="lyra-titlebar-navigation-action lyra-titlebar-navigation-favorite-action"
-                  active={favoriteButton!.active}
-                  aria-label={favoriteButton!.label}
-                  title={favoriteButton!.label}
-                  onClick={favoriteButton!.onToggle}
-                >
-                  <Star
-                    size={14}
-                    aria-hidden="true"
-                    fill={favoriteButton!.active ? "currentColor" : "none"}
-                  />
-                </AppIconButton>
-              ) : null}
-              {hasValue ? (
-                <AppIconButton
-                  className="lyra-titlebar-navigation-action"
-                  aria-label={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
-                  title={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
-                  onClick={() => {
-                    onChange("");
-                  }}
-                >
-                  <X size={14} aria-hidden="true" />
-                </AppIconButton>
-              ) : null}
-              {pageFindMode ? (
-                <>
-                  <span className="lyra-titlebar-page-find-counter">
-                    {pageFindCounter}
-                  </span>
+              <AppInput
+                ref={inputRef}
+                className="lyra-titlebar-navigation-input"
+                type="text"
+                value={value}
+                placeholder={placeholder}
+                aria-label={ariaLabel}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                onChange={handleChange}
+                onFocus={onFocus}
+                onBlur={onBlur}
+                onKeyDown={onKeyDown}
+              />
+              <span className="lyra-titlebar-navigation-actions">
+                {pageFindMode ? (
+                  <>
+                    <span className="lyra-titlebar-page-find-counter">
+                      {pageFindCounter}
+                    </span>
+                    <AppIconButton
+                      className="lyra-titlebar-navigation-action"
+                      aria-label={t("navigation.previousPageResult")}
+                      title={t("navigation.previousPageResult")}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        void onPageFindPrevious();
+                      }}
+                    >
+                      <ChevronUp size={14} aria-hidden="true" />
+                    </AppIconButton>
+                    <AppIconButton
+                      className="lyra-titlebar-navigation-action"
+                      aria-label={t("navigation.nextPageResult")}
+                      title={t("navigation.nextPageResult")}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        void onPageFindNext();
+                      }}
+                    >
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </AppIconButton>
+                  </>
+                ) : null}
+                {!pageFindMode ? (
                   <AppIconButton
-                    className="lyra-titlebar-navigation-action"
-                    aria-label={t("navigation.previousPageResult")}
-                    title={t("navigation.previousPageResult")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      void onPageFindPrevious();
-                    }}
+                    type="submit"
+                    className={
+                      primaryActionKind === "reload" && reloadAnimating
+                        ? "lyra-titlebar-navigation-action lyra-titlebar-navigation-action-reloading"
+                        : "lyra-titlebar-navigation-action"
+                    }
+                    aria-label={primaryActionLabel}
+                    title={primaryActionLabel}
                   >
-                    <ChevronUp size={14} aria-hidden="true" />
+                    {primaryActionKind === "reload" ? (
+                      <RefreshCw size={14} aria-hidden="true" />
+                    ) : (
+                      <ArrowRight size={14} aria-hidden="true" />
+                    )}
                   </AppIconButton>
-                  <AppIconButton
-                    className="lyra-titlebar-navigation-action"
-                    aria-label={t("navigation.nextPageResult")}
-                    title={t("navigation.nextPageResult")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      void onPageFindNext();
-                    }}
-                  >
-                    <ChevronDown size={14} aria-hidden="true" />
-                  </AppIconButton>
-                </>
-              ) : null}
-              {!pageFindMode ? (
-                <AppIconButton
-                  type="submit"
-                  className="lyra-titlebar-navigation-action"
-                  aria-label={primaryActionLabel}
-                  title={primaryActionLabel}
-                >
-                  {primaryActionKind === "reload" ? (
-                    <RefreshCw size={14} aria-hidden="true" />
-                  ) : (
-                    <ArrowRight size={14} aria-hidden="true" />
-                  )}
-                </AppIconButton>
-              ) : null}
-            </span>
+                ) : null}
+              </span>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+        {hasExternalActions ? (
+          <div className="lyra-titlebar-navigation-external-actions">
+            {trailingControl}
+            {hasFavoriteButton ? (
+              <AppIconButton
+                className="lyra-titlebar-navigation-action lyra-titlebar-navigation-favorite-action"
+                active={favoriteButton!.active}
+                aria-label={favoriteButton!.label}
+                title={favoriteButton!.label}
+                onClick={favoriteButton!.onToggle}
+              >
+                <Star
+                  size={14}
+                  aria-hidden="true"
+                  fill={favoriteButton!.active ? "currentColor" : "none"}
+                />
+              </AppIconButton>
+            ) : null}
+            {hasValue ? (
+              <AppIconButton
+                className="lyra-titlebar-navigation-action"
+                aria-label={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
+                title={formatMessage("navigation.clearAddressAriaLabel", { label: ariaLabel })}
+                onClick={() => {
+                  onChange("");
+                }}
+              >
+                <X size={14} aria-hidden="true" />
+              </AppIconButton>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       {showSecurityPopover && nativeSecurityPopoverTabIdRef.current === null
         ? createPortal(securityPopover, document.body)
         : null}

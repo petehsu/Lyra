@@ -359,6 +359,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       readonly highlightTargets?: boolean;
       readonly highlightTargetRefs?: readonly string[];
       readonly downsampleForVision?: boolean;
+      readonly prebuiltHighlightRegions?: readonly import("../types").LumenScreenshotHighlightRegion[];
     }
   ): Promise<WorkbenchVisualCaptureResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
@@ -386,18 +387,23 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
 
     const shouldHighlight = request?.highlightTargets !== false;
     const cacheEntry = readBrowserAgentCacheEntry(tabId, target.targetMode);
-    const highlightRegions = shouldHighlight
-      ? buildHighlightRegionsFromElements(cacheEntry?.elements ?? [], {
-        dpr: visualFrame.dpr,
-        scrollX: visualFrame.scrollX,
-        scrollY: visualFrame.scrollY,
-        viewOffsetX: 0,
-        viewOffsetY: 0,
-        ...(request?.highlightTargetRefs === undefined
-          ? {}
-          : { targetRefs: request.highlightTargetRefs })
-      })
-      : [];
+    // When the caller supplies pre-built highlight regions (e.g. AX-derived
+    // annotations for browser.see annotate mode), use them directly instead of
+    // rebuilding from the Lumen DOM cache entry.
+    const highlightRegions = Array.isArray(request?.prebuiltHighlightRegions)
+      ? request!.prebuiltHighlightRegions
+      : shouldHighlight
+        ? buildHighlightRegionsFromElements(cacheEntry?.elements ?? [], {
+          dpr: visualFrame.dpr,
+          scrollX: visualFrame.scrollX,
+          scrollY: visualFrame.scrollY,
+          viewOffsetX: 0,
+          viewOffsetY: 0,
+          ...(request?.highlightTargetRefs === undefined
+            ? {}
+            : { targetRefs: request.highlightTargetRefs })
+        })
+        : [];
 
     let highlighted = false;
     let downsampled = false;

@@ -253,6 +253,12 @@ const createDesktopApi = () => {
       enabled: browserFollowModeEnabled
     };
   });
+  const readActCache = vi.fn(async () => ({
+    enabled: false
+  }));
+  const updateActCache = vi.fn(async (request: { readonly enabled: boolean }) => ({
+    enabled: request.enabled
+  }));
   const readTerminalMemoryTimeline = vi.fn(async (request: { readonly sessionId: string }) => ({
     sessionId: request.sessionId,
     cursor: null,
@@ -335,6 +341,8 @@ const createDesktopApi = () => {
       runJudge,
       readBrowserFollowMode,
       updateBrowserFollowMode,
+      readActCache,
+      updateActCache,
       materializeImageAttachment,
       onEvent: vi.fn((next: (event: AgentRuntimeEvent) => void) => {
         listener = next;
@@ -363,6 +371,8 @@ const createDesktopApi = () => {
     revealSensitiveValue,
     readBrowserFollowMode,
     updateBrowserFollowMode,
+    readActCache,
+    updateActCache,
     readTerminalMemoryTimeline,
     emit: (event: AgentRuntimeEvent) => {
       listener?.(event);

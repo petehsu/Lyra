@@ -284,6 +284,22 @@ export type AgentBrowserFollowModeUpdateRequest = {
   readonly enabled: boolean;
 };
 
+export type AgentActCacheSnapshot = {
+  readonly enabled: boolean;
+};
+
+export type AgentActCacheUpdateRequest = {
+  readonly enabled: boolean;
+};
+
+export type AgentCodeGraphEmbeddingSnapshot = {
+  readonly enabled: boolean;
+};
+
+export type AgentCodeGraphEmbeddingUpdateRequest = {
+  readonly enabled: boolean;
+};
+
 export type AgentSessionLedgerCommitSummary = {
   readonly hash?: string | null;
   readonly shortHash?: string | null;
@@ -1357,6 +1373,7 @@ export type AgentCodegraphStatus = {
     readonly checkedFiles?: number;
   } | null;
   readonly error?: string;
+  readonly embeddingsEnabled?: boolean;
 };
 
 export type AgentSkillSource =
@@ -1771,6 +1788,14 @@ export type AgentApi = {
   readonly updateBrowserFollowMode: (
     request: AgentBrowserFollowModeUpdateRequest
   ) => Promise<AgentBrowserFollowModeSnapshot>;
+  readonly readActCache: () => Promise<AgentActCacheSnapshot>;
+  readonly updateActCache: (
+    request: AgentActCacheUpdateRequest
+  ) => Promise<AgentActCacheSnapshot>;
+  readonly readCodeGraphEmbedding: () => Promise<AgentCodeGraphEmbeddingSnapshot>;
+  readonly updateCodeGraphEmbedding: (
+    request: AgentCodeGraphEmbeddingUpdateRequest
+  ) => Promise<AgentCodeGraphEmbeddingSnapshot>;
   readonly materializeImageAttachment: (
     request: AgentImageAttachmentMaterializeRequest
   ) => Promise<AgentImageAttachmentMaterializeResponse>;

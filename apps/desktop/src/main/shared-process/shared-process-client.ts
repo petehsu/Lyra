@@ -80,8 +80,11 @@ export const createSharedProcessClient = (
     proc.postMessage(msg);
   };
 
-  proc.on("message", (event: { readonly data: SharedProcessMessage }) => {
-    const msg = event.data;
+  // Electron UtilityProcess "message" event passes the raw message directly
+  // (not a MessageEvent with .data like parentPort.on in the child side)
+  proc.on("message", (msg: SharedProcessMessage) => {
+    // UtilityProcess lifecycle 期间可能 emit undefined/null 载荷
+    if (typeof msg !== "object" || msg === null) return;
     switch (msg.type) {
       case "response": {
         const pending = pendingRequests.get(msg.id);

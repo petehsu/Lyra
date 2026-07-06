@@ -526,6 +526,7 @@ pub(crate) fn codegraph_status(payload: Value) -> super::AgentRuntimeResult<Valu
                 "symbolCount": context.as_ref().map(|ctx| ctx.symbol_count.max(symbol_count)).unwrap_or(symbol_count),
                 "scope": context.map(|ctx| ctx.scope),
                 "staleness": staleness,
+                "embeddingsEnabled": engine().embeddings_enabled(),
             })
         }
         lyra_code_intel_core::IndexStatus::Indexing { progress } => json!({

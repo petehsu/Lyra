@@ -107,6 +107,7 @@ fn prompt_projection(report: &PromptBuildReport) -> Value {
         "estimatedSavedTokens": report.estimated_saved_tokens,
         "omittedStableTokens": report.omitted_stable_tokens,
         "prefixCacheEligibleTokens": report.prefix_cache_eligible_tokens,
+        "codegraphFragmentReport": report.codegraph_fragment_report,
         "prompt": report.prompt,
     })
 }
@@ -126,4 +127,132 @@ fn lean_prompt_report_snapshot() {
     let full = full_report();
     let report = lean_report(full.stable_prompt_hash);
     insta::assert_snapshot!("lean_prompt_report", pretty(&prompt_projection(&report)));
+}
+
+#[test]
+fn codegraph_prompt_report_snapshot() {
+    // P6: CodeGraph signals injected into runtime_context → the
+    // codegraph_fragments section should render with the pre-fetched
+    // neighborhood summary.
+    let ctx = {
+        let mut base = runtime_context("projectCode");
+        base["codegraphSignals"] = json!({
+            "mentionedSymbols": ["handleLoginSubmit", "validateToken"],
+            "resolvedNeighborhoods": [
+                {
+                    "name": "handleLoginSubmit",
+                    "kind": "function",
+                    "file": "src/auth/login.ts",
+                    "line": 42,
+                    "directCallers": [
+                        {"name": "LoginPage.onSubmit", "kind": "method", "file": "src/pages/Login.tsx"}
+                    ],
+                    "directCallees": [
+                        {"name": "validateToken", "kind": "function", "file": "src/auth/validate.ts"},
+                        {"name": "setSession", "kind": "function", "file": "src/auth/session.ts"}
+                    ],
+                    "impactDepth2Count": 3
+                }
+            ],
+            "staleFilesRelevant": ["src/auth/validate.ts"],
+            "graphState": "ready",
+            "queriesExecuted": [
+                {"tool": "search_symbols_sync", "query": "handleLoginSubmit", "elapsedMs": 2, "resultCount": 1},
+                {"tool": "explore_sync", "query": "handleLoginSubmit", "elapsedMs": 5, "resultCount": 1}
+            ],
+            "cacheHits": 0,
+            "cacheMisses": 2,
+            "intent": "debug",
+            "impactAnalysis": null,
+            "relatedTests": [],
+            "circularDeps": [],
+            "deadImports": [],
+            "hotPaths": [],
+            "patternMatches": [],
+            "fileSymbols": [],
+            "memoryHits": []
+        });
+        base
+    };
+    let report = build_system_prompt_report(&PromptPolicyInput {
+        runtime_context: ctx,
+        latest_user_text: "fix the handleLoginSubmit function in src/auth/login.ts".to_string(),
+        persona: persona(),
+        memory_prompt: memory_prompt().to_string(),
+        accounting: accounting(),
+        delivery_mode: Some(PromptDeliveryMode::Full),
+        ..PromptPolicyInput::default()
+    });
+    insta::assert_snapshot!("codegraph_prompt_report", pretty(&prompt_projection(&report)));
+}
+
+#[test]
+fn codegraph_intent_fragments_snapshot() {
+    // P6: CodeGraph intent-driven fragments. When the user says "edit X" and
+    // intent=Edit triggers analyze_impact, the prompt should carry the impact
+    // analysis + related tests fragments alongside the neighborhood summary.
+    let ctx = {
+        let mut base = runtime_context("projectCode");
+        base["codegraphSignals"] = json!({
+            "mentionedSymbols": ["handleLoginSubmit"],
+            "resolvedNeighborhoods": [
+                {
+                    "name": "handleLoginSubmit",
+                    "kind": "function",
+                    "file": "src/auth/login.ts",
+                    "line": 42,
+                    "directCallers": [
+                        {"name": "LoginPage.onSubmit", "kind": "method", "file": "src/pages/Login.tsx"}
+                    ],
+                    "directCallees": [
+                        {"name": "validateToken", "kind": "function", "file": "src/auth/validate.ts"}
+                    ],
+                    "impactDepth2Count": 5
+                }
+            ],
+            "staleFilesRelevant": [],
+            "graphState": "ready",
+            "queriesExecuted": [
+                {"tool": "search_symbols_sync", "query": "handleLoginSubmit", "elapsedMs": 2, "resultCount": 1},
+                {"tool": "explore_sync", "query": "handleLoginSubmit", "elapsedMs": 4, "resultCount": 1},
+                {"tool": "codegraph_analyze_impact", "query": "handleLoginSubmit", "elapsedMs": 8, "resultCount": 5},
+                {"tool": "codegraph_find_related_tests", "query": "src/auth/login.ts", "elapsedMs": 3, "resultCount": 2}
+            ],
+            "cacheHits": 0,
+            "cacheMisses": 2,
+            "intent": "edit",
+            "impactAnalysis": {
+                "symbol": "handleLoginSubmit",
+                "file": "src/auth/login.ts",
+                "directImpacted": 3,
+                "indirectImpacted": 2,
+                "riskLevel": "medium",
+                "filesAffected": 4,
+                "topCallers": [
+                    {"name": "LoginPage.onSubmit", "kind": "method", "file": "src/pages/Login.tsx"}
+                ]
+            },
+            "relatedTests": [
+                {"name": "test_handleLoginSubmit", "file": "tests/auth.test.ts", "relationship": "calls_target"},
+                {"name": "test_login_page", "file": "tests/LoginPage.test.tsx", "relationship": "same_file"}
+            ],
+            "circularDeps": [],
+            "deadImports": [],
+            "hotPaths": [],
+            "patternMatches": [],
+            "fileSymbols": [],
+            "memoryHits": []
+        });
+        base
+    };
+    let report = build_system_prompt_report(&PromptPolicyInput {
+        runtime_context: ctx,
+        latest_user_text: "edit the handleLoginSubmit function in src/auth/login.ts".to_string(),
+        persona: persona(),
+        memory_prompt: memory_prompt().to_string(),
+        accounting: accounting(),
+        delivery_mode: Some(PromptDeliveryMode::Full),
+        ..PromptPolicyInput::default()
+    });
+    insta::assert_snapshot!("codegraph_intent_fragments", pretty(&prompt_projection(&report)));
 }

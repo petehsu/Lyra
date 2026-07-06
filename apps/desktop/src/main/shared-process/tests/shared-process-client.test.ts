@@ -5,7 +5,7 @@ import type { SharedProcessMessage } from "../shared-process-client";
 // ─── Fake utility process ───────────────────────────────────────────────────
 // 模拟 Electron UtilityProcess 的消息收发，不启动真实进程
 
-type MessageHandler = (event: { readonly data: SharedProcessMessage }) => void;
+type MessageHandler = (msg: SharedProcessMessage) => void;
 type ExitHandler = () => void;
 
 const createFakeUtilityProcess = () => {
@@ -32,9 +32,9 @@ const createFakeUtilityProcess = () => {
     }),
   };
 
-  // 从 "utility" 向 main 发送消息
+  // 从 "utility" 向 main 发送消息（Electron UtilityProcess message 事件传裸消息）
   const emitFromUtility = (msg: SharedProcessMessage): void => {
-    messageHandler?.({ data: msg });
+    messageHandler?.(msg);
   };
 
   const emitExit = (): void => {
@@ -211,5 +211,22 @@ describe("shared-process-client", () => {
     emitExit();
 
     await expect(promise).rejects.toThrow("Shared process exited unexpectedly");
+  });
+
+  test("undefined 消息载荷不抛异常", () => {
+    const { fakeProc, emitFromUtility } = createFakeUtilityProcess();
+    electronMock.utilityProcess.fork.mockReturnValue(fakeProc);
+
+    const client = createSharedProcessClient({
+      modulePath: "/fake/shared-process.cjs",
+      storageRoot: "/tmp/storage",
+      agentStorageRoot: "/tmp/agent",
+    });
+
+    // UtilityProcess lifecycle 期间可能 emit undefined 裸载荷
+    expect(() =>
+      emitFromUtility(undefined as unknown as SharedProcessMessage)
+    ).not.toThrow();
+    client.dispose();
   });
 });

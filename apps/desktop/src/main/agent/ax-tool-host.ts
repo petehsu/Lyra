@@ -309,6 +309,7 @@ export const createAxToolHost = ({
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const axRef = readAxRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const intent = readOptionalStringField(payload, "intent");
       const authorized = consumeAxAuthorization(payload, "act", axRef, tabId, targetMode);
       return await browser.axActOnNode(tabId, {
         axRef,
@@ -316,7 +317,8 @@ export const createAxToolHost = ({
         verification: readAxVerification(payload),
         targetMode,
         ...(authorized ? { authorized: true } : {}),
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(intent === undefined ? {} : { intent })
       });
     }),
     "lyraAx.focus": withLyraAxResult("lyraAx.focus", async (payload) => {

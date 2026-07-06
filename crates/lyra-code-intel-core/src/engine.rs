@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
@@ -272,6 +273,12 @@ pub struct CodeGraphEngine {
     mcp_servers: Mutex<HashMap<PathBuf, Arc<Mutex<McpServer>>>>,
     #[allow(dead_code)]
     storage_root: PathBuf,
+    /// Whether the embedding model (BGE-Small / Jina-Code) should be loaded
+    /// for semantic symbol search and memory search. Default off — when off,
+    /// `run_mcp_tool_sync` creates McpServer with `with_graph_only(true)`.
+    /// Controlled at runtime via `set_embeddings_enabled` by the agent-runtime
+    /// host callback `agent.readCodeGraphEmbeddingEnabled`.
+    embeddings_enabled: Arc<AtomicBool>,
 }
 
 impl CodeGraphEngine {
@@ -288,7 +295,20 @@ impl CodeGraphEngine {
             projects: RwLock::new(HashMap::new()),
             mcp_servers: Mutex::new(HashMap::new()),
             storage_root,
+            embeddings_enabled: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Enable or disable the embedding model. When enabled, `run_mcp_tool_sync`
+    /// creates McpServer without `with_graph_only`, allowing semantic search,
+    /// duplicate detection, and memory search tools to work.
+    pub fn set_embeddings_enabled(&self, enabled: bool) {
+        self.embeddings_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Returns whether embeddings are currently enabled.
+    pub fn embeddings_enabled(&self) -> bool {
+        self.embeddings_enabled.load(Ordering::Relaxed)
     }
 
     // ── Sync wrappers (for agent-runtime OS-thread tool dispatch) ───────
@@ -377,9 +397,15 @@ impl CodeGraphEngine {
     ) -> Result<Value, String> {
         self.runtime.block_on(async {
             let root = normalize_project_root(root);
+            let embeddings = self.embeddings_enabled();
             let server = {
                 let mut servers = self.mcp_servers.lock().await;
                 if let Some(server) = servers.get(&root) {
+                    // If the toggle changed since the server was created, the
+                    // server may have a stale graph_only setting. We don't
+                    // rebuild the server on toggle change (that would discard
+                    // the loaded embedding model); instead the server keeps
+                    // its original mode until a re-index clears it.
                     server.clone()
                 } else {
                     let config = IndexConfig::default();
@@ -391,7 +417,7 @@ impl CodeGraphEngine {
                         codegraph_memory::CodeGraphEmbeddingModel::BgeSmall,
                         true,
                     )
-                    .with_graph_only(true)
+                    .with_graph_only(!embeddings)
                     .with_scope_files(scope.files);
                     let server = Arc::new(Mutex::new(server));
                     servers.insert(root.clone(), server.clone());

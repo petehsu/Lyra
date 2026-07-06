@@ -49,6 +49,14 @@ const TEMPLATES: &[(&str, &str)] = &[
         "prompt_accounting.md.j2",
         include_str!("prompts/prompt_accounting.md.j2"),
     ),
+    (
+        "codegraph_fragments.md.j2",
+        include_str!("prompts/codegraph_fragments.md.j2"),
+    ),
+    (
+        "codegraph_intent_fragments.md.j2",
+        include_str!("prompts/codegraph_intent_fragments.md.j2"),
+    ),
 ];
 
 pub(crate) fn render_template(name: &str, context: Value) -> Result<String, String> {

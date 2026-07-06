@@ -6,7 +6,7 @@
 //! satisfy this trait.
 
 use crate::model::{
-    ActOutcome, BackendError, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
+    ActOutcome, ActRequest, BackendError, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
     ComputerObserveResult, ListAppsRequest, MapRequest,
 };
 
@@ -30,12 +30,7 @@ pub trait ComputerBackend: Send + Sync {
     /// Re-resolve `os_ref` and perform `action`. The runtime layer wraps this
     /// with before/after snapshots to produce the closed-loop diff, so backends
     /// only need to perform the action itself.
-    fn act(
-        &self,
-        os_ref: &str,
-        action: crate::model::ComputerAction,
-        text: Option<&str>,
-    ) -> Result<(), BackendError>;
+    fn act(&self, request: &ActRequest) -> Result<(), BackendError>;
 
     /// List running desktop applications and their visible windows.
     fn list_apps(&self, request: &ListAppsRequest) -> Result<Vec<ComputerAppEntry>, BackendError>;

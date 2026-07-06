@@ -429,6 +429,8 @@ export type WorkbenchBrowserAgentMapCompaction = {
   }[];
 };
 
+export type LumenScreenshotHighlightColor = "red" | "blue" | "green" | "yellow" | "purple";
+
 export type LumenScreenshotHighlightRegion = {
   readonly targetRef: string;
   readonly elementId: number;
@@ -436,7 +438,48 @@ export type LumenScreenshotHighlightRegion = {
   readonly role: string;
   readonly bounds: WorkbenchBrowserAgentElementBounds;
   readonly deviceBounds: WorkbenchBrowserAgentElementBounds;
+  // Annotated-screenshot fields (Set-of-Mark on AX tree). `index` is the 0-based
+  // position in the annotations table; `color` cycles through LUMEN_HIGHLIGHT_COLORS
+  // so the model can correlate a colored box on the screenshot with the table entry.
+  readonly index?: number;
+  readonly color?: LumenScreenshotHighlightColor;
+  // When the region was derived from an axRef (rather than a DOM targetRef), this
+  // carries the axRef so the see/vact visual and semantic paths share one handle.
+  readonly axRef?: string;
 };
+
+export type WorkbenchBrowserAxRefBbox = {
+  readonly ok: true;
+  readonly kind: "browserAxRefBbox";
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly axRef: string;
+  readonly role: string;
+  readonly name: string;
+  readonly bounds?: WorkbenchBrowserAgentElementBounds;
+  readonly screenBounds?: WorkbenchBrowserAgentElementBounds;
+  readonly snapshotId: string;
+  readonly snapshotHash: string;
+  readonly url: string;
+};
+
+export type WorkbenchBrowserAxRefBboxError =
+  | {
+      readonly ok: false;
+      readonly kind: "browserAxRefBbox";
+      readonly tabId: string;
+      readonly targetMode: WorkbenchBrowserAgentTargetMode;
+      readonly axRef: string;
+      readonly error:
+        | { readonly kind: "staleAxRef"; readonly message: string }
+        | { readonly kind: "unknownAxRef"; readonly message: string }
+        | { readonly kind: "invalidAxRef"; readonly message: string };
+      readonly nextRecommendedAction: string;
+    };
+
+export type WorkbenchBrowserAxRefBboxResult =
+  | WorkbenchBrowserAxRefBbox
+  | WorkbenchBrowserAxRefBboxError;
 
 export type WorkbenchBrowserAgentElementMatchLevel =
   | "exact"
@@ -724,6 +767,12 @@ export type WorkbenchBrowserAxActionResult = {
   readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
   readonly error?: { readonly kind: string; readonly message: string };
   readonly nextRecommendedAction?: string;
+  // ActCache signals. `cacheHit`/`replayed` mark a result served from the
+  // ActCache without re-executing the action; `cacheMiss` marks a result that
+  // was recorded into the cache for future replay.
+  readonly cacheHit?: boolean;
+  readonly replayed?: boolean;
+  readonly cacheMiss?: boolean;
 };
 
 export type WorkbenchBrowserAxFocusTrailEntry = {
@@ -773,7 +822,9 @@ export type WorkbenchBrowserAgentVisualStaleResult = {
     | "unknown_capture"
     | "tab_mismatch"
     | "target_mode_mismatch"
-    | "viewport_resized";
+    | "viewport_resized"
+    | "axref_unresolved"
+    | "missing_point";
   readonly message: string;
   readonly nextRecommendedAction: "lyra_lumen.see";
 };
@@ -1144,6 +1195,10 @@ export type WorkbenchBrowserViewManager = {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly authorized?: boolean;
+      // Optional natural-language description of this action. When ActCache is
+      // enabled, this is folded into the cache key so repeatable NL→axRef mappings
+      // can be replayed without re-mapping the page.
+      readonly intent?: string;
     }
   ) => Promise<WorkbenchBrowserAxActionResult>;
   readonly axFocusAgentPage: (
@@ -1174,6 +1229,13 @@ export type WorkbenchBrowserViewManager = {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
     }
   ) => WorkbenchBrowserAxExplanation;
+  readonly axResolveAxRefBbox: (
+    tabId: string,
+    request: {
+      readonly axRef: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    }
+  ) => Promise<WorkbenchBrowserAxRefBboxResult>;
   readonly findAgentPage: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & WorkbenchBrowserSearchInPageRequest & {
@@ -1317,10 +1379,21 @@ export type WorkbenchBrowserViewManager = {
   >;
   readonly captureAgentPage: (
     tabId: string,
-    request?: WorkbenchBrowserAgentModeRequest
+    request?: WorkbenchBrowserAgentModeRequest & {
+      readonly highlightTargets?: boolean;
+      readonly highlightTargetRefs?: readonly string[];
+      readonly downsampleForVision?: boolean;
+      // Pre-built highlight regions (e.g. AX-derived annotations). When provided,
+      // captureAgentPage skips buildHighlightRegionsFromElements and draws these
+      // directly, so callers can annotate the screenshot with axRef bounding boxes.
+      readonly prebuiltHighlightRegions?: readonly LumenScreenshotHighlightRegion[];
+    }
   ) => Promise<WorkbenchVisualCaptureResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+    readonly highlightRegions?: readonly LumenScreenshotHighlightRegion[];
+    readonly highlighted?: boolean;
+    readonly downsampled?: boolean;
   }>;
   readonly detectAgentPageQr: (
     tabId: string,

@@ -2,15 +2,15 @@
 //!
 //! Platform N-API shims call these `*_json` entry points with a JSON string and
 //! get a JSON string back, so the napi layer stays a thin marshaller. This is
-//! also where the act -> diff closed loop (§6.3) and the find query (§3.1) live,
+//! also where the act -> diff closed loop (ยง6.3) and the find query (ยง3.1) live,
 //! independent of platform.
 
 use serde_json::{json, Value};
 
 use crate::backend::{act_outcome, ComputerBackend};
 use crate::model::{
-    BackendError, ComputerAction, ComputerFocusRequest, ComputerNode, ListAppsRequest, MapRequest,
-    MapStrategy, Platform, SessionMode,
+    ActRequest, BackendError, ComputerAction, ComputerFocusRequest, ComputerNode, DeliveryMode,
+    ListAppsRequest, MapRequest, MapStrategy, Platform, SessionMode,
 };
 use crate::snapshot_store::{get_snapshot, observation_diff, remember_snapshot};
 
@@ -104,7 +104,7 @@ pub fn map_json(payload: &str) -> String {
     match backend.map(&map_request) {
         Ok(nodes) => {
             // Remember the snapshot so a later computer.diff can compute the
-            // observation diff against this baseline (§3.2 / D2).
+            // observation diff against this baseline (ยง3.2 / D2).
             let snapshot_id = remember_snapshot(&nodes);
             let values = nodes.iter().map(node_to_value).collect::<Vec<_>>();
             json!({
@@ -139,7 +139,7 @@ pub fn map_json(payload: &str) -> String {
     }
 }
 
-/// `computer.find`: query a fresh tree by role / name substring (§3.1).
+/// `computer.find`: query a fresh tree by role / name substring (ยง3.1).
 ///
 /// Request fields: `role`, `nameIncludes`, `maxResults` (1..=50), plus `strategy`.
 pub fn find_json(payload: &str) -> String {
@@ -206,7 +206,7 @@ pub fn find_json(payload: &str) -> String {
 }
 
 /// `computer.act`: re-resolve `osRef`, act, and return the before/after diff
-/// (§6.3). Request fields: `osRef`, `action`, `text` (for setText).
+/// (ยง6.3). Request fields: `osRef`, `action`, `text` (for setText).
 pub fn act_json(payload: &str) -> String {
     let request: Value = serde_json::from_str(payload).unwrap_or_else(|_| json!({}));
     let os_ref = request.get("osRef").and_then(Value::as_str).unwrap_or("");
@@ -228,7 +228,7 @@ pub fn act_json(payload: &str) -> String {
         ))
         .to_string();
     };
-    let text = request.get("text").and_then(Value::as_str);
+    let text = request.get("text").and_then(Value::as_str).map(String::from);
     let mode = request
         .get("mode")
         .and_then(Value::as_str)
@@ -236,19 +236,88 @@ pub fn act_json(payload: &str) -> String {
         .unwrap_or(SessionMode::Shared);
     // Set by the host only after it has resolved a sensitive-value-ref to
     // plaintext out-of-band (the secret never passed through the agent). This
-    // is the one sanctioned exception to the secure-field setText block (§11).
+    // is the one sanctioned exception to the secure-field setText block (ยง11).
     let credential_fill = request
         .get("credentialFill")
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    // Background modes are true background (§14.2): refuse foreground-stealing
+    // --- New action parameters ---
+    let key = request.get("key").and_then(Value::as_str).map(String::from);
+    let action_name = request
+        .get("actionName")
+        .and_then(Value::as_str)
+        .map(String::from);
+    let direction = request
+        .get("direction")
+        .and_then(Value::as_str)
+        .map(String::from);
+    let pages = request.get("pages").and_then(Value::as_f64);
+    let from_x = request.get("fromX").and_then(Value::as_f64);
+    let from_y = request.get("fromY").and_then(Value::as_f64);
+    let to_x = request.get("toX").and_then(Value::as_f64);
+    let to_y = request.get("toY").and_then(Value::as_f64);
+    let delivery_mode = request
+        .get("deliveryMode")
+        .and_then(Value::as_str)
+        .map(DeliveryMode::parse)
+        .unwrap_or_default();
+
+    let act_request = ActRequest {
+        os_ref: os_ref.to_string(),
+        action,
+        text,
+        mode,
+        key,
+        action_name,
+        direction,
+        pages,
+        from_x,
+        from_y,
+        to_x,
+        to_y,
+        delivery_mode,
+    };
+
+    // Background modes are true background (ยง14.2): refuse foreground-stealing
     // actions rather than silently activating the target.
     if action == ComputerAction::Focus && !mode.allows_foreground_steal() {
         let mut value = error_envelope(&BackendError::new(
             "foregroundStealBlocked",
             format!(
                 "focus would raise the window; not allowed in {} mode. Use shared mode or a semantic action (press/setText/toggle).",
+                mode.as_str()
+            ),
+        ));
+        value["osRef"] = json!(os_ref);
+        value["action"] = json!(action.as_str());
+        value["mode"] = json!(mode.as_str());
+        return value.to_string();
+    }
+
+    // Drag moves the physical pointer — shared mode only.
+    if action == ComputerAction::Drag && !mode.allows_foreground_steal() {
+        let mut value = error_envelope(&BackendError::new(
+            "foregroundStealBlocked",
+            format!(
+                "drag requires shared mode to move the physical pointer; not allowed in {} mode.",
+                mode.as_str()
+            ),
+        ));
+        value["osRef"] = json!(os_ref);
+        value["action"] = json!(action.as_str());
+        value["mode"] = json!(mode.as_str());
+        return value.to_string();
+    }
+
+    // delivery_mode:"foreground" steals focus (SendInput + SetForegroundWindow);
+    // background/isolated session modes forbid that.
+    if delivery_mode.is_foreground() && !mode.allows_foreground_steal() {
+        let mut value = error_envelope(&BackendError::new(
+            "foregroundStealBlocked",
+            format!(
+                "deliveryMode \"foreground\" would steal focus; not allowed in {} mode. \
+                 Use deliveryMode \"background\" (PostMessage) or switch to shared mode.",
                 mode.as_str()
             ),
         ));
@@ -268,7 +337,7 @@ pub fn act_json(payload: &str) -> String {
     // Closed loop: snapshot the node, act, snapshot again, diff.
     let before = backend.resolve(os_ref).unwrap_or(None);
 
-    // Hard-block writing into secure (password) fields (§11) — UNLESS this is a
+    // Hard-block writing into secure (password) fields (ยง11) โ�� UNLESS this is a
     // credential fill, where the host resolved a sensitive-value-ref to
     // plaintext out-of-band and the agent never saw the secret. Plain `setText`
     // with agent-authored text into a password field stays blocked.
@@ -286,7 +355,7 @@ pub fn act_json(payload: &str) -> String {
         return value.to_string();
     }
 
-    match backend.act(os_ref, action, text) {
+    match backend.act(&act_request) {
         Ok(()) => {
             let after = backend.resolve(os_ref).unwrap_or(None);
             let outcome = act_outcome(true, os_ref, action, before, after);
@@ -314,7 +383,7 @@ pub fn act_json(payload: &str) -> String {
     }
 }
 
-/// `computer.diff`: two modes (§3.2 / D2).
+/// `computer.diff`: two modes (ยง3.2 / D2).
 ///
 /// - `baselineSnapshotId` present: re-read the full tree and return the
 ///   observation diff (added / removed / changed) against that earlier
@@ -416,7 +485,7 @@ fn snapshot_diff_json(baseline_id: &str, request: &Value) -> String {
 
 /// `computer.explain`: report whether semantic control is available on this OS
 /// and what the recommended path is, so the Agent can decide on escalation
-/// (§4 Level 1->2->3). Request fields: `osRef` (optional).
+/// (ยง4 Level 1->2->3). Request fields: `osRef` (optional).
 pub fn explain_json(payload: &str) -> String {
     let request: Value = serde_json::from_str(payload).unwrap_or_else(|_| json!({}));
     let os_ref = request.get("osRef").and_then(Value::as_str);
@@ -451,7 +520,7 @@ pub fn explain_json(payload: &str) -> String {
         None => None,
     };
 
-    // Secure (password) fields are hard-blocked: surface that explicitly (§11).
+    // Secure (password) fields are hard-blocked: surface that explicitly (ยง11).
     if let Some(node) = resolved.as_ref().filter(|node| node.secure) {
         return json!({
             "ok": true,
@@ -719,7 +788,7 @@ mod tests {
     #[test]
     fn focus_is_blocked_in_background_mode() {
         // A focus/raise would steal the foreground, which background modes
-        // forbid (§14.2). This gate runs before any backend call, so it is
+        // forbid (ยง14.2). This gate runs before any backend call, so it is
         // testable on every platform.
         let out = act_json(r#"{"osRef":"osax:0/1","action":"focus","mode":"background-semantic"}"#);
         let value: Value = serde_json::from_str(&out).expect("valid json");
@@ -775,5 +844,16 @@ mod tests {
         let out = focus_json(r#"{"appRef":"osxapp:42","mode":"shared"}"#);
         let value: Value = serde_json::from_str(&out).expect("valid json");
         assert_ne!(value["error"]["kind"], json!("foregroundStealBlocked"));
+    }
+
+    #[test]
+    fn delivery_mode_foreground_blocked_in_background_semantic() {
+        let out = act_json(
+            r#"{"osRef":"osax:0/1","action":"pressKey","key":"return","mode":"background-semantic","deliveryMode":"foreground"}"#,
+        );
+        let value: Value = serde_json::from_str(&out).expect("valid json");
+        assert_eq!(value["ok"], json!(false));
+        assert_eq!(value["error"]["kind"], json!("foregroundStealBlocked"));
+        assert_eq!(value["mode"], json!("background-semantic"));
     }
 }

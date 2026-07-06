@@ -19,9 +19,9 @@ use std::ptr;
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    BackendError, Bounds, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
-    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
-    ListAppsRequest, MapRequest, MapStrategy, Platform,
+    ActRequest, BackendError, Bounds, ComputerAction, ComputerAppEntry, ComputerFocusRequest,
+    ComputerNode, ComputerNodeSource, ComputerNodeState, ComputerObserveResult,
+    ComputerWindowEntry, ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 type Boolean = c_uchar;
@@ -73,6 +73,12 @@ unsafe extern "C" {
     fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut PidT) -> AXError;
     fn AXValueGetType(value: AXValueRef) -> c_int;
     fn AXValueGetValue(value: AXValueRef, the_type: c_int, value_ptr: *mut c_void) -> Boolean;
+    fn AXUIElementCopyActionNames(element: AXUIElementRef, names: *mut CFArrayRef) -> AXError;
+    fn AXUIElementIsAttributeSettable(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        settable: *mut Boolean,
+    ) -> AXError;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -99,6 +105,153 @@ unsafe extern "C" {
     fn CFArrayGetCount(array: CFArrayRef) -> CFIndex;
     fn CFArrayGetValueAtIndex(array: CFArrayRef, index: CFIndex) -> *const c_void;
     static kCFBooleanTrue: CFTypeRef;
+}
+
+// CoreGraphics event types and constants for CGEvent-based input simulation.
+type CGEventSourceRef = *const c_void;
+type CGEventRef = *const c_void;
+type CGEventSourceStateID = u32;
+type CGEventType = u32;
+type CGMouseButton = u32;
+type CGEventField = u32;
+type CGEventFlags = u64;
+type UniChar = u16;
+
+const KCG_STATE_EVENT_SESSION: CGEventSourceStateID = 1;
+const KCG_EVENT_MOUSE_MOVED: CGEventType = 5;
+const KCG_EVENT_LEFT_MOUSE_DOWN: CGEventType = 1;
+const KCG_EVENT_LEFT_MOUSE_UP: CGEventType = 2;
+const KCG_EVENT_LEFT_MOUSE_DRAGGED: CGEventType = 6;
+const KCG_EVENT_LEFT_MOUSE: CGMouseButton = 0;
+const KCG_MOUSE_EVENT_CLICK_STATE: CGEventField = 1;
+const KCG_SCROLL_EVENT_UNIT_LINE: u32 = 1;
+const KCG_EVENT_FLAG_MASK_COMMAND: CGEventFlags = 0x100000;
+const KCG_EVENT_FLAG_MASK_SHIFT: CGEventFlags = 0x200000;
+const KCG_EVENT_FLAG_MASK_ALTERNATE: CGEventFlags = 0x80000;
+const KCG_EVENT_FLAG_MASK_CONTROL: CGEventFlags = 0x40000;
+
+// Virtual key codes from Carbon.HIToolbox (Events.h). Used by press_key.
+const VK_ANSI_A: u16 = 0;
+const VK_ANSI_S: u16 = 1;
+const VK_ANSI_D: u16 = 2;
+const VK_ANSI_F: u16 = 3;
+const VK_ANSI_H: u16 = 4;
+const VK_ANSI_G: u16 = 5;
+const VK_ANSI_Z: u16 = 6;
+const VK_ANSI_X: u16 = 7;
+const VK_ANSI_C: u16 = 8;
+const VK_ANSI_V: u16 = 9;
+const VK_ANSI_B: u16 = 11;
+const VK_ANSI_Q: u16 = 12;
+const VK_ANSI_W: u16 = 13;
+const VK_ANSI_E: u16 = 14;
+const VK_ANSI_R: u16 = 15;
+const VK_ANSI_Y: u16 = 16;
+const VK_ANSI_T: u16 = 17;
+const VK_ANSI_1: u16 = 18;
+const VK_ANSI_2: u16 = 19;
+const VK_ANSI_3: u16 = 20;
+const VK_ANSI_4: u16 = 21;
+const VK_ANSI_6: u16 = 22;
+const VK_ANSI_5: u16 = 23;
+const VK_ANSI_EQUAL: u16 = 24;
+const VK_ANSI_9: u16 = 25;
+const VK_ANSI_7: u16 = 26;
+const VK_ANSI_MINUS: u16 = 27;
+const VK_ANSI_8: u16 = 28;
+const VK_ANSI_0: u16 = 29;
+const VK_ANSI_RIGHT_BRACKET: u16 = 30;
+const VK_ANSI_O: u16 = 31;
+const VK_ANSI_U: u16 = 32;
+const VK_ANSI_LEFT_BRACKET: u16 = 33;
+const VK_ANSI_I: u16 = 34;
+const VK_ANSI_P: u16 = 35;
+const VK_RETURN: u16 = 36;
+const VK_ANSI_L: u16 = 37;
+const VK_ANSI_J: u16 = 38;
+const VK_ANSI_QUOTE: u16 = 39;
+const VK_ANSI_K: u16 = 40;
+const VK_ANSI_SEMICOLON: u16 = 41;
+const VK_ANSI_BACKSLASH: u16 = 42;
+const VK_ANSI_COMMA: u16 = 43;
+const VK_ANSI_SLASH: u16 = 44;
+const VK_ANSI_N: u16 = 45;
+const VK_ANSI_M: u16 = 46;
+const VK_ANSI_PERIOD: u16 = 47;
+const VK_TAB: u16 = 48;
+const VK_SPACE: u16 = 49;
+const VK_ANSI_GRAVE: u16 = 50;
+const VK_DELETE: u16 = 51; // Backspace
+const VK_ESCAPE: u16 = 53;
+const VK_F5: u16 = 96;
+const VK_F6: u16 = 97;
+const VK_F7: u16 = 98;
+const VK_F3: u16 = 99;
+const VK_F8: u16 = 100;
+const VK_F9: u16 = 101;
+const VK_F11: u16 = 103;
+const VK_F13: u16 = 105;
+const VK_F14: u16 = 107;
+const VK_F10: u16 = 109;
+const VK_F12: u16 = 111;
+const VK_F15: u16 = 113;
+const VK_HELP: u16 = 114;
+const VK_HOME: u16 = 115;
+const VK_PAGE_UP: u16 = 116;
+const VK_FORWARD_DELETE: u16 = 117;
+const VK_F4: u16 = 118;
+const VK_END: u16 = 119;
+const VK_F2: u16 = 120;
+const VK_PAGE_DOWN: u16 = 121;
+const VK_F1: u16 = 122;
+const VK_LEFT_ARROW: u16 = 123;
+const VK_RIGHT_ARROW: u16 = 124;
+const VK_DOWN_ARROW: u16 = 125;
+const VK_UP_ARROW: u16 = 126;
+const VK_COMMAND: u16 = 55;
+const VK_SHIFT: u16 = 56;
+const VK_CAPS_LOCK: u16 = 57;
+const VK_OPTION: u16 = 58;
+const VK_CONTROL: u16 = 59;
+const VK_RIGHT_SHIFT: u16 = 60;
+const VK_RIGHT_OPTION: u16 = 61;
+const VK_RIGHT_CONTROL: u16 = 62;
+const VK_FUNCTION: u16 = 63;
+const VK_F16: u16 = 124;
+const VK_F17: u16 = 125;
+const VK_F18: u16 = 126;
+const VK_F19: u16 = 127;
+const VK_F20: u16 = 128;
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGEventSourceCreate(stateID: CGEventSourceStateID) -> CGEventSourceRef;
+    fn CGEventCreate(source: CGEventSourceRef, virtualKey: u16, keyDown: Boolean) -> CGEventRef;
+    fn CGEventCreateMouseEvent(
+        source: CGEventSourceRef,
+        mouseType: CGEventType,
+        mouseCursorPosition: CGPoint,
+        mouseButton: CGMouseButton,
+    ) -> CGEventRef;
+    fn CGEventCreateScrollWheelEvent2(
+        source: CGEventSourceRef,
+        units: u32,
+        wheelCount: u32,
+        wheel1: i32,
+        wheel2: i32,
+        wheel3: i32,
+    ) -> CGEventRef;
+    fn CGEventPostToPid(pid: PidT, event: CGEventRef);
+    fn CGEventSetIntegerValueField(event: CGEventRef, field: CGEventField, value: i64);
+    fn CGEventSetFlags(event: CGEventRef, flags: CGEventFlags);
+    fn CGEventKeyboardSetUnicodeString(
+        event: CGEventRef,
+        maxStringLength: UniChar,
+        uniChars: *const UniChar,
+        actualStringLength: UniChar,
+    );
+    fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+    fn CGEventSourceFlagsState(source: CGEventSourceRef, state: u32) -> CGEventFlags;
 }
 
 /// RAII wrapper that releases the owned CoreFoundation reference on drop.
@@ -628,6 +781,193 @@ fn raise_window(pid: PidT, index: usize) -> Result<(), BackendError> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Key mapping (xdotool-style "cmd+c" → virtual key code + modifier flags)
+// ---------------------------------------------------------------------------
+
+/// Modifier key resolved to (flag, virtualKeyCode).
+struct ParsedModifier {
+    flag: CGEventFlags,
+    key_code: u16,
+}
+
+/// Parse a key specification like "cmd+c", "shift+tab", "ctrl+a" into the
+/// target key code and a list of modifiers. Returns None on unknown tokens.
+fn parse_key_spec(spec: &str) -> Option<(u16, Vec<ParsedModifier>)> {
+    let tokens: Vec<String> = spec
+        .split('+')
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let key_token = tokens.last()?;
+    let mut modifiers = Vec::new();
+    for mod_token in tokens.iter().take(tokens.len() - 1) {
+        modifiers.push(parse_modifier(mod_token)?);
+    }
+    let key_code = key_code_for(key_token)?;
+    Some((key_code, modifiers))
+}
+
+fn parse_modifier(token: &str) -> Option<ParsedModifier> {
+    match token {
+        "cmd" | "command" | "super" | "meta" => Some(ParsedModifier {
+            flag: KCG_EVENT_FLAG_MASK_COMMAND,
+            key_code: VK_COMMAND,
+        }),
+        "shift" => Some(ParsedModifier {
+            flag: KCG_EVENT_FLAG_MASK_SHIFT,
+            key_code: VK_SHIFT,
+        }),
+        "option" | "alt" => Some(ParsedModifier {
+            flag: KCG_EVENT_FLAG_MASK_ALTERNATE,
+            key_code: VK_OPTION,
+        }),
+        "control" | "ctrl" => Some(ParsedModifier {
+            flag: KCG_EVENT_FLAG_MASK_CONTROL,
+            key_code: VK_CONTROL,
+        }),
+        _ => None,
+    }
+}
+
+fn key_code_for(token: &str) -> Option<u16> {
+    Some(match token {
+        "a" => VK_ANSI_A,
+        "b" => VK_ANSI_B,
+        "c" => VK_ANSI_C,
+        "d" => VK_ANSI_D,
+        "e" => VK_ANSI_E,
+        "f" => VK_ANSI_F,
+        "g" => VK_ANSI_G,
+        "h" => VK_ANSI_H,
+        "i" => VK_ANSI_I,
+        "j" => VK_ANSI_J,
+        "k" => VK_ANSI_K,
+        "l" => VK_ANSI_L,
+        "m" => VK_ANSI_M,
+        "n" => VK_ANSI_N,
+        "o" => VK_ANSI_O,
+        "p" => VK_ANSI_P,
+        "q" => VK_ANSI_Q,
+        "r" => VK_ANSI_R,
+        "s" => VK_ANSI_S,
+        "t" => VK_ANSI_T,
+        "u" => VK_ANSI_U,
+        "v" => VK_ANSI_V,
+        "w" => VK_ANSI_W,
+        "x" => VK_ANSI_X,
+        "y" => VK_ANSI_Y,
+        "z" => VK_ANSI_Z,
+        "0" => VK_ANSI_0,
+        "1" => VK_ANSI_1,
+        "2" => VK_ANSI_2,
+        "3" => VK_ANSI_3,
+        "4" => VK_ANSI_4,
+        "5" => VK_ANSI_5,
+        "6" => VK_ANSI_6,
+        "7" => VK_ANSI_7,
+        "8" => VK_ANSI_8,
+        "9" => VK_ANSI_9,
+        "return" | "enter" => VK_RETURN,
+        "tab" => VK_TAB,
+        "space" | "spacebar" => VK_SPACE,
+        "escape" | "esc" => VK_ESCAPE,
+        "backspace" | "delete" => VK_DELETE,
+        "forwarddelete" | "del" => VK_FORWARD_DELETE,
+        "insert" => VK_HELP,
+        "up" => VK_UP_ARROW,
+        "down" => VK_DOWN_ARROW,
+        "left" => VK_LEFT_ARROW,
+        "right" => VK_RIGHT_ARROW,
+        "home" => VK_HOME,
+        "end" => VK_END,
+        "pageup" | "page_up" | "prior" => VK_PAGE_UP,
+        "pagedown" | "page_down" | "next" => VK_PAGE_DOWN,
+        "caps_lock" => VK_CAPS_LOCK,
+        "f1" => VK_F1,
+        "f2" => VK_F2,
+        "f3" => VK_F3,
+        "f4" => VK_F4,
+        "f5" => VK_F5,
+        "f6" => VK_F6,
+        "f7" => VK_F7,
+        "f8" => VK_F8,
+        "f9" => VK_F9,
+        "f10" => VK_F10,
+        "f11" => VK_F11,
+        "f12" => VK_F12,
+        "f13" => VK_F13,
+        "f14" => VK_F14,
+        "f15" => VK_F15,
+        "f16" => VK_F16,
+        "f17" => VK_F17,
+        "f18" => VK_F18,
+        "f19" => VK_F19,
+        "f20" => VK_F20,
+        "-" | "minus" => VK_ANSI_MINUS,
+        "=" | "equal" => VK_ANSI_EQUAL,
+        "[" | "left_bracket" => VK_ANSI_LEFT_BRACKET,
+        "]" | "right_bracket" => VK_ANSI_RIGHT_BRACKET,
+        "\\" | "backslash" => VK_ANSI_BACKSLASH,
+        ";" | "semicolon" => VK_ANSI_SEMICOLON,
+        "'" | "quote" => VK_ANSI_QUOTE,
+        "`" | "grave" => VK_ANSI_GRAVE,
+        "," | "comma" => VK_ANSI_COMMA,
+        "." | "period" => VK_ANSI_PERIOD,
+        "/" | "slash" => VK_ANSI_SLASH,
+        _ => return None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Input simulation helpers (CGEvent postToPid — does not steal foreground)
+// ---------------------------------------------------------------------------
+
+/// Scroll wheel delta: 12 lines per page, matching open-codex-computer-use.
+fn scroll_wheel_delta(pages: f64) -> i32 {
+    let raw = (12.0 * pages).round();
+    let clamped = raw.max(1.0).min(i32::MAX as f64);
+    clamped as i32
+}
+
+/// Split text into UTF-16 chunks of at most `max_units` code units, aligning
+/// on Unicode scalar boundaries so surrogate pairs stay together.
+fn unicode_chunks(text: &str, max_units: usize) -> Vec<Vec<UniChar>> {
+    if max_units == 0 {
+        return Vec::new();
+    }
+    let mut chunks: Vec<Vec<UniChar>> = Vec::new();
+    let mut current: Vec<UniChar> = Vec::new();
+    for ch in text.chars() {
+        let units: Vec<UniChar> = String::from(ch).encode_utf16().collect();
+        if !current.is_empty() && current.len() + units.len() > max_units {
+            chunks.push(std::mem::take(&mut current));
+        }
+        current.extend(units);
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+    chunks
+}
+
+/// ponytail: 10-step linear interpolation for drag. Not spring-smoothed;
+/// upgrade to easing curve if visual quality matters.
+fn drag_points(from: CGPoint, to: CGPoint) -> Vec<CGPoint> {
+    (1..=10)
+        .map(|step| {
+            let progress = step as f64 / 10.0;
+            CGPoint {
+                x: from.x + (to.x - from.x) * progress,
+                y: from.y + (to.y - from.y) * progress,
+            }
+        })
+        .collect()
+}
+
 /// The macOS Accessibility [`ComputerBackend`].
 pub struct MacBackend;
 
@@ -674,33 +1014,30 @@ impl ComputerBackend for MacBackend {
         }
     }
 
-    fn act(
-        &self,
-        os_ref: &str,
-        action: ComputerAction,
-        text: Option<&str>,
-    ) -> Result<(), BackendError> {
+    fn act(&self, request: &ActRequest) -> Result<(), BackendError> {
         ensure_trusted()?;
-        let Some(os_path) = os_path_from_ref(os_ref) else {
+        let Some(os_path) = os_path_from_ref(&request.os_ref) else {
             return Err(BackendError::new(
                 "invalidOsRef",
                 "Computer osRef must use the osax: scheme.",
             ));
         };
         let root = root_element()?;
-        let element = resolve_path(root.as_type() as AXUIElementRef, os_path).ok_or_else(|| {
-            BackendError::stale_os_ref("Computer osRef is no longer present in the focused window.")
-        })?;
+        let element =
+            resolve_path(root.as_type() as AXUIElementRef, os_path).ok_or_else(|| {
+                BackendError::stale_os_ref(
+                    "Computer osRef is no longer present in the focused window.",
+                )
+            })?;
         let element_ref = element.as_type() as AXUIElementRef;
 
-        match action {
+        match request.action {
             ComputerAction::SetText => {
-                let text = text.unwrap_or_default();
+                let text = request.text.as_deref().unwrap_or_default();
                 let attr = cf_string("AXValue")
                     .ok_or_else(|| BackendError::new("internal", "Failed to build AXValue key."))?;
-                let value = cf_string(text).ok_or_else(|| {
-                    BackendError::new("internal", "Failed to build AXValue payload.")
-                })?;
+                let value = cf_string(text)
+                    .ok_or_else(|| BackendError::new("internal", "Failed to build AXValue payload."))?;
                 let err = unsafe {
                     AXUIElementSetAttributeValue(
                         element_ref,
@@ -717,10 +1054,297 @@ impl ComputerBackend for MacBackend {
                     ))
                 }
             }
-            // Press / Focus / Toggle / Select / Scroll all map to AXPress in v1;
-            // richer actions (e.g. AXIncrement/AXScrollToVisible) can specialize later.
+
+            ComputerAction::TypeText => {
+                let text = request.text.as_deref().unwrap_or_default();
+                // Prefer AXValue set when the element supports it (covers
+                // Electron/Feishu rich text that doesn't reliably receive
+                // background keyboard events).
+                let ax_value = cf_string("AXValue")
+                    .ok_or_else(|| BackendError::new("internal", "Failed to build AXValue key."))?;
+                let mut settable: Boolean = 0;
+                let can_set = unsafe {
+                    AXUIElementIsAttributeSettable(
+                        element_ref,
+                        ax_value.as_type() as CFStringRef,
+                        &mut settable,
+                    ) == AX_ERROR_SUCCESS
+                        && settable != 0
+                };
+                if can_set {
+                    let value = cf_string(text).ok_or_else(|| {
+                        BackendError::new("internal", "Failed to build AXValue payload.")
+                    })?;
+                    let err = unsafe {
+                        AXUIElementSetAttributeValue(
+                            element_ref,
+                            ax_value.as_type() as CFStringRef,
+                            value.as_type(),
+                        )
+                    };
+                    if err == AX_ERROR_SUCCESS {
+                        return Ok(());
+                    }
+                }
+                // Fallback: Unicode keyboard events via CGEvent postToPid.
+                let pid = pid_for_element(element_ref).ok_or_else(|| {
+                    BackendError::new("internal", "Cannot resolve pid for typeText target.")
+                })?;
+                let source = unsafe { CGEventSourceCreate(KCG_STATE_EVENT_SESSION) };
+                if source.is_null() {
+                    return Err(BackendError::new(
+                        "internal",
+                        "Failed to create CGEventSource for typeText.",
+                    ));
+                }
+                for chunk in unicode_chunks(text, 64) {
+                    let down = unsafe { CGEventCreate(source, 0, 1) };
+                    let up = unsafe { CGEventCreate(source, 0, 0) };
+                    if down.is_null() || up.is_null() {
+                        continue;
+                    }
+                    let len = chunk.len() as UniChar;
+                    unsafe {
+                        CGEventKeyboardSetUnicodeString(down, len, chunk.as_ptr(), len);
+                        CGEventKeyboardSetUnicodeString(up, len, chunk.as_ptr(), len);
+                        CGEventPostToPid(pid, down);
+                        CGEventPostToPid(pid, up);
+                        // ponytail: 20ms sleep matches open-codex; not tunable yet.
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                }
+                Ok(())
+            }
+
+            ComputerAction::PressKey => {
+                let spec = request.key.as_deref().ok_or_else(|| {
+                    BackendError::new("invalidArgument", "pressKey requires a key specification.")
+                })?;
+                let (key_code, modifiers) = parse_key_spec(spec).ok_or_else(|| {
+                    BackendError::new("invalidArgument", format!("Unsupported key spec {spec:?}."))
+                })?;
+                let pid = pid_for_element(element_ref).ok_or_else(|| {
+                    BackendError::new("internal", "Cannot resolve pid for pressKey target.")
+                })?;
+                let mut active_flags: CGEventFlags = 0;
+                // Modifier keyDown
+                for modifier in &modifiers {
+                    let event = unsafe { CGEventCreate(std::ptr::null(), modifier.key_code, 1) };
+                    if event.is_null() {
+                        continue;
+                    }
+                    active_flags |= modifier.flag;
+                    unsafe {
+                        CGEventSetFlags(event, active_flags);
+                        CGEventPostToPid(pid, event);
+                    }
+                }
+                // Main key down + up
+                let key_down = unsafe { CGEventCreate(std::ptr::null(), key_code, 1) };
+                let key_up = unsafe { CGEventCreate(std::ptr::null(), key_code, 0) };
+                if !key_down.is_null() && !key_up.is_null() {
+                    unsafe {
+                        CGEventSetFlags(key_down, active_flags);
+                        CGEventSetFlags(key_up, active_flags);
+                        CGEventPostToPid(pid, key_down);
+                        CGEventPostToPid(pid, key_up);
+                    }
+                }
+                // Modifier keyUp (reverse order)
+                for modifier in modifiers.iter().rev() {
+                    let event = unsafe { CGEventCreate(std::ptr::null(), modifier.key_code, 0) };
+                    if event.is_null() {
+                        continue;
+                    }
+                    active_flags &= !modifier.flag;
+                    unsafe {
+                        CGEventSetFlags(event, active_flags);
+                        CGEventPostToPid(pid, event);
+                    }
+                }
+                Ok(())
+            }
+
+            ComputerAction::SecondaryAction => {
+                let action_name = request.action_name.as_deref().ok_or_else(|| {
+                    BackendError::new(
+                        "invalidArgument",
+                        "secondaryAction requires an actionName.",
+                    )
+                })?;
+                // Verify the element exposes this action before performing it.
+                let mut names: CFArrayRef = std::ptr::null();
+                let err = unsafe { AXUIElementCopyActionNames(element_ref, &mut names) };
+                if err != AX_ERROR_SUCCESS || names.is_null() {
+                    return Err(BackendError::new(
+                        "osAxActionFailed",
+                        "Cannot enumerate accessibility actions for this element.",
+                    ));
+                }
+                let count = unsafe { CFArrayGetCount(names) };
+                let mut found = false;
+                for index in 0..count {
+                    let name_ref = unsafe { CFArrayGetValueAtIndex(names, index) };
+                    if name_ref.is_null() {
+                        continue;
+                    }
+                    if let Some(name_str) =
+                        cf_string_to_string(name_ref as CFStringRef)
+                    {
+                        if name_str == action_name {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !found {
+                    return Err(BackendError::new(
+                        "invalidArgument",
+                        format!("{action_name:?} is not a valid action for this element."),
+                    ));
+                }
+                let cf_action = cf_string(action_name)
+                    .ok_or_else(|| BackendError::new("internal", "Failed to build AX action string."))?;
+                let err = unsafe {
+                    AXUIElementPerformAction(element_ref, cf_action.as_type() as CFStringRef)
+                };
+                if err == AX_ERROR_SUCCESS {
+                    Ok(())
+                } else {
+                    Err(BackendError::new(
+                        "osAxActionFailed",
+                        format!("AXUIElementPerformAction({action_name}) failed with AXError {err}."),
+                    ))
+                }
+            }
+
+            ComputerAction::Scroll => {
+                let direction = request.direction.as_deref().unwrap_or("down");
+                let pages = request.pages.unwrap_or(1.0);
+                let pid = pid_for_element(element_ref).ok_or_else(|| {
+                    BackendError::new("internal", "Cannot resolve pid for scroll target.")
+                })?;
+                let delta = scroll_wheel_delta(pages);
+                let (wheel1, wheel2) = match direction {
+                    "up" => (delta, 0),
+                    "down" => (-delta, 0),
+                    "left" => (0, delta),
+                    "right" => (0, -delta),
+                    _ => {
+                        return Err(BackendError::new(
+                            "invalidArgument",
+                            format!("Unsupported scroll direction {direction:?}."),
+                        ))
+                    }
+                };
+                let event = unsafe {
+                    CGEventCreateScrollWheelEvent2(
+                        std::ptr::null(),
+                        KCG_SCROLL_EVENT_UNIT_LINE,
+                        2,
+                        wheel1,
+                        wheel2,
+                        0,
+                    )
+                };
+                if event.is_null() {
+                    return Err(BackendError::new(
+                        "internal",
+                        "Failed to create scroll wheel event.",
+                    ));
+                }
+                unsafe {
+                    CGEventPostToPid(pid, event);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Ok(())
+            }
+
+            ComputerAction::Drag => {
+                if !request.mode.allows_foreground_steal() {
+                    return Err(BackendError::unsupported(
+                        "drag requires shared mode — it moves the physical pointer.",
+                    ));
+                }
+                let (from_x, from_y) = (request.from_x, request.from_y);
+                let (to_x, to_y) = (request.to_x, request.to_y);
+                let from_x = from_x.ok_or_else(|| {
+                    BackendError::new("invalidArgument", "drag requires fromX.")
+                })?;
+                let from_y = from_y.ok_or_else(|| {
+                    BackendError::new("invalidArgument", "drag requires fromY.")
+                })?;
+                let to_x = to_x.ok_or_else(|| {
+                    BackendError::new("invalidArgument", "drag requires toX.")
+                })?;
+                let to_y = to_y.ok_or_else(|| {
+                    BackendError::new("invalidArgument", "drag requires toY.")
+                })?;
+                let pid = pid_for_element(element_ref).ok_or_else(|| {
+                    BackendError::new("internal", "Cannot resolve pid for drag target.")
+                })?;
+                let source = unsafe { CGEventSourceCreate(KCG_STATE_EVENT_SESSION) };
+                if source.is_null() {
+                    return Err(BackendError::new(
+                        "internal",
+                        "Failed to create CGEventSource for drag.",
+                    ));
+                }
+                let from = CGPoint { x: from_x, y: from_y };
+                let to = CGPoint { x: to_x, y: to_y };
+                // mouseMoved → leftMouseDown → 10× leftMouseDragged → leftMouseUp
+                unsafe {
+                    let moved = CGEventCreateMouseEvent(
+                        source,
+                        KCG_EVENT_MOUSE_MOVED,
+                        from,
+                        KCG_EVENT_LEFT_MOUSE,
+                    );
+                    if !moved.is_null() {
+                        CGEventPostToPid(pid, moved);
+                        std::thread::sleep(std::time::Duration::from_millis(30));
+                    }
+                    let down = CGEventCreateMouseEvent(
+                        source,
+                        KCG_EVENT_LEFT_MOUSE_DOWN,
+                        from,
+                        KCG_EVENT_LEFT_MOUSE,
+                    );
+                    if !down.is_null() {
+                        CGEventSetIntegerValueField(down, KCG_MOUSE_EVENT_CLICK_STATE, 1);
+                        CGEventPostToPid(pid, down);
+                        std::thread::sleep(std::time::Duration::from_millis(30));
+                    }
+                    for point in drag_points(from, to) {
+                        let dragged = CGEventCreateMouseEvent(
+                            source,
+                            KCG_EVENT_LEFT_MOUSE_DRAGGED,
+                            point,
+                            KCG_EVENT_LEFT_MOUSE,
+                        );
+                        if !dragged.is_null() {
+                            CGEventSetIntegerValueField(dragged, KCG_MOUSE_EVENT_CLICK_STATE, 1);
+                            CGEventPostToPid(pid, dragged);
+                            std::thread::sleep(std::time::Duration::from_millis(16));
+                        }
+                    }
+                    let up = CGEventCreateMouseEvent(
+                        source,
+                        KCG_EVENT_LEFT_MOUSE_UP,
+                        to,
+                        KCG_EVENT_LEFT_MOUSE,
+                    );
+                    if !up.is_null() {
+                        CGEventSetIntegerValueField(up, KCG_MOUSE_EVENT_CLICK_STATE, 1);
+                        CGEventPostToPid(pid, up);
+                    }
+                }
+                Ok(())
+            }
+
+            // Press / Focus / Toggle / Select: AXPress / AXRaise via AXUIElementPerformAction.
             _ => {
-                let action_name = match action {
+                let action_name = match request.action {
                     ComputerAction::Focus => "AXRaise",
                     _ => "AXPress",
                 };
@@ -735,9 +1359,7 @@ impl ComputerBackend for MacBackend {
                 } else {
                     Err(BackendError::new(
                         "osAxActionFailed",
-                        format!(
-                            "AXUIElementPerformAction({action_name}) failed with AXError {err}."
-                        ),
+                        format!("AXUIElementPerformAction({action_name}) failed with AXError {err}."),
                     ))
                 }
             }
@@ -889,5 +1511,94 @@ impl ComputerBackend for MacBackend {
         };
 
         set_app_frontmost(pid)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pure-logic self-checks (no macOS framework calls, safe on any platform)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scroll_wheel_delta_whole_pages() {
+        assert_eq!(scroll_wheel_delta(1.0), 12);
+        assert_eq!(scroll_wheel_delta(3.0), 36);
+    }
+
+    #[test]
+    fn scroll_wheel_delta_fractional_pages() {
+        assert_eq!(scroll_wheel_delta(0.5), 6);
+        assert_eq!(scroll_wheel_delta(3.5), 42);
+    }
+
+    #[test]
+    fn scroll_wheel_delta_clamps_minimum() {
+        assert_eq!(scroll_wheel_delta(0.0), 1);
+        assert_eq!(scroll_wheel_delta(-5.0), 1);
+    }
+
+    #[test]
+    fn parse_key_spec_simple_key() {
+        let (code, mods) = parse_key_spec("c").expect("single key should parse");
+        assert_eq!(code, VK_ANSI_C);
+        assert!(mods.is_empty());
+    }
+
+    #[test]
+    fn parse_key_spec_cmd_combo() {
+        let (code, mods) = parse_key_spec("cmd+c").expect("cmd+c should parse");
+        assert_eq!(code, VK_ANSI_C);
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].flag, KCG_EVENT_FLAG_MASK_COMMAND);
+        assert_eq!(mods[0].key_code, VK_COMMAND);
+    }
+
+    #[test]
+    fn parse_key_spec_multi_modifier() {
+        let (code, mods) = parse_key_spec("shift+cmd+a").expect("shift+cmd+a should parse");
+        assert_eq!(code, VK_ANSI_A);
+        assert_eq!(mods.len(), 2);
+        assert_eq!(mods[0].flag, KCG_EVENT_FLAG_MASK_SHIFT);
+        assert_eq!(mods[1].flag, KCG_EVENT_FLAG_MASK_COMMAND);
+    }
+
+    #[test]
+    fn parse_key_spec_unknown_key_returns_none() {
+        assert!(parse_key_spec("cmd+xyz").is_none());
+    }
+
+    #[test]
+    fn parse_key_spec_case_insensitive() {
+        let (code, _) = parse_key_spec("CMD+TAB").expect("case-insensitive parse");
+        assert_eq!(code, VK_TAB);
+    }
+
+    #[test]
+    fn unicode_chunks_ascii() {
+        let chunks = unicode_chunks("hello", 64);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), 5);
+    }
+
+    #[test]
+    fn unicode_chunks_splits_on_boundary() {
+        let chunks = unicode_chunks("abcdef", 3);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], vec![b'a' as UniChar, b'b' as UniChar, b'c' as UniChar]);
+        assert_eq!(chunks[1], vec![b'd' as UniChar, b'e' as UniChar, b'f' as UniChar]);
+    }
+
+    #[test]
+    fn unicode_chunks_surrogate_pair_stays_together() {
+        // U+1F600 (😀) is a surrogate pair (2 UTF-16 units).
+        // With max_units=2, it must stay in one chunk.
+        let chunks = unicode_chunks("a😀b", 2);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].len(), 1);            // 'a'
+        assert_eq!(chunks[1].len(), 2);            // surrogate pair
+        assert_eq!(chunks[2].len(), 1);            // 'b'
     }
 }

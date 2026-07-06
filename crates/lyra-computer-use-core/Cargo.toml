@@ -44,5 +44,8 @@ windows = { version = "0.57", features = [
   "Win32_System_Variant",
   "Win32_UI_Accessibility",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_Security",
+  "Win32_Graphics_Gdi",
 ] }
 windows-core = "0.57"

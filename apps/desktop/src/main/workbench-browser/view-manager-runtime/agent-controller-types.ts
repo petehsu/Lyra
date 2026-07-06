@@ -60,6 +60,10 @@ export type WorkbenchBrowserAgentControllerHost = {
   ) => Promise<void>;
   readonly openDebuggerSessionForTarget: (target: BrowserAgentPageTarget) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
+  // ActCache toggle source (mirrors browserFollowMode). When true, the AX
+  // controller may replay cached axActOnNode results for repeatable NL→axRef
+  // mappings instead of re-executing the action.
+  readonly getActCacheEnabled?: () => boolean;
   readonly readPageDiagnostics: (tabId: string) => readonly import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry[];
   readonly consumeBrowserHealthAlerts?: (tabId: string) => readonly import("../types").BrowserHealthAlert[];
   readonly onBrowserHealthCaptcha?: (tabId: string, label: string) => void;

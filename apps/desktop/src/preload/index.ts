@@ -4,6 +4,10 @@ import {
   LYRA_CHANNELS,
   type AgentBrowserFollowModeSnapshot,
   type AgentBrowserFollowModeUpdateRequest,
+  type AgentActCacheSnapshot,
+  type AgentActCacheUpdateRequest,
+  type AgentCodeGraphEmbeddingSnapshot,
+  type AgentCodeGraphEmbeddingUpdateRequest,
   type AgentClarificationRespondRequest,
   type AgentGitDiffRequest,
   type AgentGitDiffResponse,
@@ -1737,6 +1741,24 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentBrowserFollowUpdate,
         request
       ) as Promise<AgentBrowserFollowModeSnapshot>,
+    readActCache: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentActCacheRead
+      ) as Promise<AgentActCacheSnapshot>,
+    updateActCache: (request: AgentActCacheUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentActCacheUpdate,
+        request
+      ) as Promise<AgentActCacheSnapshot>,
+    readCodeGraphEmbedding: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentCodeGraphEmbeddingRead
+      ) as Promise<AgentCodeGraphEmbeddingSnapshot>,
+    updateCodeGraphEmbedding: (request: AgentCodeGraphEmbeddingUpdateRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentCodeGraphEmbeddingUpdate,
+        request
+      ) as Promise<AgentCodeGraphEmbeddingSnapshot>,
     materializeImageAttachment: (request: AgentImageAttachmentMaterializeRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentImageAttachmentMaterialize,

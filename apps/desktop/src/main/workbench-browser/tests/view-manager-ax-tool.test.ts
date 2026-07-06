@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createBrowserAxController } from "../view-manager-runtime/ax-controller";
 import { createBrowserAxSnapshotStore } from "../view-manager-runtime/ax-snapshot-store";
+import { createBrowserActCache } from "../view-manager-runtime/ax-act-cache";
 import type {
   WorkbenchBrowserAgentModeInfo,
   WorkbenchBrowserOsAxAdapter,
@@ -79,6 +80,7 @@ const createDeps = (options: {
 
   let epoch = 0;
   const axSnapshotStore = createBrowserAxSnapshotStore();
+  const axActCache = createBrowserActCache();
   const controller = createBrowserAxController({
     openDebuggerSessionForTarget: vi.fn(async () => session),
     resolveBrowserAgentTarget: vi.fn(async () => target),
@@ -89,9 +91,10 @@ const createDeps = (options: {
     buildSemanticFrameGraph: vi.fn(async () => options.frameGraphOverride ?? frameGraph),
     nextMapEpoch: () => (epoch += 1),
     axSnapshotStore,
+    axActCache,
     ...(options.osAxAdapter === undefined ? {} : { osAxAdapter: options.osAxAdapter })
   });
-  return { controller, session, sendAgentInputEvent, assertSharedControlCanContinue, axSnapshotStore };
+  return { controller, session, sendAgentInputEvent, assertSharedControlCanContinue, axSnapshotStore, axActCache };
 };
 
 const googleButtonTree = {

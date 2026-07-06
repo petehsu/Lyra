@@ -42,6 +42,7 @@ import {
   isRecord,
   normalizePayload,
   readClampedOptionalNumber,
+  readOptionalNumberField,
   readOptionalStringField,
   readStringField
 } from "./host-payload";
@@ -130,9 +131,13 @@ const COMPUTER_ACTIONS = new Set([
   "press",
   "focus",
   "setText",
+  "typeText",
   "toggle",
   "select",
-  "scroll"
+  "scroll",
+  "pressKey",
+  "secondaryAction",
+  "drag",
 ]);
 
 const COMPUTER_MODES = new Set(["shared", "background-semantic", "isolated-session"]);
@@ -732,6 +737,23 @@ export const createComputerToolHost = ({
       if (text !== undefined) {
         request.text = text;
       }
+      // New action parameters: pressKey / secondaryAction / scroll / drag
+      const key = readOptionalStringField(input, "key");
+      if (key !== undefined) request.key = key;
+      const actionName = readOptionalStringField(input, "actionName");
+      if (actionName !== undefined) request.actionName = actionName;
+      const direction = readOptionalStringField(input, "direction");
+      if (direction !== undefined) request.direction = direction;
+      const pages = readOptionalNumberField(input, "pages");
+      if (pages !== undefined) request.pages = pages;
+      const fromX = readOptionalNumberField(input, "fromX");
+      if (fromX !== undefined) request.fromX = fromX;
+      const fromY = readOptionalNumberField(input, "fromY");
+      if (fromY !== undefined) request.fromY = fromY;
+      const toX = readOptionalNumberField(input, "toX");
+      if (toX !== undefined) request.toX = toX;
+      const toY = readOptionalNumberField(input, "toY");
+      if (toY !== undefined) request.toY = toY;
       return invokeNative("computerActJson", request);
     },
 

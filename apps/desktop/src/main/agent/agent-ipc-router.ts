@@ -52,6 +52,10 @@ import type {
   AgentTurnSendResponse,
   AgentBrowserFollowModeSnapshot,
   AgentBrowserFollowModeUpdateRequest,
+  AgentActCacheSnapshot,
+  AgentActCacheUpdateRequest,
+  AgentCodeGraphEmbeddingSnapshot,
+  AgentCodeGraphEmbeddingUpdateRequest,
   AgentActionRunRequest,
   AgentAccountLoginCompleteRequest,
   AgentAccountLoginCompleteResponse,
@@ -103,6 +107,8 @@ import type {
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { materializeImageAttachment } from "./artifact-materializer";
 import { normalizePayload } from "./host-payload";
+import { actCacheController } from "./act-cache-toggle";
+import { codeGraphEmbeddingController } from "./codegraph-embedding-toggle";
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
 
@@ -309,6 +315,38 @@ export const createAgentIpcRouter = ({
         return {
           enabled: browserFollowMode.read()
         } satisfies AgentBrowserFollowModeSnapshot;
+      }
+    ],
+    [
+      LYRA_CHANNELS.agentActCacheRead,
+      () => ({
+        enabled: actCacheController.read()
+      } satisfies AgentActCacheSnapshot)
+    ],
+    [
+      LYRA_CHANNELS.agentActCacheUpdate,
+      (_event, payload) => {
+        const request = normalizePayload(payload) as AgentActCacheUpdateRequest;
+        actCacheController.set(request.enabled === true);
+        return {
+          enabled: actCacheController.read()
+        } satisfies AgentActCacheSnapshot;
+      }
+    ],
+    [
+      LYRA_CHANNELS.agentCodeGraphEmbeddingRead,
+      () => ({
+        enabled: codeGraphEmbeddingController.read()
+      } satisfies AgentCodeGraphEmbeddingSnapshot)
+    ],
+    [
+      LYRA_CHANNELS.agentCodeGraphEmbeddingUpdate,
+      (_event, payload) => {
+        const request = normalizePayload(payload) as AgentCodeGraphEmbeddingUpdateRequest;
+        codeGraphEmbeddingController.set(request.enabled === true);
+        return {
+          enabled: codeGraphEmbeddingController.read()
+        } satisfies AgentCodeGraphEmbeddingSnapshot;
       }
     ],
     [

@@ -220,6 +220,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     isTurnRunning,
     browserFollowModeEnabled,
     setBrowserFollowMode,
+    actCacheEnabled,
+    setActCache,
+    codeGraphEmbeddingEnabled,
+    setCodeGraphEmbedding,
     cancelTurn,
     session,
     bindProject,
@@ -721,6 +725,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           isTurnRunning={isTurnRunning}
           browserFollowModeEnabled={browserFollowModeEnabled}
           onToggleBrowserFollowMode={setBrowserFollowMode}
+          actCacheEnabled={actCacheEnabled}
+          onToggleActCache={setActCache}
+          codeGraphEmbeddingEnabled={codeGraphEmbeddingEnabled}
+          onToggleCodeGraphEmbedding={setCodeGraphEmbedding}
           onCancelTurn={cancelTurn}
           pendingCitation={pendingCitation}
           pendingCitationNonce={pendingCitationNonce}

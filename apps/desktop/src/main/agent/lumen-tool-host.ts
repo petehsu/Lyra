@@ -6,7 +6,9 @@ import type {
   WorkbenchBrowserAgentScrollDirection,
   WorkbenchBrowserAgentTargetMode,
   WorkbenchBrowserAgentVerification,
-  WorkbenchBrowserWorkflowCacheMode
+  WorkbenchBrowserWorkflowCacheMode,
+  LumenScreenshotHighlightRegion,
+  LumenScreenshotHighlightColor
 } from "../workbench-browser/types";
 import { compactMapObservation } from "../workbench-browser/view-manager-runtime/agent-map-compaction";
 import {
@@ -147,6 +149,19 @@ const applyBrowserBlockedEnvelope = <T extends Record<string, unknown>>(
     nextRecommendedAction: "ask_user"
   };
 };
+
+// Highlight color cycle — must match HIGHLIGHT_COLORS in
+// lumen-screenshot-highlights.ts (red, blue, green, yellow, purple).
+const LUMEN_ANNOTATION_COLORS: readonly LumenScreenshotHighlightColor[] = [
+  "red",
+  "blue",
+  "green",
+  "yellow",
+  "purple"
+];
+
+const annotationColorForIndex = (index: number): LumenScreenshotHighlightColor =>
+  LUMEN_ANNOTATION_COLORS[index % LUMEN_ANNOTATION_COLORS.length]!;
 
 const truncateLumenTextContent = (
   content: string,
@@ -1020,9 +1035,54 @@ export const createLumenToolHost = ({
       const to = readOptionalLumenToPoint(payload);
       const scrollDy = readOptionalNumberField(payload, "scrollDy");
       const verification = readLumenVerification(payload);
+      const captureId = readStringField(payload, "captureId");
+      const axRef = readOptionalStringField(payload, "axRef");
+      // When axRef is supplied, derive the click point from the AX node's bbox
+      // center instead of reading device-pixel coordinates from the screenshot.
+      // The captureId is still required so the executor can verify the viewport
+      // hasn't scrolled/resized since the see call.
+      let point = readOptionalLumenPoint(payload);
+      if (axRef !== undefined) {
+        const bbox = await browser.axResolveAxRefBbox(tabId, { axRef, targetMode });
+        if (!bbox.ok || bbox.bounds === undefined) {
+          return withLumenTargetIds({
+            ok: false,
+            kind: "lyraLumenVactStale",
+            tabId,
+            targetMode,
+            captureId,
+            reason: "axref_unresolved",
+            message: bbox.ok === false
+              ? `Could not resolve axRef for vact: ${bbox.error.message}`
+              : "The AX node has no bounding box; cannot derive a click point.",
+            nextRecommendedAction: "browser_ax.map"
+          }, tabId);
+        }
+        // bbox.bounds is in CSS pixels; the visual point is expected in
+        // device-pixel space (origin = top-left of the see screenshot). The
+        // executor's cssPointFromVisualFrame divides by dpr, so we pass CSS
+        // coordinates here and let it convert. Use bbox center.
+        point = {
+          x: bbox.bounds.x + Math.round(bbox.bounds.width / 2),
+          y: bbox.bounds.y + Math.round(bbox.bounds.height / 2),
+          reason: `axRef ${axRef} bbox center`
+        };
+      }
+      if (point === undefined) {
+        return withLumenTargetIds({
+          ok: false,
+          kind: "lyraLumenVactStale",
+          tabId,
+          targetMode,
+          captureId,
+          reason: "missing_point",
+          message: "vact requires either a point (device-pixel x/y) or an axRef. Provide one of them alongside captureId.",
+          nextRecommendedAction: "lyra_lumen.see"
+        }, tabId);
+      }
       const result = await browser.actOnAgentVisualPoint(tabId, {
-        captureId: readStringField(payload, "captureId"),
-        point: readLumenPoint(payload),
+        captureId,
+        point,
         interaction: readLumenVisualInteraction(payload),
         ...readLumenModeRequest(payload, targetMode),
         ...(to === undefined ? {} : { to }),
@@ -1033,7 +1093,8 @@ export const createLumenToolHost = ({
       return withLumenTargetIds({
         ...result,
         visual: true,
-        captureId: readStringField(payload, "captureId"),
+        captureId,
+        ...(axRef === undefined ? {} : { axRef }),
         nextRecommendedAction:
           result.kind === "lyraLumenVactStale"
             ? "lyra_lumen.see"
@@ -1608,15 +1669,89 @@ export const createLumenToolHost = ({
       const highlightTargetRefs = Array.isArray(payload.highlightTargetRefs)
         ? payload.highlightTargetRefs.filter((value): value is string => typeof value === "string")
         : undefined;
+      const annotateRequested = readOptionalBooleanField(payload, "annotate") === true;
+      const annotateAxRefs = Array.isArray(payload.annotateAxRefs)
+        ? payload.annotateAxRefs.filter((value): value is string => typeof value === "string")
+        : undefined;
+      // Build AX-derived annotation regions when annotate:true. We query the
+      // latest AX snapshot for nodes with bounds, optionally filtered to the
+      // caller-supplied axRefs, and convert their CSS bounds to device-pixel
+      // regions so captureAgentPage can draw them as colored boxes.
+      const annotationRegions: LumenScreenshotHighlightRegion[] = [];
+      const annotationTable: Array<{
+        readonly index: number;
+        readonly axRef: string;
+        readonly role: string;
+        readonly name: string;
+        readonly color: LumenScreenshotHighlightColor;
+      }> = [];
+      if (annotateRequested) {
+        const query = await browser.axQueryAgentSnapshot(tabId, {
+          targetMode,
+          maxResults: 50
+        }).catch(() => null);
+        const allowedAxRefs = annotateAxRefs === undefined ? null : new Set(annotateAxRefs);
+        const visualFrameHint = (await browser.captureAgentPage(tabId, {
+          ...readLumenModeRequest(payload, targetMode),
+          highlightTargets: false,
+          downsampleForVision: false
+        }).catch(() => null));
+        const dpr = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
+          ? visualFrameHint.visualFrame.dpr
+          : 1;
+        const scrollX = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
+          ? visualFrameHint.visualFrame.scrollX
+          : 0;
+        const scrollY = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
+          ? visualFrameHint.visualFrame.scrollY
+          : 0;
+        if (query !== null && query.ok) {
+          for (let i = 0; i < query.matches.length; i += 1) {
+            const match = query.matches[i]!;
+            if (match.bounds === undefined) {
+              continue;
+            }
+            if (allowedAxRefs !== null && !allowedAxRefs.has(match.axRef)) {
+              continue;
+            }
+            const color = annotationColorForIndex(annotationRegions.length);
+            const deviceBounds = {
+              x: Math.round((match.bounds.x - scrollX) * dpr),
+              y: Math.round((match.bounds.y - scrollY) * dpr),
+              width: Math.max(1, Math.round(match.bounds.width * dpr)),
+              height: Math.max(1, Math.round(match.bounds.height * dpr))
+            };
+            annotationRegions.push({
+              targetRef: match.axRef,
+              elementId: -1,
+              label: match.name,
+              role: match.role,
+              bounds: match.bounds,
+              deviceBounds,
+              index: annotationRegions.length,
+              color,
+              axRef: match.axRef
+            });
+            annotationTable.push({
+              index: annotationTable.length - 1,
+              axRef: match.axRef,
+              role: match.role,
+              name: match.name,
+              color
+            });
+          }
+        }
+      }
       const capture = await browser.captureAgentPage(
         tabId,
         {
           ...readLumenModeRequest(payload, targetMode),
-          highlightTargets: readOptionalBooleanField(payload, "highlightTargets") ?? true,
+          highlightTargets: annotateRequested ? false : (readOptionalBooleanField(payload, "highlightTargets") ?? true),
           downsampleForVision: readOptionalBooleanField(payload, "downsampleForVision") ?? true,
           ...(highlightTargetRefs === undefined || highlightTargetRefs.length === 0
             ? {}
-            : { highlightTargetRefs })
+            : { highlightTargetRefs }),
+          ...(annotationRegions.length === 0 ? {} : { prebuiltHighlightRegions: annotationRegions })
         }
       ).catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -1669,12 +1804,52 @@ export const createLumenToolHost = ({
           : {}),
         ...("highlighted" in capture && capture.highlighted === true ? { highlighted: true } : {}),
         ...("downsampled" in capture && capture.downsampled === true ? { downsampled: true } : {}),
+        ...(annotationTable.length === 0 ? {} : { annotations: annotationTable }),
         imageArtifact,
         evidenceRefs: [imageArtifact.id],
         message:
           `Captured browser visual evidence ${imageArtifact.id} (${capture.width}x${capture.height})${
             "highlighted" in capture && capture.highlighted === true ? " with targetRef highlights" : ""
+          }${
+            annotationTable.length > 0
+              ? `. Annotated ${annotationTable.length} AX node${annotationTable.length === 1 ? "" : "s"} with colored boxes; use the annotations table (index → axRef → role → name → color) to pick a target, then call /tools/browser/vact with axRef.`
+              : ""
           }.`,
+        nextRecommendedAction: annotationTable.length > 0 ? "lyra_lumen.vact" : "lyra_lumen.map"
+      }, tabId);
+    }),
+    "lyraLumen.extract": withLyraLumenResult("lyraLumen.extract", async (payload) => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      const instruction = readStringField(payload, "instruction");
+      const scope = payload.scope === "full" ? "full" : "viewport";
+      // schema is an arbitrary JSON object; pass it back to the model as a hint.
+      const schemaHint = isRecord(payload.schema) ? payload.schema : undefined;
+      const read = await browser.readAgentPage(tabId, {
+        strategy: scope === "full" ? "domFallback" : "focus",
+        ...readLumenModeRequest(payload, targetMode),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      }).catch(() => null);
+      const budgeted = truncateLumenTextContent(read?.content ?? "");
+      return withLumenTargetIds({
+        ok: true,
+        kind: "lyraLumenExtract",
+        tabId,
+        targetMode,
+        instruction,
+        ...(schemaHint === undefined ? {} : { schemaHint }),
+        scope,
+        ...("browserMode" in (read ?? {}) && (read as { browserMode?: unknown }).browserMode !== undefined
+          ? { browserMode: (read as { browserMode: unknown }).browserMode }
+          : {}),
+        content: budgeted.content,
+        truncated: budgeted.truncated,
+        message: `Read browser page for structured extraction. Conform your next reply to the provided JSON schema${
+          schemaHint === undefined ? "" : " (schemaHint)"
+        }. Instruction: ${instruction}`,
         nextRecommendedAction: "lyra_lumen.map"
       }, tabId);
     }),

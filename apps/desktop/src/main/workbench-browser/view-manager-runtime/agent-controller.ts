@@ -14,6 +14,7 @@ import {
 } from "./agent-workflow-runtime";
 import { createBrowserAxController } from "./ax-controller";
 import { createBrowserAxSnapshotStore } from "./ax-snapshot-store";
+import { createBrowserActCache } from "./ax-act-cache";
 import { agentTargetAddress } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { WorkbenchBrowserAgentTargetMode } from "../types";
@@ -23,6 +24,7 @@ export type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-typ
 export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgentControllerHost) => {
   const stateStore = createBrowserAgentStateStore();
   const axSnapshotStore = createBrowserAxSnapshotStore();
+  const axActCache = createBrowserActCache();
   const observationEngine = createBrowserAgentObservationEngine({
     findFrameInWebContents: host.findFrameInWebContents,
     openDebuggerSessionForTarget: host.openDebuggerSessionForTarget,
@@ -143,10 +145,12 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     buildSemanticFrameGraph: observationEngine.buildBrowserAgentSemanticFrameGraph,
     nextMapEpoch: stateStore.nextMapEpoch,
     axSnapshotStore,
+    axActCache,
+    ...(host.getActCacheEnabled === undefined ? {} : { getActCacheEnabled: host.getActCacheEnabled }),
     ...(host.osAxAdapter === undefined ? {} : { osAxAdapter: host.osAxAdapter })
   });
 
-  // Invalidate AX snapshots in lockstep with Lumen targets (navigation/reload/clearSiteData).
+  // Invalidate AX snapshots + ActCache in lockstep with Lumen targets (navigation/reload/clearSiteData).
   const invalidateBrowserAgentTargets = (
     tabId: string,
     targetMode: WorkbenchBrowserAgentTargetMode,
@@ -154,6 +158,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
   ): void => {
     stateStore.invalidateBrowserAgentTargets(tabId, targetMode, reason);
     axSnapshotStore.invalidate(tabId, targetMode, reason);
+    axActCache.invalidate(tabId, targetMode);
   };
 
   const explainAgentTargetRef = async (
@@ -174,6 +179,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     elevation.dispose();
     ax.dispose();
     axSnapshotStore.dispose();
+    axActCache.dispose();
   };
 
   const replayWorkflowOnPage = async (
@@ -237,6 +243,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     axFocusAgentPage: ax.axFocusAgentPage,
     axPressAgentKey: ax.axPressAgentKey,
     axExplainNode: ax.axExplainNode,
+    axResolveAxRefBbox: ax.axResolveAxRefBbox,
     captureAgentPage: page.captureAgentPage,
     detectAgentPageQr: qr.detectAgentPageQr,
     completeElevationSession: elevation.completeElevationSession,

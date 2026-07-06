@@ -102,6 +102,18 @@ export interface DataProviderValue {
   /** Toggle visible Workbench browser following for Agent browser actions. */
   setBrowserFollowMode(enabled: boolean): Promise<void>;
 
+  /** True when AX ActCache replay is enabled (record/replay NL→axRef mappings). */
+  readonly actCacheEnabled: boolean;
+
+  /** Toggle AX ActCache replay for repeatable browser_ax.act automations. */
+  setActCache(enabled: boolean): Promise<void>;
+
+  /** True when CodeGraph semantic embedding loading is enabled. */
+  readonly codeGraphEmbeddingEnabled: boolean;
+
+  /** Toggle CodeGraph ONNX embedding loading for semantic symbol search. */
+  setCodeGraphEmbedding(enabled: boolean): Promise<void>;
+
   /** Open a web URL in the center Workbench browser area. */
   openUrlInWorkbench(url: string, title?: string): Promise<void>;
 

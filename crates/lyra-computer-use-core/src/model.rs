@@ -56,12 +56,21 @@ pub enum ComputerAction {
     Focus,
     /// Replace the element's text value (AXValue / ValuePattern.SetValue).
     SetText,
+    /// Type text character-by-character via keyboard events (CGEvent postToPid).
+    /// Falls back to AXValue set when the element is settable.
+    TypeText,
     /// Flip a checkbox/switch/disclosure (TogglePattern).
     Toggle,
     /// Select an item in a list/menu/radio group (SelectionItemPattern).
     Select,
-    /// Scroll the element (ScrollPattern).
+    /// Scroll the element (AXScrollToVisible / CGEvent scrollWheel / ScrollPattern).
     Scroll,
+    /// Press a key or key-combination (xdotool syntax, e.g. "cmd+c").
+    PressKey,
+    /// Invoke a secondary accessibility action (AXShowMenu / AXOpen / etc.).
+    SecondaryAction,
+    /// Drag from one coordinate to another (coordinate-only, shared mode).
+    Drag,
 }
 
 impl ComputerAction {
@@ -70,9 +79,13 @@ impl ComputerAction {
             "press" | "click" => Some(ComputerAction::Press),
             "focus" => Some(ComputerAction::Focus),
             "setText" | "type" => Some(ComputerAction::SetText),
+            "typeText" => Some(ComputerAction::TypeText),
             "toggle" => Some(ComputerAction::Toggle),
             "select" => Some(ComputerAction::Select),
             "scroll" => Some(ComputerAction::Scroll),
+            "pressKey" => Some(ComputerAction::PressKey),
+            "secondaryAction" => Some(ComputerAction::SecondaryAction),
+            "drag" => Some(ComputerAction::Drag),
             _ => None,
         }
     }
@@ -82,9 +95,13 @@ impl ComputerAction {
             ComputerAction::Press => "press",
             ComputerAction::Focus => "focus",
             ComputerAction::SetText => "setText",
+            ComputerAction::TypeText => "typeText",
             ComputerAction::Toggle => "toggle",
             ComputerAction::Select => "select",
             ComputerAction::Scroll => "scroll",
+            ComputerAction::PressKey => "pressKey",
+            ComputerAction::SecondaryAction => "secondaryAction",
+            ComputerAction::Drag => "drag",
         }
     }
 }
@@ -216,6 +233,43 @@ impl SessionMode {
     }
 }
 
+/// Per-call input delivery strategy. Orthogonal to [`SessionMode`]: the
+/// session mode governs whether foreground-steal is *allowed* at all, while
+/// the delivery mode governs *how* input is synthesized when it is.
+///
+/// - `Background` (default): PostMessage to the target window's deepest child
+///   HWND — no focus steal, no cursor move. Falls back to SendInput when the
+///   target is known to reject PostMessage (Chromium, XAML/UWP, terminals) or
+///   when modifiers must be held (PostMessage does not update `GetKeyState`).
+/// - `Foreground`: SendInput against the system input queue, briefly fronting
+///   the target then restoring the prior foreground. The only path that reaches
+///   Chromium content, WPF drag, and apps behind UIPI isolation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DeliveryMode {
+    Background,
+    Foreground,
+}
+
+impl Default for DeliveryMode {
+    fn default() -> Self {
+        Self::Background
+    }
+}
+
+impl DeliveryMode {
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "foreground" => Self::Foreground,
+            _ => Self::Background,
+        }
+    }
+
+    pub fn is_foreground(self) -> bool {
+        matches!(self, Self::Foreground)
+    }
+}
+
 /// Filter applied while reading the tree, mirroring browser_ax strategies (§6.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapStrategy {
@@ -256,10 +310,46 @@ impl Default for MapRequest {
 pub struct ActRequest {
     pub os_ref: String,
     pub action: ComputerAction,
-    /// Text payload for `SetText`; ignored by other actions.
+    /// Text payload for `SetText` / `TypeText`; ignored by other actions.
     pub text: Option<String>,
     /// Session mode gate (§5). Defaults to `Shared`.
     pub mode: SessionMode,
+    /// Key specification for `PressKey` (xdotool syntax, e.g. "cmd+c").
+    pub key: Option<String>,
+    /// Action name for `SecondaryAction` (e.g. "AXShowMenu").
+    pub action_name: Option<String>,
+    /// Scroll direction: "up" / "down" / "left" / "right".
+    pub direction: Option<String>,
+    /// Scroll pages (fractional supported). Defaults to 1.
+    pub pages: Option<f64>,
+    /// Drag start coordinate (screen-space pixels).
+    pub from_x: Option<f64>,
+    pub from_y: Option<f64>,
+    /// Drag end coordinate (screen-space pixels).
+    pub to_x: Option<f64>,
+    pub to_y: Option<f64>,
+    /// Per-call input delivery strategy. See [`DeliveryMode`].
+    pub delivery_mode: DeliveryMode,
+}
+
+impl Default for ActRequest {
+    fn default() -> Self {
+        Self {
+            os_ref: String::new(),
+            action: ComputerAction::Press,
+            text: None,
+            mode: SessionMode::Shared,
+            key: None,
+            action_name: None,
+            direction: None,
+            pages: None,
+            from_x: None,
+            from_y: None,
+            to_x: None,
+            to_y: None,
+            delivery_mode: DeliveryMode::Background,
+        }
+    }
 }
 
 /// The outcome of re-resolving + acting on a node, plus the closed-loop diff
@@ -389,5 +479,34 @@ impl ComputerFocusRequest {
             || self.bundle_id.is_some()
             || self.window_title.is_some()
             || self.window_ref.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delivery_mode_parse_foreground() {
+        assert_eq!(DeliveryMode::parse("foreground"), DeliveryMode::Foreground);
+        assert!(DeliveryMode::parse("foreground").is_foreground());
+    }
+
+    #[test]
+    fn delivery_mode_parse_background_default() {
+        assert_eq!(DeliveryMode::parse("background"), DeliveryMode::Background);
+        assert!(!DeliveryMode::parse("background").is_foreground());
+    }
+
+    #[test]
+    fn delivery_mode_parse_unknown_falls_back_to_background() {
+        assert_eq!(DeliveryMode::parse(""), DeliveryMode::Background);
+        assert_eq!(DeliveryMode::parse("fg"), DeliveryMode::Background);
+        assert_eq!(DeliveryMode::parse("Foreground"), DeliveryMode::Background);
+    }
+
+    #[test]
+    fn delivery_mode_default_is_background() {
+        assert_eq!(DeliveryMode::default(), DeliveryMode::Background);
     }
 }

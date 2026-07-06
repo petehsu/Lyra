@@ -6032,11 +6032,12 @@
 .lyra-terminal-toolbar-actions {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, var(--lyra-control-h-28));
+  grid-template-columns: repeat(4, var(--lyra-shell-terminal-tabbar-h));
   justify-content: start;
   align-items: center;
   gap: var(--lyra-space-4);
-  padding: var(--lyra-space-8) var(--lyra-space-6) var(--lyra-space-6);
+  height: var(--lyra-shell-terminal-tabbar-h);
+  padding: 0 var(--lyra-space-2);
   background: transparent;
 }
 
@@ -6051,6 +6052,8 @@
 }
 
 .lyra-terminal-toolbar-actions .lyra-app-icon-button {
+  width: var(--lyra-shell-terminal-tabbar-h);
+  height: var(--lyra-shell-terminal-tabbar-h);
   justify-self: center;
 }
 
@@ -6382,4 +6385,3 @@
 .lyra-settings-ai-provider-back:hover {
   color: var(--lyra-text-primary);
 }
-

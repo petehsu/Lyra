@@ -48,6 +48,7 @@ const renderNavigation = (
 
 describe("TitlebarNavigation", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -72,6 +73,22 @@ describe("TitlebarNavigation", () => {
 
     fireEvent.click(button);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  test("animates the reload action after clicking it", async () => {
+    vi.useFakeTimers();
+    renderNavigation({
+      primaryActionKind: "reload"
+    });
+
+    const button = screen.getByRole("button", { name: "Reload page" });
+    fireEvent.click(button);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16);
+    });
+
+    expect(button).toHaveClass("lyra-titlebar-navigation-action-reloading");
   });
 
   test("renders omnibox suggestions inside the navigation shell so the input stretches upward", () => {

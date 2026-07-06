@@ -210,5 +210,13 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Verify browser task completion from trajectory and final observation.",
             Some("browser_judge_task"),
         ),
+        super::s(
+            "/tools/browser/extract",
+            "browser",
+            "extract",
+            "Extract browser page",
+            "Read browser page text with a JSON schema hint so the model can return structured data matching the schema in its next reply.",
+            Some("browser_extract"),
+        ),
     ]
 }

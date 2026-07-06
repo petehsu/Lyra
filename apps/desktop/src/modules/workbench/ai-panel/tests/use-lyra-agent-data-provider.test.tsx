@@ -64,7 +64,10 @@ const createDesktopApi = (snapshot: AgentSessionSnapshot): LyraDesktopApi => ({
       sessions: [{ id: snapshot.id }]
     })),
     listAgentModels: vi.fn(async () => emptyModelCatalog()),
-    readBrowserFollowMode: vi.fn(async () => ({ enabled: false }))
+    readBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
+    updateBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
+    readActCache: vi.fn(async () => ({ enabled: false })),
+    updateActCache: vi.fn(async () => ({ enabled: false }))
   }
 } as unknown as LyraDesktopApi);
 
@@ -87,7 +90,10 @@ describe("useLyraAgentDataProvider", () => {
         readSession,
         listSessions,
         listAgentModels: vi.fn(async () => emptyModelCatalog()),
-        readBrowserFollowMode: vi.fn(async () => ({ enabled: false }))
+        readBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
+        updateBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
+        readActCache: vi.fn(async () => ({ enabled: false })),
+        updateActCache: vi.fn(async () => ({ enabled: false }))
       }
     } as unknown as LyraDesktopApi;
 

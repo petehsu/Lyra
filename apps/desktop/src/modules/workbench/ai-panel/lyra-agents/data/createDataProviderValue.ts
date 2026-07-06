@@ -49,6 +49,10 @@ export interface CreateDataProviderValueInput {
   aiRichRenderingEnabled?: boolean;
   browserFollowModeEnabled?: boolean;
   setBrowserFollowMode?: (enabled: boolean) => Promise<void>;
+  actCacheEnabled?: boolean;
+  setActCache?: (enabled: boolean) => Promise<void>;
+  codeGraphEmbeddingEnabled?: boolean;
+  setCodeGraphEmbedding?: (enabled: boolean) => Promise<void>;
   openUrlInWorkbench?: (url: string, title?: string) => Promise<void>;
   openFileInWorkbench?: (filePath: string) => Promise<void>;
   revealPathInWorkbench?: (filePath: string) => Promise<void>;
@@ -161,6 +165,10 @@ export function createDataProviderValue({
   aiRichRenderingEnabled = true,
   browserFollowModeEnabled = false,
   setBrowserFollowMode = () => resolved,
+  actCacheEnabled = false,
+  setActCache = () => resolved,
+  codeGraphEmbeddingEnabled = false,
+  setCodeGraphEmbedding = () => resolved,
   openUrlInWorkbench = () => resolved,
   openFileInWorkbench = () => resolved,
   revealPathInWorkbench = () => resolved,
@@ -244,6 +252,10 @@ export function createDataProviderValue({
     aiRichRenderingEnabled,
     browserFollowModeEnabled,
     setBrowserFollowMode,
+    actCacheEnabled,
+    setActCache,
+    codeGraphEmbeddingEnabled,
+    setCodeGraphEmbedding,
     openUrlInWorkbench: visibleFailure(t("appStatus.openUrlFailed"), openUrlInWorkbench),
     openFileInWorkbench: visibleFailure(t("appStatus.openFileFailed"), openFileInWorkbench),
     revealPathInWorkbench: visibleFailure(t("appStatus.revealPathFailed"), revealPathInWorkbench),

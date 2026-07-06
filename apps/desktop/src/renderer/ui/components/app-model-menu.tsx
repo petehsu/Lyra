@@ -181,11 +181,6 @@ export const AppModelMenu = <TModelValue extends string = string>({
                     <span className="lyra-app-model-menu-group-line" aria-hidden="true" />
                     <span className="lyra-app-model-menu-group-label">
                       {group.label}
-                      <ChevronDown
-                        className="lyra-app-model-menu-group-chevron"
-                        data-collapsed={isCollapsed ? "true" : undefined}
-                        aria-hidden="true"
-                      />
                     </span>
                     <span className="lyra-app-model-menu-group-line" aria-hidden="true" />
                   </DropdownMenuItem>

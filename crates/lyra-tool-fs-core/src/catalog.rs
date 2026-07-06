@@ -310,6 +310,9 @@ fn description_for(
         ("browser", "judge_task") => {
             "Use when the agent needs to verify browser task completion, detect captcha/auth blocks, or decide whether to escalate after a multi-step browser trajectory."
         }
+        ("browser", "extract") => {
+            "Use when the agent needs structured data from a browser page (list/detail/table → JSON). Returns page text + the requested JSON schema as a hint (schemaHint); the model emits JSON conforming to the schema in its next reply. Cheaper than read+manual parse for tabular or list data."
+        }
         ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => {
             "Use when the agent needs to scroll a browser page, bring an offscreen button or input into view, keep the Agent cursor visible, or recover after a mapped target is outside the viewport."
         }
@@ -335,7 +338,7 @@ fn description_for(
             "Use to control native desktop apps outside the Lyra browser through the OS accessibility tree (osRef): read the focused window's semantic tree, find a control by role/name, or explain whether semantic control is available and reachable. Prefer this over screenshots+coordinates."
         }
         ("computer", "act" | "diff") => {
-            "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/toggle/select it semantically (no coordinates, no foreground steal), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff."
+            "Use when an osRef from computer.map/find is the right desktop target: press/focus/setText/typeText/toggle/select/scroll/pressKey/secondaryAction it semantically (no coordinates except drag), or verify changes — re-read one node's state, or diff a whole computer.map snapshot (added/removed/changed) against a fresh read. computer.act already returns a before/after diff. typeText types via keyboard events (unlike setText which replaces the whole value). pressKey sends key combinations (e.g. cmd+c). secondaryAction invokes non-primary AX actions (e.g. AXShowMenu for right-click). drag moves the pointer from (fromX,fromY) to (toX,toY) — shared mode only."
         }
         ("computer", "see") => {
             "Use only as a visual fallback when semantic control fails: computer.map returned nothing usable, the control has no accessibility node, or you must read image/canvas content. Screenshots the screen or focused window for the vision model; it does not act or steal focus. Prefer semantic map/find/act whenever the node exists."
@@ -674,6 +677,16 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "浏览器任务验收",
                 "验收浏览器任务",
             ],
+            ("browser", "extract") => vec![
+                "extract page",
+                "scrape page",
+                "structured extract",
+                "extract table",
+                "extract list",
+                "页面结构化抽取",
+                "提取页面数据",
+                "结构化提取",
+            ],
             ("browser", "scroll" | "scroll_to_target" | "ensure_visible") => vec![
                 "scroll page",
                 "scroll down",
@@ -997,6 +1010,11 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Judge whether the login flow completed after act/type steps.",
             "判断浏览器任务是否完成。",
         ],
+        ("browser", "extract") => vec![
+            "Extract all product titles and prices from a listing page into a JSON array matching {title, price}.",
+            "Extract a single article's headline, author, and publish date into {headline, author, date}.",
+            "从列表页结构化抽取商品标题与价格。",
+        ],
         ("workbench", _) => vec![
             "Inspect open Lyra tabs and active workspace state.",
             "查看当前工作区标签页。",
@@ -1124,6 +1142,7 @@ fn output_kind(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "read") => "text",
         ("browser", "see") | ("computer", "see") => "artifact",
+        ("browser", "extract") => "text",
         _ => "json",
     }
 }
@@ -1613,6 +1632,16 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     ),
                 ),
                 (
+                    "annotate",
+                    json!({ "type": "boolean", "default": false, "description": "When true, annotate actionable AX nodes from the latest snapshot with colored bounding boxes and return an annotations table mapping index→axRef→role→name→color. Visual and semantic workflows then share the same refs; call /tools/browser/vact with axRef to act on a numbered box." }),
+                ),
+                (
+                    "annotateAxRefs",
+                    string_array(
+                        "Optional axRefs to annotate on the screenshot; defaults to all actionable AX nodes with bounds when annotate is true.",
+                    ),
+                ),
+                (
                     "downsampleForVision",
                     json!({ "type": "boolean", "default": true, "description": "Downsample screenshots to <=2000px longest edge before returning vision artifacts." }),
                 ),
@@ -1731,10 +1760,16 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     ),
                 ),
                 (
+                    "axRef",
+                    string(
+                        "Optional axRef; when provided, derive the click point from the AX node's bbox center instead of reading device-pixel coordinates from the screenshot. Still requires captureId for viewport-staleness verification. Either axRef or point must be supplied.",
+                    ),
+                ),
+                (
                     "point",
                     json!({
                         "type": "object",
-                        "description": "Device-pixel coordinate read directly off the latest see screenshot (origin = top-left of the screenshot).",
+                        "description": "Device-pixel coordinate read directly off the latest see screenshot (origin = top-left of the screenshot). Optional when axRef is supplied.",
                         "properties": {
                             "x": { "type": "number", "description": "Device-pixel X on the see image." },
                             "y": { "type": "number", "description": "Device-pixel Y on the see image." },
@@ -1765,7 +1800,37 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
                 ),
             ],
-            &["point", "captureId"],
+            &["captureId"],
+        ),
+        ("browser", "extract") => object_schema(
+            [
+                ("tabId", string("Lyra browser tab id.")),
+                (
+                    "targetMode",
+                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
+                ),
+                (
+                    "instruction",
+                    string("Natural language description of what to extract from the page."),
+                ),
+                (
+                    "schema",
+                    json!({
+                        "type": "object",
+                        "description": "JSON Schema the model should conform its extracted data to. Returned to the model as a hint (schemaHint) alongside the page text; the model emits JSON in its next reply.",
+                        "additionalProperties": true
+                    }),
+                ),
+                (
+                    "scope",
+                    json!({ "type": "string", "enum": ["viewport", "full"], "default": "viewport", "description": "Read only the visible viewport or the full page." }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
+                ),
+            ],
+            &["instruction", "schema"],
         ),
         ("browser", _) => object_schema(
             [
@@ -1945,6 +2010,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "timeoutMs",
                     json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
                 ),
+                (
+                    "intent",
+                    string("Optional natural-language description of this action; used for ActCache replay matching when ActCache is enabled in settings."),
+                ),
             ],
             &["axRef"],
         ),
@@ -2105,7 +2174,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "action",
-                    json!({ "type": "string", "enum": ["press", "focus", "setText", "toggle", "select", "scroll"], "default": "press" }),
+                    json!({ "type": "string", "enum": ["press", "focus", "setText", "typeText", "toggle", "select", "scroll", "pressKey", "secondaryAction", "drag"], "default": "press" }),
                 ),
                 (
                     "text",
@@ -2120,6 +2189,38 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 (
                     "mode",
                     json!({ "type": "string", "enum": ["shared", "background-semantic", "isolated-session"], "default": "shared", "description": "shared: user-visible, focus/raise allowed. background-semantic/isolated-session: true background, semantic actions only — focus/raise is refused." }),
+                ),
+                (
+                    "key",
+                    json!({ "type": "string", "description": "Key specification for pressKey (xdotool syntax, e.g. \"cmd+c\", \"shift+tab\", \"ctrl+a\"). Required when action is pressKey." }),
+                ),
+                (
+                    "actionName",
+                    json!({ "type": "string", "description": "Secondary accessibility action name for secondaryAction (e.g. \"AXShowMenu\", \"AXOpen\"). Required when action is secondaryAction." }),
+                ),
+                (
+                    "direction",
+                    json!({ "type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction. Used with action: scroll." }),
+                ),
+                (
+                    "pages",
+                    json!({ "type": "number", "minimum": 0.1, "description": "Scroll pages (fractional supported, e.g. 0.5). Used with action: scroll. Defaults to 1." }),
+                ),
+                (
+                    "fromX",
+                    json!({ "type": "number", "description": "Drag start X (screen-space pixels). Used with action: drag." }),
+                ),
+                (
+                    "fromY",
+                    json!({ "type": "number", "description": "Drag start Y (screen-space pixels). Used with action: drag." }),
+                ),
+                (
+                    "toX",
+                    json!({ "type": "number", "description": "Drag end X (screen-space pixels). Used with action: drag." }),
+                ),
+                (
+                    "toY",
+                    json!({ "type": "number", "description": "Drag end Y (screen-space pixels). Used with action: drag." }),
                 ),
             ],
             &["osRef"],

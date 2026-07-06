@@ -110,6 +110,8 @@ export const aiPanel = {
   "lyra-agents-composer.pause": "暂停",
   "lyra-agents-composer.followAgent": "跟随 Agent",
   "lyra-agents-composer.stopFollowingAgent": "停止跟随 Agent",
+  "lyra-agents-composer.actCache": "启用 ActCache 重放",
+  "lyra-agents-composer.actCacheOff": "关闭 ActCache 重放",
   "lyra-agents-composer.attach": "附件",
   "lyra-agents-composer.poke": "继续未完成事项",
   "lyra-agents-composer.openPlan": "规划",

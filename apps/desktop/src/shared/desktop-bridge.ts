@@ -128,6 +128,10 @@ import type { AgentApi } from "./agent";
 
 export type {
   AgentApi,
+  AgentActCacheSnapshot,
+  AgentActCacheUpdateRequest,
+  AgentCodeGraphEmbeddingSnapshot,
+  AgentCodeGraphEmbeddingUpdateRequest,
   AgentBrowserFollowModeSnapshot,
   AgentBrowserFollowModeUpdateRequest,
   AgentClarificationRespondRequest,
@@ -650,6 +654,10 @@ export const LYRA_CHANNELS = {
   agentImageAttachmentMaterialize: "lyra:agent/image-attachment/materialize",
   agentBrowserFollowRead: "lyra:agent/browser-follow/read",
   agentBrowserFollowUpdate: "lyra:agent/browser-follow/update",
+  agentActCacheRead: "lyra:agent/act-cache/read",
+  agentActCacheUpdate: "lyra:agent/act-cache/update",
+  agentCodeGraphEmbeddingRead: "lyra:agent/codegraph-embedding/read",
+  agentCodeGraphEmbeddingUpdate: "lyra:agent/codegraph-embedding/update",
   agentTurnStart: "lyra:agent/turn/start",
   agentTurnSend: "lyra:agent/turn/send",
   agentTurnResume: "lyra:agent/turn/resume",

@@ -37,6 +37,7 @@ import {
   revealPathInFolder
 } from "./editor-actions";
 import { createAgentIpcBridge } from "./agent";
+import { readActCacheEnabled } from "./agent/act-cache-toggle";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
 import { createDownloadManagerIpcBridge } from "./download-manager";
@@ -1160,7 +1161,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     accessibilityNative: accessibilityNativeLoadResult,
     workbenchState: workbenchStateBridge,
     performanceScheduler,
-    deferLayoutSync: deferWorkbenchBrowserLayoutSync
+    deferLayoutSync: deferWorkbenchBrowserLayoutSync,
+    getActCacheEnabled: readActCacheEnabled
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const uiuxPacksBridge = createUiuxPacksIpcBridge({

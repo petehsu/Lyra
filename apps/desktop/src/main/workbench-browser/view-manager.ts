@@ -66,7 +66,8 @@ export const createWorkbenchBrowserViewManager = ({
   osAxAdapter,
   workbenchState,
   onWebContentsCreated,
-  performanceScheduler
+  performanceScheduler,
+  getActCacheEnabled
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
@@ -77,6 +78,9 @@ export const createWorkbenchBrowserViewManager = ({
   };
   readonly onWebContentsCreated?: (tabId: string, webContents: WebContents) => () => void;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
+  // ActCache toggle (mirrors browserFollowMode). When true, the AX controller
+  // may replay cached axActOnNode results for repeatable NL→axRef mappings.
+  readonly getActCacheEnabled?: () => boolean;
 }): WorkbenchBrowserViewManager => {
   const liveElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION);
@@ -449,7 +453,8 @@ export const createWorkbenchBrowserViewManager = ({
     visualStaleResult,
     cssPointFromVisualFrame,
     readAgentViewportState,
-    readBrowserAgentShadow
+    readBrowserAgentShadow,
+    ...(getActCacheEnabled === undefined ? {} : { getActCacheEnabled })
   });
   const {
     actOnAgentElement,
@@ -461,6 +466,7 @@ export const createWorkbenchBrowserViewManager = ({
     axFocusAgentPage,
     axPressAgentKey,
     axExplainNode,
+    axResolveAxRefBbox,
     captureAgentPage,
     detectAgentPageQr,
     completeElevationSession,
@@ -693,6 +699,7 @@ export const createWorkbenchBrowserViewManager = ({
     axFocusAgentPage,
     axPressAgentKey,
     axExplainNode,
+    axResolveAxRefBbox,
     focusAgentPage,
     scrollAgentPage,
     typeIntoAgentElement,

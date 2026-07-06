@@ -17,6 +17,7 @@ import type {
   WorkbenchBrowserAxOsStatus,
   WorkbenchBrowserAxQueryMatch,
   WorkbenchBrowserAxQueryResult,
+  WorkbenchBrowserAxRefBboxResult,
   WorkbenchBrowserAxStrategy,
   WorkbenchBrowserDebuggerSession,
   WorkbenchBrowserOsAxAdapter,
@@ -31,6 +32,8 @@ import {
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAxSnapshotStore } from "./ax-snapshot-store";
 import { BROWSER_AX_SNAPSHOT_TTL_MS } from "./ax-snapshot-store";
+import type { BrowserAxActCache } from "./ax-act-cache";
+import { buildAxActCacheKey } from "./ax-act-cache";
 import {
   BROWSER_AX_ACTIONABLE_ROLES,
   BROWSER_AX_TEXT_ROLES,
@@ -90,6 +93,8 @@ type BrowserAxControllerDeps = Pick<
   ) => Promise<BrowserAgentSemanticFrameGraph>;
   readonly nextMapEpoch: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => number;
   readonly axSnapshotStore: BrowserAxSnapshotStore;
+  readonly axActCache: BrowserAxActCache;
+  readonly getActCacheEnabled?: () => boolean;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
 };
 
@@ -199,6 +204,8 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     buildSemanticFrameGraph,
     nextMapEpoch,
     axSnapshotStore,
+    axActCache,
+    getActCacheEnabled,
     osAxAdapter
   } = deps;
 
@@ -975,11 +982,35 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly authorized?: boolean;
+      readonly intent?: string;
     }
   ): Promise<WorkbenchBrowserAxActionResult> => {
     const interaction = normalizeAxInteraction(request.interaction);
     const resolution = axSnapshotStore.resolveAxRef(request.axRef);
     const targetMode = request.targetMode ?? "live";
+    // ActCache replay: when the toggle is on and an intent is supplied, look up
+    // a previously-recorded successful result for this (url, snapshot, axRef,
+    // interaction, intent) tuple. Hits are only possible within the same AX
+    // snapshot (snapshotHash is in the key), so the page state is identical to
+    // when the act was first verified — safe to replay the recorded outcome.
+    if (getActCacheEnabled !== undefined && getActCacheEnabled() && request.intent !== undefined && resolution.kind === "ok") {
+      const cacheKey = buildAxActCacheKey({
+        url: resolution.snapshot.url,
+        snapshotHash: resolution.snapshot.snapshotHash,
+        axRef: request.axRef,
+        interaction,
+        intent: request.intent
+      });
+      const lookup = axActCache.get(cacheKey);
+      if (lookup.hit && lookup.entry !== undefined) {
+        return {
+          ...lookup.entry.result,
+          cacheHit: true,
+          replayed: true,
+          nextRecommendedAction: "browser_ax.query"
+        };
+      }
+    }
     if (resolution.kind === "stale") {
       return {
         ok: false,
@@ -1306,7 +1337,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           };
         })();
 
-    return {
+    const result: WorkbenchBrowserAxActionResult = {
       ok: true,
       kind: "browserAxActionResult",
       tabId,
@@ -1324,6 +1355,34 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       pathTaken: "fast",
       nextRecommendedAction: navigationStarted || pageChanged ? "browser_ax.map" : "browser_ax.query"
     };
+    // Record successful acts into the ActCache when the toggle is on and an
+    // intent is supplied. The key folds snapshotHash so this entry is only
+    // replayable while the same AX snapshot is live.
+    if (getActCacheEnabled !== undefined && getActCacheEnabled() && request.intent !== undefined && !pageChanged && !navigationStarted) {
+      const cacheKey = buildAxActCacheKey({
+        url: resolution.kind === "ok" ? resolution.snapshot.url : "",
+        snapshotHash: resolution.kind === "ok" ? resolution.snapshot.snapshotHash : "",
+        axRef: request.axRef,
+        interaction,
+        intent: request.intent
+      });
+      if (cacheKey.length > 0 && resolution.kind === "ok") {
+        axActCache.set({
+          tabId,
+          targetMode: target.targetMode,
+          axRef: request.axRef,
+          interaction,
+          intent: request.intent,
+          snapshotHash: resolution.snapshot.snapshotHash,
+          url: resolution.snapshot.url,
+          result,
+          recordedAt: Date.now(),
+          ttlMs: BROWSER_AX_SNAPSHOT_TTL_MS
+        });
+        return { ...result, cacheMiss: true };
+      }
+    }
+    return result;
   };
 
   const axPressAgentKey = async (
@@ -1527,6 +1586,69 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     };
   };
 
+  // Resolve an axRef to its current bbox + snapshot metadata. Used by the
+  // lumen-tool-host to (a) annotate browser.see screenshots with AX-derived
+  // bounding boxes and (b) derive a device-pixel click point for browser.vact
+  // from an axRef, bridging the visual and semantic paths.
+  const axResolveAxRefBbox = async (
+    tabId: string,
+    request: {
+      readonly axRef: string;
+      readonly targetMode?: WorkbenchBrowserAgentTargetMode;
+    }
+  ): Promise<WorkbenchBrowserAxRefBboxResult> => {
+    const targetMode = request.targetMode ?? "live";
+    if (!request.axRef.startsWith("ax:")) {
+      return {
+        ok: false,
+        kind: "browserAxRefBbox",
+        tabId,
+        targetMode,
+        axRef: request.axRef,
+        error: { kind: "invalidAxRef", message: "axRef must start with 'ax:'." },
+        nextRecommendedAction: "browser_ax.map"
+      };
+    }
+    const resolution = axSnapshotStore.resolveAxRef(request.axRef);
+    if (resolution.kind === "stale") {
+      return {
+        ok: false,
+        kind: "browserAxRefBbox",
+        tabId,
+        targetMode,
+        axRef: request.axRef,
+        error: { kind: "staleAxRef", message: "AX snapshot is stale. Re-run browser_ax.map." },
+        nextRecommendedAction: "browser_ax.map"
+      };
+    }
+    if (resolution.kind === "unknownNode") {
+      return {
+        ok: false,
+        kind: "browserAxRefBbox",
+        tabId,
+        targetMode,
+        axRef: request.axRef,
+        error: { kind: "unknownAxRef", message: "axRef is not present in the latest AX snapshot." },
+        nextRecommendedAction: "browser_ax.map"
+      };
+    }
+    const { node, snapshot } = resolution;
+    return {
+      ok: true,
+      kind: "browserAxRefBbox",
+      tabId,
+      targetMode,
+      axRef: request.axRef,
+      role: node.role,
+      name: node.name,
+      ...(node.bounds === undefined ? {} : { bounds: node.bounds }),
+      ...(node.screenBounds === undefined ? {} : { screenBounds: node.screenBounds }),
+      snapshotId: snapshot.snapshotId,
+      snapshotHash: snapshot.snapshotHash,
+      url: snapshot.url
+    };
+  };
+
   const dispose = (): void => {
     // Snapshot store lifecycle is owned by the controller; nothing else to clean up here.
   };
@@ -1538,6 +1660,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     axFocusAgentPage,
     axPressAgentKey,
     axExplainNode,
+    axResolveAxRefBbox,
     dispose
   };
 };

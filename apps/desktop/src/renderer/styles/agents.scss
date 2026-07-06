@@ -207,7 +207,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--lyra-space-10);
-  height: var(--lyra-control-h-40);
+  height: var(--lyra-control-h-34);
   background: var(--lyra-app-material-toolbar-bg);
   -webkit-backdrop-filter: var(--lyra-app-material-blur-sm) var(--lyra-app-material-saturate);
   backdrop-filter: var(--lyra-app-material-blur-sm) var(--lyra-app-material-saturate);
@@ -223,8 +223,8 @@
   --lyra-agents-session-tab-hover-bg: var(--lyra-app-row-hover-bg);
   --lyra-agents-session-tab-active-bg: var(--lyra-app-row-active-bg);
   --lyra-agents-session-tab-border: color-mix(in srgb, var(--lyra-app-border) 72%, transparent);
-  --lyra-agents-session-header-h: var(--lyra-control-h-40);
-  --lyra-agents-session-tab-h: var(--lyra-control-h-30);
+  --lyra-agents-session-header-h: var(--lyra-control-h-34);
+  --lyra-agents-session-tab-h: var(--lyra-control-h-28);
   --lyra-agents-session-tab-y:
     calc((var(--lyra-agents-session-header-h) - var(--lyra-agents-session-tab-h)) / 2);
   --lyra-agents-session-tab-radius: var(--lyra-radius-8);
@@ -5043,7 +5043,7 @@
   flex-direction: column;
   width: 100%;
   gap: 0;
-  background: var(--lyra-app-surface-strong-bg);
+  background: var(--lyra-app-surface-bg);
   border: var(--lyra-stroke-thin) solid var(--lyra-app-input-border);
   border-radius: var(--lyra-radius-12);
   padding: var(--lyra-space-8) var(--lyra-space-10) var(--lyra-space-8);
@@ -5067,7 +5067,7 @@
 }
 
 .lyra-agents-composer:focus-within {
-  background: var(--lyra-app-surface-strong-bg);
+  background: var(--lyra-app-surface-bg);
   border-color: color-mix(
     in srgb,
     var(--lyra-app-input-focus-border) 56%,
@@ -5079,7 +5079,7 @@
   width: 100%;
   flex: none;
   resize: none;
-  background: transparent;
+  background: var(--lyra-app-input-bg);
   color: var(--lyra-text-primary);
   border: 0;
   border-radius: var(--lyra-radius-8);
@@ -5098,13 +5098,13 @@
 }
 
 .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:focus-visible {
-  background: transparent;
+  background: var(--lyra-app-input-focus-bg);
   border: 0;
   box-shadow: none;
 }
 
 .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:hover:not(:disabled) {
-  background: transparent;
+  background: var(--lyra-app-input-hover-bg);
   border: 0;
 }
 
@@ -5125,7 +5125,7 @@
 .lyra-agents-composer > .lyra-agents-citation-composer-input.lyra-agents-composer-input {
   width: 100%;
   flex: none;
-  background: transparent;
+  background: var(--lyra-app-input-bg);
   color: var(--lyra-text-primary);
   border: 0;
   border-radius: var(--lyra-radius-8);
@@ -5153,6 +5153,7 @@
 
 .lyra-agents-citation-composer-input:focus-visible {
   outline: none;
+  background: var(--lyra-app-input-focus-bg);
 }
 
 .lyra-agents-citation-composer-input[data-drop-active="true"] {
@@ -5492,8 +5493,13 @@
   align-items: center;
   gap: var(--lyra-agents-composer-toolbar-gap);
   margin-top: var(--lyra-space-6);
-  min-height: var(--lyra-agents-composer-toolbar-control-size);
+  padding: var(--lyra-space-4);
+  height: var(--lyra-shell-titlebar-nav-h);
+  min-height: var(--lyra-shell-titlebar-nav-h);
   min-width: 0;
+  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
+  border-radius: var(--lyra-radius-8);
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 72%, var(--lyra-app-surface-bg));
 }
 
 .lyra-agents-composer-model-controls {
@@ -5705,15 +5711,6 @@
 
 .lyra-app-model-menu-group-header:hover .lyra-app-model-menu-group-label {
   color: var(--lyra-text-secondary);
-}
-
-.lyra-app-model-menu-group-chevron {
-  flex: 0 0 auto;
-  transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-.lyra-app-model-menu-group-chevron[data-collapsed="true"] {
-  transform: rotate(-90deg);
 }
 
 .lyra-agents-composer-action {
@@ -6125,8 +6122,12 @@
   }
 
   .lyra-agents-session-tabs-header {
+    --lyra-agents-session-header-h: var(--lyra-control-h-34);
+    --lyra-agents-session-tab-h: var(--lyra-control-h-28);
     grid-template-columns: minmax(0, 1fr) var(--lyra-unit-80);
     column-gap: var(--lyra-unit-4);
+    height: var(--lyra-agents-session-header-h);
+    min-height: var(--lyra-agents-session-header-h);
     padding-right: var(--lyra-unit-4);
   }
 

@@ -1,0 +1,57 @@
+{# P6 dynamic: CodeGraph intent-driven fragments. Rendered alongside
+   codegraph_fragments.md.j2 when intent queries produce results (impact,
+   tests, cycles, dead imports, hot paths, patterns, file symbols, memory).
+   Uses `is defined` guards for Strict-undefined safety. Empty arrays
+   produce no output (the section is skipped in render_prompt_sections). #}
+{% if codegraph_signals.impactAnalysis is defined and codegraph_signals.impactAnalysis -%}
+<CodeGraph impact analysis for "{{ codegraph_signals.impactAnalysis.symbol }}" (changeType: modify):
+- Risk level: {{ codegraph_signals.impactAnalysis.riskLevel }}
+- Direct impacts: {{ codegraph_signals.impactAnalysis.directImpacted }}, indirect: {{ codegraph_signals.impactAnalysis.indirectImpacted }}
+- Files affected: {{ codegraph_signals.impactAnalysis.filesAffected }}
+{%- if codegraph_signals.impactAnalysis.topCallers is defined and codegraph_signals.impactAnalysis.topCallers|length > 0 %}
+- Top callers to review: {% for c in codegraph_signals.impactAnalysis.topCallers %}{{ c.name }}{% if c.file %} ({{ c.file }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+{%- endif %}
+{% endif -%}
+{% if codegraph_signals.relatedTests is defined and codegraph_signals.relatedTests|length > 0 -%}
+<CodeGraph related tests (run these before/after editing):
+{% for t in codegraph_signals.relatedTests -%}
+- {{ t.name }} ({{ t.file }}) — {{ t.relationship }}
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.circularDeps is defined and codegraph_signals.circularDeps|length > 0 -%}
+<CodeGraph circular dependencies detected:
+{% for c in codegraph_signals.circularDeps -%}
+- Cycle (length {{ c.length }}): {{ c.files|join(" -> ") }}
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.deadImports is defined and codegraph_signals.deadImports|length > 0 -%}
+<CodeGraph dead imports in mentioned files:
+{% for d in codegraph_signals.deadImports -%}
+- {{ d.file }}: {{ d.importedModule }}{% if d.line %}:{{ d.line }}{% endif %}
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.hotPaths is defined and codegraph_signals.hotPaths|length > 0 -%}
+<CodeGraph hot paths (high caller score — optimize carefully):
+{% for h in codegraph_signals.hotPaths -%}
+- {{ h.name }} ({{ h.file }}) score={{ h.score }}, direct callers={{ h.directCallers }}
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.patternMatches is defined and codegraph_signals.patternMatches|length > 0 -%}
+<CodeGraph error-handling patterns in mentioned files:
+{% for p in codegraph_signals.patternMatches -%}
+- {{ p.name }} ({{ p.kind }}, {{ p.file }}:{{ p.line }}) {{ p.matchedIn }}
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.fileSymbols is defined and codegraph_signals.fileSymbols|length > 0 -%}
+<CodeGraph top-level symbols in mentioned files:
+{% for s in codegraph_signals.fileSymbols -%}
+- {{ s.name }} ({{ s.kind }}, {{ s.file }}:{{ s.line }}, {{ s.visibility }})
+{% endfor -%}
+{% endif -%}
+{% if codegraph_signals.memoryHits is defined and codegraph_signals.memoryHits|length > 0 -%}
+<CodeGraph memory (prior debug notes / decisions — verify before relying):
+{% for m in codegraph_signals.memoryHits -%}
+- [{{ m.kind }}] {{ m.title }} (score={{ m.score }})
+  {{ m.content }}
+{% endfor -%}
+{% endif -%}

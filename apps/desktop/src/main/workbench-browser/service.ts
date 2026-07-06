@@ -322,6 +322,7 @@ export type WorkbenchBrowserIpcBridge = {
   readonly axFocusAgentPage: WorkbenchBrowserViewManager["axFocusAgentPage"];
   readonly axPressAgentKey: WorkbenchBrowserViewManager["axPressAgentKey"];
   readonly axExplainNode: WorkbenchBrowserViewManager["axExplainNode"];
+  readonly axResolveAxRefBbox: WorkbenchBrowserViewManager["axResolveAxRefBbox"];
   readonly navigateAgentPage: WorkbenchBrowserViewManager["navigateAgentPage"];
   readonly reloadAgentPage: WorkbenchBrowserViewManager["reloadAgentPage"];
   readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
@@ -344,7 +345,8 @@ export const createWorkbenchBrowserIpcBridge = ({
   accessibilityNative,
   workbenchState,
   performanceScheduler,
-  deferLayoutSync
+  deferLayoutSync,
+  getActCacheEnabled
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
@@ -353,6 +355,9 @@ export const createWorkbenchBrowserIpcBridge = ({
   readonly workbenchState?: Pick<WorkbenchStateIpcBridge, "readState" | "writeState">;
   readonly performanceScheduler?: LyraPerformanceResourceScheduler;
   readonly deferLayoutSync?: (flush: () => void) => boolean;
+  // ActCache toggle (mirrors browserFollowMode). Forwarded to the view manager
+  // and on to the AX controller so it can replay cached axActOnNode results.
+  readonly getActCacheEnabled?: () => boolean;
 }): WorkbenchBrowserIpcBridge => {
   registerBrowserPageFramePreload();
   const osAxAdapter = createOsAxAdapter(accessibilityNative);
@@ -362,6 +367,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     ...(osAxAdapter === undefined ? {} : { osAxAdapter }),
     ...(workbenchState === undefined ? {} : { workbenchState }),
     ...(performanceScheduler === undefined ? {} : { performanceScheduler }),
+    ...(getActCacheEnabled === undefined ? {} : { getActCacheEnabled }),
     ...(
       downloadManager === undefined && loginManager === undefined
         ? {}
@@ -623,6 +629,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     axFocusAgentPage: manager.axFocusAgentPage,
     axPressAgentKey: manager.axPressAgentKey,
     axExplainNode: manager.axExplainNode,
+    axResolveAxRefBbox: manager.axResolveAxRefBbox,
     actOnAgentElement: manager.actOnAgentElement,
     planAgentPage: manager.planAgentPage,
     replayWorkflowOnPage: manager.replayWorkflowOnPage,

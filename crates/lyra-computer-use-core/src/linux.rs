@@ -33,9 +33,9 @@ use atspi::State;
 
 use crate::backend::ComputerBackend;
 use crate::model::{
-    BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest, ComputerNode,
-    ComputerNodeSource, ComputerNodeState, ComputerObserveResult, ComputerWindowEntry,
-    ListAppsRequest, MapRequest, MapStrategy, Platform,
+    ActRequest, BackendError, ComputerAction, ComputerAppEntry, ComputerFocusRequest,
+    ComputerNode, ComputerNodeSource, ComputerNodeState, ComputerObserveResult,
+    ComputerWindowEntry, ListAppsRequest, MapRequest, MapStrategy, Platform,
 };
 
 /// Maps an AT-SPI role to our normalized role vocabulary (shared with the macOS
@@ -471,13 +471,8 @@ impl ComputerBackend for LinuxBackend {
         })
     }
 
-    fn act(
-        &self,
-        os_ref: &str,
-        action: ComputerAction,
-        text: Option<&str>,
-    ) -> Result<(), BackendError> {
-        let Some(os_path) = os_path_from_ref(os_ref) else {
+    fn act(&self, request: &ActRequest) -> Result<(), BackendError> {
+        let Some(os_path) = os_path_from_ref(&request.os_ref) else {
             return Err(BackendError::new(
                 "invalidOsRef",
                 "Computer osRef must use the atspi: scheme on Linux.",
@@ -493,13 +488,25 @@ impl ComputerBackend for LinuxBackend {
                         "Computer osRef is no longer present in the accessibility tree.",
                     )
                 })?;
-            match action {
-                ComputerAction::SetText => do_set_text(&proxy, text.unwrap_or_default()).await,
+            match request.action {
+                ComputerAction::SetText => {
+                    do_set_text(&proxy, request.text.as_deref().unwrap_or_default()).await
+                }
                 ComputerAction::Focus => {
                     // grab_focus lives on the Component interface; activation via
                     // Action is the portable path, so fall back to it.
                     do_activation(&proxy).await
                 }
+                // typeText / pressKey / secondaryAction / drag require
+                // keyboard-event or coordinate synthesis not yet wired through
+                // AT-SPI. Return structured unsupported.
+                ComputerAction::TypeText
+                | ComputerAction::PressKey
+                | ComputerAction::SecondaryAction
+                | ComputerAction::Drag => Err(BackendError::unsupported(format!(
+                    "Action {:?} is not yet implemented on the Linux AT-SPI backend.",
+                    request.action.as_str()
+                ))),
                 // Press / Toggle / Select / Scroll all route through the Action
                 // interface in AT-SPI: the object exposes the relevant verb.
                 _ => do_activation(&proxy).await,
