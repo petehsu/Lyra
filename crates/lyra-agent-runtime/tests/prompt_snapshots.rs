@@ -11,6 +11,13 @@ fn persona() -> PersonaContext {
         location_label: Some("Shanghai, China".to_string()),
         device_summary: Some("macOS arm64 · Lyra test fixture".to_string()),
         user_name: Some("petehsu".to_string()),
+        current_epoch_ms: Some(1750966200000),
+        timezone: Some("Asia/Shanghai".to_string()),
+        timezone_offset_minutes: Some(480),
+        screen_width: Some(2560),
+        screen_height: Some(1600),
+        screen_scale_factor: Some(2.0),
+        screen_display_count: Some(1),
     }
 }
 
@@ -57,6 +64,22 @@ fn runtime_context(scene: &str) -> Value {
                     "summary": "Prompt prose should live in prompt templates, not Rust helper strings."
                 }
             ]
+        },
+        "spatiotemporal": {
+            "session": {
+                "startedAt": "2026-06-22T09:10:00Z",
+                "ageSeconds": 1200,
+                "turnCount": 5,
+                "secondsSinceLastInteraction": 3
+            },
+            "workspace": {
+                "windowWidth": 1440,
+                "windowHeight": 900,
+                "layoutMode": "single",
+                "paneCount": 1,
+                "activeTabTitle": "Lyra · workbench",
+                "activeTabKind": "page"
+            }
         }
     })
 }

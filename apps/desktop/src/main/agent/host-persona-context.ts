@@ -1,15 +1,26 @@
-import { app } from "electron";
+import { app, screen } from "electron";
 import * as os from "node:os";
 
 import type { AppMetaPayload } from "../../shared/desktop-bridge";
 import { resolveCurrentDesktopTarget } from "../platform-target";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 
+export type HostPersonaScreenInfo = {
+  readonly width: number;
+  readonly height: number;
+  readonly scaleFactor: number;
+  readonly displayCount: number;
+};
+
 export type HostPersonaContextPayload = {
   readonly currentTime?: string;
+  readonly currentEpochMs?: number;
+  readonly timezone?: string;
+  readonly timezoneOffsetMinutes?: number;
   readonly locationLabel?: string;
   readonly deviceSummary?: string;
   readonly userName?: string;
+  readonly screen?: HostPersonaScreenInfo;
 };
 
 const readString = (value: unknown): string | undefined => {
@@ -118,6 +129,43 @@ const readLocationLabel = (
   }
 };
 
+const readScreenInfo = (): HostPersonaScreenInfo | undefined => {
+  try {
+    const primary = screen.getPrimaryDisplay();
+    const displays = screen.getAllDisplays();
+    return {
+      width: primary.size.width,
+      height: primary.size.height,
+      scaleFactor: primary.scaleFactor,
+      displayCount: displays.length
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+const readTimezoneInfo = (): {
+  readonly timezone?: string;
+  readonly offsetMinutes?: number;
+  readonly epochMs?: number;
+} => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz === undefined || tz.trim().length === 0) {
+      return {};
+    }
+    const now = new Date();
+    const offsetMinutes = -now.getTimezoneOffset();
+    return {
+      timezone: tz,
+      offsetMinutes,
+      epochMs: now.getTime()
+    };
+  } catch {
+    return {};
+  }
+};
+
 export const readHostPersonaContextPayload = (
   workbenchState: WorkbenchStateIpcBridge
 ): HostPersonaContextPayload => {
@@ -125,11 +173,19 @@ export const readHostPersonaContextPayload = (
   const currentTime = formatCurrentTime(meta.locale, meta.timeZone);
   const locationLabel = readLocationLabel(workbenchState);
   const deviceSummary = formatDeviceSummary(meta);
+  const tzInfo = readTimezoneInfo();
+  const screenInfo = readScreenInfo();
   return {
     ...(currentTime === undefined ? {} : { currentTime }),
+    ...(tzInfo.epochMs === undefined ? {} : { currentEpochMs: tzInfo.epochMs }),
+    ...(tzInfo.timezone === undefined ? {} : { timezone: tzInfo.timezone }),
+    ...(tzInfo.offsetMinutes === undefined
+      ? {}
+      : { timezoneOffsetMinutes: tzInfo.offsetMinutes }),
     ...(locationLabel === undefined ? {} : { locationLabel }),
     ...(deviceSummary === undefined ? {} : { deviceSummary }),
-    ...(meta.userName === undefined ? {} : { userName: meta.userName })
+    ...(meta.userName === undefined ? {} : { userName: meta.userName }),
+    ...(screenInfo === undefined ? {} : { screen: screenInfo })
   };
 };
 

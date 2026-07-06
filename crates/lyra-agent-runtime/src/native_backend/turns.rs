@@ -291,6 +291,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         previous_context_trimmed,
         configured_prompt_delivery_mode,
         configured_stateful_prompt_contract,
+        session_created_at,
+        turn_count,
     ) = {
         let state = state()
             .lock()
@@ -321,6 +323,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             previous_runtime_contract,
             previous_prompt_hash,
             previous_context_trimmed,
+            session_created_at,
+            turn_count,
         ) = {
             let session = state.sessions.get(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
@@ -368,6 +372,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 previous_runtime_contract,
                 previous_prompt_hash,
                 previous_context_trimmed,
+                session.created_at.clone(),
+                session.runtime_turns.len() as u64,
             )
         };
         let active_turn_id = state
@@ -402,6 +408,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             previous_context_trimmed,
             state.config.prompt_delivery_mode.clone(),
             state.config.openai_responses_stateful_prompt_contract,
+            session_created_at,
+            turn_count,
         )
     };
     let provider = providers::transport::auth::provider_with_resolved_api_key(
@@ -606,6 +614,39 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     } else {
         Vec::new()
     });
+    // Spatiotemporal awareness: inject session time + workspace layout so the
+    // agent has a coherent sense of "how long I've been here" and "what's on
+    // screen right now". Session age is derived from the session's created_at
+    // timestamp; workspace layout comes from the host capability.
+    {
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let session_age_seconds = (now_ms - super::helpers::iso_ms(&session_created_at)).max(0) as u64 / 1000;
+        let seconds_since_last_interaction = session_messages
+            .iter()
+            .rev()
+            .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+            .and_then(|m| m.get("createdAt").and_then(Value::as_str))
+            .map(|t| ((now_ms - super::helpers::iso_ms(t)).max(0) as u64 / 1000))
+            .unwrap_or(0);
+        let workspace = if let Some(ref dispatcher) = host_dispatcher {
+            super::activity::invoke_host_capability(
+                dispatcher,
+                "agent.readSpatiotemporalContext",
+                json!({}),
+            ).unwrap_or_else(|_| json!({}))
+        } else {
+            json!({})
+        };
+        runtime_context["spatiotemporal"] = json!({
+            "session": {
+                "startedAt": session_created_at,
+                "ageSeconds": session_age_seconds,
+                "turnCount": turn_count,
+                "secondsSinceLastInteraction": seconds_since_last_interaction,
+            },
+            "workspace": workspace,
+        });
+    }
     let persona_context = read_host_persona_context(host_dispatcher.as_ref());
     let prompt_report = build_system_prompt_report(
         &runtime_context,

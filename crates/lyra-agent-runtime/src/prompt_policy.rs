@@ -127,12 +127,26 @@ pub struct PromptAccounting {
     pub artifact_budget: usize,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PersonaContext {
     pub current_time: Option<String>,
     pub location_label: Option<String>,
     pub device_summary: Option<String>,
     pub user_name: Option<String>,
+    /// Precise Unix epoch milliseconds — enables elapsed-time arithmetic.
+    pub current_epoch_ms: Option<u64>,
+    /// IANA timezone label, e.g. "Asia/Shanghai".
+    pub timezone: Option<String>,
+    /// Offset from UTC in minutes, e.g. +480 for UTC+8.
+    pub timezone_offset_minutes: Option<i32>,
+    /// Primary display pixel width.
+    pub screen_width: Option<u32>,
+    /// Primary display pixel height.
+    pub screen_height: Option<u32>,
+    /// Display density (Retina = 2.0).
+    pub screen_scale_factor: Option<f64>,
+    /// Number of physical displays attached.
+    pub screen_display_count: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -162,11 +176,25 @@ pub fn persona_context_from_value(value: &Value) -> PersonaContext {
             .filter(|text| !text.is_empty())
             .map(str::to_string)
     };
+    let read_u64 = |key: &str| -> Option<u64> {
+        value.get(key).and_then(Value::as_u64)
+    };
+    let read_i32 = |key: &str| -> Option<i32> {
+        value.get(key).and_then(Value::as_i64).map(|n| n as i32)
+    };
+    let screen = value.get("screen");
     PersonaContext {
         current_time: read_string("currentTime"),
         location_label: read_string("locationLabel"),
         device_summary: read_string("deviceSummary"),
         user_name: read_string("userName"),
+        current_epoch_ms: read_u64("currentEpochMs"),
+        timezone: read_string("timezone"),
+        timezone_offset_minutes: read_i32("timezoneOffsetMinutes"),
+        screen_width: screen.and_then(|s| s.get("width")).and_then(Value::as_u64).map(|n| n as u32),
+        screen_height: screen.and_then(|s| s.get("height")).and_then(Value::as_u64).map(|n| n as u32),
+        screen_scale_factor: screen.and_then(|s| s.get("scaleFactor")).and_then(Value::as_f64),
+        screen_display_count: screen.and_then(|s| s.get("displayCount")).and_then(Value::as_u64).map(|n| n as u32),
     }
 }
 
@@ -358,6 +386,116 @@ impl PromptSectionCandidate {
     }
 }
 
+/// Build a first-person spatiotemporal awareness brief for the kernel (P0).
+///
+/// Composes a natural-language paragraph that anchors the agent in a concrete
+/// time-space coordinate: wall-clock time + timezone, session duration + turn
+/// count, screen geometry, and workspace layout (active app/tab, pane count).
+/// Degrades gracefully — if a datum is missing the corresponding clause is
+/// omitted, and if ALL data is missing the function returns `None`.
+fn build_spatiotemporal_brief(
+    persona: &PersonaContext,
+    runtime_context: &Value,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+
+    // ── Time ──
+    if let Some(ref t) = persona.current_time {
+        let mut clause = format!("It is {t}");
+        if let Some(ref tz) = persona.timezone {
+            clause.push_str(&format!(" ({tz}"));
+            if let Some(offset) = persona.timezone_offset_minutes {
+                let sign = if offset >= 0 { "+" } else { "-" };
+                let hours = (offset.abs() / 60).abs();
+                let mins = (offset.abs() % 60).abs();
+                clause.push_str(&format!(", UTC{sign}{hours:02}:{mins:02}"));
+            }
+            clause.push(')');
+        }
+        clause.push('.');
+        parts.push(clause);
+    }
+
+    // ── Session temporal ──
+    if let Some(st) = runtime_context.get("spatiotemporal").and_then(|s| s.get("session")) {
+        let mut session_parts: Vec<String> = Vec::new();
+        if let Some(age) = st.get("ageSeconds").and_then(Value::as_u64) {
+            let mins = age / 60;
+            let secs = age % 60;
+            if mins > 0 {
+                session_parts.push(format!("{mins} min {secs} sec"));
+            } else {
+                session_parts.push(format!("{secs} sec"));
+            }
+        }
+        if let Some(turns) = st.get("turnCount").and_then(Value::as_u64) {
+            session_parts.push(format!("{turns} turn{}", if turns == 1 { "" } else { "s" }));
+        }
+        if !session_parts.is_empty() {
+            parts.push(format!("This session has been going for {}", session_parts.join(", ")));
+        }
+        if let Some(idle) = st.get("secondsSinceLastInteraction").and_then(Value::as_u64) {
+            if idle > 0 {
+                parts.push(format!("{idle} sec since the member's last message."));
+            }
+        }
+    }
+
+    // ── Screen / device ──
+    let mut screen_clause = String::new();
+    if let (Some(w), Some(h)) = (persona.screen_width, persona.screen_height) {
+        screen_clause.push_str(&format!("Screen is {w}×{h} px"));
+        if let Some(sf) = persona.screen_scale_factor {
+            if sf > 1.0 {
+                screen_clause.push_str(&format!(" @{sf}x"));
+            }
+        }
+        if let Some(count) = persona.screen_display_count {
+            if count > 1 {
+                screen_clause.push_str(&format!(" ({count} monitors)"));
+            }
+        }
+        screen_clause.push('.');
+        parts.push(screen_clause);
+    }
+
+    // ── Workspace spatial ──
+    if let Some(ws) = runtime_context.get("spatiotemporal").and_then(|s| s.get("workspace")) {
+        let mut ws_parts: Vec<String> = Vec::new();
+        if let Some(app) = ws.get("foregroundApp").and_then(Value::as_str) {
+            ws_parts.push(format!("member is in {app}"));
+        }
+        if let Some(win) = ws.get("focusedWindow").and_then(Value::as_str) {
+            ws_parts.push(format!("looking at \"{win}\""));
+        }
+        if let Some(title) = ws.get("activeTabTitle").and_then(Value::as_str) {
+            ws_parts.push(format!("active tab \"{title}\""));
+        }
+        if let Some(addr) = ws.get("activeTabAddress").and_then(Value::as_str) {
+            ws_parts.push(format!("at {addr}"));
+        }
+        if let Some(panes) = ws.get("paneCount").and_then(Value::as_u64) {
+            if panes > 1 {
+                ws_parts.push(format!("{panes} panes"));
+            }
+        }
+        if let Some(mode) = ws.get("layoutMode").and_then(Value::as_str) {
+            if mode == "split" {
+                ws_parts.push("split view".to_string());
+            }
+        }
+        if !ws_parts.is_empty() {
+            parts.push(format!("Workspace: {}.", ws_parts.join("; ")));
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
 fn render_prompt_sections(
     input: &PromptPolicyInput,
     runtime_context: &Value,
@@ -365,6 +503,8 @@ fn render_prompt_sections(
     let active_skill_prompt = input.active_skill_prompt.trim();
     let memory_prompt = input.memory_prompt.trim();
     let scenes = select_scene_modules(input, runtime_context, active_skill_prompt);
+
+    let spatiotemporal_brief = build_spatiotemporal_brief(&input.persona, runtime_context);
 
     let mut sections = vec![
         PromptSectionCandidate {
@@ -382,6 +522,7 @@ fn render_prompt_sections(
                     "location_label": input.persona.location_label.as_deref(),
                     "device_summary": input.persona.device_summary.as_deref(),
                     "user_name": input.persona.user_name.as_deref(),
+                    "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
                 }),
             ),
         },

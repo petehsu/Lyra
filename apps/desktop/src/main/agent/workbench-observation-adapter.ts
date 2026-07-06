@@ -466,6 +466,50 @@ export const createWorkbenchObservationAdapter = ({
       return await browser.clearSiteData(
         normalizePayload(payload) as WorkbenchBrowserClearSiteDataRequest
       );
+    },
+    "agent.readSpatiotemporalContext": async () => {
+      const service = getWorkbenchObservationService();
+      const win = getWindow();
+      const result: {
+        readonly windowWidth?: number;
+        readonly windowHeight?: number;
+        readonly layoutMode?: string;
+        readonly paneCount?: number;
+        readonly activeTabTitle?: string;
+        readonly activeTabAddress?: string;
+        readonly activeTabKind?: string;
+        readonly visibleTabCount?: number;
+      } = {};
+      // Window dimensions
+      if (win !== null) {
+        try {
+          const bounds = win.getContentBounds();
+          result.windowWidth = bounds.width;
+          result.windowHeight = bounds.height;
+        } catch {
+          // ignore
+        }
+      }
+      // Workspace layout + active tab
+      if (service !== null) {
+        try {
+          const listed = await service.listTabs({ scope: "all", includeUnsupported: true });
+          result.layoutMode = listed.layout?.layoutMode ?? "single";
+          result.paneCount = listed.visibleTabIds.length;
+          result.visibleTabCount = listed.tabs.length;
+          const activeTab = findActiveWorkbenchTab(listed.tabs, listed.activeTabId);
+          if (activeTab !== null) {
+            result.activeTabTitle = activeTab.title;
+            result.activeTabKind = activeTab.observationKind ?? activeTab.pageKind;
+            if (activeTab.displayAddress !== undefined) {
+              result.activeTabAddress = activeTab.displayAddress;
+            }
+          }
+        } catch {
+          // ignore — degrade to window-only
+        }
+      }
+      return result;
     }
   };
 
