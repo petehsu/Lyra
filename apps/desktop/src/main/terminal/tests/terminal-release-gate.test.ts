@@ -114,7 +114,6 @@ describe("terminal release gate IPC bridge", () => {
     const root = await createRoot();
     const request = vi.fn(async (method: string) => {
       if (method === "terminal.sessions.create") return snapshot;
-      if (method === "terminal.sessions.restore") return [snapshot];
       if (
         method === "terminal.sessions.write" ||
         method === "terminal.sessions.resize" ||
@@ -132,28 +131,10 @@ describe("terminal release gate IPC bridge", () => {
 
     const cases: Array<readonly [string, string, Record<string, unknown>]> = [
       [LYRA_CHANNELS.terminalReadSession, "terminal.sessions.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalReadMemoryTimeline, "terminal.memory.readTimeline", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalReadEvents, "terminal.events.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalReadCommands, "terminal.commands.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalReadOutputRange, "terminal.output.readRange", { sessionId: "terminal-session-1", start: 0, end: 10 }],
-      [LYRA_CHANNELS.terminalListArtifacts, "terminal.artifacts.list", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalReadScreen, "terminal.screen.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalWaitUntil, "terminal.waitUntil", { sessionId: "terminal-session-1", target: "output" }],
-      [LYRA_CHANNELS.terminalInputExecute, "terminal.input.execute", { sessionId: "terminal-session-1", action: "runCommand" }],
       [LYRA_CHANNELS.terminalPermissionsEvaluate, "terminal.permissions.evaluate", { sessionId: "terminal-session-1" }],
       [LYRA_CHANNELS.terminalPermissionsRespond, "terminal.permissions.respond", { sessionId: "terminal-session-1" }],
       [LYRA_CHANNELS.terminalProcessesRead, "terminal.processes.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalProcessesSignal, "terminal.processes.signal", { sessionId: "terminal-session-1", signal: "SIGTERM" }],
-      [LYRA_CHANNELS.terminalCommandStatus, "terminal.command.status", { sessionId: "terminal-session-1", commandId: "command-1" }],
-      [LYRA_CHANNELS.terminalCommandWait, "terminal.command.wait", { sessionId: "terminal-session-1", commandId: "command-1" }],
-      [LYRA_CHANNELS.terminalCommandReadOutput, "terminal.command.readOutput", { sessionId: "terminal-session-1", commandId: "command-1" }],
-      [LYRA_CHANNELS.terminalMapRead, "terminal.map.read", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalActExecute, "terminal.act.execute", { sessionId: "terminal-session-1", action: "confirm" }],
-      [LYRA_CHANNELS.terminalAttachmentsAttach, "terminal.attachments.attach", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalAttachmentsDetach, "terminal.attachments.detach", { sessionId: "terminal-session-1", attachmentId: "attachment-1" }],
-      [LYRA_CHANNELS.terminalAttachmentsList, "terminal.attachments.list", { sessionId: "terminal-session-1" }],
-      [LYRA_CHANNELS.terminalAttachmentsPause, "terminal.attachments.pause", { sessionId: "terminal-session-1", attachmentId: "attachment-1" }],
-      [LYRA_CHANNELS.terminalAttachmentsResume, "terminal.attachments.resume", { sessionId: "terminal-session-1", attachmentId: "attachment-1" }]
+      [LYRA_CHANNELS.terminalProcessesSignal, "terminal.processes.signal", { sessionId: "terminal-session-1", signal: "SIGTERM" }]
     ];
 
     for (const [channel, method, payload] of cases) {
@@ -332,7 +313,6 @@ describe("terminal release gate IPC bridge", () => {
     const root = await createRoot();
     const request = vi.fn(async (method: string) => {
       if (method === "terminal.sessions.create") return snapshot;
-      if (method === "terminal.sessions.restore") return [snapshot];
       return undefined;
     });
     const bridge = createTerminalIpcBridge(
@@ -363,29 +343,6 @@ describe("terminal release gate IPC bridge", () => {
       expect.anything()
     );
 
-    await expect(bridge.restoreSessions({
-      sessions: [{
-        sessionId: "terminal-session-1",
-        cols: 80,
-        rows: 24,
-        source: "user",
-        mode: "shell"
-      }]
-    })).resolves.toEqual([snapshot]);
-    expect(request).toHaveBeenCalledWith(
-      "terminal.sessions.restore",
-      expect.objectContaining({
-        sessions: [
-          expect.objectContaining({
-            sessionId: "terminal-session-1",
-            source: "user",
-            mode: "shell",
-            storageRoot: root
-          })
-        ]
-      })
-    );
-
     bridge.dispose();
   });
 
@@ -399,7 +356,7 @@ describe("terminal release gate IPC bridge", () => {
       () => null
     );
 
-    await expect(bridge.readScreen({ sessionId: "terminal-session-1" }))
+    await expect(bridge.readObservation({ sessionId: "terminal-session-1" }))
       .rejects
       .toThrow("Runtime unavailable");
     bridge.dispose();

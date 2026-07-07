@@ -326,7 +326,7 @@ url = "2"
 urlencoding = "2.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 v8 = "=146.4.0"
-vt100 = "0.16.2"
+vte = "0.13"
 walkdir = "2.5.0"
 webbrowser = "1.0"
 which = "8"

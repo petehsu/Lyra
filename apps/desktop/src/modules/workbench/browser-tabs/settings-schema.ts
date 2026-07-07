@@ -39,6 +39,8 @@ export type SettingsFieldId =
   | "aiModels"
   | "aiSkills"
   | "aiMcp"
+  | "actCache"
+  | "codeGraphEmbedding"
   | "aiProviderSettings"
   | "legalNotices";
 
@@ -83,6 +85,7 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "loginManagerCategoryLabel"
   | "softwareStoreCategoryLabel"
   | "linuxCategoryLabel"
+  | "experimentalCategoryLabel"
   | "legalCategoryLabel"
   | "languageLabel"
   | "themeLabel"
@@ -94,6 +97,8 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "aiStopBehaviorLabel"
   | "preventSleepLabel"
   | "jsReplLabel"
+  | "actCacheLabel"
+  | "codeGraphEmbeddingLabel"
   | "searchCategoryLabel"
   | "searchWebEnginesLabel"
   | "searchSearxngEndpointLabel"
@@ -157,6 +162,8 @@ export const createWorkbenchSettingsSchema = (
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
+    createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
+    createField("codeGraphEmbedding", "experimental", props.codeGraphEmbeddingLabel, "boolean-choice"),
     createField("legalNotices", "legal", props.legalNoticesLabel, "custom")
   ];
 
@@ -228,6 +235,11 @@ export const createWorkbenchSettingsSchema = (
       id: "mcp",
       label: props.mcpCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "mcp").map((section) => section.id)
+    },
+    {
+      id: "experimental",
+      label: props.experimentalCategoryLabel,
+      sectionIds: sections.filter((section) => section.categoryId === "experimental").map((section) => section.id)
     },
     {
       id: "legal",

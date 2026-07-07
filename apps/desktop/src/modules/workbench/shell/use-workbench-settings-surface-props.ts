@@ -65,6 +65,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
     useState<LinuxCompatReadStatusResponse | null>(null);
   const [linuxCompatConfig, setLinuxCompatConfig] =
     useState<LinuxCompatConfig | null>(null);
+  const [actCacheValue, setActCacheValue] = useState(false);
+  const [codeGraphEmbeddingValue, setCodeGraphEmbeddingValue] = useState(false);
 
   useEffect(() => {
     if (desktopApi?.uiux === undefined) {
@@ -162,6 +164,22 @@ export const useWorkbenchSettingsSurfaceProps = ({
       window.removeEventListener("focus", readLinuxCompat);
     };
   }, [desktopApi?.linuxCompat]);
+
+  // Experimental toggles: read from agent IPC on mount, default off.
+  useEffect(() => {
+    const agent = desktopApi?.agent;
+    if (agent === undefined) return;
+    let cancelled = false;
+    void Promise.all([
+      agent.readActCache?.().catch(() => undefined),
+      agent.readCodeGraphEmbedding?.().catch(() => undefined)
+    ]).then(([actSnap, cgSnap]) => {
+      if (cancelled) return;
+      if (actSnap !== undefined) setActCacheValue(actSnap.enabled);
+      if (cgSnap !== undefined) setCodeGraphEmbeddingValue(cgSnap.enabled);
+    });
+    return () => { cancelled = true; };
+  }, [desktopApi?.agent]);
 
   const uiStyleOptions = useMemo(
     () => [
@@ -351,6 +369,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
     aiStopBehaviorValue: preferences.aiStopBehavior,
     preventSleepValue: preferences.preventSleepEnabled,
     jsReplValue: jsReplEnabled,
+    actCacheValue,
+    codeGraphEmbeddingValue,
     searchWebEngineIds: preferences.searchWebEngineIds,
     searchSearxngEndpointValue: preferences.searchSearxngEndpoint ?? "",
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
@@ -402,6 +422,18 @@ export const useWorkbenchSettingsSurfaceProps = ({
     onAiStopBehaviorChange: preferencesModel.setAiStopBehavior,
     onPreventSleepChange: preferencesModel.setPreventSleepEnabled,
     onJsReplChange,
+    onActCacheChange: (value: boolean) => {
+      setActCacheValue(value);
+      void desktopApi?.agent?.updateActCache?.({ enabled: value })
+        .then((snap) => { if (snap !== undefined) setActCacheValue(snap.enabled); })
+        .catch(() => undefined);
+    },
+    onCodeGraphEmbeddingChange: (value: boolean) => {
+      setCodeGraphEmbeddingValue(value);
+      void desktopApi?.agent?.updateCodeGraphEmbedding?.({ enabled: value })
+        .then((snap) => { if (snap !== undefined) setCodeGraphEmbeddingValue(snap.enabled); })
+        .catch(() => undefined);
+    },
     onSearchWebEnginesChange: preferencesModel.setSearchWebEngineIds,
     onSearchSearxngEndpointChange: (value: string) => {
       preferencesModel.setSearchSearxngEndpoint(value);

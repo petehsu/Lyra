@@ -11,25 +11,10 @@ export type TerminalAgentToolMapping = TerminalAgentToolRoute & {
 
 export const TERMINAL_AGENT_TOOL_ROUTES = {
   terminal_list: { method: "terminal.list", displayName: "terminal", action: "list", readOnly: true },
-  terminal_create: { method: "terminal.create", displayName: "terminal", action: "create", readOnly: true },
   terminal_read: { method: "terminal.read", displayName: "terminal", action: "read", readOnly: true },
-  terminal_screen: { method: "terminal.screen", displayName: "terminal", action: "screen", readOnly: true },
-  terminal_wait: { method: "terminal.wait", displayName: "terminal", action: "wait", readOnly: true },
-  terminal_write: { method: "terminal.write", displayName: "terminal", action: "write", readOnly: false },
-  terminal_close: { method: "terminal.close", displayName: "terminal", action: "close", readOnly: false },
-  terminal_events: { method: "terminal.events.read", displayName: "terminal", action: "events", readOnly: true },
-  terminal_read_until: { method: "terminal.waitUntil", displayName: "terminal", action: "read_until", readOnly: true },
-  terminal_run: { method: "terminal.input.execute", displayName: "terminal", action: "run", readOnly: false },
-  terminal_input: { method: "terminal.input.execute", displayName: "terminal", action: "input", readOnly: false },
-  terminal_keys: { method: "terminal.input.execute", displayName: "terminal", action: "keys", readOnly: false },
-  terminal_resize: { method: "terminal.resize", displayName: "terminal", action: "resize", readOnly: false },
-  terminal_signal: { method: "terminal.processes.signal", displayName: "terminal", action: "signal", readOnly: false },
-  terminal_processes: { method: "terminal.processes.read", displayName: "terminal", action: "processes", readOnly: true },
-  terminal_command_status: { method: "terminal.command.status", displayName: "terminal", action: "command_status", readOnly: true },
-  terminal_map: { method: "terminal.map.read", displayName: "terminal", action: "map", readOnly: true },
-  terminal_act: { method: "terminal.act.execute", displayName: "terminal", action: "act", readOnly: false },
-  terminal_attach_agent: { method: "terminal.attachments.attach", displayName: "terminal", action: "attach_agent", readOnly: false },
-  terminal_detach_agent: { method: "terminal.attachments.detach", displayName: "terminal", action: "detach_agent", readOnly: false }
+  // terminal_write is not model-visible; it exists so write_stdin's
+  // host method routing and permission checks resolve correctly.
+  terminal_write: { method: "terminal.write", displayName: "terminal", action: "write", readOnly: false }
 } as const satisfies Record<string, TerminalAgentToolRoute>;
 
 export type TerminalAgentToolName = keyof typeof TERMINAL_AGENT_TOOL_ROUTES;
@@ -96,17 +81,10 @@ export const terminalPermissionRisk = (
   input: unknown
 ): "none" | "shell" | "dangerous" => {
   const payload = isRecord(input) ? input : {};
-  if (
-    action === "create"
-    && typeof payload.command === "string"
-    && payload.command.trim().length > 0
-  ) {
-    return "shell";
-  }
   if ((TERMINAL_PERMISSION_FREE_ACTIONS as readonly string[]).includes(action)) {
     return "none";
   }
-  if (action === "run" || action === "write" || action === "close") {
+  if (action === "write") {
     return "shell";
   }
   return "dangerous";

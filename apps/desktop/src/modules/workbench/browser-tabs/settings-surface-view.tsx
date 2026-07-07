@@ -10,6 +10,7 @@ import {
   Package,
   Palette,
   Boxes,
+  FlaskConical,
   ScrollText,
   Search,
   Settings2,
@@ -72,6 +73,7 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   softwareStore: AppWindow,
   search: Search,
   skills: Sparkles,
+  experimental: FlaskConical,
   connector: Boxes,
   workspace: Monitor
 };

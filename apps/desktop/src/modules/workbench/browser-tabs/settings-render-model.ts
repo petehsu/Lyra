@@ -349,6 +349,8 @@ const resolveCategoryHeading = (
       return props.skillsCategoryLabel;
     case "mcp":
       return props.mcpCategoryLabel;
+    case "experimental":
+      return props.experimentalCategoryLabel;
     case "legal":
       return props.legalCategoryLabel;
     default:
@@ -723,6 +725,36 @@ const createSectionControl = (
             model: props.aiModel,
             openDialog: props.openDialog
           }
+        ]
+      });
+    case "actCache":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.actCacheLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.actCacheLabel,
+            value: props.actCacheValue,
+            description: props.actCacheDescription,
+            enabledLabel: props.actCacheEnabledLabel,
+            disabledLabel: props.actCacheDisabledLabel,
+            onChange: props.onActCacheChange
+          })
+        ]
+      });
+    case "codeGraphEmbedding":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.codeGraphEmbeddingLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.codeGraphEmbeddingLabel,
+            value: props.codeGraphEmbeddingValue,
+            description: props.codeGraphEmbeddingDescription,
+            enabledLabel: props.codeGraphEmbeddingEnabledLabel,
+            disabledLabel: props.codeGraphEmbeddingDisabledLabel,
+            onChange: props.onCodeGraphEmbeddingChange
+          })
         ]
       });
     case "legalNotices":

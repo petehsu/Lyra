@@ -52,7 +52,7 @@ const createRuntimeClient = (registered: Map<string, (payload: unknown) => unkno
   unregisterRequestHandler: vi.fn()
 }) as unknown as LyraRuntimeClient;
 
-const createTerminalBridgeMock = (screenText = "ready") => ({
+const createTerminalBridgeMock = () => ({
   createSession: vi.fn(async (request: { readonly sessionId?: string }) => ({
     sessionId: request.sessionId ?? "private-terminal-1",
     title: "Agent Terminal",
@@ -75,40 +75,6 @@ const createTerminalBridgeMock = (screenText = "ready") => ({
     truncated: false,
     source: "agent",
     mode: "shell",
-    memory: terminalMemory
-  })),
-  readScreen: vi.fn(async (request: { readonly sessionId: string }) => ({
-    sessionId: request.sessionId,
-    cursor: "screen-42",
-    screenVersion: 42,
-    rows: 24,
-    cols: 80,
-    mode: "alternate",
-    visibleText: screenText,
-    visibleRows: [{ row: 0, text: "ready", wrapped: false }],
-    scrollbackText: null,
-    scrollbackCursor: "0",
-    scrollbackRows: [],
-    cursorPosition: { row: 0, col: 5, visible: true },
-    cells: [],
-    cellsTruncated: false,
-    styles: [],
-    links: [],
-    inputModes: {
-      applicationCursor: false,
-      applicationKeypad: false,
-      bracketedPaste: false,
-      mouseReporting: "none",
-      mouseEncoding: "default",
-      lineWrap: true
-    },
-    selectedText: null,
-    activeCommand: null,
-    prompt: "$",
-    regions: [],
-    running: true,
-    exitCode: null,
-    truncated: false,
     memory: terminalMemory
   })),
   closeSession: vi.fn(),
@@ -150,42 +116,7 @@ describe("terminal agent release gate", () => {
       }
     }
 
-    expect(terminalPermissionRisk("create", { command: "npm test" })).toBe("shell");
-  });
-
-  test("terminal screen projection preserves mode/version and points to artifacts", async () => {
-    const registered = new Map<string, (payload: unknown) => unknown>();
-    const longScreen = "screen line\n".repeat(3_000);
-    const bridge = createAgentIpcBridge({
-      runtimeClient: createRuntimeClient(registered),
-      storageRoot: "/tmp/lyra-agent-test",
-      terminalBridge: createTerminalBridgeMock(longScreen) as never,
-      getWindow: () => null,
-      getBrowserBridge: () => null,
-      getWorkbenchObservationService: () => null,
-      workbenchState: createWorkbenchStateMock()
-    });
-
-    const created = await registered.get("terminal.create")?.({
-      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-create" }
-    }) as { readonly sessionId: string };
-    const result = await registered.get("terminal.screen")?.({
-      sessionId: created.sessionId,
-      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-screen" }
-    }) as {
-      readonly output: string;
-      readonly truncated: boolean;
-      readonly screen: { readonly screenVersion: number; readonly mode: string };
-      readonly readHint: { readonly outputTextPath: string };
-    };
-
-    expect(result.output.length).toBeLessThan(longScreen.length);
-    expect(result.output).toContain("Terminal screen projected for model context");
-    expect(result.truncated).toBe(true);
-    expect(result.screen).toMatchObject({ screenVersion: 42, mode: "alternate" });
-    expect(result.readHint.outputTextPath).toBe(terminalMemory.outputTextPath);
-
-    bridge.dispose();
+    expect(terminalPermissionRisk("write", { command: "npm test" })).toBe("shell");
   });
 
   test("UI terminal target resolution fails clearly when no pane is available", async () => {

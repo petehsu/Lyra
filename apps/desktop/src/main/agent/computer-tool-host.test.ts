@@ -95,68 +95,6 @@ describe("computer-tool-host", () => {
     expect(nodes[0]?.osRef).toBe(encodeLyraBrowserOsRef("browser-tab-1", "ax:abc/0/1"));
   });
 
-  test("routes lyra-terminal surface map through terminal.map.read", async () => {
-    const { handlers } = createComputerToolHost({
-      internalSurfaces: {
-        tabResolver: {
-          resolveBrowserAgentTabId: async () => {
-            throw new Error("browser should not be used");
-          },
-          readWorkbenchTabWithSummaryFallback: async () => ({}),
-          describeWorkbenchTabKind: () => "terminal"
-        },
-        listWorkbenchTabs: async () => ({
-          activeTabId: "terminal-tab-1",
-          visibleTabIds: ["terminal-tab-1"],
-          layout: {
-            layoutMode: "single",
-            splitGroupTabIds: [],
-            focusedSplitTabId: null
-          },
-          tabs: [
-            {
-              tabId: "terminal-tab-1",
-              title: "Terminal",
-              pageKind: "terminal",
-              observationKind: "terminal",
-              active: true,
-              visible: true,
-              focusedPane: true,
-              observable: true
-            }
-          ]
-        }),
-        axHandlers: {},
-        terminalHandlers: {
-          "terminal.map.read": async () => ({
-            sessionId: "session-1",
-            screen: { screenVersion: 2 },
-            regions: [
-              {
-                regionId: "region-1",
-                kind: "button",
-                text: "Yes",
-                rowStart: 1,
-                rowEnd: 1,
-                colStart: 1,
-                colEnd: 3,
-                confidence: 1,
-                suggestedActions: ["confirm"]
-              }
-            ]
-          })
-        }
-      }
-    });
-    const result = await invoke(handlers, "lyraComputer.map", { surface: "lyra-terminal" });
-    expect(result).toMatchObject({
-      ok: true,
-      surface: "lyra-terminal",
-      capabilityLevel: 1
-    });
-    expect(result.nodes).toHaveLength(1);
-  });
-
   test("requires a valid sensitiveValueRef for credential autofill", async () => {
     const { handlers } = createComputerToolHost({
       resolveSensitiveValueForFill: async () => "secret"

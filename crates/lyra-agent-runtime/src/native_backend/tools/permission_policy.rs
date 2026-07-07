@@ -49,10 +49,6 @@ pub(crate) fn policy_record_required(display_name: &str, action: &str, input: &V
     match (display_name, action) {
         ("file", "write" | "edit" | "multiedit" | "apply_patch") => true,
         ("shell", "run") => true,
-        ("terminal", "create") => input
-            .get("command")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty()),
         ("terminal", terminal_action) => terminal_action_requires_policy(terminal_action),
         ("hardware", "session_open" | "session_read" | "session_write" | "run_action") => true,
         ("git", "stage" | "unstage" | "discard") => true,

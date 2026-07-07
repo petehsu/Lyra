@@ -1,4 +1,5 @@
 use super::*;
+use crate::persona::ComputedPersona;
 
 fn browser_snapshot_active_tab(snapshot: &Value) -> Option<&Value> {
     let active_tab_id = snapshot.get("activeTabId").and_then(Value::as_str)?;
@@ -464,6 +465,7 @@ pub(crate) fn build_system_prompt(
         0,
         false,
         None,
+        None,
     )
     .prompt
 }
@@ -482,6 +484,8 @@ pub(crate) fn build_system_prompt_report(
     consecutive_tool_failure_count: usize,
     user_correction_detected: bool,
     delivery_mode: Option<prompt_policy::PromptDeliveryMode>,
+    computed_persona: Option<ComputedPersona>,
+    first_used_at: Option<&str>,
 ) -> prompt_policy::PromptBuildReport {
     prompt_policy::build_system_prompt_report(&PromptPolicyInput {
         runtime_context: runtime_context.clone(),
@@ -504,6 +508,8 @@ pub(crate) fn build_system_prompt_report(
         recent_tool_mismatch_count,
         consecutive_tool_failure_count,
         user_correction_detected,
+        computed_persona,
+        first_used_at: first_used_at.map(str::to_string),
     })
 }
 

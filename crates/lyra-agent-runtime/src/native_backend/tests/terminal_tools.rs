@@ -2,25 +2,10 @@ use super::*;
 
 const TERMINAL_TOOLS: &[&str] = &[
     "terminal_list",
-    "terminal_create",
     "terminal_read",
-    "terminal_screen",
-    "terminal_wait",
+    // terminal_write is not model-visible; it exists so write_stdin's
+    // permission checks (terminal_action_requires_policy("write")) resolve.
     "terminal_write",
-    "terminal_close",
-    "terminal_events",
-    "terminal_read_until",
-    "terminal_run",
-    "terminal_input",
-    "terminal_keys",
-    "terminal_resize",
-    "terminal_signal",
-    "terminal_processes",
-    "terminal_command_status",
-    "terminal_map",
-    "terminal_act",
-    "terminal_attach_agent",
-    "terminal_detach_agent",
 ];
 
 #[test]
@@ -54,25 +39,7 @@ fn terminal_schema_registry_exposes_complete_agent_surface() {
 fn terminal_tool_fs_targets_exist_for_every_terminal_action() {
     let expected = [
         ("terminal.list", "list"),
-        ("terminal.create", "create"),
         ("terminal.read", "read"),
-        ("terminal.screen", "screen"),
-        ("terminal.wait", "wait"),
-        ("terminal.write", "write"),
-        ("terminal.close", "close"),
-        ("terminal.events.read", "events"),
-        ("terminal.waitUntil", "read_until"),
-        ("terminal.input.execute", "run"),
-        ("terminal.input.execute", "input"),
-        ("terminal.input.execute", "keys"),
-        ("terminal.resize", "resize"),
-        ("terminal.processes.signal", "signal"),
-        ("terminal.processes.read", "processes"),
-        ("terminal.command.status", "command_status"),
-        ("terminal.map.read", "map"),
-        ("terminal.act.execute", "act"),
-        ("terminal.attachments.attach", "attach_agent"),
-        ("terminal.attachments.detach", "detach_agent"),
     ];
 
     let registry = tool_fs::runtime_registry();
@@ -102,18 +69,7 @@ fn terminal_tool_fs_targets_exist_for_every_terminal_action() {
 
 #[test]
 fn terminal_permission_policy_covers_every_terminal_action() {
-    for action in [
-        "list",
-        "create",
-        "read",
-        "screen",
-        "wait",
-        "events",
-        "read_until",
-        "processes",
-        "command_status",
-        "map",
-    ] {
+    for action in ["list", "read"] {
         assert_eq!(
             permission_risk("terminal", action, &json!({ "sessionId": "terminal-1" })),
             None,
@@ -122,32 +78,7 @@ fn terminal_permission_policy_covers_every_terminal_action() {
     }
 
     assert_eq!(
-        permission_risk("terminal", "create", &json!({ "command": "npm test" })),
-        Some("shell".to_string())
-    );
-    assert_eq!(
-        permission_risk("terminal", "run", &json!({ "command": "npm test" })),
-        Some("shell".to_string())
-    );
-
-    for action in [
-        "input",
-        "keys",
-        "resize",
-        "signal",
-        "act",
-        "attach_agent",
-        "detach_agent",
-    ] {
-        assert_eq!(
-            permission_risk("terminal", action, &json!({ "sessionId": "terminal-1" })),
-            Some("dangerous".to_string()),
-            "{action} requires policy"
-        );
-    }
-
-    assert_eq!(
-        permission_risk("terminal", "close", &json!({ "sessionId": "terminal-1" })),
+        permission_risk("terminal", "write", &json!({ "sessionId": "terminal-1" })),
         Some("shell".to_string())
     );
 }
@@ -156,7 +87,7 @@ fn terminal_permission_policy_covers_every_terminal_action() {
 fn terminal_permission_summary_uses_semantic_fields_not_raw_input_bytes() {
     let summary = permission_summary(
         "terminal",
-        "input",
+        "write",
         &json!({
             "sessionId": "terminal-1",
             "text": "secret-token-123",
@@ -164,7 +95,7 @@ fn terminal_permission_summary_uses_semantic_fields_not_raw_input_bytes() {
         }),
     );
 
-    assert!(summary.contains("terminal.input"));
+    assert!(summary.contains("terminal.write"));
     assert!(summary.contains("sessionId=terminal-1"));
     assert!(summary.contains("textBytes=16"));
     assert!(!summary.contains("secret-token-123"));

@@ -648,6 +648,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         });
     }
     let persona_context = read_host_persona_context(host_dispatcher.as_ref());
+    // 采集本地信号 → 计算身份 — 纯本地操作，无网络请求，毫秒级
+    // ponytail: 每 turn 都重算，未缓存。升级路径：启动时算一次，缓存到 ~/.lyra/modules/persona/
+    let local_signals = crate::persona::collect_local_signals(Default::default());
+    let computed_persona = crate::persona::compute_persona(&local_signals, None);
     let prompt_report = build_system_prompt_report(
         &runtime_context,
         &latest_user_text,
@@ -666,6 +670,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         previous_tool_telemetry.consecutive_failure_count,
         user_correction_detected,
         Some(prompt_delivery_mode),
+        Some(computed_persona),
+        state.first_used_at.as_deref(),
     );
     let system_prompt = prompt_report.prompt.clone();
     let last_turn_tool_count = estimate_previous_turn_tool_count(&session_tools, &session_messages);

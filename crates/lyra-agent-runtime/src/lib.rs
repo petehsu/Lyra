@@ -11,6 +11,7 @@ pub mod git_runtime;
 pub mod memory_service;
 pub mod native_backend;
 pub mod permission_service;
+pub mod persona;
 pub mod prompt_contract;
 pub mod prompt_policy;
 mod prompt_templates;

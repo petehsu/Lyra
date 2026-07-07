@@ -147,6 +147,15 @@
       {
         "from": "src/main/location/read-macos-location.swift",
         "to": "location/read-macos-location.swift"
+      },
+      {
+        "from": "resources/osint",
+        "to": "osint",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       }
     ]
   },

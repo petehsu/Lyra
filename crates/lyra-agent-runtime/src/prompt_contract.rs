@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-pub const PROMPT_POLICY_VERSION: u32 = 4;
-pub const PROMPT_TEMPLATE_VERSION: u32 = 18;
+pub const PROMPT_POLICY_VERSION: u32 = 5;
+pub const PROMPT_TEMPLATE_VERSION: u32 = 21;
 pub const MEMORY_PROJECTION_VERSION: u32 = 1;
 pub const CONTEXT_PROJECTION_VERSION: u32 = 2;
 pub const RETENTION_POLICY_VERSION: u32 = 1;
 pub const TOOL_DISCOVERY_CONTRACT_VERSION: u32 = 2;
 pub const RUNTIME_CONTEXT_SCHEMA_VERSION: u32 = 3;
 pub const PROMPT_DELIVERY_MODE_VERSION: u32 = 1;
+pub const PERSONA_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

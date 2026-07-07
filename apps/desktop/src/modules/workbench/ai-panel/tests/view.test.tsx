@@ -253,64 +253,6 @@ const createDesktopApi = () => {
       enabled: browserFollowModeEnabled
     };
   });
-  const readActCache = vi.fn(async () => ({
-    enabled: false
-  }));
-  const updateActCache = vi.fn(async (request: { readonly enabled: boolean }) => ({
-    enabled: request.enabled
-  }));
-  const readTerminalMemoryTimeline = vi.fn(async (request: { readonly sessionId: string }) => ({
-    sessionId: request.sessionId,
-    cursor: null,
-    nextCursor: null,
-    hasMore: false,
-    summary: {
-      terminalSessionId: request.sessionId,
-      itemCount: 2,
-      eventCount: 2,
-      lineCount: 1,
-      errorCount: 0,
-      estimatedTokens: 4,
-      latestItemPreview: "ready"
-    },
-    memory: {
-      eventLogPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/events.jsonl`,
-      summaryPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/summary.json`,
-      uiTimelinePath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/ui-timeline.jsonl`,
-      outputTextPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.txt`,
-      rawOutputPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.raw`,
-      lineIndexPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.lines.jsonl`,
-      errorIndexPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/outputs/session-output.errors.jsonl`,
-      commandsPath: `/tmp/lyra/terminal-memory/sessions/${request.sessionId}/commands.jsonl`,
-      outputByteRange: { start: 0, end: 5 },
-      estimatedTokens: 2,
-      truncatedByProjection: false
-    },
-    items: [
-      {
-        itemId: "terminal-session-1:1",
-        terminalSessionId: request.sessionId,
-        seq: 1,
-        kind: "session_created",
-        actorKind: "human_user",
-        actorLabel: "User",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        title: "Session created",
-        preview: "Terminal"
-      },
-      {
-        itemId: "terminal-session-1:2",
-        terminalSessionId: request.sessionId,
-        seq: 2,
-        kind: "output_chunk",
-        actorKind: "terminal_kernel",
-        actorLabel: "Kernel",
-        createdAt: "2026-06-01T00:00:01.000Z",
-        title: "Output",
-        preview: "ready"
-      }
-    ]
-  }));
   const api = {
     agent: {
       createSession,
@@ -341,8 +283,6 @@ const createDesktopApi = () => {
       runJudge,
       readBrowserFollowMode,
       updateBrowserFollowMode,
-      readActCache,
-      updateActCache,
       materializeImageAttachment,
       onEvent: vi.fn((next: (event: AgentRuntimeEvent) => void) => {
         listener = next;
@@ -354,9 +294,6 @@ const createDesktopApi = () => {
     sensitiveValues: {
       revealToUser: revealSensitiveValue
     },
-    terminal: {
-      readMemoryTimeline: readTerminalMemoryTimeline
-    }
   } as unknown as LyraDesktopApi;
   return {
     api,
@@ -371,9 +308,6 @@ const createDesktopApi = () => {
     revealSensitiveValue,
     readBrowserFollowMode,
     updateBrowserFollowMode,
-    readActCache,
-    updateActCache,
-    readTerminalMemoryTimeline,
     emit: (event: AgentRuntimeEvent) => {
       listener?.(event);
     },
@@ -1429,95 +1363,6 @@ describe("AiPanelSurface", () => {
     expect(screen.queryByRole("button", { name: /not-a-button/u })).not.toBeInTheDocument();
   });
 
-  test("keeps terminal memory artifacts out of terminal tool details", async () => {
-    const { api, setReadSnapshot, readTerminalMemoryTimeline } = createDesktopApi();
-    const onOpenFile = vi.fn();
-    setReadSnapshot({
-      ...snapshot,
-      tools: [{
-        id: "terminal-read",
-        name: "terminal_read",
-        label: "Read terminal",
-        status: "completed",
-        input: { action: "read", sessionId: "terminal-session-1" },
-        output: {
-          content: [
-            "private terminal terminal-session-1: running=true exitCode=null",
-            "fullOutputPath=/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
-            "projected output"
-          ].join("\n"),
-          raw: {
-            target: {
-              type: "private",
-              sessionId: "terminal-session-1"
-            },
-            sessionId: "terminal-session-1",
-            cursor: "20000",
-            output: "projected output",
-            running: true,
-            exitCode: null,
-            truncated: true,
-            memory: {
-              eventLogPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/events.jsonl",
-              summaryPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/summary.json",
-              uiTimelinePath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/ui-timeline.jsonl",
-              outputTextPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
-              rawOutputPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.raw",
-              lineIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.lines.jsonl",
-              errorIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.errors.jsonl",
-              commandsPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/commands.jsonl",
-              eventSeqRange: { start: 1, end: 5 },
-              outputByteRange: { start: 0, end: 20_000 },
-              estimatedTokens: 6_667,
-              lineCount: 120,
-              errorCount: 2,
-              truncatedByProjection: true
-            },
-            readHint: {
-              message: "Full terminal output is cached on disk.",
-              outputTextPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.txt",
-              rawOutputPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.raw",
-              lineIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.lines.jsonl",
-              errorIndexPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/outputs/session-output.errors.jsonl",
-              eventLogPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/events.jsonl",
-              summaryPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/summary.json",
-              uiTimelinePath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/ui-timeline.jsonl",
-              commandsPath: "/tmp/lyra/terminal-memory/sessions/terminal-session-1/commands.jsonl"
-            }
-          },
-          error: null
-        },
-        startedAt: "2026-05-13T00:00:02.000Z",
-        finishedAt: "2026-05-13T00:00:02.500Z"
-      }]
-    });
-    renderPanel(
-      api,
-      undefined,
-      undefined,
-      "en-US",
-      undefined,
-      undefined,
-      onOpenFile
-    );
-
-    fireEvent.click(await screen.findByText("Agent activity"));
-    fireEvent.click(await screen.findByText("Read terminal"));
-
-    expect(screen.getByText("lines 120 - errors 2 - projected")).toBeInTheDocument();
-    expect(screen.queryByText("Full terminal output is cached on disk.")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "session-output.txt" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "summary.json" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "session-output.lines.jsonl" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "session-output.errors.jsonl" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "events.jsonl" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "ui-timeline.jsonl" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "commands.jsonl" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Timeline" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Timeline" })).not.toBeInTheDocument();
-    expect(readTerminalMemoryTimeline).not.toHaveBeenCalled();
-    expect(onOpenFile).not.toHaveBeenCalled();
-  });
 
   test("renders sensitive value refs as user-owned buttons without exposing plaintext to Agent text", async () => {
     const { api, setReadSnapshot, revealSensitiveValue } = createDesktopApi();

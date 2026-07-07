@@ -17,11 +17,8 @@ pub enum SemanticInputAction {
     SubmitInput,
     PasteText,
     PressKeys,
-    SelectRegion,
     SendSignal,
     Resize,
-    AttachAgent,
-    DetachAgent,
 }
 
 impl SemanticInputAction {
@@ -31,11 +28,8 @@ impl SemanticInputAction {
             SemanticInputAction::SubmitInput => "submitInput",
             SemanticInputAction::PasteText => "pasteText",
             SemanticInputAction::PressKeys => "pressKeys",
-            SemanticInputAction::SelectRegion => "selectRegion",
             SemanticInputAction::SendSignal => "sendSignal",
             SemanticInputAction::Resize => "resize",
-            SemanticInputAction::AttachAgent => "attachAgent",
-            SemanticInputAction::DetachAgent => "detachAgent",
         }
     }
 
@@ -48,11 +42,8 @@ impl SemanticInputAction {
             SemanticInputAction::SubmitInput
             | SemanticInputAction::PasteText
             | SemanticInputAction::PressKeys
-            | SemanticInputAction::SelectRegion
-            | SemanticInputAction::Resize
-            | SemanticInputAction::DetachAgent => TerminalPermissionRisk::Low,
+            | SemanticInputAction::Resize => TerminalPermissionRisk::Low,
             SemanticInputAction::SendSignal => TerminalPermissionRisk::Dangerous,
-            SemanticInputAction::AttachAgent => TerminalPermissionRisk::Shell,
         }
     }
 }
@@ -67,11 +58,7 @@ pub struct KeyStroke {
 
 impl KeyStroke {
     pub fn new(key: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-            repeat: 1,
-            delay_ms: None,
-        }
+        Self { key: key.into(), repeat: 1, delay_ms: None }
     }
 }
 
@@ -86,17 +73,10 @@ pub struct SemanticInputRequest {
     pub keys: Vec<KeyStroke>,
     pub secret_refs: Vec<SecretRef>,
     pub bracketed_paste: bool,
-    pub region_id: Option<String>,
-    pub screen_cursor: Option<String>,
     pub signal: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
     pub reason: Option<String>,
-    pub cwd: Option<String>,
-    pub project_root: Option<String>,
-    pub agent_session_id: Option<String>,
-    pub runtime_turn_id: Option<String>,
-    pub tool_call_id: Option<String>,
     pub actor_json: Option<String>,
     pub correlation_json: Option<String>,
     pub now_ms: i64,
@@ -117,17 +97,10 @@ impl SemanticInputRequest {
             keys: Vec::new(),
             secret_refs: Vec::new(),
             bracketed_paste: false,
-            region_id: None,
-            screen_cursor: None,
             signal: None,
             cols: None,
             rows: None,
             reason: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
             actor_json: None,
             correlation_json: None,
             now_ms,
@@ -144,17 +117,10 @@ impl SemanticInputRequest {
             keys,
             secret_refs: Vec::new(),
             bracketed_paste: false,
-            region_id: None,
-            screen_cursor: None,
             signal: None,
             cols: None,
             rows: None,
             reason: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
             actor_json: None,
             correlation_json: None,
             now_ms,
@@ -165,30 +131,10 @@ impl SemanticInputRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlannedTerminalOperation {
-    WriteBytes {
-        bytes: Vec<u8>,
-        redacted_preview: String,
-    },
-    PasteSecretRefs {
-        secret_refs: Vec<SecretRef>,
-        bracketed_paste: bool,
-        redacted_preview: String,
-    },
-    SendSignal {
-        signal: String,
-        reason: Option<String>,
-    },
-    Resize {
-        cols: u16,
-        rows: u16,
-    },
-    SelectRegion {
-        region_id: String,
-        screen_cursor: Option<String>,
-    },
-    AttachmentControl {
-        mode: String,
-    },
+    WriteBytes { bytes: Vec<u8>, redacted_preview: String },
+    PasteSecretRefs { secret_refs: Vec<SecretRef>, bracketed_paste: bool, redacted_preview: String },
+    SendSignal { signal: String, reason: Option<String> },
+    Resize { cols: u16, rows: u16 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,9 +184,7 @@ pub struct InputController {
 
 impl InputController {
     pub fn new() -> Self {
-        Self {
-            permissions: PermissionPolicyEngine::new(),
-        }
+        Self { permissions: PermissionPolicyEngine::new() }
     }
 
     pub fn permissions_mut(&mut self) -> &mut PermissionPolicyEngine {
@@ -265,11 +209,7 @@ impl InputController {
             &request,
             risk,
             Some(preview.clone()),
-            json!({
-                "reason": request.reason,
-                "regionId": request.region_id,
-                "screenCursor": request.screen_cursor
-            }),
+            json!({ "reason": request.reason }),
         )];
 
         let permission_request = PermissionEvaluationRequest {
@@ -277,12 +217,6 @@ impl InputController {
             input_id: input_id.clone(),
             action: request.action.as_contract_name().to_string(),
             risk,
-            command_text: request.command.clone(),
-            cwd: request.cwd.clone(),
-            project_root: request.project_root.clone(),
-            agent_session_id: request.agent_session_id.clone(),
-            runtime_turn_id: request.runtime_turn_id.clone(),
-            tool_call_id: request.tool_call_id.clone(),
             redacted_preview: Some(preview.clone()),
             actor_json: request.actor_json.clone(),
             correlation_json: request.correlation_json.clone(),
@@ -321,15 +255,8 @@ impl InputController {
                     }
                 }
                 Err(reason) => rejected_result(
-                    request,
-                    input_id,
-                    evaluation.permission_id,
-                    risk,
-                    InputExecutionStatus::InvalidRequest,
-                    preview,
-                    reason,
-                    events,
-                    evaluation.event,
+                    request, input_id, evaluation.permission_id, risk,
+                    InputExecutionStatus::InvalidRequest, preview, reason, events, evaluation.event,
                 ),
             },
             TerminalPermissionDecision::NeedsApproval => InputExecutionResult {
@@ -344,41 +271,22 @@ impl InputController {
                 permission_event: evaluation.event,
             },
             TerminalPermissionDecision::Deny => rejected_result(
-                request,
-                input_id,
-                evaluation.permission_id,
-                risk,
-                InputExecutionStatus::Denied,
-                preview,
+                request, input_id, evaluation.permission_id, risk,
+                InputExecutionStatus::Denied, preview,
                 evaluation.reason.unwrap_or_else(|| "denied".to_string()),
-                events,
-                evaluation.event,
+                events, evaluation.event,
             ),
             TerminalPermissionDecision::Expired => rejected_result(
-                request,
-                input_id,
-                evaluation.permission_id,
-                risk,
-                InputExecutionStatus::Expired,
-                preview,
-                evaluation
-                    .reason
-                    .unwrap_or_else(|| "approval expired".to_string()),
-                events,
-                evaluation.event,
+                request, input_id, evaluation.permission_id, risk,
+                InputExecutionStatus::Expired, preview,
+                evaluation.reason.unwrap_or_else(|| "approval expired".to_string()),
+                events, evaluation.event,
             ),
             TerminalPermissionDecision::Revoked => rejected_result(
-                request,
-                input_id,
-                evaluation.permission_id,
-                risk,
-                InputExecutionStatus::Revoked,
-                preview,
-                evaluation
-                    .reason
-                    .unwrap_or_else(|| "approval revoked".to_string()),
-                events,
-                evaluation.event,
+                request, input_id, evaluation.permission_id, risk,
+                InputExecutionStatus::Revoked, preview,
+                evaluation.reason.unwrap_or_else(|| "approval revoked".to_string()),
+                events, evaluation.event,
             ),
         }
     }
@@ -406,24 +314,13 @@ fn rejected_result(
     permission_event: Option<PermissionEvent>,
 ) -> InputExecutionResult {
     events.push(input_event(
-        "input_rejected",
-        &input_id,
-        permission_id.as_deref(),
-        &request,
-        risk,
-        Some(preview),
-        json!({ "reason": reason }),
+        "input_rejected", &input_id, permission_id.as_deref(),
+        &request, risk, Some(preview), json!({ "reason": reason }),
     ));
     InputExecutionResult {
-        session_id: request.session_id,
-        input_id,
-        permission_id,
-        action: request.action,
-        status,
-        risk,
-        operations: Vec::new(),
-        events,
-        permission_event,
+        session_id: request.session_id, input_id, permission_id,
+        action: request.action, status, risk, operations: Vec::new(),
+        events, permission_event,
     }
 }
 
@@ -454,10 +351,7 @@ fn expand_request(
                     redacted_preview: preview.to_string(),
                 }]);
             }
-            let text = required_text(
-                request.text.as_deref(),
-                "pasteText requires text or secret refs",
-            )?;
+            let text = required_text(request.text.as_deref(), "pasteText requires text or secret refs")?;
             let payload = if request.bracketed_paste {
                 bracketed_paste_payload(text)
             } else {
@@ -481,32 +375,13 @@ fn expand_request(
                 redacted_preview: preview.to_string(),
             }])
         }
-        SemanticInputAction::SelectRegion => Ok(vec![PlannedTerminalOperation::SelectRegion {
-            region_id: required_text(
-                request.region_id.as_deref(),
-                "selectRegion requires regionId",
-            )?
-            .to_string(),
-            screen_cursor: request.screen_cursor.clone(),
-        }]),
         SemanticInputAction::SendSignal => Ok(vec![PlannedTerminalOperation::SendSignal {
-            signal: required_text(request.signal.as_deref(), "sendSignal requires signal")?
-                .to_string(),
+            signal: required_text(request.signal.as_deref(), "sendSignal requires signal")?.to_string(),
             reason: request.reason.clone(),
         }]),
         SemanticInputAction::Resize => Ok(vec![PlannedTerminalOperation::Resize {
-            cols: request
-                .cols
-                .ok_or_else(|| "resize requires cols".to_string())?,
-            rows: request
-                .rows
-                .ok_or_else(|| "resize requires rows".to_string())?,
-        }]),
-        SemanticInputAction::AttachAgent => Ok(vec![PlannedTerminalOperation::AttachmentControl {
-            mode: "attach".to_string(),
-        }]),
-        SemanticInputAction::DetachAgent => Ok(vec![PlannedTerminalOperation::AttachmentControl {
-            mode: "detach".to_string(),
+            cols: request.cols.ok_or_else(|| "resize requires cols".to_string())?,
+            rows: request.rows.ok_or_else(|| "resize requires rows".to_string())?,
         }]),
     }
 }
@@ -530,15 +405,12 @@ fn action_preview(request: &SemanticInputRequest, sensitive: &SensitiveText) -> 
             .map(|key| key.key.clone())
             .collect::<Vec<_>>()
             .join(" "),
-        SemanticInputAction::SelectRegion => request.region_id.clone().unwrap_or_default(),
         SemanticInputAction::SendSignal => request.signal.clone().unwrap_or_default(),
         SemanticInputAction::Resize => format!(
             "{}x{}",
             request.cols.unwrap_or_default(),
             request.rows.unwrap_or_default()
         ),
-        SemanticInputAction::AttachAgent => "attach agent".to_string(),
-        SemanticInputAction::DetachAgent => "detach agent".to_string(),
     }
 }
 
@@ -606,24 +478,15 @@ fn key_bytes(key: &str) -> Result<Vec<u8>, String> {
     if normalized.len() == 1 {
         return Ok(normalized.into_bytes());
     }
-    if let Some(rest) = normalized
-        .strip_prefix("ctrl_")
-        .or_else(|| normalized.strip_prefix("ctrl+"))
-    {
+    if let Some(rest) = normalized.strip_prefix("ctrl_").or_else(|| normalized.strip_prefix("ctrl+")) {
         return ctrl_key(rest);
     }
-    if let Some(rest) = normalized
-        .strip_prefix("alt_")
-        .or_else(|| normalized.strip_prefix("alt+"))
-    {
+    if let Some(rest) = normalized.strip_prefix("alt_").or_else(|| normalized.strip_prefix("alt+")) {
         let mut bytes = vec![0x1b];
         bytes.extend_from_slice(&key_bytes(rest)?);
         return Ok(bytes);
     }
-    if let Some(rest) = normalized
-        .strip_prefix("meta_")
-        .or_else(|| normalized.strip_prefix("meta+"))
-    {
+    if let Some(rest) = normalized.strip_prefix("meta_").or_else(|| normalized.strip_prefix("meta+")) {
         let mut bytes = vec![0x1b];
         bytes.extend_from_slice(&key_bytes(rest)?);
         return Ok(bytes);

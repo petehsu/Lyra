@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
-import { registerBulkTerminalRestore } from "./bulk-terminal-restore";
 import type { TerminalDockModel } from "./types";
 
 type UseTerminalSessionRestoreParams = {
@@ -11,7 +10,8 @@ type UseTerminalSessionRestoreParams = {
 
 /**
  * Bulk-restore persisted terminal PTY sessions after workbench boot.
- * Mirrors VS Code's layout revive: shells come back before each pane mounts xterm.
+ * Session persistence was removed in the spawn-per-call refactoring;
+ * this hook is now a no-op placeholder.
  */
 export const useTerminalSessionRestore = ({
   desktopApi,
@@ -20,22 +20,6 @@ export const useTerminalSessionRestore = ({
   const restoreStartedRef = useRef(false);
 
   useEffect(() => {
-    if (desktopApi === null || restoreStartedRef.current) {
-      return;
-    }
-    const sessions = terminalModel.restoreRequest.sessions;
-    if (sessions.length === 0) {
-      return;
-    }
-
-    restoreStartedRef.current = true;
-    const restoreWork = desktopApi.terminal.restoreSessions({ sessions }).then((snapshots) => {
-      terminalModel.syncRestoredSessions(snapshots);
-      return snapshots;
-    });
-    registerBulkTerminalRestore(restoreWork);
-    void restoreWork.catch(() => {
-      restoreStartedRef.current = false;
-    });
+    // No-op: session restore removed in terminal architecture refactoring
   }, [desktopApi, terminalModel]);
 };

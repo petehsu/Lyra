@@ -17,7 +17,6 @@ import {
   File as FileIcon,
   LayoutGrid,
   Monitor,
-  Network,
   Plus,
   Terminal
 } from "lucide-react";
@@ -97,10 +96,6 @@ export function Composer({
   isTurnRunning,
   browserFollowModeEnabled,
   onToggleBrowserFollowMode,
-  actCacheEnabled,
-  onToggleActCache,
-  codeGraphEmbeddingEnabled,
-  onToggleCodeGraphEmbedding,
   onCancelTurn,
   onTranscriptCitationClick,
   onPageCitationClick,
@@ -144,10 +139,6 @@ export function Composer({
   isTurnRunning: boolean;
   browserFollowModeEnabled: boolean;
   onToggleBrowserFollowMode: (enabled: boolean) => Promise<void> | void;
-  actCacheEnabled: boolean;
-  onToggleActCache: (enabled: boolean) => Promise<void> | void;
-  codeGraphEmbeddingEnabled: boolean;
-  onToggleCodeGraphEmbedding: (enabled: boolean) => Promise<void> | void;
   onCancelTurn: () => Promise<void> | void;
 }) {
   const [segments, setSegments] = useState<ComposerSegment[]>([]);
@@ -155,8 +146,6 @@ export function Composer({
   const [attachmentSubmenuId, setAttachmentSubmenuId] = useState<string | null>(null);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
-  const [actCacheBusy, setActCacheBusy] = useState(false);
-  const [codeGraphEmbeddingBusy, setCodeGraphEmbeddingBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -320,12 +309,6 @@ export function Composer({
   const followLabel = browserFollowModeEnabled
     ? t("lyra-agents-composer.stopFollowingAgent")
     : t("lyra-agents-composer.followAgent");
-  const actCacheLabel = actCacheEnabled
-    ? t("lyra-agents-composer.actCacheOff")
-    : t("lyra-agents-composer.actCache");
-  const codeGraphEmbeddingLabel = codeGraphEmbeddingEnabled
-    ? t("lyra-agents-composer.codeGraphEmbeddingOff")
-    : t("lyra-agents-composer.codeGraphEmbedding");
   const configuredModels = (modelControls?.models ?? []).filter((model) => model.available && model.enabled);
   const selectedModel =
     configuredModels.find((model) => model.id === modelControls?.currentModel)
@@ -673,40 +656,6 @@ export function Composer({
             }}
           >
             <Crosshair size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
-          </AppButton>
-          <AppButton variant="ghost" size="sm"
-            type="button"
-            className="lyra-agents-composer-act-cache"
-            aria-label={actCacheLabel}
-            aria-pressed={actCacheEnabled}
-            title={actCacheLabel}
-            data-active={actCacheEnabled ? "true" : "false"}
-            disabled={actCacheBusy}
-            onClick={() => {
-              if (actCacheBusy) return;
-              setActCacheBusy(true);
-              void Promise.resolve(onToggleActCache(!actCacheEnabled))
-                .finally(() => setActCacheBusy(false));
-            }}
-          >
-            <Crosshair size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
-          </AppButton>
-          <AppButton variant="ghost" size="sm"
-            type="button"
-            className="lyra-agents-composer-codegraph-embedding"
-            aria-label={codeGraphEmbeddingLabel}
-            aria-pressed={codeGraphEmbeddingEnabled}
-            title={codeGraphEmbeddingLabel}
-            data-active={codeGraphEmbeddingEnabled ? "true" : "false"}
-            disabled={codeGraphEmbeddingBusy}
-            onClick={() => {
-              if (codeGraphEmbeddingBusy) return;
-              setCodeGraphEmbeddingBusy(true);
-              void Promise.resolve(onToggleCodeGraphEmbedding(!codeGraphEmbeddingEnabled))
-                .finally(() => setCodeGraphEmbeddingBusy(false));
-            }}
-          >
-            <Network size={TOOLBAR_ICON_SIZE} strokeWidth={TOOLBAR_ICON_STROKE_WIDTH} />
           </AppButton>
           <AppButton variant="ghost" size="sm"
             type={primaryActionMode === "send" ? "submit" : "button"}

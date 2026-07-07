@@ -11,41 +11,11 @@ import {
 } from "electron";
 import {
   LYRA_CHANNELS,
-  type TerminalActExecuteRequest,
-  type TerminalActExecuteResponse,
-  type TerminalAttachmentAttachRequest,
-  type TerminalAttachmentAttachResponse,
-  type TerminalAttachmentDetachRequest,
-  type TerminalAttachmentDetachResponse,
-  type TerminalAttachmentListRequest,
-  type TerminalAttachmentListResponse,
-  type TerminalAttachmentPauseRequest,
-  type TerminalAttachmentPauseResponse,
-  type TerminalAttachmentResumeRequest,
-  type TerminalAttachmentResumeResponse,
-  type TerminalArtifactsListRequest,
-  type TerminalArtifactsListResponse,
   type TerminalCloseRequest,
-  type TerminalCommandOutputReadRequest,
-  type TerminalCommandOutputReadResponse,
-  type TerminalCommandStatusRequest,
-  type TerminalCommandStatusResponse,
-  type TerminalCommandWaitRequest,
-  type TerminalCommandWaitResponse,
-  type TerminalCommandsReadRequest,
-  type TerminalCommandsReadResponse,
   type TerminalCreateRequest,
   type TerminalDataAckRequest,
   type TerminalDataEvent,
   type TerminalEvent,
-  type TerminalEventsReadRequest,
-  type TerminalEventsReadResponse,
-  type TerminalInputExecuteRequest,
-  type TerminalInputExecuteResponse,
-  type TerminalMapReadRequest,
-  type TerminalMapReadResponse,
-  type TerminalMemoryTimelineReadRequest,
-  type TerminalMemoryTimelineReadResponse,
   type TerminalReadRequest,
   type TerminalReadResponse,
   type TerminalReloadPromptRequest,
@@ -54,14 +24,9 @@ import {
   type TerminalRendererAttachResponse,
   type TerminalRendererDetachRequest,
   type TerminalResizeRequest,
-  type TerminalScreenReadRequest,
-  type TerminalScreenReadResponse,
-  type TerminalRestoreRequest,
   type TerminalSessionSnapshot,
   type TerminalWriteRequest,
   type TerminalCommandSource,
-  type TerminalOutputRangeReadRequest,
-  type TerminalOutputRangeReadResponse,
   type TerminalPermissionEvaluateRequest,
   type TerminalPermissionEvaluateResponse,
   type TerminalPermissionRespondRequest,
@@ -69,9 +34,7 @@ import {
   type TerminalProcessesReadRequest,
   type TerminalProcessesReadResponse,
   type TerminalProcessSignalRequest,
-  type TerminalProcessSignalResponse,
-  type TerminalWaitUntilRequest,
-  type TerminalWaitUntilResponse
+  type TerminalProcessSignalResponse
 } from "../../shared/desktop-bridge";
 import {
   normalizeTerminalThemeMode,
@@ -147,10 +110,6 @@ const normalizeCreateRequest = (request: TerminalCreateRequest): TerminalCreateR
     ...(request.correlation !== undefined ? { correlation: request.correlation } : {})
   };
 };
-
-const normalizeRestoreRequest = (request: TerminalRestoreRequest): TerminalRestoreRequest => ({
-  sessions: request.sessions.map((session) => normalizeCreateRequest(session))
-});
 
 const normalizeWriteRequest = (request: TerminalWriteRequest): TerminalWriteRequest => ({
   source: request.source ?? "user",
@@ -370,10 +329,6 @@ export const createTerminalIpcBridge = (
   } => ({
     ...payload,
     storageRoot
-  });
-
-  const withSessionStorageRoot = (request: TerminalRestoreRequest): TerminalRestoreRequest => ({
-    sessions: request.sessions.map((session) => withStorageRoot(session))
   });
 
   const ensurePromptStreamState = (sessionId: string): PromptStreamState => {
@@ -833,26 +788,6 @@ export const createTerminalIpcBridge = (
     }
   };
 
-  const restoreSessions = async (
-    request: TerminalRestoreRequest
-  ): Promise<readonly TerminalSessionSnapshot[]> => {
-    const normalized = {
-      sessions: normalizeRestoreRequest(request).sessions.map((session) =>
-        resolveLyraAgentCliRequest(storageRoot, session)
-      )
-    };
-    const snapshots = [...await requestRuntime<readonly TerminalSessionSnapshot[]>(
-      "terminal.sessions.restore",
-      withSessionStorageRoot(normalized)
-    )];
-    for (const snapshot of snapshots) {
-      sessionShellById.set(snapshot.sessionId, snapshot.shell);
-      sessionPromptModeById.set(snapshot.sessionId, "follow-app");
-      sessionPromptStreamById.set(snapshot.sessionId, createPromptStreamState());
-    }
-    return snapshots;
-  };
-
   const reloadPrompt = async (
     request: TerminalReloadPromptRequest
   ): Promise<TerminalReloadPromptResult> => {
@@ -884,24 +819,6 @@ export const createTerminalIpcBridge = (
   ): Promise<TerminalReadResponse> => {
     return await requestRuntime<TerminalReadResponse>(
       "terminal.sessions.read",
-      withStorageRoot(request)
-    );
-  };
-
-  const readTerminalScreenSnapshot = async (
-    request: TerminalScreenReadRequest
-  ): Promise<TerminalScreenReadResponse> => {
-    return await requestRuntime<TerminalScreenReadResponse>(
-      "terminal.screen.read",
-      withStorageRoot(request)
-    );
-  };
-
-  const waitTerminalUntil = async (
-    request: TerminalWaitUntilRequest
-  ): Promise<TerminalWaitUntilResponse> => {
-    return await requestRuntime<TerminalWaitUntilResponse>(
-      "terminal.waitUntil",
       withStorageRoot(request)
     );
   };
@@ -943,10 +860,6 @@ export const createTerminalIpcBridge = (
       }
     ],
     [
-      LYRA_CHANNELS.terminalRestoreSessions,
-      (_event, payload) => restoreSessions(payload as TerminalRestoreRequest)
-    ],
-    [
       LYRA_CHANNELS.terminalAttachRenderer,
       (_event, payload) => attachRenderer(payload as TerminalRendererAttachRequest)
     ],
@@ -981,62 +894,6 @@ export const createTerminalIpcBridge = (
       (_event, payload) => readSessionObservation(payload as TerminalReadRequest)
     ],
     [
-      LYRA_CHANNELS.terminalReadMemoryTimeline,
-      (_event, payload) =>
-        requestRuntime(
-          "terminal.memory.readTimeline",
-          withStorageRoot(payload as TerminalMemoryTimelineReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalReadEvents,
-      (_event, payload) =>
-        requestRuntime<TerminalEventsReadResponse>(
-          "terminal.events.read",
-          withStorageRoot(payload as TerminalEventsReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalReadCommands,
-      (_event, payload) =>
-        requestRuntime<TerminalCommandsReadResponse>(
-          "terminal.commands.read",
-          withStorageRoot(payload as TerminalCommandsReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalReadOutputRange,
-      (_event, payload) =>
-        requestRuntime<TerminalOutputRangeReadResponse>(
-          "terminal.output.readRange",
-          withStorageRoot(payload as TerminalOutputRangeReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalListArtifacts,
-      (_event, payload) =>
-        requestRuntime<TerminalArtifactsListResponse>(
-          "terminal.artifacts.list",
-          withStorageRoot(payload as TerminalArtifactsListRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalReadScreen,
-      (_event, payload) => readTerminalScreenSnapshot(payload as TerminalScreenReadRequest)
-    ],
-    [
-      LYRA_CHANNELS.terminalWaitUntil,
-      (_event, payload) => waitTerminalUntil(payload as TerminalWaitUntilRequest)
-    ],
-    [
-      LYRA_CHANNELS.terminalInputExecute,
-      (_event, payload) =>
-        requestRuntime<TerminalInputExecuteResponse>(
-          "terminal.input.execute",
-          withStorageRoot(payload as TerminalInputExecuteRequest)
-        )
-    ],
-    [
       LYRA_CHANNELS.terminalPermissionsEvaluate,
       (_event, payload) =>
         requestRuntime<TerminalPermissionEvaluateResponse>(
@@ -1059,86 +916,6 @@ export const createTerminalIpcBridge = (
     [
       LYRA_CHANNELS.terminalProcessesSignal,
       (_event, payload) => signalProcess(payload as TerminalProcessSignalRequest)
-    ],
-    [
-      LYRA_CHANNELS.terminalCommandStatus,
-      (_event, payload) =>
-        requestRuntime<TerminalCommandStatusResponse>(
-          "terminal.command.status",
-          withStorageRoot(payload as TerminalCommandStatusRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalCommandWait,
-      (_event, payload) =>
-        requestRuntime<TerminalCommandWaitResponse>(
-          "terminal.command.wait",
-          withStorageRoot(payload as TerminalCommandWaitRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalCommandReadOutput,
-      (_event, payload) =>
-        requestRuntime<TerminalCommandOutputReadResponse>(
-          "terminal.command.readOutput",
-          withStorageRoot(payload as TerminalCommandOutputReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalMapRead,
-      (_event, payload) =>
-        requestRuntime<TerminalMapReadResponse>(
-          "terminal.map.read",
-          withStorageRoot(payload as TerminalMapReadRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalActExecute,
-      (_event, payload) =>
-        requestRuntime<TerminalActExecuteResponse>(
-          "terminal.act.execute",
-          withStorageRoot(payload as TerminalActExecuteRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalAttachmentsAttach,
-      (_event, payload) =>
-        requestRuntime<TerminalAttachmentAttachResponse>(
-          "terminal.attachments.attach",
-          withStorageRoot(payload as TerminalAttachmentAttachRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalAttachmentsDetach,
-      (_event, payload) =>
-        requestRuntime<TerminalAttachmentDetachResponse>(
-          "terminal.attachments.detach",
-          withStorageRoot(payload as TerminalAttachmentDetachRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalAttachmentsList,
-      (_event, payload) =>
-        requestRuntime<TerminalAttachmentListResponse>(
-          "terminal.attachments.list",
-          withStorageRoot(payload as TerminalAttachmentListRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalAttachmentsPause,
-      (_event, payload) =>
-        requestRuntime<TerminalAttachmentPauseResponse>(
-          "terminal.attachments.pause",
-          withStorageRoot(payload as TerminalAttachmentPauseRequest)
-        )
-    ],
-    [
-      LYRA_CHANNELS.terminalAttachmentsResume,
-      (_event, payload) =>
-        requestRuntime<TerminalAttachmentResumeResponse>(
-          "terminal.attachments.resume",
-          withStorageRoot(payload as TerminalAttachmentResumeRequest)
-        )
     ],
     [
       LYRA_CHANNELS.terminalResizeSession,
@@ -1186,54 +963,6 @@ export const createTerminalIpcBridge = (
   const readObservation = (
     request: TerminalReadRequest
   ): Promise<TerminalReadResponse> => readSessionObservation(request);
-  const readScreen = (
-    request: TerminalScreenReadRequest
-  ): Promise<TerminalScreenReadResponse> => readTerminalScreenSnapshot(request);
-  const readEvents = (
-    request: TerminalEventsReadRequest
-  ): Promise<TerminalEventsReadResponse> =>
-    requestRuntime<TerminalEventsReadResponse>(
-      "terminal.events.read",
-      withStorageRoot(request)
-    );
-  const readCommands = (
-    request: TerminalCommandsReadRequest
-  ): Promise<TerminalCommandsReadResponse> =>
-    requestRuntime<TerminalCommandsReadResponse>(
-      "terminal.commands.read",
-      withStorageRoot(request)
-    );
-  const readOutputRange = (
-    request: TerminalOutputRangeReadRequest
-  ): Promise<TerminalOutputRangeReadResponse> =>
-    requestRuntime<TerminalOutputRangeReadResponse>(
-      "terminal.output.readRange",
-      withStorageRoot(request)
-    );
-  const listArtifacts = (
-    request: TerminalArtifactsListRequest
-  ): Promise<TerminalArtifactsListResponse> =>
-    requestRuntime<TerminalArtifactsListResponse>(
-      "terminal.artifacts.list",
-      withStorageRoot(request)
-    );
-  const readMemoryTimeline = (
-    request: TerminalMemoryTimelineReadRequest
-  ): Promise<TerminalMemoryTimelineReadResponse> =>
-    requestRuntime<TerminalMemoryTimelineReadResponse>(
-      "terminal.memory.readTimeline",
-      withStorageRoot(request)
-    );
-  const waitUntil = (
-    request: TerminalWaitUntilRequest
-  ): Promise<TerminalWaitUntilResponse> => waitTerminalUntil(request);
-  const executeInput = (
-    request: TerminalInputExecuteRequest
-  ): Promise<TerminalInputExecuteResponse> =>
-    requestRuntime<TerminalInputExecuteResponse>(
-      "terminal.input.execute",
-      withStorageRoot(request)
-    );
   const evaluatePermission = (
     request: TerminalPermissionEvaluateRequest
   ): Promise<TerminalPermissionEvaluateResponse> =>
@@ -1246,76 +975,6 @@ export const createTerminalIpcBridge = (
   ): Promise<TerminalPermissionRespondResponse> =>
     requestRuntime<TerminalPermissionRespondResponse>(
       "terminal.permissions.respond",
-      withStorageRoot(request)
-    );
-  const readCommandStatus = (
-    request: TerminalCommandStatusRequest
-  ): Promise<TerminalCommandStatusResponse> =>
-    requestRuntime<TerminalCommandStatusResponse>(
-      "terminal.command.status",
-      withStorageRoot(request)
-    );
-  const waitCommand = (
-    request: TerminalCommandWaitRequest
-  ): Promise<TerminalCommandWaitResponse> =>
-    requestRuntime<TerminalCommandWaitResponse>(
-      "terminal.command.wait",
-      withStorageRoot(request)
-    );
-  const readCommandOutput = (
-    request: TerminalCommandOutputReadRequest
-  ): Promise<TerminalCommandOutputReadResponse> =>
-    requestRuntime<TerminalCommandOutputReadResponse>(
-      "terminal.command.readOutput",
-      withStorageRoot(request)
-    );
-  const readMap = (
-    request: TerminalMapReadRequest
-  ): Promise<TerminalMapReadResponse> =>
-    requestRuntime<TerminalMapReadResponse>(
-      "terminal.map.read",
-      withStorageRoot(request)
-    );
-  const executeAct = (
-    request: TerminalActExecuteRequest
-  ): Promise<TerminalActExecuteResponse> =>
-    requestRuntime<TerminalActExecuteResponse>(
-      "terminal.act.execute",
-      withStorageRoot(request)
-    );
-  const attachAgent = (
-    request: TerminalAttachmentAttachRequest
-  ): Promise<TerminalAttachmentAttachResponse> =>
-    requestRuntime<TerminalAttachmentAttachResponse>(
-      "terminal.attachments.attach",
-      withStorageRoot(request)
-    );
-  const detachAgent = (
-    request: TerminalAttachmentDetachRequest
-  ): Promise<TerminalAttachmentDetachResponse> =>
-    requestRuntime<TerminalAttachmentDetachResponse>(
-      "terminal.attachments.detach",
-      withStorageRoot(request)
-    );
-  const listAttachments = (
-    request: TerminalAttachmentListRequest
-  ): Promise<TerminalAttachmentListResponse> =>
-    requestRuntime<TerminalAttachmentListResponse>(
-      "terminal.attachments.list",
-      withStorageRoot(request)
-    );
-  const pauseAttachment = (
-    request: TerminalAttachmentPauseRequest
-  ): Promise<TerminalAttachmentPauseResponse> =>
-    requestRuntime<TerminalAttachmentPauseResponse>(
-      "terminal.attachments.pause",
-      withStorageRoot(request)
-    );
-  const resumeAttachment = (
-    request: TerminalAttachmentResumeRequest
-  ): Promise<TerminalAttachmentResumeResponse> =>
-    requestRuntime<TerminalAttachmentResumeResponse>(
-      "terminal.attachments.resume",
       withStorageRoot(request)
     );
   const resize = (request: TerminalResizeRequest): Promise<void> =>
@@ -1332,35 +991,16 @@ export const createTerminalIpcBridge = (
       loadedFrom: "lyrad"
     },
     createSession,
-    restoreSessions,
     attachRenderer,
     detachRenderer,
     ackData,
     reloadPrompt,
     write: writeSession,
     readObservation,
-    readScreen,
-    readEvents,
-    readCommands,
-    readOutputRange,
-    listArtifacts,
-    readMemoryTimeline,
-    waitUntil,
-    executeInput,
     evaluatePermission,
     respondPermission,
     readProcesses,
     signalProcess,
-    readCommandStatus,
-    waitCommand,
-    readCommandOutput,
-    readMap,
-    executeAct,
-    attachAgent,
-    detachAgent,
-    listAttachments,
-    pauseAttachment,
-    resumeAttachment,
     resize,
     closeSession,
     dispose: () => {

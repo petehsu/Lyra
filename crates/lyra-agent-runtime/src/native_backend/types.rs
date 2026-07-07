@@ -22,6 +22,7 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
     pub(crate) legacy_plaintext_provider_keys: HashSet<String>,
     pub(crate) active_compressions: HashSet<String>,
+    pub(crate) first_used_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +42,8 @@ pub(crate) struct NativeStateFile {
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     #[serde(default)]
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
+    #[serde(default)]
+    pub(crate) first_used_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

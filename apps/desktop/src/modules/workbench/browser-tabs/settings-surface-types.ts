@@ -34,6 +34,7 @@ export type BrowserSettingsCategoryId =
   | "models"
   | "skills"
   | "mcp"
+  | "experimental"
   | "legal";
 
 export type BrowserSettingsCategoryFocusRequest = {
@@ -62,6 +63,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly loginManagerCategoryLabel: string;
   readonly softwareStoreCategoryLabel: string;
   readonly linuxCategoryLabel: string;
+  readonly experimentalCategoryLabel: string;
   readonly legalCategoryLabel: string;
   readonly docsNavLabel: string;
   readonly languageLabel: string;
@@ -90,6 +92,14 @@ export type BrowserSettingsSurfaceProps = {
   readonly jsReplDescription: string;
   readonly jsReplEnabledLabel: string;
   readonly jsReplDisabledLabel: string;
+  readonly actCacheLabel: string;
+  readonly actCacheDescription: string;
+  readonly actCacheEnabledLabel: string;
+  readonly actCacheDisabledLabel: string;
+  readonly codeGraphEmbeddingLabel: string;
+  readonly codeGraphEmbeddingDescription: string;
+  readonly codeGraphEmbeddingEnabledLabel: string;
+  readonly codeGraphEmbeddingDisabledLabel: string;
   readonly searchCategoryLabel: string;
   readonly searchWebEnginesLabel: string;
   readonly searchSearxngEndpointLabel: string;
@@ -153,6 +163,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly aiStopBehaviorValue: WorkbenchAiStopBehavior;
   readonly preventSleepValue: boolean;
   readonly jsReplValue: boolean;
+  readonly actCacheValue: boolean;
+  readonly codeGraphEmbeddingValue: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpointValue: string;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
@@ -189,6 +201,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly onAiStopBehaviorChange: (value: WorkbenchAiStopBehavior) => void;
   readonly onPreventSleepChange: (value: boolean) => void;
   readonly onJsReplChange: (value: boolean) => void;
+  readonly onActCacheChange: (value: boolean) => void;
+  readonly onCodeGraphEmbeddingChange: (value: boolean) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
   readonly onSearchSearxngEndpointChange: (value: string) => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;

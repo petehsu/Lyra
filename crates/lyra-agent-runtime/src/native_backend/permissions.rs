@@ -103,21 +103,13 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
                 .to_string(),
         );
     }
-    if matches!((display_name, action), ("terminal", "create"))
-        && input
-            .get("command")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Some("shell".to_string());
-    }
     if display_name == "terminal" && terminal_action_is_read_only(action) {
         return None;
     }
     if display_name == "terminal" && terminal_action_requires_policy(action) {
         return Some(
             match action {
-                "run" | "write" | "close" => "shell",
+                "write" => "shell",
                 _ => "dangerous",
             }
             .to_string(),

@@ -5,6 +5,7 @@ use crate::prompt_templates::{render_template, templates_fingerprint};
 use crate::native_backend::tools::{
     CodeGraphFragmentReport, CodeGraphSignals, extract_codegraph_signals,
 };
+use crate::persona::ComputedPersona;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -165,6 +166,10 @@ pub struct PromptPolicyInput {
     pub recent_tool_mismatch_count: usize,
     pub consecutive_tool_failure_count: usize,
     pub user_correction_detected: bool,
+    /// Computed persona from local signals + OSINT — drives P0 kernel identity rendering.
+    pub computed_persona: Option<ComputedPersona>,
+    /// ISO8601 timestamp of first usage — injected as "U've been here N days."
+    pub first_used_at: Option<String>,
 }
 
 pub fn persona_context_from_value(value: &Value) -> PersonaContext {
@@ -436,7 +441,7 @@ fn build_spatiotemporal_brief(
         }
         if let Some(idle) = st.get("secondsSinceLastInteraction").and_then(Value::as_u64) {
             if idle > 0 {
-                parts.push(format!("{idle} sec since the member's last message."));
+                parts.push(format!("{idle} sec since the last message."));
             }
         }
     }
@@ -463,7 +468,7 @@ fn build_spatiotemporal_brief(
     if let Some(ws) = runtime_context.get("spatiotemporal").and_then(|s| s.get("workspace")) {
         let mut ws_parts: Vec<String> = Vec::new();
         if let Some(app) = ws.get("foregroundApp").and_then(Value::as_str) {
-            ws_parts.push(format!("member is in {app}"));
+            ws_parts.push(format!("you are in {app}"));
         }
         if let Some(win) = ws.get("focusedWindow").and_then(Value::as_str) {
             ws_parts.push(format!("looking at \"{win}\""));
@@ -506,87 +511,151 @@ fn render_prompt_sections(
 
     let spatiotemporal_brief = build_spatiotemporal_brief(&input.persona, runtime_context);
 
-    let mut sections = vec![
-        PromptSectionCandidate {
-            id: "P0.kernel",
-            layer: PromptLayer::P0,
-            mode_policy: PromptSectionModePolicy::Always,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template(
-                "kernel.md.j2",
-                json!({
-                    "current_time": input.persona.current_time.as_deref(),
-                    "location_label": input.persona.location_label.as_deref(),
-                    "device_summary": input.persona.device_summary.as_deref(),
-                    "user_name": input.persona.user_name.as_deref(),
-                    "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
-                }),
-            ),
-        },
-        PromptSectionCandidate {
-            id: "P1.interactionContract",
-            layer: PromptLayer::P1,
-            mode_policy: PromptSectionModePolicy::Always,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template("interaction_contract.md.j2", json!({})),
-        },
-        PromptSectionCandidate {
-            id: "P1.compactContract",
-            layer: PromptLayer::P1,
-            mode_policy: PromptSectionModePolicy::Always,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template("compact_contract.md.j2", json!({})),
-        },
-        PromptSectionCandidate {
-            id: "P2.fullContract",
-            layer: PromptLayer::P2,
-            mode_policy: PromptSectionModePolicy::FullOnly,
-            include_full: true,
-            include_lean: false,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template("full_contract.md.j2", json!({})),
-        },
-        PromptSectionCandidate {
-            id: "P2.planMode",
-            layer: PromptLayer::P2,
-            mode_policy: PromptSectionModePolicy::Always,
-            include_full: true,
-            include_lean: true,
-            stable: true,
-            scene_module: None,
-            text: render_prompt_template("plan_mode.md.j2", json!({})),
-        },
-        PromptSectionCandidate {
-            id: "P3.browserScene",
-            layer: PromptLayer::P3,
-            mode_policy: PromptSectionModePolicy::SceneOnly,
-            include_full: true,
-            include_lean: scenes.browser,
-            stable: true,
-            scene_module: Some("browser"),
-            text: render_prompt_template("browser_scene.md.j2", json!({})),
-        },
-        PromptSectionCandidate {
-            id: "P3.computerScene",
-            layer: PromptLayer::P3,
-            mode_policy: PromptSectionModePolicy::SceneOnly,
-            include_full: true,
-            include_lean: scenes.computer,
-            stable: true,
-            scene_module: Some("computer"),
-            text: render_prompt_template("computer_scene.md.j2", json!({})),
-        },
-    ];
+    let mut sections = vec![];
+
+    // P0: kernel — identity + spatiotemporal + safety rules, single template.
+    let persona_identity = input.computed_persona.as_ref().filter(|p| p.has_identity());
+    let identity_platforms: Vec<Value> = persona_identity
+        .map(|p| {
+            p.identity_platforms
+                .iter()
+                .map(|plat| {
+                    json!({
+                        "site": plat.site,
+                        "username": plat.username,
+                        "profile_name": plat.profile_name,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Phase 2: location fallback — hash os_username → stable random city
+    let identity_location = input.persona.location_label.as_deref()
+        .map(String::from)
+        .unwrap_or_else(|| {
+            // ponytail: hash os_username 选城市，同机器稳定。升级路径：用户手动设置 location。
+            const CITIES: [&str; 8] = [
+                "San Francisco", "San Jose", "Seattle", "Austin",
+                "Boston", "New York", "Denver", "Portland",
+            ];
+            let seed = input.persona.user_name.as_deref().unwrap_or("anon");
+            let mut hash: u64 = 5381;
+            for b in seed.bytes() {
+                hash = hash.wrapping_mul(33).wrapping_add(b as u64);
+            }
+            CITIES[(hash as usize) % CITIES.len()].to_string()
+        });
+
+    // Phase 3: first_used_brief — "U've been here N days."
+    let first_used_brief = input.first_used_at.as_deref().and_then(|ts| {
+        let parsed = chrono::DateTime::parse_from_rfc3339(ts).ok()?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let then_ms = parsed.timestamp_millis();
+        let days = ((now_ms - then_ms).max(0) / 86_400_000) as u64;
+        if days == 0 {
+            Some("U just got here.".to_string())
+        } else if days == 1 {
+            Some("U've been here 1 day.".to_string())
+        } else {
+            Some(format!("U've been here {} days.", days))
+        }
+    });
+
+    // Phase 6: identity_age — inferred or default 21 (born 2005-08-06)
+    let identity_age = persona_identity.and_then(|p| p.inferred_age).or(Some(21));
+
+    sections.push(PromptSectionCandidate {
+        id: "P0.kernel",
+        layer: PromptLayer::P0,
+        mode_policy: PromptSectionModePolicy::Always,
+        include_full: true,
+        include_lean: true,
+        stable: true,
+        scene_module: None,
+        text: render_prompt_template(
+            "kernel.md.j2",
+            json!({
+                "current_time": input.persona.current_time.as_deref(),
+                "location_label": input.persona.location_label.as_deref(),
+                "device_summary": input.persona.device_summary.as_deref(),
+                "user_name": input.persona.user_name.as_deref(),
+                "spatiotemporal_brief": spatiotemporal_brief.as_deref(),
+                "identity_name": persona_identity.map(|p| p.identity_name.as_str()),
+                "identity_age": identity_age,
+                "identity_location": identity_location,
+                "identity_emails": persona_identity
+                    .map(|p| p.identity_emails.iter().map(String::as_str).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                "identity_usernames": persona_identity
+                    .map(|p| p.identity_usernames.iter().map(String::as_str).collect::<Vec<_>>())
+                    .unwrap_or_default(),
+                "identity_bio": persona_identity.and_then(|p| p.identity_bio.as_deref()),
+                "identity_platforms": identity_platforms,
+                "first_used_brief": first_used_brief,
+            }),
+        ),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P1.interactionContract",
+        layer: PromptLayer::P1,
+        mode_policy: PromptSectionModePolicy::Always,
+        include_full: true,
+        include_lean: true,
+        stable: true,
+        scene_module: None,
+        text: render_prompt_template("interaction_contract.md.j2", json!({})),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P1.compactContract",
+        layer: PromptLayer::P1,
+        mode_policy: PromptSectionModePolicy::Always,
+        include_full: true,
+        include_lean: true,
+        stable: true,
+        scene_module: None,
+        text: render_prompt_template("compact_contract.md.j2", json!({})),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P2.fullContract",
+        layer: PromptLayer::P2,
+        mode_policy: PromptSectionModePolicy::FullOnly,
+        include_full: true,
+        include_lean: false,
+        stable: true,
+        scene_module: None,
+        text: render_prompt_template("full_contract.md.j2", json!({})),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P2.planMode",
+        layer: PromptLayer::P2,
+        mode_policy: PromptSectionModePolicy::Always,
+        include_full: true,
+        include_lean: true,
+        stable: true,
+        scene_module: None,
+        text: render_prompt_template("plan_mode.md.j2", json!({})),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P3.browserScene",
+        layer: PromptLayer::P3,
+        mode_policy: PromptSectionModePolicy::SceneOnly,
+        include_full: true,
+        include_lean: scenes.browser,
+        stable: true,
+        scene_module: Some("browser"),
+        text: render_prompt_template("browser_scene.md.j2", json!({})),
+    });
+    sections.push(PromptSectionCandidate {
+        id: "P3.computerScene",
+        layer: PromptLayer::P3,
+        mode_policy: PromptSectionModePolicy::SceneOnly,
+        include_full: true,
+        include_lean: scenes.computer,
+        stable: true,
+        scene_module: Some("computer"),
+        text: render_prompt_template("computer_scene.md.j2", json!({})),
+    });
     if scenes.citation {
         sections.push(PromptSectionCandidate {
             id: "P3.citationScene",
@@ -992,6 +1061,7 @@ mod tests {
             location_label: Some("Shanghai, China".to_string()),
             device_summary: Some("macOS arm64 · PetedeMacBook-Air · Lyra 0.1.0".to_string()),
             user_name: Some("petehsu".to_string()),
+            ..PersonaContext::default()
         }
     }
 
@@ -1048,37 +1118,27 @@ mod tests {
         assert!(report.section_hashes.contains_key("P1.interactionContract"));
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
-        assert!(prompt.contains("U r Lyra"));
-        assert!(prompt.contains("Now Wednesday, June 17, 2026, 2:45 PM GMT+8"));
-        assert!(prompt.contains("U r team lead at diversified company"));
-        assert!(prompt.contains("diversified company"));
-        assert!(prompt.contains("U operate in Shanghai, China"));
-        assert!(prompt.contains("macOS arm64 · PetedeMacBook-Air · Lyra 0.1.0"));
-        assert!(prompt.contains("Member petehsu"));
-        assert!(prompt.contains("nickname only"));
-        assert!(prompt.contains("Members msg U on company net"));
-        assert!(prompt.contains("Interaction contract"));
-        assert!(prompt.contains("Plain assistant questions r final/non-blocking text"));
+        assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
+        assert!(prompt.contains("Tool calls r provider structured tool calls only"));
+        assert!(prompt.contains("Blocking input only comes thru structured interaction tool"));
+        assert!(prompt.contains("Plain text questions r final/non-blocking"));
         assert!(prompt.contains("lyra_clarification_ask shows panel"));
-        assert!(prompt.contains("Compact operating contract"));
-        assert!(prompt.contains("company computer w discoverable caps"));
-        assert!(prompt.contains("Full stable contract"));
-        assert!(prompt.contains("Computer capability discovery"));
-        assert!(prompt.contains("Network, provider, and recovery"));
+        assert!(prompt.contains("U have your computer w discoverable caps"));
+        assert!(prompt.contains("your computer w discoverable caps"));
+        assert!(prompt.contains("Talk direct, grounded, technical, accountable"));
         assert!(prompt.contains("provider structured tool calls"));
         assert!(prompt.contains("Never write simulated/JSON"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
-        assert!(prompt.contains("opaque member-owned refs"));
-        assert!(prompt.contains("Don't claim done without evidence"));
+        assert!(prompt.contains("opaque refs owned by u"));
+        assert!(prompt.contains("Don't claim done w/o evidence"));
         // ponytail: SOP reinforcement assertions — prove the new disciplines are in the prompt
         assert!(prompt.contains("Test alongside code"));
-        assert!(prompt.contains("Self-critique"));
+        assert!(prompt.contains("self-critique"));
         assert!(prompt.contains("Don't introduce regressions"));
-        assert!(prompt.contains("Engineering discipline"));
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: internet/reference awareness assertions
         assert!(prompt.contains("browser reaches everything the search API might miss"));
-        assert!(prompt.contains("Don't design blind"));
+        assert!(prompt.contains("don't design blind"));
         assert!(prompt.contains("keep a reference project open in browser while writing"));
         assert!(prompt.contains("internet is your reference library"));
         // ponytail: deep-fusion assertions
@@ -1092,7 +1152,7 @@ mod tests {
         assert!(prompt.contains("not a requirement"));
         assert!(prompt.contains("DESIGN.md"));
         assert!(prompt.contains("stick w it"));
-        assert!(prompt.contains("don't mix tokens"));
+        assert!(prompt.contains("Don't mix tokens"));
         // ponytail: asset/commercial awareness
         assert!(prompt.contains("Pinterest"));
         assert!(prompt.contains("Pexels"));
@@ -1127,15 +1187,12 @@ mod tests {
             persona: PersonaContext::default(),
             ..PromptPolicyInput::default()
         });
-        assert!(prompt.contains("U r Lyra"));
-        assert!(prompt.contains("U r team lead at diversified company"));
-        assert!(prompt.contains("diversified company"));
-        assert!(!prompt.contains("Now "));
+        assert!(prompt.contains("Tool calls r provider structured tool calls only"));
+        assert!(!prompt.contains("It is "));
         assert!(!prompt.contains("U operate in"));
         assert!(!prompt.contains("Company gave U this device"));
         assert!(!prompt.contains("nickname only"));
-        assert!(prompt.contains("Compact operating contract"));
-        assert!(prompt.contains("Verification"));
+        assert!(prompt.contains("U have your computer w discoverable caps"));
         // ponytail: compact SOP one-liners present even w/o persona
         assert!(prompt.contains("Self-critique before done"));
         assert!(prompt.contains("Don't regress"));
@@ -1212,12 +1269,12 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
-        assert!(report.prompt.contains("Compact operating contract"));
-        assert!(report.prompt.contains("Interaction contract"));
+        assert!(report.prompt.contains("U have your computer w discoverable caps"));
+        assert!(report.prompt.contains("Blocking input only comes thru"));
         assert!(report.prompt.contains("lyra_clarification_ask"));
-        assert!(report.prompt.contains("Current Lyra runtime context"));
+        assert!(report.prompt.contains("Current runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
-        assert!(!report.prompt.contains("Full stable contract"));
+        assert!(!report.prompt.contains("Talk direct, grounded, technical, accountable"));
         assert!(!report.prompt.contains("Browser scene module"));
         assert!(
             report
@@ -1243,7 +1300,7 @@ mod tests {
             report.refresh_reason,
             PromptRefreshReason::ContractMismatchFullRefresh
         );
-        assert!(report.prompt.contains("Full stable contract"));
+        assert!(report.prompt.contains("Talk direct, grounded, technical, accountable"));
     }
 
     #[test]
@@ -1315,10 +1372,10 @@ mod tests {
         assert!(report.scene_modules.contains(&"browser".to_string()));
         assert!(report.scene_modules.contains(&"citation".to_string()));
         assert!(report.scene_modules.contains(&"image".to_string()));
-        assert!(report.prompt.contains("Browser scene module"));
-        assert!(report.prompt.contains("Citation scene module"));
-        assert!(report.prompt.contains("Image scene module"));
-        assert!(!report.prompt.contains("Full stable contract"));
+        assert!(report.prompt.contains("Browser/web UI: discover caps by intent"));
+        assert!(report.prompt.contains("Transcript cites anchor to prior msgs"));
+        assert!(report.prompt.contains("Inline image markers show where"));
+        assert!(!report.prompt.contains("Talk direct, grounded, technical, accountable"));
     }
 
     #[test]
@@ -1345,7 +1402,7 @@ mod tests {
 
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(report.scene_modules.contains(&"browser".to_string()));
-        assert!(report.prompt.contains("Browser scene module"));
+        assert!(report.prompt.contains("Browser/web UI: discover caps by intent"));
     }
 
     #[test]

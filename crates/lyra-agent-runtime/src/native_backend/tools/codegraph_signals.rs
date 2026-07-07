@@ -259,7 +259,7 @@ pub(crate) struct QueryRecord {
 /// Observability report persisted into `session.snapshot.promptDelivery`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CodeGraphFragmentReport {
+pub struct CodeGraphFragmentReport {
     pub signals_attached: bool,
     pub symbols_resolved: usize,
     pub queries_executed: Vec<QueryRecord>,

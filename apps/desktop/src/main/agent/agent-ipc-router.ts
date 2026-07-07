@@ -5,6 +5,11 @@ import type {
   LyraSensitiveValueStoreRequest,
   LyraSensitiveValueStoreResponse
 } from "../../shared/desktop-bridge";
+import {
+  readConsent,
+  writeConsent,
+  readStatus,
+} from "../persona/consent-service";
 import type {
   AgentClarificationRespondRequest,
   AgentGitDiffRequest,
@@ -857,6 +862,27 @@ export const createAgentIpcRouter = ({
       LYRA_CHANNELS.agentProtocolContract,
       () =>
         requestRuntime<AgentProtocolContract>("agent.protocol.contract")
+    ],
+    [
+      LYRA_CHANNELS.personaConsentRead,
+      () => readConsent()
+    ],
+    [
+      LYRA_CHANNELS.personaConsentWrite,
+      (_event, payload) => writeConsent(payload)
+    ],
+    [
+      LYRA_CHANNELS.personaStatus,
+      () => readStatus()
+    ],
+    [
+      LYRA_CHANNELS.personaRefresh,
+      () => {
+        // Refresh signal: desktop just confirms the request.
+        // The actual OSINT rescan happens on the next agent turn
+        // when runtime detects consent=true and cached persona is stale.
+        return { triggered: true };
+      }
     ],
   ];
 

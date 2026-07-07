@@ -1,17 +1,8 @@
 //! Terminal request/response/snapshot contract types.
-//!
-//! Pure data structures (no logic) exchanged across the terminal-core public
-//! API boundary. Extracted from `lib.rs` to keep the crate root thin.
 
 #[cfg(feature = "node-api")]
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
-
-use crate::screen::{
-    TerminalScreenCell, TerminalScreenCursorPosition, TerminalScreenInputModes, TerminalScreenLink,
-    TerminalScreenRegion, TerminalScreenStyle, TerminalScreenVisibleRow,
-};
-use crate::tui_act::TuiActPlan;
 
 #[cfg_attr(feature = "node-api", napi(object))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,325 +125,6 @@ pub struct TerminalCloseRequest {
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverCreateRequest {
-    pub session_id: String,
-    pub title: Option<String>,
-    pub cwd: Option<String>,
-    pub shell: Option<String>,
-    pub cols: u16,
-    pub rows: u16,
-    pub source: Option<String>,
-    pub mode: Option<String>,
-    pub command: Option<String>,
-    pub persist: Option<bool>,
-    pub storage_root: String,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverInputRequest {
-    pub session_id: String,
-    pub data: Option<String>,
-    pub text: Option<String>,
-    pub keys: Option<Vec<String>>,
-    pub append_newline: Option<bool>,
-    pub source: Option<String>,
-    pub storage_root: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverOutputRequest {
-    pub session_id: String,
-    pub data: String,
-    pub storage_root: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverResizeRequest {
-    pub session_id: String,
-    pub cols: u16,
-    pub rows: u16,
-    pub storage_root: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverExitRequest {
-    pub session_id: String,
-    pub exit_code: i32,
-    pub storage_root: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalObserverCloseRequest {
-    pub session_id: String,
-    pub storage_root: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalRestoreRequest {
-    pub sessions: Vec<TerminalCreateRequest>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalMemoryTimelineReadRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-    pub kinds: Option<Vec<String>>,
-    pub actors: Option<Vec<String>>,
-    pub command_id: Option<String>,
-    pub tool_call_id: Option<String>,
-    pub agent_session_id: Option<String>,
-    pub seq_start: Option<f64>,
-    pub seq_end: Option<f64>,
-    pub time_start_ms: Option<f64>,
-    pub time_end_ms: Option<f64>,
-    pub audit: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalEventsReadRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-    pub kinds: Option<Vec<String>>,
-    pub actors: Option<Vec<String>>,
-    pub audit: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalCommandsReadRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
-    pub status: Option<String>,
-    pub audit: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalOutputRangeReadRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub start: f64,
-    pub end: f64,
-    pub raw: Option<bool>,
-    pub audit: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalArtifactsListRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub audit: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalStoredSessionsReadRequest {
-    pub storage_root: String,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalPermissionEventRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub permission_id: String,
-    pub action: Option<String>,
-    pub risk: Option<String>,
-    pub summary: Option<String>,
-    pub title: Option<String>,
-    pub detail: Option<String>,
-    pub command_id: Option<String>,
-    pub input_id: Option<String>,
-    pub agent_session_id: Option<String>,
-    pub runtime_turn_id: Option<String>,
-    pub tool_call_id: Option<String>,
-    pub decision: Option<String>,
-    pub reason: Option<String>,
-    pub expires_at: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalHandoffEventRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub handoff_id: Option<String>,
-    pub from_actor_json: Option<String>,
-    pub to_actor_json: Option<String>,
-    pub reason: Option<String>,
-    pub summary: Option<String>,
-    pub status: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalOutputPolicyMarkerRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub start: f64,
-    pub end: f64,
-    pub policy: String,
-    pub reason: Option<String>,
-    pub encrypted_ref: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalScreenReadRequest {
-    pub session_id: String,
-    pub storage_root: Option<String>,
-    /// Screen version cursor token. This is separate from the output byte cursor
-    /// used by terminal reads; callers should echo it back only for screen
-    /// observation ordering and diff-aware consumers.
-    pub cursor: Option<String>,
-    pub include_scrollback: Option<bool>,
-    pub max_rows: Option<u32>,
-    pub max_bytes: Option<u32>,
-    pub selected_text: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalScreenReadResponse {
-    pub session_id: String,
-    pub cursor: String,
-    pub screen_version: u32,
-    pub rows: u16,
-    pub cols: u16,
-    pub mode: String,
-    pub visible_text: String,
-    pub visible_rows: Vec<TerminalScreenVisibleRow>,
-    pub scrollback_text: Option<String>,
-    pub scrollback_cursor: String,
-    pub scrollback_rows: Vec<TerminalScreenVisibleRow>,
-    pub cursor_position: TerminalScreenCursorPosition,
-    pub cells: Vec<TerminalScreenCell>,
-    pub cells_truncated: bool,
-    pub styles: Vec<TerminalScreenStyle>,
-    pub links: Vec<TerminalScreenLink>,
-    pub input_modes: TerminalScreenInputModes,
-    pub selected_text: Option<String>,
-    pub active_command: Option<String>,
-    pub prompt: Option<String>,
-    pub regions: Vec<TerminalScreenRegion>,
-    pub running: bool,
-    pub exit_code: Option<i32>,
-    pub truncated: bool,
-    pub memory: Option<String>,
-    pub lifecycle: Option<TerminalLifecycleProjection>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalMapReadRequest {
-    pub session_id: String,
-    pub storage_root: Option<String>,
-    pub screen_cursor: Option<String>,
-    pub max_regions: Option<u32>,
-    pub include_text: Option<bool>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalMapReadResponse {
-    pub session_id: String,
-    pub screen: TerminalScreenReadResponse,
-    pub regions: Vec<TerminalScreenRegion>,
-    pub stale: Option<bool>,
-    pub warning: Option<String>,
-    pub memory: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalActExecuteRequest {
-    pub session_id: String,
-    pub storage_root: Option<String>,
-    pub action: String,
-    pub region_id: Option<String>,
-    pub screen_cursor: Option<String>,
-    pub text: Option<String>,
-    pub direction: Option<String>,
-    pub amount: Option<u32>,
-    pub reason: Option<String>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalActExecuteResponse {
-    pub session_id: String,
-    pub act_id: String,
-    pub status: String,
-    pub input_id: Option<String>,
-    pub permission_id: Option<String>,
-    pub screen_cursor: Option<String>,
-    pub map: Option<TerminalMapReadResponse>,
-    pub plan: Option<TuiActPlan>,
-    pub warning: Option<String>,
-    pub memory: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-pub struct TerminalWaitUntilRequest {
-    pub session_id: String,
-    pub storage_root: String,
-    pub target: String,
-    pub text: Option<String>,
-    pub regex: Option<String>,
-    pub command_id: Option<String>,
-    pub status: Option<String>,
-    pub cursor: Option<String>,
-    pub screen_cursor: Option<String>,
-    pub timeout_ms: Option<u32>,
-    pub max_bytes: Option<u32>,
-    pub actor_json: Option<String>,
-    pub correlation_json: Option<String>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalWaitUntilResponse {
-    pub session_id: String,
-    pub matched: bool,
-    pub reason: String,
-    pub cursor: Option<String>,
-    pub screen_cursor: Option<String>,
-    pub command_id: Option<String>,
-    pub output: Option<String>,
-    pub memory: Option<String>,
-    pub lifecycle: Option<TerminalLifecycleProjection>,
-}
-
-#[cfg_attr(feature = "node-api", napi(object))]
 pub struct TerminalInputExecuteRequest {
     pub session_id: String,
     pub storage_root: Option<String>,
@@ -543,6 +215,55 @@ pub struct TerminalPermissionRespondResponse {
     pub decision: String,
     pub expires_at: Option<String>,
     pub memory: Option<String>,
+}
+
+#[cfg_attr(feature = "node-api", napi(object))]
+pub struct TerminalPermissionEventRequest {
+    pub session_id: String,
+    pub storage_root: String,
+    pub permission_id: String,
+    pub action: Option<String>,
+    pub risk: Option<String>,
+    pub summary: Option<String>,
+    pub title: Option<String>,
+    pub detail: Option<String>,
+    pub command_id: Option<String>,
+    pub input_id: Option<String>,
+    pub agent_session_id: Option<String>,
+    pub runtime_turn_id: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub decision: Option<String>,
+    pub reason: Option<String>,
+    pub expires_at: Option<String>,
+    pub actor_json: Option<String>,
+    pub correlation_json: Option<String>,
+}
+
+#[cfg_attr(feature = "node-api", napi(object))]
+pub struct TerminalHandoffEventRequest {
+    pub session_id: String,
+    pub storage_root: String,
+    pub handoff_id: Option<String>,
+    pub from_actor_json: Option<String>,
+    pub to_actor_json: Option<String>,
+    pub reason: Option<String>,
+    pub summary: Option<String>,
+    pub status: Option<String>,
+    pub actor_json: Option<String>,
+    pub correlation_json: Option<String>,
+}
+
+#[cfg_attr(feature = "node-api", napi(object))]
+pub struct TerminalOutputPolicyMarkerRequest {
+    pub session_id: String,
+    pub storage_root: String,
+    pub start: f64,
+    pub end: f64,
+    pub policy: String,
+    pub reason: Option<String>,
+    pub encrypted_ref: Option<String>,
+    pub actor_json: Option<String>,
+    pub correlation_json: Option<String>,
 }
 
 #[cfg_attr(feature = "node-api", napi(object))]

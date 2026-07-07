@@ -3426,9 +3426,8 @@ fn model_request_injects_lyra_identity_and_tools() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("U r Lyra"));
-    assert!(system_prompt.contains("company computer w discoverable caps"));
-    assert!(system_prompt.contains("Interaction contract"));
+    assert!(system_prompt.contains("When a msg arrives, read it as something u urself wanna get done."));
+    assert!(system_prompt.contains("your computer w discoverable caps"));
     assert!(system_prompt.contains("Plain assistant questions r final/non-blocking text"));
     let names = request
         .tools

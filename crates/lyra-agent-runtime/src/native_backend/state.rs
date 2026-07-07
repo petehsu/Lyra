@@ -137,9 +137,17 @@ impl NativeRuntimeState {
             host_dispatcher: None,
             legacy_plaintext_provider_keys,
             active_compressions: HashSet::new(),
+            first_used_at: state_file
+                .as_ref()
+                .and_then(|s| s.first_used_at.clone())
+                .or_else(|| Some(chrono::Utc::now().to_rfc3339())),
         };
         let pruned_pending = loaded.prune_non_live_pending();
-        if pruned_pending || schema_upgrade {
+        let first_used_just_init = state_file
+            .as_ref()
+            .and_then(|s| s.first_used_at.as_ref())
+            .is_none();
+        if pruned_pending || schema_upgrade || first_used_just_init {
             let _ = loaded.save_state();
         }
         loaded
@@ -171,6 +179,7 @@ impl NativeRuntimeState {
             active_skills: self.active_skills.clone(),
             pending_permissions,
             pending_clarifications,
+            first_used_at: self.first_used_at.clone(),
         };
         write_json(&self.root.join("state.json"), &state)?;
         let session_ids = self
@@ -1280,6 +1289,7 @@ mod persistence_tests {
             host_dispatcher: None,
             legacy_plaintext_provider_keys: HashSet::from(["openai".to_string()]),
             active_compressions: HashSet::new(),
+            first_used_at: None,
         };
         let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
             assert_eq!(method, "sensitiveValues.storeForAgentUse");

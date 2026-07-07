@@ -4,9 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-use crate::memory;
 
 pub(crate) type RustEventCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 
@@ -22,16 +19,6 @@ pub(crate) struct NativeCommandCompletionEvent {
     status: String,
     exit_code: Option<i32>,
     signal: Option<String>,
-    actor: Value,
-    correlation: Value,
-    output_text_range: Value,
-    raw_output_range: Value,
-    artifact_root_path: String,
-    command_meta_path: String,
-    command_output_text_path: String,
-    command_raw_output_path: String,
-    command_events_path: String,
-    command_summary_path: String,
     completed_at: String,
 }
 
@@ -56,30 +43,6 @@ pub(crate) struct NativeEvent {
     pub(crate) command: Option<NativeCommandCompletionEvent>,
 }
 
-fn native_command_completion(
-    completion: memory::CommandCompletionProjection,
-) -> NativeCommandCompletionEvent {
-    NativeCommandCompletionEvent {
-        terminal_session_id: completion.terminal_session_id,
-        command_id: completion.command_id,
-        command_text: completion.command_text,
-        status: completion.status,
-        exit_code: completion.exit_code,
-        signal: completion.signal,
-        actor: completion.actor,
-        correlation: completion.correlation,
-        output_text_range: completion.output_text_range,
-        raw_output_range: completion.raw_output_range,
-        artifact_root_path: completion.artifact_root_path,
-        command_meta_path: completion.command_meta_path,
-        command_output_text_path: completion.command_output_text_path,
-        command_raw_output_path: completion.command_raw_output_path,
-        command_events_path: completion.command_events_path,
-        command_summary_path: completion.command_summary_path,
-        completed_at: completion.completed_at,
-    }
-}
-
 pub(crate) fn emit_event(event: NativeEvent) {
     if let Ok(guard) = RUST_EVENT_CALLBACK.lock() {
         if let Some(callback) = guard.as_ref() {
@@ -94,21 +57,29 @@ pub(crate) fn emit_command_completion(
     session_id: &str,
     source: &str,
     mode: &str,
-    completion: memory::CommandCompletionProjection,
+    command_id: &str,
+    exit_code: Option<i32>,
 ) {
-    let command_id = completion.command_id.clone();
     emit_event(NativeEvent {
         kind: "commandCompleted".to_string(),
         session_id: session_id.to_string(),
         data: None,
-        exit_code: completion.exit_code,
+        exit_code,
         error: None,
         source: Some(source.to_string()),
         mode: Some(mode.to_string()),
         cwd: None,
         current_cwd: None,
-        command_id: Some(command_id),
-        command: Some(native_command_completion(completion)),
+        command_id: Some(command_id.to_string()),
+        command: Some(NativeCommandCompletionEvent {
+            terminal_session_id: session_id.to_string(),
+            command_id: command_id.to_string(),
+            command_text: None,
+            status: exit_code.map(|code| if code == 0 { "completed" } else { "failed" }).unwrap_or("unknown").to_string(),
+            exit_code,
+            signal: None,
+            completed_at: crate::session_runtime::now_iso_like(),
+        }),
     });
 }
 

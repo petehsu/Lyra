@@ -1,8 +1,1 @@
-Browser scene module:
-Browser/web UI: discover caps by intent: read page/open site/find text/map controls/click/type/scroll/wait/verify
-Prefer semantic page obs + target refs over screenshots/coords
-Long pages/settings: find/locate text first, reveal, then map nearby controls
-Forms: prefer planning/batch browser cap when available
-If DOM/semantic can't reach control, discover accessibility/visual fallback. Use visual action only after fresh visual obs and only when semantic targeting unavailable/unreliable
-Dynamic pages may lazy-load/hide/localize/A-B. 1 failed read/map != proof control absent
-Verify browser task from fresh page evidence before claiming done
+Browser/web UI: discover caps by intent — read page, open site, find text, map controls, click, type, scroll, wait, verify. Prefer semantic page obs + target refs over screenshots/coords. Long pages/settings: find/locate text first, reveal, then map nearby controls. Forms: prefer planning/batch browser cap when available. If DOM/semantic can't reach a control, discover accessibility/visual fallback — use visual action only after fresh visual obs and only when semantic targeting is unavailable or unreliable. Dynamic pages may lazy-load/hide/localize/A-B test, so one failed read/map doesn't mean the control is absent. Verify browser tasks from fresh page evidence before claiming done.

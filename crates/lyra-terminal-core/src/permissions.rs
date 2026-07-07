@@ -32,10 +32,6 @@ pub enum TerminalPermissionDecision {
 pub enum TerminalPermissionScopeKind {
     OneShot,
     Session,
-    CommandPattern,
-    Cwd,
-    ToolCall,
-    AgentSession,
     TimeLimited,
 }
 
@@ -44,12 +40,6 @@ pub enum TerminalPermissionScopeKind {
 pub struct TerminalPermissionScope {
     pub kind: TerminalPermissionScopeKind,
     pub session_id: Option<String>,
-    pub command_pattern: Option<String>,
-    pub cwd: Option<String>,
-    pub project_root: Option<String>,
-    pub agent_session_id: Option<String>,
-    pub runtime_turn_id: Option<String>,
-    pub tool_call_id: Option<String>,
     pub expires_at_ms: Option<i64>,
     pub summary: Option<String>,
 }
@@ -59,12 +49,6 @@ impl TerminalPermissionScope {
         Self {
             kind: TerminalPermissionScopeKind::OneShot,
             session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
             expires_at_ms: None,
             summary: Some("one-shot approval".to_string()),
         }
@@ -74,12 +58,6 @@ impl TerminalPermissionScope {
         Self {
             kind: TerminalPermissionScopeKind::Session,
             session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
             expires_at_ms: None,
             summary: Some("terminal session approval".to_string()),
         }
@@ -89,81 +67,8 @@ impl TerminalPermissionScope {
         Self {
             kind: TerminalPermissionScopeKind::TimeLimited,
             session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
             expires_at_ms: Some(expires_at_ms),
             summary: Some("time-limited approval".to_string()),
-        }
-    }
-
-    pub fn command_pattern(session_id: impl Into<String>, pattern: impl Into<String>) -> Self {
-        let pattern = pattern.into();
-        Self {
-            kind: TerminalPermissionScopeKind::CommandPattern,
-            session_id: Some(session_id.into()),
-            command_pattern: Some(pattern.clone()),
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
-            expires_at_ms: None,
-            summary: Some(format!("command pattern: {pattern}")),
-        }
-    }
-
-    pub fn cwd(session_id: impl Into<String>, cwd: impl Into<String>) -> Self {
-        let cwd = cwd.into();
-        Self {
-            kind: TerminalPermissionScopeKind::Cwd,
-            session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: Some(cwd.clone()),
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: None,
-            expires_at_ms: None,
-            summary: Some(format!("cwd: {cwd}")),
-        }
-    }
-
-    pub fn tool_call(session_id: impl Into<String>, tool_call_id: impl Into<String>) -> Self {
-        let tool_call_id = tool_call_id.into();
-        Self {
-            kind: TerminalPermissionScopeKind::ToolCall,
-            session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: None,
-            runtime_turn_id: None,
-            tool_call_id: Some(tool_call_id.clone()),
-            expires_at_ms: None,
-            summary: Some(format!("tool call: {tool_call_id}")),
-        }
-    }
-
-    pub fn agent_session(
-        session_id: impl Into<String>,
-        agent_session_id: impl Into<String>,
-    ) -> Self {
-        let agent_session_id = agent_session_id.into();
-        Self {
-            kind: TerminalPermissionScopeKind::AgentSession,
-            session_id: Some(session_id.into()),
-            command_pattern: None,
-            cwd: None,
-            project_root: None,
-            agent_session_id: Some(agent_session_id.clone()),
-            runtime_turn_id: None,
-            tool_call_id: None,
-            expires_at_ms: None,
-            summary: Some(format!("agent session: {agent_session_id}")),
         }
     }
 }
@@ -175,12 +80,6 @@ pub struct PermissionEvaluationRequest {
     pub input_id: String,
     pub action: String,
     pub risk: TerminalPermissionRisk,
-    pub command_text: Option<String>,
-    pub cwd: Option<String>,
-    pub project_root: Option<String>,
-    pub agent_session_id: Option<String>,
-    pub runtime_turn_id: Option<String>,
-    pub tool_call_id: Option<String>,
     pub redacted_preview: Option<String>,
     pub actor_json: Option<String>,
     pub correlation_json: Option<String>,
@@ -267,9 +166,7 @@ pub struct PermissionPolicyEngine {
 
 impl PermissionPolicyEngine {
     pub fn new() -> Self {
-        Self {
-            records: Vec::new(),
-        }
+        Self { records: Vec::new() }
     }
 
     pub fn records(&self) -> &[PermissionRecord] {
@@ -330,8 +227,7 @@ impl PermissionPolicyEngine {
                         "matching revoked scope",
                     );
                 }
-                TerminalPermissionDecision::NeedsApproval | TerminalPermissionDecision::Expired => {
-                }
+                TerminalPermissionDecision::NeedsApproval | TerminalPermissionDecision::Expired => {}
             }
         }
 
@@ -421,10 +317,7 @@ impl PermissionPolicyEngine {
         scope: TerminalPermissionScope,
     ) -> PermissionEvent {
         self.respond(PermissionResponse {
-            permission_id: evaluation
-                .permission_id
-                .clone()
-                .unwrap_or_else(next_permission_id),
+            permission_id: evaluation.permission_id.clone().unwrap_or_else(next_permission_id),
             session_id: request.session_id.clone(),
             input_id: request.input_id.clone(),
             action: request.action.clone(),
@@ -445,10 +338,7 @@ impl PermissionPolicyEngine {
         scope: TerminalPermissionScope,
     ) -> PermissionEvent {
         self.respond(PermissionResponse {
-            permission_id: evaluation
-                .permission_id
-                .clone()
-                .unwrap_or_else(next_permission_id),
+            permission_id: evaluation.permission_id.clone().unwrap_or_else(next_permission_id),
             session_id: request.session_id.clone(),
             input_id: request.input_id.clone(),
             action: request.action.clone(),
@@ -557,45 +447,10 @@ fn record_matches(record: &PermissionRecord, request: &PermissionEvaluationReque
     {
         return false;
     }
-    match record.scope.kind {
-        TerminalPermissionScopeKind::OneShot | TerminalPermissionScopeKind::Session => true,
-        TerminalPermissionScopeKind::CommandPattern => record
-            .scope
-            .command_pattern
-            .as_deref()
-            .zip(request.command_text.as_deref())
-            .is_some_and(|(pattern, command)| wildcard_match(pattern, command)),
-        TerminalPermissionScopeKind::Cwd => {
-            let cwd_matches = record
-                .scope
-                .cwd
-                .as_deref()
-                .zip(request.cwd.as_deref())
-                .is_some_and(|(scope_cwd, cwd)| scope_cwd == cwd);
-            let project_matches = record
-                .scope
-                .project_root
-                .as_deref()
-                .zip(request.project_root.as_deref())
-                .is_some_and(|(scope_root, project_root)| scope_root == project_root);
-            cwd_matches || project_matches
-        }
-        TerminalPermissionScopeKind::ToolCall => record
-            .scope
-            .tool_call_id
-            .as_deref()
-            .zip(request.tool_call_id.as_deref())
-            .is_some_and(|(scope_tool_call_id, tool_call_id)| scope_tool_call_id == tool_call_id),
-        TerminalPermissionScopeKind::AgentSession => record
-            .scope
-            .agent_session_id
-            .as_deref()
-            .zip(request.agent_session_id.as_deref())
-            .is_some_and(|(scope_agent_session_id, agent_session_id)| {
-                scope_agent_session_id == agent_session_id
-            }),
-        TerminalPermissionScopeKind::TimeLimited => true,
-    }
+    matches!(
+        record.scope.kind,
+        TerminalPermissionScopeKind::OneShot | TerminalPermissionScopeKind::Session | TerminalPermissionScopeKind::TimeLimited
+    )
 }
 
 fn is_expired(record: &PermissionRecord, now_ms: i64) -> bool {
@@ -603,33 +458,4 @@ fn is_expired(record: &PermissionRecord, now_ms: i64) -> bool {
         .scope
         .expires_at_ms
         .is_some_and(|expires_at_ms| now_ms >= expires_at_ms)
-}
-
-fn wildcard_match(pattern: &str, value: &str) -> bool {
-    if pattern == "*" {
-        return true;
-    }
-    if !pattern.contains('*') {
-        return pattern == value;
-    }
-    let parts = pattern.split('*').collect::<Vec<_>>();
-    let mut cursor = 0;
-    for (index, part) in parts.iter().enumerate() {
-        if part.is_empty() {
-            continue;
-        }
-        let Some(position) = value[cursor..].find(part) else {
-            return false;
-        };
-        if index == 0 && position != 0 {
-            return false;
-        }
-        cursor += position + part.len();
-    }
-    if let Some(last) = parts.last() {
-        if !last.is_empty() && !value.ends_with(last) {
-            return false;
-        }
-    }
-    true
 }

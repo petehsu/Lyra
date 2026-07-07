@@ -5043,7 +5043,7 @@
   flex-direction: column;
   width: 100%;
   gap: 0;
-  background: var(--lyra-app-surface-bg);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 62%, color-mix(in srgb, var(--lyra-app-surface-strong-bg) 92%, var(--lyra-app-surface-bg) 8%));
   border: var(--lyra-stroke-thin) solid var(--lyra-app-input-border);
   border-radius: var(--lyra-radius-12);
   padding: var(--lyra-space-8) var(--lyra-space-10) var(--lyra-space-8);
@@ -5067,7 +5067,7 @@
 }
 
 .lyra-agents-composer:focus-within {
-  background: var(--lyra-app-surface-bg);
+  background: color-mix(in srgb, var(--lyra-app-row-hover-bg) 62%, color-mix(in srgb, var(--lyra-app-surface-strong-bg) 92%, var(--lyra-app-surface-bg) 8%));
   border-color: color-mix(
     in srgb,
     var(--lyra-app-input-focus-border) 56%,
@@ -5079,7 +5079,7 @@
   width: 100%;
   flex: none;
   resize: none;
-  background: var(--lyra-app-input-bg);
+  background: var(--lyra-agents-content-bg);
   color: var(--lyra-text-primary);
   border: 0;
   border-radius: var(--lyra-radius-8);
@@ -5098,13 +5098,13 @@
 }
 
 .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:focus-visible {
-  background: var(--lyra-app-input-focus-bg);
+  background: var(--lyra-agents-content-bg);
   border: 0;
   box-shadow: none;
 }
 
 .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:hover:not(:disabled) {
-  background: var(--lyra-app-input-hover-bg);
+  background: var(--lyra-agents-content-bg);
   border: 0;
 }
 
@@ -5125,7 +5125,7 @@
 .lyra-agents-composer > .lyra-agents-citation-composer-input.lyra-agents-composer-input {
   width: 100%;
   flex: none;
-  background: var(--lyra-app-input-bg);
+  background: var(--lyra-agents-content-bg);
   color: var(--lyra-text-primary);
   border: 0;
   border-radius: var(--lyra-radius-8);
@@ -5153,7 +5153,7 @@
 
 .lyra-agents-citation-composer-input:focus-visible {
   outline: none;
-  background: var(--lyra-app-input-focus-bg);
+  background: var(--lyra-agents-content-bg);
 }
 
 .lyra-agents-citation-composer-input[data-drop-active="true"] {
@@ -5497,9 +5497,6 @@
   height: var(--lyra-shell-titlebar-nav-h);
   min-height: var(--lyra-shell-titlebar-nav-h);
   min-width: 0;
-  border-top: var(--lyra-stroke-thin) solid color-mix(in srgb, var(--lyra-app-border) 48%, transparent);
-  border-radius: var(--lyra-radius-8);
-  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 72%, var(--lyra-app-surface-bg));
 }
 
 .lyra-agents-composer-model-controls {
@@ -7443,4 +7440,29 @@
   align-items: center;
   gap: var(--lyra-space-2);
   flex: 0 0 auto;
+}
+
+@container (max-width: 360px) {
+  .lyra-agents-project-meta-row {
+    gap: var(--lyra-space-4);
+  }
+
+  .lyra-agents-project-dir-chip,
+  .lyra-agents-project-location-chip,
+  .lyra-agents-project-todo-chip,
+  .lyra-agents-project-plan-chip,
+  .lyra-agents-bg-terminal-chip {
+    flex: 0 0 auto;
+    max-width: none;
+    padding-inline: var(--lyra-space-6);
+  }
+
+  .lyra-agents-project-dir-chip-label,
+  .lyra-agents-project-dir-chip-chevron,
+  .lyra-agents-project-location-chip span,
+  .lyra-agents-project-todo-chip span,
+  .lyra-agents-project-plan-chip span,
+  .lyra-agents-bg-terminal-chip > span:not(.lyra-agents-bg-terminal-count) {
+    display: none;
+  }
 }

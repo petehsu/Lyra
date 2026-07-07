@@ -12,10 +12,7 @@ import {
   adaptBrowserAxMapToComputerMap,
   adaptBrowserAxQueryToComputerFind,
   adaptFileManagerObservationToComputerMap,
-  adaptTerminalActToComputerAct,
-  adaptTerminalMapToComputerMap,
   browserAxNodeToComputerNode,
-  filterTerminalRegions,
   isBrowserAxActionResult,
   isBrowserAxMapResult,
   isBrowserAxQueryResult,
@@ -23,7 +20,6 @@ import {
   isLyraFileManagerOsRef,
   isLyraTerminalOsRef,
   mapComputerActionToAxInteraction,
-  mapComputerActionToTerminalAction,
   parseLyraBrowserOsRef,
   parseLyraFileManagerOsRef,
   parseLyraTerminalOsRef,
@@ -285,33 +281,6 @@ export const createComputerToolHost = ({
         return adaptBrowserAxMapToComputerMap(raw);
       }
       return isRecord(raw) ? raw : { ok: false, error: { kind: "internal", message: "browser_ax.map returned an invalid result." } };
-    }
-    if (surface.kind === LYRA_TERMINAL_SURFACE) {
-      const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.map.read", {
-        ...input,
-        tabId: surface.tabId
-      });
-      if (!isRecord(raw) || !Array.isArray(raw.regions) || typeof raw.sessionId !== "string") {
-        return isRecord(raw) ? raw : { ok: false, error: { kind: "internal", message: "terminal.map.read returned an invalid result." } };
-      }
-      const screen = isRecord(raw.screen) ? raw.screen : {};
-      return adaptTerminalMapToComputerMap(surface.tabId, {
-        sessionId: raw.sessionId,
-        screen: { screenVersion: typeof screen.screenVersion === "number" ? screen.screenVersion : 0 },
-        regions: raw.regions as Array<{
-          regionId: string;
-          kind: string;
-          text: string;
-          rowStart: number;
-          rowEnd: number;
-          colStart: number;
-          colEnd: number;
-          confidence: number;
-          suggestedActions: readonly string[];
-        }>,
-        ...(typeof raw.stale === "boolean" ? { stale: raw.stale } : {}),
-        ...(typeof raw.warning === "string" ? { warning: raw.warning } : {})
-      });
     }
     const readResult = await internalSurfaces.tabResolver.readWorkbenchTabWithSummaryFallback({
       tabId: surface.tabId,
@@ -658,33 +627,6 @@ export const createComputerToolHost = ({
         return adaptBrowserAxActToComputerAct(osRef, actionValue, raw);
       }
 
-      if (isLyraTerminalOsRef(osRef)) {
-        if (internalSurfaces === undefined) {
-          return {
-            ok: false,
-            error: { kind: "internalSurfaceUnavailable", message: "Lyra terminal internal osRef routing is not configured." }
-          };
-        }
-        const parsed = parseLyraTerminalOsRef(osRef);
-        if (parsed === null) {
-          return { ok: false, error: { kind: "invalidArgument", message: "Malformed Lyra terminal osRef." } };
-        }
-        const terminalAction = mapComputerActionToTerminalAction(actionValue);
-        if (terminalAction === null) {
-          return { ok: false, error: { kind: "unsupportedAction", message: `Action "${actionValue}" is not supported on Lyra terminal.` } };
-        }
-        const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.act.execute", {
-          ...input,
-          sessionId: parsed.sessionId,
-          regionId: parsed.regionId,
-          operation: terminalAction.action,
-          ...(readOptionalStringField(input, "text") === undefined
-            ? {}
-            : { text: readOptionalStringField(input, "text") })
-        });
-        return adaptTerminalActToComputerAct(osRef, actionValue, isRecord(raw) ? raw : {});
-      }
-
       if (isLyraFileManagerOsRef(osRef)) {
         return {
           ok: false,
@@ -822,45 +764,6 @@ export const createComputerToolHost = ({
           present: true,
           osRef,
           node: browserAxNodeToComputerNode(parsed.tabId, node)
-        };
-      }
-
-      if (isLyraTerminalOsRef(osRef) && internalSurfaces !== undefined) {
-        const parsed = parseLyraTerminalOsRef(osRef);
-        if (parsed === null) {
-          return { ok: false, error: { kind: "invalidArgument", message: "Malformed Lyra terminal osRef." } };
-        }
-        const raw = await invokeHandler(internalSurfaces.terminalHandlers, "terminal.map.read", {
-          ...input,
-          sessionId: parsed.sessionId
-        });
-        if (!isRecord(raw) || !Array.isArray(raw.regions)) {
-          return { ok: false, error: { kind: "internal", message: "terminal.map.read returned an invalid result." } };
-        }
-        const region = (raw.regions as Array<{ regionId: string }>).find(
-          (candidate) => candidate.regionId === parsed.regionId
-        );
-        if (region === undefined) {
-          return {
-            ok: true,
-            platform: process.platform,
-            surface: LYRA_TERMINAL_SURFACE,
-            capabilityLevel: 1,
-            present: false,
-            osRef,
-            message: "Terminal region is no longer present; the osRef is stale."
-          };
-        }
-        return {
-          ok: true,
-          platform: process.platform,
-          surface: LYRA_TERMINAL_SURFACE,
-          capabilityLevel: 1,
-          present: true,
-          osRef,
-          node: filterTerminalRegions(parsed.sessionId, raw.regions as Parameters<typeof filterTerminalRegions>[1], {
-            maxResults: 1
-          })[0]
         };
       }
 

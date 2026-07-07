@@ -9,12 +9,10 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use crate::events::{emit_cwd_changed, emit_event, NativeEvent};
 use crate::input_controller;
 use crate::live_output::{append_output, mark_session_exit, Utf8StreamDecoder};
-use crate::memory_writer::TerminalMemoryTask;
 use crate::protocol::{
     TerminalShellLaunchEnvPair, TerminalShellLaunchPlanRequest, TerminalShellLaunchPlanResponse,
     TerminalWriteRequest,
 };
-use crate::screen;
 use crate::session_runtime::SessionRuntime;
 use crate::shell::{
     configure_shell_command, configure_shell_environment, make_shell_candidates, shell_exists,
@@ -132,9 +130,7 @@ pub(crate) fn spawn_io_threads(
     let source_for_reader = runtime.source.clone();
     let mode_for_reader = runtime.mode.clone();
     let state_for_reader = Arc::clone(&runtime.state);
-    let screen_for_reader = Arc::clone(&runtime.screen);
     let current_cwd_for_reader = Arc::clone(&runtime.current_cwd);
-    let memory_writer_for_reader = runtime.memory_writer.clone();
     let reader_done = Arc::new(AtomicBool::new(false));
     let reader_done_for_reader = Arc::clone(&reader_done);
     thread::spawn(move || {
@@ -165,15 +161,6 @@ pub(crate) fn spawn_io_threads(
                 Ok(size) => {
                     let chunk = &buffer[..size];
                     let shell_events = shell_parser.feed(chunk);
-                    if let Some(writer) = memory_writer_for_reader.as_ref() {
-                        for event in shell_events
-                            .iter()
-                            .filter(|event| event.kind != ShellIntegrationEventKind::CommandEnd)
-                        {
-                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
-                        }
-                        writer.enqueue(TerminalMemoryTask::Output(chunk.to_vec()));
-                    }
                     append_output(&state_for_reader, chunk);
                     let data = event_decoder.decode(chunk);
                     if !data.is_empty() {
@@ -207,29 +194,10 @@ pub(crate) fn spawn_io_threads(
                             );
                         }
                     }
-                    let screen_diff_payload = screen_for_reader
-                        .lock()
-                        .ok()
-                        .map(|mut screen| screen.feed(chunk))
-                        .map(|diff| screen::screen_diff_payload(&diff));
-                    if let Some(writer) = memory_writer_for_reader.as_ref() {
-                        for event in shell_events
-                            .iter()
-                            .filter(|event| event.kind == ShellIntegrationEventKind::CommandEnd)
-                        {
-                            writer.enqueue(TerminalMemoryTask::ShellEvent((*event).clone()));
-                        }
-                        if let Some(payload) = screen_diff_payload {
-                            writer.enqueue(TerminalMemoryTask::ScreenDiff(payload));
-                        }
-                    }
                 }
                 Err(error) => {
                     if error.kind() == std::io::ErrorKind::Interrupted {
                         continue;
-                    }
-                    if let Some(writer) = memory_writer_for_reader.as_ref() {
-                        writer.enqueue(TerminalMemoryTask::Error(error.to_string()));
                     }
                     emit_event(NativeEvent {
                         kind: "error".to_string(),
@@ -254,7 +222,6 @@ pub(crate) fn spawn_io_threads(
     let source_for_exit = runtime.source.clone();
     let mode_for_exit = runtime.mode.clone();
     let state_for_exit = Arc::clone(&runtime.state);
-    let memory_writer_for_exit = runtime.memory_writer.clone();
     let child_for_exit = Arc::clone(&runtime.child);
     let reader_done_for_exit = Arc::clone(&reader_done);
     thread::spawn(move || {
@@ -265,9 +232,6 @@ pub(crate) fn spawn_io_threads(
         };
 
         wait_for_reader_drain(&reader_done_for_exit);
-        if let Some(writer) = memory_writer_for_exit.as_ref() {
-            writer.enqueue(TerminalMemoryTask::Exit(exit_code));
-        }
         mark_session_exit(&state_for_exit, exit_code);
 
         let session_id_for_callback = session_id.clone();

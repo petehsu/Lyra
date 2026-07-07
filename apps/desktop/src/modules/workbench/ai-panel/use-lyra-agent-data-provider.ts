@@ -486,8 +486,6 @@ export const useLyraAgentDataProvider = (
   const [permissionPolicy, setPermissionPolicy] = useState<AgentPermissionPolicySnapshot | null>(null);
   const [permissionPolicyBusy, setPermissionPolicyBusy] = useState(false);
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
-  const [actCacheEnabled, setActCacheEnabledState] = useState(false);
-  const [codeGraphEmbeddingEnabled, setCodeGraphEmbeddingEnabledState] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
   // Render budget: number of most-recent messages to render as DOM.
@@ -676,42 +674,6 @@ export const useLyraAgentDataProvider = (
         if (!disposed) {
           setBrowserFollowModeEnabled(snapshot.enabled);
           syncBrowserFollowModeCoordinator(snapshot.enabled);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-    };
-  }, [desktopApi]);
-
-  useEffect(() => {
-    if (desktopApi?.agent === undefined) {
-      setActCacheEnabledState(false);
-      return;
-    }
-    let disposed = false;
-    void desktopApi.agent.readActCache()
-      .then((snapshot) => {
-        if (!disposed) {
-          setActCacheEnabledState(snapshot.enabled);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-    };
-  }, [desktopApi]);
-
-  useEffect(() => {
-    if (desktopApi?.agent === undefined) {
-      setCodeGraphEmbeddingEnabledState(false);
-      return;
-    }
-    let disposed = false;
-    void desktopApi.agent.readCodeGraphEmbedding()
-      .then((snapshot) => {
-        if (!disposed) {
-          setCodeGraphEmbeddingEnabledState(snapshot.enabled);
         }
       })
       .catch(() => undefined);
@@ -1076,18 +1038,6 @@ export const useLyraAgentDataProvider = (
     const snapshot = await desktopApi.agent.updateBrowserFollowMode({ enabled });
     setBrowserFollowModeEnabled(snapshot.enabled);
     syncBrowserFollowModeCoordinator(snapshot.enabled);
-  }, [desktopApi]);
-
-  const setActCache = useCallback(async (enabled: boolean): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const snapshot = await desktopApi.agent.updateActCache({ enabled });
-    setActCacheEnabledState(snapshot.enabled);
-  }, [desktopApi]);
-
-  const setCodeGraphEmbedding = useCallback(async (enabled: boolean): Promise<void> => {
-    if (desktopApi?.agent === undefined) return;
-    const snapshot = await desktopApi.agent.updateCodeGraphEmbedding({ enabled });
-    setCodeGraphEmbeddingEnabledState(snapshot.enabled);
   }, [desktopApi]);
 
   const confirmFullAutoMode = useCallback(async (): Promise<boolean> => {
@@ -1879,10 +1829,6 @@ export const useLyraAgentDataProvider = (
       aiRichRenderingEnabled,
       browserFollowModeEnabled,
       setBrowserFollowMode,
-      actCacheEnabled,
-      setActCache,
-      codeGraphEmbeddingEnabled,
-      setCodeGraphEmbedding,
       openUrlInWorkbench,
       openFileInWorkbench,
       revealPathInWorkbench,
@@ -1960,10 +1906,6 @@ export const useLyraAgentDataProvider = (
     denyPermission,
     browserFollowModeEnabled,
     setBrowserFollowMode,
-    actCacheEnabled,
-    setActCache,
-    codeGraphEmbeddingEnabled,
-    setCodeGraphEmbedding,
     openModelSettings,
     openUrlInWorkbench,
     openFileInWorkbench,

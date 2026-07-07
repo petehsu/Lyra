@@ -1,0 +1,258 @@
+"""Username scanner — adapted for Lyra bridge (no console/rich, no checkpoint, no browser)."""
+
+import asyncio
+import json
+import logging
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import aiohttp
+
+from .analyzer import FeatureExtractor
+from .config import DEFAULT_HEADERS, ScannerConfig
+from .detector import Detector
+from .fingerprints import FingerprintStore, build_fingerprint
+from .http import fetch_url
+from .rate_limit import DomainRateLimiter
+from .variations import generate_username_variations
+
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+
+@dataclass
+class ScanResult:
+    site: str
+    url: str
+    final_url: str
+    status: str
+    code: int
+    response_time: float
+    confidence: int
+    ai_analysis: dict[str, Any]
+
+
+def load_sites_data(path: Path | None = None) -> dict[str, str]:
+    if path is not None:
+        with Path(path).open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    text = (_DATA_DIR / "sites.json").read_text("utf-8")
+    return json.loads(text)
+
+
+def load_nsfw_sites() -> list[str]:
+    try:
+        text = (_DATA_DIR / "nsfw_sites.json").read_text("utf-8")
+        return json.loads(text)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def filter_sites(
+    sites: dict[str, str],
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> dict[str, str]:
+    result = sites
+    if include:
+        terms = [t.lower() for t in include if t]
+        result = {
+            name: tmpl
+            for name, tmpl in result.items()
+            if any(term in name.lower() for term in terms)
+        }
+    if exclude:
+        terms = [t.lower() for t in exclude if t]
+        result = {
+            name: tmpl
+            for name, tmpl in result.items()
+            if not any(term in name.lower() for term in terms)
+        }
+    return result
+
+
+def build_connector(config: ScannerConfig, limit: int) -> aiohttp.BaseConnector:
+    return aiohttp.TCPConnector(limit=limit)
+
+
+class UsernameScanner:
+    """Silent scanner — no console output, no checkpoint, no browser fallback."""
+
+    def __init__(
+        self,
+        sites_data: dict[str, str],
+        config: ScannerConfig,
+        extractor: FeatureExtractor,
+        detector: Detector,
+        fingerprints: FingerprintStore,
+        logger: logging.Logger,
+    ) -> None:
+        self.sites_data = sites_data
+        self.config = config
+        self.extractor = extractor
+        self.detector = detector
+        self.fingerprints = fingerprints
+        self.logger = logger
+
+    async def scan_with_variations(
+        self, base_username: str, level: str
+    ) -> dict[str, list[dict[str, Any]]]:
+        variations = generate_username_variations(base_username, level)
+        all_results: dict[str, list[dict[str, Any]]] = {}
+        for username in variations:
+            results = await self.scan_all_sites(username)
+            all_results[username] = results
+        return all_results
+
+    async def scan_all_sites(self, username: str) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        if not self.sites_data:
+            return results
+
+        conn_limit = max(1, min(self.config.concurrent, len(self.sites_data)))
+        rate_limiter = DomainRateLimiter()
+        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+        for site, tmpl in self.sites_data.items():
+            queue.put_nowait((site, tmpl))
+
+        connector = build_connector(self.config, conn_limit)
+        try:
+            async with aiohttp.ClientSession(
+                headers=DEFAULT_HEADERS, connector=connector
+            ) as session:
+                workers = [
+                    asyncio.create_task(
+                        self._worker(queue, username, session, rate_limiter, results)
+                    )
+                    for _ in range(conn_limit)
+                ]
+                await queue.join()
+                for worker in workers:
+                    worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+        finally:
+            pass
+
+        return results
+
+    async def _worker(
+        self,
+        queue: asyncio.Queue[tuple[str, str]],
+        username: str,
+        session: aiohttp.ClientSession,
+        rate_limiter: DomainRateLimiter,
+        results: list[dict[str, Any]],
+    ) -> None:
+        while True:
+            try:
+                site, tmpl = await queue.get()
+            except asyncio.CancelledError:
+                break
+            try:
+                result = await self._scan_site(site, tmpl, username, session, rate_limiter)
+                results.append(result)
+            except Exception as exc:
+                url = self._format_url(site, tmpl, username)
+                self.logger.debug("Worker failed for %s: %s", site, exc)
+                result = {
+                    "site": site,
+                    "url": url,
+                    "final_url": url,
+                    "status": "Error",
+                    "code": 0,
+                    "response_time": 0.0,
+                    "confidence": 0,
+                    "ai_analysis": {"error": str(exc)},
+                }
+                results.append(result)
+            queue.task_done()
+
+    async def _scan_site(
+        self,
+        site_name: str,
+        url_template: str,
+        username: str,
+        session: aiohttp.ClientSession,
+        rate_limiter: DomainRateLimiter,
+    ) -> dict[str, Any]:
+        url = self._format_url(site_name, url_template, username)
+        fetch = await fetch_url(session, url, self.config, rate_limiter, self.logger)
+
+        if fetch.error and fetch.status == 408:
+            status_text = "Timeout"
+        elif fetch.error:
+            status_text = "Error"
+        else:
+            status_text = "Unknown"
+
+        ai_analysis: dict[str, Any] = {}
+        confidence = 0
+        if not fetch.error:
+            try:
+                bundle = self.extractor.extract(
+                    fetch.content,
+                    fetch.final_url,
+                    username,
+                    site_name,
+                    fetch.status,
+                    fetch.response_time,
+                    fetch.headers,
+                    fetch.redirect_count,
+                )
+            except Exception as exc:
+                self.logger.debug("Feature extraction failed for %s: %s", site_name, exc)
+                return {
+                    "site": site_name,
+                    "url": url,
+                    "final_url": fetch.final_url or url,
+                    "status": "Error",
+                    "code": 0,
+                    "response_time": round(fetch.response_time, 2),
+                    "confidence": 0,
+                    "ai_analysis": {"error": str(exc)},
+                }
+
+            fingerprint = build_fingerprint(bundle.fingerprint)
+            fingerprint_score = self.fingerprints.score(site_name, fingerprint)
+            bundle.features["fingerprint_match_found"] = float(fingerprint_score["match_found"])
+            bundle.features["fingerprint_match_not_found"] = float(fingerprint_score["match_not_found"])
+
+            detection = self.detector.predict(bundle.features)
+            status_text = detection.status
+            confidence = detection.confidence
+
+            ai_analysis = {
+                "method": detection.method,
+                "score": detection.score,
+                "probability": detection.probability,
+                "features": bundle.features,
+                "signals": bundle.signals,
+            }
+
+            if status_text in {"Found", "Not Found"} and confidence >= 85:
+                label = "found" if status_text == "Found" else "not_found"
+                self.fingerprints.add(site_name, label, fingerprint)
+
+        return {
+            "site": site_name,
+            "url": url,
+            "final_url": fetch.final_url,
+            "status": status_text,
+            "code": fetch.status,
+            "response_time": round(fetch.response_time, 2),
+            "confidence": confidence,
+            "ai_analysis": ai_analysis,
+        }
+
+    @staticmethod
+    def _format_url(site_name: str, url_template: str, username: str) -> str:
+        try:
+            url = url_template.format(username)
+        except (KeyError, IndexError):
+            url = url_template.replace("{}", username)
+            if "{" in url:
+                url = f"https://{site_name}.com/{username}"
+        except Exception:
+            url = f"https://{site_name}.com/{username}"
+        return url

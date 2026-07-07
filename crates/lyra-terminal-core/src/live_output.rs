@@ -1,19 +1,12 @@
 //! Live terminal output buffering and UTF-8 projection.
 //!
-//! This module owns the in-memory read buffer used while a terminal is running.
-//! Durable terminal memory lives in `memory`; this is only the short-lived live
-//! projection needed by `read_session` and waiters.
+//! Uses `vte::Parser` to strip ANSI control sequences for the text projection
+//! consumed by `read_session`. The raw byte buffer is preserved for xterm.js
+//! scrollback replay.
 
 use std::sync::{Arc, Condvar, Mutex};
 
-use once_cell::sync::Lazy;
-
 use crate::MAX_SESSION_BUFFER_BYTES;
-
-static LIVE_ANSI_CSI_RE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]").expect("valid CSI regex"));
-static LIVE_ANSI_OSC_RE: Lazy<regex::Regex> =
-    Lazy::new(|| regex::Regex::new(r"\x1b\][^\x07]*(?:\x07|\x1b\\)").expect("valid OSC regex"));
 
 pub(crate) type SessionStateHandle = Arc<(Mutex<SessionOutputState>, Condvar)>;
 
@@ -28,6 +21,32 @@ pub(crate) struct SessionOutputState {
     pub(crate) text_decoder: Utf8StreamDecoder,
     pub(crate) running: bool,
     pub(crate) exit_code: Option<i32>,
+}
+
+/// VtePerform collects printable text from a VT stream, dropping all CSI/OSC/DCS
+/// escape sequences. Only `print` and line-mode `execute` bytes (\n, \r, \t) are kept.
+struct VteTextCollector {
+    out: String,
+}
+
+impl VteTextCollector {
+    fn new() -> Self {
+        Self { out: String::new() }
+    }
+}
+
+impl vte::Perform for VteTextCollector {
+    fn print(&mut self, c: char) {
+        self.out.push(c);
+    }
+
+    fn execute(&mut self, byte: u8) {
+        // ponytail: only keep whitespace control chars that affect text layout
+        if byte == b'\n' || byte == b'\r' || byte == b'\t' {
+            self.out.push(byte as char);
+        }
+    }
+    // CSI / OSC / DCS / SGR / etc. — default no-op = discarded
 }
 
 #[derive(Default)]
@@ -124,8 +143,12 @@ pub(crate) fn append_output(state_handle: &SessionStateHandle, data: &[u8]) {
 }
 
 fn strip_live_terminal_control_sequences(text: &str) -> String {
-    let without_osc = LIVE_ANSI_OSC_RE.replace_all(text, "");
-    LIVE_ANSI_CSI_RE.replace_all(&without_osc, "").to_string()
+    let mut parser = vte::Parser::new();
+    let mut collector = VteTextCollector::new();
+    for byte in text.as_bytes() {
+        parser.advance(&mut collector, *byte);
+    }
+    collector.out
 }
 
 pub(crate) fn live_output_projection(
