@@ -1239,6 +1239,7 @@ mod persistence_tests {
             active_skills: HashSet::new(),
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
+            first_used_at: None,
         };
 
         write_json(&path, &state).expect("write state");

@@ -68,6 +68,11 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
     let mcp = |tool_name, action| RuntimeToolTarget::McpAdapter { tool_name, action };
     Some(match manifest.path.as_str() {
         "/tools/runtime/artifact_read" => native("artifact_read", "artifact", "read"),
+        "/tools/filesystem/read_file" => native("file_read", "file", "read"),
+        "/tools/filesystem/grep" => native("file_grep", "file", "grep"),
+        "/tools/filesystem/glob" => native("file_glob", "file", "glob"),
+        "/tools/filesystem/list_files" => native("file_list", "file", "list"),
+        "/tools/shell/run" => native("shell_run", "shell", "run"),
         "/tools/memory/search" => memory("memory_search", "search"),
         "/tools/memory/remember" => memory("memory_remember", "remember"),
         "/tools/memory/update" => memory("memory_update", "update"),
@@ -141,6 +146,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/software/invoke_capability" => {
             host("software.invokeCapability", "software", "invoke_capability")
         }
+        "/tools/design/reference" => native("design_reference", "design", "read"),
         "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),
@@ -174,6 +180,7 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/browser/audit" => host("lyraLumen.audit", "lyra_lumen", "audit"),
         "/tools/browser/elevate" => host("lyraLumen.elevate", "lyra_lumen", "elevate"),
         "/tools/browser/judge_task" => host("lyraLumen.judgeTask", "lyra_lumen", "judge_task"),
+        "/tools/browser/extract" => host("lyraLumen.extract", "lyra_lumen", "extract"),
         "/tools/browser_ax/map" => host("lyraAx.map", "lyra_ax", "map"),
         "/tools/browser_ax/query" => host("lyraAx.query", "lyra_ax", "query"),
         "/tools/browser_ax/act" => host("lyraAx.act", "lyra_ax", "act"),

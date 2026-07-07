@@ -567,6 +567,27 @@ export const createAgentIpcRouter = ({
         )
     ],
     [
+      LYRA_CHANNELS.agentElevationValidate,
+      (_event, payload) =>
+        requestRuntime<{ readonly valid: boolean; readonly exitCode?: number; readonly stderr?: string }>(
+          "agent.elevation.validate",
+          payload as { password: string }
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentElevationSetSecret,
+      (_event, payload) =>
+        requestRuntime<{ readonly stored: boolean }>(
+          "agent.elevation.setSecret",
+          payload as { secret: string }
+        )
+    ],
+    [
+      LYRA_CHANNELS.agentElevationClear,
+      () =>
+        requestRuntime<{ readonly cleared: boolean }>("agent.elevation.clear")
+    ],
+    [
       LYRA_CHANNELS.agentConfigRead,
       () => requestRuntime<AgentConfigSnapshot>("agent.config.read")
     ],

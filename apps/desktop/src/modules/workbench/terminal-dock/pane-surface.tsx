@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
+import { X } from "lucide-react";
 import { Terminal } from "xterm";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { AppIconButton } from "@renderer/ui/components";
 import { getIsLayoutResizing } from "../shell/use-panel-layout";
 import {
   wasBulkTerminalRestored,
@@ -20,6 +22,8 @@ export type TerminalPaneSurfaceProps = {
   readonly labels: TerminalDockLabels;
   readonly themeSignature: string;
   readonly uiThemeId: string;
+  readonly canClose?: boolean;
+  readonly onClose?: () => void;
   readonly onFocus: () => void;
 };
 
@@ -64,6 +68,14 @@ type TerminalRendererHandle = {
 };
 
 const terminalRenderersBySession = new Map<string, TerminalRendererHandle>();
+
+const focusTerminalRenderer = (handle: TerminalRendererHandle): void => {
+  try {
+    handle.terminal.focus();
+  } catch (_error) {
+    // xterm may not be attached while panes are moving between hosts.
+  }
+};
 
 const withTerminalRuntimeEnv = (
   pane: TerminalDockPane,
@@ -391,6 +403,8 @@ export const TerminalPaneSurface = ({
   labels,
   themeSignature,
   uiThemeId,
+  canClose = false,
+  onClose,
   onFocus
 }: TerminalPaneSurfaceProps) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -657,6 +671,9 @@ export const TerminalPaneSurface = ({
       lastSyncedRows = -1;
       scheduleResizeAndSync("immediate");
       scheduleInitialResizeRetries();
+      if (activeRef.current) {
+        focusTerminalRenderer(renderer);
+      }
     };
 
     setStatusMessage(null);
@@ -746,6 +763,7 @@ export const TerminalPaneSurface = ({
       }
       try {
         renderer.fitAddon.fit();
+        focusTerminalRenderer(renderer);
       } catch (_error) {
         return;
       }
@@ -778,6 +796,22 @@ export const TerminalPaneSurface = ({
       <div className="lyra-terminal-pane-body">
         <div className="lyra-terminal-host" ref={hostRef} />
         {statusMessage === null ? null : <div className="lyra-terminal-status">{statusMessage}</div>}
+        {canClose && onClose !== undefined ? (
+          <AppIconButton
+            className="lyra-terminal-pane-close"
+            aria-label={labels.closePane}
+            title={labels.closePane}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClose();
+            }}
+          >
+            <X size={12} aria-hidden="true" />
+          </AppIconButton>
+        ) : null}
       </div>
     </section>
   );

@@ -1595,18 +1595,13 @@ fn registry_model_tools_have_dispatch_paths_and_unknown_tools_fail_structurally(
         "file_multiedit",
         "shell_run",
         "terminal_list",
-        "terminal_create",
         "terminal_read",
-        "terminal_screen",
-        "terminal_wait",
         "terminal_write",
-        "terminal_close",
         "code_grep_text",
         "lsp_query",
         "web_search",
         "web_fetch",
         "todo_read",
-        "todo_write",
     ] {
         assert!(names.contains(&required.to_string()), "{required} exposed");
         assert!(

@@ -530,22 +530,9 @@ fn render_prompt_sections(
         })
         .unwrap_or_default();
 
-    // Phase 2: location fallback — hash os_username → stable random city
-    let identity_location = input.persona.location_label.as_deref()
-        .map(String::from)
-        .unwrap_or_else(|| {
-            // ponytail: hash os_username 选城市，同机器稳定。升级路径：用户手动设置 location。
-            const CITIES: [&str; 8] = [
-                "San Francisco", "San Jose", "Seattle", "Austin",
-                "Boston", "New York", "Denver", "Portland",
-            ];
-            let seed = input.persona.user_name.as_deref().unwrap_or("anon");
-            let mut hash: u64 = 5381;
-            for b in seed.bytes() {
-                hash = hash.wrapping_mul(33).wrapping_add(b as u64);
-            }
-            CITIES[(hash as usize) % CITIES.len()].to_string()
-        });
+    // Phase 2: location — real data only, no fake fallback.
+    // ponytail: 假位置比没位置更糟。升级路径：用户手动设置 / OSINT / IP geo。
+    let identity_location = input.persona.location_label.as_deref().map(String::from);
 
     // Phase 3: first_used_brief — "U've been here N days."
     let first_used_brief = input.first_used_at.as_deref().and_then(|ts| {
@@ -562,8 +549,10 @@ fn render_prompt_sections(
         }
     });
 
-    // Phase 6: identity_age — inferred or default 21 (born 2005-08-06)
-    let identity_age = persona_identity.and_then(|p| p.inferred_age).or(Some(21));
+    // Phase 6: identity_age — no fake fallback.
+    // ponytail: infer_age 假设用户创建 home 时 16 岁，太不可靠。不输出假年龄。
+    // 升级路径：OSINT bio 正则提取生日 / 用户手动设置。
+    let identity_age = persona_identity.and_then(|p| p.inferred_age);
 
     sections.push(PromptSectionCandidate {
         id: "P0.kernel",
@@ -1059,7 +1048,7 @@ mod tests {
         PersonaContext {
             current_time: Some("Wednesday, June 17, 2026, 2:45 PM GMT+8".to_string()),
             location_label: Some("Shanghai, China".to_string()),
-            device_summary: Some("macOS arm64 · PetedeMacBook-Air · Lyra 0.1.0".to_string()),
+            device_summary: Some("macOS arm64 · PetedeMacBook-Air · 0.1.0".to_string()),
             user_name: Some("petehsu".to_string()),
             ..PersonaContext::default()
         }
@@ -1093,7 +1082,7 @@ mod tests {
     #[test]
     fn prompt_policy_contains_persona_tool_strategy_and_verification() {
         let report = build_system_prompt_report(&PromptPolicyInput {
-            runtime_context: json!({ "identity": "Lyra" }),
+            runtime_context: json!({ "identity": "agent" }),
             persona: full_persona(),
             accounting: PromptAccounting {
                 system_budget: 100,

@@ -90,6 +90,7 @@ vi.mock("xterm", () => {
     helperTextarea: HTMLTextAreaElement | undefined;
     lines: string[] = [""];
     writeCalls: string[] = [];
+    focusCalls = 0;
     buffer = {
       active: {
         viewportY: 0,
@@ -133,6 +134,10 @@ vi.mock("xterm", () => {
       this.helperTextarea = undefined;
     }
     refresh(): void {}
+    focus(): void {
+      this.focusCalls += 1;
+      this.helperTextarea?.focus();
+    }
     write(data = "", callback?: () => void): void {
       this.writeCalls.push(String(data));
       const parts = String(data).replace(/\r/gu, "").split("\n");

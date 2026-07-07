@@ -600,6 +600,7 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "file_read" => tool_file_read(session_id, turn_id, tool_call_id, input),
         "file_list" => tool_file_list(session_id, input),
         "file_glob" => tool_file_glob(session_id, input),
+        "file_grep" => tool_file_grep(session_id, input),
         "file_write" => tool_file_write(session_id, turn_id, tool_call_id, input),
         "file_edit" => tool_file_edit(session_id, turn_id, tool_call_id, input),
         "file_strict_edit" => tool_file_strict_edit(session_id, turn_id, tool_call_id, input),

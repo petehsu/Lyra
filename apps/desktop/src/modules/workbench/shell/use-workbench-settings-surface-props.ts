@@ -41,6 +41,17 @@ type UseWorkbenchSettingsSurfacePropsParams = {
   readonly onJsReplChange: (enabled: boolean) => void;
 };
 
+type AgentPromptDeliveryConfig = {
+  readonly promptDelivery?: {
+    readonly mode?: string | null;
+    readonly leanExperimental?: boolean;
+    readonly openaiResponsesStatefulPromptContract?: boolean;
+  };
+};
+
+const asAgentPromptDeliveryConfig = (value: unknown): AgentPromptDeliveryConfig =>
+  (value ?? {}) as AgentPromptDeliveryConfig;
+
 export const useWorkbenchSettingsSurfaceProps = ({
   labels,
   desktopApi,
@@ -354,6 +365,12 @@ export const useWorkbenchSettingsSurfaceProps = ({
   const linuxCompatVisible = linuxCompatStatus?.platform === "linux" && linuxCompatStatus.enabled;
   const linuxCompatProfileValue =
     linuxCompatConfig?.profile ?? linuxCompatStatus?.profile ?? "reliable";
+  const agentPromptDelivery = asAgentPromptDeliveryConfig(settingsAiModel.agentConfig?.config).promptDelivery;
+  const leanPromptDeliveryValue =
+    agentPromptDelivery?.mode === "lean-experimental"
+    || agentPromptDelivery?.leanExperimental === true;
+  const statefulPromptContractValue =
+    agentPromptDelivery?.openaiResponsesStatefulPromptContract === true;
 
   return {
     ...labels.settingsSurface,
@@ -371,6 +388,8 @@ export const useWorkbenchSettingsSurfaceProps = ({
     jsReplValue: jsReplEnabled,
     actCacheValue,
     codeGraphEmbeddingValue,
+    leanPromptDeliveryValue,
+    statefulPromptContractValue,
     searchWebEngineIds: preferences.searchWebEngineIds,
     searchSearxngEndpointValue: preferences.searchSearxngEndpoint ?? "",
     omniboxNonBrowserSubmitTargetValue: preferences.omniboxNonBrowserSubmitTarget,
@@ -433,6 +452,16 @@ export const useWorkbenchSettingsSurfaceProps = ({
       void desktopApi?.agent?.updateCodeGraphEmbedding?.({ enabled: value })
         .then((snap) => { if (snap !== undefined) setCodeGraphEmbeddingValue(snap.enabled); })
         .catch(() => undefined);
+    },
+    onLeanPromptDeliveryChange: (value: boolean) => {
+      void settingsAiModel.updateAgentConfig?.({
+        promptDeliveryMode: value ? "lean-experimental" : "full"
+      });
+    },
+    onStatefulPromptContractChange: (value: boolean) => {
+      void settingsAiModel.updateAgentConfig?.({
+        openaiResponsesStatefulPromptContract: value
+      });
     },
     onSearchWebEnginesChange: preferencesModel.setSearchWebEngineIds,
     onSearchSearxngEndpointChange: (value: string) => {

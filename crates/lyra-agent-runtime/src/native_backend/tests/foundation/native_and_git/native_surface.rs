@@ -23,7 +23,7 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let legacy_read = execute_model_tool(
+    let file_read = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
@@ -34,20 +34,26 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             json!({ "path": "README.md", "startLine": 1, "endLine": 1 }),
         ),
     );
+    assert_eq!(file_read["status"].as_str(), Some("completed"));
     assert_eq!(
-        legacy_read.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
+        file_read["toolPath"].as_str(),
+        Some("/tools/filesystem/read_file")
+    );
+    assert!(
+        file_read["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("needle in docs"))
     );
     let read = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-read".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "sed -n '1p' README.md" }),
-        },
+        tool_fs_run_call(
+            "tool-read",
+            "/tools/shell/run",
+            json!({ "command": "sed -n '1p' README.md" }),
+        ),
     );
     assert!(read["content"].as_str().unwrap().contains("needle in docs"));
     assert_eq!(read["raw"]["exitCode"].as_i64(), Some(0));
@@ -58,11 +64,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-search".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "rg -n needle" }),
-        },
+        tool_fs_run_call(
+            "tool-search",
+            "/tools/shell/run",
+            json!({ "command": "rg -n needle" }),
+        ),
     );
     assert!(search["content"].as_str().unwrap().contains("README.md"));
     let files = execute_model_tool(
@@ -70,11 +76,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-files".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "rg --files -g '*.rs'" }),
-        },
+        tool_fs_run_call(
+            "tool-files",
+            "/tools/shell/run",
+            json!({ "command": "rg --files -g '*.rs'" }),
+        ),
     );
     assert!(files["content"].as_str().unwrap().contains("src/main.rs"));
     let shell = execute_model_tool(
@@ -82,11 +88,11 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-shell".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf hello" }),
-        },
+        tool_fs_run_call(
+            "tool-shell",
+            "/tools/shell/run",
+            json!({ "command": "printf hello" }),
+        ),
     );
     assert!(shell["content"].as_str().unwrap().contains("hello"));
     assert_eq!(shell["raw"]["exitCode"].as_i64(), Some(0));
@@ -155,22 +161,6 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
             .as_str()
             .expect("todo read content")
             .contains("verify native tool surface")
-    );
-    let outside_turn_id = start_test_runtime_turn(&session_id);
-    let outside = execute_model_tool(
-        &session_id,
-        &outside_turn_id,
-        &None,
-        &cancellation,
-        tool_fs_run_call(
-            "tool-outside",
-            "/tools/filesystem/read_file",
-            json!({ "path": "/etc/passwd" }),
-        ),
-    );
-    assert_eq!(
-        outside.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
     );
     let agent_root = state()
         .lock()

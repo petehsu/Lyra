@@ -493,6 +493,10 @@ pub(crate) fn filesystem_path_permission_candidates(
             value_string(input, "root").unwrap_or_else(|| ".".to_string()),
             false,
         )],
+        ("file", "grep") => vec![(
+            value_string(input, "path").unwrap_or_else(|| ".".to_string()),
+            false,
+        )],
         ("file", "list") => vec![(
             value_string(input, "path").unwrap_or_else(|| ".".to_string()),
             false,

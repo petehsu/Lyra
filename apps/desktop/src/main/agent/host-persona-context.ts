@@ -96,19 +96,127 @@ const formatCurrentTime = (
   }
 };
 
+// ── 平台特定设备信息收集 ──
+
+const execCommand = (command: string, timeoutMs = 3000): string | undefined => {
+  try {
+    const output = childProcess.execSync(command, {
+      encoding: "utf-8",
+      timeout: timeoutMs,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    return output.trim();
+  } catch {
+    return undefined;
+  }
+};
+
+// macOS: 版本 + 芯片型号 + Hackintosh 启发式检测
+const readMacosDeviceInfo = (): {
+  readonly osVersion?: string;
+  readonly chip?: string;
+  readonly isHackintosh?: boolean;
+} => {
+  const version = execCommand("sw_vers -productVersion");
+  const cpuBrand = execCommand("sysctl -n machdep.cpu.brand_string");
+
+  // Hackintosh 启发式: macOS 14+ (Sonoma) 不官方支持 Intel CPU
+  // Apple 在 2020 年完成 Apple Silicon 过渡，Sonoma+ + Intel = 几乎确定是 Hackintosh
+  let isHackintosh: boolean | undefined;
+  if (version !== undefined && cpuBrand !== undefined) {
+    const major = parseInt(version.split(".")[0] ?? "0", 10);
+    const isIntel = cpuBrand.toLowerCase().includes("intel");
+    if (isIntel && major >= 14) {
+      isHackintosh = true;
+    }
+  }
+
+  return {
+    ...(version !== undefined ? { osVersion: `macOS ${version}` } : {}),
+    ...(cpuBrand !== undefined ? { chip: cpuBrand } : {}),
+    ...(isHackintosh === true ? { isHackintosh } : {})
+  };
+};
+
+// Linux: 发行版信息（/etc/os-release PRETTY_NAME）
+const readLinuxDeviceInfo = (): {
+  readonly distro?: string;
+} => {
+  try {
+    const content = fs.readFileSync("/etc/os-release", "utf-8");
+    for (const line of content.split("\n")) {
+      if (line.startsWith("PRETTY_NAME=")) {
+        const value = line.slice("PRETTY_NAME=".length).replace(/^"|"$/g, "").trim();
+        if (value.length > 0) return { distro: value };
+      }
+    }
+  } catch {
+    // /etc/os-release 不存在或不可读
+  }
+  return {};
+};
+
+// Windows: OS Caption（如 "Microsoft Windows 11 Pro"）
+const readWindowsDeviceInfo = (): {
+  readonly osVersion?: string;
+} => {
+  const caption = execCommand(
+    'powershell -NoProfile -Command "(Get-CimInstance Win32_OperatingSystem).Caption"',
+    5000
+  );
+  if (caption !== undefined && caption.length > 0) {
+    return { osVersion: caption };
+  }
+  const release = os.release();
+  return release.length > 0 ? { osVersion: `Windows (build ${release})` } : {};
+};
+
+const readPlatformDeviceInfo = ():
+  | {
+      readonly osVersion?: string;
+      readonly chip?: string;
+      readonly isHackintosh?: boolean;
+      readonly distro?: string;
+    }
+  | undefined => {
+  if (process.platform === "darwin") return readMacosDeviceInfo();
+  if (process.platform === "linux") return readLinuxDeviceInfo();
+  if (process.platform === "win32") return readWindowsDeviceInfo();
+  return undefined;
+};
+
 const formatDeviceSummary = (meta: AppMetaPayload): string | undefined => {
   const hostName = meta.hostName?.trim();
   if (hostName === undefined || hostName.length === 0) {
     return undefined;
   }
-  const parts = [formatPlatformLabel(meta.platform)];
-  if (meta.arch !== undefined && meta.arch.trim().length > 0) {
+
+  const platformInfo = readPlatformDeviceInfo();
+  const parts: string[] = [];
+
+  // OS 标签 — 优先使用平台特定的版本信息
+  if (platformInfo?.osVersion !== undefined) {
+    parts.push(platformInfo.osVersion);
+  } else if (platformInfo?.distro !== undefined) {
+    parts.push(platformInfo.distro);
+  } else {
+    parts.push(formatPlatformLabel(meta.platform));
+  }
+
+  // 芯片型号（macOS 有具体 CPU 型号；其他平台 fallback 到 arch）
+  if (platformInfo?.chip !== undefined) {
+    parts.push(platformInfo.chip);
+  } else if (meta.arch !== undefined && meta.arch.trim().length > 0) {
     parts.push(meta.arch);
   }
+
   parts.push(hostName);
-  if (meta.version.trim().length > 0) {
-    parts.push(`Lyra ${meta.version}`);
+
+  // Hackintosh 标注
+  if (platformInfo?.isHackintosh === true) {
+    parts.push("Hackintosh");
   }
+
   return parts.join(" · ");
 };
 

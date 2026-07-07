@@ -1346,23 +1346,6 @@ describe("SettingsAiView", () => {
     expect(openAgentConfigFile).not.toHaveBeenCalled();
   });
 
-  test("toggles prompt delivery experiments through the Lyra Agent config bridge", () => {
-    const updateAgentConfig = vi.fn();
-    const model = createModel({ updateAgentConfig });
-
-    render(<SettingsAiView labels={labels} model={model} />);
-
-    fireEvent.click(screen.getByLabelText("Lean prompt delivery"));
-    fireEvent.click(screen.getByLabelText("OpenAI Responses stateful prompt contract"));
-
-    expect(updateAgentConfig).toHaveBeenCalledWith({
-      promptDeliveryMode: "lean-experimental",
-    });
-    expect(updateAgentConfig).toHaveBeenCalledWith({
-      openaiResponsesStatefulPromptContract: true,
-    });
-  });
-
   test("shows Lyra Agent bridge errors inline", () => {
     const model = createModel({
       errorMessage: "Lyra Agent runtime bridge is unavailable.",

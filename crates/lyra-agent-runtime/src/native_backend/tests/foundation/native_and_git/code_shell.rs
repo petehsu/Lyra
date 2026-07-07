@@ -43,7 +43,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let legacy_handle = execute_model_tool(
+    let read_handle = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
@@ -57,9 +57,15 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             }),
         },
     );
+    assert_eq!(read_handle["status"].as_str(), Some("completed"));
     assert_eq!(
-        legacy_handle.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
+        read_handle["toolPath"].as_str(),
+        Some("/tools/filesystem/read_file")
+    );
+    assert!(
+        read_handle["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("hello"))
     );
 
     let read = execute_model_tool(
@@ -67,11 +73,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-read-source".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "sed -n '1,80p' src/lib.rs" }),
-        },
+        tool_fs_run_call(
+            "tool-read-source",
+            "/tools/shell/run",
+            json!({ "command": "sed -n '1,80p' src/lib.rs" }),
+        ),
     );
     assert!(
         read["content"]
@@ -84,11 +90,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-rg-search".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "rg -n greeting src" }),
-        },
+        tool_fs_run_call(
+            "tool-rg-search",
+            "/tools/shell/run",
+            json!({ "command": "rg -n greeting src" }),
+        ),
     );
     assert!(
         search["content"]
@@ -108,7 +114,7 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
             &patch_cancellation,
             ModelToolCall {
                 id: "tool-direct-patch".to_string(),
-                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                name: "apply_patch".to_string(),
                 arguments: json!({ "patch": patch_text }),
             },
         )
@@ -138,11 +144,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-direct-shell".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf pinned" }),
-        },
+        tool_fs_run_call(
+            "tool-direct-shell",
+            "/tools/shell/run",
+            json!({ "command": "printf pinned" }),
+        ),
     );
     assert!(
         shell["content"]
@@ -155,11 +161,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-git-status".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git status --short" }),
-        },
+        tool_fs_run_call(
+            "tool-git-status",
+            "/tools/shell/run",
+            json!({ "command": "git status --short" }),
+        ),
     );
     assert!(
         status
@@ -173,11 +179,11 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-git-diff".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git diff -- src/lib.rs" }),
-        },
+        tool_fs_run_call(
+            "tool-git-diff",
+            "/tools/shell/run",
+            json!({ "command": "git diff -- src/lib.rs" }),
+        ),
     );
     assert!(
         diff.pointer("/raw/stdout")

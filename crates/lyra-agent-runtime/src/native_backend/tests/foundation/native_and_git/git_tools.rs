@@ -67,11 +67,11 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-git-status".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git status --short" }),
-        },
+        tool_fs_run_call(
+            "tool-git-status",
+            "/tools/shell/run",
+            json!({ "command": "git status --short" }),
+        ),
     );
     assert!(
         status
@@ -85,11 +85,11 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-git-diff".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git diff -- tracked.txt" }),
-        },
+        tool_fs_run_call(
+            "tool-git-diff",
+            "/tools/shell/run",
+            json!({ "command": "git diff -- tracked.txt" }),
+        ),
     );
     assert!(
         diff.pointer("/raw/stdout")
@@ -102,11 +102,11 @@ fn git_tool_fs_paths_are_removed_and_git_checks_use_exec_command() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-git-log".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "git log --oneline -3" }),
-        },
+        tool_fs_run_call(
+            "tool-git-log",
+            "/tools/shell/run",
+            json!({ "command": "git log --oneline -3" }),
+        ),
     );
     assert!(
         log.pointer("/raw/stdout")

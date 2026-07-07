@@ -220,8 +220,11 @@ fn description_for(
         ("filesystem", "glob") => {
             "Use when the agent knows a file name pattern, extension, or glob and only needs matching paths. This is the fastest choice for path discovery."
         }
+        ("filesystem", "grep") => {
+            "Use when the agent needs to search file contents by regex or exact text across the workspace."
+        }
         ("filesystem", "write") => {
-            "Deprecated for provider-visible code work. Use the direct apply_patch tool for file changes."
+            "Use when the agent needs to create a small file or overwrite short text content."
         }
         ("filesystem", "strict_edit") => {
             "Use when the agent must safely modify existing file text with an exact replacement after reading the current file."
@@ -410,6 +413,19 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "fd",
                     "path search",
                     "找文件",
+                ]
+            }
+            ("filesystem", "grep") => {
+                vec![
+                    "content search",
+                    "regex search",
+                    "find in files",
+                    "text search",
+                    "rg",
+                    "ripgrep",
+                    "搜索内容",
+                    "正则搜索",
+                    "查文本",
                 ]
             }
             ("filesystem", "write") => vec![
@@ -896,6 +912,10 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
 fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
     let specific = match (domain, operation) {
         ("filesystem", "read") => vec!["Read src/main.rs before editing.", "查看这个文件的内容。"],
+        ("filesystem", "grep") => vec![
+            "Search for a function name across the project.",
+            "搜索代码内容。",
+        ],
         ("filesystem", "strict_edit") => {
             vec![
                 "Read a file, then safely replace one exact string.",
@@ -1261,6 +1281,30 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &["pattern"],
         ),
+        ("filesystem", "grep") => object_schema(
+            [
+                ("pattern", string("Regex pattern or exact text to search for.")),
+                ("path", string("Optional root directory to search in. Defaults to workspace root.")),
+                ("glob", string("Optional file filter glob, e.g. \"*.rs\" or \"**/*.{ts,tsx}\".")),
+                ("includeGlobs", string_array("Optional include glob patterns.")),
+                ("excludeGlobs", string_array("Optional exclude glob patterns.")),
+                ("outputMode", json!({
+                    "type": "string",
+                    "enum": ["content", "files_with_matches", "count"],
+                    "default": "content",
+                    "description": "Output mode: content shows matching lines, files_with_matches shows only file paths, count shows match counts."
+                })),
+                (
+                    "contextLines",
+                    json!({ "type": "integer", "minimum": 0, "description": "Lines of context to show around each match. Default 0." }),
+                ),
+                (
+                    "maxResults",
+                    json!({ "type": "integer", "minimum": 1, "description": "Maximum number of matches to return. Default 200." }),
+                ),
+            ],
+            &["pattern"],
+        ),
         ("filesystem", "write") => object_schema(
             [
                 ("path", string("Workspace file path.")),
@@ -1269,7 +1313,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     json!({
                         "type": "string",
                         "maxLength": 12000,
-                        "description": "Deprecated file content field. Use the direct apply_patch tool for provider-visible code changes."
+                        "description": "File content for small writes. For larger files, use the direct write_file tool."
                     }),
                 ),
                 ("overwrite", json!({ "type": "boolean", "default": false })),
@@ -2281,6 +2325,14 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
             ],
             &["command"],
+        ),
+        ("terminal", "write") => object_schema(
+            [
+                ("sessionId", string("Existing terminal session id.")),
+                ("data", string("Text to send to the terminal.")),
+                ("appendNewline", json!({ "type": "boolean", "default": false, "description": "Append a newline after the text. Default false." })),
+            ],
+            &["sessionId", "data"],
         ),
         ("terminal", _) => object_schema(
             [

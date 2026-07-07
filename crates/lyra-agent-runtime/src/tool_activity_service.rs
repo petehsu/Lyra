@@ -186,7 +186,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-memory",
                 "memory_remember",
-                "Write a durable fact, user preference, name, identity, or project instruction to Lyra long-term memory.",
+                "Write a durable fact, user preference, name, identity, or project instruction to long-term memory.",
                 "state",
                 "runtimePolicy",
                 json!({
@@ -1298,6 +1298,26 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 Some("terminal.read"),
             ),
             capability(
+                "lyra-terminal",
+                "terminal_write",
+                "Send input to an existing terminal session.",
+                "write",
+                "hostCapability",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "sessionId": { "type": "string" },
+                        "terminalTabId": { "type": "string" },
+                        "paneId": { "type": "string" },
+                        "data": { "type": "string" },
+                        "text": { "type": "string" },
+                        "keys": { "type": "array", "items": { "type": "string" } },
+                        "appendNewline": { "type": "boolean", "default": false }
+                    }
+                }),
+                Some("terminal.write"),
+            ),
+            capability(
                 "lyra-search",
                 "project_search",
                 "Search workspace file names and text content.",
@@ -1311,6 +1331,28 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         "includeHidden": { "type": "boolean", "default": false },
                         "limit": { "type": "number", "default": 80 },
                         "maxFileBytes": { "type": "number", "default": 1000000 }
+                    },
+                    "required": ["query"]
+                }),
+                None,
+            ),
+            capability(
+                "lyra-code",
+                "code_grep_text",
+                "Search workspace source text with exact strings or regex and return file, line, and snippet matches.",
+                "read",
+                "workspaceReadPolicy",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string" },
+                        "pattern": { "type": "string" },
+                        "root": { "type": "string", "default": "." },
+                        "glob": { "type": "string" },
+                        "includeHidden": { "type": "boolean", "default": false },
+                        "limit": { "type": "number", "default": 80 },
+                        "caseSensitive": { "type": "boolean", "default": false },
+                        "regex": { "type": "boolean", "default": false }
                     },
                     "required": ["query"]
                 }),
@@ -1777,8 +1819,7 @@ mod tests {
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"software_list_capabilities"));
         assert!(names.contains(&"lyra_lumen_map"));
-        assert!(names.contains(&"terminal_wait"));
-        assert!(names.contains(&"terminal_screen"));
+        assert!(names.contains(&"terminal_write"));
     }
 
     #[test]
@@ -1822,7 +1863,7 @@ mod tests {
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"shell_run"));
         assert!(names.contains(&"terminal_read"));
-        assert!(names.contains(&"terminal_screen"));
+        assert!(names.contains(&"terminal_write"));
         assert!(names.contains(&"web_fetch"));
         assert!(service.can_dispatch_model_tool("todo_write"));
         assert!(!service.can_dispatch_model_tool("missing_tool"));

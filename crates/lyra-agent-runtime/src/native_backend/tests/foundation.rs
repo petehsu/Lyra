@@ -2130,6 +2130,7 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         event_callback: None,
         host_dispatcher: None,
         legacy_plaintext_provider_keys: HashSet::new(),
+        first_used_at: None,
     };
     state.save_state().expect("save state");
     assert_eq!(
@@ -2241,6 +2242,7 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
                 responded_at: None,
             },
         )]),
+        first_used_at: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -2327,6 +2329,7 @@ fn native_state_schema_upgrade_keeps_old_version_when_snapshot_fails() {
         active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
+        first_used_at: None,
     };
     write_json(&temp.path().join("state.json"), &state_file).expect("write state");
 
@@ -2453,6 +2456,7 @@ fn native_state_persists_only_live_pending_requests() {
         event_callback: None,
         host_dispatcher: None,
         legacy_plaintext_provider_keys: HashSet::new(),
+        first_used_at: None,
     };
     assert!(state.prune_non_live_pending());
     state.save_state().expect("save state");
@@ -2489,7 +2493,7 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let legacy_list = execute_model_tool(
+    let list = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
@@ -2500,13 +2504,10 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
             json!({ "path": "." }),
         ),
     );
-    assert_eq!(legacy_list["status"].as_str(), Some("failed"));
-    assert_eq!(
-        legacy_list.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
-    );
+    assert_eq!(list["status"].as_str(), Some("completed"));
+    assert_eq!(list["raw"]["path"].as_str(), Some("."));
     assert_ne!(
-        legacy_list.pointer("/error/code").and_then(Value::as_str),
+        list.pointer("/error/code").and_then(Value::as_str),
         Some("workspace_unbound")
     );
 
@@ -2515,11 +2516,11 @@ fn native_backend_defaults_unbound_workspace_tools_to_home_directory() {
         &turn_id,
         &None,
         &cancellation,
-        ModelToolCall {
-            id: "tool-shell-unbound".to_string(),
-            name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-            arguments: json!({ "cmd": "printf shell-ok" }),
-        },
+        tool_fs_run_call(
+            "tool-shell-unbound",
+            "/tools/shell/run",
+            json!({ "command": "printf shell-ok" }),
+        ),
     );
     assert_eq!(shell["raw"]["success"].as_bool(), Some(true));
     assert_eq!(shell["raw"]["stdout"].as_str(), Some("shell-ok"));
@@ -2633,12 +2634,17 @@ fn tool_fs_run_always_returns_tool_result_envelope_for_adapter_outputs() {
 }
 
 #[test]
-fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
+fn tool_fs_filesystem_targets_validate_run_envelope() {
     let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    fs::write(temp.path().join("README.md"), "tool fs read file\n").expect("write README");
     let created = backend
         .call_agent_method(
             "agent.session.create",
-            json!({ "title": "Tool-FS Hard Cut Test" }),
+            json!({
+                "title": "Tool-FS Filesystem Target Test",
+                "workingDir": temp.path().display().to_string()
+            }),
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
@@ -2672,25 +2678,25 @@ fn tool_fs_hard_cut_hides_legacy_names_and_validates_run_envelope() {
             arguments: json!({ "path": "/tools/filesystem/read_file" }),
         },
     );
-    assert_eq!(
-        inspect.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
-    );
+    assert_eq!(inspect["status"].as_str(), Some("completed"));
+    assert_eq!(inspect["raw"]["path"].as_str(), Some("/tools/filesystem/read_file"));
 
-    let legacy_run = execute_model_tool(
+    let read_file = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
         tool_fs_run_call(
-            "run-legacy-read-file",
+            "run-read-file",
             "/tools/filesystem/read_file",
             json!({ "path": "README.md" }),
         ),
     );
-    assert_eq!(
-        legacy_run.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
+    assert_eq!(read_file["status"].as_str(), Some("completed"));
+    assert!(
+        read_file["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("tool fs read file"))
     );
 
     let invalid_args = execute_model_tool(
@@ -3426,9 +3432,9 @@ fn model_request_injects_lyra_identity_and_tools() {
     let system_prompt = request.messages[0]["content"]
         .as_str()
         .expect("system prompt");
-    assert!(system_prompt.contains("When a msg arrives, read it as something u urself wanna get done."));
-    assert!(system_prompt.contains("your computer w discoverable caps"));
-    assert!(system_prompt.contains("Plain assistant questions r final/non-blocking text"));
+    assert!(system_prompt.contains("Talk direct, grounded, technical, accountable."));
+    assert!(system_prompt.contains("Need something — find it like u would on any machine."));
+    assert!(system_prompt.contains("Plain text questions r final/non-blocking"));
     let names = request
         .tools
         .iter()
@@ -3587,9 +3593,7 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == LYRA_CLARIFICATION_ASK_TOOL
                         || name == EDIT_FILE_MODEL_TOOL
                         || name == WRITE_FILE_MODEL_TOOL
-                        || name == APPLY_PATCH_MODEL_TOOL
-                        || name == EXEC_COMMAND_MODEL_TOOL
-                        || name == WRITE_STDIN_MODEL_TOOL
+                        || name == "apply_patch"
                         || name == LYRA_SESSION_READ_MESSAGE_TOOL
                         || name == PLAN_BEGIN_MODEL_TOOL
                         || name == PLAN_WRITE_MODEL_TOOL

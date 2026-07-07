@@ -174,7 +174,7 @@ pub(crate) fn execute_model_tool_with_runtime(
             cancellation,
             runtime,
             &call.id,
-            "apply_patch",
+            APPLY_PATCH_MODEL_TOOL,
             "file",
             "apply_patch",
             call.arguments,
@@ -215,32 +215,6 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
-    if call.name == EXEC_COMMAND_MODEL_TOOL {
-        return execute_shell_tool_adapter(
-            session_id,
-            turn_id,
-            cancellation,
-            &call.id,
-            "shell_run",
-            "shell",
-            "run",
-            exec_command_arguments(call.arguments),
-            &started_at,
-        );
-    }
-    if call.name == WRITE_STDIN_MODEL_TOOL {
-        return execute_terminal_tool_adapter(
-            session_id,
-            turn_id,
-            dispatcher,
-            cancellation,
-            &call.id,
-            "terminal.write",
-            "write",
-            write_stdin_arguments(call.arguments),
-            &started_at,
-        );
-    }
     if tool_fs::is_tool_fs_model_tool(&call.name) {
         return tool_fs::execute_tool_fs_model_tool(
             session_id,
@@ -278,7 +252,7 @@ pub(crate) fn execute_model_tool_with_runtime(
     let output = tool_failure_output(
         "tool_not_found",
         &format!("Unknown Lyra provider-visible tool: {}", call.name),
-        "For exact code inspection/validation use direct file/search/shell tools; for edits use apply_patch/edit tools. For indexed CodeGraph navigation use Tool-FS /tools/code/* through tool_fs_search/inspect/run.",
+        "For exact code inspection/validation use direct file/search/shell tools; for edits use edit_file/write_file. For indexed CodeGraph navigation use Tool-FS /tools/code/* through tool_fs_search/inspect/run.",
         None,
     );
     record_tool_activity(
@@ -322,36 +296,6 @@ fn edit_file_arguments(arguments: Value) -> Value {
             })
             .collect();
         input.insert("edits".to_string(), Value::Array(mapped));
-    }
-    Value::Object(input)
-}
-
-fn exec_command_arguments(arguments: Value) -> Value {
-    let mut input = arguments.as_object().cloned().unwrap_or_default();
-    if let Some(cmd) = input.remove("cmd") {
-        input.entry("command".to_string()).or_insert(cmd);
-    }
-    if let Some(workdir) = input.remove("workdir") {
-        input.entry("cwd".to_string()).or_insert(workdir);
-    }
-    if let Some(timeout_ms) = input.remove("timeout_ms") {
-        input.entry("timeoutMs".to_string()).or_insert(timeout_ms);
-    }
-    if let Some(max_output_tokens) = input.remove("max_output_tokens")
-        && let Some(tokens) = max_output_tokens.as_u64()
-    {
-        let bytes = tokens.saturating_mul(4).min(1_000_000);
-        input
-            .entry("maxOutputBytes".to_string())
-            .or_insert(Value::Number(serde_json::Number::from(bytes)));
-    }
-    Value::Object(input)
-}
-
-fn write_stdin_arguments(arguments: Value) -> Value {
-    let mut input = arguments.as_object().cloned().unwrap_or_default();
-    if let Some(chars) = input.remove("chars") {
-        input.entry("data".to_string()).or_insert(chars);
     }
     Value::Object(input)
 }

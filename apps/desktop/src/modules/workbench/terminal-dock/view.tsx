@@ -342,7 +342,7 @@ export const TerminalDock = ({
               model.splitActivePane("horizontal");
             }}
           >
-            <SplitSquareHorizontal size={14} aria-hidden="true" />
+            <SplitSquareVertical size={14} aria-hidden="true" />
           </AppIconButton>
           <AppIconButton
             aria-label={labels.splitVertical}
@@ -351,7 +351,7 @@ export const TerminalDock = ({
               model.splitActivePane("vertical");
             }}
           >
-            <SplitSquareVertical size={14} aria-hidden="true" />
+            <SplitSquareHorizontal size={14} aria-hidden="true" />
           </AppIconButton>
           <AppIconButton
             aria-label={
@@ -393,6 +393,10 @@ export const TerminalDock = ({
                 labels={labels}
                 themeSignature={themeSignature}
                 uiThemeId={uiThemeId}
+                canClose={model.activeDockPanes.length > 1}
+                onClose={() => {
+                  model.closePane(activeDockTab.id, pane.id);
+                }}
                 onFocus={() => {
                   model.focusPane(activeDockTab.id, pane.id);
                 }}

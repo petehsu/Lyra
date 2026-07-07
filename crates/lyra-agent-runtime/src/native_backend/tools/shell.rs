@@ -1,5 +1,6 @@
 use super::*;
 
+use std::io::Write;
 use std::sync::mpsc;
 
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
@@ -75,7 +76,7 @@ pub(crate) fn tool_shell_run(
             NativeToolFailure::new(
                 "apply_patch_shell_transport_invalid",
                 "shell command appears to invoke apply_patch, but Lyra could not extract a Codex patch payload",
-                "Call the provider-visible apply_patch tool directly with a complete patch argument.",
+                "Use edit_file or write_file instead of apply_patch.",
             )
         })?;
         return tool_apply_patch(
@@ -101,11 +102,22 @@ pub(crate) fn tool_shell_run(
         DEFAULT_COMMAND_OUTPUT_BYTES,
         1_000_000,
     );
+    // ponytail: sudo auto-resolve — 如果命令含 sudo 且进程内存中有提权密码，
+    // 将 `sudo ` 替换为 `sudo -S `（从 stdin 读密码），spawn 后通过 stdin 注入。
+    // 启发式检测 `sudo ` 子串，可能匹配字符串内的 sudo，但 elevation_secret 仅在
+    // full_auto 模式下存在，此时用户已授权所有命令执行。
+    let elevation = elevation_secret();
+    let needs_sudo_stdin = elevation.is_some() && command.contains("sudo ");
+    let command = if needs_sudo_stdin {
+        command.replacen("sudo ", "sudo -S ", 1)
+    } else {
+        command
+    };
     let mut command_builder = shell_command_builder(&command);
     configure_shell_child(&mut command_builder);
     command_builder
         .current_dir(&cwd.absolute)
-        .stdin(Stdio::null())
+        .stdin(if needs_sudo_stdin { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_allowed_env(input, &mut command_builder);
@@ -116,6 +128,12 @@ pub(crate) fn tool_shell_run(
             "Retry with an installed executable and valid arguments.",
         )
     })?;
+    // sudo -S 从 stdin 读密码 — spawn 后立即写入，drop stdin 触发 EOF
+    if needs_sudo_stdin {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(format!("{}\n", elevation.unwrap()).as_bytes());
+        }
+    }
     let child_process_id = child.id();
     lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
     let stdout = child

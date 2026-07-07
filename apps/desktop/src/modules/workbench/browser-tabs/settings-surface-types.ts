@@ -100,6 +100,14 @@ export type BrowserSettingsSurfaceProps = {
   readonly codeGraphEmbeddingDescription: string;
   readonly codeGraphEmbeddingEnabledLabel: string;
   readonly codeGraphEmbeddingDisabledLabel: string;
+  readonly leanPromptDeliveryLabel: string;
+  readonly leanPromptDeliveryDescription: string;
+  readonly leanPromptDeliveryEnabledLabel: string;
+  readonly leanPromptDeliveryDisabledLabel: string;
+  readonly statefulPromptContractLabel: string;
+  readonly statefulPromptContractDescription: string;
+  readonly statefulPromptContractEnabledLabel: string;
+  readonly statefulPromptContractDisabledLabel: string;
   readonly searchCategoryLabel: string;
   readonly searchWebEnginesLabel: string;
   readonly searchSearxngEndpointLabel: string;
@@ -165,6 +173,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly jsReplValue: boolean;
   readonly actCacheValue: boolean;
   readonly codeGraphEmbeddingValue: boolean;
+  readonly leanPromptDeliveryValue: boolean;
+  readonly statefulPromptContractValue: boolean;
   readonly searchWebEngineIds: readonly string[];
   readonly searchSearxngEndpointValue: string;
   readonly omniboxNonBrowserSubmitTargetValue: WorkbenchOmniboxNonBrowserSubmitTarget;
@@ -203,6 +213,8 @@ export type BrowserSettingsSurfaceProps = {
   readonly onJsReplChange: (value: boolean) => void;
   readonly onActCacheChange: (value: boolean) => void;
   readonly onCodeGraphEmbeddingChange: (value: boolean) => void;
+  readonly onLeanPromptDeliveryChange: (value: boolean) => void;
+  readonly onStatefulPromptContractChange: (value: boolean) => void;
   readonly onSearchWebEnginesChange: (value: readonly string[]) => void;
   readonly onSearchSearxngEndpointChange: (value: string) => void;
   readonly onOmniboxNonBrowserSubmitTargetChange: (value: WorkbenchOmniboxNonBrowserSubmitTarget) => void;

@@ -463,6 +463,7 @@ export type {
 export type {
   LyraSensitiveValueApi,
   LyraSensitiveValueCapability,
+  LyraSensitiveValueDeleteRequest,
   LyraSensitiveValueKind,
   LyraSensitiveValueOwner,
   LyraSensitiveValueOwnerRef,
@@ -597,6 +598,10 @@ export const LYRA_CHANNELS = {
   loginManagerEvent: "lyra:login-manager/event",
   sensitiveValuesRevealToUser: "lyra:sensitive-values/reveal-to-user",
   sensitiveValuesStore: "lyra:sensitive-values/store",
+  sensitiveValuesDelete: "lyra:sensitive-values/delete",
+  agentElevationValidate: "lyra:agent/elevation/validate",
+  agentElevationSetSecret: "lyra:agent/elevation/set-secret",
+  agentElevationClear: "lyra:agent/elevation/clear",
   lspOpenDocument: "lyra:lsp/open-document",
   lspChangeDocument: "lyra:lsp/change-document",
   lspSaveDocument: "lyra:lsp/save-document",

@@ -32,6 +32,7 @@ export type TerminalDockLabels = {
   readonly moveTerminalToTop: string;
   readonly moveTerminalToBottom: string;
   readonly closeTab: string;
+  readonly closePane: string;
   readonly renameTab: string;
   readonly pinTab: string;
   readonly unpinTab: string;

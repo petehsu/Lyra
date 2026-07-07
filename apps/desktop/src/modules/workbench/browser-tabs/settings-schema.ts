@@ -41,6 +41,8 @@ export type SettingsFieldId =
   | "aiMcp"
   | "actCache"
   | "codeGraphEmbedding"
+  | "leanPromptDelivery"
+  | "statefulPromptContract"
   | "aiProviderSettings"
   | "legalNotices";
 
@@ -99,6 +101,8 @@ type WorkbenchSettingsSchemaInput = Pick<
   | "jsReplLabel"
   | "actCacheLabel"
   | "codeGraphEmbeddingLabel"
+  | "leanPromptDeliveryLabel"
+  | "statefulPromptContractLabel"
   | "searchCategoryLabel"
   | "searchWebEnginesLabel"
   | "searchSearxngEndpointLabel"
@@ -164,6 +168,8 @@ export const createWorkbenchSettingsSchema = (
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
     createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
     createField("codeGraphEmbedding", "experimental", props.codeGraphEmbeddingLabel, "boolean-choice"),
+    createField("leanPromptDelivery", "experimental", props.leanPromptDeliveryLabel, "boolean-choice"),
+    createField("statefulPromptContract", "experimental", props.statefulPromptContractLabel, "boolean-choice"),
     createField("legalNotices", "legal", props.legalNoticesLabel, "custom")
   ];
 

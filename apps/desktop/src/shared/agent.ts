@@ -1687,6 +1687,13 @@ export type AgentApi = {
   readonly setPermissionPolicyMode: (
     request: AgentPermissionPolicySetModeRequest
   ) => Promise<AgentPermissionPolicySnapshot>;
+  readonly validateElevationPassword: (
+    request: { readonly password: string }
+  ) => Promise<{ readonly valid: boolean; readonly exitCode?: number; readonly stderr?: string }>;
+  readonly setElevationSecret: (
+    request: { readonly secret: string }
+  ) => Promise<{ readonly stored: boolean }>;
+  readonly clearElevationSecret: () => Promise<{ readonly cleared: boolean }>;
   readonly readAgentConfig: () => Promise<AgentConfigSnapshot>;
   readonly readAgentProviderCatalog: () => Promise<AgentProviderCatalogSnapshot>;
   readonly updateAgentConfig: (

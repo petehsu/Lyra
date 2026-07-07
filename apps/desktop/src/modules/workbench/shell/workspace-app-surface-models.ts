@@ -75,6 +75,9 @@ export const createTerminalWorkspaceModel = (
       onFocusPane: (paneId) => {
         context.terminalModel.focusPane(terminalTab.id, paneId);
       },
+      onClosePane: (paneId) => {
+        context.terminalModel.closePane(terminalTab.id, paneId);
+      },
       onOpenTab: context.terminalModel.openTab,
       onSplitHorizontal: () => {
         context.terminalModel.splitTab(terminalTab.id, "horizontal");

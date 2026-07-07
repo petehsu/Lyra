@@ -26,6 +26,7 @@ import type {
   LyraDesktopApi,
   LyraSensitiveValueRef
 } from "../../../shared/desktop-bridge";
+import { isLyraSensitiveValueRef } from "../../../shared/sensitive-value";
 import type { SettingsAiModel } from "../settings-ai";
 import { setBrowserFollowModeEnabled as syncBrowserFollowModeCoordinator } from "../workspace-tabs/tab-activation-coordinator";
 import type { GlobalDialogModel } from "../global-dialog";
@@ -690,10 +691,32 @@ export const useLyraAgentDataProvider = (
       setPermissionPolicy(null);
       return;
     }
+    const agent = desktopApi.agent;
+    const sensitiveValues = desktopApi.sensitiveValues;
     let disposed = false;
-    void desktopApi.agent.readPermissionPolicy()
-      .then((snapshot) => {
-        if (!disposed) setPermissionPolicy(snapshot);
+    void agent.readPermissionPolicy()
+      .then(async (snapshot) => {
+        if (disposed) return;
+        setPermissionPolicy(snapshot);
+
+        // 启动时恢复：full_auto 模式且有 credential ref → 从 safeStorage 解密 → 注入 Rust
+        const ref = snapshot.elevationCredentialRef;
+        if (
+          snapshot.effectiveMode === "full_auto"
+          && ref !== undefined
+          && ref !== null
+          && sensitiveValues !== undefined
+          && isLyraSensitiveValueRef(ref)
+        ) {
+          try {
+            const { value } = await sensitiveValues.revealToUser({ ref });
+            if (!disposed && value.length > 0) {
+              await agent.setElevationSecret({ secret: value });
+            }
+          } catch {
+            // safeStorage 解密失败（OS 密钥变更等）— 静默降级，下次 sudo 会报权限错误
+          }
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -1114,29 +1137,117 @@ export const useLyraAgentDataProvider = (
     });
   }, [locale, openDialog]);
 
+  const showPasswordInvalid = useCallback(async (): Promise<void> => {
+    const description = t("permissionPolicy.passwordInvalidDescription");
+    if (openDialog === undefined) {
+      window.alert(description);
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      openDialog({
+        title: t("permissionPolicy.passwordInvalidTitle"),
+        description,
+        source: {
+          title: "Lyra Agent",
+          subtitle: t("permissionPolicy.dialogSourceSubtitle"),
+          iconLabel: "LA",
+          iconTone: "danger"
+        },
+        actions: [
+          {
+            id: "ok",
+            label: t("permissionPolicy.passwordInvalidAck"),
+            onSelect: () => resolve()
+          }
+        ]
+      });
+    });
+  }, [locale, openDialog]);
+
+  const confirmDisableFullAuto = useCallback(async (
+    hasCredential: boolean
+  ): Promise<"delete" | "keep" | "cancel"> => {
+    if (!hasCredential) return "keep";
+    const description = t("permissionPolicy.deleteCredentialDescription");
+    if (openDialog === undefined) {
+      return window.confirm(description) ? "delete" : "cancel";
+    }
+    return new Promise<"delete" | "keep" | "cancel">((resolve) => {
+      openDialog({
+        title: t("permissionPolicy.deleteCredentialTitle"),
+        description,
+        source: {
+          title: "Lyra Agent",
+          subtitle: t("permissionPolicy.dialogSourceSubtitle"),
+          iconLabel: "LA",
+          iconTone: "danger"
+        },
+        actions: [
+          {
+            id: "cancel",
+            label: t("permissionPolicy.cancel"),
+            onSelect: () => resolve("cancel")
+          },
+          {
+            id: "keep",
+            label: t("permissionPolicy.keepAndDisable"),
+            onSelect: () => resolve("keep")
+          },
+          {
+            id: "delete",
+            label: t("permissionPolicy.deleteAndDisable"),
+            tone: "danger",
+            onSelect: () => resolve("delete")
+          }
+        ]
+      });
+    });
+  }, [locale, openDialog]);
+
   const switchPermissionMode = useCallback(async (
     mode: "approval" | "full_auto"
   ): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
+    const agent = desktopApi.agent;
     const sensitiveValues = desktopApi.sensitiveValues;
-    if (mode === "full_auto" && sensitiveValues === undefined) return;
+
+    // 关闭全自动 → 弹出凭据删除选择
     if (mode === "approval") {
+      const existingRef = permissionPolicy?.elevationCredentialRef;
+      const hasCredential = existingRef !== undefined && existingRef !== null;
+      const choice = await confirmDisableFullAuto(hasCredential);
+      if (choice === "cancel") return;
       setPermissionPolicyBusy(true);
       try {
-        setPermissionPolicy(await desktopApi.agent.setPermissionPolicyMode({ mode }));
+        if (choice === "delete") {
+          await agent.clearElevationSecret();
+          if (sensitiveValues !== undefined && isLyraSensitiveValueRef(existingRef)) {
+            await sensitiveValues.delete({ ref: existingRef });
+          }
+        }
+        setPermissionPolicy(await agent.setPermissionPolicyMode({ mode }));
       } finally {
         setPermissionPolicyBusy(false);
       }
       return;
     }
 
+    // 开启全自动 → 警告 → 输入密码 → 校验 → 存储 → 注入
+    if (sensitiveValues === undefined) return;
     const confirmed = await confirmFullAutoMode();
     if (!confirmed) return;
     const password = await requestAdminPassword();
     if (password === null) return;
-    if (sensitiveValues === undefined) return;
     setPermissionPolicyBusy(true);
     try {
+      // 校验密码 — Rust 侧运行 sudo -S -k true 验证
+      const validation = await agent.validateElevationPassword({ password });
+      if (!validation.valid) {
+        await showPasswordInvalid();
+        return;
+      }
+
+      // 校验通过 → 加密存储到 safeStorage
       const credential = await sensitiveValues.store({
         owner: "system",
         valueKind: "credential",
@@ -1145,14 +1256,27 @@ export const useLyraAgentDataProvider = (
         value: password,
         capabilities: ["list_metadata", "use"]
       });
-      setPermissionPolicy(await desktopApi.agent.setPermissionPolicyMode({
+
+      // 注入明文密码到 Rust 进程内（shell.rs sudo 自动解密用）
+      await agent.setElevationSecret({ secret: password });
+
+      // 设置权限模式 + 绑定 credential ref
+      setPermissionPolicy(await agent.setPermissionPolicyMode({
         mode,
         elevationCredentialRef: credential.ref
       }));
     } finally {
       setPermissionPolicyBusy(false);
     }
-  }, [confirmFullAutoMode, desktopApi, locale, requestAdminPassword]);
+  }, [
+    confirmDisableFullAuto,
+    confirmFullAutoMode,
+    desktopApi,
+    locale,
+    permissionPolicy?.elevationCredentialRef,
+    requestAdminPassword,
+    showPasswordInvalid
+  ]);
 
   const previewRollback = useCallback(async (messageId: string) => {
     if (desktopApi?.agent === undefined || state.session === null) {

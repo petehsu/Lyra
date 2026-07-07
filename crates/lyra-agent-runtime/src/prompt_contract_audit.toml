@@ -5,4 +5,4 @@
 # prompt runtime contract and decided a version/snapshot change is not required.
 
 reviewed_prompt_contract = true
-reason = "Bumped PROMPT_TEMPLATE_VERSION to 21 — removed all 'Lyra' product name references from prompt templates (replaced w/ neutral terms), removed 'physical self' language (eliminates virtual/physical dualism), rewrote kernel.md.j2 identity line to natural immersive identity (name/age/location/first_used_brief), added location fallback (8 US tech cities hash os_username), added age inference (home_dir_birthtime + git_first_commit_date weak signals, default 21), added first_used_at persistence (NativeStateFile lazy-init), fallback_lyra identity_name now empty instead of 'Lyra'."
+reason = "Bumped PROMPT_POLICY_VERSION to 8, PROMPT_TEMPLATE_VERSION to 24 — added elevation context block (sudo password ref metadata injected into prompt context when full_auto mode is active), enhanced device summary with platform-specific info (macOS version + chip model, Linux distro PRETTY_NAME, Windows OS caption, Hackintosh heuristic for macOS 14+ on Intel), removed product name 'Lyra' from device summary per immersive identity principle."

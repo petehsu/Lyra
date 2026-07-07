@@ -109,10 +109,7 @@ pub(crate) fn plan_gate_model_tool(
     let phase = gate_state.phase;
     let mutation_tool = matches!(
         tool_name,
-        APPLY_PATCH_MODEL_TOOL
-            | WRITE_FILE_MODEL_TOOL
-            | EDIT_FILE_MODEL_TOOL
-            | WRITE_STDIN_MODEL_TOOL
+        "apply_patch" | WRITE_FILE_MODEL_TOOL | EDIT_FILE_MODEL_TOOL
     );
     let blocked = mutation_tool
         && (matches!(

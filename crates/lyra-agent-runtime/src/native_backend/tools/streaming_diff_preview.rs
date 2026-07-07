@@ -17,7 +17,7 @@ use crate::native_backend::{
 };
 
 use super::{
-    APPLY_PATCH_MODEL_TOOL, EDIT_FILE_MODEL_TOOL, WRITE_FILE_MODEL_TOOL, apply_fuzzy_replacement,
+    EDIT_FILE_MODEL_TOOL, WRITE_FILE_MODEL_TOOL, apply_fuzzy_replacement,
     budgeted_tool_output, diff_text, resolve_missing_ok_workspace_path, resolve_workspace_path,
 };
 
@@ -566,7 +566,7 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
     // intentionally reuses the model tool name and the live tool_call_id so
     // the front-end renders one card that transitions running→done — not a
     // separate preview card alongside the real execution.
-    let target = if normalized_name == APPLY_PATCH_MODEL_TOOL {
+    let target = if normalized_name == "apply_patch" {
         MutationToolTarget {
             tool_path: "/tools/runtime/apply_patch".to_string(),
             operation: "apply_patch".to_string(),
@@ -633,7 +633,7 @@ pub(crate) fn maybe_emit_streaming_diff_preview(
     }
 
     // Expensive work: parse + file read + diff — only after throttle passes.
-    let preview_input = if normalized_name == APPLY_PATCH_MODEL_TOOL {
+    let preview_input = if normalized_name == "apply_patch" {
         parse_direct_apply_patch_preview_input(partial_arguments)
     } else if normalized_name == WRITE_FILE_MODEL_TOOL {
         parse_write_file_preview_input(partial_arguments)

@@ -19,6 +19,7 @@ const createSchemaInput = (
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
   linuxCategoryLabel: "Linux",
+  experimentalCategoryLabel: "Experimental",
   legalCategoryLabel: "Legal",
   splitTriggerModeLabel: "Split trigger",
   splitThreePaneLayoutLabel: "Split layout",
@@ -27,6 +28,10 @@ const createSchemaInput = (
   aiStopBehaviorLabel: "Stop behavior",
   preventSleepLabel: "Prevent sleep",
   jsReplLabel: "JS REPL",
+  actCacheLabel: "ActCache Replay",
+  codeGraphEmbeddingLabel: "CodeGraph Semantic Search",
+  leanPromptDeliveryLabel: "Lean prompt delivery",
+  statefulPromptContractLabel: "OpenAI Responses stateful prompt contract",
   searchCategoryLabel: "Search",
   searchWebEnginesLabel: "Web engines",
   searchSearxngEndpointLabel: "SearXNG endpoint",
@@ -62,6 +67,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "models",
       "skills",
       "mcp",
+      "experimental",
       "legal"
     ]);
     expect(schema.categories.map((category) => category.label)).toEqual([
@@ -77,6 +83,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "Models",
       "Skills",
       "MCP",
+      "Experimental",
       "Legal"
     ]);
   });
@@ -89,6 +96,14 @@ describe("createWorkbenchSettingsSchema", () => {
       "omniboxNonBrowserSubmitTarget",
       "searchWebEngines",
       "searchSearxngEndpoint"
+    ]);
+
+    const experimentalCategory = schema.categories.find((category) => category.id === "experimental");
+    expect(experimentalCategory?.sectionIds).toEqual([
+      "actCache",
+      "codeGraphEmbedding",
+      "leanPromptDelivery",
+      "statefulPromptContract"
     ]);
   });
 

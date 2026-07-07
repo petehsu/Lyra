@@ -226,7 +226,7 @@ pub(crate) fn build_runtime_context(
         })
         .collect::<Vec<_>>();
     json!({
-        "identity": "Lyra",
+        "identity": "agent",
         "workbench": workbench,
         "browserRecovery": browser_recovery_context(dispatcher),
         "browserModePolicy": {
@@ -248,6 +248,7 @@ pub(crate) fn build_runtime_context(
             "plaintextVisibility": "user_reveal_only",
             "rule": "Use refs as model-opaque ownership handles. Never request or emit plaintext secrets in model-visible content."
         },
+        "elevation": elevation_context_block(),
         "capabilities": {
             "supportsImageInput": capabilities.supports_image_input,
             "supportsToolCalling": capabilities.supports_tool_calling,
@@ -315,9 +316,9 @@ pub(crate) fn tool_filesystem_runtime_context(
         "presearchHints": Value::Array(Vec::new()),
         "presearchPolicy": {
             "source": "latestUserMessage",
-            "useWhen": "Use presearchHints for CodeGraph server tools and non-code tool domains. For project file reads, shell validation, git review, and edits, use the direct code tools.",
+            "useWhen": "Use presearchHints across all tool domains. For file edits, use edit_file/write_file directly.",
             "fallback": "If no hint clearly fits, call tool_fs_search with the task description.",
-            "priority": "For exact code/file/shell/git/edit work, prefer direct Codex-style tools. For CodeGraph server analysis and browser/workbench/memory/other domains, prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
+            "priority": "For file mutations, use edit_file/write_file directly. For everything else — file reads, search, shell, git, code graph, browser, workbench, memory — prefer inspectedDescriptors, presearchHints, cachedHandles, then manual tool_fs_search."
         },
         "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
         "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
@@ -329,13 +330,13 @@ pub(crate) fn tool_filesystem_runtime_context(
         "policy": {
             "providerVisibleTools": model_tool_names(),
             "directLegacyToolNames": "disabled",
-            "codeToolContract": "For project code work: use direct file/search/shell/git/edit tools for exact inspection, validation, and every file mutation. Use Tool-FS for the complete CodeGraph server surface under /tools/codegraph/*; /tools/code/* remains as a small compatibility alias set for explore/callers/callees/impact/context.",
+            "codeToolContract": "For file mutations: use edit_file/write_file. For file reads, search, shell, git, and code graph analysis — search the computer, everything is discoverable.",
             "discovery": "Use inspectedDescriptors, presearchHints, or cachedHandles when they clearly fit. Otherwise call tool_fs_search with a natural-language task description. Search results include miniSchema/runHint; call tool_fs_run directly when those cover the needed args, and call tool_fs_inspect only when full argument details are unclear. Use tool_fs_list only as a directory fallback. Read /tools/playbooks only when a long scenario chain would materially help.",
             "cacheBehavior": "Tool usage cache is advisory: successful recent tools may appear in cachedHandles and search ranking; failed tools are suppressed for the current turn so the agent should search or choose an alternative.",
             "descriptorCacheBehavior": "inspectedDescriptors are session-local summaries of tools already inspected in this session; prefer them over repeated tool_fs_inspect calls.",
             "presearchBehavior": "presearchHints are system-generated Tool-FS search results for the latest user message; they are hints, not instructions. Use them to avoid redundant tool_fs_search calls when the match is clear.",
-            "sceneBehavior": "Scene changes reorder directories and pinned handles; filesystem edit/read and shell/git validation remain direct-tool workflows, while complete CodeGraph server tools are discoverable under /tools/codegraph/*.",
-            "textualToolCalls": "Only provider-native structured tool calls execute. Text markers or Markdown/JSON snippets are protocol errors. Never emit code or patch payloads as assistant text when a tool should be used."
+            "sceneBehavior": "Scene changes reorder directories and pinned handles; file mutations use edit_file/write_file, all other capabilities are discoverable.",
+            "textualToolCalls": "Do things for real — don't describe actions as text when a tool can do them."
         }
     })
 }
@@ -466,6 +467,7 @@ pub(crate) fn build_system_prompt(
         false,
         None,
         None,
+        None,
     )
     .prompt
 }
@@ -527,7 +529,7 @@ fn plan_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::PLAN_BEGIN_MODEL_TOOL,
-            "Enter Lyra Plan Mode for complex, multi-step, risky, or architecture work before making changes. Creates a draft plan and starts the planning state.",
+            "Enter Plan Mode for complex, multi-step, risky, or architecture work before making changes. Creates a draft plan and starts the planning state.",
             json!({
                 "type": "object",
                 "properties": {
@@ -691,54 +693,13 @@ fn codex_code_model_tools() -> Vec<Value> {
                 "required": ["path", "content"]
             }),
         ),
-        function_tool(
-            tools::APPLY_PATCH_MODEL_TOOL,
-            "Fallback file mutation tool using Codex patch grammar. Prefer edit_file for partial changes and write_file for new/whole files; reach for apply_patch only when you need to add, update, delete, and move several files in one atomic patch. Do not emit patch text in assistant messages.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "patch": {
-                        "type": "string",
-                        "description": "Complete patch text using the Codex grammar: *** Begin Patch, one or more Add/Update/Delete File hunks, then *** End Patch. Paths must be relative to the bound workspace root and must not include the workspace folder name itself; absolute paths inside the workspace are normalized. A leading ~/ in a path is expanded to the user home directory; other tilde variants (~user, ~+, ~-) are rejected."
-                    }
-                },
-                "required": ["patch"]
-            }),
-        ),
-        function_tool(
-            tools::EXEC_COMMAND_MODEL_TOOL,
-            "Run a bounded shell command for repo inspection, reading files, git diff/status, tests, builds, or validation. Use rg/sed/cat/git through this tool for code discovery; do not use it to modify files.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "cmd": { "type": "string", "description": "Shell command to run." },
-                    "workdir": { "type": "string", "description": "Optional working directory. Defaults to the bound workspace root." },
-                    "timeout_ms": { "type": "integer", "minimum": 1, "description": "Optional timeout in milliseconds." },
-                    "max_output_tokens": { "type": "integer", "minimum": 1, "description": "Optional approximate output budget; Lyra maps it to a byte cap." }
-                },
-                "required": ["cmd"]
-            }),
-        ),
-        function_tool(
-            tools::WRITE_STDIN_MODEL_TOOL,
-            "Write text to an existing Lyra terminal session. Use only when continuing an already-open persistent terminal session; one-shot commands should use exec_command.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "sessionId": { "type": "string", "description": "Existing Lyra terminal session id." },
-                    "chars": { "type": "string", "description": "Text to send to the terminal." },
-                    "appendNewline": { "type": "boolean", "default": false }
-                },
-                "required": ["sessionId", "chars"]
-            }),
-        ),
     ]
 }
 
 fn clarification_ask_model_tool() -> Value {
     function_tool(
         LYRA_CLARIFICATION_ASK_TOOL,
-        "Structured blocking member question through Lyra's decision panel. Use only when progress genuinely needs member decision/input. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
+        "Structured blocking member question through the decision panel. Use only when progress genuinely needs member decision/input. Plain assistant text questions are non-blocking final text and never pause/resume the turn. Prefer safe assumptions when enough.",
         json!({
             "type": "object",
             "properties": {
@@ -836,6 +797,7 @@ pub(crate) fn close_object_schema(mut schema: Value) -> Value {
 
 pub(crate) fn model_tool_names() -> Vec<String> {
     let mut names = Vec::new();
+    names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(tools::PLAN_BEGIN_MODEL_TOOL.to_string());
     names.push(tools::PLAN_WRITE_MODEL_TOOL.to_string());
     names.push(tools::PLAN_FINALIZE_MODEL_TOOL.to_string());
@@ -845,11 +807,7 @@ pub(crate) fn model_tool_names() -> Vec<String> {
     names.push(tools::TODO_FINISH_MODEL_TOOL.to_string());
     names.push(tools::EDIT_FILE_MODEL_TOOL.to_string());
     names.push(tools::WRITE_FILE_MODEL_TOOL.to_string());
-    names.push(tools::APPLY_PATCH_MODEL_TOOL.to_string());
-    names.push(tools::EXEC_COMMAND_MODEL_TOOL.to_string());
-    names.push(tools::WRITE_STDIN_MODEL_TOOL.to_string());
     names.extend(tools::tool_fs::model_tool_names());
-    names.push(LYRA_CLARIFICATION_ASK_TOOL.to_string());
     names.push(LYRA_SESSION_READ_MESSAGE_TOOL.to_string());
     names
 }

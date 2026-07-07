@@ -5,8 +5,20 @@ import { TerminalDock } from "../view";
 import type { TerminalDockProps } from "../types";
 
 vi.mock("../pane-surface", () => ({
-  TerminalPaneSurface: ({ pane }: { readonly pane: { readonly id: string } }) => (
-    <div aria-label={`pane-${pane.id}`} />
+  TerminalPaneSurface: ({
+    pane,
+    canClose,
+    onClose
+  }: {
+    readonly pane: { readonly id: string };
+    readonly canClose?: boolean;
+    readonly onClose?: () => void;
+  }) => (
+    <div aria-label={`pane-${pane.id}`}>
+      {canClose ? (
+        <button type="button" aria-label={`close-pane-${pane.id}`} onClick={onClose} />
+      ) : null}
+    </div>
   )
 }));
 
@@ -23,6 +35,7 @@ const createProps = (reloadPrompt = vi.fn(async () => ({ applied: true, deferred
     moveTerminalToTop: "move-top",
     moveTerminalToBottom: "move-bottom",
     closeTab: "close",
+    closePane: "close-pane",
     newTabWithProfile: "new-profile",
     profile: "profile",
     renameTab: "rename",
@@ -165,5 +178,42 @@ describe("terminal dock view", () => {
 
     expect(props.model.openTab).toHaveBeenCalledTimes(1);
     expect(props.model.openTabWithProfile).not.toHaveBeenCalled();
+  });
+
+  test("shows a pane close control when a terminal tab is split", () => {
+    const props = createProps();
+    const splitTab = {
+      id: "tab-1",
+      title: "Terminal",
+      orientation: "horizontal" as const,
+      paneIds: ["pane-1", "pane-2"],
+      activePaneId: "pane-1",
+      placement: "dock" as const
+    };
+    const splitProps = {
+      ...props,
+      model: {
+        ...props.model,
+        activeDockTab: splitTab,
+        dockTabs: [splitTab],
+        activeDockPanes: [
+          {
+            id: "pane-1",
+            sessionId: "session-1",
+            title: "Terminal"
+          },
+          {
+            id: "pane-2",
+            sessionId: "session-2",
+            title: "Terminal 2"
+          }
+        ]
+      }
+    };
+
+    render(<TerminalDock {...splitProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "close-pane-pane-1" }));
+
+    expect(splitProps.model.closePane).toHaveBeenCalledWith("tab-1", "pane-1");
   });
 });

@@ -82,11 +82,6 @@ type AgentConfigShape = {
       readonly enabled?: boolean;
     }[];
   }>;
-  readonly promptDelivery?: {
-    readonly mode?: string | null;
-    readonly leanExperimental?: boolean;
-    readonly openaiResponsesStatefulPromptContract?: boolean;
-  };
 };
 
 const asAgentConfig = (value: unknown): AgentConfigShape =>
@@ -104,29 +99,6 @@ const uniqueModelIds = (...groups: readonly string[][]): string[] => {
   }
   return result;
 };
-
-type SettingsAiSwitchRowProps = {
-  readonly checked: boolean;
-  readonly className?: string;
-  readonly label: string;
-  readonly onCheckedChange: (checked: boolean) => void;
-};
-
-const SettingsAiSwitchRow = ({
-  checked,
-  className,
-  label,
-  onCheckedChange
-}: SettingsAiSwitchRowProps) => (
-  <div className={["lyra-settings-ai-switch-row", className ?? ""].filter(Boolean).join(" ")}>
-    <span>{label}</span>
-    <AppSwitch
-      checked={checked}
-      aria-label={label}
-      onCheckedChange={onCheckedChange}
-    />
-  </div>
-);
 
 type SettingsAiInputFieldProps = Omit<ComponentPropsWithoutRef<typeof AppInput>, "className" | "onChange" | "value"> & {
   readonly className?: string;
@@ -2301,14 +2273,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
 };
 
 export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
-  const config = asAgentConfig(model.agentConfig?.config);
   const loginProviders = model.agentLoginProviders?.providers ?? [];
   const oauthLoginProviders = loginProviders.filter((provider) => provider.requiresCallback);
-  const leanPromptDeliveryEnabled =
-    config.promptDelivery?.mode === "lean-experimental"
-    || config.promptDelivery?.leanExperimental === true;
-  const statefulPromptContractEnabled =
-    config.promptDelivery?.openaiResponsesStatefulPromptContract === true;
   const [pendingLogin, setPendingLogin] = useState<{
     readonly provider: string;
     readonly label?: string | null;
@@ -2424,36 +2390,6 @@ export const SettingsAiView = ({ labels, model }: SettingsAiViewProps) => {
             </footer>
           </div>
         )}
-      </div>
-
-      <div className="lyra-settings-ai-inline-editor">
-        <header className="lyra-settings-ai-inline-editor-header">
-          <span className="lyra-settings-ai-inline-editor-title-copy">
-            <h3>{labels.promptExperimentsTitle}</h3>
-            <small>{labels.promptExperimentsDescription}</small>
-          </span>
-        </header>
-
-        <div className="lyra-settings-ai-form">
-          <SettingsAiSwitchRow
-            checked={leanPromptDeliveryEnabled}
-            label={labels.leanPromptDeliveryLabel}
-            onCheckedChange={(checked) => {
-              void model.updateAgentConfig?.({
-                promptDeliveryMode: checked ? "lean-experimental" : "full",
-              });
-            }}
-          />
-          <SettingsAiSwitchRow
-            checked={statefulPromptContractEnabled}
-            label={labels.statefulPromptContractLabel}
-            onCheckedChange={(checked) => {
-              void model.updateAgentConfig?.({
-                openaiResponsesStatefulPromptContract: checked,
-              });
-            }}
-          />
-        </div>
       </div>
     </section>
   );

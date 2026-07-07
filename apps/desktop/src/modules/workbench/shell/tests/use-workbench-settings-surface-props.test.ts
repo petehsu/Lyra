@@ -8,6 +8,7 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import { createTranslator } from "../../i18n";
 import type { WorkbenchPreferencesModel } from "../../preferences";
+import type { SettingsAiModel } from "../../settings-ai";
 import { useWorkbenchLabels } from "../use-workbench-labels";
 import { useWorkbenchSettingsSurfaceProps } from "../use-workbench-settings-surface-props";
 import { createInitialWorkbenchPreferences } from "../workbench-shell-defaults";
@@ -58,10 +59,12 @@ const createDesktopApi = ({
 
 const renderSettingsProps = ({
   desktopApi = createDesktopApi(),
-  preferencesModel = createPreferencesModel()
+  preferencesModel = createPreferencesModel(),
+  settingsAiModel = {} as SettingsAiModel
 }: {
   readonly desktopApi?: LyraDesktopApi | null;
   readonly preferencesModel?: WorkbenchPreferencesModel;
+  readonly settingsAiModel?: SettingsAiModel;
 } = {}) =>
   renderHook(() => {
     const t = createTranslator("en-US");
@@ -70,7 +73,7 @@ const renderSettingsProps = ({
       labels,
       desktopApi,
       preferencesModel,
-      settingsAiModel: {} as never,
+      settingsAiModel,
       softwareCapabilities: {
         software: [],
         loading: false,
@@ -89,7 +92,7 @@ const renderSettingsProps = ({
     });
   });
 
-describe("useWorkbenchSettingsSurfaceProps system notifications", () => {
+describe("useWorkbenchSettingsSurfaceProps", () => {
   test("keeps the mode off when selecting off", async () => {
     const requestAccess = vi.fn().mockResolvedValue(createSystemNotificationAccessResult(true));
     const desktopApi = createDesktopApi({ requestAccess });
@@ -157,6 +160,40 @@ describe("useWorkbenchSettingsSurfaceProps system notifications", () => {
 
     await waitFor(() => {
       expect(result.current.systemNotificationModeValue).toBe("off");
+    });
+  });
+
+  test("derives and updates prompt delivery experiment settings", () => {
+    const updateAgentConfig = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderSettingsProps({
+      desktopApi: null,
+      settingsAiModel: {
+        agentConfig: {
+          config: {
+            promptDelivery: {
+              mode: "lean-experimental",
+              openaiResponsesStatefulPromptContract: true
+            }
+          },
+          commands: []
+        },
+        updateAgentConfig
+      } as unknown as SettingsAiModel
+    });
+
+    expect(result.current.leanPromptDeliveryValue).toBe(true);
+    expect(result.current.statefulPromptContractValue).toBe(true);
+
+    act(() => {
+      result.current.onLeanPromptDeliveryChange(false);
+      result.current.onStatefulPromptContractChange(false);
+    });
+
+    expect(updateAgentConfig).toHaveBeenCalledWith({
+      promptDeliveryMode: "full"
+    });
+    expect(updateAgentConfig).toHaveBeenCalledWith({
+      openaiResponsesStatefulPromptContract: false
     });
   });
 });

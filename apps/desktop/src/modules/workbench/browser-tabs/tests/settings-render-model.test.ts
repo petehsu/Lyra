@@ -30,6 +30,7 @@ describe("createSettingsSurfaceModel", () => {
       "models",
       "skills",
       "mcp",
+      "experimental",
       "legal"
     ]);
     expect(model.categories.map((category) => category.domId)).toEqual([
@@ -44,6 +45,7 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("models"),
       buildSettingsCategoryDomId("skills"),
       buildSettingsCategoryDomId("mcp"),
+      buildSettingsCategoryDomId("experimental"),
       buildSettingsCategoryDomId("legal")
     ]);
   });
@@ -123,6 +125,25 @@ describe("createSettingsSurfaceModel", () => {
     const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps());
 
     expect(findSection(model, "aiToolDisplayMode")).toBeUndefined();
+  });
+
+  test("renders prompt delivery experiments in the experimental category", () => {
+    const model = createSettingsSurfaceModel(createBrowserSettingsSurfaceProps({
+      leanPromptDeliveryValue: true,
+      statefulPromptContractValue: true
+    }));
+    const experimentalCategory = model.categories.find((category) => category.id === "experimental");
+
+    expect(experimentalCategory?.sections.map((section) => section.id)).toContain("leanPromptDelivery");
+    expect(experimentalCategory?.sections.map((section) => section.id)).toContain("statefulPromptContract");
+    expect(findSection(model, "leanPromptDelivery")?.controls[0]).toMatchObject({
+      kind: "boolean-choice",
+      value: true
+    });
+    expect(findSection(model, "statefulPromptContract")?.controls[0]).toMatchObject({
+      kind: "boolean-choice",
+      value: true
+    });
   });
 
   test("shows Linux compatibility sections only when Linux status is available", () => {

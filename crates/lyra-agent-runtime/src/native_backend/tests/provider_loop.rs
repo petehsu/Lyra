@@ -558,7 +558,7 @@ fn direct_apply_patch_writes_large_generated_file() {
             &cancellation,
             ModelToolCall {
                 id: "tool-direct-apply-patch".to_string(),
-                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                name: "apply_patch".to_string(),
                 arguments: json!({ "patch": patch }),
             },
         )

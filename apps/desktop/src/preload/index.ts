@@ -185,6 +185,7 @@ import {
   type LoginManagerRevealCredentialResponse,
   type LoginManagerSnapshot,
   type LoginManagerUpdateSessionRequest,
+  type LyraSensitiveValueDeleteRequest,
   type LyraSensitiveValueRevealRequest,
   type LyraSensitiveValueRevealResponse,
   type LyraSensitiveValueStoreRequest,
@@ -1178,7 +1179,14 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
       ipcRenderer.invoke(
         LYRA_CHANNELS.sensitiveValuesRevealToUser,
         request
-      ) as Promise<LyraSensitiveValueRevealResponse>
+      ) as Promise<LyraSensitiveValueRevealResponse>,
+    delete: async (
+      request: LyraSensitiveValueDeleteRequest
+    ): Promise<{ readonly deleted: boolean }> =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.sensitiveValuesDelete,
+        request
+      ) as Promise<{ readonly deleted: boolean }>
   },
   lsp: {
     openDocument: (request: LspDocumentRequest) =>
@@ -1448,6 +1456,20 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentPermissionPolicySetMode,
         request
       ) as Promise<AgentPermissionPolicySnapshot>,
+    validateElevationPassword: (request: { password: string }) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentElevationValidate,
+        request
+      ) as Promise<{ readonly valid: boolean; readonly exitCode?: number; readonly stderr?: string }>,
+    setElevationSecret: (request: { secret: string }) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentElevationSetSecret,
+        request
+      ) as Promise<{ readonly stored: boolean }>,
+    clearElevationSecret: () =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentElevationClear
+      ) as Promise<{ readonly cleared: boolean }>,
     readAgentConfig: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentConfigRead) as Promise<AgentConfigSnapshot>,
     readAgentProviderCatalog: () =>

@@ -5,6 +5,9 @@ use super::*;
 pub use codegraph_signals::CodeGraphFragmentReport;
 
 pub(crate) const APPLY_PATCH_MODEL_TOOL: &str = "apply_patch";
+pub(crate) const READ_FILE_MODEL_TOOL: &str = "read_file";
+pub(crate) const GREP_MODEL_TOOL: &str = "grep";
+pub(crate) const GLOB_MODEL_TOOL: &str = "glob";
 pub(crate) const EDIT_FILE_MODEL_TOOL: &str = "edit_file";
 pub(crate) const WRITE_FILE_MODEL_TOOL: &str = "write_file";
 pub(crate) const EXEC_COMMAND_MODEL_TOOL: &str = "exec_command";

@@ -55,6 +55,7 @@ const createProps = (): TerminalPaneSurfaceProps => ({
     moveTerminalToTop: "move-top",
     moveTerminalToBottom: "move-bottom",
     closeTab: "close",
+    closePane: "close-pane",
     newTabWithProfile: "new-profile",
     profile: "profile",
     renameTab: "rename",
@@ -72,12 +73,14 @@ const createProps = (): TerminalPaneSurfaceProps => ({
 });
 
 const getTerminalInstances = async (): Promise<Array<{
+  focusCalls: number;
   lines: string[];
   options: Record<string, unknown>;
   writeCalls: string[];
 }>> => {
   const module = await import("xterm") as unknown as {
     __terminalInstances: Array<{
+      focusCalls: number;
       lines: string[];
       options: Record<string, unknown>;
       writeCalls: string[];
@@ -109,6 +112,18 @@ describe("terminal pane surface", () => {
     expect(terminalInstances[0]?.options.cursorInactiveStyle).toBe("bar");
     expect(terminalInstances[0]?.options.cursorWidth).toBe(1);
     expect(terminalInstances[0]?.options.convertEol).toBe(false);
+  });
+
+  test("focuses the active xterm pane so cursor blink can run", async () => {
+    await act(async () => {
+      render(<TerminalPaneSurface {...createProps()} />);
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+
+    await waitFor(async () => {
+      const terminalInstances = await getTerminalInstances();
+      expect(terminalInstances[0]?.focusCalls).toBeGreaterThan(0);
+    });
   });
 
   test("does not render kernel projection chrome in the human terminal renderer", async () => {

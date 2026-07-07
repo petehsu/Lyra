@@ -79,7 +79,7 @@ fn rollback_preview_and_restore_recover_messages_and_files() {
     );
 }
 #[test]
-fn removed_file_read_tool_fs_does_not_request_outside_workspace_permission() {
+fn file_read_tool_fs_requests_outside_workspace_permission() {
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let created = backend
@@ -90,20 +90,34 @@ fn removed_file_read_tool_fs_does_not_request_outside_workspace_permission() {
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let denied_output = execute_model_tool(
-        &session_id,
-        &turn_id,
-        &None,
-        &Arc::new(AtomicBool::new(false)),
-        tool_fs_run_call(
-            "tool-outside-denied",
-            "/tools/filesystem/read_file",
-            json!({ "path": "/etc/passwd" }),
-        ),
-    );
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let read_session_id = session_id.clone();
+    let read_turn_id = turn_id.clone();
+    let read_cancellation = cancellation.clone();
+    let read_handle = thread::spawn(move || {
+        execute_model_tool(
+            &read_session_id,
+            &read_turn_id,
+            &None,
+            &read_cancellation,
+            tool_fs_run_call(
+                "tool-outside-denied",
+                "/tools/filesystem/read_file",
+                json!({ "path": "/etc/passwd" }),
+            ),
+        )
+    });
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": false }),
+        )
+        .expect("deny outside read permission");
+    let denied_output = read_handle.join().expect("join outside read");
     assert_eq!(
         denied_output.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
+        Some("permission_denied")
     );
     assert!(
         state()
@@ -138,7 +152,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             &Arc::new(AtomicBool::new(false)),
             ModelToolCall {
                 id: "tool-denied".to_string(),
-                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                name: "apply_patch".to_string(),
                 arguments: json!({ "patch": denied_patch }),
             },
         )
@@ -178,7 +192,7 @@ fn permission_request_denies_and_allows_native_file_write() {
             &Arc::new(AtomicBool::new(false)),
             ModelToolCall {
                 id: "tool-allowed".to_string(),
-                name: APPLY_PATCH_MODEL_TOOL.to_string(),
+                name: "apply_patch".to_string(),
                 arguments: json!({ "patch": allowed_patch }),
             },
         )
@@ -263,11 +277,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &denied_shell_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            ModelToolCall {
-                id: "tool-shell-denied".to_string(),
-                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm denied-shell.txt" }),
-            },
+            tool_fs_run_call(
+                "tool-shell-denied",
+                "/tools/shell/run",
+                json!({ "command": "rm denied-shell.txt" }),
+            ),
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -295,11 +309,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &allowed_shell_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            ModelToolCall {
-                id: "tool-shell-allowed".to_string(),
-                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm allowed-shell.txt" }),
-            },
+            tool_fs_run_call(
+                "tool-shell-allowed",
+                "/tools/shell/run",
+                json!({ "command": "rm allowed-shell.txt" }),
+            ),
         )
     });
     let permission_id = wait_for_pending_permission(&session_id);
@@ -339,11 +353,11 @@ fn permission_request_denies_and_allows_native_file_write() {
             &unbound_turn_id,
             &None,
             &Arc::new(AtomicBool::new(false)),
-            ModelToolCall {
-                id: "tool-shell-unbound-denied".to_string(),
-                name: EXEC_COMMAND_MODEL_TOOL.to_string(),
-                arguments: json!({ "cmd": "rm unbound-shell.txt", "workdir": unbound_cwd }),
-            },
+            tool_fs_run_call(
+                "tool-shell-unbound-denied",
+                "/tools/shell/run",
+                json!({ "command": "rm unbound-shell.txt", "cwd": unbound_cwd }),
+            ),
         )
     });
     let permission_id = wait_for_pending_permission(&unbound_session_id);

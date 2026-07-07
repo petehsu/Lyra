@@ -7444,7 +7444,7 @@
 
 @container (max-width: 360px) {
   .lyra-agents-project-meta-row {
-    gap: var(--lyra-space-4);
+    gap: var(--lyra-space-2);
   }
 
   .lyra-agents-project-dir-chip,
@@ -7452,17 +7452,36 @@
   .lyra-agents-project-todo-chip,
   .lyra-agents-project-plan-chip,
   .lyra-agents-bg-terminal-chip {
-    flex: 0 0 auto;
-    max-width: none;
     padding-inline: var(--lyra-space-6);
   }
 
-  .lyra-agents-project-dir-chip-label,
+  .lyra-agents-project-location-chip,
+  .lyra-agents-project-todo-chip,
+  .lyra-agents-project-plan-chip {
+    flex: 0 0 var(--lyra-agents-composer-toolbar-control-size);
+    width: var(--lyra-agents-composer-toolbar-control-size);
+    min-width: var(--lyra-agents-composer-toolbar-control-size);
+    max-width: var(--lyra-agents-composer-toolbar-control-size);
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .lyra-agents-project-dir-chip,
+  .lyra-agents-bg-terminal-chip {
+    flex: 0 1 auto;
+    max-width: var(--lyra-unit-80);
+  }
+
+  .lyra-agents-project-location-chip,
+  .lyra-agents-project-todo-chip,
+  .lyra-agents-project-plan-chip {
+    gap: 0;
+  }
+
   .lyra-agents-project-dir-chip-chevron,
   .lyra-agents-project-location-chip span,
   .lyra-agents-project-todo-chip span,
-  .lyra-agents-project-plan-chip span,
-  .lyra-agents-bg-terminal-chip > span:not(.lyra-agents-bg-terminal-count) {
+  .lyra-agents-project-plan-chip span {
     display: none;
   }
 }

@@ -83,10 +83,17 @@ export type LyraSensitiveValueStoreResponse = {
   readonly ref: LyraSensitiveValueRef;
 };
 
+export type LyraSensitiveValueDeleteRequest = {
+  readonly ref: LyraSensitiveValueRef;
+};
+
 export type LyraSensitiveValueApi = {
   readonly store: (
     request: LyraSensitiveValueStoreRequest
   ) => Promise<LyraSensitiveValueStoreResponse>;
+  readonly delete: (
+    request: LyraSensitiveValueDeleteRequest
+  ) => Promise<{ readonly deleted: boolean }>;
   readonly revealToUser: (
     request: LyraSensitiveValueRevealRequest
   ) => Promise<LyraSensitiveValueRevealResponse>;

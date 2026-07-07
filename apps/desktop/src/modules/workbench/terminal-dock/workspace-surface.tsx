@@ -17,6 +17,7 @@ export type TerminalWorkspaceSurfaceProps = {
   readonly tab: TerminalDockTab;
   readonly panes: readonly TerminalDockPane[];
   readonly onFocusPane: (paneId: string) => void;
+  readonly onClosePane: (paneId: string) => void;
   readonly onOpenTab: () => void;
   readonly onSplitHorizontal: () => void;
   readonly onSplitVertical: () => void;
@@ -30,7 +31,8 @@ export const TerminalWorkspaceSurface = ({
   uiThemeId,
   tab,
   panes,
-  onFocusPane
+  onFocusPane,
+  onClosePane
 }: TerminalWorkspaceSurfaceProps) => {
   const contribution = useMemo(
     () => ({
@@ -62,6 +64,10 @@ export const TerminalWorkspaceSurface = ({
             labels={labels}
             themeSignature={themeSignature}
             uiThemeId={uiThemeId}
+            canClose={panes.length > 1}
+            onClose={() => {
+              onClosePane(pane.id);
+            }}
             onFocus={() => {
               onFocusPane(pane.id);
             }}

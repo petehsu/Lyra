@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import {
   LYRA_CHANNELS,
+  type LyraSensitiveValueDeleteRequest,
   type LyraSensitiveValueRevealRequest,
   type LyraSensitiveValueRevealResponse,
   type LyraSensitiveValueStoreRequest,
@@ -224,12 +225,35 @@ export const createSensitiveValuesIpcBridge = ({
     return decryptValue(record.ciphertextBase64);
   };
 
+  const deleteValue = async (
+    request: LyraSensitiveValueDeleteRequest
+  ): Promise<{ readonly deleted: boolean }> => {
+    if (!isLyraSensitiveValueRef(request.ref)) {
+      throw new Error("Invalid sensitive value ref.");
+    }
+    const ref = request.ref;
+    const current = readStore();
+    const recordId = ref.ownerRef.kind === "opaque" ? ref.ownerRef.valueId : ref.id;
+    const before = current.values.length;
+    const filtered = current.values.filter((entry) => entry.id !== recordId);
+    if (filtered.length === before) {
+      return { deleted: false };
+    }
+    writeStore({ values: filtered });
+    return { deleted: true };
+  };
+
+  ipcMain.handle(LYRA_CHANNELS.sensitiveValuesDelete, async (_event, request: unknown) =>
+    await deleteValue(request as LyraSensitiveValueDeleteRequest));
+
   return {
     dispose: () => {
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesRevealToUser);
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesStore);
+      ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesDelete);
     },
     store,
+    delete: deleteValue,
     revealToUser,
     resolveForAgentFill
   };

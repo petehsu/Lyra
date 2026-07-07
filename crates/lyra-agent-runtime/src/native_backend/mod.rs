@@ -48,6 +48,7 @@ mod activity;
 mod browser_loop_detector;
 mod clarifications;
 mod context;
+mod elevation;
 pub(crate) mod context_window;
 pub(crate) mod cut_store;
 pub mod file_citations;
@@ -103,7 +104,7 @@ mod types;
 mod tests;
 
 use self::{
-    actions::*, activity::*, clarifications::*, context::*, file_citations::*, helpers::*,
+    actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*, helpers::*,
     inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*, memory_autonomy::*,
     memory_compress::*, memory_derived_fields::*, memory_event_trigger::*, memory_layer::*,
     memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, memory_sync::*,
@@ -186,6 +187,9 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.permission.respond" => respond_permission(payload),
             "agent.permissionPolicy.read" => read_permission_policy(),
             "agent.permissionPolicy.setMode" => set_permission_policy_mode(payload),
+            "agent.elevation.setSecret" => set_elevation_secret(payload),
+            "agent.elevation.clear" => clear_elevation_secret(),
+            "agent.elevation.validate" => validate_sudo_password(payload),
             "agent.clarification.respond" => respond_clarification(payload),
             "agent.config.read" => read_config(),
             "agent.config.update" => update_config(payload),

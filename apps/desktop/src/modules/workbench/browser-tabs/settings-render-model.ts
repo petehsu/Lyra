@@ -757,6 +757,36 @@ const createSectionControl = (
           })
         ]
       });
+    case "leanPromptDelivery":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.leanPromptDeliveryLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.leanPromptDeliveryLabel,
+            value: props.leanPromptDeliveryValue,
+            description: props.leanPromptDeliveryDescription,
+            enabledLabel: props.leanPromptDeliveryEnabledLabel,
+            disabledLabel: props.leanPromptDeliveryDisabledLabel,
+            onChange: props.onLeanPromptDeliveryChange
+          })
+        ]
+      });
+    case "statefulPromptContract":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.statefulPromptContractLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.statefulPromptContractLabel,
+            value: props.statefulPromptContractValue,
+            description: props.statefulPromptContractDescription,
+            enabledLabel: props.statefulPromptContractEnabledLabel,
+            disabledLabel: props.statefulPromptContractDisabledLabel,
+            onChange: props.onStatefulPromptContractChange
+          })
+        ]
+      });
     case "legalNotices":
       return createSettingsSection({
         id: sectionId,

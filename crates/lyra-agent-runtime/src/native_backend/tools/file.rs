@@ -491,6 +491,72 @@ pub(crate) fn tool_file_glob(session_id: &str, input: &Value) -> NativeToolResul
     })
 }
 
+pub(crate) fn tool_file_grep(session_id: &str, input: &Value) -> NativeToolResult {
+    let pattern = required_value_string(input, "pattern")?;
+    let root = value_string(input, "path").unwrap_or_else(|| ".".to_string());
+    let workspace_path = resolve_workspace_path(session_id, &root, false)?;
+    let glob = value_string(input, "glob");
+    let case_insensitive = value_bool(input, "caseInsensitive", false);
+    let context_lines = value_usize(input, "contextLines", 0, 10);
+    let max_results = value_usize(input, "maxResults", 200, 2000);
+
+    let mut cmd = std::process::Command::new("rg");
+    cmd.arg("--line-number")
+        .arg("--no-heading")
+        .arg("--color=never")
+        .arg("-m")
+        .arg(max_results.to_string())
+        .current_dir(&workspace_path.absolute);
+
+    if case_insensitive {
+        cmd.arg("-i");
+    }
+    if context_lines > 0 {
+        cmd.arg("-C").arg(context_lines.to_string());
+    }
+    if let Some(ref g) = glob {
+        cmd.arg("-g").arg(g);
+    }
+    cmd.arg(&pattern);
+
+    let output = cmd.output().map_err(|error| NativeToolFailure::new(
+        "grep_failed",
+        format!("failed to run rg: {error}"),
+        "Ensure ripgrep (rg) is installed and in PATH.",
+    ))?;
+
+    // ponytail: rg exit code 1 = no matches (not an error). Only treat code != 0 && != 1 as failure.
+    if !output.status.success() && !output.status.code().is_some_and(|c| c == 1) {
+        return Err(NativeToolFailure::new(
+            "grep_failed",
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            "Check the regex pattern and try again.",
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    let truncated = lines.len() >= max_results;
+    let display: &[&str] = if truncated { &lines[..max_results] } else { &lines };
+
+    Ok(NativeToolSuccess {
+        content: if display.is_empty() {
+            "No matches found.".to_string()
+        } else {
+            display.join("\n")
+        },
+        raw: json!({
+            "pattern": pattern,
+            "path": workspace_path.relative,
+            "matches": display.len(),
+            "truncated": truncated,
+        }),
+        recommended_next_action: truncated.then_some(
+            "Narrow the pattern or path to reduce results.".to_string(),
+        ),
+    })
+}
+
 pub(crate) fn collect_workspace_files(
     workspace_root: &Path,
     dir: &Path,

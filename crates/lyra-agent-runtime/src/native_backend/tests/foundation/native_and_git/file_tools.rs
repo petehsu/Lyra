@@ -20,20 +20,22 @@ fn native_file_tools_enforce_policy_budgets_edits_and_patch_artifacts() {
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = Arc::new(AtomicBool::new(false));
-    let legacy_list = execute_model_tool(
+    let tool_fs_list = execute_model_tool(
         &session_id,
         &turn_id,
         &None,
         &cancellation,
         tool_fs_run_call(
-            "tool-legacy-list",
+            "tool-list",
             "/tools/filesystem/list_files",
             json!({ "path": ".", "recursive": true }),
         ),
     );
-    assert_eq!(
-        legacy_list.pointer("/error/code").and_then(Value::as_str),
-        Some("tool_not_found")
+    assert_eq!(tool_fs_list["status"].as_str(), Some("completed"));
+    assert!(
+        tool_fs_list["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("src/main.rs"))
     );
     let listed =
         tool_file_list(&session_id, &json!({ "path": ".", "recursive": true })).expect("list");
