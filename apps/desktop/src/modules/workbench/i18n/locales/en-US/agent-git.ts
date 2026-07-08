@@ -1,11 +1,11 @@
 // ponytail: agent-git surface — en-US 字典片段，按 key 前缀切割自原单文件
 export const agentGit = {
-  "agentGit.title": "Source Control",
-  "agentGit.open": "Open Source Control",
+  "agentGit.title": "SCM",
+  "agentGit.open": "Open SCM",
   "agentGit.refresh": "Refresh Git status",
   "agentGit.loading": "Reading Git status...",
-  "agentGit.notRepositoryTitle": "This project is not a Git repository",
-  "agentGit.notRepositoryDescription": "The bound project directory does not contain a Git repository.",
+  "agentGit.notRepositoryTitle": "Not a Git repo",
+  "agentGit.notRepositoryDescription": "The bound project dir does not contain a Git repo.",
   "agentGit.emptyTitle": "No changes",
   "agentGit.emptyDescription": "The working tree and index are clean.",
   "agentGit.changes": "changes",

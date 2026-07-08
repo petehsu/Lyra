@@ -294,6 +294,9 @@ impl AgentRuntimeServices {
             "agent.permissionPolicy.read" | "agent.permissionPolicy.setMode" => {
                 self.backend.call(method, payload)
             }
+            "agent.elevation.validate"
+            | "agent.elevation.setSecret"
+            | "agent.elevation.clear" => self.backend.call(method, payload),
             "agent.clarification.respond" => self.clarification.respond_from_payload(payload),
             method if self.provider.handles_method(method) => self
                 .provider

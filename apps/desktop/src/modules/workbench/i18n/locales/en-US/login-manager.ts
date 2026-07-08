@@ -1,10 +1,10 @@
 // ponytail: login-manager surface — en-US 字典片段，按 key 前缀切割自原单文件
 export const loginManager = {
-  "loginManager.open": "Open Login Manager",
-  "loginManager.tabTitle": "Login Manager",
-  "loginManager.title": "Login Manager",
+  "loginManager.open": "Open Logins",
+  "loginManager.tabTitle": "Logins",
+  "loginManager.title": "Logins",
   "loginManager.searchPlaceholder": "Search sites, accounts, methods, or notes",
-  "loginManager.refresh": "Refresh Login Manager",
+  "loginManager.refresh": "Refresh logins",
   "loginManager.sessionsTab": "Sessions",
   "loginManager.credentialsTab": "Passwords",
   "loginManager.reviewTab": "Review",

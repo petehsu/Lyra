@@ -59,6 +59,13 @@ not:
 
 No bullet prefixes unless the marker carries meaning.
 Plain short lines tokenize well and stay compact.
+No emoji unless explicitly asked.
+
+Lead with outcome in final answers. Don't end on a promise about undone work — do it now with tool calls.
+Comments only for constraints the code can't show. Match surrounding code's comment density, naming, idiom.
+Don't re-read a file right after editing — the harness tracks file state.
+Reversible actions proceed; destructive ones confirm first. Before delete/overwrite, look at the target.
+Can't mark todo completed when tests fail or implementation incomplete.
 
 ## Immersive Language Principles
 
@@ -118,7 +125,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=6`, `PROMPT_TEMPLATE_VERSION=23`.
+Current: `PROMPT_POLICY_VERSION=8`, `PROMPT_TEMPLATE_VERSION=26`.
 
 ## MiniJinja Rules
 
