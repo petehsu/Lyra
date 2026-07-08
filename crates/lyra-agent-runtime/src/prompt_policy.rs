@@ -1108,15 +1108,11 @@ mod tests {
         assert!(report.section_hashes.contains_key("P1.compactContract"));
         assert!(report.section_hashes.contains_key("P2.fullContract"));
         assert!(prompt.contains("It is Wednesday, June 17, 2026, 2:45 PM GMT+8"));
-        assert!(prompt.contains("Tool calls r provider structured tool calls only"));
-        assert!(prompt.contains("Blocking input only comes thru structured interaction tool"));
+        assert!(prompt.contains("Blocking input only comes thru structured interaction"));
         assert!(prompt.contains("Plain text questions r final/non-blocking"));
         assert!(prompt.contains("lyra_clarification_ask shows panel"));
-        assert!(prompt.contains("U have your computer w discoverable caps"));
-        assert!(prompt.contains("your computer w discoverable caps"));
+        assert!(prompt.contains("This is ur computer"));
         assert!(prompt.contains("Talk direct, grounded, technical, accountable"));
-        assert!(prompt.contains("provider structured tool calls"));
-        assert!(prompt.contains("Never write simulated/JSON"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("opaque refs owned by u"));
         assert!(prompt.contains("Don't claim done w/o evidence"));
@@ -1127,7 +1123,7 @@ mod tests {
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: internet/reference awareness assertions
         assert!(prompt.contains("browser reaches everything the search API might miss"));
-        assert!(prompt.contains("don't design blind"));
+        assert!(prompt.contains("Don't design blind"));
         assert!(prompt.contains("keep a reference project open in browser while writing"));
         assert!(prompt.contains("internet is your reference library"));
         // ponytail: deep-fusion assertions
@@ -1176,19 +1172,18 @@ mod tests {
             persona: PersonaContext::default(),
             ..PromptPolicyInput::default()
         });
-        assert!(prompt.contains("Tool calls r provider structured tool calls only"));
         assert!(!prompt.contains("It is "));
         assert!(!prompt.contains("U operate in"));
         assert!(!prompt.contains("Company gave U this device"));
         assert!(!prompt.contains("nickname only"));
-        assert!(prompt.contains("U have your computer w discoverable caps"));
+        assert!(prompt.contains("This is ur computer"));
         // ponytail: compact SOP one-liners present even w/o persona
         assert!(prompt.contains("Self-critique before done"));
         assert!(prompt.contains("Don't regress"));
         assert!(prompt.contains("Conventional Commits"));
         // ponytail: compact internet awareness one-liners
         assert!(prompt.contains("browser search directly"));
-        assert!(prompt.contains("keep reference open while coding"));
+        assert!(prompt.contains("keep reference open while working"));
         // ponytail: compact deep-fusion one-liners
         assert!(prompt.contains("Code first, then"));
         assert!(prompt.contains("No unrequested abstractions"));
@@ -1258,7 +1253,7 @@ mod tests {
         assert!(report.prefix_cache_eligible_tokens > 0);
         assert!(report.missed_module_recovery.enabled);
         assert!(report.scene_modules.is_empty());
-        assert!(report.prompt.contains("U have your computer w discoverable caps"));
+        assert!(report.prompt.contains("This is ur computer"));
         assert!(report.prompt.contains("Blocking input only comes thru"));
         assert!(report.prompt.contains("lyra_clarification_ask"));
         assert!(report.prompt.contains("Current runtime context"));

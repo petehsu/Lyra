@@ -866,6 +866,23 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       address,
       ...(normalizeString(request.title) === null ? {} : { title: normalizeString(request.title)! })
     });
+    // ponytail: poll for new entry — request-open-tab is async via renderer,
+    // the new tab registers via syncTopology. 3s ceiling; upgrade path is
+    // making request-open-tab return a tabId promise directly.
+    const knownTabIds = new Set(entries.keys());
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      for (const [tabId, entry] of entries) {
+        if (!knownTabIds.has(tabId) && entry.requestedAddress === address) {
+          return {
+            address,
+            tabId,
+            title: entry.titleHint ?? entry.runtime.title ?? null
+          };
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     return {
       address,
       tabId: null,

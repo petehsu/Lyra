@@ -311,13 +311,14 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
     );
     let (status, output) = match result {
         Ok(success) => {
-            let output = budgeted_tool_output(
+            let output = budgeted_tool_output_with_budget(
                 session_id,
                 turn_id,
                 tool_call_id,
                 success.content,
                 attach_policy_decision_to_raw(success.raw, policy_decision),
                 success.recommended_next_action,
+                tool_content_char_budget(display_name, action),
             );
             ("completed", output)
         }
@@ -354,7 +355,12 @@ pub(crate) fn execute_native_tool_adapter_with_runtime(
 
 pub(crate) fn native_tool_input(action: &str, arguments: Value) -> Value {
     let mut input = arguments.as_object().cloned().unwrap_or_default();
-    input.insert("action".to_string(), Value::String(action.to_string()));
+    // ponytail: or_insert instead of insert — tools like design_reference
+    // accept `action` as a user parameter (list vs read on the same path).
+    // The target mapping's action is only a default when the user omits it.
+    input
+        .entry("action".to_string())
+        .or_insert(Value::String(action.to_string()));
     Value::Object(input)
 }
 

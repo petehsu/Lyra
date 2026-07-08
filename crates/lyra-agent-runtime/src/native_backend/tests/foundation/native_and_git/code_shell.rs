@@ -447,3 +447,115 @@ fn native_shell_code_lsp_and_budget_guards_are_structured() {
         Some("diff-1")
     );
 }
+
+#[test]
+fn per_tool_char_budget_assigns_independent_limits() {
+    // file_read: usize::MAX — has its own byte-level pre-truncation, skips
+    // char-level truncation and artifact persistence entirely.
+    assert_eq!(tool_content_char_budget("file", "read"), usize::MAX);
+    // design read: 50 K chars — DESIGN.md max ~44 KB.
+    assert_eq!(tool_content_char_budget("design", "read"), 50_000);
+    // shell run: 32 K chars — already pre-truncated at 20 KB bytes.
+    assert_eq!(tool_content_char_budget("shell", "run"), 32_000);
+    // search / grep / glob / list: 32 K chars.
+    assert_eq!(tool_content_char_budget("file", "grep"), 32_000);
+    assert_eq!(tool_content_char_budget("file", "glob"), 32_000);
+    assert_eq!(tool_content_char_budget("file", "list"), 32_000);
+    assert_eq!(tool_content_char_budget("code", "search_text"), 32_000);
+    // browser map/see/read: 8 K chars — compact structured snapshots.
+    assert_eq!(tool_content_char_budget("lyra_lumen", "map"), 8_000);
+    // default fallback: 16 K chars.
+    assert_eq!(tool_content_char_budget("unknown", "action"), DEFAULT_TOOL_CONTENT_CHARS);
+}
+
+#[test]
+fn persisted_output_tag_embeds_artifact_path() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Persisted Output", "workingDir": temp.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    // Content just over the default 16 K char budget triggers truncation +
+    // artifact persistence with a [persisted-output] tag.
+    let oversized = "α".repeat(DEFAULT_TOOL_CONTENT_CHARS + 100);
+    let output = budgeted_tool_output_with_budget(
+        &session_id,
+        "turn-persisted",
+        "tool-persisted",
+        oversized,
+        json!({ "ok": true }),
+        None,
+        DEFAULT_TOOL_CONTENT_CHARS,
+    );
+    assert_eq!(output["truncated"], true);
+    let content = output["content"].as_str().expect("content string");
+    assert!(content.contains("[persisted-output]"));
+    assert!(content.contains("Use read_file to access the full content."));
+    // The artifact path should be embedded in the content text.
+    let artifact_path = output["artifactRef"]["path"]
+        .as_str()
+        .expect("artifact path in JSON");
+    assert!(content.contains(artifact_path));
+    assert!(std::path::Path::new(artifact_path).exists());
+}
+
+#[test]
+fn enforce_turn_tool_budget_spills_largest_output() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Turn Aggregate Budget",
+                "workingDir": temp.path().display().to_string()
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    // Three untruncated outputs whose combined size exceeds 200 K chars.
+    // The largest (150 K) should be spilled first.
+    let mut outputs = vec![
+        json!({
+            "content": "x".repeat(150_000),
+            "truncated": false,
+        }),
+        json!({
+            "content": "y".repeat(40_000),
+            "truncated": false,
+        }),
+        json!({
+            "content": "z".repeat(30_000),
+            "truncated": false,
+        }),
+    ];
+    let tool_call_ids: Vec<String> = (0..3).map(|i| format!("tool-turn-{i}")).collect();
+    enforce_turn_tool_budget(&session_id, "turn-aggregate", &mut outputs, &tool_call_ids);
+
+    // The largest output should now be truncated with a [persisted-output] tag.
+    assert_eq!(outputs[0]["truncated"], true);
+    let spilled_content = outputs[0]["content"].as_str().expect("spilled content");
+    assert!(spilled_content.contains("[persisted-output]"));
+    assert!(outputs[0]["artifactRef"].is_object());
+
+    // The smaller outputs should remain untruncated.
+    assert_eq!(outputs[1]["truncated"], false);
+    assert_eq!(outputs[2]["truncated"], false);
+}
+
+#[test]
+fn native_tool_input_preserves_user_action_parameter() {
+    // design_reference accepts `action` as a user parameter (list vs read).
+    // The Tool-FS target mapping's action is only a default when the user omits it.
+    let input = native_tool_input("read", json!({"action": "list"}));
+    assert_eq!(input["action"], "list", "user-supplied action must not be overwritten");
+
+    let input = native_tool_input("read", json!({}));
+    assert_eq!(input["action"], "read", "default action applies when user omits it");
+}

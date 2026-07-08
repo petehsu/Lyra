@@ -786,7 +786,7 @@ pub(crate) fn run_model_loop(
             // ponytail: All tools parallel by default — model decides what to batch.
             // Single call skips thread::scope overhead.  New tools inherit parallel
             // capability automatically; no per-tool opt-in needed.
-            let outputs: Vec<Value> = if tool_calls.len() > 1 {
+            let mut outputs: Vec<Value> = if tool_calls.len() > 1 {
                 std::thread::scope(|s| {
                     tool_calls
                         .iter()
@@ -849,6 +849,13 @@ pub(crate) fn run_model_loop(
                     })
                     .collect()
             };
+            let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
+            tools::enforce_turn_tool_budget(
+                session_id,
+                turn_id,
+                &mut outputs,
+                &tool_call_ids,
+            );
             for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
                 let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
                 provider_tool_results.push(content.clone());

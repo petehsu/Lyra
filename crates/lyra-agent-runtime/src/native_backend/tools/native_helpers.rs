@@ -4,12 +4,28 @@ use std::path::Component;
 
 const DEFAULT_TOOL_RAW_CHARS: usize = 32_000;
 const BROWSER_MAP_TOOL_CONTENT_CHARS: usize = 8_000;
+const DESIGN_REFERENCE_CONTENT_CHARS: usize = 50_000;
+const SHELL_OUTPUT_CONTENT_CHARS: usize = 32_000;
+const SEARCH_OUTPUT_CONTENT_CHARS: usize = 32_000;
 
 pub(crate) fn tool_content_char_budget(display_name: &str, action: &str) -> usize {
-    if display_name == "lyra_lumen" && matches!(action, "map" | "see" | "read") {
-        BROWSER_MAP_TOOL_CONTENT_CHARS
-    } else {
-        DEFAULT_TOOL_CONTENT_CHARS
+    match (display_name, action) {
+        // file_read has its own 96 KB byte-level pre-truncation (file.rs);
+        // usize::MAX skips char-level truncation and artifact persistence
+        // entirely, preventing a Read→persist→Read circular dependency.
+        ("file", "read") => usize::MAX,
+        // DESIGN.md files max ~44 KB; 50 K accommodates nearly all without
+        // spilling to artifact.
+        ("design", "read") => DESIGN_REFERENCE_CONTENT_CHARS,
+        // shell already pre-truncates at 20 KB bytes; 32 K chars gives
+        // headroom for multibyte UTF-8.
+        ("shell", "run") => SHELL_OUTPUT_CONTENT_CHARS,
+        // search / grep / glob / list can produce many matches.
+        ("file", "grep" | "glob" | "list") => SEARCH_OUTPUT_CONTENT_CHARS,
+        ("code", "search_text" | "grep_text" | "search_symbol") => SEARCH_OUTPUT_CONTENT_CHARS,
+        // browser map/see/read: compact structured snapshots.
+        ("lyra_lumen", "map" | "see" | "read") => BROWSER_MAP_TOOL_CONTENT_CHARS,
+        _ => DEFAULT_TOOL_CONTENT_CHARS,
     }
 }
 
@@ -53,7 +69,7 @@ pub(crate) fn budgeted_browser_tool_output(
     )
 }
 
-fn budgeted_tool_output_with_budget(
+pub(crate) fn budgeted_tool_output_with_budget(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
@@ -66,8 +82,19 @@ fn budgeted_tool_output_with_budget(
     let (content, truncated, artifact_ref, truncated_reason) =
         if content_char_count > content_budget {
             let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
+            let mut truncated_content: String = content.chars().take(content_budget).collect();
+            match artifact_ref
+                .as_ref()
+                .and_then(|r| r.get("path"))
+                .and_then(Value::as_str)
+            {
+                Some(path) => truncated_content.push_str(&format!(
+                    "\n\n[persisted-output]\nFull output saved to: {path}\nUse read_file to access the full content.\n[/persisted-output]"
+                )),
+                None => truncated_content.push_str("\n\n[truncated]"),
+            }
             (
-                truncate_chars(&content, content_budget),
+                truncated_content,
                 true,
                 artifact_ref,
                 Some(format!("tool output exceeded {content_budget} characters")),
@@ -550,5 +577,79 @@ pub(crate) fn filesystem_path_permission_candidates(
             .map(|path| vec![(path, false)])
             .unwrap_or_default(),
         _ => Vec::new(),
+    }
+}
+
+/// Per-turn aggregate budget for all tool outputs combined.
+/// When total untruncated content exceeds this, the largest outputs are
+/// spilled to disk artifacts so the combined message stays within limits.
+const TURN_TOOL_OUTPUT_BUDGET_CHARS: usize = 200_000;
+
+/// Preview size for outputs spilled by the aggregate budget layer.
+/// Smaller than per-tool budgets — these are secondary spills.
+const TURN_SPILL_PREVIEW_CHARS: usize = 4_000;
+
+/// After all tool results for a turn are collected, if their combined
+/// untruncated content exceeds `TURN_TOOL_OUTPUT_BUDGET_CHARS`, spill the
+/// largest outputs to disk artifacts (descending by size) until the total
+/// fits. Each spilled output is replaced with a short preview plus a
+/// `[persisted-output]` tag pointing at the artifact file.
+pub(crate) fn enforce_turn_tool_budget(
+    session_id: &str,
+    turn_id: &str,
+    outputs: &mut [Value],
+    tool_call_ids: &[String],
+) {
+    let total: usize = outputs
+        .iter()
+        .filter(|o| !o.get("truncated").and_then(Value::as_bool).unwrap_or(false))
+        .map(|o| o.get("content").and_then(Value::as_str).map(str::len).unwrap_or(0))
+        .sum();
+    if total <= TURN_TOOL_OUTPUT_BUDGET_CHARS {
+        return;
+    }
+
+    // Collect indices of untruncated outputs with non-empty content, sorted
+    // descending by byte length so we spill the biggest offenders first.
+    let mut candidates: Vec<(usize, usize)> = outputs
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| !o.get("truncated").and_then(Value::as_bool).unwrap_or(false))
+        .map(|(i, o)| (i, o.get("content").and_then(Value::as_str).map(str::len).unwrap_or(0)))
+        .filter(|(_, len)| *len > 0)
+        .collect();
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let mut remaining = total;
+    for (idx, content_len) in candidates {
+        if remaining <= TURN_TOOL_OUTPUT_BUDGET_CHARS {
+            break;
+        }
+        let tool_call_id = &tool_call_ids[idx];
+        let content = outputs[idx]
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let artifact_ref = write_tool_artifact(session_id, turn_id, tool_call_id, &content);
+        let mut truncated: String = content.chars().take(TURN_SPILL_PREVIEW_CHARS).collect();
+        match artifact_ref
+            .as_ref()
+            .and_then(|r| r.get("path"))
+            .and_then(Value::as_str)
+        {
+            Some(path) => truncated.push_str(&format!(
+                "\n\n[persisted-output]\nFull output saved to: {path}\nUse read_file to access the full content.\n[/persisted-output]"
+            )),
+            None => truncated.push_str("\n\n[truncated]"),
+        }
+        if let Some(obj) = outputs[idx].as_object_mut() {
+            obj.insert("content".to_string(), Value::String(truncated));
+            obj.insert("truncated".to_string(), Value::Bool(true));
+            if let Some(artifact_ref) = artifact_ref {
+                obj.insert("artifactRef".to_string(), artifact_ref);
+            }
+        }
+        remaining = remaining.saturating_sub(content_len.saturating_sub(TURN_SPILL_PREVIEW_CHARS));
     }
 }
