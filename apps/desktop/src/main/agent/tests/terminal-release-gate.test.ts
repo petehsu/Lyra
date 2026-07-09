@@ -77,6 +77,7 @@ const createTerminalBridgeMock = () => ({
     mode: "shell",
     memory: terminalMemory
   })),
+  write: vi.fn(async () => undefined),
   closeSession: vi.fn(),
   dispose: vi.fn()
 });
@@ -139,6 +140,48 @@ describe("terminal agent release gate", () => {
       target: "ui",
       runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-read" }
     })).rejects.toThrow("No UI terminal pane is available");
+
+    bridge.dispose();
+  });
+
+  test("terminal read tolerates null memory from host runtime", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const terminalBridge = createTerminalBridgeMock();
+    const bridge = createAgentIpcBridge({
+      runtimeClient: createRuntimeClient(registered),
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    const writeResult = await registered.get("terminal.write")?.({
+      text: "echo ready",
+      appendNewline: true,
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-write" }
+    }) as { readonly target?: { readonly sessionId?: string } };
+    const privateSessionId = writeResult.target?.sessionId ?? "private-terminal-1";
+    terminalBridge.readObservation.mockResolvedValueOnce({
+      sessionId: privateSessionId,
+      cursor: "12",
+      output: "ready",
+      running: true,
+      exitCode: null,
+      truncated: false,
+      source: "agent",
+      mode: "shell",
+      memory: null
+    } as never);
+
+    await expect(registered.get("terminal.read")?.({
+      runtimeCancellation: { sessionId: "agent-1", turnId: "turn-1", toolCallId: "tool-read" }
+    })).resolves.toMatchObject({
+      sessionId: privateSessionId,
+      output: "ready",
+      running: true
+    });
 
     bridge.dispose();
   });

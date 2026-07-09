@@ -1,6 +1,8 @@
 {
   "name": "@lyra/desktop",
   "version": "0.1.0",
+  "description": "Lyra desktop AI agent workspace.",
+  "author": "徐远豪",
   "private": true,
   "type": "module",
   "main": "out/main/index.cjs",

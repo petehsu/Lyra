@@ -205,6 +205,9 @@ fn description_for(
     summary: &str,
 ) -> String {
     let purpose = match (domain, operation) {
+        ("design", "extract_reference") => {
+            "Use when the agent needs live website visual style evidence for UI or website work: computed colors, typography, spacing, radius, shadows, section bounds, area ratios, components, and assets. This is the non-visual fallback for web design references; browser/see text fallback is not enough for visual style decisions."
+        }
         ("design", "read") => {
             "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list to see all available design references, then action=read with a brand name to get the full DESIGN.md."
         }
@@ -353,10 +356,10 @@ fn description_for(
             "Use when the agent needs Lyra workspace tabs, active tab state, visible app surfaces, or workbench navigation."
         }
         ("web", "search") => {
-            "Use when the agent needs current web search results from the network."
+            "Use when the agent needs zero-config public web search results from the network: general web, GitHub/docs/community, public YouTube/Bilibili/V2EX topics, or another public platform without a configured dedicated tool. Returns result metadata only; use research when top sources should be read."
         }
         ("web", "research") => {
-            "Use when the agent needs current web results plus reader-backed deep summaries from top sources."
+            "Use when the agent needs current public web results plus reader-backed deep summaries from top sources: web/docs/GitHub/community discussions, public platform pages, reviews, comparisons, and 'what people think' questions. Use browser tools when rendering, login, or interaction blocks HTTP reads."
         }
         ("web", "map") => {
             "Use before bulk crawling: discover same-origin URLs from a seed page and optional sitemap, then selectively fetch."
@@ -365,7 +368,7 @@ fn description_for(
             "Use for multiple known URLs. Small batches run inline; larger batches return a jobId and emit session progress events."
         }
         ("web", "fetch") => {
-            "Use when the agent needs to fetch a known URL as agent-friendly markdown, metadata, chunks, or document/image recommendations."
+            "Use when the agent needs to fetch a known public URL, RSS/Atom feed, GitHub/V2EX page, or public video/article page as agent-friendly markdown, metadata, chunks, or document/image recommendations. Use browser tools when rendering, login, or interaction is required."
         }
         ("memory", "search" | "list" | "explain_injection") => {
             "Use when the agent needs stored Lyra memory, user preferences, project facts, or memory injection diagnostics."
@@ -550,6 +553,31 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             }
             ("code", "graph_expand") => vec!["related code", "imports", "dependencies", "代码关系"],
             ("code", "query") => vec!["lsp", "diagnostics", "references", "语言服务", "诊断"],
+            ("design", "extract_reference") => vec![
+                "design reference extraction",
+                "extract design tokens",
+                "computed style",
+                "visual style",
+                "website clone",
+                "clone website",
+                "colors typography spacing",
+                "bounds area ratio",
+                "non visual design fallback",
+                "提取设计参考",
+                "提取网站风格",
+                "设计 token",
+                "颜色 字体 间距",
+                "占用面积",
+                "仿站",
+                "克隆网站",
+            ],
+            ("design", "read") => vec![
+                "design reference",
+                "design system",
+                "DESIGN.md",
+                "品牌设计",
+                "设计规范",
+            ],
             ("shell", "run") => vec![
                 "run command",
                 "execute command",
@@ -852,9 +880,38 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                 "系统无障碍",
             ],
             ("workbench", _) => vec!["workspace tabs", "active tab", "工作区", "标签页"],
-            ("web", "search") => vec!["internet search", "search web", "联网搜索", "网页搜索"],
+            ("web", "search") => vec![
+                "internet search",
+                "search web",
+                "public platform search",
+                "github search",
+                "youtube search",
+                "bilibili search",
+                "v2ex search",
+                "agent reach",
+                "联网搜索",
+                "网页搜索",
+                "全网搜索",
+                "GitHub搜索",
+                "YouTube搜索",
+                "B站搜索",
+                "V2EX搜索",
+            ],
             ("web", "research") => {
-                vec!["research web", "deep read search", "联网调研", "搜索并阅读"]
+                vec![
+                    "research web",
+                    "deep read search",
+                    "public platform research",
+                    "community discussion research",
+                    "what people think",
+                    "agent reach research",
+                    "联网调研",
+                    "全网调研",
+                    "搜索并阅读",
+                    "网上讨论",
+                    "大家怎么评价",
+                    "搜索并总结",
+                ]
             }
             ("web", "map") => vec![
                 "map site",
@@ -872,7 +929,31 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
                     "批量读取",
                 ]
             }
-            ("web", "fetch") => vec!["fetch url", "download page", "读取链接", "抓取网页"],
+            ("web", "fetch") => vec![
+                "fetch url",
+                "download page",
+                "read url",
+                "read rss",
+                "rss feed",
+                "atom feed",
+                "jina reader",
+                "github repo",
+                "github issue",
+                "youtube page",
+                "bilibili page",
+                "v2ex hot",
+                "v2ex topic",
+                "读取链接",
+                "读链接",
+                "看链接",
+                "抓取网页",
+                "读取RSS",
+                "RSS订阅",
+                "GitHub仓库",
+                "YouTube视频",
+                "B站视频",
+                "V2EX热门",
+            ],
             ("hardware", _) => vec![
                 "development board",
                 "serial device",
@@ -936,6 +1017,14 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
         ("code", "search_symbol") => vec![
             "Find the React component or Rust function definition.",
             "查找函数定义。",
+        ],
+        ("design", "extract_reference") => vec![
+            "Extract colors, typography, section bounds, components, and image assets from a reference URL before cloning its visual style.",
+            "根据参考网站提取颜色、字体、间距、面积占比和素材证据。",
+        ],
+        ("design", "read") => vec![
+            "List curated DESIGN.md references, then read the closest matching brand.",
+            "先列出内置设计参考，再读取匹配的 DESIGN.md。",
         ],
         ("shell", "run") => vec!["Run cargo test or npm typecheck.", "执行测试命令。"],
         ("hardware", "list" | "inspect") => vec![
@@ -1039,10 +1128,13 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Inspect open Lyra tabs and active workspace state.",
             "查看当前工作区标签页。",
         ],
-        ("web", "search") => vec!["Search the web for recent documentation.", "联网搜索资料。"],
+        ("web", "search") => vec![
+            "Search the web, GitHub, public video sites, or community pages for current results.",
+            "联网搜索资料，包含公开平台、GitHub、视频站点和社区页面。",
+        ],
         ("web", "research") => vec![
-            "Research a topic by searching and deep-reading top results.",
-            "联网搜索并阅读多个来源。",
+            "Research a topic by searching and deep-reading top public results.",
+            "全网调研一个问题，并阅读多个公开来源。",
         ],
         ("web", "map") => vec![
             "Map URLs from a documentation site before selective fetch.",
@@ -1052,7 +1144,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
             "Fetch several known URLs as one batch job.",
             "批量抓取多个已知 URL。",
         ],
-        ("web", "fetch") => vec!["Fetch a known documentation URL.", "读取指定网页。"],
+        ("web", "fetch") => vec![
+            "Fetch a known documentation URL, RSS/Atom feed, GitHub/V2EX page, or public video page.",
+            "读取指定网页、RSS、GitHub/V2EX 或公开视频页面。",
+        ],
         ("memory", "search") => vec![
             "Find saved user preferences or project facts.",
             "搜索记忆里的偏好。",
@@ -1082,6 +1177,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "shell" => vec!["command", "test", "build"],
             "hardware" => vec!["device", "serial", "board"],
             "terminal" => vec!["interactive", "process", "pane"],
+            "design" => vec!["design", "style", "tokens", "reference"],
             "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
@@ -1237,6 +1333,55 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("design", "extract_reference") => object_schema(
+            [
+                (
+                    "url",
+                    string("Reference page URL to render and extract design evidence from."),
+                ),
+                (
+                    "targetSelector",
+                    string("Optional CSS selector to limit extraction to a specific page area."),
+                ),
+                (
+                    "includeScreenshot",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Also capture a visible screenshot artifact for human or vision-model evidence."
+                    }),
+                ),
+                (
+                    "includePageshot",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Also capture a full-page screenshot artifact when the host supports it."
+                    }),
+                ),
+                (
+                    "maxElements",
+                    json!({
+                        "type": "integer",
+                        "minimum": 50,
+                        "maximum": 3000,
+                        "default": 1200,
+                        "description": "Maximum rendered DOM elements sampled for computed style tokens."
+                    }),
+                ),
+                (
+                    "timeoutMs",
+                    json!({
+                        "type": "integer",
+                        "minimum": 250,
+                        "maximum": 120000,
+                        "default": 20000,
+                        "description": "Browser render and extraction timeout in milliseconds."
+                    }),
+                ),
+            ],
+            &["url"],
+        ),
         ("filesystem", "list") => object_schema(
             [
                 ("path", string("Workspace path.")),
@@ -1283,17 +1428,35 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         ),
         ("filesystem", "grep") => object_schema(
             [
-                ("pattern", string("Regex pattern or exact text to search for.")),
-                ("path", string("Optional root directory to search in. Defaults to workspace root.")),
-                ("glob", string("Optional file filter glob, e.g. \"*.rs\" or \"**/*.{ts,tsx}\".")),
-                ("includeGlobs", string_array("Optional include glob patterns.")),
-                ("excludeGlobs", string_array("Optional exclude glob patterns.")),
-                ("outputMode", json!({
-                    "type": "string",
-                    "enum": ["content", "files_with_matches", "count"],
-                    "default": "content",
-                    "description": "Output mode: content shows matching lines, files_with_matches shows only file paths, count shows match counts."
-                })),
+                (
+                    "pattern",
+                    string("Regex pattern or exact text to search for."),
+                ),
+                (
+                    "path",
+                    string("Optional root directory to search in. Defaults to workspace root."),
+                ),
+                (
+                    "glob",
+                    string("Optional file filter glob, e.g. \"*.rs\" or \"**/*.{ts,tsx}\"."),
+                ),
+                (
+                    "includeGlobs",
+                    string_array("Optional include glob patterns."),
+                ),
+                (
+                    "excludeGlobs",
+                    string_array("Optional exclude glob patterns."),
+                ),
+                (
+                    "outputMode",
+                    json!({
+                        "type": "string",
+                        "enum": ["content", "files_with_matches", "count"],
+                        "default": "content",
+                        "description": "Output mode: content shows matching lines, files_with_matches shows only file paths, count shows match counts."
+                    }),
+                ),
                 (
                     "contextLines",
                     json!({ "type": "integer", "minimum": 0, "description": "Lines of context to show around each match. Default 0." }),
@@ -2056,7 +2219,9 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ),
                 (
                     "intent",
-                    string("Optional natural-language description of this action; used for ActCache replay matching when ActCache is enabled in settings."),
+                    string(
+                        "Optional natural-language description of this action; used for ActCache replay matching when ActCache is enabled in settings.",
+                    ),
                 ),
             ],
             &["axRef"],
@@ -2330,7 +2495,10 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             [
                 ("sessionId", string("Existing terminal session id.")),
                 ("data", string("Text to send to the terminal.")),
-                ("appendNewline", json!({ "type": "boolean", "default": false, "description": "Append a newline after the text. Default false." })),
+                (
+                    "appendNewline",
+                    json!({ "type": "boolean", "default": false, "description": "Append a newline after the text. Default false." }),
+                ),
             ],
             &["sessionId", "data"],
         ),
@@ -2795,7 +2963,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
             "Control native desktop apps through the OS accessibility tree (osRef): map, find, act, and verify semantically without screenshots or coordinates."
         }
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
-        "design" => "Browse and read curated DESIGN.md design system references for UI work.",
+        "design" => {
+            "Browse curated DESIGN.md references and extract live website design tokens, layout bounds, components, and assets for UI work."
+        }
         "code" => "Search code text, symbols, code graph, and LSP data.",
         "shell" => "Run bounded shell commands in the bound workspace.",
         "terminal" => "Control Lyra terminal sessions and terminal panes.",

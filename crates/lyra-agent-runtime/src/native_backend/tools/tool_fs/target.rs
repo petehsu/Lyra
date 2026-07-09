@@ -147,6 +147,9 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
             host("software.invokeCapability", "software", "invoke_capability")
         }
         "/tools/design/reference" => native("design_reference", "design", "read"),
+        "/tools/design/extract_reference" => {
+            native("design_extract_reference", "design", "extract_reference")
+        }
         "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),

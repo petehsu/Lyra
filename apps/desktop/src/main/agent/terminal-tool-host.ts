@@ -558,11 +558,12 @@ export const createTerminalToolHost = ({
   ) => {
     rememberTerminalCursor(target, response.cursor);
     const projected = projectTerminalOutput(response);
-    const memory = response.memory === undefined
+    const responseMemory = response.memory ?? undefined;
+    const memory = responseMemory === undefined
       ? undefined
       : {
-        ...response.memory,
-        truncatedByProjection: response.memory.truncatedByProjection || projected.truncated
+        ...responseMemory,
+        truncatedByProjection: responseMemory.truncatedByProjection || projected.truncated
       };
     const readHint = terminalReadHintFromMemory(memory);
     return {

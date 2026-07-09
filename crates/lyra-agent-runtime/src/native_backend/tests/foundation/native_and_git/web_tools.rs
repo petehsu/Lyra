@@ -390,6 +390,99 @@ fn native_web_fetch_browser_engine_uses_rendered_snapshot() {
 }
 
 #[test]
+fn native_design_extract_reference_uses_rendered_snapshot_report() {
+    let payloads = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let payloads_for_dispatch = payloads.clone();
+    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
+        assert_eq!(method, "workbench.browser.readRenderedSnapshot");
+        let payload: Value = serde_json::from_str(&payload).expect("payload json");
+        payloads_for_dispatch
+            .lock()
+            .expect("payload lock")
+            .push(payload);
+        Ok(serde_json::to_string(&json!({
+            "ok": true,
+            "kind": "workbenchBrowserRenderedSnapshot",
+            "tabId": "browser-tab-design",
+            "finalUrl": "https://example.test/design",
+            "title": "Reference Site",
+            "viewport": { "width": 1366, "height": 900, "deviceScaleFactor": 1 },
+            "warnings": [],
+            "designReference": {
+                "status": "ok",
+                "warnings": [],
+                "recommendedNextAction": "Use these DOM/CSS tokens as visual evidence.",
+                "source": { "url": "https://example.test/design", "title": "Reference Site" },
+                "viewport": { "width": 1366, "height": 900, "deviceScaleFactor": 1 },
+                "tokens": {
+                    "colors": [
+                        { "value": "rgb(16, 16, 16)", "count": 8 },
+                        { "value": "rgb(250, 248, 242)", "count": 5 }
+                    ],
+                    "fontFamilies": [{ "value": "Inter, sans-serif", "count": 12 }],
+                    "fontSizes": [{ "value": "16px", "count": 9 }],
+                    "fontWeights": [{ "value": "600", "count": 3 }],
+                    "spacing": [{ "value": "24px", "count": 6 }],
+                    "radius": [{ "value": "8px", "count": 4 }],
+                    "shadow": [{ "value": "rgba(0, 0, 0, 0.12) 0px 8px 30px", "count": 2 }]
+                },
+                "sections": [{
+                    "tag": "main",
+                    "selector": "body > main",
+                    "text": "Reference hero and product grid",
+                    "bounds": { "x": 0, "y": 0, "width": 1366, "height": 720 },
+                    "areaRatio": 1.09
+                }],
+                "components": {
+                    "buttons": [{ "selector": "a.cta", "text": "Start", "style": { "backgroundColor": "rgb(16, 16, 16)" } }],
+                    "cards": [{ "selector": ".product-card", "text": "Product", "style": { "borderRadius": { "topLeft": "8px" } } }],
+                    "inputs": [],
+                    "navItems": []
+                },
+                "assets": {
+                    "images": [{ "url": "https://example.test/hero.jpg", "naturalWidth": 1200, "naturalHeight": 800 }],
+                    "backgroundImages": [],
+                    "inlineSvgCount": 2,
+                    "mediaCount": 0
+                }
+            }
+        }))
+        .expect("json"))
+    });
+
+    let extracted = tool_design_extract_reference(
+        "turn-design",
+        "tool-design",
+        &json!({
+            "url": "https://example.test/design",
+            "targetSelector": "main",
+            "maxElements": 250
+        }),
+        Some(&dispatcher),
+    )
+    .expect("design extract");
+
+    assert_eq!(extracted.raw["kind"], "design_reference_report");
+    assert_eq!(extracted.raw["status"], "ok");
+    assert_eq!(
+        extracted.raw["report"]["sections"][0]["selector"],
+        "body > main"
+    );
+    assert!(extracted.content.contains("DesignReferenceReport"));
+    assert!(extracted.content.contains("rgb(16, 16, 16)"));
+    assert!(extracted.content.contains("Components: buttons=1, cards=1"));
+    assert!(extracted.content.contains("Button samples:"));
+    assert!(extracted.content.contains("Card samples:"));
+    assert!(extracted.content.contains("Image samples:"));
+    let first_payload = payloads.lock().expect("payload lock")[0].clone();
+    assert_eq!(first_payload["includeDesignReference"], true);
+    assert_eq!(first_payload["includeMedia"], true);
+    assert_eq!(first_payload["includeScreenshot"], false);
+    assert_eq!(first_payload["targetSelector"], "main");
+    assert_eq!(first_payload["maxDesignElements"], 250);
+}
+
+#[test]
 fn native_web_fetch_include_media_defaults_to_summary_footer() {
     let url = serve_http_once(
         "HTTP/1.1 200 OK",

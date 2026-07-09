@@ -2121,6 +2121,133 @@ fn openai_responses_tool_loop_replays_native_items_and_function_outputs() {
 }
 
 #[test]
+fn plan_finalize_stops_same_tool_batch_before_mutation() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let target_path = temp.path().join("should-not-exist.txt");
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({
+                "title": "Plan Finalize Stop Test",
+                "workingDir": temp.path().display().to_string(),
+            }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local provider");
+    let addr = listener.local_addr().expect("local addr");
+    let server = thread::spawn({
+        let target_path = target_path.clone();
+        move || {
+            let (mut stream, _) = listener.accept().expect("accept provider request");
+            let _ = read_http_json_body(&mut stream);
+            let tool_call = |id: &str, name: &str, args: Value| {
+                json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args.to_string(),
+                    }
+                })
+            };
+            let body = json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            tool_call("call-plan-begin", "plan_begin", json!({
+                                "title": "Build site",
+                                "reason": "user requested plan",
+                            })),
+                            tool_call("call-plan-write", "plan_write", json!({
+                                "markdownDelta": "# Plan\n\nBuild a complete site.",
+                                "replace": true,
+                            })),
+                            tool_call("call-plan-finalize", "plan_finalize", json!({
+                                "summary": "Ready for review",
+                            })),
+                            tool_call("call-write", "write_file", json!({
+                                "path": target_path.display().to_string(),
+                                "content": "should not be written",
+                                "overwrite": true,
+                            })),
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }]
+            })
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("write provider response");
+        }
+    });
+    let provider = NativeProviderProfile {
+        id: "local".to_string(),
+        label: "Local Test".to_string(),
+        route_id: "custom_openai_compatible".to_string(),
+        base_url: Some(format!("http://{addr}")),
+        default_model: Some("test-model".to_string()),
+        api_key_ref: None,
+        api_key: Some("test-key".to_string()),
+        api_key_env: None,
+        auth_header: None,
+        embedding_model: None,
+        models: vec![NativeProviderModel {
+            id: "test-model".to_string(),
+            label: None,
+            context_window: None,
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_reasoning_effort: None,
+            enabled: true,
+        }],
+    };
+    let request = ModelRequest {
+        provider: provider.clone(),
+        model: "test-model".to_string(),
+        messages: vec![json!({ "role": "user", "content": "make a website" })],
+        tools: model_tools(),
+        host_dispatcher: None,
+        capabilities: model_capabilities(&provider, "test-model"),
+        input_downgrades: Vec::new(),
+        evidence_refs: Vec::new(),
+        token_estimate: 0,
+        context_trimmed: false,
+    };
+
+    let result = run_model_loop(
+        &session_id,
+        &turn_id,
+        request,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .expect("model loop");
+
+    assert!(result.final_text.is_none());
+    assert!(!target_path.exists());
+    let phase = state()
+        .lock()
+        .expect("state lock")
+        .sessions
+        .get(&session_id)
+        .and_then(|session| session.snapshot.pointer("/plan/phase"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    assert_eq!(phase.as_deref(), Some("reviewing"));
+    server.join().expect("server join");
+}
+
+#[test]
 fn anthropic_messages_tool_loop_converts_tool_use_and_results() {
     let backend = LyraAgentBackend;
     let created = backend

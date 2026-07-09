@@ -1098,12 +1098,12 @@ fn escape_html(value: &str) -> String {
 }
 
 #[derive(Clone, Copy)]
-enum BrowserSnapshotImageKind {
+pub(crate) enum BrowserSnapshotImageKind {
     Screenshot,
     Pageshot,
 }
 
-fn materialize_browser_snapshot_image(
+pub(crate) fn materialize_browser_snapshot_image(
     turn_id: &str,
     tool_call_id: &str,
     raw: &mut Value,

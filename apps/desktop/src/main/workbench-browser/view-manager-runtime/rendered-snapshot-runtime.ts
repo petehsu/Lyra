@@ -251,7 +251,7 @@ const runRenderedSnapshotWait = async (
   }
 };
 
-const renderedSnapshotScript = (
+export const buildRenderedSnapshotScript = (
   request: Record<string, unknown>,
   url: string,
   maxHtmlChars: number
@@ -262,6 +262,14 @@ const renderedSnapshotScript = (
     const includeIframes = ${request.includeIframes === true};
     const includeShadowDom = ${request.includeShadowDom === true};
     const includeMedia = ${request.includeMedia === true};
+    const includeDesignReference = ${request.includeDesignReference === true};
+    const maxDesignElements = ${Math.max(
+      50,
+      Math.min(
+        3000,
+        Math.round(readSnapshotNumber(request, "maxDesignElements") ?? readSnapshotNumber(request, "maxElements") ?? 1200)
+      )
+    )};
     const normalizeText = (value) =>
       typeof value === "string"
         ? value.replace(/\\u00a0/g, " ").replace(/\\r/g, "").replace(/[ \\t]+\\n/g, "\\n").replace(/\\n[ \\t]+/g, "\\n").replace(/\\n{3,}/g, "\\n\\n").trim()
@@ -299,6 +307,375 @@ const renderedSnapshotScript = (
       } catch {
         return undefined;
       }
+    };
+    const round = (value, places = 2) => {
+      const factor = Math.pow(10, places);
+      return Math.round(Number(value || 0) * factor) / factor;
+    };
+    const visibleElement = (element) => {
+      const rect = boundsOf(element);
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const style = getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") > 0.01;
+    };
+    const compactBounds = (element) => {
+      const rect = boundsOf(element);
+      return rect ? { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) } : undefined;
+    };
+    const addFreq = (map, value) => {
+      const text = String(value ?? "").trim();
+      if (!text || text === "none" || text === "normal" || text === "auto") return;
+      if (text === "rgba(0, 0, 0, 0)" || text === "transparent") return;
+      map.set(text, (map.get(text) || 0) + 1);
+    };
+    const topFreq = (map, limit = 12) =>
+      Array.from(map.entries())
+        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .slice(0, limit)
+        .map(([value, count]) => ({ value, count }));
+    const edgeStyle = (style, prefix) => ({
+      top: style[prefix + "Top"],
+      right: style[prefix + "Right"],
+      bottom: style[prefix + "Bottom"],
+      left: style[prefix + "Left"]
+    });
+    const backgroundUrls = (value) => {
+      const text = String(value ?? "");
+      const urls = [];
+      const pattern = /url\\((["']?)(.*?)\\1\\)/g;
+      let match;
+      while ((match = pattern.exec(text)) !== null && urls.length < 8) {
+        const url = abs(match[2] || "");
+        if (url) urls.push(url);
+      }
+      return urls;
+    };
+    const styleSummary = (element) => {
+      const style = getComputedStyle(element);
+      return {
+        color: style.color,
+        backgroundColor: style.backgroundColor,
+        background: style.background && style.background !== "none" ? style.background.slice(0, 500) : undefined,
+        backgroundImage: style.backgroundImage && style.backgroundImage !== "none" ? style.backgroundImage.slice(0, 500) : undefined,
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        lineHeight: style.lineHeight,
+        letterSpacing: style.letterSpacing,
+        textTransform: style.textTransform,
+        textDecoration: style.textDecorationLine && style.textDecorationLine !== "none" ? style.textDecoration : undefined,
+        margin: edgeStyle(style, "margin"),
+        padding: edgeStyle(style, "padding"),
+        width: style.width,
+        height: style.height,
+        maxWidth: style.maxWidth,
+        minWidth: style.minWidth,
+        gap: style.gap,
+        display: style.display,
+        flexDirection: style.flexDirection,
+        justifyContent: style.justifyContent,
+        alignItems: style.alignItems,
+        gridTemplateColumns: style.gridTemplateColumns,
+        borderRadius: {
+          topLeft: style.borderTopLeftRadius,
+          topRight: style.borderTopRightRadius,
+          bottomRight: style.borderBottomRightRadius,
+          bottomLeft: style.borderBottomLeftRadius
+        },
+        boxShadow: style.boxShadow && style.boxShadow !== "none" ? style.boxShadow.slice(0, 500) : undefined,
+        border: style.borderStyle !== "none" ? style.border : undefined,
+        position: style.position,
+        inset: {
+          top: style.top,
+          right: style.right,
+          bottom: style.bottom,
+          left: style.left
+        },
+        zIndex: style.zIndex,
+        overflow: style.overflow,
+        opacity: style.opacity,
+        transform: style.transform && style.transform !== "none" ? style.transform.slice(0, 300) : undefined,
+        transition: style.transition && style.transition !== "all 0s ease 0s" ? style.transition.slice(0, 500) : undefined,
+        animation: style.animation && style.animation !== "none 0s ease 0s 1 normal none running" ? style.animation.slice(0, 500) : undefined,
+        filter: style.filter && style.filter !== "none" ? style.filter.slice(0, 300) : undefined,
+        backdropFilter: style.backdropFilter && style.backdropFilter !== "none" ? style.backdropFilter.slice(0, 300) : undefined,
+        objectFit: style.objectFit,
+        objectPosition: style.objectPosition,
+        whiteSpace: style.whiteSpace
+      };
+    };
+    const componentSample = (elements, limit = 16) =>
+      elements
+        .filter(visibleElement)
+        .slice(0, limit)
+        .map((element) => ({
+          tag: element.localName || "element",
+          selector: selectorPath(element),
+          text: cap(element.innerText ?? element.textContent ?? "", 160),
+          bounds: compactBounds(element),
+          style: styleSummary(element)
+        }));
+    const extractDesignReference = () => {
+      let root = document.body || document.documentElement;
+      if (targetSelector.length > 0) {
+        try {
+          root = document.querySelector(targetSelector) || root;
+        } catch {}
+      }
+      const allElements = [root]
+        .concat(Array.from(root.querySelectorAll("*")).slice(0, maxDesignElements))
+        .filter((element, index, array) => element && array.indexOf(element) === index);
+      const visibleElements = allElements.filter(visibleElement);
+      const colors = new Map();
+      const gradients = new Map();
+      const fontFamilies = new Map();
+      const fontSizes = new Map();
+      const fontWeights = new Map();
+      const lineHeights = new Map();
+      const letterSpacings = new Map();
+      const spacing = new Map();
+      const radii = new Map();
+      const shadows = new Map();
+      const displays = new Map();
+      const positions = new Map();
+      const transitions = new Map();
+      const animations = new Map();
+      const backgroundImages = [];
+      visibleElements.forEach((element) => {
+        const style = getComputedStyle(element);
+        addFreq(colors, style.color);
+        addFreq(colors, style.backgroundColor);
+        addFreq(fontFamilies, style.fontFamily);
+        addFreq(fontSizes, style.fontSize);
+        addFreq(fontWeights, style.fontWeight);
+        addFreq(lineHeights, style.lineHeight);
+        addFreq(letterSpacings, style.letterSpacing);
+        [
+          style.marginTop, style.marginRight, style.marginBottom, style.marginLeft,
+          style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft,
+          style.gap, style.columnGap, style.rowGap
+        ].forEach((value) => addFreq(spacing, value));
+        [
+          style.borderTopLeftRadius,
+          style.borderTopRightRadius,
+          style.borderBottomRightRadius,
+          style.borderBottomLeftRadius
+        ].forEach((value) => addFreq(radii, value));
+        addFreq(shadows, style.boxShadow);
+        addFreq(displays, style.display);
+        addFreq(positions, style.position);
+        addFreq(transitions, style.transition);
+        addFreq(animations, style.animation);
+        if (style.backgroundImage && style.backgroundImage !== "none") {
+          const image = style.backgroundImage.slice(0, 700);
+          if (image.includes("gradient(")) addFreq(gradients, image);
+          if (backgroundImages.length < 40 && !backgroundImages.some((entry) => entry.image === image)) {
+            backgroundImages.push({
+              selector: selectorPath(element),
+              image,
+              urls: backgroundUrls(image),
+              bounds: compactBounds(element)
+            });
+          }
+        }
+      });
+      const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+      const sections = Array.from(root.querySelectorAll("header,nav,main,section,footer,article,aside,[role='banner'],[role='navigation'],[role='main'],[role='contentinfo']"))
+        .filter(visibleElement)
+        .slice(0, 40)
+        .map((element) => {
+          const rect = boundsOf(element) || { width: 0, height: 0 };
+          return {
+            tag: element.localName || "section",
+            role: element.getAttribute("role") || undefined,
+            selector: selectorPath(element),
+            text: cap(element.innerText ?? element.textContent ?? "", 240),
+            bounds: compactBounds(element),
+            areaRatio: round((rect.width * rect.height) / viewportArea, 4),
+            style: styleSummary(element)
+          };
+        });
+      const cardCandidates = visibleElements.filter((element) => {
+        const className = String(element.className || "").toLowerCase();
+        const style = getComputedStyle(element);
+        const rect = boundsOf(element) || { width: 0, height: 0 };
+        return element.localName === "article"
+          || className.includes("card")
+          || className.includes("tile")
+          || className.includes("panel")
+          || ((rect.width * rect.height) > 12000 && (style.boxShadow !== "none" || style.borderStyle !== "none" || style.borderTopLeftRadius !== "0px"));
+      });
+      const stickyOrFixed = visibleElements
+        .filter((element) => {
+          const position = getComputedStyle(element).position;
+          return position === "sticky" || position === "fixed";
+        })
+        .slice(0, 16)
+        .map((element) => ({
+          tag: element.localName || "element",
+          selector: selectorPath(element),
+          text: cap(element.innerText ?? element.textContent ?? "", 120),
+          bounds: compactBounds(element),
+          style: styleSummary(element)
+        }));
+      const transitionSamples = visibleElements
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          return style.transition && style.transition !== "all 0s ease 0s";
+        })
+        .slice(0, 16)
+        .map((element) => ({
+          selector: selectorPath(element),
+          transition: getComputedStyle(element).transition,
+          bounds: compactBounds(element)
+        }));
+      const animationSamples = visibleElements
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          return style.animationName && style.animationName !== "none";
+        })
+        .slice(0, 16)
+        .map((element) => ({
+          selector: selectorPath(element),
+          animation: getComputedStyle(element).animation,
+          bounds: compactBounds(element)
+        }));
+      const scrollSnap = visibleElements
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          return style.scrollSnapType && style.scrollSnapType !== "none";
+        })
+        .slice(0, 12)
+        .map((element) => ({
+          selector: selectorPath(element),
+          scrollSnapType: getComputedStyle(element).scrollSnapType,
+          bounds: compactBounds(element)
+        }));
+      const inlineSvgs = Array.from(root.querySelectorAll("svg"))
+        .slice(0, 30)
+        .map((element) => ({
+          selector: selectorPath(element),
+          viewBox: element.getAttribute("viewBox") || undefined,
+          width: element.getAttribute("width") || undefined,
+          height: element.getAttribute("height") || undefined,
+          ariaLabel: element.getAttribute("aria-label") || element.querySelector("title")?.textContent || undefined,
+          bounds: compactBounds(element)
+        }));
+      const imageAssets = Array.from(root.querySelectorAll("img"))
+        .filter(visibleElement)
+        .slice(0, 80)
+        .map((element) => ({
+          url: abs(element.currentSrc || element.src || element.getAttribute("src") || ""),
+          alt: element.getAttribute("alt") || undefined,
+          title: element.getAttribute("title") || undefined,
+          naturalWidth: Number(element.naturalWidth || 0) || undefined,
+          naturalHeight: Number(element.naturalHeight || 0) || undefined,
+          bounds: compactBounds(element)
+        }))
+        .filter((entry) => entry.url);
+      const pageText = cap(document.body?.innerText ?? document.body?.textContent ?? "", 4000).toLowerCase();
+      const faviconLinks = Array.from(document.querySelectorAll("link[rel*='icon']")).slice(0, 20).map((element) => ({
+        rel: element.getAttribute("rel") || undefined,
+        href: abs(element.getAttribute("href") || ""),
+        sizes: element.getAttribute("sizes") || undefined,
+        type: element.getAttribute("type") || undefined
+      })).filter((entry) => entry.href);
+      const fontLinks = Array.from(document.querySelectorAll("link[href],style")).slice(0, 200).flatMap((element) => {
+        const href = element.getAttribute?.("href") || "";
+        const text = element.textContent || "";
+        const records = [];
+        if (/fonts\\.(googleapis|gstatic)\\.com|font|typekit|use\\.typekit|cloud\\.typography/i.test(href)) {
+          records.push({ kind: "link", href: abs(href), rel: element.getAttribute("rel") || undefined });
+        }
+        if (/@font-face/i.test(text)) {
+          records.push({ kind: "style", text: text.slice(0, 600) });
+        }
+        return records;
+      }).slice(0, 24);
+      const metaImages = Array.from(document.querySelectorAll("meta[property='og:image'],meta[name='twitter:image']")).slice(0, 12).map((element) => ({
+        name: element.getAttribute("property") || element.getAttribute("name") || undefined,
+        content: abs(element.getAttribute("content") || "")
+      })).filter((entry) => entry.content);
+      const warnings = [];
+      let status = "ok";
+      let recommendedNextAction = "Use these DOM/CSS tokens as the visual reference evidence before planning or implementation.";
+      if (/cloudflare|checking your browser|enable javascript|enable cookies|access denied|verify you are human/.test(pageText)) {
+        status = "blocked";
+        warnings.push({ code: "protected_or_blocked_page", message: "The rendered page looks blocked by bot protection, auth, cookies, or JavaScript gate text." });
+        recommendedNextAction = "Use another public reference, read a curated DESIGN.md, or ask the user for a better reference.";
+      } else if (visibleElements.length < 8 || sections.length === 0 || topFreq(colors, 4).length < 2) {
+        status = "degraded";
+        warnings.push({ code: "weak_design_signal", message: "The page produced too little visible structure, color, or section evidence for confident visual matching." });
+        recommendedNextAction = "Try a more complete reference page, targetSelector, curated DESIGN.md, or blocking clarification before implementing.";
+      }
+      const assetCount = imageAssets.length + backgroundImages.length + inlineSvgs.length;
+      if (assetCount === 0) {
+        warnings.push({ code: "sparse_assets", message: "No visible img, CSS background-image, or inline SVG assets were found; verify the page is fully loaded or choose a richer reference." });
+        if (status === "ok") status = "degraded";
+      }
+      return {
+        status,
+        warnings,
+        recommendedNextAction,
+        source: {
+          url: String(location.href || ${JSON.stringify(url)}),
+          title: normalizeText(document.title ?? ""),
+          targetSelector: targetSelector || undefined
+        },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+          deviceScaleFactor: window.devicePixelRatio || 1
+        },
+        document: {
+          width: Math.max(document.documentElement?.scrollWidth || 0, document.body?.scrollWidth || 0, window.innerWidth),
+          height: Math.max(document.documentElement?.scrollHeight || 0, document.body?.scrollHeight || 0, window.innerHeight),
+          visibleElementCount: visibleElements.length,
+          sampledElementCount: allElements.length
+        },
+        tokens: {
+          colors: topFreq(colors, 18),
+          gradients: topFreq(gradients, 8),
+          fontFamilies: topFreq(fontFamilies, 8),
+          fontSizes: topFreq(fontSizes, 12),
+          fontWeights: topFreq(fontWeights, 8),
+          lineHeights: topFreq(lineHeights, 8),
+          letterSpacings: topFreq(letterSpacings, 8),
+          spacing: topFreq(spacing, 14),
+          radius: topFreq(radii, 10),
+          shadow: topFreq(shadows, 8),
+          display: topFreq(displays, 8),
+          position: topFreq(positions, 8),
+          transitions: topFreq(transitions, 8),
+          animations: topFreq(animations, 8)
+        },
+        foundations: {
+          faviconLinks,
+          fontLinks,
+          metaImages
+        },
+        interactionSignals: {
+          stickyOrFixed,
+          transitionSamples,
+          animationSamples,
+          scrollSnap,
+          interactiveCount: root.querySelectorAll("a[href],button,input,textarea,select,[role='button'],[role='link'],[tabindex]").length
+        },
+        sections,
+        components: {
+          buttons: componentSample(Array.from(root.querySelectorAll("button,a[href],[role='button']")), 18),
+          cards: componentSample(cardCandidates, 18),
+          inputs: componentSample(Array.from(root.querySelectorAll("input,textarea,select,[role='textbox'],[contenteditable='true']")), 12),
+          navItems: componentSample(Array.from(root.querySelectorAll("nav a,header a,[role='navigation'] a")), 24)
+        },
+        assets: {
+          images: imageAssets,
+          backgroundImages,
+          inlineSvgCount: root.querySelectorAll("svg").length,
+          inlineSvgs,
+          mediaCount: root.querySelectorAll("video,audio,iframe,embed,object").length
+        }
+      };
     };
 
     let selectedElement;
@@ -388,13 +765,24 @@ const renderedSnapshotScript = (
       .filter((entry) => entry.url.length > 0)
       .slice(0, 500);
     const images = Array.from(document.querySelectorAll("img[src]"))
-      .map((element) => ({
-        url: typeof element.src === "string" ? element.src : "",
-        alt: element.getAttribute("alt") ?? undefined,
-        title: element.getAttribute("title") ?? undefined
-      }))
+      .map((element) => {
+        const entry = {
+          url: typeof element.src === "string" ? element.src : "",
+          alt: element.getAttribute("alt") ?? undefined,
+          title: element.getAttribute("title") ?? undefined
+        };
+        if (!includeDesignReference) return entry;
+        return {
+          ...entry,
+          currentSrc: abs(element.currentSrc || element.src || ""),
+          naturalWidth: Number(element.naturalWidth || 0) || undefined,
+          naturalHeight: Number(element.naturalHeight || 0) || undefined,
+          bounds: compactBounds(element)
+        };
+      })
       .filter((entry) => entry.url.length > 0)
       .slice(0, 500);
+    const designReference = includeDesignReference ? extractDesignReference() : undefined;
     const html = String(docClone.outerHTML ?? "");
     return {
       html: html.slice(0, maxHtmlChars),
@@ -408,6 +796,7 @@ const renderedSnapshotScript = (
       media,
       links,
       images,
+      designReference,
       viewport: {
         width: window.innerWidth,
         height: window.innerHeight,
@@ -535,7 +924,7 @@ export const createRenderedSnapshotRuntime = ({
       Math.min(8 * 1024 * 1024, Math.round(readSnapshotNumber(request, "maxHtmlChars") ?? 2 * 1024 * 1024))
     );
     const snapshot = await runFrameScriptWithTimeout(
-      () => webContents.executeJavaScript(renderedSnapshotScript(request, url, maxHtmlChars), true),
+      () => webContents.executeJavaScript(buildRenderedSnapshotScript(request, url, maxHtmlChars), true),
       remainingSnapshotMs(deadlineMs, "rendered HTML extraction")
     ) as Record<string, unknown>;
     if (snapshot.htmlTruncated === true) {
@@ -631,6 +1020,7 @@ export const createRenderedSnapshotRuntime = ({
       viewport: snapshot.viewport,
       links: Array.isArray(snapshot.links) ? snapshot.links : [],
       images: Array.isArray(snapshot.images) ? snapshot.images : [],
+      ...(snapshot.designReference === undefined ? {} : { designReference: snapshot.designReference }),
       warnings,
       debug: {
         snapshotMode: visibleOnly ? "tabRenderer" : "temporaryRenderer"

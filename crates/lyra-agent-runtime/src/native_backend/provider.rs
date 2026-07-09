@@ -739,7 +739,13 @@ pub(crate) fn run_model_loop(
             provider_replay_items.extend(response_replay_items.clone());
             messages.extend(response_replay_items);
         }
-        let tool_calls = reply.tool_calls;
+        let mut tool_calls = reply.tool_calls;
+        let stop_after_plan_finalize = tool_calls
+            .iter()
+            .position(|call| call.name == PLAN_FINALIZE_MODEL_TOOL);
+        if let Some(index) = stop_after_plan_finalize {
+            tool_calls.truncate(index + 1);
+        }
         let assistant_content = reply.content.unwrap_or_default();
         let assistant_tool_calls = tool_calls
             .iter()
@@ -786,7 +792,9 @@ pub(crate) fn run_model_loop(
             // ponytail: All tools parallel by default — model decides what to batch.
             // Single call skips thread::scope overhead.  New tools inherit parallel
             // capability automatically; no per-tool opt-in needed.
-            let mut outputs: Vec<Value> = if tool_calls.len() > 1 {
+            let mut outputs: Vec<Value> = if tool_calls.len() > 1
+                && stop_after_plan_finalize.is_none()
+            {
                 std::thread::scope(|s| {
                     tool_calls
                         .iter()
@@ -856,6 +864,12 @@ pub(crate) fn run_model_loop(
                 &mut outputs,
                 &tool_call_ids,
             );
+            let plan_finalize_completed = stop_after_plan_finalize.is_some()
+                && tool_calls.iter().zip(outputs.iter()).any(|(call, output)| {
+                    call.name == PLAN_FINALIZE_MODEL_TOOL
+                        && output.pointer("/raw/phase").and_then(Value::as_str)
+                            == Some(PLAN_PHASE_REVIEWING)
+                });
             for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
                 let (content, evidence_ref) = guarded_tool_result_content(&output, 24_000);
                 provider_tool_results.push(content.clone());
@@ -918,6 +932,20 @@ pub(crate) fn run_model_loop(
                 },
                 "tool_results_ready",
             );
+            if plan_finalize_completed {
+                return Ok(ModelLoopResult {
+                    final_text: None,
+                    metadata: Some(json!({
+                        "planReview": {
+                            "requested": true,
+                            "stoppedAfterFinalize": true,
+                        }
+                    })),
+                    provider_transcript,
+                    provider_replay_items,
+                    ui_text_committed: false,
+                });
+            }
         }
 
         // microCompact + MidTurn 压缩 — 在 model loop 中间减小 context。

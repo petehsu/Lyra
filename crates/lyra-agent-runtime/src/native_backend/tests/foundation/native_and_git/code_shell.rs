@@ -559,3 +559,26 @@ fn native_tool_input_preserves_user_action_parameter() {
     let input = native_tool_input("read", json!({}));
     assert_eq!(input["action"], "read", "default action applies when user omits it");
 }
+
+#[test]
+fn design_reference_lists_brands_in_content_and_reads_case_insensitively() {
+    let list = tool_design_reference(&json!({ "action": "all" })).expect("list designs");
+    assert!(list.content.contains("design references available"));
+    assert!(list.content.contains("- "));
+    let brand = list.raw["references"][0]["brand"]
+        .as_str()
+        .expect("first brand");
+
+    let read = tool_design_reference(&json!({
+        "action": "read",
+        "brand": brand.to_ascii_uppercase(),
+    }))
+    .expect("read design");
+    assert_eq!(read.raw["brand"].as_str(), Some(brand));
+    assert!(!read.content.trim().is_empty());
+    assert!(
+        read.raw["bytes"]
+            .as_u64()
+            .is_some_and(|bytes| bytes > 0)
+    );
+}

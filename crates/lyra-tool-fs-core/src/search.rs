@@ -113,6 +113,34 @@ fn search_intent_adjustment(
     let operation = manifest.operation.as_str();
     let title = manifest.title.to_lowercase();
 
+    if is_design_reference_extraction_intent(&query, normalized_query) {
+        if path == "/tools/design/extract_reference" {
+            return IntentAdjustment {
+                score: 54.0,
+                reason: "design-reference-extraction intent boost".to_string(),
+            };
+        }
+        if path == "/tools/design/reference" {
+            return IntentAdjustment {
+                score: 30.0,
+                reason: "design-reference fallback intent boost".to_string(),
+            };
+        }
+        if path == "/tools/browser/see" {
+            return IntentAdjustment {
+                score: -32.0,
+                reason: "design-reference intent penalty for visual-only screenshot".to_string(),
+            };
+        }
+    }
+
+    if is_public_web_fetch_intent(&query, normalized_query) && path == "/tools/web/fetch" {
+        return IntentAdjustment {
+            score: 36.0,
+            reason: "public-web-fetch intent boost".to_string(),
+        };
+    }
+
     if is_open_url_intent(&query, normalized_query) {
         if is_browser_navigate_tool(path, operation) || is_software_open_url_tool(path, &title) {
             return IntentAdjustment {
@@ -128,13 +156,33 @@ fn search_intent_adjustment(
         }
     }
 
-    if is_web_search_intent(&query, normalized_query) {
-        if path == "/tools/web/research" && is_web_research_intent(&query, normalized_query) {
+    if is_web_research_intent(&query, normalized_query) {
+        if path == "/tools/web/research" {
             return IntentAdjustment {
                 score: 34.0,
                 reason: "web-research intent boost".to_string(),
             };
         }
+    }
+
+    if is_public_platform_search_intent(&query, normalized_query) {
+        if path == "/tools/web/search" {
+            return IntentAdjustment {
+                score: 44.0,
+                reason: "public-platform-search intent boost".to_string(),
+            };
+        }
+        if path.starts_with("/tools/codegraph/") || path.starts_with("/tools/code/") {
+            return IntentAdjustment {
+                score: -20.0,
+                reason: "public-platform-search intent penalty for code tools".to_string(),
+            };
+        }
+    }
+
+    if is_web_search_intent(&query, normalized_query)
+        || is_public_platform_search_intent(&query, normalized_query)
+    {
         if is_software_browser_search_tool(path) || path == "/tools/web/search" {
             return IntentAdjustment {
                 score: 30.0,
@@ -206,7 +254,39 @@ fn search_intent_adjustment(
         };
     }
 
-    if is_terminal_intent(&query, normalized_query) && path.starts_with("/tools/terminal/") {
+    if is_code_file_search_intent(&query, normalized_query) {
+        if path.starts_with("/tools/code/") || path.starts_with("/tools/codegraph/") {
+            return IntentAdjustment {
+                score: 40.0,
+                reason: "code-file-search intent boost".to_string(),
+            };
+        }
+        if path.starts_with("/tools/filesystem/") {
+            return IntentAdjustment {
+                score: -80.0,
+                reason: "code-file-search intent penalty for filesystem tools".to_string(),
+            };
+        }
+    }
+
+    if is_bounded_shell_intent(&query, normalized_query) {
+        if path == "/tools/shell/run" {
+            return IntentAdjustment {
+                score: 44.0,
+                reason: "bounded-shell intent boost".to_string(),
+            };
+        }
+        if path == "/tools/terminal/run" {
+            return IntentAdjustment {
+                score: -18.0,
+                reason: "bounded-shell intent penalty for terminal run".to_string(),
+            };
+        }
+    }
+
+    if is_interactive_terminal_intent(&query, normalized_query)
+        && path.starts_with("/tools/terminal/")
+    {
         return IntentAdjustment {
             score: 24.0,
             reason: "interactive-terminal intent boost".to_string(),
@@ -240,10 +320,77 @@ fn search_intent_adjustment(
     IntentAdjustment::default()
 }
 
-fn is_terminal_intent(query: &str, normalized_query: &str) -> bool {
-    normalized_query.contains("terminal")
-        || normalized_query.contains("interactive terminal")
-        || query.contains("终端")
+fn is_bounded_shell_intent(query: &str, normalized_query: &str) -> bool {
+    if is_interactive_terminal_intent(query, normalized_query) {
+        return false;
+    }
+    normalized_query.contains("run command")
+        || normalized_query.contains("execute command")
+        || normalized_query.contains("shell command")
+        || normalized_query.contains("run test")
+        || normalized_query.contains("run tests")
+        || normalized_query.contains("run build")
+        || normalized_query.contains("list directory")
+        || normalized_query.contains("show files")
+        || normalized_query.contains("pwd")
+        || normalized_query.contains("ls ")
+        || normalized_query.contains("git ")
+        || normalized_query.contains("npm ")
+        || normalized_query.contains("cargo ")
+        || query.contains("跑测试")
+        || query.contains("执行命令")
+        || query.contains("运行命令")
+        || query.contains("查看目录")
+        || query.contains("列目录")
+}
+
+fn is_design_reference_extraction_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("design reference")
+        || normalized_query.contains("design tokens")
+        || normalized_query.contains("visual style")
+        || normalized_query.contains("computed style")
+        || normalized_query.contains("getcomputedstyle")
+        || normalized_query.contains("extract style")
+        || normalized_query.contains("extract colors")
+        || normalized_query.contains("extract color")
+        || normalized_query.contains("typography")
+        || normalized_query.contains("spacing")
+        || normalized_query.contains("bounds")
+        || normalized_query.contains("area ratio")
+        || normalized_query.contains("clone website")
+        || normalized_query.contains("website clone")
+        || query.contains("设计参考")
+        || query.contains("提取设计")
+        || query.contains("网站风格")
+        || query.contains("视觉风格")
+        || query.contains("设计 token")
+        || query.contains("颜色")
+        || query.contains("字体")
+        || query.contains("间距")
+        || query.contains("占用面积")
+        || query.contains("面积")
+        || query.contains("克隆网站")
+        || query.contains("仿站")
+        || query.contains("样式")
+}
+
+fn is_interactive_terminal_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("interactive terminal")
+        || normalized_query.contains("terminal session")
+        || normalized_query.contains("existing terminal")
+        || normalized_query.contains("read terminal")
+        || normalized_query.contains("terminal output")
+        || normalized_query.contains("terminal pane")
+        || normalized_query.contains("long-running")
+        || normalized_query.contains("background")
+        || query.contains("交互式终端")
+        || query.contains("终端会话")
+        || query.contains("读取终端")
+        || query.contains("终端输出")
+        || query.contains("终端面板")
+        || query.contains("后台")
+        || query.contains("长运行")
+        || query.contains("长时间运行")
 }
 
 fn is_computer_use_intent(query: &str, normalized_query: &str) -> bool {
@@ -297,6 +444,16 @@ fn is_browser_interact_intent(query: &str, normalized_query: &str) -> bool {
         || query.contains("操作浏览器")
 }
 
+fn is_code_file_search_intent(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("search code")
+        || normalized_query.contains("read file")
+        || normalized_query.contains("find file")
+        || normalized_query.contains("grep code")
+        || query.contains("查文件")
+        || query.contains("搜索代码")
+        || query.contains("修改文件")
+}
+
 fn is_open_url_intent(query: &str, normalized_query: &str) -> bool {
     query.contains("http://")
         || query.contains("https://")
@@ -320,6 +477,9 @@ fn is_web_search_intent(query: &str, normalized_query: &str) -> bool {
         || normalized_query.contains("browser search google")
         || normalized_query.contains("web search")
         || normalized_query.contains("internet search")
+        || normalized_query.contains("search the web")
+        || query.contains("全网搜索")
+        || query.contains("联网搜索")
         || query.contains("用google搜索")
         || query.contains("google搜索")
         || query.contains("谷歌搜索")
@@ -331,8 +491,63 @@ fn is_web_research_intent(query: &str, normalized_query: &str) -> bool {
     normalized_query.contains("research")
         || normalized_query.contains("deep read")
         || normalized_query.contains("read top")
+        || normalized_query.contains("what people think")
+        || normalized_query.contains("community discussion")
         || query.contains("调研")
+        || query.contains("网上讨论")
+        || query.contains("大家怎么评价")
+        || query.contains("大家怎么看")
         || query.contains("搜索并阅读")
+        || query.contains("搜索并总结")
+}
+
+fn is_public_platform_search_intent(query: &str, normalized_query: &str) -> bool {
+    has_public_platform_signal(query, normalized_query)
+        && (normalized_query.contains("search")
+            || query.contains("搜索")
+            || query.contains("搜")
+            || query.contains("查")
+            || query.contains("找"))
+}
+
+fn is_public_web_fetch_intent(query: &str, normalized_query: &str) -> bool {
+    let feed_intent = normalized_query.contains("rss")
+        || normalized_query.contains("atom")
+        || normalized_query.contains("feed")
+        || query.contains("订阅");
+    let read_intent = normalized_query.contains("read")
+        || normalized_query.contains("fetch")
+        || normalized_query.contains("summarize")
+        || normalized_query.contains("summary")
+        || normalized_query.contains("what does")
+        || normalized_query.contains("transcript")
+        || query.contains("读")
+        || query.contains("读取")
+        || query.contains("看一下")
+        || query.contains("看看")
+        || query.contains("总结")
+        || query.contains("讲了什么")
+        || query.contains("内容");
+    let v2ex_public_list = query.contains("v2ex")
+        && (query.contains("热门") || query.contains("帖子") || normalized_query.contains("topic"));
+
+    feed_intent
+        || v2ex_public_list
+        || ((query.contains("http://")
+            || query.contains("https://")
+            || query.contains("www.")
+            || has_public_platform_signal(query, normalized_query))
+            && read_intent
+            && !is_public_platform_search_intent(query, normalized_query))
+}
+
+fn has_public_platform_signal(query: &str, normalized_query: &str) -> bool {
+    normalized_query.contains("github")
+        || normalized_query.contains("youtube")
+        || normalized_query.contains("bilibili")
+        || normalized_query.contains("v2ex")
+        || query.contains("b站")
+        || query.contains("哔哩")
 }
 
 fn is_page_search_intent(query: &str, normalized_query: &str) -> bool {

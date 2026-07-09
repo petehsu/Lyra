@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Generated at: 2026-06-29T16:52:43.166Z
+Generated at: 2026-07-08T14:40:18.402Z
 
 This file is generated from package metadata plus `legal/manual-third-party.json`.
 
@@ -8,9 +8,9 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 
 | Ecosystem | Packages |
 | --- | ---: |
-| cargo | 548 |
+| cargo | 704 |
 | derived | 1 |
-| npm | 672 |
+| npm | 366 |
 | optional | 1 |
 | vendored | 1 |
 | vendored-rust | 1 |
@@ -46,6 +46,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/BurntSushi/aho-corasick
 - Homepage: https://github.com/BurntSushi/aho-corasick
 
+### aligned-vec 0.6.4
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sarah-ek/aligned-vec/
+
+### aligned 0.4.3
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-embedded-community/aligned
+
 ### allocator-api2 0.2.21
 
 - Ecosystem: cargo
@@ -61,6 +75,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/nical/android_system_properties
 - Homepage: https://github.com/nical/android_system_properties
+
+### anes 0.1.6
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/zrzka/anes-rs
 
 ### anstream 1.0.0
 
@@ -111,19 +132,12 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-fuzz/arbitrary/
 
-### arborium-sysroot 2.18.0
+### arg_enum_proc_macro 0.3.4
 
 - Ecosystem: cargo
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/bearcove/arborium
-
-### arborium-tree-sitter 2.18.0
-
-- Ecosystem: cargo
-- License: MIT
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/tree-sitter/tree-sitter
+- Repository: https://github.com/lu-zero/arg_enum_proc_macro
 
 ### arrayvec 0.7.6
 
@@ -131,6 +145,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/bluss/arrayvec
+
+### as-slice 0.2.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/japaric/as-slice
 
 ### ascii 1.1.0
 
@@ -246,12 +267,49 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/odilia-app/atspi
 - Homepage: https://github.com/odilia-app/atspi
 
+### auto_impl 1.3.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/auto-impl-rs/auto_impl/
+
 ### autocfg 1.5.0
 
 - Ecosystem: cargo
 - License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/cuviper/autocfg
+
+### av-scenechange 0.14.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-av/av-scenechange
+
+### av1-grain 0.2.5
+
+- Ecosystem: cargo
+- License: BSD-2-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-av/av1-grain
+- Homepage: https://github.com/rust-av/av1-grain
+
+### avif-serialize 0.8.9
+
+- Ecosystem: cargo
+- License: BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/kornelski/avif-serialize
+- Homepage: https://lib.rs/avif-serialize
+
+### base64 0.13.1
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/marshallpierce/rust-base64
 
 ### base64 0.22.1
 
@@ -260,6 +318,21 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/marshallpierce/rust-base64
 
+### bincode 1.3.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/servo/bincode
+
+### bindgen 0.69.5
+
+- Ecosystem: cargo
+- License: BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-lang/rust-bindgen
+- Homepage: https://rust-lang.github.io/rust-bindgen/
+
 ### bindgen 0.72.1
 
 - Ecosystem: cargo
@@ -267,6 +340,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang/rust-bindgen
 - Homepage: https://rust-lang.github.io/rust-bindgen/
+
+### bit_field 0.10.3
+
+- Ecosystem: cargo
+- License: Apache-2.0/MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/phil-opp/rust-bit-field
 
 ### bit-set 0.8.0
 
@@ -300,6 +380,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/bitflags/bitflags
 - Homepage: https://github.com/bitflags/bitflags
 
+### bitstream-io 4.10.0
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tuffy/bitstream-io
+- Homepage: https://github.com/tuffy/bitstream-io
+
 ### block-buffer 0.10.4
 
 - Ecosystem: cargo
@@ -328,6 +416,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/BurntSushi/bstr
 - Homepage: https://github.com/BurntSushi/bstr
+
+### built 0.8.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/lukaslueg/built
 
 ### bumpalo 3.20.2
 
@@ -396,6 +491,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/unicode-org/icu4x
 
+### cast 0.3.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/japaric/cast.rs
+
+### castaway 0.2.4
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sagebind/castaway
+
 ### cbc 0.1.2
 
 - Ecosystem: cargo
@@ -455,6 +564,30 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/frewsxcv/rust-chunked-transfer
 
+### ciborium-io 0.2.2
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/enarx/ciborium
+- Homepage: https://github.com/enarx/ciborium
+
+### ciborium-ll 0.2.2
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/enarx/ciborium
+- Homepage: https://github.com/enarx/ciborium
+
+### ciborium 0.2.2
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/enarx/ciborium
+- Homepage: https://github.com/enarx/ciborium
+
 ### cipher 0.4.4
 
 - Ecosystem: cargo
@@ -511,12 +644,28 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-cli/anstyle.git
 
+### compact_str 0.9.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/ParkMyCar/compact_str
+- Homepage: https://github.com/ParkMyCar/compact_str
+
 ### concurrent-queue 2.5.0
 
 - Ecosystem: cargo
 - License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/smol-rs/concurrent-queue
+
+### console 0.15.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/console-rs/console
+- Homepage: https://github.com/console-rs/console
 
 ### console 0.16.3
 
@@ -605,6 +754,21 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/srijs/rust-crc32fast
 
+### criterion-plot 0.5.0
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/bheisler/criterion.rs
+
+### criterion 0.5.1
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/bheisler/criterion.rs
+- Homepage: https://bheisler.github.io/criterion.rs/book/index.html
+
 ### crossbeam-deque 0.8.6
 
 - Ecosystem: cargo
@@ -679,6 +843,42 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/mmastrac/rust-ctor
 
+### darling_core 0.20.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/TedDriggs/darling
+
+### darling_macro 0.20.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/TedDriggs/darling
+
+### darling 0.20.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/TedDriggs/darling
+
+### dary_heap 0.3.9
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/hanmertens/dary_heap
+
+### dashmap 5.5.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/xacrimon/dashmap
+- Homepage: https://github.com/xacrimon/dashmap
+
 ### deflate64 0.1.12
 
 - Ecosystem: cargo
@@ -700,6 +900,27 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-fuzz/arbitrary
+
+### derive_builder_core 0.20.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/colin-kiegel/rust-derive-builder
+
+### derive_builder_macro 0.20.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/colin-kiegel/rust-derive-builder
+
+### derive_builder 0.20.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/colin-kiegel/rust-derive-builder
 
 ### derive_more-impl 2.1.1
 
@@ -759,14 +980,6 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/yaahc/displaydoc
 - Homepage: https://github.com/yaahc/displaydoc
 
-### dlmalloc 0.2.14
-
-- Ecosystem: cargo
-- License: MIT/Apache-2.0
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/alexcrichton/dlmalloc-rs
-- Homepage: https://github.com/alexcrichton/dlmalloc-rs
-
 ### dtoa-short 0.3.5
 
 - Ecosystem: cargo
@@ -809,13 +1022,6 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/tormol/encode_unicode
 
-### encoding_rs_io 0.1.7
-
-- Ecosystem: cargo
-- License: MIT OR Apache-2.0
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/BurntSushi/encoding_rs_io
-
 ### encoding_rs 0.8.35
 
 - Ecosystem: cargo
@@ -845,6 +1051,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/meithecatte/enumflags2
 
+### equator-macro 0.4.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sarah-ek/equator/
+
+### equator 0.4.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sarah-ek/equator/
+
 ### equivalent 1.0.2
 
 - Ecosystem: cargo
@@ -859,6 +1079,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/lambda-fairy/rust-errno
 
+### esaxx-rs 0.1.10
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/Narsil/esaxx-rs
+- Homepage: https://github.com/Narsil/esaxx-rs
+
 ### event-listener-strategy 0.5.4
 
 - Ecosystem: cargo
@@ -872,6 +1100,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/smol-rs/event-listener
+
+### exr 1.74.0
+
+- Ecosystem: cargo
+- License: BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/johannesvollmer/exrs
 
 ### fallible-iterator 0.3.0
 
@@ -893,6 +1128,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/fancy-regex/fancy-regex
+
+### fastembed 4.9.1
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/Anush008/fastembed-rs
+- Homepage: https://crates.io/crates/fastembed
 
 ### fastrand 2.4.1
 
@@ -930,6 +1173,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/wezterm/wezterm
 
+### filetime 0.2.29
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/alexcrichton/filetime
+- Homepage: https://github.com/alexcrichton/filetime
+
 ### find-msvc-tools 0.1.9
 
 - Ecosystem: cargo
@@ -952,6 +1203,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/rust-lang/flate2-rs
 - Homepage: https://github.com/rust-lang/flate2-rs
 
+### fnv 1.0.7
+
+- Ecosystem: cargo
+- License: Apache-2.0 / MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/servo/rust-fnv
+
 ### foldhash 0.1.5
 
 - Ecosystem: cargo
@@ -972,6 +1230,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/servo/rust-url
+
+### fs2 0.4.3
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/danburkert/fs2-rs
 
 ### fsevent-sys 4.1.0
 
@@ -1133,30 +1398,6 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/BurntSushi/ripgrep/tree/master/crates/globset
 - Homepage: https://github.com/BurntSushi/ripgrep/tree/master/crates/globset
 
-### grep-matcher 0.1.8
-
-- Ecosystem: cargo
-- License: Unlicense OR MIT
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/BurntSushi/ripgrep/tree/master/crates/matcher
-- Homepage: https://github.com/BurntSushi/ripgrep/tree/master/crates/matcher
-
-### grep-regex 0.1.14
-
-- Ecosystem: cargo
-- License: Unlicense OR MIT
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/BurntSushi/ripgrep/tree/master/crates/regex
-- Homepage: https://github.com/BurntSushi/ripgrep/tree/master/crates/regex
-
-### grep-searcher 0.1.16
-
-- Ecosystem: cargo
-- License: Unlicense OR MIT
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/BurntSushi/ripgrep/tree/master/crates/searcher
-- Homepage: https://github.com/BurntSushi/ripgrep/tree/master/crates/searcher
-
 ### half 2.7.1
 
 - Ecosystem: cargo
@@ -1220,12 +1461,28 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/KokaKiwi/rust-hex
 
+### hf-hub 0.4.3
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/huggingface/hf-hub
+- Homepage: https://github.com/huggingface/hf-hub
+
 ### hmac 0.12.1
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/RustCrypto/MACs
+
+### home 0.5.12
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-lang/cargo
+- Homepage: https://github.com/rust-lang/cargo
 
 ### html5ever 0.35.0
 
@@ -1418,6 +1675,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/fitzgen/id-arena
 
+### ident_case 1.0.1
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/TedDriggs/ident_case
+
 ### idna_adapter 1.2.1
 
 - Ecosystem: cargo
@@ -1432,14 +1696,6 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/servo/rust-url/
-
-### ignore 0.4.25
-
-- Ecosystem: cargo
-- License: Unlicense OR MIT
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore
-- Homepage: https://github.com/BurntSushi/ripgrep/tree/master/crates/ignore
 
 ### image-webp 0.2.4
 
@@ -1457,12 +1713,27 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/image-rs/image
 - Homepage: https://github.com/image-rs/image
 
+### imgref 1.12.2
+
+- Ecosystem: cargo
+- License: CC0-1.0 OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/kornelski/imgref
+- Homepage: https://lib.rs/crates/imgref
+
 ### indexmap 2.14.0
 
 - Ecosystem: cargo
 - License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/indexmap-rs/indexmap
+
+### indicatif 0.17.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/console-rs/indicatif
 
 ### inotify-sys 0.1.5
 
@@ -1492,6 +1763,21 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/mitsuhiko/insta
 - Homepage: https://insta.rs/
+
+### instant-distance 0.6.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/InstantDomain/instant-distance
+- Homepage: https://github.com/InstantDomain/instant-distance
+
+### interpolate_name 0.2.4
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/lu-zero/interpolate_name
 
 ### io-kit-sys 0.4.1
 
@@ -1530,7 +1816,35 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/polyfill-rs/is_terminal_polyfill
 
+### is-terminal 0.4.17
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sunfishcode/is-terminal
+
+### itertools 0.10.5
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-itertools/itertools
+
+### itertools 0.12.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-itertools/itertools
+
 ### itertools 0.13.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-itertools/itertools
+
+### itertools 0.14.0
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
@@ -1620,6 +1934,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang-nursery/lazy-static.rs
 
+### lazycell 1.3.0
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/indiv0/lazycell
+
 ### leb128fmt 0.1.0
 
 - Ecosystem: cargo
@@ -1627,12 +1948,26 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/bluk/leb128fmt
 
+### lebe 0.5.3
+
+- Ecosystem: cargo
+- License: BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/johannesvollmer/lebe
+
 ### libc 0.2.185
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang/libc
+
+### libfuzzer-sys 0.4.13
+
+- Ecosystem: cargo
+- License: (MIT OR Apache-2.0) AND NCSA
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-fuzz/libfuzzer
 
 ### libloading 0.8.9
 
@@ -1662,6 +1997,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://gitlab.redox-os.org/redox-os/libredox.git
 
+### librocksdb-sys 0.16.0+8.10.0
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0/BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-rocksdb/rust-rocksdb
+
 ### libsqlite3-sys 0.30.1
 
 - Ecosystem: cargo
@@ -1684,6 +2026,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/dcuddeback/libudev-rs
 - Homepage: https://github.com/dcuddeback/libudev-rs
+
+### libz-sys 1.1.29
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-lang/libz-sys
 
 ### linux-raw-sys 0.12.1
 
@@ -1720,6 +2069,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang/log
 
+### loop9 0.1.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://gitlab.com/kornelski/loop9.git
+- Homepage: https://lib.rs/crates/loop9
+
 ### lopdf 0.40.0
 
 - Ecosystem: cargo
@@ -1742,6 +2099,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/jeromefroe/lru-rs.git
 - Homepage: https://github.com/jeromefroe/lru-rs
+
+### lsp-types 0.94.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/gluon-lang/lsp-types
+
+### lz4-sys 1.11.1+lz4-1.10.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/10xGenomics/lz4-rs
 
 ### lzma-rs 0.3.0
 
@@ -1772,6 +2143,21 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/JohnTitor/mach2
 
+### macro_rules_attribute-proc_macro 0.2.2
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT OR Zlib
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/danielhenrymantilla/macro_rules_attribute-rs
+
+### macro_rules_attribute 0.2.2
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT OR Zlib
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/danielhenrymantilla/macro_rules_attribute-rs
+- Homepage: https://crates.io/crates/macro_rules_attribute
+
 ### markup5ever 0.35.0
 
 - Ecosystem: cargo
@@ -1785,6 +2171,29 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/servo/html5ever
+
+### matchers 0.2.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/hawkw/matchers
+- Homepage: https://github.com/hawkw/matchers
+
+### matrixmultiply 0.3.10
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/bluss/matrixmultiply/
+
+### maybe-rayon 0.1.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/shssoichiro/maybe-rayon
+- Homepage: https://github.com/shssoichiro/maybe-rayon
 
 ### md-5 0.10.6
 
@@ -1800,13 +2209,6 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/BurntSushi/memchr
 - Homepage: https://github.com/BurntSushi/memchr
-
-### memmap2 0.9.10
-
-- Ecosystem: cargo
-- License: MIT OR Apache-2.0
-- Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/RazrFalcon/memmap2-rs
 
 ### memo-map 0.3.3
 
@@ -1867,6 +2269,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/tokio-rs/mio
 - Homepage: https://github.com/tokio-rs/mio
 
+### monostate-impl 0.1.18
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/dtolnay/monostate
+
+### monostate 0.1.18
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/dtolnay/monostate
+
 ### moxcms 0.8.1
 
 - Ecosystem: cargo
@@ -1911,6 +2327,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/napi-rs/napi-rs
 
+### ndarray 0.16.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-ndarray/ndarray
+
 ### new_debug_unreachable 1.0.6
 
 - Ecosystem: cargo
@@ -1924,6 +2347,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/nix-rust/nix
+
+### no_std_io2 0.9.4
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/wcampbell0x2a/no-std-io2
 
 ### nom_locate 5.0.0
 
@@ -1946,6 +2376,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-bakery/nom
+
+### noop_proc_macro 0.3.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/lu-zero/noop_proc_macro
 
 ### notify-types 2.1.0
 
@@ -1977,12 +2414,59 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/nushell/nu-ansi-term
 
+### num_cpus 1.17.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/seanmonstar/num_cpus
+
+### num-bigint 0.4.6
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-num/num-bigint
+- Homepage: https://github.com/rust-num/num-bigint
+
+### num-complex 0.4.6
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-num/num-complex
+- Homepage: https://github.com/rust-num/num-complex
+
 ### num-conv 0.2.1
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/jhpratt/num-conv
+
+### num-derive 0.4.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-num/num-derive
+- Homepage: https://github.com/rust-num/num-derive
+
+### num-integer 0.1.46
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-num/num-integer
+- Homepage: https://github.com/rust-num/num-integer
+
+### num-rational 0.4.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-num/num-rational
+- Homepage: https://github.com/rust-num/num-rational
 
 ### num-traits 0.2.19
 
@@ -1991,6 +2475,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-num/num-traits
 - Homepage: https://github.com/rust-num/num-traits
+
+### number_prefix 0.4.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/ogham/rust-number-prefix
 
 ### objc2-encode 4.1.0
 
@@ -2027,6 +2518,27 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/matklad/once_cell
 
+### onig_sys 69.9.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-onig/rust-onig
+
+### onig 6.5.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/iwillspeak/rust-onig
+
+### oorandom 11.1.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://hg.sr.ht/~icefox/oorandom
+
 ### option-ext 0.2.0
 
 - Ecosystem: cargo
@@ -2035,12 +2547,35 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/soc/option-ext.git
 - Homepage: https://github.com/soc/option-ext
 
+### ordered-float 3.9.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/reem/rust-ordered-float
+
 ### ordered-stream 0.2.0
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/danieldg/ordered-stream
+
+### ort-sys 2.0.0-rc.9
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/pykeio/ort
+- Homepage: https://ort.pyke.io/
+
+### ort 2.0.0-rc.9
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/pykeio/ort
+- Homepage: https://ort.pyke.io/
 
 ### parking_lot_core 0.9.12
 
@@ -2063,6 +2598,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/smol-rs/parking
 - Homepage: https://github.com/smol-rs/parking
+
+### paste 1.0.15
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/dtolnay/paste
+
+### pastey 0.1.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/as1100k/pastey
 
 ### pbkdf2 0.12.2
 
@@ -2113,12 +2662,26 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-phf/rust-phf
 
+### pin-project-internal 1.1.13
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/taiki-e/pin-project
+
 ### pin-project-lite 0.2.17
 
 - Ecosystem: cargo
 - License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/taiki-e/pin-project-lite
+
+### pin-project 1.1.13
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/taiki-e/pin-project
 
 ### piper 0.2.5
 
@@ -2133,6 +2696,30 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang/pkg-config-rs
+
+### plotters-backend 0.3.7
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/plotters-rs/plotters
+- Homepage: https://plotters-rs.github.io
+
+### plotters-svg 0.3.7
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/plotters-rs/plotters.git
+- Homepage: https://plotters-rs.github.io
+
+### plotters 0.3.7
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/plotters-rs/plotters
+- Homepage: https://plotters-rs.github.io/
 
 ### png 0.18.1
 
@@ -2219,12 +2806,36 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/dtolnay/proc-macro2
 
+### profiling-procmacros 1.0.18
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/aclysma/profiling
+- Homepage: https://github.com/aclysma/profiling
+
+### profiling 1.0.18
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/aclysma/profiling
+- Homepage: https://github.com/aclysma/profiling
+
 ### pxfm 0.1.29
 
 - Ecosystem: cargo
 - License: BSD-3-Clause OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/awxkee/pxfm
+
+### qoi 0.4.1
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/aldanor/qoi-rust
+- Homepage: https://github.com/aldanor/qoi-rust
 
 ### quick-error 2.0.1
 
@@ -2284,6 +2895,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/r-efi/r-efi
 - Homepage: https://github.com/r-efi/r-efi/wiki
+
+### rand_chacha 0.3.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-random/rand
+- Homepage: https://rust-random.github.io/book
 
 ### rand_chacha 0.9.0
 
@@ -2349,6 +2968,35 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/jeffparsons/rangemap
 - Homepage: https://github.com/jeffparsons/rangemap
 
+### rav1e 0.8.1
+
+- Ecosystem: cargo
+- License: BSD-2-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/xiph/rav1e/
+
+### ravif 0.13.0
+
+- Ecosystem: cargo
+- License: BSD-3-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/kornelski/cavif-rs
+- Homepage: https://lib.rs/crates/ravif
+
+### rawpointer 0.2.1
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/bluss/rawpointer/
+
+### rayon-cond 0.4.0
+
+- Ecosystem: cargo
+- License: Apache-2.0/MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/cuviper/rayon-cond
+
 ### rayon-core 1.13.0
 
 - Ecosystem: cargo
@@ -2408,12 +3056,42 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/seanmonstar/reqwest
 
+### rgb 0.8.53
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/kornelski/rust-rgb
+- Homepage: https://lib.rs/crates/rgb
+
 ### ring 0.17.14
 
 - Ecosystem: cargo
 - License: Apache-2.0 AND ISC
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/briansmith/ring
+
+### rmp-serde 1.3.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/3Hren/msgpack-rust
+
+### rmp 0.8.15
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/3Hren/msgpack-rust
+
+### rocksdb 0.22.0
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-rocksdb/rust-rocksdb
+- Homepage: https://github.com/rust-rocksdb/rust-rocksdb
 
 ### rusqlite 0.32.1
 
@@ -2428,6 +3106,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/djc/rustc-version-rs
+
+### rustc-hash 1.1.0
+
+- Ecosystem: cargo
+- License: Apache-2.0/MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-lang-nursery/rustc-hash
 
 ### rustc-hash 2.1.2
 
@@ -2567,6 +3252,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/nox/serde_urlencoded
 
+### serde_yaml 0.9.34+deprecated
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/dtolnay/serde-yaml
+
 ### serde 1.0.228
 
 - Ecosystem: cargo
@@ -2635,6 +3327,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/RustCrypto/hashes
 
+### sharded-slab 0.1.7
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/hawkw/sharded-slab
+- Homepage: https://github.com/hawkw/sharded-slab
+
 ### shared_library 0.1.9
 
 - Ecosystem: cargo
@@ -2676,6 +3376,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: Apache-2.0/MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/vorner/signal-hook
+
+### simd_helpers 0.1.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/lu-zero/simd_helpers
 
 ### simd-adler32 0.3.9
 
@@ -2720,6 +3427,21 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rust-lang/socket2
 - Homepage: https://github.com/rust-lang/socket2
+
+### socks 0.3.4
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/sfackler/rust-socks
+
+### spm_precompiled 0.1.4
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/huggingface/spm_precompiled
+- Homepage: https://github.com/huggingface/spm_precompiled
 
 ### stable_deref_trait 1.2.1
 
@@ -2802,6 +3524,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/mystor/synstructure
 
+### sysinfo 0.30.13
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/GuillaumeGomez/sysinfo
+
 ### sysinfo 0.33.1
 
 - Ecosystem: cargo
@@ -2822,6 +3551,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/mullvad/system-configuration-rs
+
+### tar 0.4.46
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/composefs/tar-rs
+- Homepage: https://github.com/composefs/tar-rs
 
 ### tempfile 3.27.0
 
@@ -2873,6 +3610,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/dtolnay/thiserror
+
+### thread_local 1.1.9
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/Amanieu/thread_local-rs
 
 ### tiff 0.11.3
 
@@ -2932,6 +3676,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/unicode-org/icu4x
 
+### tinytemplate 1.2.1
+
+- Ecosystem: cargo
+- License: Apache-2.0 OR MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/bheisler/TinyTemplate
+
 ### tinyvec_macros 0.1.1
 
 - Ecosystem: cargo
@@ -2945,6 +3696,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: Zlib OR Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/Lokathor/tinyvec
+
+### tokenizers 0.21.4
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/huggingface/tokenizers
+- Homepage: https://github.com/huggingface/tokenizers
 
 ### tokio-macros 2.7.0
 
@@ -2961,6 +3720,30 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/rustls/tokio-rustls
 - Homepage: https://github.com/rustls/tokio-rustls
+
+### tokio-stream 0.1.18
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/tokio
+- Homepage: https://tokio.rs
+
+### tokio-test 0.4.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/tokio
+- Homepage: https://tokio.rs
+
+### tokio-util 0.7.18
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/tokio
+- Homepage: https://tokio.rs
 
 ### tokio 1.52.1
 
@@ -3028,7 +3811,31 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/tower-rs/tower
 - Homepage: https://github.com/tower-rs/tower
 
+### tower-lsp-macros 0.9.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/ebkalderon/tower-lsp
+- Homepage: https://github.com/ebkalderon/tower-lsp
+
+### tower-lsp 0.20.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/ebkalderon/tower-lsp
+- Homepage: https://github.com/ebkalderon/tower-lsp
+
 ### tower-service 0.3.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tower-rs/tower
+- Homepage: https://github.com/tower-rs/tower
+
+### tower 0.4.13
 
 - Ecosystem: cargo
 - License: MIT
@@ -3060,6 +3867,22 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/tokio-rs/tracing
 - Homepage: https://tokio.rs
 
+### tracing-log 0.2.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/tracing
+- Homepage: https://tokio.rs
+
+### tracing-subscriber 0.3.23
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/tracing
+- Homepage: https://tokio.rs
+
 ### tracing 0.1.44
 
 - Ecosystem: cargo
@@ -3075,12 +3898,124 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/ArturKovacs/trash
 
-### tree-sitter-javascript 0.23.1
+### tree-sitter-bash 0.25.1
 
 - Ecosystem: cargo
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/tree-sitter/tree-sitter-javascript
+- Repository: https://github.com/tree-sitter/tree-sitter-bash
+
+### tree-sitter-c-sharp 0.23.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-c-sharp
+
+### tree-sitter-c 0.24.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-c
+
+### tree-sitter-clojure 0.1.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/jerielverissimo/tree-sitter-clojure
+
+### tree-sitter-cpp 0.23.4
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-cpp
+
+### tree-sitter-css 0.25.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-css
+
+### tree-sitter-elixir 0.3.5
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/elixir-lang/tree-sitter-elixir
+
+### tree-sitter-elm 5.9.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/elm-tooling/tree-sitter-elm
+
+### tree-sitter-erlang 0.15.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/WhatsApp/tree-sitter-erlang
+
+### tree-sitter-fortran 0.5.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/stadelmanma/tree-sitter-fortran
+
+### tree-sitter-go 0.25.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-go
+
+### tree-sitter-groovy 0.1.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/amaanq/tree-sitter-groovy
+
+### tree-sitter-haskell 0.23.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-haskell
+
+### tree-sitter-hcl 1.1.0
+
+- Ecosystem: cargo
+- License: Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter-grammars/tree-sitter-hcl
+
+### tree-sitter-java 0.23.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-java
+
+### tree-sitter-julia 0.23.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-julia
+
+### tree-sitter-kotlin 0.3.5
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/fwcd/tree-sitter-kotlin
 
 ### tree-sitter-language 0.1.7
 
@@ -3090,12 +4025,47 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/tree-sitter/tree-sitter
 - Homepage: https://tree-sitter.github.io/tree-sitter
 
+### tree-sitter-lua 0.5.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter-grammars/tree-sitter-lua
+
+### tree-sitter-objc 3.0.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter-grammars/tree-sitter-objc
+
+### tree-sitter-ocaml 0.24.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-ocaml
+
+### tree-sitter-php 0.24.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-php
+
 ### tree-sitter-python 0.25.0
 
 - Ecosystem: cargo
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/tree-sitter/tree-sitter-python
+
+### tree-sitter-ruby 0.23.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-ruby
 
 ### tree-sitter-rust 0.24.2
 
@@ -3104,12 +4074,69 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/tree-sitter/tree-sitter-rust
 
+### tree-sitter-scala 0.25.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-scala
+
+### tree-sitter-solidity 1.2.13
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/JoranHonig/tree-sitter-solidity
+
+### tree-sitter-swift 0.7.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/alex-pinkus/tree-sitter-swift
+
+### tree-sitter-toml-ng 0.7.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter-grammars/tree-sitter-toml
+
 ### tree-sitter-typescript 0.23.2
 
 - Ecosystem: cargo
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/tree-sitter/tree-sitter-typescript
+
+### tree-sitter-verilog 1.0.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter-verilog
+
+### tree-sitter-yaml 0.7.2
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter-grammars/tree-sitter-yaml
+
+### tree-sitter 0.20.10
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter
+
+### tree-sitter 0.25.10
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tree-sitter/tree-sitter
+- Homepage: https://tree-sitter.github.io/tree-sitter
 
 ### try-lock 0.2.5
 
@@ -3155,6 +4182,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/seanmonstar/unicase
 
+### unicode_categories 0.1.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/swgillespie/unicode-categories
+
 ### unicode-bidi 0.3.18
 
 - Ecosystem: cargo
@@ -3168,6 +4202,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: (MIT OR Apache-2.0) AND Unicode-3.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/dtolnay/unicode-ident
+
+### unicode-normalization-alignments 0.1.12
+
+- Ecosystem: cargo
+- License: MIT/Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/n1t0/unicode-normalization
+- Homepage: https://github.com/n1t0/unicode-normalization
 
 ### unicode-normalization 0.1.25
 
@@ -3209,12 +4251,26 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/unicode-rs/unicode-xid
 - Homepage: https://github.com/unicode-rs/unicode-xid
 
+### unsafe-libyaml 0.2.11
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/dtolnay/unsafe-libyaml
+
 ### untrusted 0.9.0
 
 - Ecosystem: cargo
 - License: ISC
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/briansmith/untrusted
+
+### ureq 2.12.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/algesten/ureq
 
 ### url 2.5.8
 
@@ -3269,6 +4325,20 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/uuid-rs/uuid
 - Homepage: https://github.com/uuid-rs/uuid
 
+### v_frame 0.3.9
+
+- Ecosystem: cargo
+- License: BSD-2-Clause
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rust-av/v_frame
+
+### valuable 0.1.1
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/tokio-rs/valuable
+
 ### vcpkg 0.2.15
 
 - Ecosystem: cargo
@@ -3283,15 +4353,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/SergioBenitez/version_check
 
-### vt100 0.16.2
+### vte_generate_state_changes 0.1.2
 
 - Ecosystem: cargo
-- License: MIT
+- License: Apache-2.0 OR MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
-- Repository: https://github.com/doy/vt100-rust
-- Homepage: https://github.com/doy/vt100-rust
+- Repository: https://github.com/alacritty/vte
 
-### vte 0.15.0
+### vte 0.13.1
 
 - Ecosystem: cargo
 - License: Apache-2.0 OR MIT
@@ -3389,6 +4458,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-metadata
 
+### wasm-streams 0.4.2
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/MattiasBuelens/wasm-streams/
+
 ### wasmparser 0.244.0
 
 - Ecosystem: cargo
@@ -3419,6 +4495,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/daxpedda/web-time
 
+### webpki-roots 0.26.11
+
+- Ecosystem: cargo
+- License: CDLA-Permissive-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rustls/webpki-roots
+- Homepage: https://github.com/rustls/webpki-roots
+
 ### webpki-roots 1.0.7
 
 - Ecosystem: cargo
@@ -3433,6 +4517,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/image-rs/weezl
+
+### which 6.0.3
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/harryfei/which-rs.git
 
 ### which 8.0.3
 
@@ -3582,6 +4673,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/microsoft/windows-rs
 
+### windows-core 0.52.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/microsoft/windows-rs
+
 ### windows-core 0.56.0
 
 - Ecosystem: cargo
@@ -3687,6 +4785,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/microsoft/windows-rs
 
+### windows-sys 0.59.0
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/microsoft/windows-rs
+
 ### windows-sys 0.60.2
 
 - Ecosystem: cargo
@@ -3709,6 +4814,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Repository: https://github.com/microsoft/windows-rs
 
 ### windows-targets 0.53.5
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/microsoft/windows-rs
+
+### windows 0.52.0
 
 - Ecosystem: cargo
 - License: MIT OR Apache-2.0
@@ -3742,6 +4854,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/winnow-rs/winnow
+
+### winsafe 0.0.19
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/rodrigocfd/winsafe
 
 ### wit-bindgen-core 0.51.0
 
@@ -3814,6 +4933,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/unicode-org/icu4x
 
+### xattr 1.6.1
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/Stebalien/xattr
+
 ### xz2 0.1.7
 
 - Ecosystem: cargo
@@ -3821,6 +4947,14 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/alexcrichton/xz2-rs
 - Homepage: https://github.com/alexcrichton/xz2-rs
+
+### y4m 0.8.0
+
+- Ecosystem: cargo
+- License: MIT
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Repository: https://github.com/image-rs/y4m.git
+- Homepage: https://github.com/image-rs/y4m
 
 ### yansi 1.0.1
 
@@ -3999,6 +5133,13 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 - License: MIT OR Apache-2.0 OR Zlib
 - Source: registry+https://github.com/rust-lang/crates.io-index
 - Repository: https://github.com/etemesi254/zune-image
+
+### zune-inflate 0.2.54
+
+- Ecosystem: cargo
+- License: MIT OR Apache-2.0 OR Zlib
+- Source: registry+https://github.com/rust-lang/crates.io-index
+- Homepage: https://github.com/etemesi254/zune-image/tree/main/zune-inflate
 
 ### zune-jpeg 0.5.15
 
@@ -4255,22 +5396,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ```
 
-### @ant-design/colors 8.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/colors/-/colors-8.0.1.tgz
-- Repository: git+https://github.com/ant-design/ant-design-colors.git
-- Homepage: https://github.com/ant-design/ant-design-colors#readme
-
-### @ant-design/cssinjs-utils 2.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/cssinjs-utils/-/cssinjs-utils-2.1.2.tgz
-- Repository: https://github.com/ant-design/cssinjs-util.git
-- Homepage: https://github.com/ant-design/cssinjs-util
-
 ### @ant-design/cssinjs 1.24.0
 
 - Ecosystem: npm
@@ -4278,69 +5403,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@ant-design/cssinjs/-/cssinjs-1.24.0.tgz
 - Repository: git@github.com:ant-design/cssinjs.git
 - Homepage: https://github.com/ant-design/cssinjs
-
-### @ant-design/cssinjs 2.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/cssinjs/-/cssinjs-2.1.2.tgz
-- Repository: git@github.com:ant-design/cssinjs.git
-- Homepage: https://github.com/ant-design/cssinjs
-
-### @ant-design/fast-color 3.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/fast-color/-/fast-color-3.0.1.tgz
-- Repository: https://github.com/ant-design/fast-color.git
-- Homepage: https://github.com/ant-design/fast-color
-
-### @ant-design/icons-svg 4.4.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/icons-svg/-/icons-svg-4.4.2.tgz
-- Repository: git+https://github.com/ant-design/ant-design-icons.git
-- Homepage: https://github.com/ant-design/ant-design-icons/
-
-### @ant-design/icons 6.2.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/icons/-/icons-6.2.5.tgz
-- Repository: https://github.com/ant-design/ant-design-icons/tree/master/packages/icons-react
-
-### @ant-design/react-slick 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@ant-design/react-slick/-/react-slick-2.0.0.tgz
-- Repository: https://github.com/ant-design/react-slick
-- Homepage: https://react-slick.neostack.com
-
-### @antfu/install-pkg 1.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@antfu/install-pkg/-/install-pkg-1.1.0.tgz
-- Repository: git+https://github.com/antfu/install-pkg.git
-- Homepage: https://github.com/antfu/install-pkg#readme
-
-### @babel/code-frame 7.29.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.0.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-code-frame
-
-### @babel/code-frame 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-code-frame
 
 ### @babel/compat-data 7.29.0
 
@@ -4357,57 +5419,12 @@ limitations under the License.
 - Repository: https://github.com/babel/babel.git
 - Homepage: https://babel.dev/docs/en/next/babel-core
 
-### @babel/generator 7.29.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/generator/-/generator-7.29.1.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-generator
-
-### @babel/generator 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/generator/-/generator-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-generator
-
-### @babel/helper-compilation-targets 7.28.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-compilation-targets/-/helper-compilation-targets-7.28.6.tgz
-- Repository: https://github.com/babel/babel.git
-
 ### @babel/helper-define-polyfill-provider 0.6.8
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@babel/helper-define-polyfill-provider/-/helper-define-polyfill-provider-0.6.8.tgz
 - Repository: https://github.com/babel/babel-polyfills.git
-
-### @babel/helper-globals 7.28.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.28.0.tgz
-- Repository: https://github.com/babel/babel.git
-
-### @babel/helper-globals 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-
-### @babel/helper-module-imports 7.28.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-module-imports/-/helper-module-imports-7.28.6.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-helper-module-imports
 
 ### @babel/helper-module-imports 7.29.7
 
@@ -4417,14 +5434,6 @@ limitations under the License.
 - Repository: https://github.com/babel/babel.git
 - Homepage: https://babel.dev/docs/en/next/babel-helper-module-imports
 
-### @babel/helper-module-transforms 7.28.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-module-transforms/-/helper-module-transforms-7.28.6.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-helper-module-transforms
-
 ### @babel/helper-plugin-utils 7.29.7
 
 - Ecosystem: npm
@@ -4432,67 +5441,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@babel/helper-plugin-utils/-/helper-plugin-utils-7.29.7.tgz
 - Repository: https://github.com/babel/babel.git
 - Homepage: https://babel.dev/docs/en/next/babel-helper-plugin-utils
-
-### @babel/helper-string-parser 7.27.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.27.1.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-helper-string-parser
-
-### @babel/helper-string-parser 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-helper-string-parser
-
-### @babel/helper-validator-identifier 7.28.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.28.5.tgz
-- Repository: https://github.com/babel/babel.git
-
-### @babel/helper-validator-identifier 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-
-### @babel/helper-validator-option 7.27.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helper-validator-option/-/helper-validator-option-7.27.1.tgz
-- Repository: https://github.com/babel/babel.git
-
-### @babel/helpers 7.29.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.2.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-helpers
-
-### @babel/parser 7.29.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/parser/-/parser-7.29.2.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-parser
-
-### @babel/parser 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/parser/-/parser-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-parser
 
 ### @babel/plugin-transform-runtime 7.29.7
 
@@ -4509,77 +5457,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@babel/runtime/-/runtime-7.29.2.tgz
 - Repository: https://github.com/babel/babel.git
 - Homepage: https://babel.dev/docs/en/next/babel-runtime
-
-### @babel/template 7.28.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/template/-/template-7.28.6.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-template
-
-### @babel/template 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-template
-
-### @babel/traverse 7.29.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.0.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-traverse
-
-### @babel/traverse 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-traverse
-
-### @babel/types 7.29.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/types/-/types-7.29.0.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-types
-
-### @babel/types 7.29.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@babel/types/-/types-7.29.7.tgz
-- Repository: https://github.com/babel/babel.git
-- Homepage: https://babel.dev/docs/en/next/babel-types
-
-### @braintree/sanitize-url 7.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@braintree/sanitize-url/-/sanitize-url-7.1.2.tgz
-- Repository: git+https://github.com/braintree/sanitize-url.git
-- Homepage: https://github.com/braintree/sanitize-url#readme
-
-### @chevrotain/types 11.1.2
-
-- Ecosystem: npm
-- License: Apache-2.0
-- Source: https://registry.npmjs.org/@chevrotain/types/-/types-11.1.2.tgz
-- Repository: git://github.com/Chevrotain/chevrotain.git
-- Homepage: https://chevrotain.io/documentation/
-
-### @dnd-kit/accessibility 3.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@dnd-kit/accessibility/-/accessibility-3.1.1.tgz
-- Repository: git+https://github.com/clauderic/dnd-kit.git
 
 ### @dnd-kit/core 6.3.1
 
@@ -4625,42 +5502,12 @@ limitations under the License.
 - Repository: https://github.com/missive/emoji-mart
 - Homepage: https://missiveapp.com/open/emoji-mart
 
-### @emotion/babel-plugin 11.13.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/babel-plugin/-/babel-plugin-11.13.5.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/babel-plugin
-- Homepage: https://emotion.sh
-
-### @emotion/cache 11.14.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/cache/-/cache-11.14.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/cache
-
-### @emotion/css 11.13.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/css/-/css-11.13.5.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/css
-- Homepage: https://emotion.sh
-
 ### @emotion/hash 0.8.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@emotion/hash/-/hash-0.8.0.tgz
 - Repository: https://github.com/emotion-js/emotion/tree/master/packages/hash
-
-### @emotion/hash 0.9.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/hash/-/hash-0.9.2.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/hash
 
 ### @emotion/is-prop-valid 1.4.0
 
@@ -4676,61 +5523,12 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@emotion/memoize/-/memoize-0.9.0.tgz
 - Repository: https://github.com/emotion-js/emotion/tree/main/packages/memoize
 
-### @emotion/react 11.14.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/react/-/react-11.14.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/react
-
-### @emotion/serialize 1.3.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/serialize/-/serialize-1.3.3.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/serialize
-
-### @emotion/sheet 1.4.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/sheet/-/sheet-1.4.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/sheet
-
-### @emotion/unitless 0.10.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/unitless/-/unitless-0.10.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/unitless
-
 ### @emotion/unitless 0.7.5
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@emotion/unitless/-/unitless-0.7.5.tgz
 - Repository: https://github.com/emotion-js/emotion/tree/master/packages/unitless
-
-### @emotion/use-insertion-effect-with-fallbacks 1.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/use-insertion-effect-with-fallbacks/-/use-insertion-effect-with-fallbacks-1.2.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/use-insertion-effect-with-fallbacks
-
-### @emotion/utils 1.4.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/utils/-/utils-1.4.2.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/utils
-
-### @emotion/weak-memoize 0.4.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@emotion/weak-memoize/-/weak-memoize-0.4.0.tgz
-- Repository: https://github.com/emotion-js/emotion/tree/main/packages/weak-memoize
 
 ### @floating-ui/core 1.7.5
 
@@ -4802,61 +5600,6 @@ limitations under the License.
 - License: UNKNOWN
 - Source: https://registry.npmjs.org/@giscus/react/-/react-3.1.0.tgz
 - Repository: https://github.com/giscus/giscus-component.git
-
-### @iconify/types 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@iconify/types/-/types-2.0.0.tgz
-- Repository: https://github.com/iconify/iconify.git
-- Homepage: https://github.com/iconify/iconify
-
-### @iconify/utils 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@iconify/utils/-/utils-3.1.0.tgz
-- Repository: https://github.com/iconify/iconify.git
-- Homepage: https://iconify.design/docs/libraries/utils/
-
-### @jridgewell/gen-mapping 0.3.13
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz
-- Repository: git+https://github.com/jridgewell/sourcemaps.git
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/gen-mapping
-
-### @jridgewell/remapping 2.3.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@jridgewell/remapping/-/remapping-2.3.5.tgz
-- Repository: git+https://github.com/jridgewell/sourcemaps.git
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping
-
-### @jridgewell/resolve-uri 3.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz
-- Repository: https://github.com/jridgewell/resolve-uri
-
-### @jridgewell/sourcemap-codec 1.5.5
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz
-- Repository: git+https://github.com/jridgewell/sourcemaps.git
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/sourcemap-codec
-
-### @jridgewell/trace-mapping 0.3.31
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz
-- Repository: git+https://github.com/jridgewell/sourcemaps.git
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping
 
 ### @lit-labs/ssr-dom-shim 1.6.0
 
@@ -4954,14 +5697,6 @@ limitations under the License.
 - Repository: https://github.com/mdx-js/mdx
 - Homepage: https://mdxjs.com
 
-### @mermaid-js/parser 1.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@mermaid-js/parser/-/parser-1.1.1.tgz
-- Repository: https://github.com/mermaid-js/mermaid.git
-- Homepage: https://github.com/mermaid-js/mermaid/tree/develop/packages/mermaid/parser/#readme
-
 ### @novnc/novnc 1.7.0
 
 - Ecosystem: npm
@@ -4983,14 +5718,6 @@ limitations under the License.
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@radix-ui/primitive/-/primitive-1.1.4.tgz
-- Repository: git+https://github.com/radix-ui/primitives.git
-- Homepage: https://radix-ui.com/primitives
-
-### @radix-ui/react-arrow 1.1.9
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@radix-ui/react-arrow/-/react-arrow-1.1.9.tgz
 - Repository: git+https://github.com/radix-ui/primitives.git
 - Homepage: https://radix-ui.com/primitives
 
@@ -5210,22 +5937,6 @@ limitations under the License.
 - Repository: git+https://github.com/radix-ui/primitives.git
 - Homepage: https://radix-ui.com/primitives
 
-### @radix-ui/react-use-effect-event 0.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@radix-ui/react-use-effect-event/-/react-use-effect-event-0.0.3.tgz
-- Repository: git+https://github.com/radix-ui/primitives.git
-- Homepage: https://radix-ui.com/primitives
-
-### @radix-ui/react-use-escape-keydown 1.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@radix-ui/react-use-escape-keydown/-/react-use-escape-keydown-1.1.2.tgz
-- Repository: git+https://github.com/radix-ui/primitives.git
-- Homepage: https://radix-ui.com/primitives
-
 ### @radix-ui/react-use-layout-effect 1.1.2
 
 - Ecosystem: npm
@@ -5239,14 +5950,6 @@ limitations under the License.
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/@radix-ui/react-use-previous/-/react-use-previous-1.1.2.tgz
-- Repository: git+https://github.com/radix-ui/primitives.git
-- Homepage: https://radix-ui.com/primitives
-
-### @radix-ui/react-use-rect 1.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@radix-ui/react-use-rect/-/react-use-rect-1.1.2.tgz
 - Repository: git+https://github.com/radix-ui/primitives.git
 - Homepage: https://radix-ui.com/primitives
 
@@ -5265,350 +5968,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@radix-ui/react-visually-hidden/-/react-visually-hidden-1.2.5.tgz
 - Repository: git+https://github.com/radix-ui/primitives.git
 - Homepage: https://radix-ui.com/primitives
-
-### @radix-ui/rect 1.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@radix-ui/rect/-/rect-1.1.2.tgz
-- Repository: git+https://github.com/radix-ui/primitives.git
-- Homepage: https://radix-ui.com/primitives
-
-### @rc-component/async-validator 6.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/async-validator/-/async-validator-6.0.0.tgz
-- Repository: git@github.com:react-component/async-validator.git
-- Homepage: http://github.com/react-component/async-validator
-
-### @rc-component/cascader 1.16.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/cascader/-/cascader-1.16.1.tgz
-- Repository: https://github.com/react-component/cascader.git
-- Homepage: https://github.com/react-component/cascader
-
-### @rc-component/checkbox 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/checkbox/-/checkbox-2.0.0.tgz
-- Repository: git@github.com:react-component/checkbox.git
-- Homepage: https://react-component.github.io/checkbox
-
-### @rc-component/collapse 1.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/collapse/-/collapse-1.2.0.tgz
-- Repository: git@github.com:react-component/collapse.git
-- Homepage: http://github.com/react-component/collapse
-
-### @rc-component/color-picker 3.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/color-picker/-/color-picker-3.1.1.tgz
-- Repository: git@github.com:react-component/color-picker.git
-- Homepage: http://github.com/react-component/color-picker
-
-### @rc-component/context 2.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/context/-/context-2.0.2.tgz
-- Repository: git@github.com:react-component/context.git
-- Homepage: http://github.com/react-component/context
-
-### @rc-component/dialog 1.9.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/dialog/-/dialog-1.9.0.tgz
-- Repository: git@github.com:react-component/dialog.git
-- Homepage: http://github.com/react-component/dialog
-
-### @rc-component/drawer 1.4.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/drawer/-/drawer-1.4.2.tgz
-- Repository: https://github.com/react-component/drawer.git
-- Homepage: https://github.com/react-component/drawer
-
-### @rc-component/dropdown 1.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/dropdown/-/dropdown-1.0.2.tgz
-- Repository: git@github.com:react-component/dropdown.git
-- Homepage: http://github.com/react-component/dropdown
-
-### @rc-component/form 1.8.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/form/-/form-1.8.3.tgz
-- Repository: https://github.com/react-component/field-form.git
-- Homepage: https://github.com/react-component/field-form
-
-### @rc-component/image 1.9.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/image/-/image-1.9.0.tgz
-- Repository: git@github.com:react-component/image.git
-- Homepage: http://github.com/react-component/image
-
-### @rc-component/input-number 1.6.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/input-number/-/input-number-1.6.2.tgz
-- Repository: git@github.com:react-component/input-number.git
-- Homepage: https://github.com/react-component/input-number
-
-### @rc-component/input 1.3.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/input/-/input-1.3.1.tgz
-- Repository: git@github.com:react-component/input.git
-- Homepage: https://github.com/react-component/input
-
-### @rc-component/mentions 1.9.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/mentions/-/mentions-1.9.0.tgz
-- Repository: git@github.com:react-component/mentions.git
-- Homepage: http://github.com/react-component/mentions
-
-### @rc-component/menu 1.3.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/menu/-/menu-1.3.1.tgz
-- Repository: git@github.com:react-component/menu.git
-- Homepage: http://github.com/react-component/menu
-
-### @rc-component/mini-decimal 1.1.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/mini-decimal/-/mini-decimal-1.1.4.tgz
-- Repository: https://github.com/react-component/mini-decimal.git
-- Homepage: https://github.com/react-component/mini-decimal
-
-### @rc-component/motion 1.3.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/motion/-/motion-1.3.3.tgz
-- Repository: git@github.com:react-component/motion.git
-- Homepage: https://react-component.github.io/motion
-
-### @rc-component/mutate-observer 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/mutate-observer/-/mutate-observer-2.0.1.tgz
-- Repository: https://github.com/react-component/mutate-observer.git
-- Homepage: https://github.com/react-component/mutate-observer
-
-### @rc-component/notification 2.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/notification/-/notification-2.0.7.tgz
-- Repository: git@github.com:react-component/notification.git
-- Homepage: http://github.com/react-component/notification
-
-### @rc-component/overflow 1.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/overflow/-/overflow-1.0.1.tgz
-- Repository: git@github.com:react-component/overflow.git
-- Homepage: https://react-component.github.io/overflow
-
-### @rc-component/pagination 1.3.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/pagination/-/pagination-1.3.0.tgz
-- Repository: git@github.com:react-component/pagination.git
-- Homepage: https://react-component.github.io/pagination
-
-### @rc-component/picker 1.10.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/picker/-/picker-1.10.0.tgz
-- Repository: git@github.com:react-component/picker.git
-- Homepage: https://react-component.github.io/picker
-
-### @rc-component/portal 2.2.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/portal/-/portal-2.2.1.tgz
-- Repository: https://github.com/react-component/portal.git
-- Homepage: https://github.com/react-component/portal
-
-### @rc-component/progress 1.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/progress/-/progress-1.0.2.tgz
-- Repository: git@github.com:react-component/progress.git
-- Homepage: http://github.com/react-component/progress
-
-### @rc-component/qrcode 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/qrcode/-/qrcode-2.0.0.tgz
-- Repository: https://github.com/react-component/qrcode.git
-- Homepage: https://github.com/react-component/qrcode
-
-### @rc-component/rate 1.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/rate/-/rate-1.0.1.tgz
-- Repository: https://github.com/react-component/rate.git
-- Homepage: https://github.com/react-component/rate
-
-### @rc-component/resize-observer 1.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/resize-observer/-/resize-observer-1.1.2.tgz
-- Repository: git@github.com:react-component/resize-observer.git
-- Homepage: https://react-component.github.io/resize-observer
-
-### @rc-component/segmented 1.3.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/segmented/-/segmented-1.3.0.tgz
-- Repository: git@github.com:react-component/segmented.git
-- Homepage: https://react-component.github.io/segmented
-
-### @rc-component/select 1.7.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/select/-/select-1.7.1.tgz
-- Repository: git@github.com:react-component/select.git
-- Homepage: http://github.com/react-component/select
-
-### @rc-component/slider 1.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/slider/-/slider-1.0.1.tgz
-- Repository: git@github.com:react-component/slider.git
-- Homepage: https://react-component.github.io/slider
-
-### @rc-component/steps 1.2.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/steps/-/steps-1.2.2.tgz
-- Repository:  git+ssh://git@github.com/react-component/steps.git
-- Homepage: http://github.com/react-component/steps
-
-### @rc-component/switch 1.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/switch/-/switch-1.0.3.tgz
-- Repository: git@github.com:react-component/switch.git
-- Homepage: http://github.com/react-component/switch
-
-### @rc-component/table 1.10.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/table/-/table-1.10.2.tgz
-- Repository: git@github.com:react-component/table.git
-- Homepage: http://github.com/react-component/table
-
-### @rc-component/tabs 1.9.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/tabs/-/tabs-1.9.1.tgz
-- Repository: git@github.com:react-component/tabs.git
-- Homepage: http://github.com/react-component/tabs
-
-### @rc-component/tooltip 1.4.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/tooltip/-/tooltip-1.4.0.tgz
-- Repository: git@github.com:react-component/tooltip.git
-- Homepage: http://github.com/react-component/tooltip
-
-### @rc-component/tour 2.4.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/tour/-/tour-2.4.0.tgz
-- Repository: https://github.com/react-component/tour.git
-- Homepage: https://github.com/react-component/tour
-
-### @rc-component/tree-select 1.10.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/tree-select/-/tree-select-1.10.0.tgz
-- Repository: https://github.com/react-component/tree-select.git
-- Homepage: https://github.com/react-component/tree-select
-
-### @rc-component/tree 1.3.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/tree/-/tree-1.3.2.tgz
-- Repository: git@github.com:react-component/tree.git
-- Homepage: http://github.com/react-component/tree
-
-### @rc-component/trigger 3.9.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/trigger/-/trigger-3.9.1.tgz
-- Repository: https://github.com/react-component/trigger.git
-- Homepage: https://github.com/react-component/trigger
-
-### @rc-component/upload 1.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/upload/-/upload-1.1.1.tgz
-- Repository: git@github.com:react-component/upload.git
-- Homepage: http://github.com/react-component/upload
-
-### @rc-component/util 1.11.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/util/-/util-1.11.1.tgz
-- Repository: git@github.com:react-component/util.git
-- Homepage: http://github.com/react-component/util
-
-### @rc-component/virtual-list 1.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@rc-component/virtual-list/-/virtual-list-1.2.0.tgz
-- Repository: https://github.com/react-component/virtual-list.git
-- Homepage: https://github.com/react-component/virtual-list
 
 ### @react-three/fiber 8.18.0
 
@@ -5714,262 +6073,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@streamdown/cjk/-/cjk-1.0.3.tgz
 - Repository: git+https://github.com/vercel/streamdown.git
 
-### @types/d3-array 3.2.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array
-
-### @types/d3-axis 3.0.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-axis/-/d3-axis-3.0.6.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-axis
-
-### @types/d3-brush 3.0.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-brush/-/d3-brush-3.0.6.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-brush
-
-### @types/d3-chord 3.0.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-chord/-/d3-chord-3.0.6.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-chord
-
-### @types/d3-color 3.1.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-color/-/d3-color-3.1.3.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color
-
-### @types/d3-contour 3.0.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-contour/-/d3-contour-3.0.6.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-contour
-
-### @types/d3-delaunay 6.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-delaunay/-/d3-delaunay-6.0.4.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-delaunay
-
-### @types/d3-dispatch 3.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-dispatch/-/d3-dispatch-3.0.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dispatch
-
-### @types/d3-drag 3.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-drag/-/d3-drag-3.0.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag
-
-### @types/d3-dsv 3.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-dsv/-/d3-dsv-3.0.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dsv
-
-### @types/d3-ease 3.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-ease/-/d3-ease-3.0.2.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease
-
-### @types/d3-fetch 3.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-fetch/-/d3-fetch-3.0.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-fetch
-
-### @types/d3-force 3.0.10
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-force/-/d3-force-3.0.10.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-force
-
-### @types/d3-format 3.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-format/-/d3-format-3.0.4.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-format
-
-### @types/d3-geo 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-geo/-/d3-geo-3.1.0.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-geo
-
-### @types/d3-hierarchy 3.1.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-hierarchy/-/d3-hierarchy-3.1.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-hierarchy
-
-### @types/d3-interpolate 3.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-interpolate/-/d3-interpolate-3.0.4.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate
-
-### @types/d3-path 3.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-path/-/d3-path-3.1.1.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path
-
-### @types/d3-polygon 3.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-polygon/-/d3-polygon-3.0.2.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-polygon
-
-### @types/d3-quadtree 3.0.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-quadtree/-/d3-quadtree-3.0.6.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-quadtree
-
-### @types/d3-random 3.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-random/-/d3-random-3.0.3.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-random
-
-### @types/d3-scale-chromatic 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-scale-chromatic/-/d3-scale-chromatic-3.1.0.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale-chromatic
-
-### @types/d3-scale 4.0.9
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-scale/-/d3-scale-4.0.9.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale
-
-### @types/d3-selection 3.0.11
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-selection/-/d3-selection-3.0.11.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-selection
-
-### @types/d3-shape 3.1.8
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-shape/-/d3-shape-3.1.8.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape
-
-### @types/d3-time-format 4.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-time-format/-/d3-time-format-4.0.3.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time-format
-
-### @types/d3-time 3.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-time/-/d3-time-3.0.4.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time
-
-### @types/d3-timer 3.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-timer/-/d3-timer-3.0.2.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer
-
-### @types/d3-transition 3.0.9
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-transition/-/d3-transition-3.0.9.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-transition
-
-### @types/d3-zoom 3.0.8
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3-zoom/-/d3-zoom-3.0.8.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom
-
-### @types/d3 7.4.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/d3/-/d3-7.4.3.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3
-
-### @types/debug 4.1.13
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/debug/-/debug-4.1.13.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/debug
-
 ### @types/estree-jsx 1.0.5
 
 - Ecosystem: npm
@@ -5985,14 +6088,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@types/estree/-/estree-1.0.8.tgz
 - Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 - Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree
-
-### @types/geojson 7946.0.16
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/geojson/-/geojson-7946.0.16.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson
 
 ### @types/hast 3.0.4
 
@@ -6018,14 +6113,6 @@ limitations under the License.
 - Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 - Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/katex
 
-### @types/linkify-it 5.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/linkify-it/-/linkify-it-5.0.0.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/linkify-it
-
 ### @types/markdown-it 14.1.2
 
 - Ecosystem: npm
@@ -6042,14 +6129,6 @@ limitations under the License.
 - Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 - Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mdast
 
-### @types/mdurl 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/mdurl/-/mdurl-2.0.0.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mdurl
-
 ### @types/mdx 2.0.14
 
 - Ecosystem: npm
@@ -6057,30 +6136,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@types/mdx/-/mdx-2.0.14.tgz
 - Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 - Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/mdx
-
-### @types/ms 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/ms/-/ms-2.1.0.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ms
-
-### @types/parse-json 4.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/parse-json/-/parse-json-4.0.2.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/parse-json
-
-### @types/prop-types 15.7.15
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/prop-types/-/prop-types-15.7.15.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/prop-types
 
 ### @types/react-dom 18.3.7
 
@@ -6114,22 +6169,6 @@ limitations under the License.
 - Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
 - Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react
 
-### @types/trusted-types 2.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types
-
-### @types/unist 2.0.11
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@types/unist/-/unist-2.0.11.tgz
-- Repository: https://github.com/DefinitelyTyped/DefinitelyTyped.git
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/unist
-
 ### @types/unist 3.0.3
 
 - Ecosystem: npm
@@ -6153,14 +6192,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/@ungap/structured-clone/-/structured-clone-1.3.1.tgz
 - Repository: git+https://github.com/ungap/structured-clone.git
 - Homepage: https://github.com/ungap/structured-clone#readme
-
-### @upsetjs/venn.js 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/@upsetjs/venn.js/-/venn.js-2.0.0.tgz
-- Repository: https://github.com/upsetjs/venn.js.git
-- Homepage: https://github.com/upsetjs/venn.js
 
 ### @use-gesture/core 10.3.1
 
@@ -6263,14 +6294,6 @@ limitations under the License.
 - Repository: https://github.com/react-dropzone/attr-accept.git
 - Homepage: https://github.com/react-dropzone/attr-accept#readme
 
-### babel-plugin-macros 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/babel-plugin-macros/-/babel-plugin-macros-3.1.0.tgz
-- Repository: https://github.com/kentcdodds/babel-plugin-macros
-- Homepage: https://github.com/kentcdodds/babel-plugin-macros#readme
-
 ### babel-plugin-polyfill-corejs2 0.4.17
 
 - Ecosystem: npm
@@ -6292,13 +6315,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/babel-plugin-polyfill-regenerator/-/babel-plugin-polyfill-regenerator-0.6.8.tgz
 - Repository: https://github.com/babel/babel-polyfills.git
 
-### bail 2.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/bail/-/bail-2.0.2.tgz
-- Repository: wooorm/bail
-
 ### base64-js 1.5.1
 
 - Ecosystem: npm
@@ -6306,13 +6322,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz
 - Repository: git://github.com/beatgammit/base64-js.git
 - Homepage: https://github.com/beatgammit/base64-js
-
-### baseline-browser-mapping 2.10.13
-
-- Ecosystem: npm
-- License: Apache-2.0
-- Source: https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.13.tgz
-- Repository: git+https://github.com/web-platform-dx/baseline-browser-mapping.git
 
 ### browserslist 4.28.2
 
@@ -6329,19 +6338,13 @@ limitations under the License.
 - Repository: git://github.com/feross/buffer.git
 - Homepage: https://github.com/feross/buffer
 
-### callsites 3.1.0
+### builder-util-runtime 9.7.0
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/callsites/-/callsites-3.1.0.tgz
-- Repository: sindresorhus/callsites
-
-### caniuse-lite 1.0.30001782
-
-- Ecosystem: npm
-- License: CC-BY-4.0
-- Source: https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001782.tgz
-- Repository: browserslist/caniuse-lite
+- Source: https://registry.npmjs.org/builder-util-runtime/-/builder-util-runtime-9.7.0.tgz
+- Repository: git+https://github.com/electron-userland/electron-builder.git
+- Homepage: https://github.com/electron-userland/electron-builder
 
 ### ccount 2.0.1
 
@@ -6349,34 +6352,6 @@ limitations under the License.
 - License: MIT
 - Source: https://registry.npmjs.org/ccount/-/ccount-2.0.1.tgz
 - Repository: wooorm/ccount
-
-### character-entities-html4 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/character-entities-html4/-/character-entities-html4-2.1.0.tgz
-- Repository: wooorm/character-entities-html4
-
-### character-entities-legacy 3.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/character-entities-legacy/-/character-entities-legacy-3.0.0.tgz
-- Repository: wooorm/character-entities-legacy
-
-### character-entities 2.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/character-entities/-/character-entities-2.0.2.tgz
-- Repository: wooorm/character-entities
-
-### character-reference-invalid 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/character-reference-invalid/-/character-reference-invalid-2.0.1.tgz
-- Repository: wooorm/character-reference-invalid
 
 ### chroma-js 3.2.0
 
@@ -6429,50 +6404,12 @@ limitations under the License.
 - Source: https://registry.npmjs.org/comma-separated-tokens/-/comma-separated-tokens-2.0.3.tgz
 - Repository: wooorm/comma-separated-tokens
 
-### commander 7.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/commander/-/commander-7.2.0.tgz
-- Repository: https://github.com/tj/commander.js.git
-
 ### commander 8.3.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/commander/-/commander-8.3.0.tgz
 - Repository: https://github.com/tj/commander.js.git
-
-### compute-scroll-into-view 3.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/compute-scroll-into-view/-/compute-scroll-into-view-3.1.1.tgz
-- Repository: git+https://github.com/scroll-into-view/compute-scroll-into-view.git
-- Homepage: https://scroll-into-view.dev
-
-### confbox 0.1.8
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/confbox/-/confbox-0.1.8.tgz
-- Repository: unjs/confbox
-
-### convert-source-map 1.9.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/convert-source-map/-/convert-source-map-1.9.0.tgz
-- Repository: git://github.com/thlorenz/convert-source-map.git
-- Homepage: https://github.com/thlorenz/convert-source-map
-
-### convert-source-map 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz
-- Repository: git://github.com/thlorenz/convert-source-map.git
-- Homepage: https://github.com/thlorenz/convert-source-map
 
 ### core-js-compat 3.49.0
 
@@ -6482,347 +6419,12 @@ limitations under the License.
 - Repository: git+https://github.com/zloirock/core-js.git
 - Homepage: https://core-js.io
 
-### cose-base 1.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cose-base/-/cose-base-1.0.3.tgz
-- Repository: git+https://github.com/iVis-at-Bilkent/cose-base.git
-- Homepage: https://github.com/iVis-at-Bilkent/cose-base#readme
-
-### cose-base 2.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cose-base/-/cose-base-2.2.0.tgz
-- Repository: git+https://github.com/iVis-at-Bilkent/cose-base.git
-- Homepage: https://github.com/iVis-at-Bilkent/cose-base#readme
-
-### cosmiconfig 7.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cosmiconfig/-/cosmiconfig-7.1.0.tgz
-- Repository: git+https://github.com/davidtheclark/cosmiconfig.git
-- Homepage: https://github.com/davidtheclark/cosmiconfig#readme
-
 ### csstype 3.2.3
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz
 - Repository: https://github.com/frenic/csstype
-
-### cytoscape-cose-bilkent 4.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cytoscape-cose-bilkent/-/cytoscape-cose-bilkent-4.1.0.tgz
-- Repository: https://github.com/cytoscape/cytoscape.js-cose-bilkent.git
-- Homepage: https://github.com/cytoscape/cytoscape.js-cose-bilkent
-
-### cytoscape-fcose 2.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cytoscape-fcose/-/cytoscape-fcose-2.2.0.tgz
-- Repository: https://github.com/iVis-at-Bilkent/cytoscape.js-fcose.git
-- Homepage: https://github.com/iVis-at-Bilkent/cytoscape.js-fcose
-
-### cytoscape 3.33.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/cytoscape/-/cytoscape-3.33.1.tgz
-- Repository: https://github.com/cytoscape/cytoscape.js.git
-- Homepage: http://js.cytoscape.org
-
-### d3-array 2.12.1
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/d3-array/-/d3-array-2.12.1.tgz
-- Repository: https://github.com/d3/d3-array.git
-- Homepage: https://d3js.org/d3-array/
-
-### d3-array 3.2.4
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-array/-/d3-array-3.2.4.tgz
-- Repository: https://github.com/d3/d3-array.git
-- Homepage: https://d3js.org/d3-array/
-
-### d3-axis 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-axis/-/d3-axis-3.0.0.tgz
-- Repository: https://github.com/d3/d3-axis.git
-- Homepage: https://d3js.org/d3-axis/
-
-### d3-brush 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-brush/-/d3-brush-3.0.0.tgz
-- Repository: https://github.com/d3/d3-brush.git
-- Homepage: https://d3js.org/d3-brush/
-
-### d3-chord 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-chord/-/d3-chord-3.0.1.tgz
-- Repository: https://github.com/d3/d3-chord.git
-- Homepage: https://d3js.org/d3-chord/
-
-### d3-color 3.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-color/-/d3-color-3.1.0.tgz
-- Repository: https://github.com/d3/d3-color.git
-- Homepage: https://d3js.org/d3-color/
-
-### d3-contour 4.0.2
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-contour/-/d3-contour-4.0.2.tgz
-- Repository: https://github.com/d3/d3-contour.git
-- Homepage: https://d3js.org/d3-contour/
-
-### d3-delaunay 6.0.4
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-delaunay/-/d3-delaunay-6.0.4.tgz
-- Repository: https://github.com/d3/d3-delaunay.git
-- Homepage: https://github.com/d3/d3-delaunay
-
-### d3-dispatch 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-dispatch/-/d3-dispatch-3.0.1.tgz
-- Repository: https://github.com/d3/d3-dispatch.git
-- Homepage: https://d3js.org/d3-dispatch/
-
-### d3-drag 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-drag/-/d3-drag-3.0.0.tgz
-- Repository: https://github.com/d3/d3-drag.git
-- Homepage: https://d3js.org/d3-drag/
-
-### d3-dsv 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-dsv/-/d3-dsv-3.0.1.tgz
-- Repository: https://github.com/d3/d3-dsv.git
-- Homepage: https://d3js.org/d3-dsv/
-
-### d3-ease 3.0.1
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/d3-ease/-/d3-ease-3.0.1.tgz
-- Repository: https://github.com/d3/d3-ease.git
-- Homepage: https://d3js.org/d3-ease/
-
-### d3-fetch 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-fetch/-/d3-fetch-3.0.1.tgz
-- Repository: https://github.com/d3/d3-fetch.git
-- Homepage: https://d3js.org/d3-fetch/
-
-### d3-force 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-force/-/d3-force-3.0.0.tgz
-- Repository: https://github.com/d3/d3-force.git
-- Homepage: https://d3js.org/d3-force/
-
-### d3-format 3.1.2
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-format/-/d3-format-3.1.2.tgz
-- Repository: https://github.com/d3/d3-format.git
-- Homepage: https://d3js.org/d3-format/
-
-### d3-geo 3.1.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-geo/-/d3-geo-3.1.1.tgz
-- Repository: https://github.com/d3/d3-geo.git
-- Homepage: https://d3js.org/d3-geo/
-
-### d3-hierarchy 3.1.2
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-hierarchy/-/d3-hierarchy-3.1.2.tgz
-- Repository: https://github.com/d3/d3-hierarchy.git
-- Homepage: https://d3js.org/d3-hierarchy/
-
-### d3-interpolate 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-interpolate/-/d3-interpolate-3.0.1.tgz
-- Repository: https://github.com/d3/d3-interpolate.git
-- Homepage: https://d3js.org/d3-interpolate/
-
-### d3-path 1.0.9
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/d3-path/-/d3-path-1.0.9.tgz
-- Repository: https://github.com/d3/d3-path.git
-- Homepage: https://d3js.org/d3-path/
-
-### d3-path 3.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-path/-/d3-path-3.1.0.tgz
-- Repository: https://github.com/d3/d3-path.git
-- Homepage: https://d3js.org/d3-path/
-
-### d3-polygon 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-polygon/-/d3-polygon-3.0.1.tgz
-- Repository: https://github.com/d3/d3-polygon.git
-- Homepage: https://d3js.org/d3-polygon/
-
-### d3-quadtree 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-quadtree/-/d3-quadtree-3.0.1.tgz
-- Repository: https://github.com/d3/d3-quadtree.git
-- Homepage: https://d3js.org/d3-quadtree/
-
-### d3-random 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-random/-/d3-random-3.0.1.tgz
-- Repository: https://github.com/d3/d3-random.git
-- Homepage: https://d3js.org/d3-random/
-
-### d3-sankey 0.12.3
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/d3-sankey/-/d3-sankey-0.12.3.tgz
-- Repository: https://github.com/d3/d3-sankey.git
-- Homepage: https://github.com/d3/d3-sankey
-
-### d3-scale-chromatic 3.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-scale-chromatic/-/d3-scale-chromatic-3.1.0.tgz
-- Repository: https://github.com/d3/d3-scale-chromatic.git
-- Homepage: https://d3js.org/d3-scale-chromatic/
-
-### d3-scale 4.0.2
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-scale/-/d3-scale-4.0.2.tgz
-- Repository: https://github.com/d3/d3-scale.git
-- Homepage: https://d3js.org/d3-scale/
-
-### d3-selection 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-selection/-/d3-selection-3.0.0.tgz
-- Repository: https://github.com/d3/d3-selection.git
-- Homepage: https://d3js.org/d3-selection/
-
-### d3-shape 1.3.7
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/d3-shape/-/d3-shape-1.3.7.tgz
-- Repository: https://github.com/d3/d3-shape.git
-- Homepage: https://d3js.org/d3-shape/
-
-### d3-shape 3.2.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-shape/-/d3-shape-3.2.0.tgz
-- Repository: https://github.com/d3/d3-shape.git
-- Homepage: https://d3js.org/d3-shape/
-
-### d3-time-format 4.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-time-format/-/d3-time-format-4.1.0.tgz
-- Repository: https://github.com/d3/d3-time-format.git
-- Homepage: https://d3js.org/d3-time-format/
-
-### d3-time 3.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-time/-/d3-time-3.1.0.tgz
-- Repository: https://github.com/d3/d3-time.git
-- Homepage: https://d3js.org/d3-time/
-
-### d3-timer 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-timer/-/d3-timer-3.0.1.tgz
-- Repository: https://github.com/d3/d3-timer.git
-- Homepage: https://d3js.org/d3-timer/
-
-### d3-transition 3.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-transition/-/d3-transition-3.0.1.tgz
-- Repository: https://github.com/d3/d3-transition.git
-- Homepage: https://d3js.org/d3-transition/
-
-### d3-zoom 3.0.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3-zoom/-/d3-zoom-3.0.0.tgz
-- Repository: https://github.com/d3/d3-zoom.git
-- Homepage: https://d3js.org/d3-zoom/
-
-### d3 7.9.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/d3/-/d3-7.9.0.tgz
-- Repository: https://github.com/d3/d3.git
-- Homepage: https://d3js.org
-
-### dagre-d3-es 7.0.14
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/dagre-d3-es/-/dagre-d3-es-7.0.14.tgz
-- Repository: git+https://github.com/tbo47/dagre-es.git
 
 ### dagre 0.8.5
 
@@ -6854,13 +6456,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/debug/-/debug-4.4.3.tgz
 - Repository: git://github.com/debug-js/debug.git
 
-### decode-named-character-reference 1.3.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/decode-named-character-reference/-/decode-named-character-reference-1.3.0.tgz
-- Repository: wooorm/decode-named-character-reference
-
 ### decode-uri-component 0.4.1
 
 - Ecosystem: npm
@@ -6868,27 +6463,12 @@ limitations under the License.
 - Source: https://registry.npmjs.org/decode-uri-component/-/decode-uri-component-0.4.1.tgz
 - Repository: SamVerschueren/decode-uri-component
 
-### delaunator 5.1.0
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/delaunator/-/delaunator-5.1.0.tgz
-- Repository: https://github.com/mapbox/delaunator.git
-
 ### dequal 2.0.3
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/dequal/-/dequal-2.0.3.tgz
 - Repository: lukeed/dequal
-
-### detect-node-es 1.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/detect-node-es/-/detect-node-es-1.1.0.tgz
-- Repository: https://github.com/thekashey/detect-node
-- Homepage: https://github.com/thekashey/detect-node
 
 ### devlop 1.1.0
 
@@ -6905,12 +6485,13 @@ limitations under the License.
 - Repository: git://github.com/cure53/DOMPurify.git
 - Homepage: https://github.com/cure53/DOMPurify
 
-### electron-to-chromium 1.5.329
+### electron-updater 6.8.9
 
 - Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.329.tgz
-- Repository: git+https://github.com/Kilian/electron-to-chromium.git
+- License: MIT
+- Source: https://registry.npmjs.org/electron-updater/-/electron-updater-6.8.9.tgz
+- Repository: git+https://github.com/electron-userland/electron-builder.git
+- Homepage: https://github.com/electron-userland/electron-builder
 
 ### emoji-mart 5.6.0
 
@@ -6928,42 +6509,12 @@ limitations under the License.
 - Repository: https://github.com/mathiasbynens/emoji-regex.git
 - Homepage: https://mths.be/emoji-regex
 
-### entities 4.5.0
-
-- Ecosystem: npm
-- License: BSD-2-Clause
-- Source: https://registry.npmjs.org/entities/-/entities-4.5.0.tgz
-- Repository: git://github.com/fb55/entities.git
-
 ### entities 6.0.1
 
 - Ecosystem: npm
 - License: BSD-2-Clause
 - Source: https://registry.npmjs.org/entities/-/entities-6.0.1.tgz
 - Repository: git://github.com/fb55/entities.git
-
-### error-ex 1.3.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/error-ex/-/error-ex-1.3.4.tgz
-- Repository: qix-/node-error-ex
-
-### es-errors 1.3.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz
-- Repository: git+https://github.com/ljharb/es-errors.git
-- Homepage: https://github.com/ljharb/es-errors#readme
-
-### es-toolkit 1.47.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.47.1.tgz
-- Repository: https://github.com/toss/es-toolkit.git
-- Homepage: https://es-toolkit.dev
 
 ### esast-util-from-estree 2.0.0
 
@@ -6978,20 +6529,6 @@ limitations under the License.
 - License: MIT
 - Source: https://registry.npmjs.org/esast-util-from-js/-/esast-util-from-js-2.0.1.tgz
 - Repository: syntax-tree/esast-util-from-js
-
-### escalade 3.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz
-- Repository: lukeed/escalade
-
-### escape-string-regexp 4.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz
-- Repository: sindresorhus/escape-string-regexp
 
 ### escape-string-regexp 5.0.0
 
@@ -7065,13 +6602,6 @@ limitations under the License.
 - Repository: jonschlinkert/extend-shallow
 - Homepage: https://github.com/jonschlinkert/extend-shallow
 
-### extend 3.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/extend/-/extend-3.0.2.tgz
-- Repository: https://github.com/justmoon/node-extend.git
-
 ### fast-deep-equal 3.1.3
 
 - Ecosystem: npm
@@ -7095,13 +6625,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/filter-obj/-/filter-obj-5.1.0.tgz
 - Repository: sindresorhus/filter-obj
 
-### find-root 1.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/find-root/-/find-root-1.1.0.tgz
-- Repository: git@github.com:js-n/find-root.git
-
 ### for-in 1.0.2
 
 - Ecosystem: npm
@@ -7117,6 +6640,14 @@ limitations under the License.
 - Source: https://registry.npmjs.org/framer-motion/-/framer-motion-11.18.2.tgz
 - Repository: https://github.com/motiondivision/motion/
 
+### fs-extra 10.1.0
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/fs-extra/-/fs-extra-10.1.0.tgz
+- Repository: https://github.com/jprichardson/node-fs-extra
+- Homepage: https://github.com/jprichardson/node-fs-extra
+
 ### fsevents 2.3.2
 
 - Ecosystem: npm
@@ -7125,36 +6656,12 @@ limitations under the License.
 - Repository: https://github.com/fsevents/fsevents.git
 - Homepage: https://github.com/fsevents/fsevents
 
-### function-bind 1.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz
-- Repository: https://github.com/Raynos/function-bind.git
-- Homepage: https://github.com/Raynos/function-bind
-
-### gensync 1.0.0-beta.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz
-- Repository: https://github.com/loganfsmyth/gensync.git
-- Homepage: https://github.com/loganfsmyth/gensync
-
 ### get-east-asian-width 1.6.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/get-east-asian-width/-/get-east-asian-width-1.6.0.tgz
 - Repository: sindresorhus/get-east-asian-width
-
-### get-nonce 1.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/get-nonce/-/get-nonce-1.0.1.tgz
-- Repository: git@github.com:theKashey/get-nonce.git
-- Homepage: https://github.com/theKashey/get-nonce
 
 ### get-value 2.0.6
 
@@ -7171,28 +6678,19 @@ limitations under the License.
 - Source: https://registry.npmjs.org/giscus/-/giscus-1.6.0.tgz
 - Repository: https://github.com/giscus/giscus-component.git
 
+### graceful-fs 4.2.11
+
+- Ecosystem: npm
+- License: ISC
+- Source: https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz
+- Repository: https://github.com/isaacs/node-graceful-fs
+
 ### graphlib 2.1.8
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/graphlib/-/graphlib-2.1.8.tgz
 - Repository: https://github.com/dagrejs/graphlib.git
-
-### hachure-fill 0.5.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/hachure-fill/-/hachure-fill-0.5.2.tgz
-- Repository: git+https://github.com/pshihn/hachure-fill.git
-- Homepage: https://github.com/pshihn/hachure-fill#readme
-
-### hasown 2.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz
-- Repository: git+https://github.com/inspect-js/hasOwn.git
-- Homepage: https://github.com/inspect-js/hasOwn#readme
 
 ### hast-util-from-dom 5.0.1
 
@@ -7236,13 +6734,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/hast-util-parse-selector/-/hast-util-parse-selector-4.0.0.tgz
 - Repository: syntax-tree/hast-util-parse-selector
 
-### hast-util-raw 9.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/hast-util-raw/-/hast-util-raw-9.1.0.tgz
-- Repository: syntax-tree/hast-util-raw
-
 ### hast-util-sanitize 5.0.2
 
 - Ecosystem: npm
@@ -7271,13 +6762,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/hast-util-to-jsx-runtime/-/hast-util-to-jsx-runtime-2.3.6.tgz
 - Repository: syntax-tree/hast-util-to-jsx-runtime
 
-### hast-util-to-parse5 8.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/hast-util-to-parse5/-/hast-util-to-parse5-8.0.1.tgz
-- Repository: syntax-tree/hast-util-to-parse5
-
 ### hast-util-to-text 4.0.2
 
 - Ecosystem: npm
@@ -7298,13 +6782,6 @@ limitations under the License.
 - License: MIT
 - Source: https://registry.npmjs.org/hastscript/-/hastscript-9.0.1.tgz
 - Repository: syntax-tree/hastscript
-
-### hoist-non-react-statics 3.3.2
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/hoist-non-react-statics/-/hoist-non-react-statics-3.3.2.tgz
-- Repository: git://github.com/mridgway/hoist-non-react-statics.git
 
 ### html-parse-stringify 3.0.1
 
@@ -7336,14 +6813,6 @@ limitations under the License.
 - Repository: https://github.com/i18next/i18next.git
 - Homepage: https://www.i18next.com
 
-### iconv-lite 0.6.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.6.3.tgz
-- Repository: git://github.com/ashtuchkin/iconv-lite.git
-- Homepage: https://github.com/ashtuchkin/iconv-lite
-
 ### ieee754 1.2.1
 
 - Ecosystem: npm
@@ -7367,78 +6836,12 @@ limitations under the License.
 - Repository: https://github.com/immerjs/immer.git
 - Homepage: https://github.com/immerjs/immer#readme
 
-### import-fresh 3.3.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/import-fresh/-/import-fresh-3.3.1.tgz
-- Repository: sindresorhus/import-fresh
-
-### inline-style-parser 0.2.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/inline-style-parser/-/inline-style-parser-0.2.7.tgz
-- Repository: git+https://github.com/remarkablemark/inline-style-parser.git
-
-### internmap 1.0.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/internmap/-/internmap-1.0.1.tgz
-- Repository: https://github.com/mbostock/internmap.git
-- Homepage: https://github.com/mbostock/internmap/
-
-### internmap 2.0.3
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/internmap/-/internmap-2.0.3.tgz
-- Repository: https://github.com/mbostock/internmap.git
-- Homepage: https://github.com/mbostock/internmap/
-
 ### intersection-observer 0.12.2
 
 - Ecosystem: npm
 - License: Apache-2.0
 - Source: https://registry.npmjs.org/intersection-observer/-/intersection-observer-0.12.2.tgz
 - Repository: https://github.com/GoogleChromeLabs/intersection-observer.git
-
-### is-alphabetical 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-alphabetical/-/is-alphabetical-2.0.1.tgz
-- Repository: wooorm/is-alphabetical
-
-### is-alphanumerical 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-alphanumerical/-/is-alphanumerical-2.0.1.tgz
-- Repository: wooorm/is-alphanumerical
-
-### is-arrayish 0.2.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-arrayish/-/is-arrayish-0.2.1.tgz
-- Repository: https://github.com/qix-/node-is-arrayish.git
-
-### is-core-module 2.16.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-core-module/-/is-core-module-2.16.2.tgz
-- Repository: git+https://github.com/inspect-js/is-core-module.git
-- Homepage: https://github.com/inspect-js/is-core-module
-
-### is-decimal 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-decimal/-/is-decimal-2.0.1.tgz
-- Repository: wooorm/is-decimal
 
 ### is-extendable 0.1.1
 
@@ -7456,28 +6859,6 @@ limitations under the License.
 - Repository: jonschlinkert/is-extendable
 - Homepage: https://github.com/jonschlinkert/is-extendable
 
-### is-hexadecimal 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-hexadecimal/-/is-hexadecimal-2.0.1.tgz
-- Repository: wooorm/is-hexadecimal
-
-### is-mobile 5.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-mobile/-/is-mobile-5.0.0.tgz
-- Repository: git://github.com/juliangruber/is-mobile.git
-- Homepage: https://github.com/juliangruber/is-mobile
-
-### is-plain-obj 4.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/is-plain-obj/-/is-plain-obj-4.1.0.tgz
-- Repository: sindresorhus/is-plain-obj
-
 ### is-plain-object 2.0.4
 
 - Ecosystem: npm
@@ -7485,14 +6866,6 @@ limitations under the License.
 - Source: https://registry.npmjs.org/is-plain-object/-/is-plain-object-2.0.4.tgz
 - Repository: jonschlinkert/is-plain-object
 - Homepage: https://github.com/jonschlinkert/is-plain-object
-
-### isobject 3.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/isobject/-/isobject-3.0.1.tgz
-- Repository: jonschlinkert/isobject
-- Homepage: https://github.com/jonschlinkert/isobject
 
 ### its-fine 1.2.5
 
@@ -7509,43 +6882,19 @@ limitations under the License.
 - Source: https://registry.npmjs.org/js-cookie/-/js-cookie-3.0.8.tgz
 - Repository: git://github.com/js-cookie/js-cookie.git
 
-### js-tokens 4.0.0
+### js-yaml 4.1.1
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz
-- Repository: lydell/js-tokens
+- Source: https://registry.npmjs.org/js-yaml/-/js-yaml-4.1.1.tgz
+- Repository: nodeca/js-yaml
 
-### jsesc 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz
-- Repository: https://github.com/mathiasbynens/jsesc.git
-- Homepage: https://mths.be/jsesc
-
-### json-parse-even-better-errors 2.3.1
+### jsonfile 6.2.1
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/json-parse-even-better-errors/-/json-parse-even-better-errors-2.3.1.tgz
-- Repository: https://github.com/npm/json-parse-even-better-errors
-
-### json2mq 0.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/json2mq/-/json2mq-0.2.0.tgz
-- Repository: https://github.com/akiran/json2mq
-- Homepage: https://github.com/akiran/json2mq
-
-### json5 2.2.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/json5/-/json5-2.2.3.tgz
-- Repository: git+https://github.com/json5/json5.git
-- Homepage: http://json5.org/
+- Source: https://registry.npmjs.org/jsonfile/-/jsonfile-6.2.1.tgz
+- Repository: git@github.com:jprichardson/node-jsonfile.git
 
 ### jsqr 1.4.0
 
@@ -7570,54 +6919,13 @@ limitations under the License.
 - Repository: https://github.com/KaTeX/KaTeX.git
 - Homepage: https://katex.org
 
-### khroma 2.1.0
-
-- Ecosystem: npm
-- License: SEE LICENSE
-- Source: https://registry.npmjs.org/khroma/-/khroma-2.1.0.tgz
-- Repository: github:fabiospampinato/khroma
-
-License text:
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2019-present Fabio Spampinato, Andrew Maney
-
-Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the "Software"),
-to deal in the Software without restriction, including without limitation
-the rights to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
-### layout-base 1.0.2
+### lazy-val 1.0.5
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/layout-base/-/layout-base-1.0.2.tgz
-- Repository: git+https://github.com/iVis-at-Bilkent/layout-base.git
-- Homepage: https://github.com/iVis-at-Bilkent/layout-base#readme
-
-### layout-base 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/layout-base/-/layout-base-2.0.1.tgz
-- Repository: git+https://github.com/iVis-at-Bilkent/layout-base.git
-- Homepage: https://github.com/iVis-at-Bilkent/layout-base#readme
+- Source: https://registry.npmjs.org/lazy-val/-/lazy-val-1.0.5.tgz
+- Repository: develar/lazy-val
+- Homepage: https://github.com/develar/lazy-val
 
 ### leva 0.10.1
 
@@ -7625,21 +6933,6 @@ DEALINGS IN THE SOFTWARE.
 - License: MIT
 - Source: https://registry.npmjs.org/leva/-/leva-0.10.1.tgz
 - Repository: https://github.com/pmndrs/leva.git
-
-### lines-and-columns 1.2.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/lines-and-columns/-/lines-and-columns-1.2.4.tgz
-- Repository: https://github.com/eventualbuddha/lines-and-columns.git
-- Homepage: https://github.com/eventualbuddha/lines-and-columns#readme
-
-### linkify-it 5.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/linkify-it/-/linkify-it-5.0.1.tgz
-- Repository: markdown-it/linkify-it
 
 ### lit-element 4.2.2
 
@@ -7681,11 +6974,19 @@ DEALINGS IN THE SOFTWARE.
 - Repository: lodash/lodash
 - Homepage: https://lodash.com/
 
-### lodash.debounce 4.0.8
+### lodash.escaperegexp 4.1.2
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/lodash.debounce/-/lodash.debounce-4.0.8.tgz
+- Source: https://registry.npmjs.org/lodash.escaperegexp/-/lodash.escaperegexp-4.1.2.tgz
+- Repository: lodash/lodash
+- Homepage: https://lodash.com/
+
+### lodash.isequal 4.5.0
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/lodash.isequal/-/lodash.isequal-4.5.0.tgz
 - Repository: lodash/lodash
 - Homepage: https://lodash.com/
 
@@ -7703,13 +7004,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/loose-envify/-/loose-envify-1.4.0.tgz
 - Repository: git://github.com/zertosh/loose-envify.git
 - Homepage: https://github.com/zertosh/loose-envify
-
-### lru-cache 5.1.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz
-- Repository: git://github.com/isaacs/node-lru-cache.git
 
 ### lucide-react 0.469.0
 
@@ -7763,21 +7057,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/markdown-it/-/markdown-it-14.2.0.tgz
 - Repository: markdown-it/markdown-it
 
-### markdown-table 3.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/markdown-table/-/markdown-table-3.0.4.tgz
-- Repository: wooorm/markdown-table
-
-### marked 16.4.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/marked/-/marked-16.4.2.tgz
-- Repository: git://github.com/markedjs/marked.git
-- Homepage: https://marked.js.org
-
 ### marked 17.0.6
 
 - Ecosystem: npm
@@ -7800,47 +7079,12 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/mdast-util-from-markdown/-/mdast-util-from-markdown-2.0.3.tgz
 - Repository: syntax-tree/mdast-util-from-markdown
 
-### mdast-util-gfm-autolink-literal 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-gfm-autolink-literal/-/mdast-util-gfm-autolink-literal-2.0.1.tgz
-- Repository: syntax-tree/mdast-util-gfm-autolink-literal
-
-### mdast-util-gfm-footnote 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-gfm-footnote/-/mdast-util-gfm-footnote-2.1.0.tgz
-- Repository: syntax-tree/mdast-util-gfm-footnote
-
 ### mdast-util-gfm-strikethrough 2.0.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/mdast-util-gfm-strikethrough/-/mdast-util-gfm-strikethrough-2.0.0.tgz
 - Repository: syntax-tree/mdast-util-gfm-strikethrough
-
-### mdast-util-gfm-table 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-gfm-table/-/mdast-util-gfm-table-2.0.0.tgz
-- Repository: syntax-tree/mdast-util-gfm-table
-
-### mdast-util-gfm-task-list-item 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-gfm-task-list-item/-/mdast-util-gfm-task-list-item-2.0.0.tgz
-- Repository: syntax-tree/mdast-util-gfm-task-list-item
-
-### mdast-util-gfm 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-gfm/-/mdast-util-gfm-3.1.0.tgz
-- Repository: syntax-tree/mdast-util-gfm
 
 ### mdast-util-math 3.0.0
 
@@ -7884,13 +7128,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/mdast-util-newline-to-break/-/mdast-util-newline-to-break-2.0.0.tgz
 - Repository: syntax-tree/mdast-util-newline-to-break
 
-### mdast-util-phrasing 4.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-phrasing/-/mdast-util-phrasing-4.1.0.tgz
-- Repository: syntax-tree/mdast-util-phrasing
-
 ### mdast-util-to-hast 13.2.1
 
 - Ecosystem: npm
@@ -7918,20 +7155,6 @@ DEALINGS IN THE SOFTWARE.
 - License: MIT
 - Source: https://registry.npmjs.org/mdast-util-to-markdown/-/mdast-util-to-markdown-2.1.2.tgz
 - Repository: syntax-tree/mdast-util-to-markdown
-
-### mdast-util-to-string 4.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdast-util-to-string/-/mdast-util-to-string-4.0.0.tgz
-- Repository: syntax-tree/mdast-util-to-string
-
-### mdurl 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mdurl/-/mdurl-2.0.0.tgz
-- Repository: markdown-it/mdurl
 
 ### merge-value 1.0.0
 
@@ -7976,55 +7199,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/micromark-extension-cjk-friendly/-/micromark-extension-cjk-friendly-2.0.1.tgz
 - Repository: https://github.com/tats-u/markdown-cjk-friendly
 
-### micromark-extension-gfm-autolink-literal 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-autolink-literal/-/micromark-extension-gfm-autolink-literal-2.1.0.tgz
-- Repository: micromark/micromark-extension-gfm-autolink-literal
-
-### micromark-extension-gfm-footnote 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-footnote/-/micromark-extension-gfm-footnote-2.1.0.tgz
-- Repository: micromark/micromark-extension-gfm-footnote
-
-### micromark-extension-gfm-strikethrough 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-strikethrough/-/micromark-extension-gfm-strikethrough-2.1.0.tgz
-- Repository: micromark/micromark-extension-gfm-strikethrough
-
-### micromark-extension-gfm-table 2.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-table/-/micromark-extension-gfm-table-2.1.1.tgz
-- Repository: micromark/micromark-extension-gfm-table
-
-### micromark-extension-gfm-tagfilter 2.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-tagfilter/-/micromark-extension-gfm-tagfilter-2.0.0.tgz
-- Repository: micromark/micromark-extension-gfm-tagfilter
-
-### micromark-extension-gfm-task-list-item 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm-task-list-item/-/micromark-extension-gfm-task-list-item-2.1.0.tgz
-- Repository: micromark/micromark-extension-gfm-task-list-item
-
-### micromark-extension-gfm 3.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-extension-gfm/-/micromark-extension-gfm-3.0.0.tgz
-- Repository: micromark/micromark-extension-gfm
-
 ### micromark-extension-math 3.1.0
 
 - Ecosystem: npm
@@ -8067,20 +7241,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/micromark-extension-mdxjs/-/micromark-extension-mdxjs-3.0.0.tgz
 - Repository: micromark/micromark-extension-mdxjs
 
-### micromark-factory-destination 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-factory-destination/-/micromark-factory-destination-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-factory-destination
-
-### micromark-factory-label 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-factory-label/-/micromark-factory-label-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-factory-label
-
 ### micromark-factory-mdx-expression 2.0.3
 
 - Ecosystem: npm
@@ -8094,20 +7254,6 @@ DEALINGS IN THE SOFTWARE.
 - License: MIT
 - Source: https://registry.npmjs.org/micromark-factory-space/-/micromark-factory-space-2.0.1.tgz
 - Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-factory-space
-
-### micromark-factory-title 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-factory-title/-/micromark-factory-title-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-factory-title
-
-### micromark-factory-whitespace 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-factory-whitespace/-/micromark-factory-whitespace-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-factory-whitespace
 
 ### micromark-util-character 2.1.1
 
@@ -8123,40 +7269,12 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/micromark-util-chunked/-/micromark-util-chunked-2.0.1.tgz
 - Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-chunked
 
-### micromark-util-classify-character 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-classify-character/-/micromark-util-classify-character-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-classify-character
-
 ### micromark-util-combine-extensions 2.0.1
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/micromark-util-combine-extensions/-/micromark-util-combine-extensions-2.0.1.tgz
 - Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-combine-extensions
-
-### micromark-util-decode-numeric-character-reference 2.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-decode-numeric-character-reference/-/micromark-util-decode-numeric-character-reference-2.0.2.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-numeric-character-reference
-
-### micromark-util-decode-string 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-decode-string/-/micromark-util-decode-string-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-decode-string
-
-### micromark-util-encode 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-encode/-/micromark-util-encode-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-encode
 
 ### micromark-util-events-to-acorn 2.0.3
 
@@ -8165,40 +7283,12 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/micromark-util-events-to-acorn/-/micromark-util-events-to-acorn-2.0.3.tgz
 - Repository: https://github.com/micromark/micromark-extension-mdx-expression/tree/main/packages/micromark-util-events-to-acorn
 
-### micromark-util-html-tag-name 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-html-tag-name/-/micromark-util-html-tag-name-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-html-tag-name
-
-### micromark-util-normalize-identifier 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-normalize-identifier/-/micromark-util-normalize-identifier-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-normalize-identifier
-
 ### micromark-util-resolve-all 2.0.1
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/micromark-util-resolve-all/-/micromark-util-resolve-all-2.0.1.tgz
 - Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-resolve-all
-
-### micromark-util-sanitize-uri 2.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-sanitize-uri/-/micromark-util-sanitize-uri-2.0.1.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-sanitize-uri
-
-### micromark-util-subtokenize 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/micromark-util-subtokenize/-/micromark-util-subtokenize-2.1.0.tgz
-- Repository: https://github.com/micromark/micromark/tree/main/packages/micromark-util-subtokenize
 
 ### micromark-util-symbol 2.0.1
 
@@ -8229,13 +7319,6 @@ DEALINGS IN THE SOFTWARE.
 - Repository: jonschlinkert/mixin-deep
 - Homepage: https://github.com/jonschlinkert/mixin-deep
 
-### mlly 1.8.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/mlly/-/mlly-1.8.2.tgz
-- Repository: unjs/mlly
-
 ### monaco-editor 0.52.2
 
 - Ecosystem: npm
@@ -8258,20 +7341,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/motion-utils/-/motion-utils-11.18.1.tgz
 - Repository: https://github.com/motiondivision/motion
 
-### ms 2.1.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/ms/-/ms-2.1.3.tgz
-- Repository: vercel/ms
-
-### node-releases 2.0.36
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/node-releases/-/node-releases-2.0.36.tgz
-- Repository: git+https://github.com/chicoxyzzy/node-releases.git
-
 ### numeral 2.0.6
 
 - Ecosystem: npm
@@ -8279,13 +7348,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/numeral/-/numeral-2.0.6.tgz
 - Repository: https://github.com/adamwdraper/Numeral-js
 - Homepage: http://numeraljs.com
-
-### object-assign 4.1.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz
-- Repository: sindresorhus/object-assign
 
 ### on-change 4.0.2
 
@@ -8308,35 +7370,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/oniguruma-to-es/-/oniguruma-to-es-4.3.6.tgz
 - Repository: git+https://github.com/slevithan/oniguruma-to-es.git
 
-### package-manager-detector 1.6.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/package-manager-detector/-/package-manager-detector-1.6.0.tgz
-- Repository: git+https://github.com/antfu-collective/package-manager-detector.git
-- Homepage: https://github.com/antfu-collective/package-manager-detector#readme
-
-### parent-module 1.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/parent-module/-/parent-module-1.0.1.tgz
-- Repository: sindresorhus/parent-module
-
-### parse-entities 4.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/parse-entities/-/parse-entities-4.0.2.tgz
-- Repository: wooorm/parse-entities
-
-### parse-json 5.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/parse-json/-/parse-json-5.2.0.tgz
-- Repository: sindresorhus/parse-json
-
 ### parse5 7.3.0
 
 - Ecosystem: npm
@@ -8345,43 +7378,6 @@ DEALINGS IN THE SOFTWARE.
 - Repository: git://github.com/inikulin/parse5.git
 - Homepage: https://parse5.js.org
 
-### path-data-parser 0.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/path-data-parser/-/path-data-parser-0.1.0.tgz
-- Repository: git+https://github.com/pshihn/path-data-parser.git
-- Homepage: https://github.com/pshihn/path-data-parser#readme
-
-### path-parse 1.0.7
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/path-parse/-/path-parse-1.0.7.tgz
-- Repository: https://github.com/jbgutierrez/path-parse.git
-- Homepage: https://github.com/jbgutierrez/path-parse#readme
-
-### path-type 4.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/path-type/-/path-type-4.0.0.tgz
-- Repository: sindresorhus/path-type
-
-### pathe 2.0.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz
-- Repository: unjs/pathe
-
-### picocolors 1.1.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz
-- Repository: alexeyraspopov/picocolors
-
 ### pinyin-pro 3.28.0
 
 - Ecosystem: npm
@@ -8389,13 +7385,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/pinyin-pro/-/pinyin-pro-3.28.0.tgz
 - Repository: git+https://github.com/zh-lx/pinyin-pro.git
 - Homepage: https://pinyin-pro.cn
-
-### pkg-types 1.3.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/pkg-types/-/pkg-types-1.3.1.tgz
-- Repository: unjs/pkg-types
 
 ### playwright-core 1.60.0
 
@@ -8412,22 +7401,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/playwright/-/playwright-1.60.0.tgz
 - Repository: git+https://github.com/microsoft/playwright.git
 - Homepage: https://playwright.dev
-
-### points-on-curve 0.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/points-on-curve/-/points-on-curve-0.2.0.tgz
-- Repository: git+https://github.com/pshihn/bezier-points.git
-- Homepage: https://github.com/pshihn/bezier-points#readme
-
-### points-on-path 0.2.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/points-on-path/-/points-on-path-0.2.1.tgz
-- Repository: git+https://github.com/pshihn/points-on-path.git
-- Homepage: https://github.com/pshihn/points-on-path#readme
 
 ### polished 4.3.1
 
@@ -8451,14 +7424,6 @@ DEALINGS IN THE SOFTWARE.
 - License: MIT
 - Source: https://registry.npmjs.org/property-information/-/property-information-7.1.0.tgz
 - Repository: wooorm/property-information
-
-### punycode.js 2.3.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/punycode.js/-/punycode.js-2.3.1.tgz
-- Repository: https://github.com/mathiasbynens/punycode.js.git
-- Homepage: https://mths.be/punycode
 
 ### query-string 9.4.0
 
@@ -8561,14 +7526,6 @@ DEALINGS IN THE SOFTWARE.
 - Repository: https://github.com/i18next/react-i18next.git
 - Homepage: https://github.com/i18next/react-i18next
 
-### react-is 16.13.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/react-is/-/react-is-16.13.1.tgz
-- Repository: https://github.com/facebook/react.git
-- Homepage: https://reactjs.org/
-
 ### react-is 18.3.1
 
 - Ecosystem: npm
@@ -8607,13 +7564,6 @@ DEALINGS IN THE SOFTWARE.
 - Repository: https://github.com/facebook/react.git
 - Homepage: https://reactjs.org/
 
-### react-remove-scroll-bar 2.3.8
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/react-remove-scroll-bar/-/react-remove-scroll-bar-2.3.8.tgz
-- Repository: https://github.com/theKashey/react-remove-scroll-bar
-
 ### react-remove-scroll 2.7.2
 
 - Ecosystem: npm
@@ -8628,14 +7578,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/react-rnd/-/react-rnd-10.5.3.tgz
 - Repository: https://github.com/bokuweb/react-rnd.git
 - Homepage: https://github.com/bokuweb/react-rnd
-
-### react-style-singleton 2.2.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/react-style-singleton/-/react-style-singleton-2.2.3.tgz
-- Repository: https://github.com/theKashey/react-style-singleton
-- Homepage: https://github.com/theKashey/react-style-singleton#readme
 
 ### react-use-measure 2.1.7
 
@@ -8808,14 +7750,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/remark-rehype/-/remark-rehype-11.1.2.tgz
 - Repository: remarkjs/remark-rehype
 
-### remark-stringify 11.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/remark-stringify/-/remark-stringify-11.0.0.tgz
-- Repository: https://github.com/remarkjs/remark/tree/main/packages/remark-stringify
-- Homepage: https://remark.js.org
-
 ### remend 1.3.0
 
 - Ecosystem: npm
@@ -8832,49 +7766,12 @@ DEALINGS IN THE SOFTWARE.
 - Repository: https://github.com/que-etc/resize-observer-polyfill.git
 - Homepage: https://github.com/que-etc/resize-observer-polyfill
 
-### resolve-from 4.0.0
+### sax 1.6.0
 
 - Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/resolve-from/-/resolve-from-4.0.0.tgz
-- Repository: sindresorhus/resolve-from
-
-### resolve 1.22.12
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/resolve/-/resolve-1.22.12.tgz
-- Repository: ssh://github.com/browserify/resolve.git
-
-### robust-predicates 3.0.3
-
-- Ecosystem: npm
-- License: Unlicense
-- Source: https://registry.npmjs.org/robust-predicates/-/robust-predicates-3.0.3.tgz
-- Repository: https://github.com/mourner/robust-predicates.git
-
-### roughjs 4.6.6
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/roughjs/-/roughjs-4.6.6.tgz
-- Repository: git+https://github.com/pshihn/rough.git
-- Homepage: https://roughjs.com
-
-### rw 1.3.3
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/rw/-/rw-1.3.3.tgz
-- Repository: http://github.com/mbostock/rw.git
-- Homepage: https://github.com/mbostock/rw
-
-### safer-buffer 2.1.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz
-- Repository: git+https://github.com/ChALkeR/safer-buffer.git
+- License: BlueOak-1.0.0
+- Source: https://registry.npmjs.org/sax/-/sax-1.6.0.tgz
+- Repository: git+ssh://git@github.com/isaacs/sax-js.git
 
 ### scheduler 0.21.0
 
@@ -8884,28 +7781,12 @@ DEALINGS IN THE SOFTWARE.
 - Repository: https://github.com/facebook/react.git
 - Homepage: https://reactjs.org/
 
-### scheduler 0.23.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/scheduler/-/scheduler-0.23.2.tgz
-- Repository: https://github.com/facebook/react.git
-- Homepage: https://reactjs.org/
-
 ### screenfull 5.2.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/screenfull/-/screenfull-5.2.0.tgz
 - Repository: sindresorhus/screenfull.js
-
-### scroll-into-view-if-needed 3.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/scroll-into-view-if-needed/-/scroll-into-view-if-needed-3.1.0.tgz
-- Repository: git+https://github.com/scroll-into-view/scroll-into-view-if-needed.git
-- Homepage: https://scroll-into-view.dev
 
 ### semver-compare 1.0.0
 
@@ -8922,6 +7803,13 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/semver/-/semver-6.3.1.tgz
 - Repository: https://github.com/npm/node-semver.git
 
+### semver 7.7.4
+
+- Ecosystem: npm
+- License: ISC
+- Source: https://registry.npmjs.org/semver/-/semver-7.7.4.tgz
+- Repository: git+https://github.com/npm/node-semver.git
+
 ### set-value 2.0.1
 
 - Ecosystem: npm
@@ -8937,14 +7825,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/shiki/-/shiki-3.23.0.tgz
 - Repository: git+https://github.com/shikijs/shiki.git
 - Homepage: https://github.com/shikijs/shiki#readme
-
-### source-map 0.5.7
-
-- Ecosystem: npm
-- License: BSD-3-Clause
-- Source: https://registry.npmjs.org/source-map/-/source-map-0.5.7.tgz
-- Repository: http://github.com/mozilla/source-map.git
-- Homepage: https://github.com/mozilla/source-map
 
 ### source-map 0.7.6
 
@@ -8984,13 +7864,6 @@ DEALINGS IN THE SOFTWARE.
 - Repository: git+https://github.com/vercel/streamdown.git
 - Homepage: https://streamdown.ai
 
-### string-convert 0.2.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/string-convert/-/string-convert-0.2.1.tgz
-- Repository: https://github.com/akiran/string-convert
-
 ### stringify-entities 4.0.4
 
 - Ecosystem: npm
@@ -9005,21 +7878,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/style-to-js/-/style-to-js-1.1.21.tgz
 - Repository: git+https://github.com/remarkablemark/style-to-js.git
 
-### style-to-object 1.0.14
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/style-to-object/-/style-to-object-1.0.14.tgz
-- Repository: git+https://github.com/remarkablemark/style-to-object.git
-
-### stylis 4.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/stylis/-/stylis-4.2.0.tgz
-- Repository: https://github.com/thysultan/stylis.js
-- Homepage: https://github.com/thysultan/stylis.js
-
 ### stylis 4.3.6
 
 - Ecosystem: npm
@@ -9027,14 +7885,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/stylis/-/stylis-4.3.6.tgz
 - Repository: https://github.com/thysultan/stylis.js
 - Homepage: https://github.com/thysultan/stylis.js
-
-### supports-preserve-symlinks-flag 1.0.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz
-- Repository: git+https://github.com/inspect-js/node-supports-preserve-symlinks-flag.git
-- Homepage: https://github.com/inspect-js/node-supports-preserve-symlinks-flag#readme
 
 ### suspend-react 0.1.3
 
@@ -9076,42 +7926,12 @@ DEALINGS IN THE SOFTWARE.
 - Repository: https://github.com/mrdoob/three.js
 - Homepage: https://threejs.org/
 
-### throttle-debounce 5.0.2
+### tiny-typed-emitter 2.1.0
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/throttle-debounce/-/throttle-debounce-5.0.2.tgz
-- Repository: git+https://github.com/niksy/throttle-debounce.git
-- Homepage: https://github.com/niksy/throttle-debounce#readme
-
-### tinyexec 1.0.4
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/tinyexec/-/tinyexec-1.0.4.tgz
-- Repository: git+https://github.com/tinylibs/tinyexec.git
-- Homepage: https://github.com/tinylibs/tinyexec#readme
-
-### trim-lines 3.0.1
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/trim-lines/-/trim-lines-3.0.1.tgz
-- Repository: wooorm/trim-lines
-
-### trough 2.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/trough/-/trough-2.2.0.tgz
-- Repository: wooorm/trough
-
-### ts-dedent 2.2.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/ts-dedent/-/ts-dedent-2.2.0.tgz
-- Repository: https://github.com/tamino-martinius/node-ts-dedent.git
+- Source: https://registry.npmjs.org/tiny-typed-emitter/-/tiny-typed-emitter-2.1.0.tgz
+- Repository: https://github.com/binier/tiny-typed-emitter.git
 
 ### ts-md5 1.3.1
 
@@ -9144,20 +7964,6 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz
 - Repository: https://github.com/microsoft/TypeScript.git
 - Homepage: https://www.typescriptlang.org/
-
-### uc.micro 2.1.0
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/uc.micro/-/uc.micro-2.1.0.tgz
-- Repository: markdown-it/uc.micro
-
-### ufo 1.6.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/ufo/-/ufo-1.6.3.tgz
-- Repository: unjs/ufo
 
 ### unified 11.0.5
 
@@ -9223,12 +8029,13 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/unist-util-visit/-/unist-util-visit-5.1.0.tgz
 - Repository: syntax-tree/unist-util-visit
 
-### update-browserslist-db 1.2.3
+### universalify 2.0.1
 
 - Ecosystem: npm
 - License: MIT
-- Source: https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz
-- Repository: browserslist/update-db
+- Source: https://registry.npmjs.org/universalify/-/universalify-2.0.1.tgz
+- Repository: git+https://github.com/RyanZim/universalify.git
+- Homepage: https://github.com/RyanZim/universalify#readme
 
 ### url-join 5.0.0
 
@@ -9237,27 +8044,12 @@ DEALINGS IN THE SOFTWARE.
 - Source: https://registry.npmjs.org/url-join/-/url-join-5.0.0.tgz
 - Repository: git://github.com/jfromaniello/url-join.git
 
-### use-callback-ref 1.3.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/use-callback-ref/-/use-callback-ref-1.3.3.tgz
-- Repository: https://github.com/theKashey/use-callback-ref/
-
 ### use-merge-value 1.2.0
 
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/use-merge-value/-/use-merge-value-1.2.0.tgz
 - Repository: https://github.com/chenshuai2144/merge-value-hooks
-
-### use-sidecar 1.1.3
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/use-sidecar/-/use-sidecar-1.1.3.tgz
-- Repository: https://github.com/theKashey/use-sidecar
-- Homepage: https://github.com/theKashey/use-sidecar
 
 ### use-sync-external-store 1.6.0
 
@@ -9271,13 +8063,6 @@ DEALINGS IN THE SOFTWARE.
 - Ecosystem: npm
 - License: MIT
 - Source: https://registry.npmjs.org/uuid/-/uuid-11.1.0.tgz
-- Repository: https://github.com/uuidjs/uuid.git
-
-### uuid 13.0.2
-
-- Ecosystem: npm
-- License: MIT
-- Source: https://registry.npmjs.org/uuid/-/uuid-13.0.2.tgz
 - Repository: https://github.com/uuidjs/uuid.git
 
 ### v8n 1.5.1
@@ -9345,21 +8130,6 @@ DEALINGS IN THE SOFTWARE.
 - License: MIT
 - Source: https://registry.npmjs.org/xterm/-/xterm-5.3.0.tgz
 - Repository: https://github.com/xtermjs/xterm.js
-
-### yallist 3.1.1
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz
-- Repository: git+https://github.com/isaacs/yallist.git
-
-### yaml 1.10.3
-
-- Ecosystem: npm
-- License: ISC
-- Source: https://registry.npmjs.org/yaml/-/yaml-1.10.3.tgz
-- Repository: github:eemeli/yaml
-- Homepage: https://eemeli.org/yaml/v1/
 
 ### zustand 3.7.2
 

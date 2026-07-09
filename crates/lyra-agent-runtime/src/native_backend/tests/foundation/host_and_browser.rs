@@ -172,6 +172,21 @@ fn direct_web_search_model_call_is_not_unknown_provider_tool() {
 }
 
 #[test]
+fn legacy_browser_search_open_url_dispatches_to_browser_navigate() {
+    let call = ModelToolCall {
+        id: "legacy-browser-open-url".to_string(),
+        name: "browser-search.openUrl".to_string(),
+        arguments: json!({ "url": "https://example.com" }),
+    };
+    let canonical = legacy_provider_tool_fs_call(&call).expect("legacy call mapped");
+
+    assert_eq!(canonical.id, call.id);
+    assert_eq!(canonical.name, lyra_tool_fs_core::TOOL_FS_RUN);
+    assert_eq!(canonical.arguments["path"], "/tools/browser/navigate");
+    assert_eq!(canonical.arguments["args"], call.arguments);
+}
+
+#[test]
 fn browser_ax_act_injects_trusted_one_time_authorization_after_permission() {
     let backend = LyraAgentBackend;
     let created = backend

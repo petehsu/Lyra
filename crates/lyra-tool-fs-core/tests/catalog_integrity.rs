@@ -67,7 +67,7 @@ fn search_top_results_for_core_intents_stay_stable() {
         (
             "run terminal command",
             ToolScene::Terminal,
-            "/tools/terminal/run",
+            "/tools/shell/run",
         ),
         (
             "deep web research",

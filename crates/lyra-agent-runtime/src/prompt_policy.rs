@@ -1,11 +1,11 @@
-use crate::prompt_contract::{
-    PromptRuntimeContract, current_prompt_runtime_contract, prompt_runtime_contract_matches,
-};
-use crate::prompt_templates::{render_template, templates_fingerprint};
 use crate::native_backend::tools::{
     CodeGraphFragmentReport, CodeGraphSignals, extract_codegraph_signals,
 };
 use crate::persona::ComputedPersona;
+use crate::prompt_contract::{
+    PromptRuntimeContract, current_prompt_runtime_contract, prompt_runtime_contract_matches,
+};
+use crate::prompt_templates::{render_template, templates_fingerprint};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -181,12 +181,9 @@ pub fn persona_context_from_value(value: &Value) -> PersonaContext {
             .filter(|text| !text.is_empty())
             .map(str::to_string)
     };
-    let read_u64 = |key: &str| -> Option<u64> {
-        value.get(key).and_then(Value::as_u64)
-    };
-    let read_i32 = |key: &str| -> Option<i32> {
-        value.get(key).and_then(Value::as_i64).map(|n| n as i32)
-    };
+    let read_u64 = |key: &str| -> Option<u64> { value.get(key).and_then(Value::as_u64) };
+    let read_i32 =
+        |key: &str| -> Option<i32> { value.get(key).and_then(Value::as_i64).map(|n| n as i32) };
     let screen = value.get("screen");
     PersonaContext {
         current_time: read_string("currentTime"),
@@ -196,10 +193,21 @@ pub fn persona_context_from_value(value: &Value) -> PersonaContext {
         current_epoch_ms: read_u64("currentEpochMs"),
         timezone: read_string("timezone"),
         timezone_offset_minutes: read_i32("timezoneOffsetMinutes"),
-        screen_width: screen.and_then(|s| s.get("width")).and_then(Value::as_u64).map(|n| n as u32),
-        screen_height: screen.and_then(|s| s.get("height")).and_then(Value::as_u64).map(|n| n as u32),
-        screen_scale_factor: screen.and_then(|s| s.get("scaleFactor")).and_then(Value::as_f64),
-        screen_display_count: screen.and_then(|s| s.get("displayCount")).and_then(Value::as_u64).map(|n| n as u32),
+        screen_width: screen
+            .and_then(|s| s.get("width"))
+            .and_then(Value::as_u64)
+            .map(|n| n as u32),
+        screen_height: screen
+            .and_then(|s| s.get("height"))
+            .and_then(Value::as_u64)
+            .map(|n| n as u32),
+        screen_scale_factor: screen
+            .and_then(|s| s.get("scaleFactor"))
+            .and_then(Value::as_f64),
+        screen_display_count: screen
+            .and_then(|s| s.get("displayCount"))
+            .and_then(Value::as_u64)
+            .map(|n| n as u32),
     }
 }
 
@@ -398,10 +406,7 @@ impl PromptSectionCandidate {
 /// count, screen geometry, and workspace layout (active app/tab, pane count).
 /// Degrades gracefully — if a datum is missing the corresponding clause is
 /// omitted, and if ALL data is missing the function returns `None`.
-fn build_spatiotemporal_brief(
-    persona: &PersonaContext,
-    runtime_context: &Value,
-) -> Option<String> {
+fn build_spatiotemporal_brief(persona: &PersonaContext, runtime_context: &Value) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
 
     // ── Time ──
@@ -422,7 +427,10 @@ fn build_spatiotemporal_brief(
     }
 
     // ── Session temporal ──
-    if let Some(st) = runtime_context.get("spatiotemporal").and_then(|s| s.get("session")) {
+    if let Some(st) = runtime_context
+        .get("spatiotemporal")
+        .and_then(|s| s.get("session"))
+    {
         let mut session_parts: Vec<String> = Vec::new();
         if let Some(age) = st.get("ageSeconds").and_then(Value::as_u64) {
             let mins = age / 60;
@@ -437,9 +445,15 @@ fn build_spatiotemporal_brief(
             session_parts.push(format!("{turns} turn{}", if turns == 1 { "" } else { "s" }));
         }
         if !session_parts.is_empty() {
-            parts.push(format!("This session has been going for {}", session_parts.join(", ")));
+            parts.push(format!(
+                "This session has been going for {}",
+                session_parts.join(", ")
+            ));
         }
-        if let Some(idle) = st.get("secondsSinceLastInteraction").and_then(Value::as_u64) {
+        if let Some(idle) = st
+            .get("secondsSinceLastInteraction")
+            .and_then(Value::as_u64)
+        {
             if idle > 0 {
                 parts.push(format!("{idle} sec since the last message."));
             }
@@ -465,7 +479,10 @@ fn build_spatiotemporal_brief(
     }
 
     // ── Workspace spatial ──
-    if let Some(ws) = runtime_context.get("spatiotemporal").and_then(|s| s.get("workspace")) {
+    if let Some(ws) = runtime_context
+        .get("spatiotemporal")
+        .and_then(|s| s.get("workspace"))
+    {
         let mut ws_parts: Vec<String> = Vec::new();
         if let Some(app) = ws.get("foregroundApp").and_then(Value::as_str) {
             ws_parts.push(format!("you are in {app}"));
@@ -761,9 +778,8 @@ fn render_prompt_sections(
 }
 
 fn render_prompt_template(name: &str, context: Value) -> String {
-    render_template(name, context).unwrap_or_else(|error| {
-        panic!("failed to render prompt template {name}: {error}")
-    })
+    render_template(name, context)
+        .unwrap_or_else(|error| panic!("failed to render prompt template {name}: {error}"))
 }
 
 /// Build the P6 CodeGraph fragment audit report from runtime_context signals.
@@ -777,9 +793,23 @@ fn extract_codegraph_fragment_report(
     if !signals.has_content() {
         return None;
     }
-    let intent_queries_executed = signals.queries_executed.iter().filter(|q| !q.tool.is_empty()).count();
+    let intent_queries_executed = signals
+        .queries_executed
+        .iter()
+        .filter(|q| !q.tool.is_empty())
+        .count();
     let estimated_tokens = signals.estimated_fragment_tokens();
-    let dropped_symbols: Vec<String> = signals.mentioned_symbols.iter().filter(|s| !signals.resolved_neighborhoods.iter().any(|nb| &nb.name == *s)).cloned().collect();
+    let dropped_symbols: Vec<String> = signals
+        .mentioned_symbols
+        .iter()
+        .filter(|s| {
+            !signals
+                .resolved_neighborhoods
+                .iter()
+                .any(|nb| &nb.name == *s)
+        })
+        .cloned()
+        .collect();
     let impact_attached = signals.impact_analysis.is_some();
     let tests_attached = !signals.related_tests.is_empty();
     let circular_deps_attached = !signals.circular_deps.is_empty();
@@ -1111,7 +1141,9 @@ mod tests {
         assert!(prompt.contains("Blocking input only comes thru structured interaction"));
         assert!(prompt.contains("Plain text questions r final/non-blocking"));
         assert!(prompt.contains("lyra_clarification_ask shows panel"));
+        assert!(prompt.contains("Vague build requests"));
         assert!(prompt.contains("This is ur computer"));
+        assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
         assert!(prompt.contains("Talk direct, grounded, technical, accountable"));
         assert!(prompt.contains("lyra-sensitive-value-ref"));
         assert!(prompt.contains("opaque refs owned by u"));
@@ -1136,8 +1168,16 @@ mod tests {
         assert!(prompt.contains("styles.refero.design"));
         assert!(prompt.contains("not a requirement"));
         assert!(prompt.contains("DESIGN.md"));
+        assert!(prompt.contains("/tools/design/extract_reference"));
+        assert!(prompt.contains("DesignReferenceReport"));
+        assert!(prompt.contains("Visual capture unavailable"));
+        assert!(prompt.contains("DOM/CSS extraction"));
+        assert!(prompt.contains("implementation must carry those exact extracted values"));
+        assert!(prompt.contains("sticky/fixed, transitions, animations, scroll snap"));
         assert!(prompt.contains("stick w it"));
         assert!(prompt.contains("Don't mix tokens"));
+        assert!(prompt.contains("no alert() buttons"));
+        assert!(prompt.contains("href=\"#\""));
         // ponytail: asset/commercial awareness
         assert!(prompt.contains("Pinterest"));
         assert!(prompt.contains("Pexels"));
@@ -1184,6 +1224,7 @@ mod tests {
         // ponytail: compact internet awareness one-liners
         assert!(prompt.contains("browser search directly"));
         assert!(prompt.contains("keep reference open while working"));
+        assert!(prompt.contains("One-shot cmd/test/build/listing -> shell"));
         // ponytail: compact deep-fusion one-liners
         assert!(prompt.contains("Code first, then"));
         assert!(prompt.contains("No unrequested abstractions"));
@@ -1191,7 +1232,14 @@ mod tests {
         assert!(prompt.contains("styles.refero.design"));
         assert!(prompt.contains("not a requirement"));
         assert!(prompt.contains("DESIGN.md"));
+        assert!(prompt.contains("/tools/design/extract_reference"));
+        assert!(prompt.contains("DesignReferenceReport"));
+        assert!(prompt.contains("Visual capture unavailable"));
+        assert!(prompt.contains("DOM/CSS extraction"));
+        assert!(prompt.contains("implementation must carry those exact extracted values"));
+        assert!(prompt.contains("sticky/fixed, transitions, animations, scroll snap"));
         assert!(prompt.contains("don't mix"));
+        assert!(prompt.contains("no alert() CTAs"));
         // ponytail: compact asset/commercial awareness
         assert!(prompt.contains("Pinterest"));
         assert!(prompt.contains("Commercial-grade quality"));
@@ -1258,7 +1306,11 @@ mod tests {
         assert!(report.prompt.contains("lyra_clarification_ask"));
         assert!(report.prompt.contains("Current runtime context"));
         assert!(report.prompt.contains("Prompt accounting"));
-        assert!(!report.prompt.contains("Talk direct, grounded, technical, accountable"));
+        assert!(
+            !report
+                .prompt
+                .contains("Talk direct, grounded, technical, accountable")
+        );
         assert!(!report.prompt.contains("Browser scene module"));
         assert!(
             report
@@ -1284,7 +1336,11 @@ mod tests {
             report.refresh_reason,
             PromptRefreshReason::ContractMismatchFullRefresh
         );
-        assert!(report.prompt.contains("Talk direct, grounded, technical, accountable"));
+        assert!(
+            report
+                .prompt
+                .contains("Talk direct, grounded, technical, accountable")
+        );
     }
 
     #[test]
@@ -1356,10 +1412,22 @@ mod tests {
         assert!(report.scene_modules.contains(&"browser".to_string()));
         assert!(report.scene_modules.contains(&"citation".to_string()));
         assert!(report.scene_modules.contains(&"image".to_string()));
-        assert!(report.prompt.contains("Browser/web UI: discover caps by intent"));
-        assert!(report.prompt.contains("Transcript cites anchor to prior msgs"));
+        assert!(
+            report
+                .prompt
+                .contains("Browser/web UI: discover caps by intent")
+        );
+        assert!(
+            report
+                .prompt
+                .contains("Transcript cites anchor to prior msgs")
+        );
         assert!(report.prompt.contains("Inline image markers show where"));
-        assert!(!report.prompt.contains("Talk direct, grounded, technical, accountable"));
+        assert!(
+            !report
+                .prompt
+                .contains("Talk direct, grounded, technical, accountable")
+        );
     }
 
     #[test]
@@ -1386,7 +1454,11 @@ mod tests {
 
         assert_eq!(report.prompt_mode, PromptDeliveryMode::LeanExperimental);
         assert!(report.scene_modules.contains(&"browser".to_string()));
-        assert!(report.prompt.contains("Browser/web UI: discover caps by intent"));
+        assert!(
+            report
+                .prompt
+                .contains("Browser/web UI: discover caps by intent")
+        );
     }
 
     #[test]

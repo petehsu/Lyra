@@ -18,11 +18,12 @@ fn registry_lists_root_and_pages_domain_tools() {
             .any(|entry| entry.name == "terminal")
     );
     assert!(
-        !root
-            .directories
+        root.directories
             .iter()
-            .any(|entry| matches!(entry.name.as_str(), "filesystem" | "shell" | "git"))
+            .any(|entry| entry.name == "filesystem")
     );
+    assert!(root.directories.iter().any(|entry| entry.name == "shell"));
+    assert!(!root.directories.iter().any(|entry| entry.name == "git"));
 
     let web = registry
         .list("/tools/web", 0, 2, ToolScene::ProjectCode)
@@ -100,14 +101,13 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
     assert!(
         tool_doc["content"]
             .as_str()
-            .is_some_and(|content| content.contains("current web search"))
+            .is_some_and(|content| content.contains("zero-config public web search"))
     );
 
-    assert!(
-        registry
-            .inspect_path("/tools/filesystem/read_file")
-            .is_err()
-    );
+    let file_read = registry
+        .inspect_path("/tools/filesystem/read_file")
+        .expect("filesystem read path");
+    assert_eq!(file_read.handle.as_deref(), Some("read_file"));
     let by_path = registry.inspect_path("/tools/web/search").expect("path");
     assert_eq!(by_path.handle.as_deref(), Some("web_search"));
     assert_eq!(by_path.input_schema["type"], "object");
@@ -232,6 +232,121 @@ fn web_fetch_schema_exposes_browser_engine_options() {
 }
 
 #[test]
+fn design_extract_reference_schema_and_search_prefer_design_evidence() {
+    let registry = ToolFsRegistry::default();
+    let manifest = registry
+        .inspect_path("/tools/design/extract_reference")
+        .expect("design extract manifest");
+    assert_eq!(manifest.handle.as_deref(), Some("design_extract_reference"));
+    assert_eq!(manifest.input_schema["required"], json!(["url"]));
+    let properties = &manifest.input_schema["properties"];
+    assert!(properties["url"].is_object());
+    assert!(properties["targetSelector"].is_object());
+    assert!(properties["includeScreenshot"].is_object());
+    assert!(properties["includePageshot"].is_object());
+    assert!(properties["maxElements"].is_object());
+    assert!(properties["timeoutMs"].is_object());
+
+    let chinese = registry
+        .search(
+            "提取网站颜色 字体 间距 占用面积",
+            None,
+            0,
+            8,
+            ToolScene::Browser,
+        )
+        .expect("design extraction search");
+    assert_eq!(
+        chinese.results.first().map(|result| result.path.as_str()),
+        Some("/tools/design/extract_reference")
+    );
+    assert!(chinese.results.first().is_some_and(|result| {
+        result
+            .match_reason
+            .contains("design-reference-extraction intent boost")
+    }));
+
+    let clone = registry
+        .search(
+            "clone website visual style design tokens computed style",
+            None,
+            0,
+            10,
+            ToolScene::Browser,
+        )
+        .expect("clone design search");
+    let extract_index = clone
+        .results
+        .iter()
+        .position(|result| result.path == "/tools/design/extract_reference")
+        .expect("extract result");
+    let see_index = clone
+        .results
+        .iter()
+        .position(|result| result.path == "/tools/browser/see")
+        .unwrap_or(usize::MAX);
+    assert!(extract_index < see_index);
+}
+
+#[test]
+fn zero_config_public_web_routes_use_existing_web_tools() {
+    let registry = ToolFsRegistry::default();
+
+    let rss = registry
+        .search("读一下这个 RSS feed", None, 0, 5, ToolScene::General)
+        .expect("rss search");
+    assert_eq!(
+        rss.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/fetch")
+    );
+
+    let youtube = registry
+        .search("这个 YouTube 视频讲了什么", None, 0, 5, ToolScene::General)
+        .expect("youtube search");
+    assert_eq!(
+        youtube.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/fetch")
+    );
+
+    let bilibili = registry
+        .search("B站 搜 AI 教程", None, 0, 5, ToolScene::General)
+        .expect("bilibili search");
+    assert_eq!(
+        bilibili.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/search")
+    );
+
+    let v2ex = registry
+        .search("V2EX 热门帖子", None, 0, 5, ToolScene::General)
+        .expect("v2ex search");
+    assert_eq!(
+        v2ex.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/fetch")
+    );
+
+    let research = registry
+        .search(
+            "全网调研 大家怎么评价 Cursor",
+            None,
+            0,
+            5,
+            ToolScene::General,
+        )
+        .expect("research search");
+    assert_eq!(
+        research.results.first().map(|result| result.path.as_str()),
+        Some("/tools/web/research")
+    );
+    assert!(
+        research
+            .results
+            .iter()
+            .chain(rss.results.iter())
+            .all(|result| !result.path.starts_with("/tools/agent-reach/"))
+    );
+}
+
+#[test]
 fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     let registry = ToolFsRegistry::default();
     let edit = registry
@@ -251,9 +366,8 @@ fn registry_search_finds_tools_by_natural_language_and_fuzzy_terms() {
     assert!(
         command
             .results
-            .iter()
-            .all(|result| !result.path.starts_with("/tools/shell/")
-                && !result.path.starts_with("/tools/filesystem/"))
+            .first()
+            .is_some_and(|result| result.path == "/tools/shell/run")
     );
 
     let git = registry
@@ -502,13 +616,30 @@ fn registry_search_handles_human_computer_intents_without_list_fallback() {
         .expect("terminal shell search");
     assert_eq!(
         terminal.results.first().map(|result| result.path.as_str()),
-        Some("/tools/terminal/run")
+        Some("/tools/shell/run")
     );
-    assert!(terminal.results.first().is_some_and(|result| {
-        result
-            .match_reason
-            .contains("interactive-terminal intent boost")
-    }));
+    assert!(
+        terminal
+            .results
+            .first()
+            .is_some_and(|result| { result.match_reason.contains("bounded-shell intent boost") })
+    );
+
+    let interactive_terminal = registry
+        .search(
+            "interactive terminal session read terminal output",
+            None,
+            0,
+            8,
+            ToolScene::Terminal,
+        )
+        .expect("interactive terminal search");
+    assert!(
+        interactive_terminal
+            .results
+            .first()
+            .is_some_and(|result| result.path.starts_with("/tools/terminal/"))
+    );
 
     let edit = registry
         .search(
@@ -575,7 +706,7 @@ fn registry_search_returns_fallback_for_unknown_query() {
         )
         .expect("search response");
     assert!(response.results.is_empty());
-    assert_eq!(response.fallback_list_path, "/tools/workbench");
+    assert_eq!(response.fallback_list_path, "/tools/filesystem");
     assert!(response.recommended_next_action.contains("tool_fs_list"));
 }
 
