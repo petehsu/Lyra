@@ -250,7 +250,7 @@ fn plan_tool_label(tool_name: &str) -> &'static str {
     }
 }
 
-fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
+pub(crate) fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
     let title = string_field(input, "title")?;
     let reason = optional_string_field(input, "reason");
     let scope = optional_string_field(input, "scope");
@@ -258,6 +258,18 @@ fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
     let version_id = format!("plan-version-{}", Uuid::new_v4());
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let scope_info = plan_scope_from_session(session);
+        let design_context = session
+            .snapshot
+            .get("activeDesignContext")
+            .filter(|context| context.is_object())
+            .map(|context| {
+                json!({
+                    "brand": context.get("brand").cloned().unwrap_or(Value::Null),
+                    "documentHash": context.get("documentHash").cloned().unwrap_or(Value::Null),
+                    "mixingExemptions": context.get("mixingExemptions").cloned().unwrap_or_else(|| json!([])),
+                })
+            })
+            .unwrap_or(Value::Null);
         let plan = json!({
             "activePlanId": plan_id,
             "activeVersionId": version_id,
@@ -272,6 +284,7 @@ fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
             },
             "reason": reason,
             "scope": scope,
+            "designContext": design_context,
         });
         session.snapshot["plan"] = plan.clone();
         touch_session(session);
@@ -299,7 +312,7 @@ fn tool_plan_begin(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
     })
 }
 
-fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
+pub(crate) fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
     let delta = input
         .get("markdownDelta")
         .or_else(|| input.get("markdown"))
@@ -333,6 +346,7 @@ fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
                 },
                 "reason": "Agent started writing a plan without an explicit plan_begin call.",
                 "scope": Value::Null,
+                "designContext": session.snapshot.get("activeDesignContext").cloned().unwrap_or(Value::Null),
             })
         });
         let old = plan
@@ -388,7 +402,11 @@ fn tool_plan_write(session_id: &str, turn_id: &str, input: &Value) -> NativeTool
     })
 }
 
-fn tool_plan_finalize(session_id: &str, turn_id: &str, input: &Value) -> NativeToolResult {
+pub(crate) fn tool_plan_finalize(
+    session_id: &str,
+    turn_id: &str,
+    input: &Value,
+) -> NativeToolResult {
     let summary = optional_string_field(input, "summary");
     let (callback, snapshot, plan) = update_session_plan(session_id, |session, root| {
         let mut plan = current_plan(session)?;
@@ -405,6 +423,7 @@ fn tool_plan_finalize(session_id: &str, turn_id: &str, input: &Value) -> NativeT
                 "Call plan_write with a complete Markdown plan first.",
             ));
         }
+        validate_plan_design_context_value(session.snapshot.get("activeDesignContext"), &markdown)?;
         if let Some(summary) = summary.clone() {
             plan["review"] = json!({ "status": "pending", "summary": summary });
         } else {

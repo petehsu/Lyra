@@ -9,6 +9,7 @@ import {
   AppObjectRow,
   AppSearchField,
   AppSelect,
+  AppSettingsRow,
   AppStatusMessage,
   AppSubPageBack,
   AppSwitch,

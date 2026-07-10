@@ -35,6 +35,7 @@ import type {
   AgentSessionSnapshot,
   AgentSessionSummary
 } from "../../../shared/desktop-bridge";
+import type { OmaAgentMember } from "../../../shared/agent";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
 import {
   filterBrowserHistoryEntries,
@@ -379,11 +380,13 @@ const BrowserHistoryPreviewPane = ({
 const AgentSessionPreviewPane = ({
   snapshot,
   labels,
-  loading
+  loading,
+  onSelectOmaChannel
 }: {
   readonly snapshot: AgentSessionSnapshot | null;
   readonly labels: AgentSessionHistorySurfaceProps["labels"];
   readonly loading: boolean;
+  readonly onSelectOmaChannel?: (sessionId: string, channelId: string) => Promise<void>;
 }) => {
   if (loading) {
     return (
@@ -409,6 +412,19 @@ const AgentSessionPreviewPane = ({
     rollback: null
   }));
   const workingDir = (snapshot.workingDir ?? "").trim();
+  const oma = snapshot.agentMode === "oma" ? snapshot.oma : null;
+  const agentsById = new Map((oma?.agents ?? []).map((agent) => [agent.id, agent]));
+  const avatarTone = (agentId: string): string => {
+    const builtInTones: Record<string, string> = {
+      "did:lyra:agent:builtin:lead": "1",
+      "did:lyra:agent:builtin:builder": "2",
+      "did:lyra:agent:builtin:reviewer": "3",
+      "did:lyra:agent:builtin:designer": "4",
+      "did:lyra:agent:builtin:researcher": "5"
+    };
+    return builtInTones[agentId]
+      ?? `${(Array.from(agentId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 5) + 1}`;
+  };
   const dataValue = createDataProviderValue({
     session: {
       id: snapshot.id,
@@ -451,6 +467,63 @@ const AgentSessionPreviewPane = ({
           </div>
         </DataContextProvider>
       )}
+      {oma !== null ? (
+        <div className="lyra-agent-history-oma-channels" role="tablist" aria-label="Oma channels">
+          {oma.channels.filter((channel) => channel.archived !== true).map((channel) => {
+            const agent = agentsById.get(channel.memberAgentIds[0] ?? "");
+            const members = channel.memberAgentIds
+              .map((agentId) => agentsById.get(agentId))
+              .filter((member): member is OmaAgentMember => member !== undefined);
+            const isGroup = channel.kind === "group";
+            const label = channel.kind === "direct"
+              ? agent?.shortName ?? agent?.name ?? channel.name
+              : channel.name || "Oma";
+            const avatar = channel.kind === "direct"
+              ? (agent?.avatar.value || agent?.name || label).slice(0, 2).toUpperCase()
+              : label.slice(0, 2).toUpperCase();
+            const channelStatus = isGroup
+              ? (members.some((member) => member.status === "retrying") ? "retrying"
+                : members.some((member) => member.status === "running") ? "running"
+                  : members.some((member) => member.status === "queued") ? "queued"
+                    : "idle")
+              : agent?.status ?? "idle";
+            return (
+              <AppButton
+                key={channel.id}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="lyra-agents-oma-channel"
+                data-active={channel.id === oma.activeChannelId}
+                data-group={isGroup}
+                onClick={() => void onSelectOmaChannel?.(snapshot.id, channel.id)}
+                aria-label={label}
+                title={label}
+              >
+                <span className="lyra-agents-oma-avatar-stack" data-group={isGroup} aria-hidden="true">
+                  {isGroup ? (
+                    <span
+                      className="lyra-agents-oma-group-orb"
+                      data-running={channelStatus === "running"}
+                      data-status={channelStatus}
+                    />
+                  ) : (
+                    <span
+                      className="lyra-agents-oma-avatar"
+                      data-tone={avatarTone(agent?.agentId ?? channel.id)}
+                      data-status={channelStatus}
+                    >
+                      {agent?.avatar.src ? (
+                        <img src={`data:image/svg+xml,${encodeURIComponent(agent.avatar.src)}`} alt="" />
+                      ) : avatar}
+                    </span>
+                  )}
+                </span>
+              </AppButton>
+            );
+          })}
+        </div>
+      ) : null}
     </aside>
   );
 };
@@ -677,6 +750,18 @@ export const AgentSessionHistorySurface = ({
     } finally {
       setOpeningSessionId(null);
     }
+  }, [desktopApi, labels.runtimeUnavailable]);
+
+  const selectPreviewOmaChannel = useCallback(async (
+    sessionId: string,
+    channelId: string
+  ): Promise<void> => {
+    if (desktopApi?.agent === undefined) {
+      setErrorMessage(labels.runtimeUnavailable);
+      return;
+    }
+    const snapshot = await desktopApi.agent.setOmaActiveChannel({ sessionId, channelId });
+    setPreview({ sessionId: snapshot.id, snapshot });
   }, [desktopApi, labels.runtimeUnavailable]);
 
   useEffect(() => {
@@ -1123,6 +1208,7 @@ export const AgentSessionHistorySurface = ({
             snapshot={preview.snapshot}
             labels={labels}
             loading={openingSessionId !== null && preview.sessionId === openingSessionId}
+            onSelectOmaChannel={selectPreviewOmaChannel}
           />
         )}
       </section>

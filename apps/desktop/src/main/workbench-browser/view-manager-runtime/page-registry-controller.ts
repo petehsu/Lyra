@@ -700,8 +700,10 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       return existing;
     }
     const tombstone = host.readTombstone(spec.tabId);
-    if (tombstone !== undefined && host.canMaterializePage(spec) === false) {
-      host.updateDormantTombstone(spec);
+    if (host.canMaterializePage(spec) === false) {
+      if (tombstone !== undefined) {
+        host.updateDormantTombstone(spec);
+      }
       return null;
     }
     const persisted = host.persistedTabSnapshot(spec.tabId);
@@ -749,11 +751,11 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       if (nextTabIds.has(tabId)) {
         continue;
       }
-      void host.captureBrowserRestoreState(entry).finally(() => {
-        destroyEntry(entry, true);
-        entries.delete(tabId);
-        host.scheduleBrowserSessionSnapshotWrite();
-      });
+      // A closed tab has no restore target. Capturing its full DOM snapshot
+      // here made rapid tab closes run several expensive page scripts at once.
+      destroyEntry(entry, true);
+      entries.delete(tabId);
+      host.scheduleBrowserSessionSnapshotWrite();
     }
     for (const tabId of host.listTombstoneTabIds()) {
       if (nextTabIds.has(tabId)) {

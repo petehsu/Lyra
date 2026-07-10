@@ -48,9 +48,9 @@ mod activity;
 mod browser_loop_detector;
 mod clarifications;
 mod context;
-mod elevation;
 pub(crate) mod context_window;
 pub(crate) mod cut_store;
+mod elevation;
 pub mod file_citations;
 mod helpers;
 pub mod inline_images;
@@ -70,6 +70,7 @@ mod memory_stability_policy;
 mod memory_store;
 mod memory_sync;
 mod network;
+mod oma;
 pub mod page_citations;
 mod permission_policy;
 mod permissions;
@@ -104,15 +105,15 @@ mod types;
 mod tests;
 
 use self::{
-    actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*, helpers::*,
-    inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*, memory_autonomy::*,
-    memory_compress::*, memory_derived_fields::*, memory_event_trigger::*, memory_layer::*,
-    memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*, memory_sync::*,
-    network::*, page_citations::*, permission_policy::*, permissions::*, plan_actions::*,
-    plan_store::*, projections::*, prompt_cache::*, provider::*, provider_config::*, rollback::*,
-    session_ledger::*, session_resilience::*, session_store::*, session_trim::*, sessions::*,
-    skill_catalog::*, state::*, token_estimate::*, tool_protocol::*, tools::*,
-    transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
+    actions::*, activity::*, clarifications::*, context::*, elevation::*, file_citations::*,
+    helpers::*, inline_images::*, mcp_catalog::*, memory::*, memory_audit_export::*,
+    memory_autonomy::*, memory_compress::*, memory_derived_fields::*, memory_event_trigger::*,
+    memory_layer::*, memory_layer_projection::*, memory_retrieval_policy::*, memory_store::*,
+    memory_sync::*, network::*, oma::*, page_citations::*, permission_policy::*, permissions::*,
+    plan_actions::*, plan_store::*, projections::*, prompt_cache::*, provider::*,
+    provider_config::*, rollback::*, session_ledger::*, session_resilience::*, session_store::*,
+    session_trim::*, sessions::*, skill_catalog::*, state::*, token_estimate::*, tool_protocol::*,
+    tools::*, transcript_citations::*, turn_tool_telemetry::*, turns::*, types::*,
 };
 
 fn open_sqlite_connection(path: &Path) -> AgentRuntimeResult<rusqlite::Connection> {
@@ -150,6 +151,10 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.plan.review.respond" => plan_review_respond(payload),
             "agent.todo.read-project" => project_todo_read_for_project(payload),
             "agent.session.createTemporary" => create_temporary_session(payload),
+            "agent.oma.setMode" => set_agent_mode(payload),
+            "agent.oma.addAgent" => add_oma_agent(payload),
+            "agent.oma.removeAgent" => remove_oma_agent(payload),
+            "agent.oma.setActiveChannel" => set_oma_active_channel(payload),
 
             "agent.memory.snapshot" => memory_snapshot(payload),
             "agent.memory.audit" => memory_audit(payload),

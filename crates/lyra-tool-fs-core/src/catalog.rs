@@ -6,6 +6,7 @@ use crate::model::ToolManifest;
 use crate::registry::normalize_tool_path;
 use crate::schema::{attach_schema_id, object_schema, schema_id_for_path};
 
+mod agent;
 mod browser;
 mod browser_ax;
 mod clarification;
@@ -148,6 +149,7 @@ pub(crate) fn builtin_manifests() -> Vec<ToolManifest> {
     entries.extend(software::manifests());
     entries.extend(browser::manifests());
     entries.extend(browser_ax::manifests());
+    entries.extend(agent::manifests());
     entries.extend(computer::manifests());
     entries.extend(design::manifests());
     entries.extend(filesystem::manifests());
@@ -205,11 +207,20 @@ fn description_for(
     summary: &str,
 ) -> String {
     let purpose = match (domain, operation) {
+        ("agent", "send") => {
+            "Use in Oma mode to queue concise follow-up work in an active Agent's private channel. The host runs it after the current turn; this does not fabricate a reply."
+        }
+        ("agent", "ask") => {
+            "Use in Oma mode when an Agent needs a real synchronous reply from a specific active Agent package. The target runs through the same host provider and tool chain in its private channel."
+        }
+        ("agent", "handoff") => {
+            "Use in Oma mode when the current response should queue follow-up work for another active Agent without moving the user's channel."
+        }
         ("design", "extract_reference") => {
             "Use when the agent needs live website visual style evidence for UI or website work: computed colors, typography, spacing, radius, shadows, section bounds, area ratios, components, and assets. This is the non-visual fallback for web design references; browser/see text fallback is not enough for visual style decisions."
         }
         ("design", "read") => {
-            "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list to see all available design references, then action=read with a brand name to get the full DESIGN.md."
+            "Use when the agent needs real-world design tokens (colors, typography, spacing, patterns) for UI work. Call action=list, then action=read to activate one DESIGN.md as the session design context; a second system must explicitly replace or exempt the first."
         }
         ("filesystem", "read") if path.ends_with("/read_file") => {
             "Use when the agent needs to open, inspect, or quote a complete file from the workspace."
@@ -406,6 +417,19 @@ fn aliases_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
     ];
     aliases.extend(
         match (domain, operation) {
+            ("agent", "send") => vec![
+                "oma send",
+                "agent message",
+                "multi agent chat",
+                "Agent 发消息",
+            ],
+            ("agent", "ask") => vec!["oma ask", "ask agent", "agent consult", "Agent 私聊"],
+            ("agent", "handoff") => vec![
+                "oma handoff",
+                "switch agent",
+                "delegate agent",
+                "切换 Agent",
+            ],
             ("filesystem", "list") => vec!["browse files", "list directory", "查看文件", "列目录"],
             ("filesystem", "read") => vec!["open file", "read source", "查看文件", "读取文件"],
             ("filesystem", "glob") => {
@@ -1178,6 +1202,7 @@ fn tags_for(domain: &str, operation: &str) -> Vec<String> {
             "hardware" => vec!["device", "serial", "board"],
             "terminal" => vec!["interactive", "process", "pane"],
             "design" => vec!["design", "style", "tokens", "reference"],
+            "agent" => vec!["oma", "multi-agent", "channel", "handoff"],
             "git" => vec!["repo", "diff", "commit"],
             "browser" => vec!["page", "lumen", "dom"],
             "browser_ax" => vec!["page", "accessibility", "ax"],
@@ -1227,6 +1252,7 @@ fn risk_level(domain: &str, operation: &str) -> &'static str {
             "memory",
             "remember" | "update" | "forget" | "link" | "apply_candidate" | "reject_candidate",
         ) => "memory_mutation",
+        ("agent", _) => "mutation",
         ("todo", "write") => "mutation",
         ("skills", "activate" | "deactivate") => "runtime_mutation",
         (
@@ -1268,6 +1294,7 @@ fn activity_kind(domain: &str, operation: &str) -> &'static str {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "edit",
         ("filesystem", _) => "read",
         ("design", _) => "read",
+        ("agent", _) => "task",
         ("code", _) => "search",
         ("shell", _) => "shell",
         ("hardware", _) => "hardware",
@@ -1306,6 +1333,37 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
         "description": "Defaults to the current Lyra session workingDir when available; shell falls back to the user home directory when the session is unbound."
     });
     let schema = match (domain, operation) {
+        ("agent", "send") | ("agent", "ask") => object_schema(
+            [
+                ("text", string("Message text to post into the Oma channel.")),
+                (
+                    "message",
+                    string(
+                        "Alias for text. Use text unless preserving an existing tool call shape.",
+                    ),
+                ),
+                (
+                    "channelId",
+                    string("Optional Oma channel id. Defaults to the session active channel."),
+                ),
+                (
+                    "sourceAgentId",
+                    string("Active Oma Agent id sending the message. Defaults to Lyra Lead."),
+                ),
+                (
+                    "targetAgentIds",
+                    string_array("Optional active Oma Agent ids this message is directed to."),
+                ),
+            ],
+            &[],
+        ),
+        ("agent", "handoff") => object_schema(
+            [(
+                "targetAgentId",
+                string("Active Oma Agent id whose direct channel should become active."),
+            )],
+            &["targetAgentId"],
+        ),
         ("runtime", "read") => object_schema(
             [
                 ("artifactId", string("Lyra artifact id.")),
@@ -1328,6 +1386,20 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     "brand",
                     string(
                         "Brand name to read (required when action=read). Call action=list first to see available brands.",
+                    ),
+                ),
+                (
+                    "replaceActiveDesign",
+                    json!({
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Replace the active design system instead of combining it with another reference."
+                    }),
+                ),
+                (
+                    "mixingExemption",
+                    string(
+                        "Required reason when intentionally combining this reference with the active design system.",
                     ),
                 ),
             ],
@@ -2965,6 +3037,9 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",
         "design" => {
             "Browse curated DESIGN.md references and extract live website design tokens, layout bounds, components, and assets for UI work."
+        }
+        "agent" => {
+            "Oma local multi-Agent session tools for Agent messaging, handoff, and channel membership."
         }
         "code" => "Search code text, symbols, code graph, and LSP data.",
         "shell" => "Run bounded shell commands in the bound workspace.",

@@ -64,6 +64,26 @@ describe("Workbench state IPC bridge", () => {
     reloadedBridge.dispose();
   });
 
+  test("does not write or publish a state snapshot that has not changed", async () => {
+    const bridge = await createWorkbenchStateIpcBridge(storageRoot);
+    const snapshot = JSON.stringify({
+      schemaVersion: 1,
+      snapshotId: "browser-session-1",
+      tabs: []
+    });
+    const events: Array<{ readonly key: string; readonly json: string | null }> = [];
+    const unsubscribe = bridge.subscribe((event) => events.push(event));
+
+    bridge.writeState("browser-session", snapshot);
+    await bridge.flush();
+    bridge.writeState("browser-session", snapshot);
+    await bridge.flush();
+
+    expect(events).toEqual([{ key: "browser-session", json: snapshot }]);
+    unsubscribe();
+    bridge.dispose();
+  });
+
   test("quarantines corrupt state files instead of silently reusing them", async () => {
     const filePath = path.join(storageRoot, "browser-session.v1.json");
     writeFileSync(filePath, "{ not-json", "utf8");

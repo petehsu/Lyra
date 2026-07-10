@@ -496,6 +496,79 @@ describe("Workbench browser semantic tree fixtures", () => {
     delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
   });
 
+  test("materializes only visible browser tabs and closes removed tabs without snapshotting", async () => {
+    const activeFrame = createFrame({
+      id: 1,
+      url: "https://active.example/",
+      html: "<!doctype html><title>Active</title><main>Active</main>"
+    });
+    const hiddenFrame = createFrame({
+      id: 2,
+      url: "about:blank",
+      html: "<!doctype html><title>Hidden</title><main>Hidden</main>"
+    });
+    const activeWebContents = createWebContents(activeFrame);
+    const hiddenWebContents = createWebContents(hiddenFrame);
+    electronMock.webContentsQueue.push(activeWebContents, hiddenWebContents);
+    const manager = createEmptyManager();
+
+    manager.syncTopology({
+      activeTabId: "active",
+      pages: [
+        {
+          tabId: "active",
+          address: "https://active.example/",
+          isActive: true,
+          isVisible: true
+        },
+        {
+          tabId: "hidden",
+          address: "https://hidden.example/",
+          isActive: false,
+          isVisible: false
+        }
+      ]
+    });
+    await Promise.resolve();
+
+    expect(electronMock.webContentsQueue).toEqual([hiddenWebContents]);
+
+    manager.syncTopology({
+      activeTabId: "hidden",
+      pages: [
+        {
+          tabId: "active",
+          address: "https://active.example/",
+          isActive: false,
+          isVisible: false
+        },
+        {
+          tabId: "hidden",
+          address: "https://hidden.example/",
+          isActive: true,
+          isVisible: true
+        }
+      ]
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(hiddenWebContents.loadURL).toHaveBeenCalledWith("https://hidden.example/");
+
+    manager.syncTopology({
+      activeTabId: "active",
+      pages: [{
+        tabId: "active",
+        address: "https://active.example/",
+        isActive: true,
+        isVisible: true
+      }]
+    });
+
+    expect(hiddenWebContents.executeJavaScript).not.toHaveBeenCalled();
+    expect(hiddenWebContents.close).toHaveBeenCalledTimes(1);
+  });
+
   test("does not reload when runtime navigated ahead of stale tab topology", async () => {
     const translated =
       "https://example.com/article#googtrans(en|zh-CN)";

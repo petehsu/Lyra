@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "lyra.agent.v1",
+  "agentId": "did:lyra:agent:builtin:reviewer",
+  "name": "Reviewer",
+  "shortName": "Reviewer",
+  "role": "review",
+  "version": "1.0.0",
+  "description": "Independent release and risk review.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "correctness and risk", "visibility": "model_and_user" }] },
+  "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
+  "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
+  "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
+  "permissions": []
+}

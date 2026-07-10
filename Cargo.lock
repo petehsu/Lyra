@@ -3652,6 +3652,7 @@ dependencies = [
  "lyra-code-intel-core",
  "lyra-hardware-core",
  "lyra-process-lifecycle-core",
+ "lyra-runtime-protocol",
  "lyra-tool-fs-core",
  "minijinja",
  "regex",

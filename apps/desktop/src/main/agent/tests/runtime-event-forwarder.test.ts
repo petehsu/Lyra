@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentRuntimeEvent } from "../../../shared/agent";
-import { mergeAgentRuntimeEvent } from "../runtime-event-forwarder";
+import { agentRuntimeEventKey, mergeAgentRuntimeEvent } from "../runtime-event-forwarder";
 
 const messageDelta = (
   delta: string,
@@ -32,5 +32,14 @@ describe("mergeAgentRuntimeEvent", () => {
     if (merged.kind === "messageDelta") {
       expect(merged.delta).toBe("fresh");
     }
+  });
+
+  test("uses one latest-wins key for a session snapshot", () => {
+    const event = {
+      kind: "sessionSnapshot",
+      snapshot: { id: "session-1" }
+    } as AgentRuntimeEvent;
+
+    expect(agentRuntimeEventKey(event)).toBe("sessionSnapshot:session-1");
   });
 });

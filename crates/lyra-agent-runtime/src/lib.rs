@@ -228,6 +228,10 @@ impl AgentRuntimeServices {
             | "agent.plan.revise"
             | "agent.plan.review.respond"
             | "agent.todo.read-project"
+            | "agent.oma.setMode"
+            | "agent.oma.addAgent"
+            | "agent.oma.removeAgent"
+            | "agent.oma.setActiveChannel"
             | "agent.codegraph.status" => self.backend.call(method, payload),
 
             "agent.cli.follow.read" | "agent.cli.follow.update" => {
@@ -294,9 +298,9 @@ impl AgentRuntimeServices {
             "agent.permissionPolicy.read" | "agent.permissionPolicy.setMode" => {
                 self.backend.call(method, payload)
             }
-            "agent.elevation.validate"
-            | "agent.elevation.setSecret"
-            | "agent.elevation.clear" => self.backend.call(method, payload),
+            "agent.elevation.validate" | "agent.elevation.setSecret" | "agent.elevation.clear" => {
+                self.backend.call(method, payload)
+            }
             "agent.clarification.respond" => self.clarification.respond_from_payload(payload),
             method if self.provider.handles_method(method) => self
                 .provider
@@ -471,6 +475,10 @@ mod tests {
             "agent.todo.read-project",
             "agent.codegraph.status",
             "agent.session.createTemporary",
+            "agent.oma.setMode",
+            "agent.oma.addAgent",
+            "agent.oma.removeAgent",
+            "agent.oma.setActiveChannel",
         ] {
             let routed = services
                 .handle_agent_request(method, json!({}))

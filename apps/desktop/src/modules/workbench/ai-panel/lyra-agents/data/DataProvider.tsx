@@ -14,6 +14,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type {
   AgentPageCitation,
+  AgentMode,
   AgentProjectTodoSnapshot,
   AgentPlanReviewRespondAction,
   AgentPlanSnapshot,
@@ -30,6 +31,7 @@ import type {
   ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
+  OmaControls,
   PermissionRequest,
   SessionMeta,
   TodoItem
@@ -89,6 +91,9 @@ export interface DataProviderValue {
 
   /** User-authorized physical location controls rendered in the composer toolbar. */
   locationControls?: WorkbenchLocationControls | null;
+
+  /** Local multi-Agent Oma mode controls rendered above the composer. */
+  omaControls?: OmaControls | null;
 
   /** Open Lyra Agent model/provider settings. */
   openModelSettings(): Promise<void>;
@@ -241,7 +246,7 @@ export interface DataProviderValue {
   rollbackMessage(messageId: string): Promise<void>;
 
   /** Create a new Lyra Agent-backed session and make it active. */
-  createSession(): Promise<void>;
+  createSession(mode?: AgentMode): Promise<void>;
 
   /** Bind the current Lyra Agent session to a real workspace directory. */
   bindProject(): Promise<void>;

@@ -357,7 +357,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         memoryConfigStatusIdle: t("settings.aiMemoryConfigStatusIdle"),
         memoryConfigStatusLoaded: t("settings.aiMemoryConfigStatusLoaded"),
         memoryConfigStatusSaved: t("settings.aiMemoryConfigStatusSaved"),
-        memoryConfigStatusInvalidJson: t("settings.aiMemoryConfigStatusInvalidJson")
+        memoryConfigStatusInvalidJson: t("settings.aiMemoryConfigStatusInvalidJson"),
       },
       fileManager: {
         title: t("files.title"),

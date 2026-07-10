@@ -41,4 +41,24 @@ describe("citation composer chip segments", () => {
       { type: "image", image }
     ]);
   });
+
+  test("Oma Agent mention chips round-trip through the editor DOM", () => {
+    const mention = {
+      mentionId: "oma-builder-1",
+      sessionAgentId: "session-builder",
+      agentId: "did:lyra:agent:builtin:builder",
+      name: "Lyra Builder",
+      shortName: "Builder",
+      role: "Implementation specialist",
+      avatar: { kind: "text" as const, value: "B" }
+    };
+    const root = document.createElement("div");
+    root.append("Ask ");
+    root.appendChild(createComposerChipElement({ type: "agentMention", mention }));
+
+    expect(parseEditorSegments(root, [{ type: "agentMention", mention }])).toEqual([
+      { type: "text", value: "Ask " },
+      { type: "agentMention", mention }
+    ]);
+  });
 });

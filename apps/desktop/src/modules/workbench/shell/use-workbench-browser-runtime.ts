@@ -239,6 +239,7 @@ export const useWorkbenchBrowserRuntime = ({
       return;
     }
 
+    const visibleTabIds = new Set(visibleWorkspaceLayout.visibleTabIds);
     const tabPages = tabsModel.tabs
       .filter((tab) => tab.pageKind === "page")
       .map((tab) => ({
@@ -248,19 +249,27 @@ export const useWorkbenchBrowserRuntime = ({
         ...(tab.browserRestoreState === undefined
           ? {}
           : { restoreState: tab.browserRestoreState }),
-        isActive: tab.id === activeBrowserTabId
+        isActive: tab.id === activeBrowserTabId,
+        isVisible: visibleTabIds.has(tab.id)
       }));
     const embeddedPages = embeddedBrowserPages.map((page) => ({
       tabId: page.tabId,
       address: page.address,
       ...(page.titleHint === undefined ? {} : { titleHint: page.titleHint }),
-      isActive: false
+      isActive: false,
+      isVisible: true
     }));
     void desktopApi.workbenchBrowser.syncTopology({
       activeTabId: activeBrowserTabId,
       pages: [...tabPages, ...embeddedPages]
     });
-  }, [activeBrowserTabId, desktopApi, embeddedBrowserPages, tabsModel.tabs]);
+  }, [
+    activeBrowserTabId,
+    desktopApi,
+    embeddedBrowserPages,
+    tabsModel.tabs,
+    visibleWorkspaceLayout.visibleTabIds
+  ]);
 
   useEffect(() => {
     if (desktopApi === null) {

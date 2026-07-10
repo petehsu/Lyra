@@ -125,7 +125,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=8`, `PROMPT_TEMPLATE_VERSION=29`.
+Current: `PROMPT_POLICY_VERSION=8`, `PROMPT_TEMPLATE_VERSION=30`.
 
 ## MiniJinja Rules
 

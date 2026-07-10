@@ -41,7 +41,10 @@ const readTerminalRuntimeCorrelationString = (
     : undefined;
 };
 
-const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null => {
+export const agentRuntimeEventKey = (event: AgentRuntimeEvent): string | null => {
+  if (event.kind === "sessionSnapshot") {
+    return `sessionSnapshot:${event.snapshot.id}`;
+  }
   if (event.kind === "messageDelta") {
     return [
       "messageDelta",
@@ -127,7 +130,7 @@ export const createRuntimeEventForwarder = ({
     maxQueueSize: AGENT_EVENT_MAX_QUEUE_SIZE,
     keyFor: agentRuntimeEventKey,
     merge: mergeAgentRuntimeEvent,
-    coalesceMode: "consecutive",
+    coalesceMode: "key",
     estimateBytes: estimateSerializedBytes,
     send: (event) => {
       const window = getWindow();

@@ -6,6 +6,7 @@ import {
   useWorkbenchPreferencesModel,
   writeWorkbenchPreferences
 } from "../service";
+import { getLocale } from "../../i18n";
 import {
   resetWorkbenchStateStorageForTests,
   writeWorkbenchStateSync
@@ -185,6 +186,7 @@ describe("workbench preferences", () => {
       systemNotificationClickBehavior: "open_source",
       systemNotificationActionsEnabled: false
     });
+    expect(getLocale()).toBe("en-US");
   });
 
   test("updates web search preferences via model and persists", () => {

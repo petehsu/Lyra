@@ -12,6 +12,8 @@ const session = (
   id: "session-1",
   title: "Session",
   sessionKind: "normal",
+  agentMode: "solo",
+  oma: null,
   workingDir: "/tmp",
   projectBound: false,
   messages: [],
@@ -221,6 +223,33 @@ describe("applyAgentRuntimeEventToSnapshot", () => {
       type: "text",
       id: "text-1",
       text: "Hello complete text"
+    });
+  });
+
+  test("prefers incoming metadata when message content is equally rich", () => {
+    const current = session({
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "Hello",
+        blocks: [{ type: "text", id: "text-1", text: "Hello" }],
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    });
+
+    const next = mergeRunningSessionSnapshot(current, session({
+      messages: [{
+        id: "assistant-1",
+        role: "assistant",
+        text: "Hello",
+        blocks: [{ type: "text", id: "text-1", text: "Hello" }],
+        metadata: { oma: { channelId: "direct:reviewer" } },
+        createdAt: "2026-06-05T00:00:00.000Z"
+      }]
+    }));
+
+    expect(next.messages[0]?.metadata).toEqual({
+      oma: { channelId: "direct:reviewer" }
     });
   });
 

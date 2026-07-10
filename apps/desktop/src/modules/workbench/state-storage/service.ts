@@ -40,7 +40,13 @@ export const readWorkbenchStateSync = (key: WorkbenchStateKey): string | null =>
 export const writeWorkbenchStateSync = (key: WorkbenchStateKey, json: string): void => {
   const bridge = resolveWorkbenchStateBridge();
   if (bridge === null) {
+    if (testMemoryState.get(key) === json) {
+      return;
+    }
     testMemoryState.set(key, json);
+    return;
+  }
+  if (bridge.readCached(key) === json) {
     return;
   }
   void bridge.write(key, json).catch((error: unknown) => {

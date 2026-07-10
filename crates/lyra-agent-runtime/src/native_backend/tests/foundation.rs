@@ -14,6 +14,8 @@ fn native_backend_creates_and_reads_session() {
     assert_eq!(created["workingDir"], home);
     assert_eq!(created["projectBound"], true);
     assert_eq!(created["workingDirIsHome"], true);
+    assert_eq!(created["agentMode"], "solo");
+    assert!(created["oma"].is_null());
     let session_id = created["id"].as_str().expect("session id").to_string();
     let read = backend
         .call_agent_method("agent.session.read", json!({ "sessionId": session_id }))
@@ -22,6 +24,680 @@ fn native_backend_creates_and_reads_session() {
     assert_eq!(read["workingDir"], home);
     assert_eq!(read["projectBound"], true);
     assert_eq!(read["workingDirIsHome"], true);
+    assert_eq!(read["agentMode"], "solo");
+    assert!(read["oma"].is_null());
+}
+
+#[test]
+fn native_backend_switches_oma_mode_and_exposes_only_default_group_and_directs() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Oma" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id");
+    let oma = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("set oma mode");
+    assert_eq!(oma["agentMode"], "oma");
+    assert_eq!(oma["oma"]["activeChannelId"], "group:default");
+    assert!(oma["oma"].get("schedulingMode").is_none());
+    assert_eq!(oma["oma"]["agents"].as_array().expect("agents").len(), 5);
+
+    let reviewer_channel = oma["oma"]["channels"]
+        .as_array()
+        .expect("channels")
+        .iter()
+        .find(|channel| channel["kind"] == "direct" && channel["name"] == "Reviewer")
+        .expect("reviewer direct")
+        .clone();
+    assert_eq!(
+        oma["oma"]["channels"].as_array().expect("channels").len(),
+        6
+    );
+    assert_eq!(
+        oma["oma"]["channels"]
+            .as_array()
+            .expect("channels")
+            .iter()
+            .filter(|channel| channel["kind"] == "group")
+            .count(),
+        1
+    );
+    let channel = backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({
+                "sessionId": session_id,
+                "channelId": reviewer_channel["id"]
+            }),
+        )
+        .expect("select reviewer direct");
+    assert_eq!(channel["oma"]["activeChannelId"], reviewer_channel["id"]);
+}
+
+#[test]
+fn oma_builtin_package_registry_has_five_valid_unique_packages() {
+    let packages = builtin_oma_packages();
+    assert_eq!(packages.len(), 5);
+    let ids = packages
+        .iter()
+        .map(|package| package.manifest.agent_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(ids.len(), 5);
+    for package in packages {
+        assert_eq!(package.manifest.schema_version, "lyra.agent.v1");
+        assert!(!package.prompt.trim().is_empty());
+        assert!(package.avatar_svg.contains("<svg"));
+    }
+}
+
+#[test]
+fn oma_and_solo_keep_separate_session_contexts() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Mode isolation" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            user_message("solo message".to_string(), Vec::new(), now()),
+        );
+    }
+
+    let oma = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("enter oma");
+    assert!(oma["messages"].as_array().expect("oma messages").is_empty());
+    assert_eq!(oma["oma"]["activeChannelId"], "group:default");
+
+    let channel_count = oma["oma"]["channels"].as_array().expect("channels").len();
+    let unchanged = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("repeat oma mode");
+    assert_eq!(
+        unchanged["oma"]["channels"]
+            .as_array()
+            .expect("channels")
+            .len(),
+        channel_count
+    );
+
+    let solo = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "solo" }),
+        )
+        .expect("return to solo");
+    assert_eq!(solo["messages"].as_array().expect("solo messages").len(), 1);
+    assert!(solo["oma"].is_null());
+
+    let restored_oma = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("return to oma");
+    assert_eq!(
+        restored_oma["oma"]["channels"]
+            .as_array()
+            .expect("restored channels")
+            .len(),
+        channel_count
+    );
+}
+
+#[test]
+fn oma_channels_keep_physical_message_contexts() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma isolation", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            json!({
+                "id": "group-message",
+                "role": "user",
+                "text": "group only",
+                "metadata": { "oma": { "channelId": "group:default" } }
+            }),
+        );
+        session.snapshot["tools"] = json!([{ "id": "group-tool" }]);
+        session.snapshot["todos"] = json!([{ "id": "group-todo" }]);
+        session.snapshot["memory"] = json!({ "summary": "group memory" });
+        session.snapshot["tokenEstimate"] = json!(123);
+    }
+
+    let reviewer_channel = created["oma"]["channels"]
+        .as_array()
+        .expect("channels")
+        .iter()
+        .find(|channel| channel["kind"] == "direct" && channel["name"] == "Reviewer")
+        .expect("reviewer direct");
+    let reviewer_channel_id = reviewer_channel["id"]
+        .as_str()
+        .expect("reviewer id")
+        .to_string();
+    let reviewer = backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({ "sessionId": session_id, "channelId": reviewer_channel_id }),
+        )
+        .expect("open reviewer channel");
+    assert!(
+        reviewer["messages"]
+            .as_array()
+            .expect("reviewer messages")
+            .is_empty()
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["messages"][0]["text"],
+        "group only"
+    );
+    assert!(
+        reviewer["tools"]
+            .as_array()
+            .expect("reviewer tools")
+            .is_empty()
+    );
+    assert!(
+        reviewer["todos"]
+            .as_array()
+            .expect("reviewer todos")
+            .is_empty()
+    );
+    assert!(reviewer["memory"].is_null());
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["tools"][0]["id"],
+        "group-tool"
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["todos"][0]["id"],
+        "group-todo"
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["memory"]["summary"],
+        "group memory"
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["tokenEstimate"],
+        123
+    );
+
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        push_array(
+            &mut session.snapshot,
+            "messages",
+            json!({
+                "id": "reviewer-message",
+                "role": "user",
+                "text": "reviewer only",
+                "metadata": { "oma": { "channelId": reviewer["oma"]["activeChannelId"] } }
+            }),
+        );
+    }
+
+    let group = backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({ "sessionId": session_id, "channelId": "group:default" }),
+        )
+        .expect("return to group");
+    assert_eq!(
+        group["messages"].as_array().expect("group messages").len(),
+        1
+    );
+    assert_eq!(group["messages"][0]["text"], "group only");
+    assert_eq!(
+        group["oma"]["channelContexts"][&reviewer_channel_id]["messages"][0]["text"],
+        "reviewer only"
+    );
+
+    let reviewer = backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({ "sessionId": session_id, "channelId": reviewer_channel_id }),
+        )
+        .expect("return to reviewer");
+    assert_eq!(
+        reviewer["messages"]
+            .as_array()
+            .expect("reviewer messages")
+            .len(),
+        1
+    );
+    assert_eq!(reviewer["messages"][0]["text"], "reviewer only");
+}
+
+#[test]
+fn oma_migration_discards_legacy_custom_group_history() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma legacy group", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["oma"]["channels"]
+            .as_array_mut()
+            .expect("channels")
+            .push(json!({
+                "id": "group:legacy",
+                "kind": "group",
+                "name": "Legacy",
+                "memberAgentIds": [],
+                "archived": false,
+            }));
+        session.snapshot["oma"]["channelContexts"]["group:legacy"] = json!({
+            "messages": [{ "id": "legacy-message", "role": "user", "text": "delete me" }],
+            "tools": [{ "id": "legacy-tool" }],
+            "todos": [{ "id": "legacy-todo" }],
+            "memory": { "summary": "delete me" }
+        });
+        session.snapshot["oma"]["activeChannelId"] = json!("group:legacy");
+        session.snapshot["messages"] =
+            json!([{ "id": "legacy-active", "role": "user", "text": "delete me" }]);
+    }
+    let migrated = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("migrate Oma");
+    assert_eq!(migrated["oma"]["activeChannelId"], OMA_DEFAULT_CHANNEL_ID);
+    assert!(
+        migrated["oma"]["channels"]
+            .as_array()
+            .expect("channels")
+            .iter()
+            .all(|channel| channel["id"] != "group:legacy")
+    );
+    assert!(
+        migrated["oma"]["channelContexts"]
+            .get("group:legacy")
+            .is_none()
+    );
+    assert!(
+        migrated["messages"]
+            .as_array()
+            .expect("messages")
+            .is_empty()
+    );
+}
+
+#[test]
+fn oma_prompt_is_sealed_to_the_routed_agent() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma prompt", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let reviewer = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .expect("reviewer");
+    let prompt = oma_prompt_message(&json!({
+        "state": created["oma"].clone(),
+        "latestTurn": {
+            "channelId": format!("direct:{}", reviewer["id"].as_str().expect("id")),
+            "targetSessionAgentIds": [reviewer["id"].clone()]
+        }
+    }))
+    .expect("Oma prompt");
+    let content = prompt["content"].as_str().expect("prompt content");
+
+    assert!(content.contains("You are Reviewer, an independent release gate."));
+    assert!(content.contains("Findings ordered by severity"));
+    assert!(!content.contains("Work from the real execution path"));
+}
+
+#[test]
+fn oma_routes_group_turns_to_lead_unless_an_agent_is_mentioned() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma routing", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let agents = created["oma"]["agents"].as_array().expect("agents");
+    let lead_id = agents
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:lead")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("lead id");
+    let reviewer_id = agents
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer id");
+    let mut state = state().lock().expect("state lock");
+    let session = state.sessions.get_mut(&session_id).expect("session");
+
+    let mut default_message = user_message("Plan this task".to_string(), Vec::new(), now());
+    apply_oma_user_turn(
+        session,
+        &json!({ "channelId": OMA_DEFAULT_CHANNEL_ID }),
+        "Plan this task",
+        &mut default_message,
+    )
+    .expect("route default group turn");
+    assert_eq!(
+        default_message.pointer("/metadata/oma/targetSessionAgentIds"),
+        Some(&json!([lead_id]))
+    );
+
+    let mention_id = "reviewer-mention";
+    let mentioned_text = format!("Review the release. ⟦oma-agent:{mention_id}⟧ inspect this");
+    let mut mentioned_message = user_message(mentioned_text.clone(), Vec::new(), now());
+    apply_oma_user_turn(
+        session,
+        &json!({
+            "channelId": OMA_DEFAULT_CHANNEL_ID,
+            "omaMentions": [{
+                "mentionId": mention_id,
+                "sessionAgentId": reviewer_id,
+                "agentId": "did:lyra:agent:builtin:reviewer"
+            }]
+        }),
+        &mentioned_text,
+        &mut mentioned_message,
+    )
+    .expect("route mentioned group turn");
+    assert_eq!(
+        mentioned_message.pointer("/metadata/oma/targetSessionAgentIds"),
+        Some(&json!([reviewer_id]))
+    );
+    assert_eq!(
+        mentioned_message.pointer("/metadata/oma/assignments/0/commonPreamble"),
+        Some(&json!("Review the release."))
+    );
+    assert_eq!(
+        mentioned_message.pointer("/metadata/oma/assignments/0/task"),
+        Some(&json!("inspect this"))
+    );
+}
+
+#[test]
+fn oma_merges_repeated_mentions_and_rejects_private_assignments() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma structured assignments", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let reviewer_id = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer id")
+        .to_string();
+    let repeated_text =
+        "Release prep. ⟦oma-agent:review-1⟧ check regressions ⟦oma-agent:review-2⟧ check rollout";
+    let mentions = json!([
+        {
+            "mentionId": "review-1",
+            "sessionAgentId": reviewer_id,
+            "agentId": "did:lyra:agent:builtin:reviewer"
+        },
+        {
+            "mentionId": "review-2",
+            "sessionAgentId": reviewer_id,
+            "agentId": "did:lyra:agent:builtin:reviewer"
+        }
+    ]);
+    let mut state = state().lock().expect("state lock");
+    let session = state.sessions.get_mut(&session_id).expect("session");
+    let mut message = user_message(repeated_text.to_string(), Vec::new(), now());
+    apply_oma_user_turn(
+        session,
+        &json!({
+            "channelId": OMA_DEFAULT_CHANNEL_ID,
+            "omaMentions": mentions.clone(),
+        }),
+        repeated_text,
+        &mut message,
+    )
+    .expect("merge repeated mentions");
+    assert_eq!(
+        message.pointer("/metadata/oma/targetSessionAgentIds"),
+        Some(&json!([reviewer_id]))
+    );
+    assert_eq!(
+        message.pointer("/metadata/oma/assignments/0/taskParts"),
+        Some(&json!(["check regressions", "check rollout"]))
+    );
+    assert_eq!(
+        message.pointer("/metadata/oma/assignments/0/task"),
+        Some(&json!("check regressions\n\ncheck rollout"))
+    );
+
+    let reviewer_channel = direct_channel_id(&reviewer_id);
+    activate_oma_channel(&mut session.snapshot, &reviewer_channel).expect("open private channel");
+    let mut private_message = user_message(
+        "⟦oma-agent:review-1⟧ private work".to_string(),
+        Vec::new(),
+        now(),
+    );
+    let error = apply_oma_user_turn(
+        session,
+        &json!({
+            "channelId": reviewer_channel,
+            "omaMentions": [mentions[0].clone()],
+        }),
+        "⟦oma-agent:review-1⟧ private work",
+        &mut private_message,
+    )
+    .expect_err("private channel must reject @ assignments");
+    assert!(
+        error
+            .to_string()
+            .contains("available only in the default group")
+    );
+}
+
+#[test]
+fn oma_turn_target_remains_bound_to_the_sent_channel_after_ui_switch() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma channel race", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let reviewer_id = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer id")
+        .to_string();
+    let reviewer_channel = direct_channel_id(&reviewer_id);
+    let mut state = state().lock().expect("state lock");
+    let session = state.sessions.get_mut(&session_id).expect("session");
+    let mut message = user_message("Lead this.".to_string(), Vec::new(), now());
+    apply_oma_user_turn(
+        session,
+        &json!({ "channelId": OMA_DEFAULT_CHANNEL_ID }),
+        "Lead this.",
+        &mut message,
+    )
+    .expect("apply group turn");
+    push_array(&mut session.snapshot, "messages", message);
+    activate_oma_channel(&mut session.snapshot, &reviewer_channel).expect("switch UI channel");
+
+    let (channel_id, targets) = oma_turn_targets(&session.snapshot).expect("turn targets");
+    assert_eq!(channel_id, OMA_DEFAULT_CHANNEL_ID);
+    assert_eq!(targets.len(), 1);
+}
+
+#[test]
+fn oma_existing_sessions_refresh_builtin_agent_definitions() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma migration", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let reviewer_id = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer id")
+        .to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["oma"]["defaultsVersion"] = json!(1);
+        session.snapshot["oma"]["schedulingMode"] = json!("social");
+        let reviewer = session.snapshot["oma"]["agents"]
+            .as_array_mut()
+            .expect("agents")
+            .iter_mut()
+            .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+            .expect("reviewer");
+        reviewer["prompt"] = json!("old reviewer prompt");
+    }
+
+    let refreshed = backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({
+                "sessionId": session_id,
+                "channelId": format!("direct:{reviewer_id}")
+            }),
+        )
+        .expect("refresh Oma state");
+    let reviewer = refreshed["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .expect("reviewer");
+    assert_eq!(refreshed["oma"]["defaultsVersion"], 5);
+    assert!(refreshed["oma"].get("schedulingMode").is_none());
+    assert!(
+        reviewer["prompt"]
+            .as_str()
+            .expect("reviewer prompt")
+            .contains("independent release gate")
+    );
+}
+
+#[test]
+fn oma_streaming_placeholder_stays_in_active_channel() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method("agent.session.create", json!({ "title": "Oma Stream" }))
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let oma = backend
+        .call_agent_method(
+            "agent.oma.setMode",
+            json!({ "sessionId": session_id, "mode": "oma" }),
+        )
+        .expect("set oma mode");
+    let reviewer_id = oma["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer id")
+        .to_string();
+    let reviewer_channel_id = format!("direct:{reviewer_id}");
+    backend
+        .call_agent_method(
+            "agent.oma.setActiveChannel",
+            json!({ "sessionId": session_id, "channelId": reviewer_channel_id }),
+        )
+        .expect("select direct channel");
+
+    let turn_id = "turn-oma-placeholder";
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["turnStatus"] = json!("running");
+        session.snapshot["activeTurnId"] = json!(turn_id);
+        let mut message = user_message("你好".to_string(), Vec::new(), now());
+        apply_oma_user_turn(
+            session,
+            &json!({ "channelId": reviewer_channel_id }),
+            "你好",
+            &mut message,
+        )
+        .expect("apply oma user turn");
+        push_array(&mut session.snapshot, "messages", message);
+    }
+
+    let message_id =
+        emit_assistant_message_placeholder(&session_id, turn_id).expect("assistant placeholder");
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    let message = session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages
+                .iter()
+                .find(|message| message.get("id").and_then(Value::as_str) == Some(&message_id))
+        })
+        .expect("placeholder message");
+    assert_eq!(
+        message.pointer("/metadata/oma/channelId"),
+        Some(&json!(reviewer_channel_id))
+    );
+    assert_eq!(
+        message.pointer("/metadata/oma/sender"),
+        Some(&json!("agent"))
+    );
+    assert_eq!(
+        message.pointer("/metadata/oma/senderAgentId"),
+        Some(&json!(reviewer_id))
+    );
 }
 
 #[test]
@@ -2679,7 +3355,10 @@ fn tool_fs_filesystem_targets_validate_run_envelope() {
         },
     );
     assert_eq!(inspect["status"].as_str(), Some("completed"));
-    assert_eq!(inspect["raw"]["path"].as_str(), Some("/tools/filesystem/read_file"));
+    assert_eq!(
+        inspect["raw"]["path"].as_str(),
+        Some("/tools/filesystem/read_file")
+    );
 
     let read_file = execute_model_tool(
         &session_id,

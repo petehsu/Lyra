@@ -133,7 +133,47 @@ export const createFileChipElement = (file: AgentFileAttachment): HTMLSpanElemen
   return chip;
 };
 
+export const createAgentMentionChipElement = (
+  mention: Extract<ComposerSegment, { type: "agentMention" }>["mention"]
+): HTMLSpanElement => {
+  const chip = document.createElement("span");
+  chip.className = "lyra-agents-citation-chip lyra-agents-citation-chip-agent-mention";
+  chip.contentEditable = "false";
+  chip.title = `@${mention.name} · ${mention.role}`;
+  chip.dataset.omaMentionId = mention.mentionId;
+  chip.dataset.omaSessionAgentId = mention.sessionAgentId;
+  chip.dataset.omaAgentId = mention.agentId;
+  chip.dataset.omaAgentName = mention.name;
+  chip.dataset.omaAgentShortName = mention.shortName ?? "";
+  chip.dataset.omaAgentRole = mention.role;
+  chip.dataset.omaAvatarValue = mention.avatar?.value ?? "";
+  chip.dataset.omaAvatarKind = mention.avatar?.kind ?? "";
+  chip.dataset.omaAvatarSrc = mention.avatar?.src ?? "";
+
+  const avatar = document.createElement("span");
+  avatar.className = "lyra-agents-citation-chip-agent-avatar";
+  const avatarSrc = mention.avatar?.src?.trim();
+  if (avatarSrc) {
+    const image = document.createElement("img");
+    image.src = `data:image/svg+xml,${encodeURIComponent(avatarSrc)}`;
+    image.alt = "";
+    avatar.appendChild(image);
+  } else {
+    avatar.textContent = (mention.avatar?.value ?? mention.name).trim().slice(0, 1).toUpperCase();
+  }
+  chip.appendChild(avatar);
+
+  const preview = document.createElement("span");
+  preview.className = "lyra-agents-citation-chip-preview";
+  preview.textContent = `@${mention.shortName ?? mention.name}`;
+  chip.appendChild(preview);
+  return chip;
+};
+
 export const createComposerChipElement = (segment: Exclude<ComposerSegment, { type: "text" }>): HTMLSpanElement => {
+  if (segment.type === "agentMention") {
+    return createAgentMentionChipElement(segment.mention);
+  }
   if (segment.type === "image") {
     return createImageChipElement(segment.image);
   }

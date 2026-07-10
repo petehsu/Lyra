@@ -353,6 +353,8 @@ export type WorkbenchBrowserPageSpec = {
   readonly address: string;
   readonly titleHint?: string;
   readonly isActive: boolean;
+  /** Materialize only pages that are currently displayed in a workbench pane. */
+  readonly isVisible?: boolean;
   readonly restoreState?: WorkbenchBrowserPageRestoreState;
 };
 

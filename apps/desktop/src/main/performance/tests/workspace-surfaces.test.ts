@@ -164,6 +164,11 @@ describe("workspace surface performance sync", () => {
       "workspaceSurface:browser-tab-2"
     ]);
 
+    for (const listener of listeners) {
+      listener({ key: "workspace-tabs", json });
+    }
+    expect(updates).toHaveLength(2);
+
     json = createWorkspaceTabsJson(["browser-tab-2"], "browser-tab-2");
     for (const listener of listeners) {
       listener({ key: "workspace-tabs", json });

@@ -7,6 +7,8 @@ use super::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use lyra_tool_fs_core::PROVIDER_VISIBLE_TOOL_NAMES;
+use std::collections::VecDeque;
+use std::sync::{Condvar, Mutex as StdMutex};
 
 const REPEATED_TOOL_ROUND_SOFT_OCCURRENCES: usize = 3;
 const REPEATED_TOOL_ROUND_HARD_OCCURRENCES: usize = 5;
@@ -23,6 +25,163 @@ const MAX_TOKENS_EXHAUSTED_VISIBLE_NOTE: &str =
     "[Auto continuation limit reached. Reply \"continue\" for remaining output.]";
 const PROGRESS_GUARD_WARNING_PROMPT: &str = "Lyra's dynamic progress guard detected repeated identical tool calls with identical provider-visible results. Do not repeat the exact same tool call again unless the page, file, or external state has actually changed. Change strategy, inspect different evidence, use a more specific wait/read_until condition, or produce the final answer/blocker summary from the evidence already gathered.";
 const PROGRESS_GUARD_FINAL_SYNTHESIS_PROMPT: &str = "Lyra's dynamic progress guard detected repeated identical tool calls with no new provider-visible evidence. Do not call more task tools in this response. Produce the best possible final answer from gathered evidence. If task is incomplete, state attempted work, exact blocker, and one next action. Do not ask member to restate the same request. Only exception: if completion truly needs missing member decision, call lyra_clarification_ask. Plain assistant questions r non-blocking and must not be used to wait.";
+
+const PROVIDER_MIN_CONCURRENCY: usize = 1;
+const PROVIDER_INITIAL_CONCURRENCY: usize = 2;
+const PROVIDER_MAX_CONCURRENCY: usize = 4;
+const PROVIDER_SUCCESSES_TO_GROW: u8 = 2;
+
+struct ProviderRequestScheduler {
+    state: StdMutex<HashMap<String, ProviderRequestLane>>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct ProviderRequestLane {
+    in_flight: usize,
+    capacity: usize,
+    consecutive_successes: u8,
+    next_ticket: u64,
+    waiting: VecDeque<u64>,
+    cooldown_until: Option<Instant>,
+    backoff_attempt: u8,
+}
+
+struct ProviderRequestPermit {
+    key: String,
+}
+
+static PROVIDER_REQUEST_SCHEDULER: OnceLock<ProviderRequestScheduler> = OnceLock::new();
+
+fn provider_request_scheduler() -> &'static ProviderRequestScheduler {
+    PROVIDER_REQUEST_SCHEDULER.get_or_init(|| ProviderRequestScheduler {
+        state: StdMutex::new(HashMap::new()),
+        wake: Condvar::new(),
+    })
+}
+
+fn provider_lane_key(provider: &NativeProviderProfile, model: &str) -> String {
+    format!(
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+        provider.route_id,
+        provider.id,
+        provider.base_url.as_deref().unwrap_or_default(),
+        model
+    )
+}
+
+fn acquire_provider_request_permit(
+    provider: &NativeProviderProfile,
+    model: &str,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ProviderRequestPermit> {
+    let scheduler = provider_request_scheduler();
+    let key = provider_lane_key(provider, model);
+    let mut state = scheduler
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let lane = state
+        .entry(key.clone())
+        .or_insert_with(|| ProviderRequestLane {
+            capacity: PROVIDER_INITIAL_CONCURRENCY,
+            ..ProviderRequestLane::default()
+        });
+    let ticket = lane.next_ticket;
+    lane.next_ticket = lane.next_ticket.wrapping_add(1);
+    lane.waiting.push_back(ticket);
+    loop {
+        if cancellation.load(Ordering::SeqCst) {
+            if let Some(lane) = state.get_mut(&key) {
+                lane.waiting.retain(|queued| *queued != ticket);
+            }
+            scheduler.wake.notify_all();
+            return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+        }
+        let now = Instant::now();
+        let lane = state.get_mut(&key).expect("provider lane exists");
+        let cooling_down = lane.cooldown_until.is_some_and(|deadline| deadline > now);
+        let is_next = lane.waiting.front().copied() == Some(ticket);
+        if is_next && !cooling_down && lane.in_flight < lane.capacity {
+            lane.waiting.pop_front();
+            lane.in_flight += 1;
+            return Ok(ProviderRequestPermit { key });
+        }
+        let wait_for = lane
+            .cooldown_until
+            .and_then(|deadline| deadline.checked_duration_since(now))
+            .map(|duration| duration.min(Duration::from_millis(100)))
+            .unwrap_or(Duration::from_millis(50));
+        let (next, _) = scheduler
+            .wake
+            .wait_timeout(state, wait_for)
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state = next;
+    }
+}
+
+fn release_provider_request_permit(
+    permit: ProviderRequestPermit,
+    result: &AgentRuntimeResult<ModelReply>,
+) {
+    let scheduler = provider_request_scheduler();
+    let mut state = scheduler
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let lane = state
+        .get_mut(&permit.key)
+        .expect("provider lane exists while its permit is held");
+    lane.in_flight = lane.in_flight.saturating_sub(1);
+    if result.is_ok() {
+        lane.consecutive_successes = lane.consecutive_successes.saturating_add(1);
+        if lane.consecutive_successes >= PROVIDER_SUCCESSES_TO_GROW
+            && lane.capacity < PROVIDER_MAX_CONCURRENCY
+        {
+            lane.capacity += 1;
+            lane.consecutive_successes = 0;
+            lane.backoff_attempt = 0;
+        }
+    } else if result
+        .as_ref()
+        .err()
+        .is_some_and(is_provider_rate_limited_error)
+    {
+        lane.capacity = (lane.capacity / 2).max(PROVIDER_MIN_CONCURRENCY);
+        lane.consecutive_successes = 0;
+        lane.backoff_attempt = lane.backoff_attempt.saturating_add(1).min(6);
+        let cooldown = retry_after_from_error(result.as_ref().err().expect("checked above"))
+            .unwrap_or_else(|| {
+                let base =
+                    250_u64.saturating_mul(2_u64.saturating_pow(lane.backoff_attempt.into()));
+                Duration::from_millis(base.min(8_000) + (lane.backoff_attempt as u64 * 31 % 97))
+            });
+        lane.cooldown_until = Some(Instant::now() + cooldown);
+    }
+    scheduler.wake.notify_all();
+}
+
+fn is_provider_rate_limited_error(error: &AgentRuntimeError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("status 429")
+        || message.contains("rate limit")
+        || message.contains("too many requests")
+        || message.contains("overloaded")
+        || message.contains("capacity")
+}
+
+fn retry_after_from_error(error: &AgentRuntimeError) -> Option<Duration> {
+    let marker = "retry-after-ms:";
+    let message = error.to_string().to_ascii_lowercase();
+    let offset = message.find(marker)? + marker.len();
+    let milliseconds = message[offset..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse::<u64>()
+        .ok()?;
+    Some(Duration::from_millis(milliseconds.min(60_000)))
+}
 pub(crate) struct ModelRequest {
     pub(crate) provider: NativeProviderProfile,
     pub(crate) model: String,
@@ -267,8 +426,27 @@ pub(crate) struct ModelCapabilityProfile {
 pub(crate) fn run_model_loop(
     session_id: &str,
     turn_id: &str,
+    request: ModelRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, true)
+}
+
+pub(crate) fn run_model_loop_without_ui_commit(
+    session_id: &str,
+    turn_id: &str,
+    request: ModelRequest,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    run_model_loop_with_ui_commit(session_id, turn_id, request, cancellation, false)
+}
+
+fn run_model_loop_with_ui_commit(
+    session_id: &str,
+    turn_id: &str,
     mut request: ModelRequest,
     cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     let mut messages = request.messages.clone();
     if request.context_trimmed
@@ -320,6 +498,7 @@ pub(crate) fn run_model_loop(
             &request.tools,
             &request.capabilities,
             cancellation,
+            commit_assistant_text,
         ) {
             Ok(reply) => {
                 observe_successful_provider_capabilities(session_id, &request, &messages, &reply);
@@ -391,6 +570,7 @@ pub(crate) fn run_model_loop(
                     &request.tools,
                     &request.capabilities,
                     cancellation,
+                    commit_assistant_text,
                 )?
             }
             Err(error) if !retried_after_empty_reply && is_empty_model_reply_error(&error) => {
@@ -858,12 +1038,7 @@ pub(crate) fn run_model_loop(
                     .collect()
             };
             let tool_call_ids: Vec<String> = tool_calls.iter().map(|c| c.id.clone()).collect();
-            tools::enforce_turn_tool_budget(
-                session_id,
-                turn_id,
-                &mut outputs,
-                &tool_call_ids,
-            );
+            tools::enforce_turn_tool_budget(session_id, turn_id, &mut outputs, &tool_call_ids);
             let plan_finalize_completed = stop_after_plan_finalize.is_some()
                 && tool_calls.iter().zip(outputs.iter()).any(|(call, output)| {
                     call.name == PLAN_FINALIZE_MODEL_TOOL
@@ -1023,6 +1198,7 @@ pub(crate) fn run_model_loop(
                     cancellation,
                     reason,
                     observed_occurrences,
+                    commit_assistant_text,
                 );
             }
         }
@@ -1038,6 +1214,7 @@ pub(crate) fn synthesize_after_progress_guard(
     cancellation: &Arc<AtomicBool>,
     reason: &str,
     observed_occurrences: usize,
+    commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     emit_tool_progress_guard_event(
         session_id,
@@ -1070,6 +1247,7 @@ pub(crate) fn synthesize_after_progress_guard(
         &clarification_tools,
         &request.capabilities,
         cancellation,
+        commit_assistant_text,
     )?;
     if reply.tool_calls.is_empty() {
         return Ok(
@@ -1161,6 +1339,7 @@ pub(crate) fn synthesize_after_progress_guard(
         &no_tools,
         &request.capabilities,
         cancellation,
+        commit_assistant_text,
     )?;
     if !final_reply.tool_calls.is_empty() {
         return Err(AgentRuntimeError::Core(
@@ -1253,6 +1432,7 @@ pub(crate) fn emit_provider_retry(
     attempt: u8,
     message: &str,
 ) {
+    set_oma_execution_parent_status(session_id, "retrying");
     emit_turn_state(session_id, turn_id, "retrying_provider", reason);
     emit_provider_protocol_event(
         session_id,
@@ -1400,6 +1580,7 @@ fn call_model_once_for_loop(
     tools: &[Value],
     capabilities: &ModelCapabilityProfile,
     cancellation: &Arc<AtomicBool>,
+    commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelReply> {
     call_model_once_inner(
         session_id,
@@ -1410,7 +1591,7 @@ fn call_model_once_for_loop(
         tools,
         capabilities,
         cancellation,
-        true,
+        commit_assistant_text,
     )
 }
 
@@ -1436,11 +1617,38 @@ fn provider_body_preview(body_text: &str) -> String {
     format!("{preview}...")
 }
 
+fn retry_after_milliseconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|seconds| seconds.saturating_mul(1_000))
+}
+
+fn provider_response_error_from_response(
+    provider: &NativeProviderProfile,
+    status: reqwest::StatusCode,
+    response: reqwest::blocking::Response,
+) -> AgentRuntimeError {
+    let retry_after = retry_after_milliseconds(response.headers());
+    let body = response
+        .text()
+        .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
+    let error = provider_response_error_text(provider, status, &body);
+    match retry_after {
+        Some(milliseconds) => {
+            AgentRuntimeError::Core(format!("{} [retry-after-ms:{milliseconds}]", error))
+        }
+        None => error,
+    }
+}
+
 fn read_provider_json_body(
     provider: &NativeProviderProfile,
     status: reqwest::StatusCode,
     response: reqwest::blocking::Response,
 ) -> AgentRuntimeResult<Value> {
+    let retry_after = retry_after_milliseconds(response.headers());
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -1458,7 +1666,13 @@ fn read_provider_json_body(
         ),
     })?;
     if !status.is_success() {
-        return Err(provider_response_error_text(provider, status, &body_text));
+        let error = provider_response_error_text(provider, status, &body_text);
+        return Err(match retry_after {
+            Some(milliseconds) => {
+                AgentRuntimeError::Core(format!("{} [retry-after-ms:{milliseconds}]", error))
+            }
+            None => error,
+        });
     }
     serde_json::from_str::<Value>(&body_text).map_err(|error| {
         let preview = provider_body_preview(&body_text);
@@ -1490,17 +1704,19 @@ fn call_model_once_inner(
         let mut last_stream_transport_error: Option<AgentRuntimeError> = None;
         loop {
             let mut committed_any: Option<bool> = None;
-            match call_model_once_streaming_inner(
-                session_id,
-                turn_id,
-                provider,
-                model,
-                messages,
-                tools,
-                cancellation,
-                commit_assistant_text,
-                &mut committed_any,
-            ) {
+            match scheduled_provider_request(session_id, provider, model, cancellation, || {
+                call_model_once_streaming_inner(
+                    session_id,
+                    turn_id,
+                    provider,
+                    model,
+                    messages,
+                    tools,
+                    cancellation,
+                    commit_assistant_text,
+                    &mut committed_any,
+                )
+            }) {
                 Ok(reply) => return Ok(reply),
                 Err(error) if is_empty_model_reply_error(&error) => break,
                 Err(error) if is_provider_transport_error(&error) => {
@@ -1592,14 +1808,22 @@ fn call_model_once_inner(
         // the fallback case we must surface the original streaming transport
         // error if the non-streaming attempt also fails, instead of masking it.
         if stream_fallback_attempted {
-            let mut reply = match call_model_once_non_streaming_checked(
+            let mut reply = match scheduled_provider_request(
                 session_id,
-                turn_id,
                 provider,
                 model,
-                messages,
-                tools,
                 cancellation,
+                || {
+                    call_model_once_non_streaming_checked(
+                        session_id,
+                        turn_id,
+                        provider,
+                        model,
+                        messages,
+                        tools,
+                        cancellation,
+                    )
+                },
             ) {
                 Ok(reply) => reply,
                 Err(non_streaming_error) => {
@@ -1625,15 +1849,17 @@ fn call_model_once_inner(
             return Ok(reply);
         }
     }
-    let mut reply = call_model_once_non_streaming_checked(
-        session_id,
-        turn_id,
-        provider,
-        model,
-        messages,
-        tools,
-        cancellation,
-    )?;
+    let mut reply = scheduled_provider_request(session_id, provider, model, cancellation, || {
+        call_model_once_non_streaming_checked(
+            session_id,
+            turn_id,
+            provider,
+            model,
+            messages,
+            tools,
+            cancellation,
+        )
+    })?;
     normalize_model_reply_protocol(&mut reply, tools)?;
     if commit_assistant_text {
         crate::native_backend::turns::commit_visible_assistant_reply(
@@ -1641,6 +1867,23 @@ fn call_model_once_inner(
         );
     }
     Ok(reply)
+}
+
+fn scheduled_provider_request(
+    session_id: &str,
+    provider: &NativeProviderProfile,
+    model: &str,
+    cancellation: &Arc<AtomicBool>,
+    request: impl FnOnce() -> AgentRuntimeResult<ModelReply>,
+) -> AgentRuntimeResult<ModelReply> {
+    // An Oma worker stays queued until it owns a shared provider slot. Solo
+    // sessions have no Oma parent, so these are intentional no-ops there.
+    set_oma_execution_parent_status(session_id, "queued");
+    let permit = acquire_provider_request_permit(provider, model, cancellation)?;
+    set_oma_execution_parent_status(session_id, "running");
+    let result = request();
+    release_provider_request_permit(permit, &result);
+    result
 }
 
 /// Finalize any tool still in `running` status for this turn as `failed`, so a
@@ -1856,10 +2099,9 @@ fn call_model_once_streaming_inner(
             .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response
-                .text()
-                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(provider_response_error_text(provider, status, &body));
+            return Err(provider_response_error_from_response(
+                provider, status, response,
+            ));
         }
         let mut reply = openai_responses::parse_streaming_response(
             BufReader::new(response),
@@ -1878,10 +2120,9 @@ fn call_model_once_streaming_inner(
             .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response
-                .text()
-                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(provider_response_error_text(provider, status, &body));
+            return Err(provider_response_error_from_response(
+                provider, status, response,
+            ));
         }
         let mut reply = anthropic_messages::parse_streaming_response(
             BufReader::new(response),
@@ -1901,10 +2142,9 @@ fn call_model_once_streaming_inner(
                 .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response
-                .text()
-                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(provider_response_error_text(provider, status, &body));
+            return Err(provider_response_error_from_response(
+                provider, status, response,
+            ));
         }
         let mut reply = gemini_generate_content::parse_streaming_response(
             BufReader::new(response),
@@ -1929,10 +2169,9 @@ fn call_model_once_streaming_inner(
             .map_err(reqwest_transport_error)?;
         let status = response.status();
         if !status.is_success() {
-            let body = response
-                .text()
-                .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-            return Err(provider_response_error_text(provider, status, &body));
+            return Err(provider_response_error_from_response(
+                provider, status, response,
+            ));
         }
         let mut reply = ollama_chat::parse_streaming_response(
             BufReader::new(response),
@@ -1955,10 +2194,9 @@ fn call_model_once_streaming_inner(
         .map_err(reqwest_transport_error)?;
     let status = response.status();
     if !status.is_success() {
-        let body = response
-            .text()
-            .unwrap_or_else(|error| format!("failed to read provider error body: {error}"));
-        return Err(provider_response_error_text(provider, status, &body));
+        return Err(provider_response_error_from_response(
+            provider, status, response,
+        ));
     }
     let mut stream_committed = false;
     let result = parse_streaming_response_with_commit(
@@ -2650,7 +2888,7 @@ fn observe_successful_provider_capabilities(
 
 #[cfg(test)]
 mod stop_signal_tests {
-    use super::TurnStopSignal;
+    use super::*;
 
     #[test]
     fn maps_openai_finish_reasons() {
@@ -2714,5 +2952,21 @@ mod stop_signal_tests {
     #[test]
     fn default_is_unknown() {
         assert_eq!(TurnStopSignal::default(), TurnStopSignal::Unknown);
+    }
+
+    #[test]
+    fn preserves_numeric_retry_after_for_the_shared_scheduler() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::RETRY_AFTER,
+            "3".parse().expect("header value"),
+        );
+        assert_eq!(retry_after_milliseconds(&headers), Some(3_000));
+        assert_eq!(
+            retry_after_from_error(&AgentRuntimeError::Core(
+                "provider rate limited [retry-after-ms:3000]".to_string()
+            )),
+            Some(Duration::from_millis(3_000))
+        );
     }
 }

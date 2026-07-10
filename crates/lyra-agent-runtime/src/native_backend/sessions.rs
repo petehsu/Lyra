@@ -3,7 +3,16 @@ use super::*;
 pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
     let title = string_opt(&payload, "title");
     let working_dir = string_opt(&payload, "workingDir");
-    let session = new_session(title, working_dir, "normal");
+    let agent_mode = string_opt(&payload, "agentMode").unwrap_or_else(|| "solo".to_string());
+    if agent_mode != "solo" && agent_mode != "oma" {
+        return Err(AgentRuntimeError::Core(
+            "agentMode must be either solo or oma".to_string(),
+        ));
+    }
+    let mut session = new_session(title, working_dir, "normal");
+    if agent_mode == "oma" {
+        initialize_oma_session(&mut session.snapshot);
+    }
     let session_id = session.id.clone();
     let (root, session, callback) = {
         let mut state = state()
@@ -122,7 +131,7 @@ pub(crate) fn new_session(
     let working_dir_is_home = requested_dir.is_none();
     let working_dir = requested_dir.unwrap_or_else(home_working_dir);
     let project_bound = !working_dir.trim().is_empty();
-    let snapshot = json!({
+    let mut snapshot = json!({
         "id": id,
         "title": title,
         "sessionKind": kind,
@@ -144,6 +153,7 @@ pub(crate) fn new_session(
         "updatedAt": created_at,
         "memory": Value::Null
     });
+    new_session_agent_fields(&mut snapshot);
     NativeSession {
         id,
         snapshot,
@@ -179,7 +189,7 @@ fn new_ephemeral_session(
     let working_dir_is_home = requested_dir.is_none();
     let working_dir = requested_dir.unwrap_or_else(home_working_dir);
     let project_bound = !working_dir.trim().is_empty();
-    let snapshot = json!({
+    let mut snapshot = json!({
         "id": id,
         "title": "Plan chat",
         "sessionKind": "temporary",
@@ -202,6 +212,7 @@ fn new_ephemeral_session(
         "updatedAt": created_at,
         "memory": Value::Null
     });
+    new_session_agent_fields(&mut snapshot);
     NativeSession {
         id,
         snapshot,

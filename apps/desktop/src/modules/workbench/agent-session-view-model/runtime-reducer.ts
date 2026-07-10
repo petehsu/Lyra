@@ -10,7 +10,8 @@ import type {
 const messageRichness = (message: AgentMessage): number => {
   const blockCount = message.blocks?.length ?? 0;
   const textLength = message.text.length;
-  return blockCount * 1_000 + textLength;
+  const metadata = Object.keys(asRecord(message.metadata)).length;
+  return blockCount * 1_000 + textLength + metadata * 10;
 };
 
 const chooseRicherMessage = (left: AgentMessage, right: AgentMessage): AgentMessage =>

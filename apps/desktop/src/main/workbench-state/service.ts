@@ -170,6 +170,9 @@ export const createWorkbenchStateIpcBridge = async (
   const writeStateAsync = async (key: WorkbenchStateKey, json: string): Promise<void> => {
     normalizeKey(key);
     const normalizedJson = normalizeJson(json);
+    if (stateSnapshot[key] === normalizedJson) {
+      return;
+    }
     const filePath = resolveStateFilePath(storageRoot, key);
     stateSnapshot[key] = normalizedJson;
     publish(key, normalizedJson);
@@ -186,6 +189,9 @@ export const createWorkbenchStateIpcBridge = async (
 
   const removeStateAsync = async (key: WorkbenchStateKey): Promise<void> => {
     normalizeKey(key);
+    if (stateSnapshot[key] === null) {
+      return;
+    }
     const filePath = resolveStateFilePath(storageRoot, key);
     stateSnapshot[key] = null;
     publish(key, null);

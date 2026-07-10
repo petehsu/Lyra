@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { BrowserLayoutSyncOptions } from "./browser-layout-sync";
 import type { PanelLayoutModel } from "./use-panel-layout";
@@ -22,6 +22,7 @@ export const useBrowserLayoutAnimationSync = ({
   animationDurationMs,
   animationSyncIntervalMs
 }: UseBrowserLayoutAnimationSyncParams): (() => void) => {
+  const lastAnimatedLayoutKeyRef = useRef<string | null>(null);
   const beginBrowserLayoutAnimationSync = useCallback((): void => {
     scheduleBrowserLayoutSync({
       force: true,
@@ -34,17 +35,21 @@ export const useBrowserLayoutAnimationSync = ({
     scheduleBrowserLayoutSync
   ]);
 
-  useEffect(() => {
-    beginBrowserLayoutAnimationSync();
-  }, [
+  const animatedLayoutKey = JSON.stringify({
     activeTabId,
-    beginBrowserLayoutAnimationSync,
-    panelLayoutModel.aiPanelSide,
-    panelLayoutModel.cssVars,
-    panelLayoutModel.terminalPanelSide,
-    scheduleBrowserLayoutSync,
-    stackedBrowserTabs
-  ]);
+    aiPanelSide: panelLayoutModel.aiPanelSide,
+    cssVars: panelLayoutModel.cssVars,
+    stackedBrowserTabs,
+    terminalPanelSide: panelLayoutModel.terminalPanelSide
+  });
+
+  useEffect(() => {
+    if (lastAnimatedLayoutKeyRef.current === animatedLayoutKey) {
+      return;
+    }
+    lastAnimatedLayoutKeyRef.current = animatedLayoutKey;
+    beginBrowserLayoutAnimationSync();
+  }, [animatedLayoutKey, beginBrowserLayoutAnimationSync]);
 
   return beginBrowserLayoutAnimationSync;
 };

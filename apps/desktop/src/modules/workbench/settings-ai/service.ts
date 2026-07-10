@@ -666,6 +666,6 @@ export const useSettingsAiModel = ({
     completeAgentAccountLogin,
     switchAgentAccount,
     removeAgentAccount,
-    openPageInNewTab: onOpenSite,
+    ...(onOpenSite === undefined ? {} : { openPageInNewTab: onOpenSite }),
   };
 };

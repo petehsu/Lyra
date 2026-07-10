@@ -7,7 +7,14 @@
 // be reused from a server-side rendering pipeline or type-checked from
 // external data providers.
 
-import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../shared/agent";
+import type {
+  AgentMode,
+  AgentPageCitation,
+  AgentTranscriptCitation,
+  OmaChannelKind,
+  OmaMessageMetadata,
+  OmaSessionState
+} from "../../../../../shared/agent";
 import type { AgentFileAttachment } from "../features/chat/composer-file";
 import type { LyraSensitiveValueRef } from "../../../../../shared/desktop-bridge";
 
@@ -209,6 +216,11 @@ export interface ChatMessage {
   id: string;
   author: "user" | "agent";
   blocks: MessageBlock[];
+  oma?: OmaMessageMetadata | null;
+  omaSenderName?: string | null;
+  omaSenderAvatar?: string | null;
+  omaSenderAvatarSrc?: string | null;
+  omaSenderAgentId?: string | null;
   isApiError?: boolean;
   /** Resolved transcript citations attached to a sent user message. */
   transcriptCitations?: readonly AgentTranscriptCitation[];
@@ -227,6 +239,16 @@ export interface ChatMessage {
     checkpointAt?: string | null;
     unavailableReason?: string | null;
   } | null;
+}
+
+export interface OmaControls {
+  state: OmaSessionState | null;
+  agentMode: AgentMode;
+  activeChannelId: string | null;
+  setMode(mode: AgentMode): Promise<void>;
+  addAgent(agentId: string): Promise<void>;
+  removeAgent(agentId: string): Promise<void>;
+  setActiveChannel(channelId: string): Promise<void>;
 }
 
 export interface ModelOption {

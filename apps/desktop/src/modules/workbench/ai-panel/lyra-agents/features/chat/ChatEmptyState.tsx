@@ -7,10 +7,9 @@
 // prompt reads "Home", matching the runtime's home-directory default — sessions
 // are always bound (to a chosen project, or to Home by default).
 
-import { useRef } from "react";
+import { useState } from "react";
 import { AppButton } from "@renderer/ui/components";
 import { LYRA_ASCII_LOGO } from "./ascii-logo";
-import { useAsciiFlicker } from "./use-ascii-flicker";
 import { t } from "@workbench/i18n";
 
 export function ChatEmptyState({
@@ -25,11 +24,26 @@ export function ChatEmptyState({
   const displayName = isHome || projectName === null || projectName.trim().length === 0
     ? t("lyra-agents-composer.workingDirHome")
     : projectName.trim();
-  const logoRef = useRef<HTMLPreElement>(null);
-  useAsciiFlicker(logoRef, LYRA_ASCII_LOGO);
+  const [logoAnimationKey, setLogoAnimationKey] = useState(0);
+  const [isLogoAnimating, setIsLogoAnimating] = useState(true);
+  const replayLogoAnimation = (): void => {
+    setLogoAnimationKey((current) => current + 1);
+    setIsLogoAnimating(true);
+  };
+
   return (
     <div className="lyra-agents-chat-empty" data-testid="lyra-agents-chat-empty">
-      <pre ref={logoRef} className="lyra-agents-chat-empty-logo" aria-hidden="true">{LYRA_ASCII_LOGO}</pre>
+      <button
+        key={logoAnimationKey}
+        type="button"
+        className="lyra-agents-chat-empty-logo"
+        aria-label={t("lyra-agents-empty.logoAction")}
+        data-animate={isLogoAnimating}
+        onAnimationEnd={() => setIsLogoAnimating(false)}
+        onClick={replayLogoAnimation}
+      >
+        {LYRA_ASCII_LOGO}
+      </button>
       <p className="lyra-agents-chat-empty-question">
         {t("lyra-agents-empty.questionPrefix")}
         <AppButton

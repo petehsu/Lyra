@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
+import { changeI18nLocale, WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
 import type {
   SystemNotificationClickBehavior,
   SystemNotificationMode
@@ -186,6 +186,7 @@ export const useWorkbenchPreferencesModel = (
   return {
     preferences,
     setLocale: (locale) => {
+      void changeI18nLocale(locale);
       commit((current) => ({
         ...current,
         locale

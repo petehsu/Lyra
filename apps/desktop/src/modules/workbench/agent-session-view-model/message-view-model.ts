@@ -1,4 +1,9 @@
-import type { AgentMessageBlock, AgentSessionSnapshot, AgentToolActivity } from "../../../shared/agent";
+import type {
+  AgentMessageBlock,
+  AgentSessionSnapshot,
+  AgentToolActivity,
+  OmaMessageMetadata
+} from "../../../shared/agent";
 import type { ChatMessage, MessageBlock } from "../ai-panel/lyra-agents/core/types";
 import { formatMessage, t, formatTime } from "@workbench/i18n";
 import { isInternalRuntimeFallbackText } from "../ai-panel/lyra-agents/core/turn-failure-message";
@@ -190,6 +195,22 @@ const isCompressedContextBlock = (metadata: unknown): boolean => {
 const isApiErrorAgentMessage = (metadata: unknown): boolean => {
   if (metadata === null || typeof metadata !== "object") return false;
   return (metadata as { readonly isApiError?: boolean }).isApiError === true;
+};
+
+const parseOmaMetadata = (metadata: unknown): OmaMessageMetadata | null => {
+  if (metadata === null || typeof metadata !== "object") return null;
+  const oma = (metadata as { readonly oma?: unknown }).oma;
+  return oma !== null && typeof oma === "object" ? (oma as OmaMessageMetadata) : null;
+};
+
+const sameOmaMessageThread = (left: ChatMessage, right: ChatMessage): boolean => {
+  const leftOma = left.oma ?? null;
+  const rightOma = right.oma ?? null;
+  if (leftOma === null && rightOma === null) return true;
+  return (
+    leftOma?.channelId === rightOma?.channelId &&
+    leftOma?.senderAgentId === rightOma?.senderAgentId
+  );
 };
 
 type LegacyAgentToolBlock = Extract<AgentMessageBlock, { type: "tool" }> & {
@@ -404,6 +425,12 @@ export const agentSessionToChatMessages = (
 
   const sessionTools = latestToolActivities(session.tools);
   const toolsById = new Map(sessionTools.map((tool) => [tool.id, tool]));
+  const omaAgentsById = new Map(
+    (session.oma?.agents ?? []).map((agent) => [agent.id, agent])
+  );
+  const omaChannelKindsById = new Map(
+    (session.oma?.channels ?? []).map((channel) => [channel.id, channel.kind])
+  );
   const messageLimit = typeof options.messageLimitFromEnd === "number" &&
     Number.isFinite(options.messageLimitFromEnd)
     ? Math.max(0, Math.floor(options.messageLimitFromEnd))
@@ -431,10 +458,22 @@ export const agentSessionToChatMessages = (
       const pageCitations = parsePageCitationsFromMetadata(message.metadata);
       const inlineImages = parseInlineImagesFromMetadata(message.metadata);
       const fileAttachments = parseFileAttachmentsFromMetadata(message.metadata);
+      const oma = parseOmaMetadata(message.metadata);
+      const omaSender = author === "agent" && typeof oma?.senderAgentId === "string"
+        && omaChannelKindsById.get(oma.channelId ?? "") === "group"
+        ? omaAgentsById.get(oma.senderAgentId)
+        : undefined;
       const isApiError = author === "agent" && isApiErrorAgentMessage(message.metadata);
       const chatMessage: ChatMessage = {
         id: message.id,
         author,
+        ...(oma === null ? {} : { oma }),
+        ...(omaSender === undefined ? {} : {
+          omaSenderName: omaSender.name,
+          omaSenderAvatar: omaSender.avatar.value,
+          omaSenderAvatarSrc: omaSender.avatar.src ?? null,
+          omaSenderAgentId: omaSender.agentId
+        }),
         ...(isApiError ? { isApiError: true } : {}),
         ...(formattedTime === undefined ? {} : { time: formattedTime }),
         ...(transcriptCitations.length === 0 ? {} : { transcriptCitations }),
@@ -508,7 +547,8 @@ export const agentSessionToChatMessages = (
         prev.author === msg.author &&
         prev.author === "agent" &&
         !isPendingAgentMessage(prev) &&
-        !isPendingAgentMessage(msg)
+        !isPendingAgentMessage(msg) &&
+        sameOmaMessageThread(prev, msg)
       ) {
         let nextBlocks = [...prev.blocks];
         for (const block of msg.blocks) {

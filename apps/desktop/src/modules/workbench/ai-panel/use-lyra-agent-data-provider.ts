@@ -10,6 +10,7 @@ import {
 
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
+  type AgentMode,
   type AgentModelCatalogSnapshot,
   type AgentFileCitation,
   type AgentPageCitation,
@@ -40,6 +41,7 @@ import type {
   DecisionOption,
   DecisionQuestion,
   DiffFileEntry,
+  OmaControls,
   PermissionRequest
 } from "./lyra-agents/core/types";
 import { setLocale, t, type I18nKey, type Locale } from "@workbench/i18n";
@@ -58,7 +60,10 @@ import {
   normalizeAgentSessionSnapshot
 } from "../agent-session-view-model";
 import type { CitationScrollTarget } from "./lyra-agents/data/DataProvider";
-import type { ComposerInsertableCitation } from "./lyra-agents/features/chat/message-citation";
+import {
+  type ComposerInsertableCitation,
+  segmentsToOmaMentions
+} from "./lyra-agents/features/chat/message-citation";
 import {
   buildFileAttachmentFromPath,
   type AgentFileAttachment
@@ -95,6 +100,14 @@ type WorkbenchPathTarget = {
 
 const isAbsoluteOrHomePath = (filePath: string): boolean =>
   /^(?:\/|~\/|[A-Za-z]:[\\/]|file:\/\/)/u.test(filePath);
+
+const omaChannelIdFromMetadata = (metadata: unknown): string | null => {
+  if (metadata === null || typeof metadata !== "object") return null;
+  const oma = (metadata as { readonly oma?: unknown }).oma;
+  if (oma === null || typeof oma !== "object") return null;
+  const channelId = (oma as { readonly channelId?: unknown }).channelId;
+  return typeof channelId === "string" ? channelId : null;
+};
 
 const resolveSessionRelativePath = (filePath: string, workingDir: string | null | undefined): string => {
   const trimmed = filePath.trim();
@@ -755,9 +768,11 @@ export const useLyraAgentDataProvider = (
 
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
-  const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
+  const createSessionRequest = useCallback((agentMode: AgentMode = "solo"): AgentSessionCreateRequest => {
     const workingDir = activeDraftWorkingDir?.trim() ?? "";
-    return workingDir.length > 0 ? { title: t("aiPanel.defaultSessionTitle"), workingDir } : { title: t("aiPanel.defaultSessionTitle") };
+    return workingDir.length > 0
+      ? { title: t("aiPanel.defaultSessionTitle"), workingDir, agentMode }
+      : { title: t("aiPanel.defaultSessionTitle"), agentMode };
   }, [activeDraftWorkingDir]);
 
   const ensureBackingSession = useCallback(async (): Promise<AgentSessionSnapshot | null> => {
@@ -835,13 +850,55 @@ export const useLyraAgentDataProvider = (
 
     await desktopApi.agent.sendTurn({
       sessionId: session.id,
+      ...(session.agentMode === "oma" && session.oma !== null
+        ? { channelId: session.oma.activeChannelId }
+        : {}),
       text: trimmed,
       ...(preparedImages.length === 0 ? {} : { images: preparedImages }),
       ...(citations.length === 0 ? {} : { citations }),
       ...(pageCitations.length === 0 ? {} : { pageCitations }),
-      ...(fileCitations.length === 0 ? {} : { fileCitations })
+      ...(fileCitations.length === 0 ? {} : { fileCitations }),
+      ...(session.agentMode === "oma" && session.oma?.activeChannelId === "group:default"
+        ? (() => {
+            const omaMentions = segmentsToOmaMentions(segments);
+            return omaMentions.length === 0 ? {} : { omaMentions };
+          })()
+        : {})
     });
   }, [desktopApi, ensureBackingSession]);
+
+  const applyOmaSnapshot = useCallback((snapshot: AgentSessionSnapshot): void => {
+    currentSessionIdRef.current = snapshot.id;
+    dispatch({ type: "snapshot", snapshot });
+  }, []);
+
+  const setAgentMode = useCallback(async (mode: AgentMode): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
+    applyOmaSnapshot(await desktopApi.agent.setAgentMode({ sessionId: session.id, mode }));
+  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
+
+  const addOmaAgent = useCallback(async (agentId: string): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
+    applyOmaSnapshot(await desktopApi.agent.addOmaAgent({ sessionId: session.id, agentId }));
+  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
+
+  const removeOmaAgent = useCallback(async (agentId: string): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
+    applyOmaSnapshot(await desktopApi.agent.removeOmaAgent({ sessionId: session.id, agentId }));
+  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
+
+  const setOmaActiveChannel = useCallback(async (channelId: string): Promise<void> => {
+    if (desktopApi?.agent === undefined) return;
+    const session = await ensureBackingSession();
+    if (session === null) return;
+    applyOmaSnapshot(await desktopApi.agent.setOmaActiveChannel({ sessionId: session.id, channelId }));
+  }, [applyOmaSnapshot, desktopApi, ensureBackingSession]);
 
   const addCitationToComposer = useCallback((citation: AgentTranscriptCitation): void => {
     setPendingCitation({ kind: "transcript", citation });
@@ -1305,10 +1362,10 @@ export const useLyraAgentDataProvider = (
     dispatch({ type: "snapshot", snapshot: response.snapshot });
   }, [desktopApi, state.session]);
 
-  const createSession = useCallback(async (): Promise<void> => {
+  const createSession = useCallback(async (agentMode?: AgentMode): Promise<void> => {
     if (desktopApi?.agent === undefined) return;
-    const request = createSessionRequest();
-    if (onCreateDraftSessionTab !== undefined) {
+    const request = createSessionRequest(agentMode);
+    if (agentMode === undefined && onCreateDraftSessionTab !== undefined) {
       onCreateDraftSessionTab(request);
       setModelState(null);
       dispatch({ type: "empty" });
@@ -1900,9 +1957,21 @@ export const useLyraAgentDataProvider = (
   }, []);
 
   const data = useMemo(() => {
-    const totalMessageCount = state.session?.messages.length ?? 0;
+    const activeOmaChannelId =
+      state.session?.agentMode === "oma" && state.session.oma !== null
+        ? state.session.oma.activeChannelId
+        : null;
+    const messageSession = activeOmaChannelId === null || state.session === null
+      ? state.session
+      : {
+          ...state.session,
+          messages: state.session.messages.filter((message) =>
+            omaChannelIdFromMetadata(message.metadata) === activeOmaChannelId
+          )
+        };
+    const totalMessageCount = messageSession?.messages.length ?? 0;
     const visibleMessageCount = Math.min(totalMessageCount, renderBudgetCount);
-    const chatMessages = agentSessionToChatMessages(state.session, {
+    const chatMessages = agentSessionToChatMessages(messageSession, {
       messageLimitFromEnd: renderBudgetCount
     });
     const turnRunning = state.session?.follow.running ?? state.loading;
@@ -1921,6 +1990,7 @@ export const useLyraAgentDataProvider = (
             {
               id: "lyra-agent-connecting",
               author: "agent",
+              ...(activeOmaChannelId === null ? {} : { oma: { channelId: activeOmaChannelId } }),
               blocks: [
                 {
                   type: "text",
@@ -1931,6 +2001,15 @@ export const useLyraAgentDataProvider = (
             }
           ]
         : chatMessages;
+    const omaControls: OmaControls = {
+      state: state.session?.oma ?? null,
+      agentMode: state.session?.agentMode ?? "solo",
+      activeChannelId: activeOmaChannelId,
+      setMode: setAgentMode,
+      addAgent: addOmaAgent,
+      removeAgent: removeOmaAgent,
+      setActiveChannel: setOmaActiveChannel
+    };
     const input: CreateDataProviderValueInput = {
       session: agentSessionMetaWithDraftWorkingDir(agentSessionToSessionMeta(state.session), state.session === null ? activeDraftWorkingDir : null),
       messages,
@@ -1949,6 +2028,7 @@ export const useLyraAgentDataProvider = (
       modelControls,
       permissionModeControls,
       locationControls: locationControls ?? null,
+      omaControls,
       openModelSettings,
       aiRichRenderingEnabled,
       browserFollowModeEnabled,
@@ -1986,9 +2066,9 @@ export const useLyraAgentDataProvider = (
       pickFileFromFileManager,
       workspaceTabs: workspaceTabsForComposer,
       terminalTabs: terminalTabsForComposer,
-      getTerminalTabPanes,
-      closeTerminalTab: onCloseTerminalTab,
-      focusTerminalTabInDock: onFocusTerminalTabInDock,
+      ...(getTerminalTabPanes === undefined ? {} : { getTerminalTabPanes }),
+      ...(onCloseTerminalTab === undefined ? {} : { closeTerminalTab: onCloseTerminalTab }),
+      ...(onFocusTerminalTabInDock === undefined ? {} : { focusTerminalTabInDock: onFocusTerminalTabInDock }),
       cancelTurn: cancel,
       previewRollback,
       rollbackMessage,
@@ -2071,6 +2151,10 @@ export const useLyraAgentDataProvider = (
     runRefactor,
     runReview,
     sendMessage,
+    setAgentMode,
+    addOmaAgent,
+    removeOmaAgent,
+    setOmaActiveChannel,
     activeDraftWorkingDir,
     state.session,
     state.loading,

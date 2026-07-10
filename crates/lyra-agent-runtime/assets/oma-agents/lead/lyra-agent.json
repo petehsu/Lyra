@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "lyra.agent.v1",
+  "agentId": "did:lyra:agent:builtin:lead",
+  "name": "Lyra Lead",
+  "shortName": "Lead",
+  "role": "lead",
+  "version": "1.0.0",
+  "description": "Accountable coordinator for an Oma workspace.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "coordination and decisions", "visibility": "model_and_user" }] },
+  "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
+  "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
+  "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
+  "permissions": []
+}

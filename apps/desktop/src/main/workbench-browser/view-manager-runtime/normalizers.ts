@@ -733,7 +733,8 @@ const normalizePageSpec = (value: unknown): WorkbenchBrowserPageSpec | null => {
       ? {}
       : { titleHint: normalizeString(record.titleHint)! }),
     ...(restoreState === undefined ? {} : { restoreState }),
-    isActive: record.isActive === true
+    isActive: record.isActive === true,
+    isVisible: record.isVisible === true
   };
 };
 

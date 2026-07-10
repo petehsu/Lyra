@@ -649,10 +649,11 @@ pub(crate) fn run_native_tool_with_dispatcher(
         "todo_write" => tool_todo_write(session_id, turn_id, input),
         "todo_update" => tool_todo_update(session_id, turn_id, input),
         "todo_finish" => tool_todo_finish(session_id, turn_id, input),
-        "design_reference" => tool_design_reference(input),
+        "design_reference" => tool_design_reference(session_id, input),
         "design_extract_reference" => {
             tool_design_extract_reference(turn_id, tool_call_id, input, dispatcher)
         }
+        "oma_agent" => super::super::tool_oma_agent(session_id, turn_id, input),
         "codegraph_explore" => tool_codegraph_explore(session_id, input),
         "codegraph_callers" => tool_codegraph_callers(session_id, input),
         "codegraph_callees" => tool_codegraph_callees(session_id, input),

@@ -3,6 +3,154 @@ use serde_json::Value;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// Stable, distributable definition of one Lyra Agent package.
+///
+/// This is deliberately data-only: hosts keep their existing model, tool and
+/// permission runtimes and project this identity into them.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageManifest {
+    pub schema_version: String,
+    pub agent_id: String,
+    pub name: String,
+    pub short_name: String,
+    pub role: String,
+    pub version: String,
+    pub description: String,
+    #[serde(default)]
+    pub profile: AgentPackageProfile,
+    #[serde(default)]
+    pub icons: Vec<AgentPackageIcon>,
+    pub prompt: AgentPackagePrompt,
+    #[serde(default)]
+    pub capabilities: AgentPackageCapabilities,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageProfile {
+    #[serde(default)]
+    pub facts: Vec<AgentPackageFact>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageFact {
+    pub key: String,
+    pub label: String,
+    pub value: String,
+    pub visibility: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageIcon {
+    pub src: String,
+    #[serde(rename = "type")]
+    pub media_type: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackagePrompt {
+    pub main: String,
+    #[serde(default)]
+    pub variables: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageCapabilities {
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub code_hooks: Vec<String>,
+}
+
+/// A package installed into one Oma session. `session_agent_id` is local to
+/// the session; `agent_id` stays stable across installations and distribution.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAgent {
+    pub session_agent_id: String,
+    pub agent_id: String,
+    pub package_version: String,
+    pub status: String,
+}
+
+/// Backward-compatible name for the Oma session member model.
+pub type OmaSessionAgent = SessionAgent;
+
+/// Oma permits exactly one shared channel and per-session-Agent private
+/// channels. Hosts derive the persisted channel id through [`OmaChannel::id`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum OmaChannel {
+    GroupDefault,
+    Direct { session_agent_id: String },
+}
+
+impl OmaChannel {
+    pub fn id(&self) -> String {
+        match self {
+            Self::GroupDefault => "group:default".to_string(),
+            Self::Direct { session_agent_id } => format!("direct:{session_agent_id}"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmaChannelContext {
+    #[serde(default)]
+    pub messages: Vec<Value>,
+    #[serde(default)]
+    pub tools: Vec<Value>,
+    #[serde(default)]
+    pub todos: Vec<Value>,
+    #[serde(default)]
+    pub memory: Option<Value>,
+    #[serde(default)]
+    pub prompt_runtime_contract: Option<Value>,
+    #[serde(default)]
+    pub prompt_delivery: Option<Value>,
+    #[serde(default)]
+    pub token_estimate: Option<Value>,
+    #[serde(default)]
+    pub token_estimate_at_ms: Option<Value>,
+}
+
+/// Per-Agent projection of a structured default-group `@` assignment.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmaExecutionAssignment {
+    #[serde(default)]
+    pub common_preamble: String,
+    #[serde(default)]
+    pub task: String,
+    #[serde(default)]
+    pub task_parts: Vec<String>,
+    #[serde(default)]
+    pub full_text: String,
+}
+
+/// The neutral hand-off boundary for hosts that want to adopt Oma without
+/// replacing their existing agent runner.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmaExecutionRequest {
+    pub session_id: String,
+    pub channel_id: String,
+    pub session_agent_id: String,
+    pub package: AgentPackageManifest,
+    pub context: OmaChannelContext,
+    pub input: Value,
+    #[serde(default)]
+    pub assignment: Option<OmaExecutionAssignment>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeError {
@@ -82,5 +230,74 @@ impl RuntimeError {
             message: message.into(),
             details: Some(details),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn oma_execution_request_serializes_package_identity_and_channel_context() {
+        let request = OmaExecutionRequest {
+            session_id: "session-1".to_string(),
+            channel_id: "direct:instance-1".to_string(),
+            session_agent_id: "instance-1".to_string(),
+            package: AgentPackageManifest {
+                schema_version: "lyra.agent.v1".to_string(),
+                agent_id: "did:lyra:agent:builtin:lead".to_string(),
+                name: "Lyra Lead".to_string(),
+                short_name: "Lead".to_string(),
+                role: "lead".to_string(),
+                version: "1.0.0".to_string(),
+                description: "Coordinates work".to_string(),
+                profile: AgentPackageProfile::default(),
+                icons: vec![AgentPackageIcon {
+                    src: "assets/avatar.svg".to_string(),
+                    media_type: "image/svg+xml".to_string(),
+                }],
+                prompt: AgentPackagePrompt {
+                    main: "prompts/main.md".to_string(),
+                    variables: Vec::new(),
+                },
+                capabilities: AgentPackageCapabilities::default(),
+                permissions: Vec::new(),
+            },
+            context: OmaChannelContext {
+                messages: vec![json!({ "role": "user", "text": "hello" })],
+                tools: vec![json!({ "id": "tool-1" })],
+                todos: vec![json!({ "id": "todo-1" })],
+                memory: Some(json!({ "summary": "private" })),
+                prompt_runtime_contract: None,
+                prompt_delivery: None,
+                token_estimate: Some(json!(42)),
+                token_estimate_at_ms: Some(json!(1)),
+            },
+            input: json!({ "text": "hello" }),
+            assignment: Some(OmaExecutionAssignment {
+                common_preamble: "Review this change".to_string(),
+                task: "Check release risks.".to_string(),
+                task_parts: vec!["Check release risks.".to_string()],
+                full_text: "Review this change @Reviewer Check release risks.".to_string(),
+            }),
+        };
+        let value = serde_json::to_value(request).expect("serialize");
+        assert_eq!(value["sessionAgentId"], "instance-1");
+        assert_eq!(value["package"]["agentId"], "did:lyra:agent:builtin:lead");
+        assert_eq!(value["context"]["messages"][0]["text"], "hello");
+        assert_eq!(value["assignment"]["task"], "Check release risks.");
+    }
+
+    #[test]
+    fn oma_channels_only_model_the_default_group_or_one_private_agent_channel() {
+        assert_eq!(OmaChannel::GroupDefault.id(), "group:default");
+        assert_eq!(
+            OmaChannel::Direct {
+                session_agent_id: "instance-1".to_string(),
+            }
+            .id(),
+            "direct:instance-1"
+        );
     }
 }

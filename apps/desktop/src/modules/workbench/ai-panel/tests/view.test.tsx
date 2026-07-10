@@ -15,6 +15,8 @@ const snapshot: AgentSessionSnapshot = {
   id: "session-1",
   title: "新会话",
   sessionKind: "normal",
+  agentMode: "solo",
+  oma: null,
   workingDir: "/",
   projectBound: false,
   messages: [],

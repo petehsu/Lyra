@@ -635,6 +635,7 @@ pub(crate) fn tool_file_write(
     }
     let before_exists = workspace_path.absolute.exists();
     let old = fs::read_to_string(&workspace_path.absolute).unwrap_or_default();
+    validate_design_style_change(session_id, &workspace_path.relative, &old, &content)?;
     if let Some(parent) = workspace_path.absolute.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             NativeToolFailure::new(
@@ -777,6 +778,7 @@ pub(crate) fn tool_file_strict_edit(
         )
     })?;
     let updated = apply_fuzzy_replacement(&old, &old_string, &new_string, replace_all)?;
+    validate_design_style_change(session_id, &workspace_path.relative, &old, &updated)?;
     let preview_diff = diff_text(&workspace_path.relative, &old, &updated);
     emit_running_mutation_diff(
         session_id,
@@ -1128,6 +1130,9 @@ pub(crate) fn tool_file_multiedit(
     }
     let mut diffs = Vec::new();
     let mut changed_files = Vec::new();
+    for (relative, old, updated) in staged.values() {
+        validate_design_style_change(session_id, relative, old, updated)?;
+    }
     for (relative, old, updated) in staged.values() {
         diffs.push(diff_text(relative, old, updated));
     }
@@ -1939,6 +1944,22 @@ fn execute_staged_patch(
     input: &Value,
     staged: Vec<StagedPatchOperation>,
 ) -> NativeToolResult {
+    for operation in &staged {
+        if let StagedPatchOperation::Write {
+            relative,
+            before,
+            after,
+            ..
+        } = operation
+        {
+            validate_design_style_change(
+                session_id,
+                relative,
+                before.as_deref().unwrap_or(""),
+                after,
+            )?;
+        }
+    }
     let mut changed_files = Vec::new();
     let mut diffs = Vec::new();
     let mut applied = Vec::new();

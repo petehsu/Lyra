@@ -87,6 +87,9 @@ import {
   type AgentMcpServerUpsertRequest,
   type AgentMcpToolDiscoverRequest,
   type AgentMcpToolDiscoverResponse,
+  type AgentOmaAgentRequest,
+  type AgentOmaChannelRequest,
+  type AgentOmaSetModeRequest,
   type AgentProviderOptionsUpdateRequest,
   type AgentProviderProfileSaveRequest,
   type AgentPokeRequest,
@@ -1321,6 +1324,26 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     bindProject: (request: AgentSessionBindProjectRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentSessionBindProject,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    setAgentMode: (request: AgentOmaSetModeRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentOmaSetMode,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    addOmaAgent: (request: AgentOmaAgentRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentOmaAddAgent,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    removeOmaAgent: (request: AgentOmaAgentRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentOmaRemoveAgent,
+        request
+      ) as Promise<AgentSessionSnapshot>,
+    setOmaActiveChannel: (request: AgentOmaChannelRequest) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.agentOmaSetActiveChannel,
         request
       ) as Promise<AgentSessionSnapshot>,
     codegraphStatus: (request: { sessionId?: string; workingDir?: string }) =>

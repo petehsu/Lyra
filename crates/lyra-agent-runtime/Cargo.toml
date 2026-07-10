@@ -13,6 +13,7 @@ dirs.workspace = true
 lyra-agent-api.workspace = true
 lyra-agent-kernel.workspace = true
 lyra-agent-plugins.workspace = true
+lyra-runtime-protocol = { path = "../lyra-runtime-protocol" }
 # Enable the real BPE tokenizer (o200k_base) so token estimates used for
 # context-window trimming and memory checkpoints are accurate for CJK/code.
 lyra-agent-reader = { workspace = true, features = ["tokenizer-tiktoken"] }
@@ -41,6 +42,9 @@ url.workspace = true
 urlencoding.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 zip.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

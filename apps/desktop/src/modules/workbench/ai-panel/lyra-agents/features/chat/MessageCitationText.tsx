@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from "react";
-import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../../shared/agent";
+import type { AgentPageCitation, AgentTranscriptCitation, OmaAgentMention } from "../../../../../../shared/agent";
 import type { AgentImageAttachment } from "../../core/types";
 import type { AgentFileAttachment } from "./composer-file";
 import { CitationChipView } from "./CitationChipView";
@@ -14,6 +14,7 @@ type MessageCitationTextProps = {
   pageCitations: readonly AgentPageCitation[];
   inlineImages?: readonly AgentImageAttachment[];
   fileAttachments?: readonly AgentFileAttachment[];
+  omaMentions?: readonly OmaAgentMention[];
   onTranscriptCitationClick?: (citation: AgentTranscriptCitation) => void;
   onPageCitationClick?: (citation: AgentPageCitation) => void;
   onImageAttachmentClick?: (image: AgentImageAttachment) => void;
@@ -26,14 +27,22 @@ export const MessageCitationText = ({
   pageCitations,
   inlineImages = [],
   fileAttachments = [],
+  omaMentions = [],
   onTranscriptCitationClick,
   onPageCitationClick,
   onImageAttachmentClick,
   onFileAttachmentClick
 }: MessageCitationTextProps) => {
   const segments = useMemo(
-    () => parseRenderedCitationSegments(text, transcriptCitations, pageCitations, inlineImages, fileAttachments),
-    [fileAttachments, inlineImages, pageCitations, text, transcriptCitations]
+    () => parseRenderedCitationSegments(
+      text,
+      transcriptCitations,
+      pageCitations,
+      inlineImages,
+      fileAttachments,
+      omaMentions
+    ),
+    [fileAttachments, inlineImages, omaMentions, pageCitations, text, transcriptCitations]
   );
   const hasRenderedCitations = segments.some(
     (segment) =>
@@ -41,6 +50,7 @@ export const MessageCitationText = ({
       || segment.type === "page"
       || segment.type === "image"
       || segment.type === "file"
+      || segment.type === "agentMention"
   );
 
   if (!hasRenderedCitations) {
@@ -87,6 +97,25 @@ export const MessageCitationText = ({
               file={segment.file}
               {...(handleClick === undefined ? {} : { onClick: handleClick })}
             />
+          );
+        }
+        if (segment.type === "agentMention") {
+          const avatarSrc = segment.mention.avatar?.src?.trim();
+          return (
+            <span
+              key={`oma-agent-${segment.mention.mentionId}-${index}`}
+              className="lyra-agents-citation-chip lyra-agents-citation-chip-agent-mention"
+              title={`@${segment.mention.name} · ${segment.mention.role}`}
+            >
+              <span className="lyra-agents-citation-chip-agent-avatar">
+                {avatarSrc ? <img src={`data:image/svg+xml,${encodeURIComponent(avatarSrc)}`} alt="" /> : (
+                  (segment.mention.avatar?.value ?? segment.mention.name).slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="lyra-agents-citation-chip-preview">
+                @{segment.mention.shortName ?? segment.mention.name}
+              </span>
+            </span>
           );
         }
         const handleClick = onTranscriptCitationClick === undefined

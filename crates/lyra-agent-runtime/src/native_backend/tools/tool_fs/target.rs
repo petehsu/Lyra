@@ -150,6 +150,9 @@ pub(crate) fn runtime_target_for_manifest(manifest: &ToolManifest) -> Option<Run
         "/tools/design/extract_reference" => {
             native("design_extract_reference", "design", "extract_reference")
         }
+        "/tools/agent/send" => native("oma_agent", "agent", "send"),
+        "/tools/agent/ask" => native("oma_agent", "agent", "ask"),
+        "/tools/agent/handoff" => native("oma_agent", "agent", "handoff"),
         "/tools/browser/interact" => native("browser_interact", "browser", "interact"),
         "/tools/browser/map" => host("lyraLumen.map", "lyra_lumen", "map"),
         "/tools/browser/plan" => host("lyraLumen.plan", "lyra_lumen", "plan"),

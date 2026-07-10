@@ -465,7 +465,10 @@ fn per_tool_char_budget_assigns_independent_limits() {
     // browser map/see/read: 8 K chars — compact structured snapshots.
     assert_eq!(tool_content_char_budget("lyra_lumen", "map"), 8_000);
     // default fallback: 16 K chars.
-    assert_eq!(tool_content_char_budget("unknown", "action"), DEFAULT_TOOL_CONTENT_CHARS);
+    assert_eq!(
+        tool_content_char_budget("unknown", "action"),
+        DEFAULT_TOOL_CONTENT_CHARS
+    );
 }
 
 #[test]
@@ -554,31 +557,213 @@ fn native_tool_input_preserves_user_action_parameter() {
     // design_reference accepts `action` as a user parameter (list vs read).
     // The Tool-FS target mapping's action is only a default when the user omits it.
     let input = native_tool_input("read", json!({"action": "list"}));
-    assert_eq!(input["action"], "list", "user-supplied action must not be overwritten");
+    assert_eq!(
+        input["action"], "list",
+        "user-supplied action must not be overwritten"
+    );
 
     let input = native_tool_input("read", json!({}));
-    assert_eq!(input["action"], "read", "default action applies when user omits it");
+    assert_eq!(
+        input["action"], "read",
+        "default action applies when user omits it"
+    );
 }
 
 #[test]
 fn design_reference_lists_brands_in_content_and_reads_case_insensitively() {
-    let list = tool_design_reference(&json!({ "action": "all" })).expect("list designs");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let created = LyraAgentBackend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Design context", "workingDir": workspace.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let list =
+        tool_design_reference(&session_id, &json!({ "action": "all" })).expect("list designs");
     assert!(list.content.contains("design references available"));
     assert!(list.content.contains("- "));
     let brand = list.raw["references"][0]["brand"]
         .as_str()
         .expect("first brand");
 
-    let read = tool_design_reference(&json!({
-        "action": "read",
-        "brand": brand.to_ascii_uppercase(),
-    }))
+    let read = tool_design_reference(
+        &session_id,
+        &json!({
+            "action": "read",
+            "brand": brand.to_ascii_uppercase(),
+        }),
+    )
     .expect("read design");
     assert_eq!(read.raw["brand"].as_str(), Some(brand));
-    assert!(!read.content.trim().is_empty());
-    assert!(
-        read.raw["bytes"]
-            .as_u64()
-            .is_some_and(|bytes| bytes > 0)
+    assert_eq!(
+        read.raw["activeDesignContext"]["brand"].as_str(),
+        Some(brand)
     );
+    assert!(
+        read.raw["activeDesignContext"]["documentHash"]
+            .as_str()
+            .is_some_and(|hash| hash.starts_with("sha256:"))
+    );
+    assert!(
+        read.raw["activeDesignContext"]["cssVariables"]
+            .as_str()
+            .is_some_and(|variables| variables.contains(":root"))
+    );
+    assert!(
+        read.raw["activeDesignContext"]["componentRules"]
+            .as_str()
+            .is_some_and(|rules| rules.contains("Components"))
+    );
+    assert!(!read.content.trim().is_empty());
+    assert!(read.raw["bytes"].as_u64().is_some_and(|bytes| bytes > 0));
+}
+
+#[test]
+fn active_design_context_requires_plan_citation_and_css_variables() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let created = LyraAgentBackend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Design guard", "workingDir": workspace.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let design =
+        tool_design_reference(&session_id, &json!({ "action": "read", "brand": "cursor" }))
+            .expect("activate cursor design");
+    let document_hash = design.raw["activeDesignContext"]["documentHash"]
+        .as_str()
+        .expect("document hash");
+    let css_variables = design.raw["activeDesignContext"]["cssVariables"]
+        .as_str()
+        .expect("css variables");
+    let blocked = tool_file_write(
+        &session_id,
+        "turn-design-guard",
+        "tool-raw-color",
+        &json!({
+            "path": "site.css",
+            "content": "body { color: #123456; }",
+            "overwrite": true,
+        }),
+    )
+    .expect_err("raw color must be rejected");
+    assert_eq!(blocked.code, "design_token_violation");
+    let custom_variable = tool_file_write(
+        &session_id,
+        "turn-design-guard",
+        "tool-custom-color-variable",
+        &json!({
+            "path": "site.css",
+            "content": ":root { --brand-color: #123456; }\nbody { color: var(--brand-color); }",
+            "overwrite": true,
+        }),
+    )
+    .expect_err("custom color variables must be rejected");
+    assert_eq!(custom_variable.code, "design_token_violation");
+    tool_file_write(
+        &session_id,
+        "turn-design-guard",
+        "tool-design-css",
+        &json!({
+            "path": "site.css",
+            "content": format!("{css_variables}\nbody {{ color: var(--lyra-design-color-primary); border-radius: var(--lyra-design-radius-md); font-family: var(--lyra-design-type-body-md-font-family); }}"),
+            "overwrite": true,
+        }),
+    )
+    .expect("design variables are accepted");
+
+    tool_plan_begin(
+        &session_id,
+        "turn-design-plan",
+        &json!({ "title": "Build website" }),
+    )
+    .expect("start plan");
+    tool_plan_write(
+        &session_id,
+        "turn-design-plan",
+        &json!({ "markdown": "# Build\n\nImplement the landing page.", "replace": true }),
+    )
+    .expect("write incomplete plan");
+    let missing = tool_plan_finalize(&session_id, "turn-design-plan", &json!({}))
+        .expect_err("plan must cite active design context");
+    assert_eq!(missing.code, "design_context_missing_from_plan");
+    tool_plan_write(
+        &session_id,
+        "turn-design-plan",
+        &json!({
+            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nImplement the landing page."),
+            "replace": true,
+        }),
+    )
+    .expect("write design-cited plan");
+    tool_plan_finalize(&session_id, "turn-design-plan", &json!({}))
+        .expect("finalize design-cited plan");
+}
+
+#[test]
+fn active_design_context_requires_an_explicit_mixing_exemption() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let created = LyraAgentBackend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Design mixing", "workingDir": workspace.path().display().to_string() }),
+        )
+        .expect("create session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    tool_design_reference(&session_id, &json!({ "action": "read", "brand": "cursor" }))
+        .expect("activate primary design");
+    let missing =
+        tool_design_reference(&session_id, &json!({ "action": "read", "brand": "framer" }))
+            .expect_err("mixed reference requires an exemption");
+    assert_eq!(missing.code, "design_system_mixing_requires_exemption");
+    let mixed = tool_design_reference(
+        &session_id,
+        &json!({
+            "action": "read",
+            "brand": "framer",
+            "mixingExemption": "Use Framer only for one documented product showcase.",
+        }),
+    )
+    .expect("explicit exemption allows a second reference");
+    assert_eq!(
+        mixed.raw["activeDesignContext"]["mixingExemptions"][0]["brand"],
+        "framer"
+    );
+    let document_hash = mixed.raw["activeDesignContext"]["documentHash"]
+        .as_str()
+        .expect("document hash");
+    tool_plan_begin(
+        &session_id,
+        "turn-design-mixing-plan",
+        &json!({ "title": "Build website" }),
+    )
+    .expect("start plan");
+    tool_plan_write(
+        &session_id,
+        "turn-design-mixing-plan",
+        &json!({
+            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nImplement the landing page."),
+            "replace": true,
+        }),
+    )
+    .expect("write plan missing mixing reason");
+    let missing_reason = tool_plan_finalize(&session_id, "turn-design-mixing-plan", &json!({}))
+        .expect_err("plan must explain the mixing exemption");
+    assert_eq!(
+        missing_reason.code,
+        "design_system_exemption_missing_from_plan"
+    );
+    tool_plan_write(
+        &session_id,
+        "turn-design-mixing-plan",
+        &json!({
+            "markdown": format!("# Build\n\nDesign system: cursor ({document_hash})\n\nDesign-system exemption: Use Framer only for one documented product showcase.\n\nImplement the landing page."),
+            "replace": true,
+        }),
+    )
+    .expect("write complete mixed-system plan");
+    tool_plan_finalize(&session_id, "turn-design-mixing-plan", &json!({}))
+        .expect("finalize mixed-system plan with documented exemption");
 }

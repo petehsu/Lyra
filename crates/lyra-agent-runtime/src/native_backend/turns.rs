@@ -165,6 +165,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             session.rollback_checkpoints.push(checkpoint);
             maybe_title_session_from_first_user_message(session, &text);
         }
+        apply_oma_user_turn(session, &payload, &text, &mut user_message)?;
         push_array(&mut session.snapshot, "messages", user_message.clone());
         session.snapshot["turnStatus"] = Value::String("running".to_string());
         session.snapshot["activeTurnId"] = Value::String(turn_id.clone());
@@ -222,8 +223,11 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
 }
 
 pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation: Arc<AtomicBool>) {
-    let model_result = build_model_request(&session_id)
-        .and_then(|request| run_model_loop(&session_id, &turn_id, request, &cancellation));
+    let model_result = match run_oma_turn_if_needed(&session_id, &turn_id, &cancellation) {
+        Some(result) => result,
+        None => build_model_request(&session_id)
+            .and_then(|request| run_model_loop(&session_id, &turn_id, request, &cancellation)),
+    };
     thread::sleep(Duration::from_millis(25));
 
     if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(&session_id, &turn_id) {
@@ -273,11 +277,380 @@ pub(crate) fn run_native_turn(session_id: String, turn_id: String, cancellation:
     }
 }
 
+fn run_oma_turn_if_needed(
+    session_id: &str,
+    turn_id: &str,
+    cancellation: &Arc<AtomicBool>,
+) -> Option<AgentRuntimeResult<ModelLoopResult>> {
+    let (channel_id, targets) = {
+        let state = state().lock().ok()?;
+        let snapshot = &state.sessions.get(session_id)?.snapshot;
+        if snapshot.get("agentMode").and_then(Value::as_str) != Some("oma") {
+            return None;
+        }
+        oma_turn_targets(snapshot)?
+    };
+    Some(run_oma_turn(
+        session_id,
+        turn_id,
+        &channel_id,
+        targets,
+        cancellation,
+    ))
+}
+
+fn run_oma_turn(
+    session_id: &str,
+    turn_id: &str,
+    channel_id: &str,
+    targets: Vec<String>,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<ModelLoopResult> {
+    let workers = targets
+        .into_iter()
+        .map(|session_agent_id| {
+            let session_id = session_id.to_string();
+            let turn_id = turn_id.to_string();
+            let channel_id = channel_id.to_string();
+            let cancellation = cancellation.clone();
+            thread::spawn(move || {
+                let result = run_oma_agent_once(
+                    &session_id,
+                    &turn_id,
+                    &channel_id,
+                    &session_agent_id,
+                    &cancellation,
+                    true,
+                );
+                (session_agent_id, result)
+            })
+        })
+        .collect::<Vec<_>>();
+    for worker in workers {
+        let (session_agent_id, result) = worker
+            .join()
+            .map_err(|_| AgentRuntimeError::Core("Oma Agent worker panicked".to_string()))?;
+        if let Err(error) = result {
+            if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+                return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+            }
+            commit_oma_agent_failure(session_id, channel_id, &session_agent_id, error.to_string())?;
+        }
+    }
+    for _ in 0..8 {
+        let pending = {
+            let mut state = state().lock().map_err(|_| {
+                AgentRuntimeError::Core("agent runtime state lock failed".to_string())
+            })?;
+            let session = state.sessions.get_mut(session_id).ok_or_else(|| {
+                AgentRuntimeError::Core(format!("session not found: {session_id}"))
+            })?;
+            take_pending_oma_turns(&mut session.snapshot)
+        };
+        if pending.is_empty() {
+            break;
+        }
+        for (target_channel_id, session_agent_id) in pending {
+            run_oma_pending_agent(
+                session_id,
+                turn_id,
+                &target_channel_id,
+                &session_agent_id,
+                cancellation,
+            )?;
+        }
+    }
+    if let Ok(mut state) = state().lock()
+        && let Some(session) = state.sessions.get_mut(session_id)
+    {
+        set_oma_execution_agent(&mut session.snapshot, None);
+    }
+    Ok(ModelLoopResult {
+        final_text: None,
+        metadata: None,
+        provider_transcript: Vec::new(),
+        provider_replay_items: Vec::new(),
+        ui_text_committed: false,
+    })
+}
+
+fn run_oma_pending_agent(
+    session_id: &str,
+    turn_id: &str,
+    target_channel_id: &str,
+    session_agent_id: &str,
+    cancellation: &Arc<AtomicBool>,
+) -> AgentRuntimeResult<()> {
+    run_oma_agent_once(
+        session_id,
+        turn_id,
+        target_channel_id,
+        session_agent_id,
+        cancellation,
+        false,
+    )
+}
+
+fn run_oma_agent_once(
+    session_id: &str,
+    turn_id: &str,
+    channel_id: &str,
+    session_agent_id: &str,
+    cancellation: &Arc<AtomicBool>,
+    publish: bool,
+) -> AgentRuntimeResult<()> {
+    let execution_session_id = format!("oma-execution-{}", Uuid::new_v4());
+    let (callback, running_snapshot) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let parent = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let mut execution = parent.clone();
+        execution.id = execution_session_id.clone();
+        execution.ephemeral = true;
+        execution.dirty = false;
+        activate_oma_channel(&mut execution.snapshot, channel_id)?;
+        let assignment = oma_assignment_for_agent(&execution.snapshot, session_agent_id);
+        set_oma_execution_agent(&mut execution.snapshot, Some(session_agent_id));
+        set_oma_execution_assignment(&mut execution.snapshot, assignment);
+        execution.snapshot["oma"]["parentSessionId"] = json!(session_id);
+        execution.snapshot["activeTurnId"] = json!(turn_id);
+        state
+            .sessions
+            .insert(execution_session_id.clone(), execution);
+        let callback = state.event_callback.clone();
+        let parent = state
+            .sessions
+            .get_mut(session_id)
+            .expect("Oma parent session still exists");
+        touch_session(parent);
+        let snapshot = parent.snapshot.clone();
+        state.save_state()?;
+        (callback, snapshot)
+    };
+    if publish {
+        emit_with_callback(
+            &callback,
+            json!({ "kind": "sessionSnapshot", "snapshot": running_snapshot }),
+        );
+    }
+    let result = build_model_request(&execution_session_id).and_then(|mut request| {
+        // Oma replies are committed only after their package identity and target
+        // channel have been resolved.
+        request.capabilities.supports_streaming = false;
+        run_model_loop_without_ui_commit(&execution_session_id, turn_id, request, cancellation)
+    });
+    let (text, error) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let execution = state
+            .sessions
+            .remove(&execution_session_id)
+            .ok_or_else(|| {
+                AgentRuntimeError::Core("Oma execution session disappeared".to_string())
+            })?;
+        let text = result
+            .as_ref()
+            .ok()
+            .and_then(|result| result.final_text.clone())
+            .unwrap_or_default();
+        let error = result.err().map(|error| error.to_string());
+        let parent = state
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        merge_oma_execution_channel_context(&mut parent.snapshot, channel_id, &execution.snapshot)?;
+        if let Some(oma) = parent.snapshot.get_mut("oma") {
+            set_agent_status(oma, session_agent_id, "idle");
+        }
+        touch_session(parent);
+        state.save_state()?;
+        (text, error)
+    };
+    if let Some(error) = error {
+        return Err(AgentRuntimeError::Core(error));
+    }
+    if !text.trim().is_empty() {
+        commit_oma_agent_reply(session_id, channel_id, session_agent_id, text, publish)?;
+    } else if publish {
+        emit_oma_session_snapshot(session_id)?;
+    }
+    Ok(())
+}
+
+fn commit_oma_agent_reply(
+    session_id: &str,
+    channel_id: &str,
+    session_agent_id: &str,
+    text: String,
+    publish: bool,
+) -> AgentRuntimeResult<()> {
+    let (callback, snapshot, message, visible) = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let callback = state.event_callback.clone();
+        let session = state
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let message = assistant_message_with_metadata(
+            text,
+            Some(json!({
+                "oma": {
+                    "channelId": channel_id,
+                    "sender": "agent",
+                    "senderAgentId": session_agent_id,
+                    "kind": "agent_reply",
+                }
+            })),
+        );
+        let visible =
+            push_oma_message_to_channel(&mut session.snapshot, channel_id, message.clone())?;
+        touch_session(session);
+        let snapshot = session.snapshot.clone();
+        state.save_state()?;
+        (callback, snapshot, message, visible)
+    };
+    if publish && visible {
+        emit_with_callback(
+            &callback,
+            json!({ "kind": "messageCommitted", "sessionId": session_id, "message": message }),
+        );
+    }
+    if publish {
+        emit_with_callback(
+            &callback,
+            json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
+        );
+    }
+    Ok(())
+}
+
+fn commit_oma_agent_failure(
+    session_id: &str,
+    channel_id: &str,
+    session_agent_id: &str,
+    error: String,
+) -> AgentRuntimeResult<()> {
+    commit_oma_agent_reply(
+        session_id,
+        channel_id,
+        session_agent_id,
+        format!("I couldn't complete this assignment: {error}"),
+        true,
+    )
+}
+
+fn emit_oma_session_snapshot(session_id: &str) -> AgentRuntimeResult<()> {
+    let (callback, snapshot) = {
+        let state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let snapshot = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?
+            .snapshot
+            .clone();
+        (state.event_callback.clone(), snapshot)
+    };
+    emit_with_callback(
+        &callback,
+        json!({ "kind": "sessionSnapshot", "snapshot": snapshot }),
+    );
+    Ok(())
+}
+
+pub(crate) fn run_oma_direct_ask(
+    session_id: &str,
+    turn_id: &str,
+    source_session_agent_id: &str,
+    target_session_agent_id: &str,
+    text: String,
+) -> AgentRuntimeResult<String> {
+    let target_channel_id = direct_channel_id(target_session_agent_id);
+    let original_channel_id = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let session = state
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let original_channel_id = session
+            .snapshot
+            .pointer("/oma/activeChannelId")
+            .and_then(Value::as_str)
+            .unwrap_or(OMA_DEFAULT_CHANNEL_ID)
+            .to_string();
+        activate_oma_channel(&mut session.snapshot, &target_channel_id)?;
+        let mut request = user_message(text, Vec::new(), now());
+        request["metadata"] = json!({
+            "oma": {
+                "channelId": target_channel_id,
+                "sender": "agent",
+                "senderAgentId": source_session_agent_id,
+                "targetSessionAgentIds": [target_session_agent_id],
+                "kind": "agent_ask",
+            }
+        });
+        push_array(&mut session.snapshot, "messages", request);
+        touch_session(session);
+        original_channel_id
+    };
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let result = run_oma_agent_once(
+        session_id,
+        turn_id,
+        &target_channel_id,
+        target_session_agent_id,
+        &cancellation,
+        false,
+    );
+    let reply = {
+        let mut state = state()
+            .lock()
+            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+        let session = state
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let reply = session
+            .snapshot
+            .get("messages")
+            .and_then(Value::as_array)
+            .and_then(|messages| {
+                messages.iter().rev().find(|message| {
+                    message.get("role").and_then(Value::as_str) == Some("assistant")
+                        && message
+                            .pointer("/metadata/oma/senderAgentId")
+                            .and_then(Value::as_str)
+                            == Some(target_session_agent_id)
+                })
+            })
+            .and_then(|message| message.get("text").and_then(Value::as_str))
+            .unwrap_or_default()
+            .to_string();
+        activate_oma_channel(&mut session.snapshot, &original_channel_id)?;
+        set_oma_execution_agent(&mut session.snapshot, None);
+        touch_session(session);
+        state.save_state()?;
+        reply
+    };
+    result.map(|_| reply)
+}
+
 pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {
     let (
         root,
         provider,
         model,
+        session_snapshot,
         session_messages,
         session_tools,
         host_dispatcher,
@@ -316,6 +689,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .or_else(|| state.config.default_model.clone())
             .unwrap_or_else(|| "gpt-5-mini".to_string());
         let (
+            session_snapshot,
             session_messages,
             session_tools,
             working_dir,
@@ -329,12 +703,15 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             let session = state.sessions.get(session_id).ok_or_else(|| {
                 AgentRuntimeError::Core(format!("session not found: {session_id}"))
             })?;
+            let session_snapshot = session.snapshot.clone();
             let session_messages = session
                 .snapshot
                 .get("messages")
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            let session_messages =
+                oma_messages_for_active_channel(&session_snapshot, &session_messages);
             let session_tools = session
                 .snapshot
                 .get("tools")
@@ -365,6 +742,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             (
+                session_snapshot,
                 session_messages,
                 session_tools,
                 working_dir,
@@ -395,6 +773,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             state.root.clone(),
             provider,
             model,
+            session_snapshot,
             session_messages,
             session_tools,
             state.host_dispatcher.clone(),
@@ -474,16 +853,18 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                     &retention_signals,
                 ),
             );
-            if let Some(plan) = context_window::build_context_window_plan(
-                session,
-                &trim_config,
-                active_clarification.as_ref(),
-            ) {
-                let (filtered, dropped) =
-                    context_window::filter_messages_by_window_plan(&session_messages, &plan);
-                if dropped > 0 {
-                    session_messages = filtered;
-                    provider_context_trimmed = true;
+            if session_snapshot.get("agentMode").and_then(Value::as_str) != Some("oma") {
+                if let Some(plan) = context_window::build_context_window_plan(
+                    session,
+                    &trim_config,
+                    active_clarification.as_ref(),
+                ) {
+                    let (filtered, dropped) =
+                        context_window::filter_messages_by_window_plan(&session_messages, &plan);
+                    if dropped > 0 {
+                        session_messages = filtered;
+                        provider_context_trimmed = true;
+                    }
                 }
             }
         }
@@ -492,6 +873,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     let openai_responses_replay =
         route.protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
     let latest_user_text = latest_user_text(&session_messages);
+    let oma_context = oma_runtime_context_for_prompt(&session_snapshot, &session_messages);
     let user_correction_detected = detect_user_correction(&latest_user_text);
     let tools = if capabilities.supports_tool_calling {
         model_tools()
@@ -507,6 +889,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         &memory_record_summaries,
         &capabilities,
     );
+    if let Some(context) = oma_context.as_ref() {
+        runtime_context["oma"] = context.clone();
+    }
     let stateful_prompt_contract_enabled = route.supports_stateful_prompt_contract
         && openai_responses_stateful_prompt_contract_enabled(configured_stateful_prompt_contract);
     runtime_context["providerStatefulPrompt"] = json!({
@@ -584,7 +969,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 "agent.readCodeGraphEmbeddingEnabled",
                 json!({}),
             ) {
-                let enabled = value.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+                let enabled = value
+                    .get("enabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 tools::codegraph::engine().set_embeddings_enabled(enabled);
             }
         }
@@ -595,8 +983,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             tools::CODEGRAPH_FRAGMENT_BUDGET_TOKENS,
         );
         let extra_hints = tools::codegraph_presearch_hints_from_signals(&signals);
-        runtime_context["codegraphSignals"] =
-            tools::codegraph_signals_to_runtime_value(&signals);
+        runtime_context["codegraphSignals"] = tools::codegraph_signals_to_runtime_value(&signals);
         // Extend presearchHints with codegraph tool entries so the model can
         // discover the pre-fetched tools without an extra search round.
         if !extra_hints.is_empty() {
@@ -620,7 +1007,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     // timestamp; workspace layout comes from the host capability.
     {
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let session_age_seconds = (now_ms - super::helpers::iso_ms(&session_created_at)).max(0) as u64 / 1000;
+        let session_age_seconds =
+            (now_ms - super::helpers::iso_ms(&session_created_at)).max(0) as u64 / 1000;
         let seconds_since_last_interaction = session_messages
             .iter()
             .rev()
@@ -633,7 +1021,8 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
                 dispatcher,
                 "agent.readSpatiotemporalContext",
                 json!({}),
-            ).unwrap_or_else(|_| json!({}))
+            )
+            .unwrap_or_else(|_| json!({}))
         } else {
             json!({})
         };
@@ -723,6 +1112,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         )));
     }
     let mut messages = context.messages;
+    if let Some(prompt_message) = oma_context.as_ref().and_then(oma_prompt_message) {
+        messages.insert(0, prompt_message);
+    }
     if !context.input_downgrades.is_empty() {
         // ponytail: 把既有降级信号出声化——降级不是终点而是决策点，
         // 引导模型评估能否用 Lyra 的浏览器/在线 AI 等路径把被省略的输入补回，而非直接放弃。
@@ -1187,18 +1579,21 @@ pub(crate) fn emit_assistant_message_placeholder(
     turn_id: &str,
 ) -> Option<String> {
     let message_id = format!("message-{}", Uuid::new_v4());
-    let message = assistant_message_with_id(message_id.clone(), String::new());
-    let callback = match state().lock() {
+    let (callback, message) = match state().lock() {
         Ok(mut state) => {
             let callback = state.event_callback.clone();
             let session = state.sessions.get_mut(session_id)?;
             if session.snapshot.get("activeTurnId").and_then(Value::as_str) != Some(turn_id) {
                 return None;
             }
+            let mut message = assistant_message_with_id(message_id.clone(), String::new());
+            if let Some(metadata) = oma_finish_metadata(&session.snapshot, None) {
+                message["metadata"] = metadata;
+            }
             push_array(&mut session.snapshot, "messages", message.clone());
             touch_session(session);
             let _ = state.save_state();
-            callback
+            (callback, message)
         }
         Err(_) => return None,
     };
@@ -1747,6 +2142,7 @@ pub(crate) fn finish_turn_with_metadata(
     _failure_kind: Option<String>,
 ) {
     let failure_for_ledger = failure.clone();
+    let mut metadata = metadata;
     let mut compress_check_job: Option<(PathBuf, String, String)> = None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
     let mut trim_job: Option<(PathBuf, String)> = None;
@@ -1772,6 +2168,7 @@ pub(crate) fn finish_turn_with_metadata(
             let in_flight = state.active_compressions.contains(session_id);
             if let Some(session) = state.sessions.get_mut(session_id) {
                 if session.snapshot.get("activeTurnId").and_then(Value::as_str) == Some(turn_id) {
+                    metadata = oma_finish_metadata(&session.snapshot, metadata);
                     if let Some(text) = assistant_text.filter(|text| !text.trim().is_empty()) {
                         let message = assistant_message_with_metadata(text, metadata.clone());
                         push_array(&mut session.snapshot, "messages", message.clone());
@@ -1800,6 +2197,7 @@ pub(crate) fn finish_turn_with_metadata(
                     session.snapshot["activeTurnId"] = Value::Null;
                     session.snapshot["follow"] =
                         json!({ "running": false, "activity": Value::Null });
+                    oma_mark_turn_finished(session);
                     update_runtime_turn(session, turn_id, status);
                     let _ = prune_empty_assistant_messages(&mut session.snapshot);
                     let retention_metrics = prune_transient_tool_outputs(session);
@@ -2207,7 +2605,10 @@ enum CodeGraphSignal {
 
 /// 等待 CodeGraph 索引就绪，最多等 timeout。
 /// 如果当前 Idle，先触发索引再等。
-fn wait_codegraph_ready(working_dir: &Path, timeout: Duration) -> lyra_code_intel_core::IndexStatus {
+fn wait_codegraph_ready(
+    working_dir: &Path,
+    timeout: Duration,
+) -> lyra_code_intel_core::IndexStatus {
     let start = Instant::now();
     let mut status = index_status(working_dir);
     if matches!(status, lyra_code_intel_core::IndexStatus::Idle) {
@@ -2233,14 +2634,12 @@ fn check_codegraph_signal(working_dir: Option<&str>) -> CodeGraphSignal {
     let path = Path::new(dir);
     let status = wait_codegraph_ready(path, Duration::from_secs(10));
     match status {
-        lyra_code_intel_core::IndexStatus::Ready { .. } => {
-            match codegraph_staleness(path) {
-                Ok(info) if info.stale && !info.changed_files.is_empty() => {
-                    CodeGraphSignal::Stale(info.changed_files)
-                }
-                _ => CodeGraphSignal::Fresh,
+        lyra_code_intel_core::IndexStatus::Ready { .. } => match codegraph_staleness(path) {
+            Ok(info) if info.stale && !info.changed_files.is_empty() => {
+                CodeGraphSignal::Stale(info.changed_files)
             }
-        }
+            _ => CodeGraphSignal::Fresh,
+        },
         _ => CodeGraphSignal::Skip,
     }
 }
@@ -2262,10 +2661,7 @@ fn build_continuation_prompt(incomplete: &[&Value], codegraph: &CodeGraphSignal)
                 .pointer("/content")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let id = todo
-                .pointer("/id")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let id = todo.pointer("/id").and_then(Value::as_str).unwrap_or("");
             sections.push(format!("  - [{}] [{}] {}", id, status, content));
         }
     }
@@ -2325,10 +2721,7 @@ fn evaluate_goal_continuation(session_id: &str, _turn_id: &str) {
             .map(|arr| {
                 arr.iter()
                     .filter(|t| {
-                        let s = t
-                            .pointer("/status")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
+                        let s = t.pointer("/status").and_then(Value::as_str).unwrap_or("");
                         s == "pending" || s == "in_progress"
                     })
                     .cloned()

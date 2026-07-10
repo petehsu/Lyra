@@ -388,6 +388,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   });
 
   let pendingDeferredLayoutSnapshot: WorkbenchBrowserLayoutSnapshot | null = null;
+  let lastLayoutSnapshotKey: string | null = null;
   const flushDeferredLayoutSync = (): void => {
     const snapshot = pendingDeferredLayoutSnapshot;
     pendingDeferredLayoutSnapshot = null;
@@ -396,6 +397,11 @@ export const createWorkbenchBrowserIpcBridge = ({
     }
   };
   const syncLayout = (snapshot: WorkbenchBrowserLayoutSnapshot): void => {
+    const snapshotKey = JSON.stringify(snapshot);
+    if (snapshotKey === lastLayoutSnapshotKey) {
+      return;
+    }
+    lastLayoutSnapshotKey = snapshotKey;
     pendingDeferredLayoutSnapshot = snapshot;
     if (deferLayoutSync?.(flushDeferredLayoutSync) === true) {
       return;

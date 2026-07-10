@@ -39,8 +39,8 @@ export const useWorkbenchActiveAppContext = ({
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
     labels: labels.settingsAi,
-    onOpenAgentConfigFile,
-    onOpenSite,
+    ...(onOpenAgentConfigFile === undefined ? {} : { onOpenAgentConfigFile }),
+    ...(onOpenSite === undefined ? {} : { onOpenSite }),
   });
 
   return {

@@ -9,6 +9,8 @@ const session = (
   id: "session-1",
   title: "Session",
   sessionKind: "normal",
+  agentMode: "solo",
+  oma: null,
   workingDir: "/project",
   projectBound: false,
   workingDirIsHome: false,

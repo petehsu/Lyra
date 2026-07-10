@@ -226,17 +226,6 @@ pub(crate) fn execute_model_tool_with_runtime(
             &started_at,
         );
     }
-    if let Some(canonical_call) = legacy_provider_tool_fs_call(&call) {
-        return tool_fs::execute_tool_fs_model_tool(
-            session_id,
-            turn_id,
-            dispatcher,
-            cancellation,
-            runtime,
-            canonical_call,
-            &started_at,
-        );
-    }
     if tool_fs::runtime_registry()
         .inspect_handle(&call.name)
         .is_ok()
@@ -284,25 +273,8 @@ pub(crate) fn execute_model_tool_with_runtime(
     output
 }
 
-fn unknown_provider_tool_recommended_action(tool_name: &str) -> &'static str {
-    if tool_name.starts_with("browser-search.") {
-        return "Use Tool-FS /tools/browser/* for browser navigation/read actions, or /tools/software/invoke_capability for software capabilities.";
-    }
+fn unknown_provider_tool_recommended_action(_tool_name: &str) -> &'static str {
     "For exact code inspection/validation use direct file/search/shell tools; for edits use edit_file/write_file. For indexed CodeGraph navigation use Tool-FS /tools/code/* through tool_fs_search/inspect/run."
-}
-
-pub(crate) fn legacy_provider_tool_fs_call(call: &ModelToolCall) -> Option<ModelToolCall> {
-    if call.name != "browser-search.openUrl" {
-        return None;
-    }
-    Some(ModelToolCall {
-        id: call.id.clone(),
-        name: lyra_tool_fs_core::TOOL_FS_RUN.to_string(),
-        arguments: json!({
-            "path": "/tools/browser/navigate",
-            "args": call.arguments.clone(),
-        }),
-    })
 }
 
 /// Translate the public `edit_file` arguments ({path, edits:[{old_text,

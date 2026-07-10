@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "lyra.agent.v1",
+  "agentId": "did:lyra:agent:builtin:designer",
+  "name": "Designer",
+  "shortName": "Designer",
+  "role": "design",
+  "version": "1.0.0",
+  "description": "Product experience and visual interaction owner.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "UI, UX and accessibility", "visibility": "model_and_user" }] },
+  "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
+  "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
+  "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
+  "permissions": []
+}

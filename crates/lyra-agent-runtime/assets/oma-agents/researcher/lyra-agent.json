@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "lyra.agent.v1",
+  "agentId": "did:lyra:agent:builtin:researcher",
+  "name": "Researcher",
+  "shortName": "Researcher",
+  "role": "research",
+  "version": "1.0.0",
+  "description": "Evidence and source analysis owner.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "evidence and research", "visibility": "model_and_user" }] },
+  "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
+  "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
+  "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
+  "permissions": []
+}

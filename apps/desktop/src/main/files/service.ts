@@ -33,6 +33,7 @@ import { loadFilesNativeBindings } from "./native-loader";
 import type { FilesNativeBindings, FilesNativeLoadResult } from "./types";
 
 const DIRECTORY_PATCH_THROTTLE_MS = 75;
+const DIRECTORY_PATCH_POLL_MS = 150;
 const DIRECTORY_PATCH_MAX_QUEUE_SIZE = 1024;
 const PREVIEWABLE_IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -385,7 +386,7 @@ export const createFilesIpcBridge = (
     }
     patchPoller = setInterval(() => {
       void broadcastDirectoryPatches();
-    }, 50);
+    }, DIRECTORY_PATCH_POLL_MS);
   };
 
   const maybeStopPatchPoller = (): void => {

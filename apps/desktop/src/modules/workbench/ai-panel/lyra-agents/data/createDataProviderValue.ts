@@ -5,6 +5,7 @@ import type {
   ComposerPermissionModeControls,
   DecisionQuestion,
   DiffFileEntry,
+  OmaControls,
   PermissionRequest,
   SessionMeta,
   TodoItem
@@ -12,6 +13,7 @@ import type {
 import { t } from "@workbench/i18n";
 import type {
   AgentFileCitation,
+  AgentMode,
   AgentPageCitation,
   AgentProjectTodoSnapshot,
   AgentPlanReviewRespondAction,
@@ -45,6 +47,7 @@ export interface CreateDataProviderValueInput {
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
   locationControls?: WorkbenchLocationControls | null;
+  omaControls?: OmaControls | null;
   openModelSettings?: () => Promise<void>;
   aiRichRenderingEnabled?: boolean;
   browserFollowModeEnabled?: boolean;
@@ -106,7 +109,7 @@ export interface CreateDataProviderValueInput {
   cancelTurn?: () => Promise<void>;
   previewRollback?: (messageId: string) => Promise<AgentRollbackPreviewResponse>;
   rollbackMessage?: (messageId: string) => Promise<void>;
-  createSession?: () => Promise<void>;
+  createSession?: (mode?: AgentMode) => Promise<void>;
   bindProject?: () => Promise<void>;
   openProjectTree?: () => Promise<void>;
   runImprove?: (options?: { planOnly?: boolean; focus?: string | null }) => Promise<void>;
@@ -157,6 +160,7 @@ export function createDataProviderValue({
   modelControls = null,
   permissionModeControls = null,
   locationControls = null,
+  omaControls = null,
   openModelSettings = () => resolved,
   aiRichRenderingEnabled = true,
   browserFollowModeEnabled = false,
@@ -240,6 +244,7 @@ export function createDataProviderValue({
     modelControls,
     permissionModeControls,
     locationControls,
+    omaControls,
     openModelSettings,
     aiRichRenderingEnabled,
     browserFollowModeEnabled,

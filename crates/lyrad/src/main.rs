@@ -70,7 +70,10 @@ use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 #[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
 #[cfg(any(unix, windows))]
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedSender},
+    OwnedSemaphorePermit, Semaphore,
+};
 #[cfg(windows)]
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, LocalFree, HANDLE},
@@ -106,6 +109,8 @@ const MAX_HOST_CAPABILITY_TIMEOUT: Duration = Duration::from_secs(120);
 const HOST_CAPABILITY_TIMEOUT_GRACE: Duration = Duration::from_secs(5);
 #[cfg(any(unix, windows))]
 const MAX_RUNTIME_FRAME_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(any(unix, windows))]
+const MAX_PENDING_PERFORMANCE_REQUESTS: usize = 32;
 
 fn main() {
     #[cfg(any(unix, windows))]
@@ -162,12 +167,60 @@ fn run() {
 #[derive(Clone)]
 struct ConnectionContext {
     outgoing: UnboundedSender<RuntimeEnvelope>,
+    performance_requests: PerformanceRequestGate,
 }
 
 #[cfg(any(unix, windows))]
-#[derive(Clone, Default)]
+#[derive(Clone)]
+struct PerformanceRequestGate {
+    pending: Arc<Semaphore>,
+    executing: Arc<Semaphore>,
+}
+
+#[cfg(any(unix, windows))]
+struct PerformanceRequestPermit {
+    _pending: OwnedSemaphorePermit,
+    _executing: OwnedSemaphorePermit,
+}
+
+#[cfg(any(unix, windows))]
+impl PerformanceRequestGate {
+    fn new(max_pending: usize) -> Self {
+        Self {
+            pending: Arc::new(Semaphore::new(max_pending)),
+            executing: Arc::new(Semaphore::new(1)),
+        }
+    }
+
+    async fn enter(&self) -> Result<PerformanceRequestPermit, RuntimeError> {
+        let pending = self.pending.clone().try_acquire_owned().map_err(|_| {
+            router::runtime_error(
+                "RUNTIME_BUSY",
+                "performance request queue is full; retry after pending updates settle",
+            )
+        })?;
+        let executing = self.executing.clone().acquire_owned().await.map_err(|_| {
+            router::runtime_error("RUNTIME_UNAVAILABLE", "performance request queue is closed")
+        })?;
+        Ok(PerformanceRequestPermit {
+            _pending: pending,
+            _executing: executing,
+        })
+    }
+}
+
+#[cfg(any(unix, windows))]
+impl Default for PerformanceRequestGate {
+    fn default() -> Self {
+        Self::new(MAX_PENDING_PERFORMANCE_REQUESTS)
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[derive(Clone)]
 struct DaemonSessionManager {
     inner: Arc<DaemonSessionManagerInner>,
+    performance_requests: PerformanceRequestGate,
 }
 
 #[cfg(any(unix, windows))]
@@ -176,6 +229,16 @@ struct DaemonSessionManagerInner {
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, UnboundedSender<RuntimeEnvelope>>>,
     pending_requests: Mutex<HashMap<String, std_mpsc::Sender<Result<Value, RuntimeError>>>>,
+}
+
+#[cfg(any(unix, windows))]
+impl Default for DaemonSessionManager {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(DaemonSessionManagerInner::default()),
+            performance_requests: PerformanceRequestGate::default(),
+        }
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -838,29 +901,37 @@ async fn handle_request_envelope(
     payload: Value,
 ) {
     let outgoing = connection.outgoing.clone();
-    let response =
-        match tokio::task::spawn_blocking(move || router::handle_runtime_request(&method, payload))
+    let result = if method.starts_with("performance.") {
+        let _permit = connection.performance_requests.enter().await;
+        match _permit {
+            Ok(_permit) => tokio::task::spawn_blocking(move || {
+                router::handle_runtime_request(&method, payload)
+            })
             .await
-        {
-            Ok(Ok(result)) => RuntimeEnvelope::Response {
-                id,
-                ok: true,
-                result: Some(result),
-                error: None,
-            },
-            Ok(Err(error)) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(error),
-            },
-            Err(error) => RuntimeEnvelope::Response {
-                id,
-                ok: false,
-                result: None,
-                error: Some(router::runtime_error("TASK_JOIN_FAILED", error.to_string())),
-            },
-        };
+            .map_err(|error| router::runtime_error("TASK_JOIN_FAILED", error.to_string()))
+            .and_then(|result| result),
+            Err(error) => Err(error),
+        }
+    } else {
+        tokio::task::spawn_blocking(move || router::handle_runtime_request(&method, payload))
+            .await
+            .map_err(|error| router::runtime_error("TASK_JOIN_FAILED", error.to_string()))
+            .and_then(|result| result)
+    };
+    let response = match result {
+        Ok(result) => RuntimeEnvelope::Response {
+            id,
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Err(error) => RuntimeEnvelope::Response {
+            id,
+            ok: false,
+            result: None,
+            error: Some(error),
+        },
+    };
     let _ = outgoing.send(response);
 }
 
@@ -896,6 +967,7 @@ where
     let connection_id = sessions.register(outgoing.clone());
     let context = ConnectionContext {
         outgoing: outgoing.clone(),
+        performance_requests: sessions.performance_requests.clone(),
     };
 
     let writer_task = tokio::spawn(write_loop(writer, receiver));
@@ -997,7 +1069,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::router::handle_runtime_request;
-    use crate::DaemonSessionManager;
+    use crate::{DaemonSessionManager, PerformanceRequestGate};
     use lyra_runtime_protocol::RuntimeEnvelope;
     use tokio::sync::mpsc::unbounded_channel;
 
@@ -1015,6 +1087,22 @@ mod tests {
         assert!(receiver.try_recv().is_ok());
         manager.unregister(id);
         assert_eq!(manager.connection_count(), 0);
+    }
+
+    #[test]
+    fn performance_request_gate_rejects_excess_waiters() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let gate = PerformanceRequestGate::new(1);
+            let active = gate.enter().await.expect("first request admitted");
+            let error = gate.enter().await.err().expect("second request rejected");
+            assert_eq!(error.code, "RUNTIME_BUSY");
+            drop(active);
+            assert!(gate.enter().await.is_ok());
+        });
     }
 
     #[test]

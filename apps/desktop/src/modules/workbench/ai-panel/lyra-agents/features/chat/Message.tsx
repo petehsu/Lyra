@@ -77,6 +77,23 @@ const usesServiceStatusDots = (activity: string | null | undefined): boolean =>
   activity === AGENT_FOLLOW_ACTIVITY_CONNECTING ||
   normalizeFollowActivity(activity) === "retrying_provider";
 
+const omaAvatarTone = (agentId: string | null | undefined): string => {
+  switch (agentId) {
+    case "did:lyra:agent:builtin:lead":
+      return "1";
+    case "did:lyra:agent:builtin:builder":
+      return "2";
+    case "did:lyra:agent:builtin:reviewer":
+      return "3";
+    case "did:lyra:agent:builtin:designer":
+      return "4";
+    case "did:lyra:agent:builtin:researcher":
+      return "5";
+    default:
+      return "1";
+  }
+};
+
 const activateButtonKey = (
   event: KeyboardEvent<HTMLElement>,
   action: () => void
@@ -514,6 +531,12 @@ const chatMessageEqual = (
     left.isApiError !== right.isApiError ||
     left.time !== right.time ||
     left.workDurationMs !== right.workDurationMs ||
+    left.omaSenderName !== right.omaSenderName ||
+    left.omaSenderAvatar !== right.omaSenderAvatar ||
+    left.omaSenderAvatarSrc !== right.omaSenderAvatarSrc ||
+    left.omaSenderAgentId !== right.omaSenderAgentId ||
+    left.oma?.channelId !== right.oma?.channelId ||
+    left.oma?.senderAgentId !== right.oma?.senderAgentId ||
     left.blocks.length !== right.blocks.length ||
     !rollbackEqual(left.rollback, right.rollback)
   ) {
@@ -717,6 +740,7 @@ export function Message({
                         pageCitations={pageCitations}
                         inlineImages={inlineImages}
                         fileAttachments={fileAttachments}
+                        omaMentions={message.oma?.mentions ?? []}
                         onTranscriptCitationClick={(citation) => {
                           void scrollToMessage(citation.messageId, {
                             blockId: citation.blockId ?? null,
@@ -1087,6 +1111,20 @@ const AgentMessage = memo(function AgentMessage({
         className={`lyra-agents-message-body${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}`}
         onContextMenu={(event) => onContextMenu?.(event, message)}
       >
+        {message.omaSenderName === undefined || message.omaSenderName === null ? null : (
+          <div className="lyra-agents-message-agent-label">
+            <span
+              className="lyra-agents-message-agent-avatar"
+              data-tone={omaAvatarTone(message.omaSenderAgentId)}
+              aria-hidden="true"
+            >
+              {message.omaSenderAvatarSrc ? (
+                <img src={`data:image/svg+xml,${encodeURIComponent(message.omaSenderAvatarSrc)}`} alt="" />
+              ) : (message.omaSenderAvatar ?? message.omaSenderName.slice(0, 1))}
+            </span>
+            <span>{message.omaSenderName}</span>
+          </div>
+        )}
         {isEmptyPendingAgent ? null : renderedBlocks}
         {showRespondingStatus ? (
           <span className="lyra-agents-message-time lyra-agents-message-time-agent" aria-label={t("lyra-agents-message.agentResponding")}>

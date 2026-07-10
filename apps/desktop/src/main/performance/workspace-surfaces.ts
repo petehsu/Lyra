@@ -275,11 +275,16 @@ export const createLyraWorkspaceSurfacePerformanceSync = ({
 }): { readonly dispose: () => void; readonly syncNow: () => void } => {
   const registeredResourceIds = new Set<string>();
   let disposed = false;
+  let lastSyncedJson: string | null = null;
 
   const syncJson = (json: string | null): void => {
     if (disposed) {
       return;
     }
+    if (json === lastSyncedJson) {
+      return;
+    }
+    lastSyncedJson = json;
     const snapshot = parseWorkspaceTabsSnapshot(json);
     const nextResourceIds = new Set<string>();
     const now = Date.now();

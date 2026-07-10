@@ -10,6 +10,7 @@ import {
   inlineContentMarkersToDisplayText,
   parseRenderedCitationSegments,
   segmentsToCitations,
+  segmentsToOmaMentions,
   segmentsToPlainText,
   truncateQuotedText
 } from "../message-citation";
@@ -111,6 +112,38 @@ describe("composer segments", () => {
       { type: "text", value: "x" },
       { type: "citation", citation }
     ])).toEqual([citation]);
+  });
+
+  it("keeps Oma Agent mentions structured while serializing their stable marker", () => {
+    const mention = {
+      mentionId: "oma-reviewer-1",
+      sessionAgentId: "session-reviewer",
+      agentId: "did:lyra:agent:builtin:reviewer",
+      name: "Lyra Reviewer",
+      shortName: "Reviewer",
+      role: "Release reviewer"
+    } as const;
+    const segments = [
+      { type: "text", value: "Please " },
+      { type: "agentMention", mention },
+      { type: "text", value: " inspect the release." }
+    ] as const;
+    expect(segmentsToPlainText(segments)).toBe(
+      "Please ⟦oma-agent:oma-reviewer-1⟧ inspect the release."
+    );
+    expect(segmentsToOmaMentions(segments)).toEqual([mention]);
+    expect(parseRenderedCitationSegments(
+      "Please ⟦oma-agent:oma-reviewer-1⟧ inspect the release.",
+      [],
+      [],
+      [],
+      [],
+      [mention]
+    )).toEqual([
+      { type: "text", value: "Please " },
+      { type: "agentMention", mention },
+      { type: "text", value: " inspect the release." }
+    ]);
   });
 
   it("renders orphan image markers as placeholder chips instead of raw marker text", () => {

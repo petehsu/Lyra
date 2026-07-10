@@ -26,6 +26,8 @@ const makeSnapshot = (
   id,
   title,
   sessionKind: "normal",
+  agentMode: "solo",
+  oma: null,
   workingDir: "/",
   projectBound: false,
   messages: [],

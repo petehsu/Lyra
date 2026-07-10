@@ -1,11 +1,16 @@
 import {
+  useCallback,
+  useMemo,
   useState,
   useRef,
   useEffect,
   type CSSProperties,
-  type FormEvent
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode
 } from "react";
 import type {
+  OmaAgentMember,
   AgentPageCitation,
   AgentTranscriptCitation
 } from "../../../../../../shared/agent";
@@ -91,7 +96,10 @@ export function Composer({
   terminalTabs = [],
   modelControls,
   permissionModeControls,
+  topSlot,
+  modeSlot,
   onOpenModelSettings,
+  omaMentionAgents = [],
   disabledReason,
   isTurnRunning,
   browserFollowModeEnabled,
@@ -134,7 +142,11 @@ export function Composer({
   terminalTabs?: readonly TerminalDockTab[];
   modelControls?: ComposerModelControls | null;
   permissionModeControls?: ComposerPermissionModeControls | null;
+  topSlot?: ReactNode;
+  modeSlot?: ReactNode;
   onOpenModelSettings?: () => Promise<void>;
+  /** Present only for the active Oma default group channel. */
+  omaMentionAgents?: readonly OmaAgentMember[];
   disabledReason?: string | undefined;
   isTurnRunning: boolean;
   browserFollowModeEnabled: boolean;
@@ -150,6 +162,8 @@ export function Composer({
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendLogoVisible, setSendLogoVisible] = useState(false);
+  const [mentionPickerSuppressed, setMentionPickerSuppressed] = useState(false);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const composerRootRef = useRef<HTMLFormElement>(null);
   const composerInputRef = useRef<CitationComposerInputHandle>(null);
   const sendInFlightRef = useRef(false);
@@ -165,6 +179,70 @@ export function Composer({
       sendLogoTimerRef.current = null;
     }, SEND_LOGO_BURST_MS);
   };
+
+  const mentionQuery = useMemo(() => {
+    if (omaMentionAgents.length === 0) return null;
+    const finalSegment = segments.at(-1);
+    if (finalSegment?.type !== "text") return null;
+    const match = finalSegment.value.match(/@([^\s@]*)$/u);
+    return match?.[1] ?? null;
+  }, [omaMentionAgents.length, segments]);
+  const normalizedMentionQuery = mentionQuery?.trim().toLocaleLowerCase() ?? "";
+  const filteredMentionAgents = useMemo(() => omaMentionAgents.filter((agent) => {
+    if (normalizedMentionQuery.length === 0) return true;
+    const candidate = [agent.name, agent.shortName, agent.role]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ")
+      .toLocaleLowerCase();
+    return candidate.includes(normalizedMentionQuery);
+  }), [normalizedMentionQuery, omaMentionAgents]);
+  const mentionPickerOpen =
+    mentionQuery !== null && !mentionPickerSuppressed && filteredMentionAgents.length > 0;
+
+  useEffect(() => {
+    setMentionActiveIndex((index) => Math.min(index, Math.max(0, filteredMentionAgents.length - 1)));
+  }, [filteredMentionAgents.length]);
+
+  const selectMentionAgent = useCallback((agent: OmaAgentMember) => {
+    const mentionId = `oma-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    composerInputRef.current?.insertAgentMention({
+      mentionId,
+      sessionAgentId: agent.sessionAgentId ?? agent.id,
+      agentId: agent.agentId,
+      name: agent.name,
+      shortName: agent.shortName ?? null,
+      role: agent.role,
+      avatar: agent.avatar
+    });
+    setMentionActiveIndex(0);
+    setMentionPickerSuppressed(false);
+  }, []);
+
+  const handleMentionKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>): boolean => {
+    if (!mentionPickerOpen) return false;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMentionPickerSuppressed(true);
+      return true;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setMentionActiveIndex((index) =>
+        (index + direction + filteredMentionAgents.length) % filteredMentionAgents.length
+      );
+      return true;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      const agent = filteredMentionAgents[mentionActiveIndex];
+      if (agent !== undefined) {
+        event.preventDefault();
+        selectMentionAgent(agent);
+        return true;
+      }
+    }
+    return false;
+  }, [filteredMentionAgents, mentionActiveIndex, mentionPickerOpen, selectMentionAgent]);
 
   const submit = async () => {
     if (disabledReason !== undefined || sendInFlightRef.current) return;
@@ -413,6 +491,7 @@ export function Composer({
       const key = model.providerKey ?? model.providerId ?? model.provider ?? model.id;
       const existing = map.get(key);
       const option = modelPickerOptions[i];
+      if (option === undefined) return;
       if (existing) {
         map.set(key, { ...existing, options: [...existing.options, option] });
       } else {
@@ -421,6 +500,9 @@ export function Composer({
     });
     return [...map.values()];
   })();
+  const showComposerControlGroup =
+    (modelControls !== null && modelControls !== undefined)
+    || (modeSlot !== null && modeSlot !== undefined);
 
   return (
     <form ref={composerRootRef} className="lyra-agents-composer" onSubmit={handleSubmit}>
@@ -430,12 +512,45 @@ export function Composer({
           <span>{sendError}</span>
         </div>
       )}
+      {topSlot}
+      {mentionPickerOpen ? (
+        <div className="lyra-agents-oma-mention-picker" role="listbox" aria-label="Mention an Oma Agent">
+          {filteredMentionAgents.map((agent, index) => {
+            const avatarSrc = agent.avatar.src?.trim();
+            return (
+              <button
+                key={agent.id}
+                type="button"
+                role="option"
+                className="lyra-agents-oma-mention-option"
+                aria-selected={index === mentionActiveIndex}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectMentionAgent(agent)}
+              >
+                <span className="lyra-agents-oma-mention-option-avatar">
+                  {avatarSrc ? <img src={`data:image/svg+xml,${encodeURIComponent(avatarSrc)}`} alt="" /> : (
+                    agent.avatar.value.slice(0, 1).toUpperCase()
+                  )}
+                </span>
+                <span className="lyra-agents-oma-mention-option-copy">
+                  <span>@{agent.shortName ?? agent.name}</span>
+                  <small>{agent.role}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <CitationComposerInput
         ref={composerInputRef}
         segments={segments}
         disabled={disabledReason !== undefined}
         placeholder={disabledReason ?? t("lyra-agents-composer.placeholder")}
-        onSegmentsChange={setSegments}
+        onSegmentsChange={(nextSegments) => {
+          setMentionPickerSuppressed(false);
+          setSegments(nextSegments);
+        }}
+        onEditorKeyDown={handleMentionKeyDown}
         onSubmit={() => {
           void submit();
         }}
@@ -590,9 +705,9 @@ export function Composer({
             </AppMenuContent>
           </div>
         </AppMenu>
-        {modelControls !== null && modelControls !== undefined ? (
+        {showComposerControlGroup ? (
           <div className="lyra-agents-composer-model-controls">
-            {modelPickerOptions.length > 0 ? (
+            {modelControls !== null && modelControls !== undefined && modelPickerOptions.length > 0 ? (
               <AppModelMenu
                 ariaLabel={t("lyra-agents-composer.modelControls")}
                 className="lyra-agents-composer-model-picker"
@@ -607,7 +722,7 @@ export function Composer({
                 disabled={modelControls.isSwitching}
               />
             ) : null}
-            {modelPickerOptions.length === 0 ? (
+            {modelControls !== null && modelControls !== undefined && modelPickerOptions.length === 0 ? (
               <AppButton variant="ghost" size="sm"
                 type="button"
                 className="lyra-agents-composer-model-settings-button"
@@ -637,6 +752,7 @@ export function Composer({
                 }}
               />
             ) : null}
+            {modeSlot}
           </div>
         ) : null}
         <div className="lyra-agents-composer-primary-actions">

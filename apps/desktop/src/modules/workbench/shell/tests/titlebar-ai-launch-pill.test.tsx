@@ -79,7 +79,7 @@ describe("TitlebarAiLaunchPill", () => {
     expect(enSizers[0]?.textContent).toBe("Chat");
   });
 
-  test("exposes a marquee flag on the word that defaults to false without layout", () => {
+  test("stays static until the user hovers it", () => {
     render(
       <TitlebarAiLaunchPill
         isOpen={false}
@@ -93,8 +93,12 @@ describe("TitlebarAiLaunchPill", () => {
 
     const button = screen.getByRole("button", { name: "Toggle Left Panel" });
     const word = button.querySelector(".lyra-titlebar-ai-launch-word") as HTMLElement;
-    expect(word.getAttribute("data-marquee")).toBe("false");
-    expect(word.getAttribute("style")).toBeNull();
+    const logo = button.querySelector(".lyra-titlebar-ai-launch-logo") as HTMLElement;
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(word.textContent).toBe("Chat");
+    expect(logo.className).not.toContain("lyra-brand-logo-spin");
   });
 
   test("invokes onToggle when clicked", () => {
@@ -114,7 +118,7 @@ describe("TitlebarAiLaunchPill", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  test("rotates to the next verb after the rotation interval and animation phases", () => {
+  test("rotates to the next verb and spins the logo once on hover", () => {
     render(
       <TitlebarAiLaunchPill
         isOpen={false}
@@ -123,7 +127,6 @@ describe("TitlebarAiLaunchPill", () => {
         prefix="和 Lyra"
         verbs={VERBS}
         ariaLabel="切换左侧面板"
-        verbRotationMs={2000}
         exitDurationMs={200}
         enterDurationMs={300}
       />
@@ -134,12 +137,14 @@ describe("TitlebarAiLaunchPill", () => {
     expect(initialWord.textContent).toBe("讨论");
 
     act(() => {
-      vi.advanceTimersByTime(2000);
+      fireEvent.mouseEnter(button);
     });
 
     const exitWord = button.querySelector(".lyra-titlebar-ai-launch-word") as HTMLElement;
     expect(exitWord.getAttribute("data-phase")).toBe("exit");
     expect(exitWord.textContent).toBe("讨论");
+    expect(button.querySelector(".lyra-titlebar-ai-launch-logo")?.className)
+      .toContain("lyra-brand-logo-spin");
 
     act(() => {
       vi.advanceTimersByTime(200);
@@ -150,12 +155,14 @@ describe("TitlebarAiLaunchPill", () => {
     expect(enterWord.textContent).toBe("编码");
 
     act(() => {
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(440);
     });
 
     const idleWord = button.querySelector(".lyra-titlebar-ai-launch-word") as HTMLElement;
     expect(idleWord.getAttribute("data-phase")).toBe("idle");
     expect(idleWord.textContent).toBe("编码");
+    expect(button.querySelector(".lyra-titlebar-ai-launch-logo")?.className)
+      .not.toContain("lyra-brand-logo-spin");
   });
 
   test("marks the open state with aria-pressed and class", () => {
@@ -175,7 +182,7 @@ describe("TitlebarAiLaunchPill", () => {
     expect(button.className).toContain("lyra-titlebar-ai-launch-open");
   });
 
-  test("does not animate phases when reduced motion is preferred", () => {
+  test("changes the word without animation when reduced motion is preferred", () => {
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes("prefers-reduced-motion"),
@@ -197,14 +204,13 @@ describe("TitlebarAiLaunchPill", () => {
           prefix="和 Lyra"
           verbs={VERBS}
           ariaLabel="切换左侧面板"
-          verbRotationMs={1500}
         />
       );
 
       const button = screen.getByRole("button", { name: "切换左侧面板" });
 
       act(() => {
-        vi.advanceTimersByTime(1500);
+        fireEvent.mouseEnter(button);
       });
 
       const word = button.querySelector(".lyra-titlebar-ai-launch-word") as HTMLElement;
@@ -224,7 +230,6 @@ describe("TitlebarAiLaunchPill", () => {
         prefix="和 Lyra"
         verbs={["讨论"]}
         ariaLabel="切换左侧面板"
-        verbRotationMs={1000}
       />
     );
 
@@ -234,7 +239,7 @@ describe("TitlebarAiLaunchPill", () => {
     expect(word.getAttribute("data-phase")).toBe("idle");
 
     act(() => {
-      vi.advanceTimersByTime(5000);
+      fireEvent.mouseEnter(button);
     });
 
     const laterWord = button.querySelector(".lyra-titlebar-ai-launch-word") as HTMLElement;

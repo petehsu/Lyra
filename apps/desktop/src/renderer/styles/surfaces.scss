@@ -2256,26 +2256,11 @@
     );
 }
 
-.lyra-search-silk-canvas-layer {
-  position: absolute;
-  inset: 0;
-}
-
-.lyra-search-silk-canvas-layer canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
 :root[data-lyra-theme-tone="dark"] .lyra-search-silk-background {
   opacity: 0.38;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lyra-search-silk-canvas-layer {
-    display: none;
-  }
-
   .lyra-search-silk-background {
     opacity: 0.34;
   }

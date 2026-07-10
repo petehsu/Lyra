@@ -65,11 +65,7 @@ export const createLayoutController = ({
     layoutSnapshot.layouts.find((layout) => layout.tabId === tabId) ?? null;
 
   const canMaterializePage = (spec: WorkbenchBrowserPageSpec): boolean => {
-    if (spec.isActive) {
-      return true;
-    }
-    const layout = findLayout(spec.tabId);
-    return layout?.visible === true;
+    return spec.isActive || spec.isVisible === true;
   };
 
   const getActiveOrFocusedTabId = (): string | null => {

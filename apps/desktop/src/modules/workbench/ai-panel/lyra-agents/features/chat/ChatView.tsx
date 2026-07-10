@@ -19,10 +19,22 @@ import {
   type MouseEvent,
   type ReactNode
 } from "react";
-import { ArrowDown, BookText, CornerUpLeft, Copy, Link2, ListChecks, MapPin, Undo2 } from "lucide-react";
+import {
+  ArrowDown,
+  BookText,
+  CornerUpLeft,
+  Copy,
+  Link2,
+  ListChecks,
+  MapPin,
+  Plus,
+  Undo2,
+  X
+} from "lucide-react";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
-import type { ChatMessage } from "../../core/types";
+import type { OmaAgentMember } from "../../../../../../shared/agent";
+import type { ChatMessage, OmaControls } from "../../core/types";
 import { APP_CONFIG } from "../../core/config";
 import { t } from "@workbench/i18n";
 import { useData } from "../../data/DataProvider";
@@ -216,6 +228,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     modelControls,
     permissionModeControls,
     locationControls,
+    omaControls,
     openModelSettings,
     isTurnRunning,
     browserFollowModeEnabled,
@@ -245,6 +258,20 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     rollbackMessage,
   } = useData();
   const contextMenu = useContextMenuModel();
+  const omaMentionAgents = useMemo(() => {
+    const oma = omaControls?.state;
+    if (oma === null || oma === undefined || oma.activeChannelId !== "group:default") {
+      return [];
+    }
+    const group = oma.channels.find((channel) => channel.id === "group:default" && !channel.archived);
+    if (group === undefined) {
+      return [];
+    }
+    const agents = new Map(oma.agents.map((agent) => [agent.id, agent] as const));
+    return group.memberAgentIds
+      .map((sessionAgentId) => agents.get(sessionAgentId))
+      .filter((agent): agent is OmaAgentMember => agent !== undefined);
+  }, [omaControls?.state]);
 
   const canManagePlans =
     session.projectBound === true &&
@@ -609,6 +636,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
           {messages.length === 0 ? (
             <ChatEmptyState
+              key={session.id}
               projectName={session.project.trim().length > 0 ? session.project.trim() : null}
               isHome={session.workingDirIsHome}
               onChooseProject={bindProject}
@@ -717,6 +745,8 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
           }}
           modelControls={modelControls ?? null}
           permissionModeControls={permissionModeControls ?? null}
+          topSlot={<OmaChannelStrip controls={omaControls ?? null} />}
+          omaMentionAgents={omaMentionAgents}
           onOpenModelSettings={openModelSettings}
           isTurnRunning={isTurnRunning}
           browserFollowModeEnabled={browserFollowModeEnabled}
@@ -821,6 +851,183 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         </div>
       </div>
     </>
+  );
+}
+
+function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }) {
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  if (controls === null || controls.state === null) {
+    return null;
+  }
+
+  const oma = controls.state;
+  const activeAgentIdSet = new Set(oma.agents.map((agent) => agent.agentId));
+  const agentById = new Map(oma.agents.map((agent) => [agent.id, agent]));
+  const addableAgents = oma.availableAgents.filter((agent) => !activeAgentIdSet.has(agent.agentId));
+  const channels = oma.channels.filter((channel) => channel.archived !== true);
+
+  const channelLabel = (channel: (typeof channels)[number]): string => {
+    if (channel.kind === "direct") {
+      const agent = agentById.get(channel.memberAgentIds[0] ?? "");
+      return agent?.shortName ?? agent?.name ?? channel.name;
+    }
+    return channel.name.trim().length > 0 ? channel.name : t("lyra-agents-oma.group");
+  };
+
+  const channelMembers = (channel: (typeof channels)[number]) =>
+    channel.memberAgentIds
+      .map((agentId) => agentById.get(agentId))
+      .filter((agent): agent is OmaAgentMember => agent !== undefined);
+
+  const avatarText = (value: string | null | undefined, fallback: string): string =>
+    (value ?? fallback).trim().slice(0, 2).toUpperCase();
+  const statusLabel = (status: OmaAgentMember["status"] | undefined): string => {
+    if (status === "queued") return t("lyra-agents-oma.agentQueued");
+    if (status === "retrying") return t("lyra-agents-oma.agentRetrying");
+    if (status === "running") return t("lyra-agents-oma.agentRunning");
+    return "";
+  };
+  const dominantStatus = (agents: readonly OmaAgentMember[]): OmaAgentMember["status"] =>
+    agents.some((agent) => agent.status === "retrying") ? "retrying"
+      : agents.some((agent) => agent.status === "running") ? "running"
+        : agents.some((agent) => agent.status === "queued") ? "queued"
+          : "idle";
+  const avatarTone = (value: string): string => {
+    const builtInTone: Record<string, string> = {
+      "did:lyra:agent:builtin:lead": "1",
+      "did:lyra:agent:builtin:builder": "2",
+      "did:lyra:agent:builtin:reviewer": "3",
+      "did:lyra:agent:builtin:designer": "4",
+      "did:lyra:agent:builtin:researcher": "5"
+    };
+    return builtInTone[value]
+      ?? `${(Array.from(value).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 5) + 1}`;
+  };
+  const avatar = (
+    agent: OmaAgentMember | undefined,
+    fallback: string,
+    status: OmaAgentMember["status"] = agent?.status ?? "idle"
+  ) => {
+    const src = agent?.avatar.src?.trim();
+    return (
+      <span
+        className="lyra-agents-oma-avatar"
+        data-tone={avatarTone(agent?.agentId ?? fallback)}
+        data-running={status === "running"}
+        data-status={status}
+        title={statusLabel(status) || undefined}
+      >
+        {src ? <img src={`data:image/svg+xml,${encodeURIComponent(src)}`} alt="" /> : avatarText(agent?.avatar.value, fallback)}
+      </span>
+    );
+  };
+
+  return (
+    <div className="lyra-agents-oma">
+      <div className="lyra-agents-oma-channels" role="tablist" aria-label={t("lyra-agents-oma.channels")}>
+        {channels.map((channel) => {
+          const members = channelMembers(channel);
+          const firstMember = members[0];
+          const isGroup = channel.kind === "group";
+          const channelStatus = isGroup
+            ? dominantStatus(members)
+            : firstMember?.status ?? "idle";
+          return (
+            <AppButton
+              key={channel.id}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="lyra-agents-oma-channel"
+              data-active={channel.id === oma.activeChannelId}
+              data-group={isGroup}
+              onClick={() => void controls.setActiveChannel(channel.id)}
+              aria-label={channelLabel(channel)}
+              title={[channelLabel(channel), statusLabel(channelStatus)].filter(Boolean).join(" · ")}
+            >
+              <span className="lyra-agents-oma-avatar-stack" data-group={isGroup} aria-hidden="true">
+                {isGroup ? (
+                  <span
+                    className="lyra-agents-oma-group-orb"
+                    data-running={channelStatus === "running"}
+                    data-status={channelStatus}
+                  />
+                ) : (
+                  avatar(firstMember, channelLabel(channel), channelStatus)
+                )}
+              </span>
+            </AppButton>
+          );
+        })}
+        <AppButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="lyra-agents-oma-add"
+          onClick={() => setPanelOpen((open) => !open)}
+          aria-label={t("lyra-agents-oma.manage")}
+          title={t("lyra-agents-oma.manage")}
+        >
+          <Plus size={14} strokeWidth={2.2} />
+        </AppButton>
+      </div>
+
+      {panelOpen ? (
+        <div className="lyra-agents-oma-panel" role="dialog" aria-label={t("lyra-agents-oma.manage")}>
+          <div className="lyra-agents-oma-panel-head">
+            <div>
+              <div className="lyra-agents-oma-panel-title">{t("lyra-agents-oma.manage")}</div>
+              <div className="lyra-agents-oma-panel-subtitle">{t("lyra-agents-oma.tagline")}</div>
+            </div>
+            <AppButton type="button" variant="ghost" size="sm" className="lyra-agents-oma-icon-button" onClick={() => setPanelOpen(false)}>
+              <X size={14} strokeWidth={2.2} />
+            </AppButton>
+          </div>
+
+          {addableAgents.length > 0 ? (
+            <div className="lyra-agents-oma-section">
+              <div className="lyra-agents-oma-section-title">{t("lyra-agents-oma.addAgent")}</div>
+              <div className="lyra-agents-oma-agent-list">
+                {addableAgents.map((agent) => (
+                  <AppButton key={agent.agentId} type="button" variant="ghost" size="sm" className="lyra-agents-oma-agent-row" onClick={() => void controls.addAgent(agent.agentId)}>
+                    {avatar(agent, agent.name)}
+                    <span>{agent.name}</span>
+                    <Plus size={13} strokeWidth={2.2} />
+                  </AppButton>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="lyra-agents-oma-section">
+            <div className="lyra-agents-oma-section-title">{t("lyra-agents-oma.manageMembers")}</div>
+            <div className="lyra-agents-oma-agent-list">
+              {oma.agents.map((agent) => {
+                const locked = agent.agentId === "did:lyra:agent:builtin:lead" || agent.status !== "idle";
+                return (
+                  <AppButton
+                    key={agent.id}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="lyra-agents-oma-agent-row"
+                    disabled={locked}
+                    onClick={() => void controls.removeAgent(agent.agentId)}
+                    title={statusLabel(agent.status) || agent.name}
+                  >
+                    {avatar(agent, agent.name)}
+                    <span>{agent.name}</span>
+                    <X size={13} strokeWidth={2.2} />
+                  </AppButton>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+      ) : null}
+    </div>
   );
 }
 

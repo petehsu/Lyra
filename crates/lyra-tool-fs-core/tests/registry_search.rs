@@ -122,6 +122,39 @@ fn registry_reads_docs_and_inspects_path_and_handle() {
 }
 
 #[test]
+fn registry_exposes_oma_agent_tools() {
+    let registry = ToolFsRegistry::default();
+    let agent = registry
+        .list("/tools/agent", 0, 20, ToolScene::General)
+        .expect("agent tools");
+    let paths = agent
+        .tools
+        .iter()
+        .map(|tool| tool.path.as_str())
+        .collect::<Vec<_>>();
+    assert!(paths.contains(&"/tools/agent/send"));
+    assert!(paths.contains(&"/tools/agent/ask"));
+    assert!(!paths.contains(&"/tools/agent/channel_create"));
+
+    let send = registry
+        .inspect_path("/tools/agent/send")
+        .expect("agent send");
+    assert_eq!(send.handle.as_deref(), Some("agent_send"));
+    assert_eq!(send.domain, "agent");
+    assert_eq!(send.input_schema["type"], "object");
+
+    let search = registry
+        .search("Oma agent handoff channel", None, 0, 5, ToolScene::General)
+        .expect("search");
+    assert!(
+        search
+            .results
+            .iter()
+            .any(|result| result.path == "/tools/agent/handoff")
+    );
+}
+
+#[test]
 fn manifest_projection_does_not_expose_legacy_name() {
     let registry = ToolFsRegistry::default();
     let manifest = registry

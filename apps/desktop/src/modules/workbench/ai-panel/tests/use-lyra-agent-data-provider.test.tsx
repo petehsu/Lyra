@@ -4,7 +4,6 @@ import { describe, expect, test, vi } from "vitest";
 import type {
   AgentModelCatalogSnapshot,
   AgentRuntimeEvent,
-  AgentSessionListResponse,
   AgentSessionSnapshot
 } from "../../../../shared/agent";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
@@ -41,6 +40,8 @@ const createSnapshot = (
   id: "session-1",
   title: "新会话",
   sessionKind: "normal",
+  agentMode: "solo",
+  oma: null,
   workingDir: "/Users/petehsu/Documents/Lyra",
   projectBound: true,
   workingDirIsHome: false,
@@ -57,7 +58,7 @@ const createSnapshot = (
 const createDesktopApi = (snapshot: AgentSessionSnapshot): LyraDesktopApi => ({
   agent: {
     onEvent: vi.fn((_: (event: AgentRuntimeEvent) => void) => () => undefined),
-    createSession: vi.fn(),
+    createSession: vi.fn(async () => snapshot),
     readSession: vi.fn(async () => snapshot),
     listSessions: vi.fn(async () => ({
       sessionsDir: "/tmp/lyra-agent-runtime/sessions",
@@ -72,23 +73,22 @@ const createDesktopApi = (snapshot: AgentSessionSnapshot): LyraDesktopApi => ({
 } as unknown as LyraDesktopApi);
 
 describe("useLyraAgentDataProvider", () => {
-  test("removes a stale persisted session before readSession is invoked", async () => {
+  test("reports a missing persisted session when readSession rejects", async () => {
     const onMissingSession = vi.fn();
     const readSession = vi.fn<
       (request: { readonly sessionId: string }) => Promise<AgentSessionSnapshot>
-    >();
-    const listSessions = vi.fn<
-      () => Promise<AgentSessionListResponse>
-    >(async () => ({
-      sessionsDir: "/tmp/lyra-agent-runtime/sessions",
-      sessions: []
-    }));
+    >(async () => {
+      throw new Error("session not found");
+    });
     const desktopApi = {
       agent: {
         onEvent: vi.fn((_: (event: AgentRuntimeEvent) => void) => () => undefined),
         createSession: vi.fn(),
         readSession,
-        listSessions,
+        listSessions: vi.fn(async () => ({
+          sessionsDir: "/tmp/lyra-agent-runtime/sessions",
+          sessions: []
+        })),
         listAgentModels: vi.fn(async () => emptyModelCatalog()),
         readBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
         updateBrowserFollowMode: vi.fn(async () => ({ enabled: false })),
@@ -112,8 +112,7 @@ describe("useLyraAgentDataProvider", () => {
       expect(onMissingSession).toHaveBeenCalledWith("session-stale");
     });
 
-    expect(listSessions).toHaveBeenCalledWith({});
-    expect(readSession).not.toHaveBeenCalled();
+    expect(readSession).toHaveBeenCalledWith({ sessionId: "session-stale" });
     expect(result.current.error).toBeNull();
   });
 

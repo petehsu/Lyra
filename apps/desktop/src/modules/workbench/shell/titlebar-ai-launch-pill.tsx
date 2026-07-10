@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppButton } from "@renderer/ui/components";
 import { LyraBrandLogo } from "../brand";
@@ -12,15 +12,13 @@ export type TitlebarAiLaunchPillProps = {
   readonly prefix: string;
   readonly verbs: readonly string[];
   readonly ariaLabel: string;
-  readonly verbRotationMs?: number;
   readonly exitDurationMs?: number;
   readonly enterDurationMs?: number;
 };
 
-const DEFAULT_ROTATION_MS = 8000;
 const DEFAULT_EXIT_MS = 280;
 const DEFAULT_ENTER_MS = 360;
-const MIN_INTERVAL_MS = 1500;
+const LOGO_SPIN_DURATION_MS = 640;
 
 const prefersReducedMotion = (): boolean => {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -66,7 +64,6 @@ export const TitlebarAiLaunchPill = ({
   prefix,
   verbs,
   ariaLabel,
-  verbRotationMs = DEFAULT_ROTATION_MS,
   exitDurationMs = DEFAULT_EXIT_MS,
   enterDurationMs = DEFAULT_ENTER_MS,
 }: TitlebarAiLaunchPillProps) => {
@@ -89,9 +86,7 @@ export const TitlebarAiLaunchPill = ({
   }, [safeVerbs]);
   const [verbIndex, setVerbIndex] = useState(0);
   const [phase, setPhase] = useState<PillPhase>("idle");
-  const [marqueeDistancePx, setMarqueeDistancePx] = useState<number>(0);
-  const rotatorRef = useRef<HTMLSpanElement>(null);
-  const wordRef = useRef<HTMLSpanElement>(null);
+  const [isLogoSpinning, setIsLogoSpinning] = useState(false);
   const reducedMotionRef = useRef<boolean>(prefersReducedMotion());
   const pendingTimeouts = useRef<number[]>([]);
 
@@ -116,49 +111,53 @@ export const TitlebarAiLaunchPill = ({
     };
   }, []);
 
-  useEffect(() => {
+  const clearPendingTimeouts = useCallback((): void => {
+    for (const timeoutId of pendingTimeouts.current) {
+      window.clearTimeout(timeoutId);
+    }
+    pendingTimeouts.current = [];
+  }, []);
+
+  const scheduleTimeout = useCallback((callback: () => void, delayMs: number): void => {
+    const timeoutId = window.setTimeout(() => {
+      pendingTimeouts.current = pendingTimeouts.current.filter((id) => id !== timeoutId);
+      callback();
+    }, delayMs);
+    pendingTimeouts.current.push(timeoutId);
+  }, []);
+
+  useEffect(() => clearPendingTimeouts, [clearPendingTimeouts]);
+
+  const playHoverMotion = useCallback((): void => {
+    if (phase !== "idle") {
+      return;
+    }
+    if (reducedMotionRef.current) {
+      if (safeVerbs.length > 1) {
+        setVerbIndex((current) => (current + 1) % safeVerbs.length);
+      }
+      return;
+    }
+
+    setIsLogoSpinning(true);
+    scheduleTimeout(() => setIsLogoSpinning(false), LOGO_SPIN_DURATION_MS);
     if (safeVerbs.length <= 1) {
       return;
     }
-    const interval = Math.max(MIN_INTERVAL_MS, verbRotationMs);
-    const cleanupPendingTimeouts = (): void => {
-      for (const timeoutId of pendingTimeouts.current) {
-        window.clearTimeout(timeoutId);
-      }
-      pendingTimeouts.current = [];
-    };
 
-    const handle = window.setInterval(() => {
-      if (reducedMotionRef.current) {
-        setVerbIndex((current) => (current + 1) % safeVerbs.length);
-        return;
-      }
-      cleanupPendingTimeouts();
-      setPhase("exit");
-      const swapTimeout = window.setTimeout(() => {
-        setVerbIndex((current) => {
-          const nextIndex = (current + 1) % safeVerbs.length;
-          const nextVerb = safeVerbs[nextIndex] ?? "";
-          const nextCharCount = splitGraphemes(nextVerb).length;
-          const nextCharDelay = computeCharDelayMs(nextCharCount, enterDurationMs);
-          const staggerTail = Math.max(0, nextCharCount - 1) * nextCharDelay;
-          const nextRestoreMs = Math.max(0, enterDurationMs) + staggerTail;
-          const restoreTimeout = window.setTimeout(() => {
-            setPhase("idle");
-          }, nextRestoreMs);
-          pendingTimeouts.current.push(restoreTimeout);
-          return nextIndex;
-        });
-        setPhase("enter");
-      }, Math.max(0, exitDurationMs));
-      pendingTimeouts.current.push(swapTimeout);
-    }, interval);
-
-    return () => {
-      window.clearInterval(handle);
-      cleanupPendingTimeouts();
-    };
-  }, [enterDurationMs, exitDurationMs, safeVerbs, verbRotationMs]);
+    setPhase("exit");
+    scheduleTimeout(() => {
+      const nextIndex = (verbIndex + 1) % safeVerbs.length;
+      const nextCharCount = splitGraphemes(safeVerbs[nextIndex] ?? "").length;
+      const nextCharDelay = computeCharDelayMs(nextCharCount, enterDurationMs);
+      setVerbIndex(nextIndex);
+      setPhase("enter");
+      scheduleTimeout(
+        () => setPhase("idle"),
+        Math.max(0, enterDurationMs) + Math.max(0, nextCharCount - 1) * nextCharDelay
+      );
+    }, Math.max(0, exitDurationMs));
+  }, [enterDurationMs, exitDurationMs, phase, safeVerbs, scheduleTimeout, verbIndex]);
 
   const activeVerb = safeVerbs[verbIndex] ?? "";
   const chars = useMemo(() => splitGraphemes(activeVerb), [activeVerb]);
@@ -166,38 +165,9 @@ export const TitlebarAiLaunchPill = ({
     phase === "exit" ? exitDurationMs : phase === "enter" ? enterDurationMs : 0;
   const charDelayMs = computeCharDelayMs(chars.length, animationDuration);
 
-  useEffect(() => {
-    const rotator = rotatorRef.current;
-    const word = wordRef.current;
-    if (rotator === null || word === null) {
-      return;
-    }
-    const measure = (): void => {
-      const delta = word.scrollWidth - rotator.clientWidth;
-      setMarqueeDistancePx(delta > 0 ? delta : 0);
-    };
-    measure();
-    if (typeof ResizeObserver !== "function") {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      measure();
-    });
-    observer.observe(rotator);
-    observer.observe(word);
-    return () => {
-      observer.disconnect();
-    };
-  }, [activeVerb, phase, prefix, shortestSizerVerb]);
-
   const rootClassName = isOpen
     ? "lyra-titlebar-ai-launch lyra-titlebar-ai-launch-open"
     : "lyra-titlebar-ai-launch";
-
-  const hasMarquee = marqueeDistancePx > 0;
-  const wordStyle = hasMarquee
-    ? ({ "--lyra-pill-marquee-distance": "-" + String(marqueeDistancePx) + "px" } as Record<string, string>)
-    : undefined;
 
   return (
     <AppButton
@@ -208,18 +178,18 @@ export const TitlebarAiLaunchPill = ({
       aria-pressed={isOpen}
       title={ariaLabel}
       onClick={onToggle}
+      onMouseEnter={playHoverMotion}
       data-phase={phase}
     >
       <LyraBrandLogo
         logoUrl={logoUrl}
         className="lyra-titlebar-ai-launch-logo"
-        motion={isOpen ? "active" : "ambient"}
-        spinIntensity={isOpen ? "steady" : "subtle"}
-        spinDurationMs={isOpen ? 6400 : 18000}
+        motion={isLogoSpinning ? "active" : "none"}
+        spinDurationMs={LOGO_SPIN_DURATION_MS}
       />
       <span className="lyra-titlebar-ai-launch-text">
         <span className="lyra-titlebar-ai-launch-prefix">{prefix}</span>
-        <span ref={rotatorRef} className="lyra-titlebar-ai-launch-rotator">
+        <span className="lyra-titlebar-ai-launch-rotator">
           <span
             className="lyra-titlebar-ai-launch-sizer"
             aria-hidden="true"
@@ -227,12 +197,9 @@ export const TitlebarAiLaunchPill = ({
             {shortestSizerVerb}
           </span>
           <span
-            ref={wordRef}
             key={String(verbIndex) + ":" + phase}
             className="lyra-titlebar-ai-launch-word"
             data-phase={phase}
-            data-marquee={hasMarquee ? "true" : "false"}
-            {...(wordStyle === undefined ? {} : { style: wordStyle })}
           >
             {chars.length === 0 ? (
               <span className="lyra-titlebar-ai-launch-char" aria-hidden="true">

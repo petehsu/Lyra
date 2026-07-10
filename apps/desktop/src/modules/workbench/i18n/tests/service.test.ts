@@ -11,16 +11,16 @@ describe("i18n translator", () => {
 
   test("returns localized string for en-US", () => {
     const t = createTranslator("en-US");
-    expect(t("settings.pageTitle")).toBe("Basic Settings");
+    expect(t("settings.pageTitle")).toBe("Settings");
   });
 
   test("falls back to en-US dictionary for unknown locale", () => {
     const t = createTranslator("unknown" as WorkbenchLocale);
-    expect(t("settings.pageTitle")).toBe("Basic Settings");
+    expect(t("settings.pageTitle")).toBe("Settings");
   });
 
-  test("falls back to en-US key text when key is missing in current locale", () => {
+  test("returns the key when it is missing from every locale", () => {
     const t = createTranslator("zh-CN");
-    expect(t("totally.missing.key" as I18nKey)).toBeUndefined();
+    expect(t("totally.missing.key" as I18nKey)).toBe("totally.missing.key");
   });
 });

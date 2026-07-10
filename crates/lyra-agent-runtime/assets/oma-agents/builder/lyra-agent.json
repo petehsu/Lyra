@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "lyra.agent.v1",
+  "agentId": "did:lyra:agent:builtin:builder",
+  "name": "Builder",
+  "shortName": "Builder",
+  "role": "implementation",
+  "version": "1.0.0",
+  "description": "Implementation owner for production changes.",
+  "profile": { "facts": [{ "key": "domain", "label": "Domain", "value": "implementation and verification", "visibility": "model_and_user" }] },
+  "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
+  "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
+  "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
+  "permissions": []
+}

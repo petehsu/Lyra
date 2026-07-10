@@ -5,6 +5,67 @@ export type AgentTurnStatus = "idle" | "running" | "cancelled" | "saved" | "arch
 export type AgentTurnFinishStatus = "finished" | "cancelled";
 export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled" | "uncertain";
 export type AgentSessionKind = "normal";
+export type AgentMode = "solo" | "oma";
+export type OmaChannelKind = "group" | "direct";
+export type OmaAgentMemberStatus = "idle" | "queued" | "running" | "retrying";
+
+export type OmaAgentAvatar = {
+  readonly kind: "text" | "svg" | "image";
+  readonly value: string;
+  readonly src?: string | null;
+};
+
+export type OmaAgentMember = {
+  readonly id: string;
+  readonly sessionAgentId?: string | null;
+  readonly agentId: string;
+  readonly name: string;
+  readonly shortName?: string | null;
+  readonly role: string;
+  readonly avatar: OmaAgentAvatar;
+  readonly prompt: string;
+  readonly status: OmaAgentMemberStatus;
+  readonly builtIn?: boolean;
+};
+
+export type OmaChannel = {
+  readonly id: string;
+  readonly kind: OmaChannelKind;
+  readonly name: string;
+  readonly memberAgentIds: readonly string[];
+  readonly createdBy: "system" | "user" | "agent";
+  readonly archived: boolean;
+  readonly createdByTurnId?: string | null;
+};
+
+export type OmaSessionState = {
+  readonly enabled: boolean;
+  readonly activeChannelId: string;
+  readonly agents: readonly OmaAgentMember[];
+  readonly availableAgents: readonly OmaAgentMember[];
+  readonly channels: readonly OmaChannel[];
+};
+
+export type OmaAgentMention = {
+  /** Stable only within the composing message. */
+  readonly mentionId: string;
+  readonly sessionAgentId: string;
+  readonly agentId: string;
+  readonly name: string;
+  readonly shortName?: string | null;
+  readonly role: string;
+  readonly avatar?: OmaAgentAvatar | null;
+};
+
+export type OmaMessageMetadata = {
+  readonly channelId?: string | null;
+  readonly sender?: "user" | "agent" | string;
+  readonly senderAgentId?: string | null;
+  readonly mentions?: readonly OmaAgentMention[];
+  readonly targetAgentIds?: readonly string[];
+  readonly targetSessionAgentIds?: readonly string[];
+  readonly kind?: string | null;
+};
 
 export type AgentMessage = {
   readonly id: string;
@@ -321,6 +382,8 @@ export type AgentSessionSnapshot = {
   readonly id: string;
   readonly title: string;
   readonly sessionKind: AgentSessionKind;
+  readonly agentMode: AgentMode;
+  readonly oma: OmaSessionState | null;
   readonly workingDir: string;
   readonly projectBound: boolean;
   readonly workingDirIsHome?: boolean;
@@ -519,6 +582,7 @@ export type AgentMemorySharedUpdateRequest = {
 export type AgentSessionCreateRequest = {
   readonly title?: string;
   readonly workingDir?: string | null;
+  readonly agentMode?: AgentMode;
 };
 
 export type AgentTemporarySessionCreateRequest = {
@@ -599,11 +663,29 @@ export type AgentFileCitation = {
 export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly turnId?: string | null;
+  readonly channelId?: string | null;
   readonly text: string;
   readonly images?: readonly AgentImageInput[];
   readonly citations?: readonly AgentTranscriptCitation[];
   readonly pageCitations?: readonly AgentPageCitation[];
   readonly fileCitations?: readonly AgentFileCitation[];
+  /** Structured Oma group mentions; raw text markers only preserve rendering/order. */
+  readonly omaMentions?: readonly OmaAgentMention[];
+};
+
+export type AgentOmaSetModeRequest = {
+  readonly sessionId: string;
+  readonly mode: AgentMode;
+};
+
+export type AgentOmaAgentRequest = {
+  readonly sessionId: string;
+  readonly agentId: string;
+};
+
+export type AgentOmaChannelRequest = {
+  readonly sessionId: string;
+  readonly channelId: string;
 };
 
 export type AgentMessageResolveRequest = {
@@ -1629,6 +1711,12 @@ export type AgentApi = {
     request: AgentSessionDeleteRequest
   ) => Promise<AgentSessionDeleteResponse>;
   readonly bindProject: (request: AgentSessionBindProjectRequest) => Promise<AgentSessionSnapshot>;
+  readonly setAgentMode: (request: AgentOmaSetModeRequest) => Promise<AgentSessionSnapshot>;
+  readonly addOmaAgent: (request: AgentOmaAgentRequest) => Promise<AgentSessionSnapshot>;
+  readonly removeOmaAgent: (request: AgentOmaAgentRequest) => Promise<AgentSessionSnapshot>;
+  readonly setOmaActiveChannel: (
+    request: AgentOmaChannelRequest
+  ) => Promise<AgentSessionSnapshot>;
   readonly codegraphStatus: (request: { sessionId?: string; workingDir?: string }) => Promise<AgentCodegraphStatus>;
   readonly startTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
   readonly sendTurn: (request: AgentTurnSendRequest) => Promise<AgentTurnSendResponse>;
