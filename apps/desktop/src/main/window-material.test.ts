@@ -24,6 +24,7 @@ describe("window material", () => {
 
   test("resolves native material options for supported platforms", () => {
     expect(resolveLyraWindowMaterial({ platform: "darwin", env: {} }).options).toEqual({
+      backgroundColor: "#00000000",
       transparent: true,
       vibrancy: "under-window",
       visualEffectState: "active"

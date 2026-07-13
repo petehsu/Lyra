@@ -10,5 +10,11 @@
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
-  "permissions": []
+  "permissions": [],
+  "delegation": {
+    "specialties": ["product UX", "visual hierarchy", "accessibility"],
+    "acceptedWork": ["design interaction", "review interface flow", "define UX acceptance criteria"],
+    "deliverables": ["interaction proposal", "visual direction", "acceptance criteria"],
+    "collaborationHints": ["Bring Designer in before UI implementation when the interaction or state model matters."]
+  }
 }

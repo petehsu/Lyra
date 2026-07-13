@@ -5,17 +5,19 @@ import { readBrowserContextMenuLocaleFromPreferences } from "../view-manager-run
 
 describe("page context menu native", () => {
   test("reads locale from preferences json", () => {
-    expect(readBrowserContextMenuLocaleFromPreferences(null)).toBe("zh-CN");
+    expect(readBrowserContextMenuLocaleFromPreferences(null)).toBe("en-US");
     expect(
       readBrowserContextMenuLocaleFromPreferences(JSON.stringify({ locale: "en-US" }))
     ).toBe("en-US");
     expect(
       readBrowserContextMenuLocaleFromPreferences(JSON.stringify({ locale: "fr-FR" }))
-    ).toBe("zh-CN");
+    ).toBe("fr-FR");
   });
 
   test("labels include cite actions", () => {
     expect(browserContextMenuLabels("en-US").citeSelection).toContain("AI");
     expect(browserContextMenuLabels("zh-CN").citePage).toContain("AI");
+    expect(browserContextMenuLabels("ja-JP").copy).toBe("コピー");
+    expect(browserContextMenuLabels("unknown").back).toBe("Back");
   });
 });

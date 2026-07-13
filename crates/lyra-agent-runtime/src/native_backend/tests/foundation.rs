@@ -95,6 +95,301 @@ fn oma_builtin_package_registry_has_five_valid_unique_packages() {
 }
 
 #[test]
+fn oma_local_package_registry_keeps_stable_package_identity_and_fresh_session_identity() {
+    let root = tempfile::tempdir().expect("registry tempdir");
+    let package = json!({
+        "agentId": "did:lyra:agent:local:quality",
+        "name": "Quality Partner",
+        "role": "quality specialist",
+        "description": "Owns acceptance checks.",
+        "prompt": "Validate the work against its acceptance criteria.",
+    });
+    write_oma_local_packages(root.path(), vec![package.clone(), package])
+        .expect("write local package registry");
+    let packages = read_oma_local_packages(root.path());
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0]["agentId"], "did:lyra:agent:local:quality");
+    assert_eq!(packages[0]["source"], "lead_local");
+    let first = session_agent_from_available_package(&packages[0]);
+    let second = session_agent_from_available_package(&packages[0]);
+    assert_eq!(first["agentId"], second["agentId"]);
+    assert_ne!(first["sessionAgentId"], second["sessionAgentId"]);
+}
+
+#[test]
+fn oma_team_scheduler_runs_different_agents_in_parallel_and_each_agent_in_order() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma team scheduler", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let agents = created["oma"]["agents"].as_array().expect("agents");
+    let builder = agents
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:builder")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("builder")
+        .to_string();
+    let reviewer = agents
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("reviewer")
+        .to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["plan"] = json!({
+            "activePlanId": "team-plan",
+            "phase": PLAN_PHASE_TODO_REQUIRED,
+        });
+        session.snapshot["oma"]["team"] = json!({
+            "id": "team",
+            "status": "reviewing",
+            "planId": "team-plan",
+            "workPackages": [
+                {
+                    "id": "build-1",
+                    "title": "Build core",
+                    "task": "Implement core.",
+                    "assigneeSessionAgentId": builder,
+                    "dependencies": [],
+                    "status": "queued",
+                },
+                {
+                    "id": "review-1",
+                    "title": "Review core",
+                    "task": "Review core.",
+                    "assigneeSessionAgentId": reviewer,
+                    "dependencies": [],
+                    "status": "queued",
+                },
+                {
+                    "id": "build-2",
+                    "title": "Build follow-up",
+                    "task": "Implement follow-up.",
+                    "assigneeSessionAgentId": builder,
+                    "dependencies": [],
+                    "status": "queued",
+                }
+            ]
+        });
+    }
+
+    assert!(start_oma_team_work(&session_id).expect("start team"));
+    {
+        let state = state().lock().expect("state lock");
+        let session = state.sessions.get(&session_id).expect("session");
+        let pending = session.snapshot["oma"]["pendingAgentTurns"]
+            .as_array()
+            .expect("pending");
+        assert_eq!(pending.len(), 2);
+        assert!(pending.iter().any(|turn| turn["sessionAgentId"] == builder));
+        assert!(
+            pending
+                .iter()
+                .any(|turn| turn["sessionAgentId"] == reviewer)
+        );
+        assert_eq!(
+            session.snapshot["oma"]["team"]["workPackages"][2]["enqueued"],
+            Value::Null
+        );
+    }
+
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["oma"]["pendingAgentTurns"] = json!([]);
+        session.snapshot["oma"]["team"]["workPackages"][0]["status"] = json!("completed");
+    }
+    assert!(start_oma_team_work(&session_id).expect("release next package"));
+    let state = state().lock().expect("state lock");
+    let session = state.sessions.get(&session_id).expect("session");
+    let pending = session.snapshot["oma"]["pendingAgentTurns"]
+        .as_array()
+        .expect("pending");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0]["sessionAgentId"], builder);
+    assert_eq!(
+        session.snapshot["oma"]["team"]["workPackages"][2]["enqueued"],
+        true
+    );
+}
+
+#[test]
+fn oma_terminal_team_queues_one_public_lead_summary() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma terminal summary", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let lead_id = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:lead")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("lead")
+        .to_string();
+    let builder_id = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:builder")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("builder")
+        .to_string();
+    let mut snapshot = created;
+    snapshot["oma"]["team"] = json!({
+        "id": "team-terminal",
+        "title": "Terminal plan",
+        "status": "executing",
+        "workPackages": [{
+            "id": "build",
+            "assigneeSessionAgentId": builder_id,
+            "status": "running"
+        }]
+    });
+
+    set_oma_work_package_status(
+        &mut snapshot,
+        "build",
+        "completed",
+        Some("Delivered the patch."),
+    );
+    queue_oma_team_completion_lead_followup(&mut snapshot);
+    queue_oma_team_completion_lead_followup(&mut snapshot);
+
+    assert_eq!(snapshot["oma"]["team"]["status"], "completed");
+    assert_eq!(snapshot["oma"]["team"]["leadSummaryQueued"], true);
+    assert_eq!(
+        snapshot["oma"]["pendingAgentTurns"],
+        json!([{
+            "channelId": OMA_DEFAULT_CHANNEL_ID,
+            "sessionAgentId": lead_id,
+        }])
+    );
+    assert_eq!(
+        snapshot["messages"]
+            .as_array()
+            .expect("group messages")
+            .last()
+            .and_then(|message| message.pointer("/metadata/oma/kind"))
+            .and_then(Value::as_str),
+        Some("team_completion_followup")
+    );
+}
+
+#[test]
+fn oma_team_work_package_allows_mutation_only_for_its_assignee() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma plan gate", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let builder = created["oma"]["agents"]
+        .as_array()
+        .expect("agents")
+        .iter()
+        .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:builder")
+        .and_then(|agent| agent["id"].as_str())
+        .expect("builder")
+        .to_string();
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["plan"] = Value::Null;
+        session.snapshot["oma"]["executingWorkPackageId"] = json!("build");
+        session.snapshot["oma"]["executingSessionAgentId"] = json!(builder);
+        session.snapshot["oma"]["channelContexts"]["group:default"] = json!({
+            "plan": { "phase": PLAN_PHASE_EXECUTING_TODO }
+        });
+        session.snapshot["oma"]["team"] = json!({
+            "workPackages": [{
+                "id": "build",
+                "assigneeSessionAgentId": builder,
+                "status": "queued",
+            }]
+        });
+    }
+    assert!(
+        plan_gate_model_tool(
+            &session_id,
+            "turn",
+            "call-allowed",
+            APPLY_PATCH_MODEL_TOOL,
+            json!({}),
+            &now(),
+        )
+        .is_none()
+    );
+
+    {
+        let mut state = state().lock().expect("state lock");
+        let session = state.sessions.get_mut(&session_id).expect("session");
+        session.snapshot["oma"]["team"]["workPackages"][0]["assigneeSessionAgentId"] =
+            json!("another-agent");
+    }
+    let blocked = plan_gate_model_tool(
+        &session_id,
+        "turn",
+        "call-blocked",
+        APPLY_PATCH_MODEL_TOOL,
+        json!({}),
+        &now(),
+    )
+    .expect("block non-owner mutation");
+    assert_eq!(
+        blocked.pointer("/error/code"),
+        Some(&json!("todo_in_progress_required_before_execution"))
+    );
+}
+
+#[test]
+fn oma_work_package_replans_once_before_becoming_terminal() {
+    let mut snapshot = json!({
+        "oma": {
+            "team": {
+                "workPackages": [{
+                    "id": "work",
+                    "status": "running",
+                    "replanCount": 0,
+                    "enqueued": true,
+                }]
+            }
+        }
+    });
+    assert!(replan_oma_work_package_once(
+        &mut snapshot,
+        "work",
+        "provider overloaded"
+    ));
+    let work_package = &snapshot["oma"]["team"]["workPackages"][0];
+    assert_eq!(work_package["status"], "queued");
+    assert_eq!(work_package["replanCount"], 1);
+    assert_eq!(work_package["enqueued"], false);
+    assert!(
+        work_package["summary"]
+            .as_str()
+            .expect("replan summary")
+            .contains("provider overloaded")
+    );
+    assert!(!replan_oma_work_package_once(
+        &mut snapshot,
+        "work",
+        "failed again"
+    ));
+}
+
+#[test]
 fn oma_and_solo_keep_separate_session_contexts() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -185,6 +480,8 @@ fn oma_channels_keep_physical_message_contexts() {
         );
         session.snapshot["tools"] = json!([{ "id": "group-tool" }]);
         session.snapshot["todos"] = json!([{ "id": "group-todo" }]);
+        session.snapshot["plan"] = json!({ "activePlanId": "group-plan" });
+        session.snapshot["projectTodo"] = json!({ "todoListId": "group-project-todo" });
         session.snapshot["memory"] = json!({ "summary": "group memory" });
         session.snapshot["tokenEstimate"] = json!(123);
     }
@@ -228,6 +525,8 @@ fn oma_channels_keep_physical_message_contexts() {
             .is_empty()
     );
     assert!(reviewer["memory"].is_null());
+    assert!(reviewer["plan"].is_null());
+    assert!(reviewer["projectTodo"].is_null());
     assert_eq!(
         reviewer["oma"]["channelContexts"]["group:default"]["tools"][0]["id"],
         "group-tool"
@@ -235,6 +534,14 @@ fn oma_channels_keep_physical_message_contexts() {
     assert_eq!(
         reviewer["oma"]["channelContexts"]["group:default"]["todos"][0]["id"],
         "group-todo"
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["plan"]["activePlanId"],
+        "group-plan"
+    );
+    assert_eq!(
+        reviewer["oma"]["channelContexts"]["group:default"]["projectTodo"]["todoListId"],
+        "group-project-todo"
     );
     assert_eq!(
         reviewer["oma"]["channelContexts"]["group:default"]["memory"]["summary"],
@@ -367,19 +674,31 @@ fn oma_prompt_is_sealed_to_the_routed_agent() {
         .iter()
         .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
         .expect("reviewer");
-    let prompt = oma_prompt_message(&json!({
-        "state": created["oma"].clone(),
-        "latestTurn": {
-            "channelId": format!("direct:{}", reviewer["id"].as_str().expect("id")),
-            "targetSessionAgentIds": [reviewer["id"].clone()]
-        }
-    }))
-    .expect("Oma prompt");
+    let mut snapshot = created.clone();
+    snapshot["oma"]["executingSessionAgentId"] = reviewer["id"].clone();
+    snapshot["oma"]["channelContexts"]
+        [format!("direct:{}", reviewer["id"].as_str().expect("id"))] = json!({
+        "messages": [{ "text": "private Reviewer message" }],
+        "tools": [{ "id": "private-tool" }],
+        "memory": { "summary": "private memory" },
+    });
+    let context = oma_runtime_context_for_prompt(&snapshot, &[]).expect("Oma context");
+    let prompt = oma_prompt_message(&context).expect("Oma prompt");
     let content = prompt["content"].as_str().expect("prompt content");
 
     assert!(content.contains("You are Reviewer, an independent release gate."));
     assert!(content.contains("Findings ordered by severity"));
     assert!(!content.contains("Work from the real execution path"));
+    assert!(
+        !serde_json::to_string(&context)
+            .expect("context json")
+            .contains("private Reviewer message")
+    );
+    assert!(
+        !serde_json::to_string(&context)
+            .expect("context json")
+            .contains("private-tool")
+    );
 }
 
 #[test]
@@ -441,6 +760,13 @@ fn oma_routes_group_turns_to_lead_unless_an_agent_is_mentioned() {
         Some(&json!([reviewer_id]))
     );
     assert_eq!(
+        mentioned_message
+            .pointer("/metadata/oma/mentions")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
         mentioned_message.pointer("/metadata/oma/assignments/0/commonPreamble"),
         Some(&json!("Review the release."))
     );
@@ -498,6 +824,13 @@ fn oma_merges_repeated_mentions_and_rejects_private_assignments() {
     assert_eq!(
         message.pointer("/metadata/oma/targetSessionAgentIds"),
         Some(&json!([reviewer_id]))
+    );
+    assert_eq!(
+        message
+            .pointer("/metadata/oma/mentions")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(2)
     );
     assert_eq!(
         message.pointer("/metadata/oma/assignments/0/taskParts"),
@@ -616,7 +949,7 @@ fn oma_existing_sessions_refresh_builtin_agent_definitions() {
         .iter()
         .find(|agent| agent["agentId"] == "did:lyra:agent:builtin:reviewer")
         .expect("reviewer");
-    assert_eq!(refreshed["oma"]["defaultsVersion"], 5);
+    assert_eq!(refreshed["oma"]["defaultsVersion"], 6);
     assert!(refreshed["oma"].get("schedulingMode").is_none());
     assert!(
         reviewer["prompt"]

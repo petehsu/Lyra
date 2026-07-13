@@ -32,7 +32,9 @@ export const createStaticBundleSource = (
 // ponytail: pseudo-localization — 双写元音 + 全角括号包裹，测试布局溢出
 // ceiling: 不模拟 CJK 全宽字符；升级路径：加 ICU lengthening 选项
 const pseudoTransform = (value: string): string =>
-  `［${value.replace(/[aeiouAEIOU]/g, (c) => c + c)}］`;
+  `［${value.replace(/\{[^}]+\}|[aeiouAEIOU]/g, (token) =>
+    token.startsWith("{") ? token : token + token
+  )}］`;
 
 // ponytail: pseudo locale source — 包装 en-US bundle，对每个 value 做伪本地化变换
 export const createPseudoLocaleSource = (

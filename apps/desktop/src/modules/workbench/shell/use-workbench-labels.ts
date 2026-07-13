@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 
-import type { createTranslator } from "../i18n";
+import {
+  useWorkbenchLocaleSnapshot,
+  useWorkbenchLocales,
+  type createTranslator
+} from "../i18n";
 import type { SoftwareStoreBuiltinApp } from "../software-store";
 import { createWorkbenchUiPackOptions } from "../ui-platform";
 import type { WorkspaceSurfaceI18nProps } from "./workspace-surface-router";
@@ -15,7 +19,10 @@ import {
 type WorkbenchTranslator = ReturnType<typeof createTranslator>;
 
 export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
-  useMemo(
+  {
+    const { locale, revision } = useWorkbenchLocaleSnapshot();
+    const locales = useWorkbenchLocales();
+    return useMemo(
     () => ({
       terminal: {
         newTab: t("terminal.newTab"),
@@ -37,7 +44,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         unavailable: t("terminal.unavailable")
       },
       settingsOptions: {
-        locale: createSettingLocaleOptions(t),
+        locale: createSettingLocaleOptions(t, locales, locale),
         theme: createSettingThemeOptions(t),
         uiStyle: createWorkbenchUiPackOptions(t),
         splitTriggerMode: createSettingSplitTriggerModeOptions(t),
@@ -116,7 +123,19 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         legalCategoryLabel: t("settings.legalCategoryLabel"),
         docsNavLabel: t("settings.docsNavLabel"),
         languageLabel: t("settings.languageLabel"),
+        languagePickerLabels: {
+          searchPlaceholder: t("settings.languageSearchPlaceholder"),
+          installing: t("settings.languageStatusInstalling"),
+          removing: t("settings.languageRemoving"),
+          download: t("settings.languageDownload"),
+          remove: t("settings.languageRemove"),
+          noResults: t("settings.languageNoResults")
+        },
         themeLabel: t("settings.themeLabel"),
+        windowMaterialLabel: t("settings.windowMaterialLabel"),
+        windowMaterialDescription: t("settings.windowMaterialDescription"),
+        windowMaterialEnabledLabel: t("settings.windowMaterialEnabled"),
+        windowMaterialDisabledLabel: t("settings.windowMaterialDisabled"),
         uiStyleLabel: t("settings.uiStyleLabel"),
         uiStyleExternalReloadRequired: t("settings.uiStyleExternalReloadRequired"),
         uiStyleExternalUntrusted: t("settings.uiStyleExternalUntrusted"),
@@ -916,7 +935,8 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         channelError: t("browser.channelError")
       } satisfies WorkspaceSurfaceI18nProps,
     }),
-    [t]
-  );
+      [locale, revision, locales, t]
+    );
+  };
 
 export type WorkbenchLabels = ReturnType<typeof useWorkbenchLabels>;

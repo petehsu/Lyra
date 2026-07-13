@@ -70,7 +70,7 @@ function LumenCard({
         <div className="lyra-agents-tool-screenshot-container">
           <ClickableImage
             src={details.screenshot}
-            alt="Lyra Lumen snapshot"
+            alt={t("tool.lumenSnapshotAlt")}
             image={details.screenshotImage}
             className="lyra-agents-tool-screenshot-img"
             allowTargetFallback={false}
@@ -155,7 +155,7 @@ function SearchCard({
   return (
     <div className="lyra-agents-info-block">
       <div className="lyra-agents-info-line">
-        <span className="lyra-agents-info-dim">query</span>
+        <span className="lyra-agents-info-dim">{t("tool.searchQueryLabel")}</span>
         <span className="lyra-agents-info-strong">{details.query}</span>
       </div>
       <div className="lyra-agents-search-results">
@@ -212,7 +212,7 @@ function WebCard({
       {results.length > 0 ? (
         <>
           <div className="lyra-agents-info-line">
-            <span className="lyra-agents-info-dim">query</span>
+            <span className="lyra-agents-info-dim">{t("tool.searchQueryLabel")}</span>
             <span className="lyra-agents-info-strong">{details.query ?? details.url}</span>
           </div>
           <div className="lyra-agents-web-results">
@@ -241,7 +241,7 @@ function WebCard({
       ) : (
         <>
           <div className="lyra-agents-info-line">
-            <span className="lyra-agents-info-dim">URL</span>
+            <span className="lyra-agents-info-dim">{t("tool.webUrlLabel")}</span>
             <AppButton variant="ghost" size="sm"
               type="button"
               className="lyra-agents-web-url-button"
@@ -264,7 +264,7 @@ function WebCard({
         <div className="lyra-agents-tool-screenshot-container">
           <ClickableImage
             src={details.screenshot}
-            alt="Browser Screenshot"
+            alt={t("tool.browserScreenshotAlt")}
             className="lyra-agents-tool-screenshot-img"
           />
         </div>
@@ -385,7 +385,7 @@ function TaskCard({
 }) {
   return (
     <div className="lyra-agents-task-card">
-      <div className="lyra-agents-task-card-head">Execution plan</div>
+      <div className="lyra-agents-task-card-head">{t("tool.executionPlan")}</div>
       <ul className="lyra-agents-task-list">
         {details.tasks.map((t, i) => (
           <li key={i} className={`lyra-agents-task-item status-${t.status}`}>

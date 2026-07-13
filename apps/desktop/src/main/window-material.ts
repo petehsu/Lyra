@@ -50,6 +50,7 @@ export const resolveLyraWindowMaterial = ({
       mode: "native",
       platform,
       options: {
+        backgroundColor: TRANSPARENT_BACKGROUND,
         transparent: true,
         vibrancy: "under-window",
         visualEffectState: "active"

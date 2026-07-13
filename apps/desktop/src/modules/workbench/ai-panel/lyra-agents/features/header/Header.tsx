@@ -3,6 +3,7 @@
 // ============================================================================
 
 import {
+  AppBadge,
   AppIconButton,
   AppMenu,
   AppMenuContent,
@@ -135,18 +136,21 @@ export function HeaderControls({
           </AppMenuTrigger>
           <AppMenuContent className="lyra-agents-header-menu" align="end" sideOffset={6}>
             <AppMenuItem
-              className={menuItemClassName}
+              className={`${menuItemClassName} lyra-agents-header-mode-item`}
               disabled={creating}
               onSelect={() => void onCreateSession("solo")}
             >
-              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.solo")}</span>
+              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.soloMode")}</span>
             </AppMenuItem>
             <AppMenuItem
-              className={menuItemClassName}
+              className={`${menuItemClassName} lyra-agents-header-mode-item`}
               disabled={creating}
               onSelect={() => void onCreateSession("oma")}
             >
-              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.oma")}</span>
+              <span className="lyra-app-menu-item-label">{t("lyra-agents-oma.omaMode")}</span>
+              <AppBadge tone="warning" className="lyra-agents-header-mode-beta">
+                {t("lyra-agents-oma.beta")}
+              </AppBadge>
             </AppMenuItem>
           </AppMenuContent>
         </AppMenu>

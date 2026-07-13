@@ -58,6 +58,10 @@ import {
   type AgentTurnSendRequest,
   type AgentTurnSendResponse,
   type AppMetaPayload,
+  type AuthProfile,
+  type AuthProfileUpdate,
+  type AuthLocalIdentity,
+  type AuthSnapshot,
   type ScreenshotPreviewEvent,
   type ScreenshotPreviewPresentRequest,
   type AgentAccountLoginCompleteRequest,
@@ -238,6 +242,11 @@ import {
   type DetectedEditor,
   type OpenInEditorRequest
 } from "../shared/desktop-bridge";
+import type {
+  InstalledLanguagePack,
+  LanguagePackCatalogResponse,
+  LanguagePackChangeEvent
+} from "../shared/language-packs";
 import type {
   FileManagerCreateFileRequest,
   FileManagerCreateFolderRequest,
@@ -803,7 +812,9 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
   windowControls: {
     minimize: () => ipcRenderer.invoke(LYRA_CHANNELS.minimizeWindow),
     toggleMaximize: () => ipcRenderer.invoke(LYRA_CHANNELS.toggleWindowMaximize),
-    close: () => ipcRenderer.invoke(LYRA_CHANNELS.closeWindow)
+    close: () => ipcRenderer.invoke(LYRA_CHANNELS.closeWindow),
+    setThemeSource: (source) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.setWindowThemeSource, source)
   },
   appMeta: readAppMeta(),
   shellEvents: {
@@ -1811,7 +1822,68 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     readLocalBundles: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.i18nReadLocalBundles) as Promise<
         Readonly<Record<string, Record<string, string>>>
-      >
+      >,
+    readLanguageBundles: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.i18nReadLanguageBundles) as Promise<{
+        readonly managed: Readonly<Record<string, Record<string, string>>>;
+        readonly local: Readonly<Record<string, Record<string, string>>>;
+      }>
+  },
+  languagePacks: {
+    listCatalog: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.languagePacksListCatalog) as Promise<LanguagePackCatalogResponse>,
+    listInstalled: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.languagePacksListInstalled) as Promise<
+        readonly InstalledLanguagePack[]
+      >,
+    install: (locale: string) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.languagePacksInstall, locale) as Promise<InstalledLanguagePack>,
+    uninstall: (locale: string) =>
+      ipcRenderer.invoke(LYRA_CHANNELS.languagePacksUninstall, locale) as Promise<void>,
+    checkForUpdates: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.languagePacksCheckForUpdates) as Promise<LanguagePackCatalogResponse>,
+    onChanged: (listener: (event: LanguagePackChangeEvent) => void) => {
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        payload: LanguagePackChangeEvent
+      ): void => {
+        listener(payload);
+      };
+      ipcRenderer.on(LYRA_CHANNELS.languagePacksChanged, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(LYRA_CHANNELS.languagePacksChanged, wrappedListener);
+      };
+    }
+  },
+  auth: {
+    getSession: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.authGetSession) as Promise<AuthSnapshot>,
+    getLocalIdentity: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.authGetLocalIdentity) as Promise<AuthLocalIdentity>,
+    startGoogleLogin: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.authStartGoogleLogin) as Promise<{
+        readonly started: boolean;
+        readonly authorizationUrl: string;
+      }>,
+    updateProfile: (update: AuthProfileUpdate) =>
+      ipcRenderer.invoke(
+        LYRA_CHANNELS.authUpdateProfile,
+        update
+      ) as Promise<AuthProfile>,
+    logout: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.authLogout) as Promise<void>,
+    onChanged: (listener: (snapshot: AuthSnapshot) => void) => {
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        payload: AuthSnapshot
+      ): void => {
+        listener(payload);
+      };
+      ipcRenderer.on(LYRA_CHANNELS.authEvent, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(LYRA_CHANNELS.authEvent, wrappedListener);
+      };
+    }
   }
 });
 

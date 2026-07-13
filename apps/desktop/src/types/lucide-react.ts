@@ -167,6 +167,8 @@ export declare const Unplug: LucideIcon;
 export declare const UserRound: LucideIcon;
 export declare const Webhook: LucideIcon;
 export declare const Workflow: LucideIcon;
+export declare const Volume2: LucideIcon;
+export declare const VolumeX: LucideIcon;
 export declare const XCircle: LucideIcon;
 export declare const ZoomIn: LucideIcon;
 export declare const ZoomOut: LucideIcon;

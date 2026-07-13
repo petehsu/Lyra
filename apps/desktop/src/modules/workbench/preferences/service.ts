@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
-import { changeI18nLocale, WORKBENCH_LOCALES, type WorkbenchLocale } from "../i18n";
+import {
+  getWorkbenchLocale,
+  isWorkbenchLocale,
+  setWorkbenchLocale,
+  useWorkbenchLocale,
+  type WorkbenchLocale
+} from "../i18n";
 import type {
   SystemNotificationClickBehavior,
   SystemNotificationMode
@@ -21,12 +27,10 @@ import type {
   WorkbenchSplitThreePaneLayout,
   WorkbenchSplitTriggerMode
 } from "./types";
+import type { AuthLocalePreference } from "../../../shared/auth";
 
 export const WORKBENCH_PREFERENCES_STORAGE_KEY = "lyra.workbench.preferences.v1";
 const WORKBENCH_PREFERENCES_STATE_KEY = "preferences" as const;
-
-const isLocale = (value: unknown): value is WorkbenchLocale =>
-  typeof value === "string" && WORKBENCH_LOCALES.includes(value as WorkbenchLocale);
 
 const normalizeTheme = (value: unknown, fallback: WorkbenchThemeId): WorkbenchThemeId =>
   normalizeWorkbenchThemeId(value, fallback);
@@ -81,7 +85,9 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
   try {
     const parsed = JSON.parse(raw) as {
       readonly locale?: unknown;
+      readonly localePreference?: unknown;
       readonly theme?: unknown;
+      readonly windowMaterialEnabled?: unknown;
       readonly uiPackId?: unknown;
       readonly uiStyleId?: unknown;
       readonly splitTriggerMode?: unknown;
@@ -104,10 +110,28 @@ export const readWorkbenchPreferences = (defaults: WorkbenchPreferences): Workbe
       typeof parsed.searchSearxngEndpoint === "string"
         ? parsed.searchSearxngEndpoint.trim()
         : defaults.searchSearxngEndpoint;
+    const normalizedLocalePreference: AuthLocalePreference | undefined =
+      parsed.localePreference === "system"
+        ? { mode: "system" }
+        : parsed.localePreference !== null
+          && typeof parsed.localePreference === "object"
+          && (parsed.localePreference as { readonly mode?: unknown }).mode === "explicit"
+          && typeof (parsed.localePreference as { readonly locale?: unknown }).locale === "string"
+          ? {
+              mode: "explicit",
+              locale: (parsed.localePreference as { readonly locale: string }).locale
+            }
+          : defaults.localePreference;
 
     return {
-      locale: isLocale(parsed.locale) ? parsed.locale : defaults.locale,
+      locale: isWorkbenchLocale(parsed.locale) ? parsed.locale : defaults.locale,
+      ...(normalizedLocalePreference === undefined
+        ? {}
+        : { localePreference: normalizedLocalePreference }),
       theme: normalizeTheme(parsed.theme, defaults.theme),
+      windowMaterialEnabled: isBoolean(parsed.windowMaterialEnabled)
+        ? parsed.windowMaterialEnabled
+        : defaults.windowMaterialEnabled,
       uiPackId: isUiPackId(parsed.uiPackId)
         ? parsed.uiPackId
         : isUiPackId(parsed.uiStyleId)
@@ -168,34 +192,60 @@ export const writeWorkbenchPreferences = (preferences: WorkbenchPreferences): vo
     WORKBENCH_PREFERENCES_STATE_KEY,
     JSON.stringify(preferences)
   );
+  setWorkbenchLocale(preferences.locale);
 };
 
 export const useWorkbenchPreferencesModel = (
   defaults: WorkbenchPreferences
 ): WorkbenchPreferencesModel => {
-  const [preferences, setPreferences] = useState<WorkbenchPreferences>(() => readWorkbenchPreferences(defaults));
+  const initialPreferences = useMemo(() => readWorkbenchPreferences(defaults), [defaults]);
+  const [storedPreferences, setStoredPreferences] = useState<WorkbenchPreferences>(
+    initialPreferences
+  );
+  const preferencesRef = useRef(storedPreferences);
+  const locale = useWorkbenchLocale();
+  const preferences = useMemo(
+    () => ({
+      ...storedPreferences,
+      locale
+    }),
+    [locale, storedPreferences]
+  );
 
   const commit = (updater: (current: WorkbenchPreferences) => WorkbenchPreferences): void => {
-    setPreferences((current) => {
-      const next = updater(current);
-      writeWorkbenchPreferences(next);
-      return next;
+    const next = updater({
+      ...preferencesRef.current,
+      locale: getWorkbenchLocale()
     });
+    preferencesRef.current = next;
+    setStoredPreferences(next);
+    writeWorkbenchPreferences(next);
   };
 
   return {
     preferences,
     setLocale: (locale) => {
-      void changeI18nLocale(locale);
-      commit((current) => ({
-        ...current,
-        locale
-      }));
+      commit((current) => current.localePreference === undefined
+        ? {
+            ...current,
+            locale
+          }
+        : {
+            ...current,
+            locale,
+            localePreference: { mode: "explicit", locale }
+          });
     },
     setTheme: (theme) => {
       commit((current) => ({
         ...current,
         theme
+      }));
+    },
+    setWindowMaterialEnabled: (enabled) => {
+      commit((current) => ({
+        ...current,
+        windowMaterialEnabled: enabled
       }));
     },
     setUiPackId: (uiPackId) => {

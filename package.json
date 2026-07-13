@@ -12,6 +12,7 @@
     "lint:harmony-ui": "tsx tools/harmony/write-workbench-ui-contract.ts --check",
     "lint:prompt-contract": "tsx tools/verify-prompt-contract.ts",
     "lint:i18n": "pnpm --filter @lyra/desktop lint:i18n",
+    "i18n:language-pack-manifest": "tsx tools/generate-language-pack-source-manifest.ts",
     "lint:agent-contract": "tsx tools/verify-agent-contract.ts",
     "lint:repo-hygiene": "tsx tools/verify-repo-hygiene.ts",
     "lint:ts": "pnpm -r --filter './services/**' --filter './packages/**' run typecheck",

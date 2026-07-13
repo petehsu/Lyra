@@ -34,12 +34,14 @@ import {
 import { SettingsAiMcpView, SettingsAiModelsView, SettingsAiSkillsView, SettingsAiView } from "../settings-ai";
 import { LoginManagerSurface } from "../login-manager";
 import { SoftwareStoreSurface } from "../software-store";
+import { LanguagePicker } from "./language-picker";
 import type { SettingsCategoryId } from "./settings-schema";
 import type {
   SettingsBooleanChoiceControlDescriptor,
   SettingsChoiceControlDescriptor,
   SettingsControlDescriptor,
   SettingsInlineStatusActionControlDescriptor,
+  SettingsLanguagePickerControlDescriptor,
   SettingsLegalNoticesCustomControlDescriptor,
   SettingsMultiChoiceControlDescriptor,
   SettingsRenderedSection,
@@ -124,6 +126,25 @@ const SettingsChoiceSelect = ({ control }: { readonly control: SettingsChoiceCon
         value={control.value}
         options={buildSelectOptions(control)}
         onValueChange={control.onChange}
+      />
+    )}
+  />
+);
+
+const SettingsLanguagePicker = ({
+  control
+}: {
+  readonly control: SettingsLanguagePickerControlDescriptor;
+}) => (
+  <AppSettingsRow
+    title={control.label}
+    control={(
+      <LanguagePicker
+        value={control.value}
+        builtins={control.options}
+        labels={control.labels}
+        desktopApi={control.desktopApi}
+        onChange={control.onChange}
       />
     )}
   />
@@ -397,6 +418,8 @@ const renderControl = (control: SettingsControlDescriptor): ReactNode => {
       return <SettingsBooleanChoice control={control} />;
     case "choice":
       return <SettingsChoiceSelect control={control} />;
+    case "language-picker":
+      return <SettingsLanguagePicker control={control} />;
     case "custom":
       if (control.customKind === "login-manager") {
         return <LoginManagerSurface {...control.props} embedded />;

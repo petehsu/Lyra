@@ -17,7 +17,7 @@
   -webkit-user-select: none;
 }
 
-:root[data-lyra-window-material="native"] .lyra-root {
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] .lyra-root {
   background: transparent;
 }
 
@@ -653,6 +653,7 @@
   display: grid;
   grid-template-columns: var(--left-width, var(--lyra-unit-260)) 0 minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  background: transparent;
   overflow: hidden;
   transition:
     grid-template-columns var(--lyra-motion-panel-layout),

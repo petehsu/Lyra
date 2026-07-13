@@ -112,6 +112,7 @@ describe("terminal pane surface", () => {
     expect(terminalInstances[0]?.options.cursorInactiveStyle).toBe("bar");
     expect(terminalInstances[0]?.options.cursorWidth).toBe(1);
     expect(terminalInstances[0]?.options.convertEol).toBe(false);
+    expect(terminalInstances[0]?.options.allowTransparency).toBe(true);
   });
 
   test("focuses the active xterm pane so cursor blink can run", async () => {

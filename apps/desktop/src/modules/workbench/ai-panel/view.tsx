@@ -594,7 +594,6 @@ export const AiPanelSurface = ({
   onOpenFile,
   onRevealPathInWorkbench,
   openDialog,
-  locale,
   title,
   aiPanelSide,
   onToggleAiPanelSide,
@@ -648,7 +647,6 @@ export const AiPanelSurface = ({
       onRevealPathInWorkbench,
       onOpenTerminalLiveSession,
       openDialog,
-      locale,
       composerCitationSinkRef,
       onSetActiveBrowserTab,
       resolveActiveWorkspaceTab,
@@ -689,7 +687,6 @@ export const AiPanelSurface = ({
               {...(movePanelToRightLabel === undefined ? {} : { movePanelToRightLabel })}
             />
           }
-          {...(locale === undefined ? {} : { locale })}
         />
       </div>
     </AppPanel>

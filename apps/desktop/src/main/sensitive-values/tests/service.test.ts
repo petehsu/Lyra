@@ -140,4 +140,27 @@ describe("Sensitive values IPC bridge", () => {
 
     bridge.dispose();
   });
+
+  test("restores legacy system credentials stored with use capability", async () => {
+    const bridge = createSensitiveValuesIpcBridge({
+      loginManager: {
+        revealCredential: vi.fn()
+      } as unknown as LoginManagerIpcBridge
+    });
+
+    const stored = await bridge.store({
+      owner: "system",
+      valueKind: "credential",
+      label: "Administrator credential",
+      value: "local-admin-password",
+      capabilities: ["list_metadata", "use"]
+    });
+
+    await expect(bridge.revealToUser({ ref: stored.ref })).resolves.toEqual({
+      refId: stored.ref.id,
+      value: "local-admin-password"
+    });
+
+    bridge.dispose();
+  });
 });

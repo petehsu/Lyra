@@ -8,7 +8,6 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { GlobalDialogModel } from "../global-dialog";
-import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchLocationControls } from "../location";
 import type { SettingsAiModel } from "../settings-ai";
 import type { ComposerCitationSink } from "../shell/use-browser-page-context-menu";
@@ -73,7 +72,6 @@ export type AiPanelSurfaceProps = {
   ) => void) | undefined;
   readonly onRevealPathInWorkbench?: ((filePath: string) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"];
-  readonly locale?: WorkbenchLocale;
   readonly aiRichRenderingEnabled?: boolean;
   readonly title: string;
   readonly emptyThreadLabel: string;

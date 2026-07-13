@@ -12,8 +12,7 @@ import {
 import { WORKBENCH_CONFIG } from "../config";
 import { useContextMenuModel } from "../context-menu";
 import { useGlobalDialogModel } from "../global-dialog";
-import { createTranslator } from "../i18n";
-import { changeI18nLocale } from "../i18n/i18n-instance";
+import { createTranslator, useWorkbenchLocaleSnapshot } from "../i18n";
 import { useWorkbenchNotificationModel } from "../notifications";
 import { useWorkbenchPreferencesModel } from "../preferences";
 import { useWorkbenchLocationModel } from "../location";
@@ -22,7 +21,11 @@ import { isAgentSessionHistoryAppId } from "../workspace-apps";
 import { useWorkspaceTabsModel } from "../workspace-tabs";
 import { useWorkbenchUiRuntime } from "../ui-platform";
 import { cx } from "../ui-primitives";
-import { getDesktopApi, syncCssVarsToDocumentRoot } from "./service";
+import {
+  getDesktopApi,
+  syncCssVarsToDocumentRoot,
+  syncWindowThemeSource
+} from "./service";
 
 import { useBrowserSearchModel } from "../browser-search";
 import {
@@ -75,6 +78,7 @@ import {
   useWorkbenchSystemNotificationPublisher
 } from "./use-workbench-system-notifications";
 import { useWorkbenchThemeRuntime } from "./use-workbench-theme-runtime";
+import { resolveMaterialThemeVars } from "../theme";
 import { createInitialWorkbenchPreferences, createWorkbenchBrowserTabsConfig } from "./workbench-shell-defaults";
 import { WorkbenchShellStage } from "./workbench-shell-stage";
 import { EXPECTED_PROTOCOL_VERSION } from "../../../shared/agent";
@@ -104,6 +108,7 @@ export const WorkbenchShell = () => {
   }, [desktopApi]);
 
   const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
+  const { locale } = useWorkbenchLocaleSnapshot();
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
   const [settingsFocusRequest, setSettingsFocusRequest] =
     useState<BrowserSettingsCategoryFocusRequest | null>(null);
@@ -122,14 +127,9 @@ export const WorkbenchShell = () => {
   );
 
   const t = useMemo(
-    () => createTranslator(preferencesModel.preferences.locale),
-    [preferencesModel.preferences.locale]
+    () => createTranslator(locale),
+    [locale]
   );
-  // ponytail: i18next locale 同步 + html lang 更新；createTranslator 已委托 i18next，此处确保 i18next language 跟随偏好
-  useEffect(() => {
-    changeI18nLocale(preferencesModel.preferences.locale);
-    document.documentElement.lang = preferencesModel.preferences.locale;
-  }, [preferencesModel.preferences.locale]);
   const labels = useWorkbenchLabels(t);
   const rootRef = useRef<HTMLElement | null>(null);
   const browserTabsConfig = useMemo(() => createWorkbenchBrowserTabsConfig(t), [t]);
@@ -165,6 +165,32 @@ resolvedThemeId,
   } = useWorkbenchThemeRuntime(
     preferencesModel.preferences.theme,
   );
+  const previousThemeVarsRef = useRef(themeVars);
+  const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
+
+  useEffect(() => {
+    const previousThemeVars = previousThemeVarsRef.current;
+    if (previousThemeVars === themeVars) {
+      return;
+    }
+
+    const root = rootRef.current;
+    if (root !== null) {
+      root.style.setProperty(
+        "--lyra-theme-transition-from-bg",
+        previousThemeVars["--lyra-app-bg"] ?? "transparent"
+      );
+    }
+    previousThemeVarsRef.current = themeVars;
+    setIsThemeTransitioning(true);
+    const timer = window.setTimeout(() => {
+      setIsThemeTransitioning(false);
+    }, 440);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [themeVars]);
+
   const workbenchChromeLabels = useMemo(
     () => createWorkbenchChromeLabels(t),
     [t]
@@ -324,7 +350,7 @@ resolvedThemeId,
     onOpenLoginManager: () => {
       openSettingsSectionFromCapability("loginManager");
     },
-    locale: preferencesModel.preferences.locale,
+    locale,
     resolvedThemeId
   });
   useWorkbenchObservationBridge({
@@ -350,7 +376,7 @@ resolvedThemeId,
   const locationControls = useWorkbenchLocationModel({
     desktopApi,
     openDialog: globalDialogModel.openDialog,
-    locale: preferencesModel.preferences.locale,
+    locale,
     t
   });
 
@@ -536,14 +562,21 @@ resolvedThemeId,
     }
   }, [uiRuntime.interactions.workbenchDrag]);
 
-  const rootStyle = useMemo(
-    () =>
-      ({
+  const materialThemeEnabled =
+    desktopApi?.appMeta.windowMaterialMode === "native"
+    && preferencesModel.preferences.windowMaterialEnabled;
+  const rootVars = useMemo(
+    () => resolveMaterialThemeVars(
+      {
         ...themeVars,
         ...uiRuntime.vars
-      }) as CSSProperties,
-    [themeVars, uiRuntime.vars]
+      },
+      materialThemeEnabled,
+      resolvedThemeId.endsWith("-dark") ? "dark" : "light"
+    ),
+    [materialThemeEnabled, resolvedThemeId, themeVars, uiRuntime.vars]
   );
+  const rootStyle = rootVars as CSSProperties;
 
   useLayoutEffect(() => {
     if (getIsLayoutResizing()) {
@@ -553,16 +586,22 @@ resolvedThemeId,
   }, [panelLayoutModel.cssVars]);
 
   useEffect(() => {
-    syncCssVarsToDocumentRoot({
-      ...themeVars,
-      ...uiRuntime.vars
-    } as Record<`--${string}`, string>);
+    syncCssVarsToDocumentRoot(rootVars);
+    syncWindowThemeSource(desktopApi, preferencesModel.preferences.theme);
     document.documentElement.dataset.lyraThemeTone = resolvedThemeId.endsWith("-dark")
       ? "dark"
       : "light";
     document.documentElement.dataset.lyraWindowMaterial =
       desktopApi?.appMeta.windowMaterialMode ?? "opaque";
-  }, [desktopApi, resolvedThemeId, themeVars, uiRuntime.vars]);
+    document.documentElement.dataset.lyraMaterialEnabled =
+      preferencesModel.preferences.windowMaterialEnabled ? "true" : "false";
+  }, [
+    desktopApi,
+    preferencesModel.preferences.theme,
+    preferencesModel.preferences.windowMaterialEnabled,
+    resolvedThemeId,
+    rootVars
+  ]);
 
   useWorkbenchAppRestoration({
     activeTab,
@@ -576,6 +615,7 @@ resolvedThemeId,
   const rootClassName = cx(
     "lyra-root",
     uiRuntime.rootClassName,
+    isThemeTransitioning && "lyra-theme-transition",
     isFullScreen && "lyra-root-fullscreen",
     globalDialogModel.state.isOpen && "lyra-root-modal-open"
   );
@@ -609,6 +649,7 @@ resolvedThemeId,
       isFullScreen={isFullScreen}
       isMaximized={isMaximized}
       labels={labels}
+      locale={locale}
       notificationModel={notificationModel}
       onGoBack={onGoBack}
       onGoForward={onGoForward}

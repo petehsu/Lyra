@@ -1,5 +1,15 @@
-export { WORKBENCH_LOCALES } from "./config";
 export { changeI18nLocale } from "./i18n-instance";
+export {
+  getWorkbenchLocale,
+  getWorkbenchLocales,
+  isWorkbenchLocale,
+  setWorkbenchLocale,
+  useWorkbenchLocale,
+  useWorkbenchLocaleSnapshot,
+  useWorkbenchLocales
+} from "./locale-state";
+export { WorkbenchI18nProvider } from "./provider";
+export { registerUiPackI18nResources, uiPackI18nNamespace } from "./ui-pack-resources";
 export {
   createTranslator,
   t,

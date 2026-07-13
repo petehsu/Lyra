@@ -44,6 +44,39 @@ try {
       fail(`preload bridge incomplete: ${JSON.stringify(bridgeSnapshot)}`);
     }
 
+    await page.evaluate(async () => {
+      await window.lyraDesktop.workbenchState.write(
+        "preferences",
+        JSON.stringify({ locale: "en-US" })
+      );
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(
+      () => document.documentElement.lang === "en-US",
+      undefined,
+      { timeout: 30_000 }
+    );
+    await page.getByPlaceholder("Search, enter a URL, or enter a file path").waitFor({
+      state: "visible",
+      timeout: 30_000
+    });
+    const postponeLocationPermission = page.getByRole("button", { name: "Not now" });
+    if (await postponeLocationPermission.isVisible()) {
+      await postponeLocationPermission.click();
+    }
+    await page.getByRole("button", { name: "Open settings" }).click();
+    await page.getByRole("combobox", { name: "Language" }).click();
+    await page.getByRole("option", { name: "Simplified Chinese" }).click();
+    await page.waitForFunction(
+      () => document.documentElement.lang === "zh-CN",
+      undefined,
+      { timeout: 30_000 }
+    );
+    await page.getByPlaceholder("搜索、输入网址或文件路径").waitFor({
+      state: "visible",
+      timeout: 30_000
+    });
+
     const blockedFileUrl = await page.evaluate(() =>
       window.lyraDesktop.openExternal("file:///tmp/lyra-e2e-secret")
     );

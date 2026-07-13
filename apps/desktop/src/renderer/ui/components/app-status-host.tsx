@@ -42,7 +42,9 @@ export const reportWorkbenchStatus = (
     pending.push(next);
     return;
   }
-  listeners.forEach((listener) => listener(next));
+  queueMicrotask(() => {
+    listeners.forEach((listener) => listener(next));
+  });
 };
 
 export const reportWorkbenchError = (

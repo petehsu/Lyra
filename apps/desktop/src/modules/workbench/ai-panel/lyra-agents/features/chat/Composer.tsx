@@ -514,7 +514,11 @@ export function Composer({
       )}
       {topSlot}
       {mentionPickerOpen ? (
-        <div className="lyra-agents-oma-mention-picker" role="listbox" aria-label="Mention an Oma Agent">
+        <div
+          className="lyra-agents-oma-mention-picker"
+          role="listbox"
+          aria-label={t("oma.mentionAgentAriaLabel")}
+        >
           {filteredMentionAgents.map((agent, index) => {
             const avatarSrc = agent.avatar.src?.trim();
             return (

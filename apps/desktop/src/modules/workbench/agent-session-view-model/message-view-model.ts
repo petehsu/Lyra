@@ -222,6 +222,9 @@ const toolIdForBlock = (block: AgentMessageBlock): string | null => {
   return block.toolId ?? (block as LegacyAgentToolBlock).tool_id ?? null;
 };
 
+const isClarificationTool = (tool: AgentToolActivity): boolean =>
+  tool.name === "clarification" || tool.name === "lyra_clarification_ask";
+
 const mergeToolBlocks = (
   left: Extract<MessageBlock, { type: "tools" }>,
   right: Extract<MessageBlock, { type: "tools" }>
@@ -370,7 +373,7 @@ const chatBlocksForAgentMessage = (
 
     const toolId = toolIdForBlock(block);
     const tool = toolId === null ? undefined : toolsById.get(toolId);
-    if (tool !== undefined) {
+    if (tool !== undefined && !isClarificationTool(tool)) {
       pendingTools.push(tool);
     }
   }
@@ -618,7 +621,9 @@ const attachEphemeralRunningTools = (
     return [...messages];
   }
 
-  const runningTools = latestToolActivities(session.tools).filter((tool) => tool.status === "running");
+  const runningTools = latestToolActivities(session.tools).filter(
+    (tool) => tool.status === "running" && !isClarificationTool(tool)
+  );
   if (runningTools.length === 0) {
     return [...messages];
   }

@@ -916,21 +916,25 @@ export const LoginManagerSurface = ({
                   <div>
                     <dt>
                       <FactIcon kind="cookies" />
-                      <span>Cookies</span>
+                      <span>{t("loginManager.cookiesLabel")}</span>
                     </dt>
                     <dd>{String(selectedItem.value.signals.cookieCount)}</dd>
                   </div>
                   <div>
                     <dt>
                       <FactIcon kind="storage" />
-                      <span>Storage</span>
+                      <span>{t("loginManager.storageLabel")}</span>
                     </dt>
-                    <dd>{selectedItem.value.signals.storageObserved ? "Yes" : "No"}</dd>
+                    <dd>
+                      {selectedItem.value.signals.storageObserved
+                        ? t("loginManager.yes")
+                        : t("loginManager.no")}
+                    </dd>
                   </div>
                   <div>
                     <dt>
                       <FactIcon kind="updated" />
-                      <span>Updated</span>
+                      <span>{t("loginManager.updatedLabel")}</span>
                     </dt>
                     <dd>{formatTime(selectedItem.value.updatedAt)}</dd>
                   </div>
@@ -1019,7 +1023,7 @@ export const LoginManagerSurface = ({
                 <div>
                   <dt>
                     <FactIcon kind="password" />
-                    <span>Password</span>
+                      <span>{t("loginManager.passwordLabel")}</span>
                   </dt>
                   <dd>
                     {revealedPasswords.get(selectedItem.value.id) ?? (selectedItem.value.passwordAvailable ? "••••••••" : "—")}
@@ -1028,14 +1032,14 @@ export const LoginManagerSurface = ({
                 <div>
                   <dt>
                     <FactIcon kind="updated" />
-                    <span>Updated</span>
+                      <span>{t("loginManager.updatedLabel")}</span>
                   </dt>
                   <dd>{formatTime(selectedItem.value.updatedAt)}</dd>
                 </div>
                 <div>
                   <dt>
                     <FactIcon kind="lastUsed" />
-                    <span>Last used</span>
+                      <span>{t("loginManager.lastUsedLabel")}</span>
                   </dt>
                   <dd>{formatTime(selectedItem.value.lastUsedAt)}</dd>
                 </div>

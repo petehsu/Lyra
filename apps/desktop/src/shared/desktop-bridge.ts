@@ -48,6 +48,19 @@ import type {
 } from "./image-viewer";
 import type { TerminalThemePresetId } from "./terminal-theme";
 import type {
+  InstalledLanguagePack,
+  LanguagePackCatalogResponse,
+  LanguagePackChangeEvent
+} from "./language-packs";
+import type {
+  AuthApi,
+  AuthLocalIdentity,
+  AuthProfile,
+  AuthProfileUpdate,
+  AuthSnapshot,
+  AuthUser
+} from "./auth";
+import type {
   BrowserSessionSnapshot,
   BrowserStorageStateRef,
   WorkbenchBrowserChromePopoverRequest,
@@ -502,6 +515,7 @@ export const LYRA_CHANNELS = {
   minimizeWindow: "lyra:shell/window/minimize",
   toggleWindowMaximize: "lyra:shell/window/toggle-maximize",
   closeWindow: "lyra:shell/window/close",
+  setWindowThemeSource: "lyra:shell/window/set-theme-source",
   readAppMeta: "lyra:shell/app/meta",
   readAppMetaSync: "lyra:shell/app/meta-sync",
   openExternal: "lyra:shell/open-external",
@@ -748,6 +762,19 @@ export const LYRA_CHANNELS = {
   screenshotPreviewDismiss: "lyra:screenshot-preview/dismiss",
   screenshotPreviewEvent: "lyra:screenshot-preview/event",
   i18nReadLocalBundles: "lyra:i18n/read-local-bundles",
+  i18nReadLanguageBundles: "lyra:i18n/read-language-bundles",
+  languagePacksListCatalog: "lyra:language-packs/list-catalog",
+  languagePacksListInstalled: "lyra:language-packs/list-installed",
+  languagePacksInstall: "lyra:language-packs/install",
+  languagePacksUninstall: "lyra:language-packs/uninstall",
+  languagePacksCheckForUpdates: "lyra:language-packs/check-for-updates",
+  languagePacksChanged: "lyra:language-packs/changed",
+  authGetSession: "lyra:auth/get-session",
+  authGetLocalIdentity: "lyra:auth/get-local-identity",
+  authStartGoogleLogin: "lyra:auth/start-google-login",
+  authUpdateProfile: "lyra:auth/update-profile",
+  authLogout: "lyra:auth/logout",
+  authEvent: "lyra:auth/event",
 } as const;
 
 export type WindowStatePayload = {
@@ -1002,6 +1029,7 @@ export type SearchWebEngineDefinition = SearchAggregateEngine & {
 export type SearchResolveWebEngineRequest = {
   readonly query: string;
   readonly engines: readonly SearchWebEngineDefinition[];
+  readonly locale: string;
   readonly timeoutMs?: number;
 };
 
@@ -1572,6 +1600,7 @@ export type WindowControlsApi = {
   readonly minimize: () => Promise<void>;
   readonly toggleMaximize: () => Promise<void>;
   readonly close: () => Promise<void>;
+  readonly setThemeSource?: (source: "system" | "light" | "dark") => Promise<void>;
 };
 
 export type ShellEventsApi = {
@@ -1945,9 +1974,30 @@ export type LegalApi = {
 export type DetectedEditor = { id: string; label: string; icon?: string };
 export type OpenInEditorRequest = { editorId: string; path: string };
 
-// ponytail: I18nApi — 渲染器通过 IPC 从主进程获取本地 locale bundles（~/.lyra/locales/）
 export type I18nApi = {
   readonly readLocalBundles: () => Promise<Readonly<Record<string, Record<string, string>>>>;
+  readonly readLanguageBundles: () => Promise<{
+    readonly managed: Readonly<Record<string, Record<string, string>>>;
+    readonly local: Readonly<Record<string, Record<string, string>>>;
+  }>;
+};
+
+export type LanguagePacksApi = {
+  readonly listCatalog: () => Promise<LanguagePackCatalogResponse>;
+  readonly listInstalled: () => Promise<readonly InstalledLanguagePack[]>;
+  readonly install: (locale: string) => Promise<InstalledLanguagePack>;
+  readonly uninstall: (locale: string) => Promise<void>;
+  readonly checkForUpdates: () => Promise<LanguagePackCatalogResponse>;
+  readonly onChanged: (listener: (event: LanguagePackChangeEvent) => void) => () => void;
+};
+
+export type {
+  AuthApi,
+  AuthLocalIdentity,
+  AuthProfile,
+  AuthProfileUpdate,
+  AuthSnapshot,
+  AuthUser
 };
 
 export type LyraDesktopApi = {
@@ -1979,4 +2029,6 @@ export type LyraDesktopApi = {
   readonly workbenchState: WorkbenchStateApi;
   readonly location?: LocationApi;
   readonly i18n: I18nApi;
+  readonly languagePacks: LanguagePacksApi;
+  readonly auth?: AuthApi;
 };

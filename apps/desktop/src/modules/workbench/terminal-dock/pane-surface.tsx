@@ -186,7 +186,7 @@ const getOrCreateTerminalRenderer = ({
   }
 
   const terminal = new Terminal({
-    allowTransparency: false,
+    allowTransparency: true,
     cursorBlink: true,
     cursorInactiveStyle: "bar",
     cursorStyle: "bar",
@@ -314,6 +314,7 @@ const applyTerminalRendererOptions = (
   terminalFontSize: number,
   terminalLineHeight: number
 ): void => {
+  terminal.options.allowTransparency = true;
   terminal.options.fontFamily = "var(--lyra-font-mono)";
   terminal.options.fontSize = terminalFontSize;
   terminal.options.lineHeight = terminalLineHeight;
@@ -427,6 +428,7 @@ export const TerminalPaneSurface = ({
     }
 
     try {
+      terminal.options.allowTransparency = true;
       terminal.options.theme = resolveTerminalTheme(host);
     } catch (_error) {
       // xterm may throw during teardown ticks

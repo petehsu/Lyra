@@ -7,6 +7,7 @@ import {
   writeWorkbenchPreferences
 } from "../service";
 import { getLocale } from "../../i18n";
+import { __resetWorkbenchLocaleStateForTests } from "../../i18n/locale-state";
 import {
   resetWorkbenchStateStorageForTests,
   writeWorkbenchStateSync
@@ -16,6 +17,7 @@ import type { WorkbenchPreferences } from "../types";
 const defaults: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
+  windowMaterialEnabled: true,
   uiPackId: "classic",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",
@@ -35,6 +37,7 @@ const defaults: WorkbenchPreferences = {
 describe("workbench preferences", () => {
   beforeEach(() => {
     resetWorkbenchStateStorageForTests();
+    __resetWorkbenchLocaleStateForTests();
   });
 
   test("falls back to defaults when storage is empty", () => {
@@ -89,6 +92,15 @@ describe("workbench preferences", () => {
       splitOverflowPolicy: "replace_oldest",
       aiRichRenderingEnabled: true
     });
+  });
+
+  test("persists the system material background preference", () => {
+    writeWorkbenchPreferences({
+      ...defaults,
+      windowMaterialEnabled: false
+    });
+
+    expect(readWorkbenchPreferences(defaults).windowMaterialEnabled).toBe(false);
   });
 
   test("migrates legacy theme family values into Lyra theme ids", () => {

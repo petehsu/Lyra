@@ -23,7 +23,7 @@ describe("BrowserSettingsSurface", () => {
 
     const nav = screen.getByLabelText("settings-nav");
     expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Language" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search languages" })).toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Bing" })).toBeNull();
 
     fireEvent.click(within(nav).getByRole("button", { name: "Search" }));
@@ -33,7 +33,7 @@ describe("BrowserSettingsSurface", () => {
     );
     expect(screen.getByRole("heading", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Bing" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Language" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search languages" })).toBeNull();
   });
 
   test("opens directly to the AI provider settings category when requested", () => {

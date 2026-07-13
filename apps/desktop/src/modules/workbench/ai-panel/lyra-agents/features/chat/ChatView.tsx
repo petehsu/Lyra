@@ -2,12 +2,8 @@
 // ChatView — scrollable message list + floating lyra-agents-composer stack
 // ============================================================================
 //
-// Render-budget approach (replaces virtual scroll + height estimation):
-// All messages from the DataProvider are rendered directly as DOM. The
-// DataProvider caps the count via a render budget; a "Show earlier" button
-// loads more. This eliminates height-table / spacer / pre-measure jitter
-// at the cost of more DOM nodes for very long sessions — a tradeoff that
-// favors stability over memory, matching hermes-agent's proven approach.
+// The DataProvider limits how much history is materialized; this view also
+// virtualizes that window so resize and paint cost stays bounded.
 
 import {
   useCallback,
@@ -50,7 +46,7 @@ import { ProjectDirChip } from "./ProjectDirChip";
 import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
 import { TodoBar } from "../pills/TodoBar";
 import { DecisionPanel, PermissionPanel, PlanReviewPanel } from "../panels";
-import { AppButton } from "@renderer/ui/components";
+import { AppButton, AppSwitch } from "@renderer/ui/components";
 import {
   buildFullMessageCitation,
   messagePlainText,
@@ -61,9 +57,9 @@ import { queryCitationMessageElement } from "./scroll-to-citation";
 // ponytail: sticky anchor offset from the top of the scroll viewport.
 const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
-const CHAT_VIRTUALIZATION_THRESHOLD = 120;
-const CHAT_VIRTUAL_OVERSCAN_PX = 1_400;
-const CHAT_INITIAL_TAIL_MESSAGES = 80;
+const CHAT_VIRTUALIZATION_THRESHOLD = 40;
+const CHAT_VIRTUAL_OVERSCAN_PX = 600;
+const CHAT_INITIAL_TAIL_MESSAGES = 30;
 
 type ChatVirtualRange = {
   readonly start: number;
@@ -177,6 +173,23 @@ const chatRangeEqual = (left: ChatVirtualRange, right: ChatVirtualRange): boolea
   left.bottom === right.bottom &&
   left.messageCount === right.messageCount;
 
+const stickyMessageIdAtScroll = (
+  messages: readonly ChatMessage[],
+  measuredHeights: ReadonlyMap<string, number>,
+  anchorLine: number
+): string | null => {
+  let bottom = 0;
+  let stickyId: string | null = null;
+  for (const message of messages) {
+    bottom += heightForMessage(message, measuredHeights);
+    if (bottom > anchorLine) break;
+    if (message.author === "user") {
+      stickyId = message.id;
+    }
+  }
+  return stickyId;
+};
+
 const textPreviewForMessage = (message: ChatMessage): string => {
   const text = message.blocks
     .filter((block) => block.type === "text")
@@ -272,6 +285,17 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       .map((sessionAgentId) => agents.get(sessionAgentId))
       .filter((agent): agent is OmaAgentMember => agent !== undefined);
   }, [omaControls?.state]);
+  const omaAgentBySessionId = useMemo(
+    () => new Map((omaControls?.state?.agents ?? []).map((agent) => [agent.id, agent] as const)),
+    [omaControls?.state?.agents]
+  );
+  const resolveOmaSource = useCallback(
+    (sourceSessionAgentId: string | null | undefined) =>
+      sourceSessionAgentId === null || sourceSessionAgentId === undefined
+        ? undefined
+        : omaAgentBySessionId.get(sourceSessionAgentId),
+    [omaAgentBySessionId]
+  );
 
   const canManagePlans =
     session.projectBound === true &&
@@ -321,6 +345,9 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
   const measuredMessageHeightsRef = useRef<Map<string, number>>(new Map());
+  const pendingMessageHeightsRef = useRef<Map<string, number>>(new Map());
+  const messageResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const messageMeasureFrameRef = useRef<number | null>(null);
   const virtualScrollFrameRef = useRef<number | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -346,13 +373,48 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     });
   }, [updateVirtualRangeNow]);
 
-  const recordMessageHeight = useCallback((messageId: string, height: number) => {
-    const normalized = Math.max(1, Math.ceil(height));
-    const current = measuredMessageHeightsRef.current.get(messageId);
-    if (current !== undefined && Math.abs(current - normalized) < 2) return;
-    measuredMessageHeightsRef.current.set(messageId, normalized);
-    scheduleVirtualRangeUpdate();
+  const flushMessageHeights = useCallback(() => {
+    messageMeasureFrameRef.current = null;
+    let changed = false;
+    for (const [messageId, height] of pendingMessageHeightsRef.current) {
+      const normalized = Math.max(1, Math.ceil(height));
+      const current = measuredMessageHeightsRef.current.get(messageId);
+      if (current !== undefined && Math.abs(current - normalized) < 2) continue;
+      measuredMessageHeightsRef.current.set(messageId, normalized);
+      changed = true;
+    }
+    pendingMessageHeightsRef.current.clear();
+    if (changed) {
+      scheduleVirtualRangeUpdate();
+    }
   }, [scheduleVirtualRangeUpdate]);
+
+  const ensureMessageResizeObserver = useCallback((): ResizeObserver | null => {
+    if (typeof ResizeObserver === "undefined") return null;
+    if (messageResizeObserverRef.current !== null) return messageResizeObserverRef.current;
+    messageResizeObserverRef.current = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target as HTMLElement;
+        const messageId = target.dataset.chatMessageId;
+        if (messageId === undefined) continue;
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        pendingMessageHeightsRef.current.set(messageId, height);
+      }
+      if (messageMeasureFrameRef.current === null) {
+        messageMeasureFrameRef.current = window.requestAnimationFrame(flushMessageHeights);
+      }
+    });
+    return messageResizeObserverRef.current;
+  }, [flushMessageHeights]);
+
+  const registerMessageSlot = useCallback((messageId: string, slot: HTMLElement) => {
+    const observer = ensureMessageResizeObserver();
+    observer?.observe(slot);
+    return () => {
+      observer?.unobserve(slot);
+      pendingMessageHeightsRef.current.delete(messageId);
+    };
+  }, [ensureMessageResizeObserver]);
 
   const visibleRange =
     virtualRange.messageCount === messages.length
@@ -374,21 +436,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
     scheduleVirtualRangeUpdate();
 
-    // Sticky anchor: find the last user message whose bottom is above the anchor line.
-    // Uses DOM getBoundingClientRect instead of a height table — simpler and always accurate.
     const anchorLine = el.scrollTop + STICKY_ANCHOR_TOP_OFFSET_PX;
-    let foundStickyId: string | null = null;
-    const slots = el.querySelectorAll<HTMLElement>("[data-chat-message-id]");
-    for (const slot of slots) {
-      const top = slot.offsetTop;
-      const bottom = top + slot.offsetHeight;
-      if (bottom <= anchorLine && slot.dataset.chatMessageAuthor === "user") {
-        foundStickyId = slot.dataset.chatMessageId ?? null;
-      } else if (top > anchorLine) {
-        break;
-      }
-    }
-    setStickyMessageId(foundStickyId);
+    setStickyMessageId(stickyMessageIdAtScroll(
+      messagesRef.current,
+      measuredMessageHeightsRef.current,
+      anchorLine
+    ));
 
     // Load earlier messages when scrolled near the top
     if (
@@ -432,6 +485,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     if (virtualScrollFrameRef.current !== null) {
       window.cancelAnimationFrame(virtualScrollFrameRef.current);
     }
+    if (messageMeasureFrameRef.current !== null) {
+      window.cancelAnimationFrame(messageMeasureFrameRef.current);
+    }
+    messageResizeObserverRef.current?.disconnect();
   }, []);
 
   const scrollToEstimatedMessage = useCallback((messageId: string): boolean => {
@@ -655,7 +712,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             <MeasuredMessageSlot
               key={message.id}
               message={message}
-              onHeight={recordMessageHeight}
+              register={registerMessageSlot}
             >
               <Message
                 message={message}
@@ -711,6 +768,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             onDeny={denyPermission}
             progress={1}
             onTap={() => undefined}
+            resolveOmaSource={resolveOmaSource}
           />
         )}
 
@@ -721,13 +779,17 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
             onDismiss={() => undefined}
             progress={1}
             onTap={() => undefined}
+            resolveOmaSource={resolveOmaSource}
           />
         )}
+
+        <OmaTeamBoard controls={omaControls ?? null} />
 
         <PlanReviewPanel
           plan={pendingPlanReview}
           onReview={openPlanReview}
           onRespond={respondPlanReview}
+          resolveOmaSource={resolveOmaSource}
         />
 
         <Composer
@@ -854,8 +916,92 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   );
 }
 
+function OmaTeamBoard({ controls }: { readonly controls: OmaControls | null }) {
+  const oma = controls?.state;
+  if (controls === null || oma === null || oma === undefined || oma.activeChannelId !== "group:default" || oma.team === null || oma.team === undefined) {
+    return null;
+  }
+  const agents = new Map(oma.agents.map((agent) => [agent.id, agent] as const));
+  const statusLabel = (status: string) => {
+    if (status === "queued") return "Queued";
+    if (status === "running") return "Running";
+    if (status === "retrying") return "Retrying";
+    if (status === "blocked") return "Blocked";
+    if (status === "completed") return "Completed";
+    if (status === "failed") return "Failed";
+    return status;
+  };
+  return (
+    <section className="lyra-agents-oma-team-board" aria-label={t("lyra-agents-oma.teamPlan")}>
+      <div className="lyra-agents-oma-team-board-head">
+        <BookText size={14} strokeWidth={2.1} />
+        <div>
+          <strong>{oma.team.title}</strong>
+          {oma.team.summary?.trim() ? <span>{oma.team.summary}</span> : null}
+        </div>
+      </div>
+      <div className="lyra-agents-oma-work-list">
+        {oma.team.workPackages.map((workPackage) => {
+          const agent = agents.get(workPackage.assigneeSessionAgentId);
+          const channelId = `direct:${workPackage.assigneeSessionAgentId}`;
+          const detail = workPackage.failureReason ?? workPackage.summary ?? workPackage.task;
+          return (
+            <AppButton
+              key={workPackage.id}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="lyra-agents-oma-work-card"
+              data-status={workPackage.status}
+              onClick={() => void controls.setActiveChannel(channelId)}
+              title={`Open ${agent?.name ?? "Agent"} private work`}
+            >
+              <span className="lyra-agents-oma-work-avatar" aria-hidden="true">
+                {agent?.avatar.src ? <img src={`data:image/svg+xml,${encodeURIComponent(agent.avatar.src)}`} alt="" /> : (agent?.shortName ?? "?").slice(0, 1)}
+              </span>
+              <span className="lyra-agents-oma-work-copy">
+                <strong>{workPackage.title}</strong>
+                <span>{detail}</span>
+                {workPackage.dependencies.length > 0 ? (
+                  <small>Depends on {workPackage.dependencies.length}</small>
+                ) : null}
+              </span>
+              <span className="lyra-agents-oma-work-status">{statusLabel(workPackage.status)}</span>
+            </AppButton>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }) {
   const [panelOpen, setPanelOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!panelOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !panelRef.current?.contains(target) &&
+        !triggerRef.current?.contains(target)
+      ) {
+        setPanelOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [panelOpen]);
 
   if (controls === null || controls.state === null) {
     return null;
@@ -864,7 +1010,11 @@ function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }
   const oma = controls.state;
   const activeAgentIdSet = new Set(oma.agents.map((agent) => agent.agentId));
   const agentById = new Map(oma.agents.map((agent) => [agent.id, agent]));
-  const addableAgents = oma.availableAgents.filter((agent) => !activeAgentIdSet.has(agent.agentId));
+  const activeAgentByPackageId = new Map(oma.agents.map((agent) => [agent.agentId, agent]));
+  const managedAgents = [
+    ...oma.availableAgents.map((agent) => activeAgentByPackageId.get(agent.agentId) ?? agent),
+    ...oma.agents.filter((agent) => !oma.availableAgents.some((available) => available.agentId === agent.agentId))
+  ];
   const channels = oma.channels.filter((channel) => channel.archived !== true);
 
   const channelLabel = (channel: (typeof channels)[number]): string => {
@@ -886,13 +1036,19 @@ function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }
     if (status === "queued") return t("lyra-agents-oma.agentQueued");
     if (status === "retrying") return t("lyra-agents-oma.agentRetrying");
     if (status === "running") return t("lyra-agents-oma.agentRunning");
+    if (status === "blocked") return "Blocked by dependency";
+    if (status === "completed") return "Completed";
+    if (status === "failed") return "Failed";
     return "";
   };
   const dominantStatus = (agents: readonly OmaAgentMember[]): OmaAgentMember["status"] =>
     agents.some((agent) => agent.status === "retrying") ? "retrying"
       : agents.some((agent) => agent.status === "running") ? "running"
         : agents.some((agent) => agent.status === "queued") ? "queued"
-          : "idle";
+          : agents.some((agent) => agent.status === "failed") ? "failed"
+            : agents.some((agent) => agent.status === "blocked") ? "blocked"
+              : agents.some((agent) => agent.status === "completed") ? "completed"
+                : "idle";
   const avatarTone = (value: string): string => {
     const builtInTone: Record<string, string> = {
       "did:lyra:agent:builtin:lead": "1",
@@ -960,71 +1116,63 @@ function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }
             </AppButton>
           );
         })}
-        <AppButton
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="lyra-agents-oma-add"
-          onClick={() => setPanelOpen((open) => !open)}
-          aria-label={t("lyra-agents-oma.manage")}
-          title={t("lyra-agents-oma.manage")}
-        >
-          <Plus size={14} strokeWidth={2.2} />
-        </AppButton>
+        <div ref={triggerRef}>
+          <AppButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="lyra-agents-oma-add"
+            onClick={() => setPanelOpen((open) => !open)}
+            aria-label={t("lyra-agents-oma.manage")}
+            title={t("lyra-agents-oma.manage")}
+          >
+            <Plus size={14} strokeWidth={2.2} />
+          </AppButton>
+        </div>
       </div>
 
       {panelOpen ? (
-        <div className="lyra-agents-oma-panel" role="dialog" aria-label={t("lyra-agents-oma.manage")}>
+        <div ref={panelRef} className="lyra-agents-oma-panel" role="dialog" aria-label={t("lyra-agents-oma.manage")}>
           <div className="lyra-agents-oma-panel-head">
-            <div>
-              <div className="lyra-agents-oma-panel-title">{t("lyra-agents-oma.manage")}</div>
-              <div className="lyra-agents-oma-panel-subtitle">{t("lyra-agents-oma.tagline")}</div>
-            </div>
+            <div className="lyra-agents-oma-panel-title">{t("lyra-agents-oma.manage")}</div>
             <AppButton type="button" variant="ghost" size="sm" className="lyra-agents-oma-icon-button" onClick={() => setPanelOpen(false)}>
               <X size={14} strokeWidth={2.2} />
             </AppButton>
           </div>
 
-          {addableAgents.length > 0 ? (
-            <div className="lyra-agents-oma-section">
-              <div className="lyra-agents-oma-section-title">{t("lyra-agents-oma.addAgent")}</div>
-              <div className="lyra-agents-oma-agent-list">
-                {addableAgents.map((agent) => (
-                  <AppButton key={agent.agentId} type="button" variant="ghost" size="sm" className="lyra-agents-oma-agent-row" onClick={() => void controls.addAgent(agent.agentId)}>
-                    {avatar(agent, agent.name)}
-                    <span>{agent.name}</span>
-                    <Plus size={13} strokeWidth={2.2} />
-                  </AppButton>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="lyra-agents-oma-section">
-            <div className="lyra-agents-oma-section-title">{t("lyra-agents-oma.manageMembers")}</div>
-            <div className="lyra-agents-oma-agent-list">
-              {oma.agents.map((agent) => {
-                const locked = agent.agentId === "did:lyra:agent:builtin:lead" || agent.status !== "idle";
-                return (
-                  <AppButton
-                    key={agent.id}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="lyra-agents-oma-agent-row"
+          <div className="lyra-agents-oma-agent-list">
+            {managedAgents.map((agent) => {
+              const active = activeAgentIdSet.has(agent.agentId);
+              const locked = active && (
+                agent.agentId === "did:lyra:agent:builtin:lead" ||
+                agent.status !== "idle"
+              );
+              return (
+                <label
+                  key={agent.agentId}
+                  className="lyra-agents-oma-agent-row"
+                  data-active={active}
+                  title={locked ? statusLabel(agent.status) || agent.name : agent.role}
+                >
+                  {avatar(agent, agent.name)}
+                  <span className="lyra-agents-oma-agent-row-copy">
+                    <strong>{agent.name}</strong>
+                    <small>{agent.role}</small>
+                  </span>
+                  <AppSwitch
+                    checked={active}
                     disabled={locked}
-                    onClick={() => void controls.removeAgent(agent.agentId)}
-                    title={statusLabel(agent.status) || agent.name}
-                  >
-                    {avatar(agent, agent.name)}
-                    <span>{agent.name}</span>
-                    <X size={13} strokeWidth={2.2} />
-                  </AppButton>
-                );
-              })}
-            </div>
+                    aria-label={`${active ? "Remove" : "Add"} ${agent.name}`}
+                    onCheckedChange={(checked) => {
+                      void (checked
+                        ? controls.addAgent(agent.agentId)
+                        : controls.removeAgent(agent.agentId));
+                    }}
+                  />
+                </label>
+              );
+            })}
           </div>
-
         </div>
       ) : null}
     </div>
@@ -1033,11 +1181,11 @@ function OmaChannelStrip({ controls }: { readonly controls: OmaControls | null }
 
 function MeasuredMessageSlot({
   message,
-  onHeight,
+  register,
   children
 }: {
   readonly message: ChatMessage;
-  readonly onHeight: (messageId: string, height: number) => void;
+  readonly register: (messageId: string, slot: HTMLElement) => () => void;
   readonly children: ReactNode;
 }) {
   const slotRef = useRef<HTMLDivElement>(null);
@@ -1045,15 +1193,8 @@ function MeasuredMessageSlot({
   useLayoutEffect(() => {
     const slot = slotRef.current;
     if (slot === null) return;
-    const measure = () => {
-      onHeight(message.id, slot.getBoundingClientRect().height || slot.offsetHeight);
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(slot);
-    return () => observer.disconnect();
-  }, [message.id, onHeight]);
+    return register(message.id, slot);
+  }, [message.id, register]);
 
   return (
     <div

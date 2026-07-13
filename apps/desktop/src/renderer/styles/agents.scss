@@ -686,6 +686,16 @@
   width: 100%;
 }
 
+.lyra-agents-header-mode-item {
+  min-width: var(--lyra-unit-188);
+}
+
+.lyra-agents-header-mode-beta {
+  min-height: var(--lyra-control-h-16);
+  padding: 0 var(--lyra-space-5);
+  font-size: var(--lyra-text-size-9);
+}
+
 /* Floating pills bar: below the header. When one pill → centered.
    When two pills → space-between (left + right). */
 .lyra-agents-pills-rail {
@@ -956,12 +966,7 @@
 
 .lyra-agents-chat-message-slot {
   min-width: 0;
-  /* Off-screen virtualization is handled entirely by the JS window in
-     `VirtualizedMessageList` (only viewport+overscan slots are mounted, with
-     top/bottom spacers). Do NOT add `content-visibility: auto` here: it makes
-     the browser independently collapse mounted slots it deems off-screen,
-     which fights the JS window and causes blank/jumping messages during scroll
-     and panel resize. */
+  /* JS owns the viewport window; content-visibility would fight its spacers. */
 }
 
 /* -------- Messages -------- */
@@ -1455,40 +1460,6 @@
   animation-delay: 280ms;
 }
 
-.lyra-agents-tool-execution-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--lyra-unit-16);
-  height: var(--lyra-unit-16);
-  color: var(--lyra-text-muted);
-}
-
-.lyra-agents-tool-execution-indicator {
-  gap: var(--lyra-unit-1);
-}
-
-.lyra-agents-tool-execution-indicator span {
-  width: var(--lyra-unit-2);
-  height: var(--lyra-unit-10);
-  border-radius: var(--lyra-radius-pill);
-  background: currentColor;
-  opacity: 0.32;
-  animation: lyra-agents-tool-execution-step 0.95s steps(2, end) infinite;
-}
-
-.lyra-agents-tool-execution-indicator span:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.lyra-agents-tool-execution-indicator span:nth-child(3) {
-  animation-delay: 240ms;
-}
-
-.lyra-agents-tool-execution-indicator span:nth-child(4) {
-  animation-delay: 360ms;
-}
-
 @keyframes lyra-agents-service-status-dot {
   0%,
   80%,
@@ -1500,20 +1471,6 @@
   38% {
     opacity: 0.78;
     transform: translateY(calc(var(--lyra-unit-1) * -1));
-  }
-}
-
-@keyframes lyra-agents-tool-execution-step {
-  0% {
-    opacity: 0.28;
-  }
-
-  50% {
-    opacity: 0.82;
-  }
-
-  100% {
-    opacity: 0.36;
   }
 }
 
@@ -4545,6 +4502,144 @@
   animation: decision-in 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+.lyra-agents-oma-team-board {
+  pointer-events: auto;
+  align-self: center;
+  display: grid;
+  gap: var(--lyra-space-8);
+  width: min(100%, var(--lyra-unit-520));
+  margin-bottom: calc(var(--lyra-unit-1) * -1);
+  padding: var(--lyra-space-10) var(--lyra-space-12);
+  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 46%, transparent);
+  border-bottom: 0;
+  border-radius: var(--lyra-unit-14) var(--lyra-unit-14) 0 0;
+  background: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 92%, var(--lyra-app-surface-bg) 8%);
+}
+
+.lyra-agents-oma-team-board-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--lyra-space-8);
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-agents-oma-team-board-head > div {
+  display: grid;
+  gap: var(--lyra-space-2);
+  min-width: 0;
+}
+
+.lyra-agents-oma-team-board-head strong,
+.lyra-agents-oma-work-copy strong {
+  color: var(--lyra-text-primary);
+  font-size: var(--lyra-text-size-12);
+}
+
+.lyra-agents-oma-team-board-head span,
+.lyra-agents-oma-work-copy span,
+.lyra-agents-oma-work-copy small {
+  overflow: hidden;
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-11);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-agents-oma-work-list {
+  display: grid;
+  gap: var(--lyra-space-4);
+}
+
+.lyra-agents-oma-work-card {
+  display: grid;
+  grid-template-columns: var(--lyra-control-h-24) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lyra-space-8);
+  width: 100%;
+  min-height: var(--lyra-control-h-34);
+  padding: var(--lyra-space-5) var(--lyra-space-6);
+  border: var(--lyra-stroke-thin) solid transparent;
+  border-radius: var(--lyra-radius-6);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lyra-agents-oma-work-card:hover,
+.lyra-agents-oma-work-card:focus-visible {
+  border-color: color-mix(in srgb, var(--lyra-app-border) 60%, transparent);
+  background: var(--lyra-app-row-hover-bg);
+}
+
+.lyra-agents-oma-work-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-control-h-24);
+  height: var(--lyra-control-h-24);
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--lyra-app-input-bg);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-10);
+  font-weight: 700;
+}
+
+.lyra-agents-oma-work-avatar img {
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-agents-oma-panel-source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lyra-space-4);
+  width: fit-content;
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-10);
+}
+
+.lyra-agents-oma-panel-source-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--lyra-control-h-18);
+  height: var(--lyra-control-h-18);
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--lyra-app-input-bg);
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-9);
+  font-weight: 700;
+}
+
+.lyra-agents-oma-panel-source-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lyra-agents-oma-work-copy {
+  display: grid;
+  gap: var(--lyra-space-1);
+  min-width: 0;
+}
+
+.lyra-agents-oma-work-status {
+  color: var(--lyra-text-secondary);
+  font-size: var(--lyra-text-size-10);
+}
+
+.lyra-agents-oma-work-card[data-status="running"] .lyra-agents-oma-work-status {
+  color: var(--lyra-status-success);
+}
+
+.lyra-agents-oma-work-card[data-status="blocked"] .lyra-agents-oma-work-status,
+.lyra-agents-oma-work-card[data-status="failed"] .lyra-agents-oma-work-status {
+  color: var(--lyra-status-error);
+}
+
 @keyframes decision-in {
   from {
     opacity: 0;
@@ -5216,6 +5311,21 @@
   box-shadow: 0 0 0 var(--lyra-space-2) color-mix(in srgb, var(--lyra-status-warning) 60%, transparent);
 }
 
+.lyra-agents-oma-group-orb[data-status="blocked"],
+.lyra-agents-oma-avatar[data-status="blocked"] {
+  box-shadow: 0 0 0 var(--lyra-stroke-thin) color-mix(in srgb, var(--lyra-status-warning) 82%, transparent);
+}
+
+.lyra-agents-oma-group-orb[data-status="failed"],
+.lyra-agents-oma-avatar[data-status="failed"] {
+  box-shadow: 0 0 0 var(--lyra-space-2) color-mix(in srgb, var(--lyra-status-error) 62%, transparent);
+}
+
+.lyra-agents-oma-group-orb[data-status="completed"],
+.lyra-agents-oma-avatar[data-status="completed"] {
+  box-shadow: 0 0 0 var(--lyra-stroke-thin) color-mix(in srgb, var(--lyra-status-success) 60%, transparent);
+}
+
 .lyra-agents-oma-avatar-stack .lyra-agents-oma-avatar {
   flex-basis: var(--lyra-control-h-26);
   width: var(--lyra-control-h-26);
@@ -5257,10 +5367,11 @@
 
 .lyra-agents-oma-panel {
   position: absolute;
-  right: 0;
+  left: 50%;
   bottom: calc(100% + var(--lyra-space-8));
+  transform: translateX(-50%);
   z-index: 130;
-  width: min(var(--lyra-unit-520), calc(100vw - var(--lyra-space-24)));
+  width: min(var(--lyra-unit-520), calc(100% - var(--lyra-space-24)));
   max-height: min(var(--lyra-unit-560), calc(100vh - var(--lyra-unit-220)));
   overflow: auto;
   display: flex;
@@ -5276,7 +5387,7 @@
 
 .lyra-agents-oma-panel-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--lyra-space-10);
 }
@@ -5285,12 +5396,6 @@
 .lyra-agents-oma-section-title {
   font-size: var(--lyra-text-size-12);
   font-weight: 700;
-}
-
-.lyra-agents-oma-panel-subtitle {
-  margin-top: var(--lyra-space-2);
-  color: var(--lyra-text-tertiary);
-  font-size: var(--lyra-text-size-11);
 }
 
 .lyra-agents-oma-icon-button {
@@ -5344,6 +5449,10 @@
   gap: var(--lyra-space-6);
 }
 
+.lyra-agents-oma-agent-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--lyra-unit-176)), 1fr));
+}
+
 .lyra-agents-oma-member-grid {
   grid-template-columns: repeat(auto-fit, minmax(var(--lyra-unit-112), 1fr));
 }
@@ -5362,21 +5471,48 @@
 }
 
 .lyra-agents-oma-agent-row {
+  width: 100%;
   justify-content: space-between;
-  cursor: pointer;
+  cursor: default;
+  border: var(--lyra-stroke-thin) solid transparent;
 }
 
-.lyra-agents-oma-agent-row span:nth-child(2),
+.lyra-agents-oma-agent-row-copy,
 .lyra-agents-oma-member-check span:last-child {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.lyra-agents-oma-agent-row-copy {
+  display: grid;
+  gap: var(--lyra-space-2);
+  text-align: left;
+}
+
+.lyra-agents-oma-agent-row-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+}
+
+.lyra-agents-oma-agent-row-copy small {
+  color: var(--lyra-text-tertiary);
+  font-size: var(--lyra-text-size-10);
+  line-height: 1.1;
+}
+
 .lyra-agents-oma-agent-row:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+.lyra-agents-oma-agent-row[data-active="true"] {
+  border-color: color-mix(in srgb, var(--lyra-text-accent) 28%, transparent);
+  background: color-mix(in srgb, var(--lyra-text-accent) 7%, transparent);
 }
 
 .lyra-agents-oma-member-check {

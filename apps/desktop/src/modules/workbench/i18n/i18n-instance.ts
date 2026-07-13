@@ -3,6 +3,11 @@ import { initReactI18next } from "react-i18next";
 
 import { EN_US_DICTIONARY } from "./locales/en-US";
 import { ZH_CN_DICTIONARY } from "./locales/zh-CN";
+import {
+  getWorkbenchLocale,
+  refreshWorkbenchLocale,
+  registerWorkbenchLocales
+} from "./locale-state";
 import { createStaticBundleSource, createPseudoLocaleSource } from "./translation-source";
 import type { WorkbenchLocale } from "./types";
 
@@ -32,7 +37,7 @@ void i18n.use(initReactI18next).init({
     "en-US": { translation: coreSource.loadBundle("en-US") },
     ...(pseudoBundle ? { pseudo: { translation: pseudoBundle } } : {}),
   },
-  lng: "zh-CN",
+  lng: getWorkbenchLocale(),
   fallbackLng: I18N_FALLBACK,
   defaultNS: "translation",
   ns: ["translation"],
@@ -57,18 +62,54 @@ void i18n.use(initReactI18next).init({
 export const changeI18nLocale = (locale: WorkbenchLocale) => i18n.changeLanguage(locale);
 export default i18n;
 
-// ponytail: 异步加载本地 locale bundles — 主进程扫描 ~/.lyra/locales/{locale}.json
-// init 后异步合并到 i18next 实例，不阻塞首次渲染
-// ponytail: window.lyraDesktop 由 preload 注入，测试环境可能不存在
-void (async () => {
+type DesktopLanguageBundleApi = {
+  readonly i18n?: {
+    readonly readLocalBundles?: () => Promise<Readonly<Record<string, Record<string, string>>>>;
+    readonly readLanguageBundles?: () => Promise<{
+      readonly managed: Readonly<Record<string, Record<string, string>>>;
+      readonly local: Readonly<Record<string, Record<string, string>>>;
+    }>;
+  };
+  readonly languagePacks?: {
+    readonly onChanged?: (listener: () => void) => () => void;
+  };
+};
+
+const reloadDesktopLanguageBundles = async (): Promise<void> => {
   try {
-    const api = (globalThis as unknown as { lyraDesktop?: { i18n?: { readLocalBundles?: () => Promise<Readonly<Record<string, Record<string, string>>>> } } }).lyraDesktop;
-    const bundles = await api?.i18n?.readLocalBundles?.();
-    if (!bundles) return;
-    for (const [locale, bundle] of Object.entries(bundles)) {
-      void i18n.addResourceBundle(locale, "translation", bundle, true, true);
+    const api = (globalThis as unknown as { lyraDesktop?: DesktopLanguageBundleApi }).lyraDesktop;
+    const snapshot = await api?.i18n?.readLanguageBundles?.();
+    const managed = snapshot?.managed ?? {};
+    const local = snapshot?.local ?? await api?.i18n?.readLocalBundles?.() ?? {};
+    const locales = new Set([...Object.keys(managed), ...Object.keys(local)]);
+    if (locales.size === 0) {
+      return;
     }
+    registerWorkbenchLocales(Array.from(locales));
+    for (const locale of locales) {
+      i18n.removeResourceBundle(locale, "translation");
+      const managedBundle = managed[locale];
+      const localBundle = local[locale];
+      if (managedBundle !== undefined) {
+        i18n.addResourceBundle(locale, "translation", managedBundle, true, true);
+      }
+      // Local files are user-owned overrides. They remain separate on disk and
+      // intentionally win only at renderer merge time.
+      if (localBundle !== undefined) {
+        i18n.addResourceBundle(locale, "translation", localBundle, true, true);
+      }
+    }
+    refreshWorkbenchLocale();
   } catch {
-    // ponytail: IPC 不可用时静默降级 — 内置 locale 仍可用
+    // IPC is optional in tests and non-desktop renderers; built-ins remain available.
   }
-})();
+};
+
+// Managed packages and user-local bundles arrive asynchronously after first
+// paint. The main process sends a revision event whenever a verified package
+// changes, so the selected locale can update without an app restart.
+void reloadDesktopLanguageBundles();
+const desktopApi = (globalThis as unknown as { lyraDesktop?: DesktopLanguageBundleApi }).lyraDesktop;
+desktopApi?.languagePacks?.onChanged?.(() => {
+  void reloadDesktopLanguageBundles();
+});

@@ -26,6 +26,10 @@ pub struct AgentPackageManifest {
     pub capabilities: AgentPackageCapabilities,
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Public, prompt-safe routing information. Hosts may expose this to a
+    /// coordinating Agent without exposing the package prompt or private state.
+    #[serde(default)]
+    pub delegation: AgentPackageDelegation,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -67,6 +71,19 @@ pub struct AgentPackageCapabilities {
     pub tools: Vec<String>,
     #[serde(default)]
     pub code_hooks: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPackageDelegation {
+    #[serde(default)]
+    pub specialties: Vec<String>,
+    #[serde(default)]
+    pub accepted_work: Vec<String>,
+    #[serde(default)]
+    pub deliverables: Vec<String>,
+    #[serde(default)]
+    pub collaboration_hints: Vec<String>,
 }
 
 /// A package installed into one Oma session. `session_agent_id` is local to
@@ -120,6 +137,10 @@ pub struct OmaChannelContext {
     pub token_estimate: Option<Value>,
     #[serde(default)]
     pub token_estimate_at_ms: Option<Value>,
+    #[serde(default)]
+    pub plan: Option<Value>,
+    #[serde(default)]
+    pub project_todo: Option<Value>,
 }
 
 /// Per-Agent projection of a structured default-group `@` assignment.
@@ -134,6 +155,36 @@ pub struct OmaExecutionAssignment {
     pub task_parts: Vec<String>,
     #[serde(default)]
     pub full_text: String,
+}
+
+/// Prompt-safe view of the current Oma roster. It intentionally carries only
+/// public package metadata and routing ids; private channel state never crosses
+/// this boundary.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmaOrganizationProjection {
+    #[serde(default)]
+    pub current_agent: Option<OmaOrganizationMember>,
+    #[serde(default)]
+    pub members: Vec<OmaOrganizationMember>,
+    #[serde(default)]
+    pub team: Option<Value>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OmaOrganizationMember {
+    pub session_agent_id: String,
+    pub agent_id: String,
+    pub name: String,
+    pub short_name: String,
+    pub role: String,
+    pub description: String,
+    pub status: String,
+    pub source: String,
+    pub direct_channel_id: String,
+    #[serde(default)]
+    pub delegation: AgentPackageDelegation,
 }
 
 /// The neutral hand-off boundary for hosts that want to adopt Oma without
@@ -263,6 +314,7 @@ mod tests {
                 },
                 capabilities: AgentPackageCapabilities::default(),
                 permissions: Vec::new(),
+                delegation: AgentPackageDelegation::default(),
             },
             context: OmaChannelContext {
                 messages: vec![json!({ "role": "user", "text": "hello" })],
@@ -273,6 +325,8 @@ mod tests {
                 prompt_delivery: None,
                 token_estimate: Some(json!(42)),
                 token_estimate_at_ms: Some(json!(1)),
+                plan: None,
+                project_todo: None,
             },
             input: json!({ "text": "hello" }),
             assignment: Some(OmaExecutionAssignment {

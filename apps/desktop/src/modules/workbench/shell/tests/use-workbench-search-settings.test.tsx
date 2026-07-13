@@ -7,6 +7,7 @@ import { useWorkbenchSearchSettings } from "../use-workbench-search-settings";
 const preferences: WorkbenchPreferences = {
   locale: "zh-CN",
   theme: "lyra-light",
+  windowMaterialEnabled: true,
   uiPackId: "classic",
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",

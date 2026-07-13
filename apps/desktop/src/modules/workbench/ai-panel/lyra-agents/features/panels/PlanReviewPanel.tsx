@@ -1,19 +1,23 @@
 import { BookText, Eye, Archive, Check } from "lucide-react";
 import type {
   AgentPlanReviewRespondAction,
-  AgentPlanSnapshot
+  AgentPlanSnapshot,
+  OmaAgentMember
 } from "../../../../../../shared/agent";
 import { AppButton } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
+import { OmaPanelSource } from "./OmaPanelSource";
 
 export function PlanReviewPanel({
   plan,
   onReview,
-  onRespond
+  onRespond,
+  resolveOmaSource
 }: {
   plan: AgentPlanSnapshot | null;
   onReview: (plan: AgentPlanSnapshot) => void | Promise<void>;
   onRespond: (action: AgentPlanReviewRespondAction, feedback?: string | null) => void | Promise<void>;
+  resolveOmaSource?: (sourceSessionAgentId: string | null | undefined) => OmaAgentMember | undefined;
 }) {
   if (plan === null || plan.phase !== "reviewing") return null;
 
@@ -22,6 +26,7 @@ export function PlanReviewPanel({
     plan.review.status === "changed" ? "request_revision" : "approve";
   const primaryLabel =
     plan.review.status === "changed" ? t("planReview.revise") : t("planReview.approve");
+  const sourceAgent = resolveOmaSource?.(plan.omaSource?.sessionAgentId);
 
   return (
     <div className="lyra-agents-decision-panel lyra-agents-plan-review-panel">
@@ -32,6 +37,7 @@ export function PlanReviewPanel({
         <div className="lyra-agents-decision-title-block">
           <p className="lyra-agents-decision-question">{plan.title}</p>
           <p className="lyra-agents-decision-detail">{summary}</p>
+          <OmaPanelSource agent={sourceAgent} />
         </div>
       </div>
       <div className="lyra-agents-plan-review-actions">

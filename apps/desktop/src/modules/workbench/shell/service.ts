@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 
-import { WORKBENCH_LOCALES, type I18nKey, type WorkbenchLocale } from "../i18n";
+import type { I18nKey, WorkbenchLocale } from "../i18n";
 import {
   WORKBENCH_THEME_IDS,
+  resolveWorkbenchNativeThemeSource,
   type WorkbenchResolvedThemeId,
   type WorkbenchThemeId
 } from "../theme";
@@ -227,18 +228,47 @@ export const getDesktopApi = (): LyraDesktopApi | null => {
   return window.lyraDesktop;
 };
 
+export const syncWindowThemeSource = (
+  desktopApi: LyraDesktopApi | null,
+  theme: WorkbenchThemeId
+): void => {
+  void desktopApi?.windowControls.setThemeSource?.(
+    resolveWorkbenchNativeThemeSource(theme)
+  ).catch((error: unknown) => {
+    console.warn(`[lyra-theme] failed to sync native window theme: ${String(error)}`);
+  });
+};
+
 type Option<T extends string> = {
   readonly value: T;
   readonly label: string;
 };
 
 export const createSettingLocaleOptions = (
-  t: (key: I18nKey) => string
+  t: (key: I18nKey) => string,
+  locales: readonly WorkbenchLocale[],
+  displayLocale: WorkbenchLocale
 ): readonly Option<WorkbenchLocale>[] =>
-  WORKBENCH_LOCALES.map((locale) => ({
-    value: locale,
-    label: t(`settings.locale.${locale}` as I18nKey)
-  }));
+  locales.map((locale) => {
+    if (locale === "zh-CN" || locale === "en-US") {
+      return {
+        value: locale,
+        label: t(`settings.locale.${locale}` as I18nKey)
+      };
+    }
+    if (locale === "pseudo") {
+      return { value: locale, label: "Pseudo (accented)" };
+    }
+    try {
+      const label = new Intl.DisplayNames([displayLocale], {
+        type: "language",
+        fallback: "code"
+      }).of(locale);
+      return { value: locale, label: label ?? locale };
+    } catch {
+      return { value: locale, label: locale };
+    }
+  });
 
 export const createSettingThemeOptions = (
   t: (key: I18nKey) => string

@@ -519,6 +519,7 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
         className="lyra-agents-composer-input lyra-agents-citation-composer-input"
         contentEditable={disabled ? "false" : "true"}
         role="textbox"
+        aria-label={placeholder}
         aria-multiline="true"
         aria-disabled={disabled}
         data-placeholder={placeholder}

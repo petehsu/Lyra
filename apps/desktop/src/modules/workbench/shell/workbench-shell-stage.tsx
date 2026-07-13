@@ -51,6 +51,7 @@ export const WorkbenchShellStage = ({
   isFullScreen,
   isMaximized,
   labels,
+  locale,
   notificationModel,
   onGoBack,
   onGoForward,
@@ -286,7 +287,7 @@ export const WorkbenchShellStage = ({
       onOpenBrowserHistoryEntry: (entry: { url: string; title: string }) => {
         tabsModel.openPageInNewTab(entry.url, entry.title);
       },
-      locale: preferencesModel.preferences.locale
+      locale
     }
   });
   const isMac = desktopApi?.appMeta.platform === "darwin";
@@ -384,7 +385,7 @@ export const WorkbenchShellStage = ({
             {...titlebarNavigation}
             activeBrowserTabId={activeBrowserTabId}
             browserChromePopoverBridge={desktopApi?.workbenchBrowser}
-            locale={preferencesModel.preferences.locale}
+            locale={locale}
             securityLabels={titlebarSecurityLabels}
             trailingControl={
               titlebarElementPicker.visible ? (
@@ -405,7 +406,11 @@ export const WorkbenchShellStage = ({
       <TerminalDockAdapter
         desktopApi={desktopApi}
         labels={labels.terminal}
-        themeSignature={preferencesModel.preferences.theme}
+        themeSignature={[
+          resolvedThemeId,
+          desktopApi?.appMeta.windowMaterialMode ?? "opaque",
+          preferencesModel.preferences.windowMaterialEnabled ? "material" : "solid"
+        ].join(":")}
         uiThemeId={resolvedThemeId}
         model={terminalModel}
         terminalIdentityByTabId={terminalIdentityByTabId}

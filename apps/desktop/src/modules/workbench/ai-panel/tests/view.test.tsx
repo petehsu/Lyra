@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { type ReactElement, useState } from "react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import type {
   AgentRuntimeEvent,
@@ -8,6 +8,7 @@ import type {
 } from "../../../../shared/desktop-bridge";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import type { SettingsAiModel } from "../../settings-ai";
+import { setWorkbenchLocale, WorkbenchI18nProvider } from "../../i18n";
 import type { AiPanelSessionTab } from "../session-tabs";
 import { AiPanelSurface } from "../view";
 
@@ -27,6 +28,13 @@ const snapshot: AgentSessionSnapshot = {
   follow: { running: false, activity: null },
   updatedAt: "2026-05-13T00:00:00.000Z"
 };
+
+beforeEach(() => {
+  setWorkbenchLocale("en-US");
+});
+
+const renderWithWorkbenchI18n = (ui: ReactElement) =>
+  render(<WorkbenchI18nProvider>{ui}</WorkbenchI18nProvider>);
 
 const projectBoundSnapshot: AgentSessionSnapshot = {
   ...snapshot,
@@ -343,20 +351,22 @@ const renderPanel = (
     location?: { readonly line: number; readonly endLine?: number }
   ) => void
 ) =>
-  render(
-    <AiPanelSurface
-      variant="sidebar"
-      desktopApi={desktopApi}
-      {...(onRequestProjectBind === undefined ? {} : { onRequestProjectBind })}
-      {...(onOpenProjectTree === undefined ? {} : { onOpenProjectTree })}
-      {...(onOpenModelSettings === undefined ? {} : { onOpenModelSettings })}
-      {...(onOpenUrlInWorkbench === undefined ? {} : { onOpenUrlInWorkbench })}
-      {...(onOpenFile === undefined ? {} : { onOpenFile })}
-      title="Agent"
-      emptyThreadLabel="No messages"
-      locale={locale}
-    />
-  );
+  {
+    setWorkbenchLocale(locale);
+    return renderWithWorkbenchI18n(
+      <AiPanelSurface
+        variant="sidebar"
+        desktopApi={desktopApi}
+        {...(onRequestProjectBind === undefined ? {} : { onRequestProjectBind })}
+        {...(onOpenProjectTree === undefined ? {} : { onOpenProjectTree })}
+        {...(onOpenModelSettings === undefined ? {} : { onOpenModelSettings })}
+        {...(onOpenUrlInWorkbench === undefined ? {} : { onOpenUrlInWorkbench })}
+        {...(onOpenFile === undefined ? {} : { onOpenFile })}
+        title="Agent"
+        emptyThreadLabel="No messages"
+      />
+    );
+  };
 
 const settingsAiModel = {
   profiles: [],
@@ -373,14 +383,13 @@ const settingsAiModel = {
 } as unknown as SettingsAiModel;
 
 const renderPanelWithSettings = (desktopApi: LyraDesktopApi) =>
-  render(
+  renderWithWorkbenchI18n(
     <AiPanelSurface
       variant="sidebar"
       desktopApi={desktopApi}
       settingsAiModel={settingsAiModel}
       title="Agent"
       emptyThreadLabel="No messages"
-      locale="en-US"
     />
   );
 
@@ -406,10 +415,27 @@ describe("AiPanelSurface", () => {
     renderPanel(api, undefined, undefined, "zh-CN");
 
     await screen.findByText("新会话");
-    expect(screen.getByPlaceholderText("给Lyra发送消息")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "给Lyra发送消息" })).toBeInTheDocument();
     expect(screen.getByLabelText("更多")).toBeInTheDocument();
     expect(await screen.findByLabelText("模型控制")).toBeInTheDocument();
     expect(screen.queryByLabelText("刷新模型列表")).not.toBeInTheDocument();
+  });
+
+  test("updates mounted Agent chrome from the workbench locale store", async () => {
+    const { api } = createDesktopApi();
+    renderPanel(api);
+
+    expect(await screen.findByRole("textbox", { name: "Send a message to Lyra" }))
+      .toBeInTheDocument();
+
+    act(() => {
+      setWorkbenchLocale("zh-CN");
+    });
+
+    expect(await screen.findByRole("textbox", { name: "给Lyra发送消息" }))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("更多")).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe("zh-CN");
   });
 
   test("toggles visible browser following from the composer actions", async () => {
@@ -838,7 +864,7 @@ describe("AiPanelSurface", () => {
       }
     } as unknown as SettingsAiModel;
 
-    const { rerender } = render(
+    const { rerender } = renderWithWorkbenchI18n(
       <AiPanelSurface
         variant="sidebar"
         desktopApi={api}
@@ -846,22 +872,22 @@ describe("AiPanelSurface", () => {
         onOpenModelSettings={openModelSettings}
         title="Agent"
         emptyThreadLabel="No messages"
-        locale="en-US"
       />
     );
 
     expect(await screen.findByRole("button", { name: "Configure model" })).toBeInTheDocument();
     setModelsResponse(agentModels);
     rerender(
-      <AiPanelSurface
-        variant="sidebar"
-        desktopApi={api}
-        settingsAiModel={configuredSettings}
-        onOpenModelSettings={openModelSettings}
-        title="Agent"
-        emptyThreadLabel="No messages"
-        locale="en-US"
-      />
+      <WorkbenchI18nProvider>
+        <AiPanelSurface
+          variant="sidebar"
+          desktopApi={api}
+          settingsAiModel={configuredSettings}
+          onOpenModelSettings={openModelSettings}
+          title="Agent"
+          emptyThreadLabel="No messages"
+        />
+      </WorkbenchI18nProvider>
     );
 
     await waitFor(() => {
@@ -974,7 +1000,7 @@ describe("AiPanelSurface", () => {
 
   test("disables the more menu on an empty draft session", async () => {
     const { api } = createDesktopApi();
-    render(
+    renderWithWorkbenchI18n(
       <AiPanelSurface
         variant="sidebar"
         desktopApi={api}
@@ -988,7 +1014,6 @@ describe("AiPanelSurface", () => {
         }]}
         title="Agent"
         emptyThreadLabel="No messages"
-        locale="en-US"
       />
     );
 
@@ -1912,12 +1937,11 @@ describe("AiPanelSurface", () => {
           onCloseSessionTab={onCloseSessionTab}
           title="Agent"
           emptyThreadLabel="No messages"
-          locale="en-US"
         />
       );
     }
 
-    const { container } = render(<Harness />);
+    const { container } = renderWithWorkbenchI18n(<Harness />);
 
     expect(await screen.findByRole("tab", { name: "Primary Chat" }))
       .toHaveAttribute("aria-selected", "true");
@@ -1990,12 +2014,11 @@ describe("AiPanelSurface", () => {
           }}
           title="Agent"
           emptyThreadLabel="No messages"
-          locale="en-US"
         />
       );
     }
 
-    render(<Harness />);
+    renderWithWorkbenchI18n(<Harness />);
 
     await screen.findByLabelText("New session");
     fireEvent.click(screen.getByLabelText("New session"));
@@ -2076,12 +2099,11 @@ describe("AiPanelSurface", () => {
           }}
           title="Agent"
           emptyThreadLabel="No messages"
-          locale="en-US"
         />
       );
     }
 
-    render(<Harness />);
+    renderWithWorkbenchI18n(<Harness />);
 
     await screen.findByLabelText("New session");
     fireEvent.click(screen.getByLabelText("New session"));
@@ -2136,7 +2158,7 @@ describe("AiPanelSurface", () => {
       title: longTitle
     });
 
-    render(
+    renderWithWorkbenchI18n(
       <AiPanelSurface
         variant="sidebar"
         desktopApi={api}
@@ -2151,7 +2173,6 @@ describe("AiPanelSurface", () => {
         ]}
         title="Agent"
         emptyThreadLabel="No messages"
-        locale="en-US"
       />
     );
 
@@ -2193,7 +2214,7 @@ describe("AiPanelSurface", () => {
         title: "Session 1"
       });
 
-      const { container } = render(
+      const { container } = renderWithWorkbenchI18n(
         <AiPanelSurface
           variant="sidebar"
           desktopApi={api}
@@ -2226,7 +2247,6 @@ describe("AiPanelSurface", () => {
           ]}
           title="Agent"
           emptyThreadLabel="No messages"
-          locale="en-US"
         />
       );
 
@@ -2285,7 +2305,7 @@ describe("AiPanelSurface", () => {
         title: "Session 8"
       });
 
-      const { container } = render(
+      const { container } = renderWithWorkbenchI18n(
         <AiPanelSurface
           variant="sidebar"
           desktopApi={api}
@@ -2301,7 +2321,6 @@ describe("AiPanelSurface", () => {
           })}
           title="Agent"
           emptyThreadLabel="No messages"
-          locale="en-US"
         />
       );
 

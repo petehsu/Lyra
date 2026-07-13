@@ -11,7 +11,7 @@ import type { AiPanelSurfaceProps } from "../ai-panel";
 
 type SidebarAiPreferences = Pick<
   WorkbenchPreferences,
-  "locale" | "aiStopBehavior" | "aiRichRenderingEnabled"
+  "aiStopBehavior" | "aiRichRenderingEnabled"
 >;
 
 type UseWorkbenchSidebarAiSurfacePropsParams = {
@@ -96,7 +96,6 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       variant: "sidebar",
       desktopApi,
       settingsAiModel,
-      locale: preferences.locale,
       aiRichRenderingEnabled: preferences.aiRichRenderingEnabled,
       title: t("ai.tabTitle"),
       aiPanelSide,
@@ -148,7 +147,6 @@ export const useWorkbenchSidebarAiSurfaceProps = ({
       onFocusTerminalTabInDock,
       locationControls,
       openDialog,
-      preferences.locale,
       preferences.aiRichRenderingEnabled,
       t,
     ]

@@ -7,7 +7,7 @@ export type AgentToolStatus = "running" | "completed" | "failed" | "cancelled" |
 export type AgentSessionKind = "normal";
 export type AgentMode = "solo" | "oma";
 export type OmaChannelKind = "group" | "direct";
-export type OmaAgentMemberStatus = "idle" | "queued" | "running" | "retrying";
+export type OmaAgentMemberStatus = "idle" | "queued" | "running" | "retrying" | "blocked" | "completed" | "failed";
 
 export type OmaAgentAvatar = {
   readonly kind: "text" | "svg" | "image";
@@ -26,6 +26,14 @@ export type OmaAgentMember = {
   readonly prompt: string;
   readonly status: OmaAgentMemberStatus;
   readonly builtIn?: boolean;
+  readonly source?: "builtin" | "user" | "lead_temporary" | "lead_local" | string;
+  readonly temporary?: boolean;
+  readonly delegation?: {
+    readonly specialties?: readonly string[];
+    readonly acceptedWork?: readonly string[];
+    readonly deliverables?: readonly string[];
+    readonly collaborationHints?: readonly string[];
+  };
 };
 
 export type OmaChannel = {
@@ -44,6 +52,38 @@ export type OmaSessionState = {
   readonly agents: readonly OmaAgentMember[];
   readonly availableAgents: readonly OmaAgentMember[];
   readonly channels: readonly OmaChannel[];
+  readonly team?: OmaTeamState | null;
+};
+
+export type OmaWorkPackageStatus =
+  | "queued"
+  | "running"
+  | "retrying"
+  | "blocked"
+  | "completed"
+  | "failed";
+
+export type OmaWorkPackage = {
+  readonly id: string;
+  readonly title: string;
+  readonly task: string;
+  readonly assigneeSessionAgentId: string;
+  readonly dependencies: readonly string[];
+  readonly acceptanceCriteria?: unknown;
+  readonly deliverable?: string | null;
+  readonly status: OmaWorkPackageStatus;
+  readonly summary?: string | null;
+  readonly failureReason?: string | null;
+};
+
+export type OmaTeamState = {
+  readonly id: string;
+  readonly title: string;
+  readonly summary?: string | null;
+  readonly status: "reviewing" | "executing" | "completed" | "blocked" | "failed";
+  readonly planId: string;
+  readonly versionId: string;
+  readonly workPackages: readonly OmaWorkPackage[];
 };
 
 export type OmaAgentMention = {
@@ -65,6 +105,11 @@ export type OmaMessageMetadata = {
   readonly targetAgentIds?: readonly string[];
   readonly targetSessionAgentIds?: readonly string[];
   readonly kind?: string | null;
+};
+
+export type OmaInteractionSource = {
+  readonly sessionAgentId: string;
+  readonly channelId: string;
 };
 
 export type AgentMessage = {
@@ -207,6 +252,7 @@ export type AgentPlanSnapshot = {
   readonly review: AgentPlanReviewSnapshot;
   readonly reason?: string | null;
   readonly scope?: string | null;
+  readonly omaSource?: OmaInteractionSource | null;
 };
 
 export type AgentProjectTodoStatus =
@@ -237,6 +283,8 @@ export type AgentPlanReviewRespondRequest = {
   readonly sessionId: string;
   readonly action: AgentPlanReviewRespondAction;
   readonly feedback?: string | null;
+  readonly omaChannelId?: string | null;
+  readonly omaSourceSessionAgentId?: string | null;
 };
 
 export type AgentProjectPlanSummary = {
@@ -1071,6 +1119,7 @@ export type AgentRuntimeEvent =
       readonly kind: "planUpdated" | "planReviewRequested";
       readonly sessionId: string;
       readonly plan: AgentPlanSnapshot;
+      readonly omaSource?: OmaInteractionSource | null;
     }
   | {
       readonly kind: "planReviewResolved";
@@ -1093,6 +1142,7 @@ export type AgentRuntimeEvent =
       readonly allowCustomAnswer: boolean;
       readonly detail?: string | null;
       readonly detailI18nKey?: string | null;
+      readonly omaSource?: OmaInteractionSource | null;
     }
   | {
       readonly kind: "clarificationResolved";
@@ -1111,6 +1161,7 @@ export type AgentRuntimeEvent =
       readonly permissionId: string;
       readonly title: string;
       readonly detail: string;
+      readonly omaSource?: OmaInteractionSource | null;
     }
   | {
       readonly kind: "turnFinished";

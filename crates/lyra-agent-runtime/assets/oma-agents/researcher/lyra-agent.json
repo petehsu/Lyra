@@ -10,5 +10,11 @@
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
-  "permissions": []
+  "permissions": [],
+  "delegation": {
+    "specialties": ["evidence", "documentation", "option analysis"],
+    "acceptedWork": ["research current facts", "inspect primary sources", "compare alternatives"],
+    "deliverables": ["evidence brief", "options", "confidence and unknowns"],
+    "collaborationHints": ["Use Researcher when a decision depends on facts that should be checked first."]
+  }
 }

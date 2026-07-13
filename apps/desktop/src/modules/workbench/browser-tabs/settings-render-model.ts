@@ -7,7 +7,11 @@ import {
   type SettingsCategoryId,
   type SettingsFieldId
 } from "./settings-schema";
-import type { BrowserSettingsSurfaceProps, SettingsOption } from "./settings-surface-types";
+import type {
+  BrowserSettingsSurfaceProps,
+  LanguagePickerLabels,
+  SettingsOption
+} from "./settings-surface-types";
 
 export type SettingsPreviewKind = "theme" | "split-layout";
 
@@ -32,6 +36,16 @@ export type SettingsBooleanChoiceControlDescriptor = {
   readonly enabledLabel: string;
   readonly disabledLabel: string;
   readonly onChange: (value: boolean) => void;
+};
+
+export type SettingsLanguagePickerControlDescriptor = {
+  readonly kind: "language-picker";
+  readonly label: string;
+  readonly value: BrowserSettingsSurfaceProps["localeValue"];
+  readonly options: BrowserSettingsSurfaceProps["localeOptions"];
+  readonly labels: LanguagePickerLabels;
+  readonly desktopApi: BrowserSettingsSurfaceProps["desktopApi"];
+  readonly onChange: BrowserSettingsSurfaceProps["onLocaleChange"];
 };
 
 export type SettingsTextControlDescriptor = {
@@ -141,6 +155,7 @@ export type SettingsControlDescriptor =
   | SettingsChoiceControlDescriptor
   | SettingsCustomControlDescriptor
   | SettingsInlineStatusActionControlDescriptor
+  | SettingsLanguagePickerControlDescriptor
   | SettingsMultiChoiceControlDescriptor
   | SettingsStatusListControlDescriptor
   | SettingsTextControlDescriptor
@@ -368,12 +383,15 @@ const createSectionControl = (
         id: sectionId,
         label: props.languageLabel,
         controls: [
-          createChoiceControl({
+          {
+            kind: "language-picker",
             label: props.languageLabel,
             options: props.localeOptions,
             value: props.localeValue,
+            labels: props.languagePickerLabels,
+            desktopApi: props.desktopApi,
             onChange: props.onLocaleChange
-          })
+          }
         ]
       });
     case "preventSleep":
@@ -403,6 +421,21 @@ const createSectionControl = (
             onChange: props.onThemeChange,
             gridClassName: "lyra-settings-choice-grid lyra-settings-choice-grid-themes",
             previewKind: "theme"
+          })
+        ]
+      });
+    case "windowMaterial":
+      return createSettingsSection({
+        id: sectionId,
+        label: props.windowMaterialLabel,
+        controls: [
+          createBooleanChoiceControl({
+            label: props.windowMaterialLabel,
+            value: props.windowMaterialValue,
+            description: props.windowMaterialDescription,
+            enabledLabel: props.windowMaterialEnabledLabel,
+            disabledLabel: props.windowMaterialDisabledLabel,
+            onChange: props.onWindowMaterialChange
           })
         ]
       });

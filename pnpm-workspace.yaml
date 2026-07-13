@@ -3,6 +3,7 @@ packages:
   - services/*
   - packages/*
   - web/docs
+  - web/site
 
 onlyBuiltDependencies:
   - "@parcel/watcher"

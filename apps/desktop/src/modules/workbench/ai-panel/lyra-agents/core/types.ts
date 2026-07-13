@@ -11,6 +11,7 @@ import type {
   AgentMode,
   AgentPageCitation,
   AgentTranscriptCitation,
+  OmaInteractionSource,
   OmaChannelKind,
   OmaMessageMetadata,
   OmaSessionState
@@ -327,6 +328,7 @@ export interface DecisionQuestion {
   allowCustomAnswer?: boolean;
   detail?: string | null;
   displayDetail?: string | null;
+  omaSource?: OmaInteractionSource | null;
 }
 
 export interface PermissionRequest {
@@ -334,6 +336,7 @@ export interface PermissionRequest {
   type: "shell" | "file" | "network" | "dangerous";
   title: string;
   detail: string;
+  omaSource?: OmaInteractionSource | null;
 }
 
 export interface SessionMeta {

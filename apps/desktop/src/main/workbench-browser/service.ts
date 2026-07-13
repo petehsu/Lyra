@@ -33,6 +33,7 @@ import type { LoginManagerIpcBridge } from "../login-manager";
 import type { LyraPerformanceResourceScheduler } from "../performance";
 import type { WorkbenchStateIpcBridge } from "../workbench-state";
 import type { WorkbenchObservationBrowserDomSummary } from "../workbench-observation/types";
+import type { BrowserContextMenuLabels } from "../../shared/browser-context-menu-labels";
 import {
   normalizePageDragCitationPayload,
   type PageDragCitationPayload
@@ -346,7 +347,8 @@ export const createWorkbenchBrowserIpcBridge = ({
   workbenchState,
   performanceScheduler,
   deferLayoutSync,
-  getActCacheEnabled
+  getActCacheEnabled,
+  resolveBrowserContextMenuLabels
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly downloadManager?: DownloadManagerIpcBridge;
@@ -358,6 +360,7 @@ export const createWorkbenchBrowserIpcBridge = ({
   // ActCache toggle (mirrors browserFollowMode). Forwarded to the view manager
   // and on to the AX controller so it can replay cached axActOnNode results.
   readonly getActCacheEnabled?: () => boolean;
+  readonly resolveBrowserContextMenuLabels?: (locale: string) => BrowserContextMenuLabels;
 }): WorkbenchBrowserIpcBridge => {
   registerBrowserPageFramePreload();
   const osAxAdapter = createOsAxAdapter(accessibilityNative);
@@ -368,6 +371,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     ...(workbenchState === undefined ? {} : { workbenchState }),
     ...(performanceScheduler === undefined ? {} : { performanceScheduler }),
     ...(getActCacheEnabled === undefined ? {} : { getActCacheEnabled }),
+    ...(resolveBrowserContextMenuLabels === undefined ? {} : { resolveBrowserContextMenuLabels }),
     ...(
       downloadManager === undefined && loginManager === undefined
         ? {}

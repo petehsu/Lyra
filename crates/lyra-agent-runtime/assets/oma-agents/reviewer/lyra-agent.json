@@ -10,5 +10,11 @@
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
-  "permissions": []
+  "permissions": [],
+  "delegation": {
+    "specialties": ["correctness", "regression risk", "release review"],
+    "acceptedWork": ["review a patch", "identify risk", "verify acceptance criteria"],
+    "deliverables": ["prioritized findings", "residual risk assessment"],
+    "collaborationHints": ["Use Reviewer after an implementation or before a risky decision."]
+  }
 }

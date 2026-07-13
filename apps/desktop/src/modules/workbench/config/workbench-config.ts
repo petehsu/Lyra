@@ -5,7 +5,11 @@ import type { WorkbenchUiPackId } from "../ui-platform";
 // ponytail: 首次启动检测 OS locale；已保存的偏好通过 preferences/service.ts localStorage 优先覆盖
 const detectInitialLocale = (): WorkbenchLocale => {
   if (typeof navigator === "undefined") return "zh-CN";
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  try {
+    return Intl.getCanonicalLocales(navigator.language)[0] ?? "en-US";
+  } catch {
+    return "en-US";
+  }
 };
 
 const docsEntryAddress =

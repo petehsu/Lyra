@@ -65,6 +65,11 @@ export type WorkbenchUiPack = {
   readonly interactions: WorkbenchInteractionPolicies;
 };
 
+export type WorkbenchUiPackI18nContext = {
+  readonly namespace: string;
+  readonly t: (key: string, options?: Readonly<Record<string, unknown>>) => string;
+};
+
 export type WorkbenchUiPackContext = {
   readonly apiVersion: WorkbenchUiPackCompatibility["workbenchUiApi"];
   readonly React: typeof ReactRuntime;
@@ -74,6 +79,7 @@ export type WorkbenchUiPackContext = {
   readonly style: WorkbenchUiStylePack;
   readonly interactions: WorkbenchInteractionPolicies;
   readonly primitives: typeof WorkbenchUiPrimitives;
+  readonly i18n: WorkbenchUiPackI18nContext;
 };
 
 export type WorkbenchUiPackModule = {

@@ -58,6 +58,10 @@ import {
   normalizeWebOrigin,
 } from "./view-manager-runtime/normalizers";
 import type { WorkbenchStateKey } from "../../shared/desktop-bridge";
+import {
+  browserContextMenuLabels,
+  type BrowserContextMenuLabels
+} from "../../shared/browser-context-menu-labels";
 import { readBrowserContextMenuLocaleFromPreferences } from "./view-manager-runtime/page-context-menu-native";
 
 export const createWorkbenchBrowserViewManager = ({
@@ -67,7 +71,8 @@ export const createWorkbenchBrowserViewManager = ({
   workbenchState,
   onWebContentsCreated,
   performanceScheduler,
-  getActCacheEnabled
+  getActCacheEnabled,
+  resolveBrowserContextMenuLabels
 }: {
   readonly getWindow: () => BrowserWindow | null;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
@@ -81,6 +86,7 @@ export const createWorkbenchBrowserViewManager = ({
   // ActCache toggle (mirrors browserFollowMode). When true, the AX controller
   // may replay cached axActOnNode results for repeatable NL→axRef mappings.
   readonly getActCacheEnabled?: () => boolean;
+  readonly resolveBrowserContextMenuLabels?: (locale: string) => BrowserContextMenuLabels;
 }): WorkbenchBrowserViewManager => {
   const liveElectronSession = (): Session =>
     electronSessionApi.fromPartition(WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION);
@@ -208,8 +214,12 @@ export const createWorkbenchBrowserViewManager = ({
     unregisterBrowserPageResource: (tabId) => {
       performanceScheduler?.unregisterResource(`browserPage:${tabId}`);
     },
-    readBrowserContextMenuLocale: () =>
-      readBrowserContextMenuLocaleFromPreferences(workbenchState?.readState("preferences") ?? null),
+    readBrowserContextMenuLabels: () => {
+      const locale = readBrowserContextMenuLocaleFromPreferences(
+        workbenchState?.readState("preferences") ?? null
+      );
+      return resolveBrowserContextMenuLabels?.(locale) ?? browserContextMenuLabels(locale);
+    },
     onBrowserHealthPopup: (tabId, url) => browserHealthWatchdog.onPopupRequested(tabId, url),
     onBrowserHealthCrash: (tabId) => browserHealthWatchdog.onCrash(tabId),
     onBrowserHealthNavigationFailed: (tabId, message) =>

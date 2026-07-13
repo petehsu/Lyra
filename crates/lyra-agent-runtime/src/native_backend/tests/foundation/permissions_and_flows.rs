@@ -774,6 +774,149 @@ fn clarification_tool_resumes_same_turn_without_assistant_bubble() {
         .expect("read");
     assert_eq!(read["messages"].as_array().expect("messages").len(), 0);
 }
+
+#[test]
+fn oma_clarification_uses_the_parent_session_for_user_response() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma Clarification Test", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let execution_session_id = format!("oma-execution-{}", Uuid::new_v4());
+    {
+        let mut state = state().lock().expect("state lock");
+        let mut execution = state
+            .sessions
+            .get(&session_id)
+            .expect("parent session")
+            .clone();
+        execution.id = execution_session_id.clone();
+        execution.ephemeral = true;
+        execution.snapshot["oma"]["parentSessionId"] = json!(session_id);
+        execution.snapshot["activeTurnId"] = json!(turn_id);
+        state
+            .sessions
+            .insert(execution_session_id.clone(), execution);
+    }
+
+    let thread_session_id = execution_session_id.clone();
+    let thread_turn_id = turn_id.clone();
+    let handle = thread::spawn(move || {
+        execute_model_tool(
+            &thread_session_id,
+            &thread_turn_id,
+            &None,
+            &Arc::new(AtomicBool::new(false)),
+            ModelToolCall {
+                id: "tool-oma-clarify".to_string(),
+                name: LYRA_CLARIFICATION_ASK_TOOL.to_string(),
+                arguments: json!({
+                    "question": "Which site style?",
+                    "options": ["minimal", "editorial"],
+                    "allowCustomAnswer": true
+                }),
+            },
+        )
+    });
+
+    let clarification_id = wait_for_pending_clarification(&session_id);
+    backend
+        .call_agent_method(
+            "agent.clarification.respond",
+            json!({
+                "sessionId": session_id,
+                "clarificationId": clarification_id,
+                "answer": "minimal",
+                "selectedOption": "minimal"
+            }),
+        )
+        .expect("respond from the parent Oma session");
+    let output = handle.join().expect("join clarification");
+    assert_eq!(output["answer"], "minimal");
+
+    let mut state = state().lock().expect("state lock");
+    state.sessions.remove(&execution_session_id);
+}
+
+#[test]
+fn oma_permission_uses_the_parent_session_for_user_response() {
+    let backend = LyraAgentBackend;
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({ "title": "Oma Permission Test", "agentMode": "oma" }),
+        )
+        .expect("create Oma session");
+    let session_id = created["id"].as_str().expect("session id").to_string();
+    let turn_id = start_test_runtime_turn(&session_id);
+    let execution_session_id = format!("oma-execution-{}", Uuid::new_v4());
+    {
+        let mut state = state().lock().expect("state lock");
+        let mut execution = state
+            .sessions
+            .get(&session_id)
+            .expect("parent session")
+            .clone();
+        let source_agent_id = execution.snapshot["oma"]["agents"][0]["id"]
+            .as_str()
+            .expect("Oma Agent id")
+            .to_string();
+        execution.id = execution_session_id.clone();
+        execution.ephemeral = true;
+        execution.snapshot["oma"]["parentSessionId"] = json!(session_id);
+        execution.snapshot["oma"]["executingSessionAgentId"] = json!(source_agent_id);
+        execution.snapshot["activeTurnId"] = json!(turn_id);
+        state
+            .sessions
+            .insert(execution_session_id.clone(), execution);
+    }
+
+    let thread_session_id = execution_session_id.clone();
+    let thread_turn_id = turn_id.clone();
+    let handle = thread::spawn(move || {
+        wait_for_permission_with_timeout_for_tests(
+            PermissionRequest {
+                id: "permission-oma-parent".to_string(),
+                session_id: thread_session_id,
+                turn_id: thread_turn_id,
+                tool_call_id: "tool-oma-permission".to_string(),
+                action: "write".to_string(),
+                risk: "shell".to_string(),
+                summary: "Write a file".to_string(),
+                why: "The requested tool can change external state.".to_string(),
+                title: "Modify workspace files".to_string(),
+                detail: "Write a file".to_string(),
+                status: "pending".to_string(),
+                allowed: None,
+                created_at: now(),
+                responded_at: None,
+            },
+            &Arc::new(AtomicBool::new(false)),
+            Duration::from_secs(3),
+        )
+    });
+
+    let permission_id = wait_for_pending_permission(&session_id);
+    backend
+        .call_agent_method(
+            "agent.permission.respond",
+            json!({
+                "sessionId": session_id,
+                "permissionId": permission_id,
+                "allowed": true
+            }),
+        )
+        .expect("respond from the parent Oma session");
+    assert_eq!(handle.join().expect("join permission").expect("permission"), true);
+
+    let mut state = state().lock().expect("state lock");
+    state.sessions.remove(&execution_session_id);
+}
+
 #[test]
 fn browser_shared_control_interruption_requests_clarification_and_resolves_decision() {
     let backend = LyraAgentBackend;

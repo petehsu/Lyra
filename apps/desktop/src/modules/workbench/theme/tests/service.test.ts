@@ -8,6 +8,8 @@ import {
   normalizeWorkbenchThemeId,
   observeSystemPrefersDark,
   readSystemPrefersDark,
+  resolveMaterialThemeVars,
+  resolveWorkbenchNativeThemeSource,
   resolveThemeVars,
   resolveWorkbenchThemeId
 } from "../service";
@@ -37,6 +39,12 @@ describe("workbench theme service", () => {
   test("resolves *-system themes by prefersDark", () => {
     expect(resolveWorkbenchThemeId("lyra-system", true)).toBe("lyra-dark");
     expect(resolveWorkbenchThemeId("lyra-system", false)).toBe("lyra-light");
+  });
+
+  test("maps workbench themes to Electron native theme sources", () => {
+    expect(resolveWorkbenchNativeThemeSource("lyra-system")).toBe("system");
+    expect(resolveWorkbenchNativeThemeSource("lyra-dark")).toBe("dark");
+    expect(resolveWorkbenchNativeThemeSource("lyra-light")).toBe("light");
   });
 
   test("normalizes legacy theme ids into the Lyra family", () => {
@@ -155,6 +163,45 @@ describe("workbench theme service", () => {
     expect(darkVars).not.toHaveProperty("--lyra-terminal-bg");
     expect(darkVars).not.toHaveProperty("--lyra-terminal-fg");
     expect(darkVars).not.toHaveProperty("--lyra-terminal-selection-bg");
+  });
+
+  test("materializes shared surfaces while preserving their solid theme colors", () => {
+    const lightVars = resolveThemeVars("lyra-light", false);
+    const materialVars = resolveMaterialThemeVars(lightVars, true, "light");
+
+    expect(materialVars["--lyra-material-solid-panel-bg"]).toBe("#f6f5f6");
+    expect(materialVars["--lyra-app-panel-bg"]).toBe(
+      "color-mix(in srgb, var(--lyra-material-solid-panel-bg) 0%, transparent)"
+    );
+    expect(materialVars["--lyra-app-surface-bg"]).toContain("18%");
+    expect(materialVars["--lyra-app-input-bg"]).toBe(
+      "var(--lyra-material-solid-input-bg)"
+    );
+    expect(materialVars["--lyra-app-popover-bg"]).toBe(
+      "var(--lyra-material-solid-popover-bg)"
+    );
+    expect(materialVars["--lyra-shadow-elevated-md"]).toContain("10%");
+    expect(materialVars["--lyra-text-primary"]).toBe(lightVars["--lyra-text-primary"]);
+  });
+
+  test("keeps the existing stronger material hierarchy in dark mode", () => {
+    const darkVars = resolveMaterialThemeVars(
+      resolveThemeVars("lyra-dark", false),
+      true,
+      "dark"
+    );
+
+    expect(darkVars["--lyra-app-panel-bg"]).toContain("30%");
+    expect(darkVars["--lyra-app-surface-bg"]).toContain("40%");
+  });
+
+  test("leaves the solid theme untouched when material is disabled", () => {
+    const darkVars = resolveThemeVars("lyra-dark", false);
+
+    expect(resolveMaterialThemeVars(darkVars, false, "dark")).toBe(darkVars);
+    expect(resolveMaterialThemeVars(darkVars, false, "dark")).not.toHaveProperty(
+      "--lyra-material-solid-panel-bg"
+    );
   });
 
   test("exports breakpoint, foundation, and semantic token registries", () => {

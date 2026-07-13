@@ -12,7 +12,8 @@ Oma v1 不是五个独立 worker，也不是 Solo 会话上叠一层头像 UI。
 - 每个 Oma session 内的 roster 使用临时 UUID `sessionAgentId`。包的稳定 `agentId` 不会被拿来当消息发送者、频道成员或路由目标。
 - Oma 只允许两种频道：唯一的 `group:default` 和 `direct:<sessionAgentId>`。自定义群聊及其历史会在旧 session 迁移时删除；私聊历史会保留并迁移到新的实例频道 ID。
 - 默认群聊始终包含当前 roster 的所有成员。移除 Agent 会让其退出默认群聊，并删除该 Agent 的私聊上下文；Lead 不可移除。
-- 频道切换会整体交换 `messages`、`tools`、`todos`、`memory`、prompt 元数据与 token 统计，不允许跨私聊泄漏。
+- 频道切换会整体交换 `messages`、`tools`、`todos`、`plan`、`projectTodo`、`memory`、prompt 元数据与 token 统计，不允许跨私聊泄漏。
+- 模型提示词不会再拿到原始 `oma` state。每轮只注入一个公开组织图：当前 roster 的 `sessionAgentId`、身份、职责、公开委派元数据、状态与私聊入口；永远不包含其他 Agent 的 prompt、私聊消息、工具、memory、Todo、Plan 或 token 数据。
 
 ### 内置 Agent Package
 
@@ -29,9 +30,15 @@ crates/lyra-agent-runtime/assets/oma-agents/
 
 每个包包含 `lyra-agent.json`、`prompts/main.md`、`assets/avatar.svg` 与 `README.md`。编译期会校验 schema、唯一 `agentId`、prompt 与 SVG 是否存在。Oma 管理面板的可添加列表来自该 Package Registry，不来自硬编码角色常量。
 
+manifest 的 `delegation` 是公开元数据：`specialties`、`acceptedWork`、`deliverables`、`collaborationHints`。Lead 日常不搜索当前团队；它每轮直接读取这张紧凑组织图，像负责人读取组织架构一样选择已有成员。Tool-FS 风格的包发现只留给后续招聘、扩编和本地包管理。
+
+除编译期内置包外，Oma 有一个本地 `AgentPackageRegistry`，持久化在 runtime 根目录的 `oma-agent-packages.json`。Lead 创建的可复用本地包会写入该 registry；之后任何 Oma session 都会在管理面板的可添加列表中看到它。加入 session 时才生成新的 `sessionAgentId`，因此同一包可安全加入多个 Oma 会话。临时角色不写入 registry，只在创建它的 session 内存在。管理面板会区分内置包、用户包（为后续本地导入预留）、Lead 可复用包和 Lead 临时角色。
+
 ### 调度与通信
 
-- 默认群聊中未提及时只运行 Lead；Lead 可以用 `agent.ask` 真正执行某个专员包。专员的请求、工具记录和回复留在该专员私聊，结果作为工具结果返回 Lead。
+- 默认群聊中未提及时先只运行 Lead。Lead 对简单问题直接负责；对跨职责、可并行或有风险的任务，可自主咨询团队、发布唯一的 Team Plan，并在用户批准后执行工作包。
+- Lead 使用公开组织图做路由：它知道当前有哪些角色、每个角色接受什么工作、能交付什么，而不读取任何专员私聊。
+- `agent.ask` 可以真正并发地执行多个专员包；专员请求、工具记录和完整回复留在各自私聊，结果回到 Lead。Lead 可选择把精简的专员讨论回复公开到默认群聊。
 - 只有默认群聊支持 `@` 指派。输入 `@` 会从当前 roster 中按名称、短名和职责搜索；选择结果是含 `mentionId`、`sessionAgentId`、`agentId` 的内链胶囊，不依赖发送后再猜测文本中的名字。私聊与 Solo 没有此入口。
 - 多个 `@` 按胶囊在消息中的出现顺序解析：第一个 `@` 前是所有被指派 Agent 的共同前言；每个 `@Agent` 后、下一个 `@Agent` 前是该 Agent 的专属任务。同一 Agent 被多次提及时，任务段按出现顺序合并，该 Agent 本回合只运行一次。
 - 每个被指派 Agent 都获得完整群聊起始上下文、全部附件/引用、共同前言和自己的任务投影。发送后的用户消息继续以同一套内链胶囊渲染。
@@ -39,11 +46,15 @@ crates/lyra-agent-runtime/assets/oma-agents/
 - 没有隐式全员审阅或“由模型决定是否回复”的模式；没有结构化 `@` 时默认群聊只运行 Lead。
 - `agent.send` 与 `agent.handoff` 将工作写入目标私聊，并在当前外层回合结束后由统一执行器处理；不会伪造一条已完成的 Agent 回复。
 - `agent.ask` 同步调用目标包。所有 Agent 工具仍由 Lyra host 执行，但工具活动和结果只属于调用频道。
+- `agent.team_plan` 是 Lead 专用的权威计划入口。它创建一个默认群聊 Team Plan 和带负责人、依赖、验收条件、交付物的工作包；既有 Plan Review 批准前不会派发执行。
+- 批准后，所有无依赖工作包进入统一调度队列并并发执行；每个 Agent 对自己的私聊串行写入。依赖完成后后续工作包自动放行；失败依赖会把后续项标为 blocked，而不是让无关任务停止。每个工作包遇到执行失败时最多自动重规划一次：调度器把失败原因写回该私聊并要求负责人换一种更安全的方案；第二次失败才进入明确 failed 状态，供 Lead 在群聊说明并转入提问或权限流程。全部工作包进入终态后，runtime 会再排入一次 Lead 群聊跟进，由 Lead 基于公开工作包状态、交付摘要和失败原因发布结果、残余风险与下一步；不会复制专员的私聊过程。
+- Lead 可通过 `agent.create_role` 创建临时角色或本地角色包；该动作只能作为已批准 Team Plan 中 Lead 自己的 staffing 工作包执行，因此组织扩编也受用户审批约束。两者仍复用 host provider、模型、工具和权限，本轮不允许生成 code hook、远程执行器或独立模型配置。
 
 ### 并发、限流与执行隔离
 
 - 每个并发 Oma 任务在不可持久化的 execution scope 中运行；scope 固定绑定 session、频道、`sessionAgentId`、包身份、任务投影和群聊起始上下文。UI 的 `activeChannelId` 仅表示当前查看频道，用户切换频道不会改变正在运行的任务。
 - execution scope 完成后只把新增的工具、todo、memory、prompt/token 元数据合并回它绑定的频道；回复也只写回该频道。
+- 默认群聊保存 Team Plan 与公开工作包状态；角色私聊保存该角色的局部 Plan、Todo、工具和过程。群聊不复制专员原始工具日志。
 - Solo 和 Oma 共用 provider 调度器。调度键为 provider route、配置身份、base URL 与 model；初始并发为 2，连续成功后渐进升至最高 4。
 - 遇到 429、rate-limit 或服务过载时，调度器降低该 provider lane 的容量、按 `Retry-After`（可取得时）或带抖动的指数退避进入冷却，并让尚未开始的请求 FIFO 排队。取消 turn 会从等待队列移除，不会继续在后台发送。
 - Agent 头像状态为 `queued`、`running`、`retrying`、`idle`；队列等待与退避状态通过外圈和 hover 说明表达。
@@ -54,10 +65,11 @@ crates/lyra-agent-runtime/assets/oma-agents/
 - 默认群聊图标是固定五色、无文字、无头像堆叠的圆形徽章；运行状态只通过外圈光晕表达。
 - 私聊不显示发言者标签；默认群聊保留头像和名称。私聊头像和群聊发言头像使用包提供的 SVG。
 - `+` 只打开 Oma 管理面板：添加内置包、移除 Agent；不再创建或管理额外群聊。
+- 默认群聊在已有 Plan Review 附近显示紧凑 Team Plan / 工作包卡：负责人、状态、依赖、摘要与阻塞信息；点击工作包或负责人进入对应私聊查看完整过程。
 
 ### 本轮明确不做
 
-用户本地导入、zip 分发、签名、市场、远程 A2A、动态 code hook、独立模型/工具权限不属于 Oma v1。manifest 中可以声明未来能力，但 Oma v1 一律继承 host 的工具与权限链路，不执行这些扩展。
+用户本地导入、zip 分发、签名、市场、远程 A2A、动态 code hook、独立模型/工具权限不属于 Oma v1。当前提供 Lead 创建的临时角色与本地可复用角色包；后者只保存在本机 registry，不包含市场级安装、签名或分发。manifest 中可以声明未来能力，但 Oma v1 一律继承 host 的工具与权限链路，不执行这些扩展。
 
 ## 后续协议扩展目标（非 Oma v1）
 

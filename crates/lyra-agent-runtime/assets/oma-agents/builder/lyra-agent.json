@@ -10,5 +10,11 @@
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
-  "permissions": []
+  "permissions": [],
+  "delegation": {
+    "specialties": ["implementation", "debugging", "verification"],
+    "acceptedWork": ["change production code", "repair defects", "run focused checks"],
+    "deliverables": ["patch", "verification result", "implementation handoff"],
+    "collaborationHints": ["Give Builder a bounded implementation surface and acceptance criteria."]
+  }
 }

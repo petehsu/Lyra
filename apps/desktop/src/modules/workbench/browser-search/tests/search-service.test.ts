@@ -76,6 +76,7 @@ describe("web search resolver service", () => {
     expect(resolveWebSearchEngine).toHaveBeenCalledWith({
       query: "lyra",
       engines,
+      locale: "zh-CN",
       timeoutMs: 1800
     });
     expect(target?.engine.id).toBe("bing");

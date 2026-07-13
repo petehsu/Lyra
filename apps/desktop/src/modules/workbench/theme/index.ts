@@ -7,6 +7,8 @@ export {
   normalizeWorkbenchThemeId,
   observeSystemPrefersDark,
   readSystemPrefersDark,
+  resolveMaterialThemeVars,
+  resolveWorkbenchNativeThemeSource,
   resolveThemeVars,
   resolveWorkbenchThemeId
 } from "./service";

@@ -48,6 +48,15 @@ export type SettingsOption<T extends string = string> = {
   readonly description?: string;
 };
 
+export type LanguagePickerLabels = {
+  readonly searchPlaceholder: string;
+  readonly installing: string;
+  readonly removing: string;
+  readonly download: string;
+  readonly remove: string;
+  readonly noResults: string;
+};
+
 export type BrowserSettingsSurfaceProps = {
   readonly title: string;
   readonly desktopApi: LyraDesktopApi | null;
@@ -67,7 +76,12 @@ export type BrowserSettingsSurfaceProps = {
   readonly legalCategoryLabel: string;
   readonly docsNavLabel: string;
   readonly languageLabel: string;
+  readonly languagePickerLabels: LanguagePickerLabels;
   readonly themeLabel: string;
+  readonly windowMaterialLabel: string;
+  readonly windowMaterialDescription: string;
+  readonly windowMaterialEnabledLabel: string;
+  readonly windowMaterialDisabledLabel: string;
   readonly uiStyleLabel: string;
   readonly uiStyleExternalReloadRequired: string;
   readonly uiStyleExternalUntrusted: string;
@@ -163,6 +177,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly legalLicenseTextLabel: string;
   readonly localeValue: WorkbenchLocale;
   readonly themeValue: WorkbenchThemeId;
+  readonly windowMaterialValue: boolean;
   readonly uiStyleValue: WorkbenchUiPackId;
   readonly splitTriggerModeValue: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayoutValue: WorkbenchSplitThreePaneLayout;
@@ -203,6 +218,7 @@ export type BrowserSettingsSurfaceProps = {
   readonly softwareStore: SoftwareStoreSurfaceProps;
   readonly onLocaleChange: (value: WorkbenchLocale) => void;
   readonly onThemeChange: (value: WorkbenchThemeId) => void;
+  readonly onWindowMaterialChange: (value: boolean) => void;
   readonly onUiStyleChange: (value: WorkbenchUiPackId) => void;
   readonly onSplitTriggerModeChange: (value: WorkbenchSplitTriggerMode) => void;
   readonly onSplitThreePaneLayoutChange: (value: WorkbenchSplitThreePaneLayout) => void;

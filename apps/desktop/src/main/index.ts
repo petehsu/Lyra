@@ -37,6 +37,7 @@ import {
   revealPathInFolder
 } from "./editor-actions";
 import { createAgentIpcBridge } from "./agent";
+import { createAuthIpcBridge, type AuthIpcBridge } from "./auth/service";
 import { readActCacheEnabled } from "./agent/act-cache-toggle";
 import { createReapplyLayoutScheduler } from "./schedule-reapply-layout";
 import { createFilesIpcBridge } from "./files";
@@ -46,6 +47,7 @@ import { createIdentityIpcBridge } from "./identity";
 import { createLoginManagerIpcBridge } from "./login-manager";
 import { createLocationIpcBridge } from "./location";
 import { createLspIpcBridge, configureLanguageServerEnvironment } from "./lsp";
+import { createLanguagePacksIpcBridge, type LanguagePacksIpcBridge } from "./language-packs";
 import { createLinuxCompatBridge } from "./linux-compat";
 import {
   createLyraPerformanceResourceScheduler,
@@ -128,6 +130,7 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow: BrowserWindow | null = null;
 let disposeTerminalBridge: (() => void) | null = null;
 let disposeAgentBridge: (() => void) | null = null;
+let disposeAuthBridge: (() => void) | null = null;
 let disposeFilesBridge: (() => void) | null = null;
 let disposeDownloadManagerBridge: (() => void) | null = null;
 let disposeImageViewerBridge: (() => void) | null = null;
@@ -138,6 +141,7 @@ let disposeLspBridge: (() => void) | null = null;
 let disposeWorkbenchBrowserBridge: (() => void) | null = null;
 let disposeWorkbenchStateBridge: (() => void) | null = null;
 let disposeUiuxPacksBridge: (() => void) | null = null;
+let disposeLanguagePacksBridge: (() => void) | null = null;
 let disposeRuntimeClient: (() => void) | null = null;
 let disposeSearchBridge: (() => void) | null = null;
 let disposeSensitiveValuesBridge: (() => void) | null = null;
@@ -151,6 +155,9 @@ let disposeScreenshotPreviewBridge: (() => void) | null = null;
 let disposeWorkspaceSurfacePerformanceSync: (() => void) | null = null;
 let disposeAutoUpdateService: (() => void) | null = null;
 let workbenchBrowserBridge: WorkbenchBrowserIpcBridge | null = null;
+let languagePacksBridge: LanguagePacksIpcBridge | null = null;
+let authBridge: AuthIpcBridge | null = null;
+let pendingAuthCallbackUrl: string | null = null;
 let workbenchObservationService: WorkbenchObservationService | null = null;
 const windowMaterialDecision = resolveLyraWindowMaterial({
   platform: process.platform,
@@ -183,6 +190,33 @@ const focusExistingMainWindow = (): void => {
   mainWindow.focus();
 };
 
+const isLyraAuthCallbackUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "lyra:" && url.hostname === "auth" && url.pathname === "/callback";
+  } catch {
+    return false;
+  }
+};
+
+const readAuthCallbackUrl = (args: readonly string[]): string | undefined =>
+  args.find((value) => isLyraAuthCallbackUrl(value));
+
+const dispatchAuthCallbackUrl = (value: string): void => {
+  if (!isLyraAuthCallbackUrl(value)) {
+    return;
+  }
+  pendingAuthCallbackUrl = value;
+  if (authBridge === null) {
+    return;
+  }
+  const callbackUrl = pendingAuthCallbackUrl;
+  pendingAuthCallbackUrl = null;
+  void authBridge.handleCallback(callbackUrl).catch((error: unknown) => {
+    console.error(`[lyra-auth] callback failed: ${String(error)}`);
+  });
+};
+
 const singleInstanceLockAcquired = app.requestSingleInstanceLock();
 if (!singleInstanceLockAcquired) {
   console.warn("[lyra-electron] another Lyra instance is already using this profile; exiting");
@@ -190,8 +224,17 @@ if (!singleInstanceLockAcquired) {
   process.exit(0);
 }
 
-app.on("second-instance", () => {
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  dispatchAuthCallbackUrl(url);
+});
+
+app.on("second-instance", (_event, commandLine) => {
   focusExistingMainWindow();
+  const callbackUrl = readAuthCallbackUrl(commandLine);
+  if (callbackUrl !== undefined) {
+    dispatchAuthCallbackUrl(callbackUrl);
+  }
 });
 
 const linuxCompatBridge = createLinuxCompatBridge({
@@ -1112,6 +1155,15 @@ const registerIpcHandlers = async (): Promise<void> => {
     storageRoots.modules.workbenchState
   );
   disposeWorkbenchStateBridge = workbenchStateBridge.dispose;
+  languagePacksBridge = createLanguagePacksIpcBridge({
+    storageRoot: join(storageRoots.lyraRoot, "language-packs"),
+    appVersion: app.getVersion()
+  });
+  disposeLanguagePacksBridge = languagePacksBridge.dispose;
+  authBridge = createAuthIpcBridge({
+    getWindow: () => mainWindow
+  });
+  disposeAuthBridge = authBridge.dispose;
 
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
@@ -1162,7 +1214,8 @@ const registerIpcHandlers = async (): Promise<void> => {
     workbenchState: workbenchStateBridge,
     performanceScheduler,
     deferLayoutSync: deferWorkbenchBrowserLayoutSync,
-    getActCacheEnabled: readActCacheEnabled
+    getActCacheEnabled: readActCacheEnabled,
+    resolveBrowserContextMenuLabels: languagePacksBridge.resolveBrowserContextMenuLabels
   });
   disposeWorkbenchBrowserBridge = workbenchBrowserBridge.dispose;
   const uiuxPacksBridge = createUiuxPacksIpcBridge({
@@ -1258,6 +1311,16 @@ const registerIpcHandlers = async (): Promise<void> => {
     mainWindow?.close();
   });
 
+  ipcMain.handle(
+    LYRA_CHANNELS.setWindowThemeSource,
+    (_event, source: unknown): void => {
+      if (source !== "system" && source !== "light" && source !== "dark") {
+        throw new Error("Invalid Lyra window theme source.");
+      }
+      nativeTheme.themeSource = source;
+    }
+  );
+
   ipcMain.handle(LYRA_CHANNELS.readAppMeta, (): AppMetaPayload => readAppMetaPayload());
 
   ipcMain.on(LYRA_CHANNELS.readAppMetaSync, (event) => {
@@ -1344,33 +1407,54 @@ const registerIpcHandlers = async (): Promise<void> => {
       linuxCompatBridge.requestRestart(app, request)
   );
 
-  // ponytail: i18n local bundles — 扫描 ~/.lyra/locales/{locale}.json，返回 {locale: bundle} 映射
-  // 渲染器 init 后调用此 API，通过 addResourceBundle 合并到 i18next 实例
-  ipcMain.handle(
-    LYRA_CHANNELS.i18nReadLocalBundles,
-    (): Readonly<Record<string, Record<string, string>>> => {
-      const localesDir = join(homedir(), ".lyra", "locales");
-      if (!existsSync(localesDir)) return {};
-      const bundles: Record<string, Record<string, string>> = {};
-      for (const file of readdirSync(localesDir)) {
-        if (!file.endsWith(".json")) continue;
-        const locale = file.slice(0, -".json".length);
-        try {
-          const bundle = JSON.parse(readFileSync(join(localesDir, file), "utf-8"));
-          if (typeof bundle === "object" && bundle !== null) {
-            bundles[locale] = bundle as Record<string, string>;
+  const readLocalLanguageBundles = (): Readonly<Record<string, Record<string, string>>> => {
+    const localesDir = join(homedir(), ".lyra", "locales");
+    if (!existsSync(localesDir)) return {};
+    const bundles: Record<string, Record<string, string>> = {};
+    for (const file of readdirSync(localesDir)) {
+      if (!file.endsWith(".json")) continue;
+      const fileLocale = file.slice(0, -".json".length);
+      try {
+        const locale = Intl.getCanonicalLocales(fileLocale)[0];
+        const parsed = JSON.parse(readFileSync(join(localesDir, file), "utf-8"));
+        if (locale !== undefined && typeof parsed === "object" && parsed !== null) {
+          const bundle: Record<string, string> = {};
+          for (const [key, value] of Object.entries(parsed)) {
+            if (typeof value === "string") {
+              bundle[key] = value;
+            }
           }
-        } catch {
-          // ponytail: 损坏的 JSON 文件跳过，不影响其他 locale
+          if (Object.keys(bundle).length > 0) {
+            bundles[locale] = bundle;
+          }
         }
+      } catch {
+        // A malformed locale or bundle must not block the remaining packs.
       }
-      return bundles;
     }
+    return bundles;
+  };
+
+  ipcMain.handle(LYRA_CHANNELS.i18nReadLocalBundles, readLocalLanguageBundles);
+  ipcMain.handle(
+    LYRA_CHANNELS.i18nReadLanguageBundles,
+    async (): Promise<{
+      readonly managed: Readonly<Record<string, Record<string, string>>>;
+      readonly local: Readonly<Record<string, Record<string, string>>>;
+    }> => ({
+      managed: await languagePacksBridge?.readManagedBundles() ?? {},
+      local: readLocalLanguageBundles()
+    })
   );
 
 };
 
 app.setName(LYRA_APP_NAME);
+if (app.isPackaged) {
+  app.setAsDefaultProtocolClient("lyra");
+} else if (process.argv[1] !== undefined) {
+  app.setAsDefaultProtocolClient("lyra", process.execPath, [resolve(process.argv[1])]);
+}
 if (process.platform === "win32") {
   app.setAppUserModelId(LYRA_APP_USER_MODEL_ID);
 }
@@ -1396,6 +1480,17 @@ app.whenReady().then(async () => {
   await registerIpcHandlers();
   mainWindow = createMainWindow();
   publishWindowState(mainWindow);
+  const initialCallbackUrl = readAuthCallbackUrl(process.argv);
+  if (initialCallbackUrl !== undefined) {
+    dispatchAuthCallbackUrl(initialCallbackUrl);
+  }
+  if (pendingAuthCallbackUrl !== null && authBridge !== null) {
+    const callbackUrl = pendingAuthCallbackUrl;
+    pendingAuthCallbackUrl = null;
+    void authBridge.handleCallback(callbackUrl).catch((error: unknown) => {
+      console.error(`[lyra-auth] callback failed: ${String(error)}`);
+    });
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length > 0) {
@@ -1417,6 +1512,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (disposeAuthBridge !== null) {
+    disposeAuthBridge();
+    disposeAuthBridge = null;
+    authBridge = null;
+  }
   if (disposeFilesBridge !== null) {
     disposeFilesBridge();
     disposeFilesBridge = null;
@@ -1501,6 +1601,11 @@ app.on("before-quit", () => {
   if (disposeUiuxPacksBridge !== null) {
     disposeUiuxPacksBridge();
     disposeUiuxPacksBridge = null;
+  }
+  if (disposeLanguagePacksBridge !== null) {
+    disposeLanguagePacksBridge();
+    disposeLanguagePacksBridge = null;
+    languagePacksBridge = null;
   }
   if (disposeWorkbenchStateBridge !== null) {
     disposeWorkbenchStateBridge();

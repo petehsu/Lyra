@@ -303,4 +303,29 @@ describe("AI panel session tabs", () => {
       lastKnownStatus: "cancelled"
     });
   });
+
+  test("keeps tab state stable for duplicate runtime status events", () => {
+    writeWorkbenchStateSync("ai-panel-tabs", JSON.stringify({
+      version: 2,
+      tabs: [
+        { tabId: "session-a", sessionId: "session-a", title: "Alpha", lastKnownStatus: "running" }
+      ],
+      activeTabId: "session-a",
+      activeSessionId: "session-a"
+    }));
+    const { api, emit } = createDesktopApi();
+    const { result } = renderHook(() => useWorkbenchAiSessionTabs(api));
+    const tabsBefore = result.current.tabs;
+
+    act(() => {
+      emit({
+        kind: "turnStateChanged",
+        sessionId: "session-a",
+        turnId: "turn-a",
+        state: "calling_model"
+      });
+    });
+
+    expect(result.current.tabs).toBe(tabsBefore);
+  });
 });

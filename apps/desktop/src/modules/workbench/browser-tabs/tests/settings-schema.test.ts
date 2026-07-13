@@ -16,6 +16,7 @@ const createSchemaInput = (
   mcpCategoryLabel: "MCP",
   languageLabel: "Language",
   themeLabel: "Theme",
+  windowMaterialLabel: "Window material",
   uiStyleLabel: "UI style",
   notificationsCategoryLabel: "Notifications",
   linuxCategoryLabel: "Linux",
@@ -91,7 +92,9 @@ describe("createWorkbenchSettingsSchema", () => {
   test("keeps field metadata grouped by category", () => {
     const schema = createWorkbenchSettingsSchema(createSchemaInput(2));
     const searchCategory = schema.categories.find((category) => category.id === "search");
+    const appearanceCategory = schema.categories.find((category) => category.id === "appearance");
 
+    expect(appearanceCategory?.sectionIds).toEqual(["theme", "windowMaterial", "uiStyle"]);
     expect(searchCategory?.sectionIds).toEqual([
       "omniboxNonBrowserSubmitTarget",
       "searchWebEngines",

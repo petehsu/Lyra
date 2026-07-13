@@ -47,11 +47,26 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
     }
 
     const observedElements = new Set<HTMLElement>();
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleResync();
+    const pendingElements = new Set<HTMLElement>();
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target instanceof HTMLElement) {
+          pendingElements.add(entry.target);
+        }
+      }
+      schedulePendingSync();
     });
-    const mutationObserver = new MutationObserver(() => {
-      scheduleRediscover();
+    const mutationObserver = new MutationObserver((records) => {
+      if (records.some((record) => record.type === "childList")) {
+        scheduleRediscover();
+        return;
+      }
+      for (const record of records) {
+        if (record.target instanceof HTMLElement) {
+          pendingElements.add(record.target);
+        }
+      }
+      schedulePendingSync();
     });
 
     let frameId = 0;
@@ -86,19 +101,32 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
 
         syncElementScrollbarVisibility(element);
       }
+      pendingElements.clear();
     };
 
-    // Cheap pass: only re-evaluate the already-observed set. No subtree walk, so
-    // resize-drag and scroll stay O(observed) instead of O(DOM).
-    const resyncObservedElements = () => {
-      for (const element of observedElements) {
+    // ResizeObserver already tells us exactly which boxes changed. Restricting
+    // the pass to those targets prevents long chat transcripts from making an
+    // unrelated panel drag walk every scrollable descendant in the workbench.
+    const syncPendingElements = () => {
+      for (const element of pendingElements) {
         if (root.contains(element) === false) {
           resizeObserver.unobserve(element);
           observedElements.delete(element);
           continue;
         }
-        syncElementScrollbarVisibility(element);
+        if (shouldManageScrollbar(element)) {
+          if (observedElements.has(element) === false) {
+            observedElements.add(element);
+            resizeObserver.observe(element);
+          }
+          syncElementScrollbarVisibility(element);
+        } else {
+          resizeObserver.unobserve(element);
+          observedElements.delete(element);
+          element.removeAttribute(LYRA_SCROLLBAR_HIDDEN_ATTR);
+        }
       }
+      pendingElements.clear();
     };
 
     const runSync = () => {
@@ -107,11 +135,11 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
         needsRediscover = false;
         rediscoverObservedElements();
       } else {
-        resyncObservedElements();
+        syncPendingElements();
       }
     };
 
-    const scheduleResync = () => {
+    const schedulePendingSync = () => {
       if (frameId !== 0) return;
       frameId = window.requestAnimationFrame(runSync);
     };
@@ -128,8 +156,6 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
       attributes: true,
       attributeFilter: ["class", "style"]
     });
-    window.addEventListener("resize", scheduleResync);
-    root.addEventListener("scroll", scheduleResync, true);
 
     // Initial pass must discover the elements to observe.
     needsRediscover = true;
@@ -138,8 +164,6 @@ export const useScrollbarVisibilityGuard = (rootRef: RefObject<HTMLElement>): vo
     return () => {
       mutationObserver.disconnect();
       resizeObserver.disconnect();
-      window.removeEventListener("resize", scheduleResync);
-      root.removeEventListener("scroll", scheduleResync, true);
       if (frameId !== 0) {
         window.cancelAnimationFrame(frameId);
       }

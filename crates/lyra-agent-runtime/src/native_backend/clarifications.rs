@@ -3,14 +3,28 @@ use super::*;
 pub(crate) fn wait_for_clarification(
     request: ClarificationRequest,
 ) -> AgentRuntimeResult<ClarificationRequest> {
+    let mut request = request;
     let request_id = request.id.clone();
-    let session_id = request.session_id.clone();
     let turn_id = request.turn_id.clone();
-    let (callback, events) = {
+    let (callback, events, session_id) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let callback = state.event_callback.clone();
+        // Oma workers run in short-lived execution sessions. Interactive
+        // requests must target the durable parent session, which is the one
+        // the desktop UI subscribes to and the user can answer against.
+        let oma_source = state
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| oma_interaction_source(&session.snapshot));
+        let session_id = state
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| oma_parent_session_id(&session.snapshot))
+            .filter(|parent_session_id| state.sessions.contains_key(parent_session_id))
+            .unwrap_or_else(|| request.session_id.clone());
+        request.session_id = session_id.clone();
         if let Some(session) = state.sessions.get_mut(&session_id) {
             set_runtime_turn_state(
                 session,
@@ -44,6 +58,7 @@ pub(crate) fn wait_for_clarification(
                 "detailI18nKey": request.detail_i18n_key,
                 "toolCallId": request.tool_call_id,
                 "turnId": turn_id,
+                "omaSource": oma_source,
             }),
             json!({
                 "kind": "turnStateChanged",
@@ -56,7 +71,7 @@ pub(crate) fn wait_for_clarification(
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
-        (callback, events)
+        (callback, events, session_id)
     };
     for event in events {
         emit_with_callback(&callback, event);

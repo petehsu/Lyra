@@ -188,6 +188,29 @@ export const createSensitiveValuesIpcBridge = ({
       };
     }
 
+    const canRevealStoredValue =
+      ref.ownerRef.kind === "opaque"
+      && ref.ownerRef.owner === "sensitive-values"
+      && (
+        ref.capabilities.includes("reveal_to_user")
+        || (
+          ref.owner === "system"
+          && ref.valueKind === "credential"
+          && ref.capabilities.includes("use")
+        )
+      );
+    if (canRevealStoredValue) {
+      const current = readStore();
+      const record = current.values.find((entry) => entry.id === ref.ownerRef.valueId);
+      if (record === undefined || record.owner !== ref.owner) {
+        throw new Error(`Sensitive value not found: ${ref.id}`);
+      }
+      return {
+        refId: ref.id,
+        value: decryptValue(record.ciphertextBase64)
+      };
+    }
+
     throw new Error(`Unsupported sensitive value ref: ${ref.id}`);
   };
 

@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 
 import { APP_CONFIG } from "./core/config";
-import { setLocale, type Locale } from "@workbench/i18n";
 import type { LyraDesktopApi } from "../../../../shared/desktop-bridge";
 import { assertUsingRealData } from "./styles/guards";
 import {
@@ -17,7 +16,6 @@ import { DebugPanel } from "./features/debug";
 
 export interface LyraAgentsShellProps {
   showDebugPanel?: boolean;
-  locale?: Locale;
   showHeader?: boolean;
   headerSlot?: ReactNode;
   desktopApi?: LyraDesktopApi | null;
@@ -25,15 +23,10 @@ export interface LyraAgentsShellProps {
 
 export function LyraAgentsShell({
   showDebugPanel = false,
-  locale,
   showHeader = true,
   headerSlot,
   desktopApi = null,
 }: LyraAgentsShellProps) {
-  if (locale !== undefined) {
-    setLocale(locale);
-  }
-
   const [showDecisions, setShowDecisions] = useState(true);
   const [showPermission, setShowPermission] = useState(true);
   const { isMock } = useData();
@@ -67,7 +60,6 @@ export function LyraAgentsShell({
 export interface LyraAgentsAppProps {
   data: DataProviderValue;
   showDebugPanel?: boolean;
-  locale?: Locale;
   showHeader?: boolean;
   headerSlot?: ReactNode;
   desktopApi?: LyraDesktopApi | null;
@@ -76,7 +68,6 @@ export interface LyraAgentsAppProps {
 export function LyraAgentsApp({
   data,
   showDebugPanel = false,
-  locale,
   showHeader = true,
   headerSlot,
   desktopApi = null,
@@ -88,7 +79,6 @@ export function LyraAgentsApp({
         showHeader={showHeader}
         headerSlot={headerSlot}
         desktopApi={desktopApi}
-        {...(locale === undefined ? {} : { locale })}
       />
     </DataContextProvider>
   );

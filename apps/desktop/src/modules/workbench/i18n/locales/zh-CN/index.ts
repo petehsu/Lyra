@@ -14,6 +14,7 @@ import { softwareStore } from "./software-store";
 import { notifications } from "./notifications";
 import { aiPanel } from "./ai-panel";
 import { location } from "./location";
+import { startup } from "./startup";
 
 export const ZH_CN_DICTIONARY: WorkbenchDictionary = {
   ...shared,
@@ -30,4 +31,5 @@ export const ZH_CN_DICTIONARY: WorkbenchDictionary = {
   ...notifications,
   ...aiPanel,
   ...location,
+  ...startup,
 };

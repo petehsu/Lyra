@@ -44,7 +44,7 @@ import type {
   OmaControls,
   PermissionRequest
 } from "./lyra-agents/core/types";
-import { setLocale, t, type I18nKey, type Locale } from "@workbench/i18n";
+import { t, useWorkbenchLocale, type I18nKey } from "@workbench/i18n";
 import {
   createDataProviderValue,
   type CreateDataProviderValueInput
@@ -431,7 +431,6 @@ type LyraAgentDataProviderCallbacks = {
     readonly paneId?: string | null;
   }) => Promise<void> | void) | undefined;
   readonly openDialog?: GlobalDialogModel["openDialog"] | undefined;
-  readonly locale?: Locale | undefined;
   readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null> | undefined;
   readonly onSetActiveBrowserTab?: ((tabId: string) => void) | undefined;
   readonly resolveActiveWorkspaceTab?: (() => WorkspaceTab | undefined) | undefined;
@@ -477,7 +476,6 @@ export const useLyraAgentDataProvider = (
     onRevealPathInWorkbench,
     onOpenTerminalLiveSession,
     openDialog,
-    locale,
     composerCitationSinkRef,
     onSetActiveBrowserTab,
     resolveActiveWorkspaceTab,
@@ -490,9 +488,7 @@ export const useLyraAgentDataProvider = (
     locationControls,
     aiRichRenderingEnabled = true
   } = callbacks;
-  if (locale !== undefined) {
-    setLocale(locale);
-  }
+  const locale = useWorkbenchLocale();
 
   const [state, dispatch] = useReducer(reducer, initialState);
   const [modelState, setModelState] = useState<AgentModelCatalogSnapshot | null>(null);
@@ -502,6 +498,7 @@ export const useLyraAgentDataProvider = (
   const [browserFollowModeEnabled, setBrowserFollowModeEnabled] = useState(false);
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
+  const [pendingPlanReview, setPendingPlanReview] = useState<AgentPlanSnapshot | null>(null);
   // Render budget: number of most-recent messages to render as DOM.
   // Replaces the old virtual-scroll + height-estimation system.
   const [renderBudgetCount, setRenderBudgetCount] = useState<number>(
@@ -562,6 +559,7 @@ export const useLyraAgentDataProvider = (
     if (previousSessionIdRef.current !== nextSessionId) {
       setPendingClarifications([]);
       setPendingPermissions([]);
+      setPendingPlanReview(null);
       // Reset render budget on session switch — start with the latest N messages
       setRenderBudgetCount(APP_CONFIG.messageWindow.initialRenderCount);
       previousSessionIdRef.current = nextSessionId;
@@ -588,7 +586,8 @@ export const useLyraAgentDataProvider = (
           question: event.question,
           options: normalizeClarificationOptions(event.options ?? []),
           allowCustomAnswer: event.allowCustomAnswer,
-          detail: event.detail ?? null
+          detail: event.detail ?? null,
+          omaSource: event.omaSource ?? null
         };
         const displayQuestion = translateI18nKey(event.i18nKey);
         const displayDetail = translateI18nKey(event.detailI18nKey);
@@ -603,9 +602,15 @@ export const useLyraAgentDataProvider = (
             id: event.permissionId,
             type: classifyPermissionRequest(event.title, event.detail),
             title: event.title,
-            detail: event.detail
+            detail: event.detail,
+            omaSource: event.omaSource ?? null
           })
         );
+      } else if (event.kind === "planReviewRequested") {
+        setPendingPlanReview({
+          ...event.plan,
+          omaSource: event.omaSource ?? event.plan.omaSource ?? null
+        });
       } else if (
         event.kind === "turnFinished" ||
         event.kind === "turnFailed" ||
@@ -763,8 +768,23 @@ export const useLyraAgentDataProvider = (
   useEffect(() => {
     if (state.session === null) return;
     onActiveSessionChange?.(state.session.id);
+  }, [onActiveSessionChange, state.session?.id]);
+
+  // The tab strip only consumes session metadata. Streaming deltas replace the
+  // session object many times per second; forwarding each replacement to the
+  // shell made the entire workbench re-render for every token.
+  useEffect(() => {
+    if (state.session === null) return;
     onSessionSnapshotChange?.(state.session);
-  }, [onActiveSessionChange, onSessionSnapshotChange, state.session]);
+  }, [
+    onSessionSnapshotChange,
+    state.session?.id,
+    state.session?.title,
+    state.session?.turnStatus,
+    state.session?.workingDir,
+    state.session?.projectBound,
+    state.session?.workingDirIsHome
+  ]);
 
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
@@ -1311,7 +1331,7 @@ export const useLyraAgentDataProvider = (
         label: t("permissionPolicy.adminCredentialLabel"),
         description: t("permissionPolicy.adminCredentialStorageDescription"),
         value: password,
-        capabilities: ["list_metadata", "use"]
+        capabilities: ["list_metadata", "use", "reveal_to_user"]
       });
 
       // 注入明文密码到 Rust 进程内（shell.rs sudo 自动解密用）
@@ -1526,10 +1546,13 @@ export const useLyraAgentDataProvider = (
     const snapshot = await desktopApi.agent.respondPlanReview({
       sessionId: state.session.id,
       action,
-      feedback: feedback ?? null
+      feedback: feedback ?? null,
+      omaChannelId: pendingPlanReview?.omaSource?.channelId ?? null,
+      omaSourceSessionAgentId: pendingPlanReview?.omaSource?.sessionAgentId ?? null
     });
+    setPendingPlanReview(null);
     dispatch({ type: "snapshot", snapshot });
-  }, [desktopApi, state.session]);
+  }, [desktopApi, pendingPlanReview, state.session]);
 
   const currentSessionId = resolvedSessionId;
 
@@ -2024,7 +2047,9 @@ export const useLyraAgentDataProvider = (
       diffFiles: [] satisfies DiffFileEntry[],
       decisions: pendingClarifications.slice(0, 1),
       permissions: pendingPermissions,
-      planReview: state.session?.plan?.phase === "reviewing" ? state.session.plan : null,
+      planReview: pendingPlanReview ?? (
+        state.session?.plan?.phase === "reviewing" ? state.session.plan : null
+      ),
       modelControls,
       permissionModeControls,
       locationControls: locationControls ?? null,
@@ -2145,6 +2170,7 @@ export const useLyraAgentDataProvider = (
     aiRichRenderingEnabled,
     pendingClarifications,
     pendingPermissions,
+    pendingPlanReview,
     previewRollback,
     rollbackMessage,
     runImprove,

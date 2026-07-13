@@ -37,6 +37,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { OmaAgentMember } from "../../../shared/agent";
 import type { FileManagerFavorite } from "../../../shared/file-manager";
+import { t } from "../i18n";
 import {
   filterBrowserHistoryEntries,
   type BrowserHistoryEntry
@@ -468,7 +469,11 @@ const AgentSessionPreviewPane = ({
         </DataContextProvider>
       )}
       {oma !== null ? (
-        <div className="lyra-agent-history-oma-channels" role="tablist" aria-label="Oma channels">
+        <div
+          className="lyra-agent-history-oma-channels"
+          role="tablist"
+          aria-label={t("oma.channelsAriaLabel")}
+        >
           {oma.channels.filter((channel) => channel.archived !== true).map((channel) => {
             const agent = agentsById.get(channel.memberAgentIds[0] ?? "");
             const members = channel.memberAgentIds

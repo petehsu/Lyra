@@ -2,14 +2,12 @@ import { Terminal, FileText, Globe, AlertTriangle } from "lucide-react";
 import { ChevronLeft, ChevronRight, Check, X } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 import { t } from "@workbench/i18n";
+import type { OmaAgentMember } from "../../../../../../shared/agent";
+import type { PermissionRequest } from "../../core/types";
+import { OmaPanelSource } from "./OmaPanelSource";
 import { AppButton } from "@renderer/ui/components";
 
-export interface PermissionRequest {
-  id: string;
-  type: "shell" | "file" | "network" | "dangerous";
-  title: string;
-  detail: string;
-}
+export type { PermissionRequest } from "../../core/types";
 
 /**
  * Permission approval panel — same layout as DecisionPanel:
@@ -22,12 +20,14 @@ export function PermissionPanel({
   onDeny,
   progress,
   onTap,
+  resolveOmaSource,
 }: {
   requests: PermissionRequest[];
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   progress: number;
   onTap: () => void;
+  resolveOmaSource?: (sourceSessionAgentId: string | null | undefined) => OmaAgentMember | undefined;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -39,6 +39,7 @@ export function PermissionPanel({
   const canNext = currentIndex < requests.length - 1;
   const showNav = requests.length > 1;
   const isCollapsed = progress < 0.1;
+  const sourceAgent = resolveOmaSource?.(req.omaSource?.sessionAgentId);
 
   const handleAction = (action: "approve" | "deny") => {
     const id = req.id;
@@ -64,9 +65,12 @@ export function PermissionPanel({
         <span className={`lyra-agents-decision-icon permission-icon-${req.type}`}>
           {renderPermissionIcon(req.type)}
         </span>
-        <p className="lyra-agents-decision-question">
-          {req.title} <code className="lyra-agents-permission-cmd">{req.detail}</code>
-        </p>
+        <div className="lyra-agents-decision-title-block">
+          <p className="lyra-agents-decision-question">
+            {req.title} <code className="lyra-agents-permission-cmd">{req.detail}</code>
+          </p>
+          <OmaPanelSource agent={sourceAgent} />
+        </div>
         {showNav && (
           <div className="lyra-agents-decision-nav">
             <AppButton variant="ghost" size="sm"

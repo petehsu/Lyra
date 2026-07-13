@@ -145,6 +145,28 @@ describe("agentSessionToChatMessages", () => {
     expect(cssCalls).toHaveLength(1);
   });
 
+  it("keeps clarification tools out of the message timeline", () => {
+    const messages = agentSessionToChatMessages(session({
+      messages: [{
+        id: "assistant-clarification",
+        role: "assistant",
+        text: "",
+        blocks: [{ type: "tool", id: "tool-clarification", toolId: "clarification-1" }],
+        createdAt: "2026-06-20T00:00:00.000Z"
+      }],
+      tools: [{
+        id: "clarification-1",
+        name: "clarification",
+        label: "Asked for clarification",
+        status: "running",
+        input: { question: "Which style?" },
+        startedAt: "2026-06-20T00:00:01.000Z"
+      }]
+    }));
+
+    expect(messages).toEqual([]);
+  });
+
   it("carries real assistant work duration from message and tool timestamps", () => {
     const messages = agentSessionToChatMessages(session({
       turnStatus: "idle",

@@ -224,7 +224,7 @@
   overflow: hidden;
 }
 
-:root[data-lyra-window-material="native"] .lyra-ui-app-shell {
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] .lyra-ui-app-shell {
   background: transparent;
 }
 

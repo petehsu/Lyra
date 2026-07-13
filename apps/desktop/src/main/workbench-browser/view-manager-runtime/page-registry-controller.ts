@@ -53,7 +53,7 @@ import type {
   WorkbenchBrowserPageContextMenuPayload
 } from "../../../shared/workbench-browser";
 import { executePageContextAction } from "./page-context-actions";
-import type { BrowserContextMenuLocale } from "../../../shared/browser-context-menu-labels";
+import type { BrowserContextMenuLabels } from "../../../shared/browser-context-menu-labels";
 import { showNativePageContextMenu } from "./page-context-menu-native";
 import { isSafeExternalUrl } from "../../security";
 
@@ -183,7 +183,7 @@ type PageRegistryHost = {
     entry: ReturnType<typeof liveAgentTarget>
   ) => Promise<WorkbenchBrowserDebuggerSession>;
   readonly unregisterBrowserPageResource: (tabId: string) => void;
-  readonly readBrowserContextMenuLocale: () => BrowserContextMenuLocale;
+  readonly readBrowserContextMenuLabels: () => BrowserContextMenuLabels;
   readonly onBrowserHealthPopup?: (tabId: string, url: string) => void;
   readonly onBrowserHealthCrash?: (tabId: string) => void;
   readonly onBrowserHealthNavigationFailed?: (tabId: string, message: string) => void;
@@ -592,7 +592,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
           entry,
           menu,
           tabTitle,
-          locale: host.readBrowserContextMenuLocale(),
+          labels: host.readBrowserContextMenuLabels(),
           host: {
             publishEvent: host.publishEvent,
             goBack,

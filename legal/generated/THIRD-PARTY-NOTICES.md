@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Generated at: 2026-07-08T14:40:18.402Z
+Generated at: 2026-07-12T05:05:21.209Z
 
 This file is generated from package metadata plus `legal/manual-third-party.json`.
 
@@ -10,7 +10,7 @@ This file is generated from package metadata plus `legal/manual-third-party.json
 | --- | ---: |
 | cargo | 704 |
 | derived | 1 |
-| npm | 366 |
+| npm | 375 |
 | optional | 1 |
 | vendored | 1 |
 | vendored-rust | 1 |
@@ -5594,6 +5594,14 @@ limitations under the License.
 - Repository: git+https://github.com/fontsource/font-files.git
 - Homepage: https://fontsource.org/fonts/geist-sans
 
+### @fontsource/zen-dots 5.2.8
+
+- Ecosystem: npm
+- License: OFL-1.1
+- Source: https://registry.npmjs.org/@fontsource/zen-dots/-/zen-dots-5.2.8.tgz
+- Repository: git+https://github.com/fontsource/font-files.git
+- Homepage: https://fontsource.org/fonts/zen-dots
+
 ### @giscus/react 3.1.0
 
 - Ecosystem: npm
@@ -6072,6 +6080,61 @@ limitations under the License.
 - License: Apache-2.0
 - Source: https://registry.npmjs.org/@streamdown/cjk/-/cjk-1.0.3.tgz
 - Repository: git+https://github.com/vercel/streamdown.git
+
+### @supabase/auth-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/auth-js/-/auth-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/auth-js
+
+### @supabase/functions-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/functions-js/-/functions-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/functions-js
+
+### @supabase/phoenix 0.4.4
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/phoenix/-/phoenix-0.4.4.tgz
+- Repository: git://github.com/supabase/phoenix.git
+
+### @supabase/postgrest-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/postgrest-js/-/postgrest-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/postgrest-js
+
+### @supabase/realtime-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/realtime-js/-/realtime-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/realtime-js
+
+### @supabase/storage-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/storage-js/-/storage-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/storage-js
+
+### @supabase/supabase-js 2.110.2
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-2.110.2.tgz
+- Repository: https://github.com/supabase/supabase-js.git
+- Homepage: https://github.com/supabase/supabase-js/tree/master/packages/core/supabase-js
 
 ### @types/estree-jsx 1.0.5
 
@@ -6812,6 +6875,14 @@ limitations under the License.
 - Source: https://registry.npmjs.org/i18next/-/i18next-25.10.10.tgz
 - Repository: https://github.com/i18next/i18next.git
 - Homepage: https://www.i18next.com
+
+### iceberg-js 0.8.1
+
+- Ecosystem: npm
+- License: MIT
+- Source: https://registry.npmjs.org/iceberg-js/-/iceberg-js-0.8.1.tgz
+- Repository: https://github.com/supabase/iceberg-js
+- Homepage: https://github.com/supabase/iceberg-js#readme
 
 ### ieee754 1.2.1
 

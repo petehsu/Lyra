@@ -1,5 +1,9 @@
 # Node
 node_modules/
+.next/
+**/.env
+!**/.env.example
+*.tsbuildinfo
 dist/
 coverage/
 apps/desktop/out/
@@ -25,6 +29,7 @@ __pycache__/
 .vscode/
 .idea/
 .tmp/
+.qa/
 .codex
 .kilo/
 

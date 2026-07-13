@@ -2,7 +2,9 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, ArrowUp, HelpCircle, Info } from "lucide-react";
 import { t } from "@workbench/i18n";
 import type { DecisionQuestion } from "../../core/types";
+import type { OmaAgentMember } from "../../../../../../shared/agent";
 import { AppButton, AppInput, AppTooltip } from "@renderer/ui/components";
+import { OmaPanelSource } from "./OmaPanelSource";
 
 export type { DecisionQuestion } from "../../core/types";
 
@@ -17,12 +19,14 @@ export function DecisionPanel({
   onDismiss: _onDismiss,
   progress,
   onTap,
+  resolveOmaSource,
 }: {
   questions: DecisionQuestion[];
   onSubmit: (answers: Record<string, string>) => void | Promise<void>;
   onDismiss: () => void;
   progress: number;
   onTap: () => void;
+  resolveOmaSource?: (sourceSessionAgentId: string | null | undefined) => OmaAgentMember | undefined;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -79,6 +83,7 @@ export function DecisionPanel({
   };
 
   const isCollapsed = progress < 0.1;
+  const sourceAgent = resolveOmaSource?.(q.omaSource?.sessionAgentId);
 
   return (
     <div
@@ -94,6 +99,7 @@ export function DecisionPanel({
         <div className="lyra-agents-decision-title-block">
           <p className="lyra-agents-decision-question">{questionText}</p>
           {detailText ? <p className="lyra-agents-decision-detail">{detailText}</p> : null}
+          <OmaPanelSource agent={sourceAgent} />
         </div>
         {hasMultipleQuestions ? (
           <div className="lyra-agents-decision-nav">

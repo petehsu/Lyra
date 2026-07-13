@@ -73,6 +73,69 @@ const createDesktopApi = (snapshot: AgentSessionSnapshot): LyraDesktopApi => ({
 } as unknown as LyraDesktopApi);
 
 describe("useLyraAgentDataProvider", () => {
+  test("does not resync shell session metadata for streaming text deltas", async () => {
+    const snapshot = createSnapshot({
+      turnStatus: "running",
+      activeTurnId: "turn-1",
+      follow: { running: true, activity: "calling_model" },
+      messages: [{
+        id: "message-1",
+        role: "assistant",
+        text: "Hel",
+        createdAt: "2026-05-13T00:00:00.000Z"
+      }]
+    });
+    let listener: ((event: AgentRuntimeEvent) => void) | null = null;
+    const desktopApi = createDesktopApi(snapshot);
+    vi.mocked(desktopApi.agent!.onEvent).mockImplementation((next) => {
+      listener = next;
+      return () => {
+        listener = null;
+      };
+    });
+    const onActiveSessionChange = vi.fn();
+    const onSessionSnapshotChange = vi.fn();
+
+    const { result } = renderHook(() =>
+      useLyraAgentDataProvider(
+        desktopApi,
+        undefined,
+        snapshot.id,
+        null,
+        true,
+        { onActiveSessionChange, onSessionSnapshotChange }
+      )
+    );
+
+    await waitFor(() => {
+      expect(result.current.data.messages.at(-1)?.blocks[0]).toMatchObject({
+        type: "text",
+        body: "Hel"
+      });
+      expect(onActiveSessionChange).toHaveBeenCalledTimes(1);
+      expect(onSessionSnapshotChange).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      listener?.({
+        kind: "messageDelta",
+        sessionId: snapshot.id,
+        messageId: "message-1",
+        blockId: null,
+        delta: "lo"
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.data.messages.at(-1)?.blocks[0]).toMatchObject({
+        type: "text",
+        body: "Hello"
+      });
+    });
+    expect(onActiveSessionChange).toHaveBeenCalledTimes(1);
+    expect(onSessionSnapshotChange).toHaveBeenCalledTimes(1);
+  });
+
   test("reports a missing persisted session when readSession rejects", async () => {
     const onMissingSession = vi.fn();
     const readSession = vi.fn<

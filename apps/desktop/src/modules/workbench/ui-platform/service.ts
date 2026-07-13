@@ -1,6 +1,8 @@
 import * as React from "react";
 
+import { uiPackI18nNamespace } from "../i18n";
 import i18n from "../i18n/i18n-instance";
+import { getWorkbenchLocale } from "../i18n/locale-state";
 import { CLASSIC_WORKBENCH_UI_PACK } from "./classic";
 import type { createTranslator } from "../i18n";
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
@@ -191,19 +193,37 @@ const EMPTY_SOFTWARE_CAPABILITIES: LyraSoftwareCapabilitiesContext = {
   registerActionHandler: () => () => {}
 };
 
+type UiPackFixedTranslator = (
+  locale: string,
+  namespace: string
+) => (key: string, options?: Readonly<Record<string, unknown>>) => string;
+
+const getUiPackFixedTranslator = i18n.getFixedT as unknown as UiPackFixedTranslator;
+
 export const createWorkbenchUiPackContext = (
   desktopApi: LyraDesktopApi | null,
-  capabilities: LyraSoftwareCapabilitiesContext = EMPTY_SOFTWARE_CAPABILITIES
-): WorkbenchUiPackContext => ({
-  apiVersion: "1",
-  React,
-  desktopApi,
-  capabilities,
-  adapters: CLASSIC_WORKBENCH_UI_PACK.adapters,
-  style: CLASSIC_WORKBENCH_UI_PACK.style,
-  interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES,
-  primitives
-});
+  capabilities: LyraSoftwareCapabilitiesContext = EMPTY_SOFTWARE_CAPABILITIES,
+  packId?: WorkbenchUiPackId
+): WorkbenchUiPackContext => {
+  const namespace = packId === undefined ? "translation" : uiPackI18nNamespace(packId);
+  return {
+    apiVersion: "1",
+    React,
+    desktopApi,
+    capabilities,
+    adapters: CLASSIC_WORKBENCH_UI_PACK.adapters,
+    style: CLASSIC_WORKBENCH_UI_PACK.style,
+    interactions: CLASSIC_WORKBENCH_INTERACTION_POLICIES,
+    primitives,
+    i18n: {
+      namespace,
+      t: (key, options) => {
+        const translate = getUiPackFixedTranslator(getWorkbenchLocale(), namespace);
+        return options === undefined ? translate(key) : translate(key, options);
+      }
+    }
+  };
+};
 
 export const loadExternalWorkbenchUiPack = async ({
   packId,
@@ -221,7 +241,7 @@ export const loadExternalWorkbenchUiPack = async ({
     throw new Error(`External UIUX pack entry did not export a WorkbenchUiPackModule: ${packId}`);
   }
   const pack = await importedModule.createPack(
-    createWorkbenchUiPackContext(desktopApi, capabilities)
+    createWorkbenchUiPackContext(desktopApi, capabilities, packId)
   );
   const trustedPack: WorkbenchUiPack = {
     ...pack,
@@ -246,15 +266,6 @@ export const loadExternalWorkbenchUiPack = async ({
   const validation = validateWorkbenchUiPack(trustedPack);
   if (validation.valid === false) {
     throw new Error(`Invalid external UIUX pack ${packId}: ${validation.errors.join("; ")}`);
-  }
-
-  // ponytail: 合并 pack l10n bundles 到 i18next — deep+overwrite 让插件 key 覆盖核心同名 key
-  // ceiling: 不实现卸载 — removeResourceBundle 移除整个 translation namespace 会破坏核心翻译；
-  // pack 切换时新 bundle 覆盖旧 key，旧 pack 独有 key 残留但不影响功能
-  if (runtime.l10nBundles !== undefined) {
-    for (const [locale, bundle] of Object.entries(runtime.l10nBundles)) {
-      i18n.addResourceBundle(locale, "translation", bundle, true, true);
-    }
   }
 
   return trustedPack;

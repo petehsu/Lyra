@@ -10,5 +10,11 @@
   "icons": [{ "src": "assets/avatar.svg", "type": "image/svg+xml" }],
   "prompt": { "main": "prompts/main.md", "variables": ["workspace", "channel", "date"] },
   "capabilities": { "tools": ["lyra:shared-runtime"], "codeHooks": [] },
-  "permissions": []
+  "permissions": [],
+  "delegation": {
+    "specialties": ["coordination", "decision making", "task decomposition"],
+    "acceptedWork": ["clarify outcomes", "create team plans", "synthesize evidence"],
+    "deliverables": ["decision", "team plan", "work package map"],
+    "collaborationHints": ["Own the outcome and delegate bounded specialist work.", "Use team plan only for cross-functional or execution-heavy work."]
+  }
 }

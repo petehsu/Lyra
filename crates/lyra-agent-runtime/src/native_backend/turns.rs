@@ -350,14 +350,45 @@ fn run_oma_turn(
         if pending.is_empty() {
             break;
         }
-        for (target_channel_id, session_agent_id) in pending {
-            run_oma_pending_agent(
-                session_id,
-                turn_id,
-                &target_channel_id,
-                &session_agent_id,
-                cancellation,
-            )?;
+        let mut unique_pending = Vec::new();
+        for entry in pending {
+            if !unique_pending.contains(&entry) {
+                unique_pending.push(entry);
+            }
+        }
+        let workers = unique_pending
+            .into_iter()
+            .map(|(target_channel_id, session_agent_id)| {
+                let session_id = session_id.to_string();
+                let turn_id = turn_id.to_string();
+                let cancellation = cancellation.clone();
+                thread::spawn(move || {
+                    let result = run_oma_pending_agent(
+                        &session_id,
+                        &turn_id,
+                        &target_channel_id,
+                        &session_agent_id,
+                        &cancellation,
+                    );
+                    (target_channel_id, session_agent_id, result)
+                })
+            })
+            .collect::<Vec<_>>();
+        for worker in workers {
+            let (target_channel_id, session_agent_id, result) = worker
+                .join()
+                .map_err(|_| AgentRuntimeError::Core("Oma pending worker panicked".to_string()))?;
+            if let Err(error) = result {
+                if cancellation.load(Ordering::SeqCst) || turn_was_cancelled(session_id, turn_id) {
+                    return Err(AgentRuntimeError::Core("turn cancelled".to_string()));
+                }
+                commit_oma_agent_failure(
+                    session_id,
+                    &target_channel_id,
+                    &session_agent_id,
+                    error.to_string(),
+                )?;
+            }
         }
     }
     if let Ok(mut state) = state().lock()
@@ -387,7 +418,7 @@ fn run_oma_pending_agent(
         target_channel_id,
         session_agent_id,
         cancellation,
-        false,
+        target_channel_id == OMA_DEFAULT_CHANNEL_ID,
     )
 }
 
@@ -400,7 +431,7 @@ fn run_oma_agent_once(
     publish: bool,
 ) -> AgentRuntimeResult<()> {
     let execution_session_id = format!("oma-execution-{}", Uuid::new_v4());
-    let (callback, running_snapshot) = {
+    let (callback, running_snapshot, work_package_id) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -413,9 +444,18 @@ fn run_oma_agent_once(
         execution.ephemeral = true;
         execution.dirty = false;
         activate_oma_channel(&mut execution.snapshot, channel_id)?;
-        let assignment = oma_assignment_for_agent(&execution.snapshot, session_agent_id);
+        let work_package = oma_work_package_for_agent(&execution.snapshot, session_agent_id);
+        let work_package_id = work_package
+            .as_ref()
+            .and_then(|package| package.get("id"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let assignment = work_package
+            .unwrap_or_else(|| oma_assignment_for_agent(&execution.snapshot, session_agent_id));
         set_oma_execution_agent(&mut execution.snapshot, Some(session_agent_id));
         set_oma_execution_assignment(&mut execution.snapshot, assignment);
+        execution.snapshot["oma"]["executingWorkPackageId"] =
+            work_package_id.clone().map_or(Value::Null, Value::from);
         execution.snapshot["oma"]["parentSessionId"] = json!(session_id);
         execution.snapshot["activeTurnId"] = json!(turn_id);
         state
@@ -426,10 +466,16 @@ fn run_oma_agent_once(
             .sessions
             .get_mut(session_id)
             .expect("Oma parent session still exists");
+        if let Some(work_package_id) = work_package_id.as_deref() {
+            set_oma_work_package_status(&mut parent.snapshot, work_package_id, "running", None);
+        }
+        if let Some(oma) = parent.snapshot.get_mut("oma") {
+            set_agent_status(oma, session_agent_id, "running");
+        }
         touch_session(parent);
         let snapshot = parent.snapshot.clone();
         state.save_state()?;
-        (callback, snapshot)
+        (callback, snapshot, work_package_id)
     };
     if publish {
         emit_with_callback(
@@ -443,7 +489,7 @@ fn run_oma_agent_once(
         request.capabilities.supports_streaming = false;
         run_model_loop_without_ui_commit(&execution_session_id, turn_id, request, cancellation)
     });
-    let (text, error) = {
+    let (text, error, replanned) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -464,20 +510,68 @@ fn run_oma_agent_once(
             .get_mut(session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
         merge_oma_execution_channel_context(&mut parent.snapshot, channel_id, &execution.snapshot)?;
+        let mut replanned = false;
+        if let Some(work_package_id) = work_package_id.as_deref() {
+            if let Some(error) = error.as_deref() {
+                replanned =
+                    replan_oma_work_package_once(&mut parent.snapshot, work_package_id, error);
+                if !replanned {
+                    set_oma_work_package_status(
+                        &mut parent.snapshot,
+                        work_package_id,
+                        "failed",
+                        Some(error),
+                    );
+                    queue_oma_team_failure_lead_followup(
+                        &mut parent.snapshot,
+                        work_package_id,
+                        error,
+                    );
+                    queue_oma_team_completion_lead_followup(&mut parent.snapshot);
+                }
+            } else {
+                set_oma_work_package_status(
+                    &mut parent.snapshot,
+                    work_package_id,
+                    "completed",
+                    (!text.trim().is_empty()).then_some(text.as_str()),
+                );
+                queue_oma_team_completion_lead_followup(&mut parent.snapshot);
+            }
+        }
         if let Some(oma) = parent.snapshot.get_mut("oma") {
-            set_agent_status(oma, session_agent_id, "idle");
+            set_agent_status(
+                oma,
+                session_agent_id,
+                match (work_package_id.is_some(), error.is_some(), replanned) {
+                    (true, true, true) => "retrying",
+                    (true, true, false) => "failed",
+                    (true, false, _) => "completed",
+                    (false, _, _) => "idle",
+                },
+            );
         }
         touch_session(parent);
         state.save_state()?;
-        (text, error)
+        (text, error, replanned)
     };
+    if replanned {
+        let _ = start_oma_team_work(session_id);
+        return Ok(());
+    }
     if let Some(error) = error {
+        if work_package_id.is_some() {
+            let _ = start_oma_team_work(session_id);
+        }
         return Err(AgentRuntimeError::Core(error));
     }
     if !text.trim().is_empty() {
         commit_oma_agent_reply(session_id, channel_id, session_agent_id, text, publish)?;
     } else if publish {
         emit_oma_session_snapshot(session_id)?;
+    }
+    if work_package_id.is_some() {
+        let _ = start_oma_team_work(session_id);
     }
     Ok(())
 }
@@ -572,9 +666,10 @@ pub(crate) fn run_oma_direct_ask(
     source_session_agent_id: &str,
     target_session_agent_id: &str,
     text: String,
+    publish_to_group: bool,
 ) -> AgentRuntimeResult<String> {
     let target_channel_id = direct_channel_id(target_session_agent_id);
-    let original_channel_id = {
+    {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
@@ -582,13 +677,7 @@ pub(crate) fn run_oma_direct_ask(
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
-        let original_channel_id = session
-            .snapshot
-            .pointer("/oma/activeChannelId")
-            .and_then(Value::as_str)
-            .unwrap_or(OMA_DEFAULT_CHANNEL_ID)
-            .to_string();
-        activate_oma_channel(&mut session.snapshot, &target_channel_id)?;
+        ensure_oma_channel_message_contexts(&mut session.snapshot);
         let mut request = user_message(text, Vec::new(), now());
         request["metadata"] = json!({
             "oma": {
@@ -599,10 +688,9 @@ pub(crate) fn run_oma_direct_ask(
                 "kind": "agent_ask",
             }
         });
-        push_array(&mut session.snapshot, "messages", request);
+        push_oma_message_to_channel(&mut session.snapshot, &target_channel_id, request)?;
         touch_session(session);
-        original_channel_id
-    };
+    }
     let cancellation = Arc::new(AtomicBool::new(false));
     let result = run_oma_agent_once(
         session_id,
@@ -620,29 +708,35 @@ pub(crate) fn run_oma_direct_ask(
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
-        let reply = session
-            .snapshot
-            .get("messages")
-            .and_then(Value::as_array)
-            .and_then(|messages| {
-                messages.iter().rev().find(|message| {
-                    message.get("role").and_then(Value::as_str) == Some("assistant")
-                        && message
-                            .pointer("/metadata/oma/senderAgentId")
-                            .and_then(Value::as_str)
-                            == Some(target_session_agent_id)
-                })
+        let reply = oma_channel_messages(&session.snapshot, &target_channel_id)
+            .iter()
+            .rev()
+            .find(|message| {
+                message.get("role").and_then(Value::as_str) == Some("assistant")
+                    && message
+                        .pointer("/metadata/oma/senderAgentId")
+                        .and_then(Value::as_str)
+                        == Some(target_session_agent_id)
             })
             .and_then(|message| message.get("text").and_then(Value::as_str))
             .unwrap_or_default()
             .to_string();
-        activate_oma_channel(&mut session.snapshot, &original_channel_id)?;
-        set_oma_execution_agent(&mut session.snapshot, None);
         touch_session(session);
         state.save_state()?;
         reply
     };
-    result.map(|_| reply)
+    result.and_then(|_| {
+        if publish_to_group && !reply.trim().is_empty() {
+            commit_oma_agent_reply(
+                session_id,
+                OMA_DEFAULT_CHANNEL_ID,
+                target_session_agent_id,
+                reply.clone(),
+                true,
+            )?;
+        }
+        Ok(reply)
+    })
 }
 
 pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelRequest> {

@@ -1,0 +1,37 @@
+name: Dispatch language-pack source updates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
+      - apps/desktop/src/shared/language-packs.ts
+      - tools/generate-language-pack-source-manifest.ts
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx tools/generate-language-pack-source-manifest.ts --output "$RUNNER_TEMP/source-manifest.v1.json"
+      - name: Notify Lyra-Language-Packs
+        env:
+          GH_TOKEN: ${{ secrets.LYRA_LANGUAGE_PACKS_DISPATCH_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN"
+          manifest_hash="$(node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).contentHash)' "$RUNNER_TEMP/source-manifest.v1.json")"
+          gh api --method POST "repos/petehsu/Lyra-Language-Packs/dispatches" \
+            -f event_type="lyra-source-updated" \
+            -f "client_payload[commit]=${GITHUB_SHA}" \
+            -f "client_payload[manifestHash]=${manifest_hash}"

@@ -7,7 +7,9 @@ type WorkbenchTranslator = (key: I18nKey) => string;
 
 export const createInitialWorkbenchPreferences = (): WorkbenchPreferences => ({
   locale: WORKBENCH_CONFIG.locale,
+  localePreference: { mode: "system" },
   theme: WORKBENCH_CONFIG.theme,
+  windowMaterialEnabled: true,
   uiPackId: WORKBENCH_CONFIG.uiPackId,
   splitTriggerMode: "ctrl_left_drag",
   splitThreePaneLayout: "adaptive",

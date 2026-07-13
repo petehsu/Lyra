@@ -142,12 +142,46 @@ function extractUnexternalizedStrings(files: string[]): { file: string; line: nu
 
 // --- Reporting ---
 
-type IssueKind = "missing-in-en" | "missing-in-zh" | "undefined-key" | "unused-key" | "duplicate-key" | "unexternalized-string";
+type IssueKind =
+  | "missing-in-en"
+  | "missing-in-zh"
+  | "interpolation-mismatch"
+  | "invalid-plural-pair"
+  | "undefined-key"
+  | "unused-key"
+  | "duplicate-key"
+  | "unexternalized-string";
 const issues: { kind: IssueKind; key: string }[] = [];
 
 // 1. Main namespace parity
 for (const k of zhKeys) if (!enKeys.has(k)) issues.push({ kind: "missing-in-en", key: k });
 for (const k of enKeys) if (!zhKeys.has(k)) issues.push({ kind: "missing-in-zh", key: k });
+
+const interpolationTokens = (value: string): readonly string[] =>
+  Array.from(value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g), (match) => match[1]!)
+    .sort();
+
+for (const key of enKeys) {
+  if (!zhKeys.has(key)) continue;
+  const enTokens = interpolationTokens(EN_US_DICTIONARY[key as keyof typeof EN_US_DICTIONARY]);
+  const zhTokens = interpolationTokens(ZH_CN_DICTIONARY[key as keyof typeof ZH_CN_DICTIONARY]);
+  if (enTokens.join(",") !== zhTokens.join(",")) {
+    issues.push({
+      kind: "interpolation-mismatch",
+      key: `${key} (en-US: ${enTokens.join(",") || "none"}; zh-CN: ${zhTokens.join(",") || "none"})`
+    });
+  }
+}
+
+for (const key of enKeys) {
+  if (!key.endsWith("_one")) continue;
+  const baseKey = key.slice(0, -"_one".length);
+  if (!enKeys.has(baseKey)) continue;
+  const otherKey = `${baseKey}_other`;
+  if (!enKeys.has(otherKey) || !zhKeys.has(otherKey)) {
+    issues.push({ kind: "invalid-plural-pair", key: `${key} requires ${otherKey}` });
+  }
+}
 
 // 2. Undefined keys in code
 const srcFiles = scanDir(WORKBENCH_SRC, [".ts", ".tsx"]);
@@ -205,6 +239,8 @@ for (const { kind, key } of issues) {
 const LABELS: Record<IssueKind, string> = {
   "missing-in-en": "Main: key in zh-CN but missing in en-US",
   "missing-in-zh": "Main: key in en-US but missing in zh-CN",
+  "interpolation-mismatch": "Locales use different interpolation variables",
+  "invalid-plural-pair": "Plural _one key is missing its _other counterpart",
   "undefined-key": "Code uses key not defined in any dictionary",
   "unused-key": "Dictionary key not used in code",
   "duplicate-key": "Key duplicated across surface files (spread merge silently overwrites)",

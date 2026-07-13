@@ -1,0 +1,34 @@
+name: Check language-pack source manifest
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
+      - apps/desktop/src/shared/language-packs.ts
+      - language-packs/source-manifest.v1.json
+      - tools/generate-language-pack-source-manifest.ts
+  push:
+    branches: [main]
+    paths:
+      - apps/desktop/src/modules/workbench/i18n/locales/en-US/**
+      - apps/desktop/src/shared/language-packs.ts
+      - language-packs/source-manifest.v1.json
+      - tools/generate-language-pack-source-manifest.ts
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx tools/generate-language-pack-source-manifest.ts --check

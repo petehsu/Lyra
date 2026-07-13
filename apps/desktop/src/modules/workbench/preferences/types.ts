@@ -1,6 +1,7 @@
 import type { WorkbenchLocale } from "../i18n";
 import type { WorkbenchThemeId } from "../theme";
 import type { WorkbenchUiPackId } from "../ui-platform";
+import type { AuthLocalePreference } from "../../../shared/auth";
 import type {
   SystemNotificationClickBehavior,
   SystemNotificationMode
@@ -28,7 +29,9 @@ export type WorkbenchEditorGpuAcceleration = "off" | "auto";
 
 export type WorkbenchPreferences = {
   readonly locale: WorkbenchLocale;
+  readonly localePreference?: AuthLocalePreference;
   readonly theme: WorkbenchThemeId;
+  readonly windowMaterialEnabled: boolean;
   readonly uiPackId: WorkbenchUiPackId;
   readonly splitTriggerMode: WorkbenchSplitTriggerMode;
   readonly splitThreePaneLayout: WorkbenchSplitThreePaneLayout;
@@ -50,6 +53,7 @@ export type WorkbenchPreferencesModel = {
   readonly preferences: WorkbenchPreferences;
   readonly setLocale: (locale: WorkbenchLocale) => void;
   readonly setTheme: (theme: WorkbenchThemeId) => void;
+  readonly setWindowMaterialEnabled: (enabled: boolean) => void;
   readonly setUiPackId: (packId: WorkbenchUiPackId) => void;
   readonly setSplitTriggerMode: (mode: WorkbenchSplitTriggerMode) => void;
   readonly setSplitThreePaneLayout: (layout: WorkbenchSplitThreePaneLayout) => void;

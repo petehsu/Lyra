@@ -45,6 +45,10 @@
   background: var(--lyra-settings-bg);
 }
 
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] .lyra-settings-surface {
+  background: transparent;
+}
+
 :root[data-lyra-window-material="opaque"] .lyra-settings-surface {
   background: var(--lyra-settings-bg);
 }
@@ -492,6 +496,146 @@
 
 .lyra-settings-select-content .lyra-ui-select-item[data-state="checked"][data-highlighted] {
   background: var(--lyra-select-item-hover-bg) !important;
+}
+
+.lyra-language-picker-trigger {
+  width: var(--lyra-unit-176);
+  justify-content: space-between;
+  gap: var(--lyra-space-8);
+  background: var(--lyra-app-input-bg) !important;
+  border-color: var(--lyra-app-input-border) !important;
+  border-radius: var(--lyra-radius-6) !important;
+}
+
+.lyra-language-picker-trigger:hover,
+.lyra-language-picker-trigger:focus-visible {
+  background: var(--lyra-app-input-hover-bg) !important;
+  border-color: var(--lyra-app-input-focus-border) !important;
+  box-shadow: none !important;
+}
+
+.lyra-language-picker-trigger-copy,
+.lyra-language-picker-option-copy {
+  min-width: 0;
+  display: block;
+  text-align: left;
+}
+
+.lyra-language-picker-trigger-copy > span,
+.lyra-language-picker-option-copy {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-language-picker-popover {
+  width: min(var(--lyra-unit-320), calc(100vw - var(--lyra-space-24)));
+  padding: var(--lyra-space-6);
+  background: var(--lyra-app-popover-bg) !important;
+  border-color: var(--lyra-app-border) !important;
+}
+
+.lyra-language-picker-search {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-space-6);
+  padding: var(--lyra-space-4) var(--lyra-space-6);
+  color: var(--lyra-app-text-muted);
+  border-bottom: 1px solid var(--lyra-app-border);
+}
+
+.lyra-language-picker-search .lyra-ui-input {
+  min-width: 0;
+  height: var(--lyra-unit-32);
+  border: 0;
+  box-shadow: none;
+}
+
+.lyra-language-picker-results {
+  max-height: var(--lyra-unit-320);
+  overflow-y: auto;
+  padding-top: var(--lyra-space-4);
+}
+
+.lyra-language-picker-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  min-height: var(--lyra-unit-36);
+  gap: var(--lyra-space-4);
+  padding: var(--lyra-space-2) var(--lyra-space-4);
+  color: inherit;
+  background: transparent;
+  border-radius: var(--lyra-radius-4);
+}
+
+.lyra-language-picker-option:hover,
+.lyra-language-picker-option[data-active] {
+  background: var(--lyra-app-row-hover-bg);
+}
+
+.lyra-language-picker-option[data-selected] {
+  background: var(--lyra-app-row-active-bg);
+}
+
+.lyra-language-picker-option-select {
+  min-width: 0;
+  min-height: var(--lyra-unit-32);
+  flex: 1 1 auto;
+  padding: 0 var(--lyra-space-4);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lyra-language-picker-option-select:disabled {
+  cursor: default;
+}
+
+.lyra-language-picker-option-actions {
+  min-width: var(--lyra-unit-28);
+  flex: 0 0 var(--lyra-unit-28);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lyra-language-picker-action {
+  width: var(--lyra-unit-28);
+  height: var(--lyra-unit-28);
+}
+
+.lyra-language-picker-action-download {
+  color: var(--lyra-status-success);
+}
+
+.lyra-language-picker-current {
+  color: var(--lyra-app-text-muted);
+}
+
+.lyra-language-picker-operation {
+  animation: lyra-language-picker-spin 900ms linear infinite;
+  color: var(--lyra-app-text-muted);
+}
+
+.lyra-language-picker-error {
+  color: var(--lyra-status-error);
+}
+
+@keyframes lyra-language-picker-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lyra-language-picker-empty {
+  margin: 0;
+  padding: var(--lyra-space-16) var(--lyra-space-8);
+  color: var(--lyra-app-text-muted);
+  font-size: var(--lyra-font-size-sm);
+  text-align: center;
 }
 
 .lyra-settings-inline-input {

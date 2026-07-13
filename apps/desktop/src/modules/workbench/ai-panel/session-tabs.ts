@@ -211,6 +211,20 @@ const tabFromSnapshot = (
   ...(snapshot.workingDirIsHome === undefined ? {} : { workingDirIsHome: snapshot.workingDirIsHome })
 });
 
+const sessionTabsEqual = (
+  left: AiPanelSessionTab,
+  right: AiPanelSessionTab
+): boolean =>
+  left.tabId === right.tabId
+  && left.sessionId === right.sessionId
+  && left.title === right.title
+  && left.lastKnownStatus === right.lastKnownStatus
+  && left.updatedAt === right.updatedAt
+  && left.workingDir === right.workingDir
+  && left.projectBound === right.projectBound
+  && left.workingDirIsHome === right.workingDirIsHome
+  && left.draftWorkingDir === right.draftWorkingDir;
+
 const runtimeEventSessionId = (event: AgentRuntimeEvent): string | null => {
   if (event.kind === "sessionSnapshot") return event.snapshot.id;
   if ("sessionId" in event) return event.sessionId;
@@ -273,6 +287,14 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
         (tab) => tab.tabId === current.activeTabId && tab.sessionId === null
       );
       const existingIndex = current.tabs.findIndex((tab) => tab.sessionId === snapshot.id);
+      const existingTab = existingIndex < 0 ? undefined : current.tabs[existingIndex];
+      if (
+        activate === false
+        && existingTab !== undefined
+        && sessionTabsEqual(existingTab, tabFromSnapshot(snapshot, existingTab.tabId))
+      ) {
+        return current;
+      }
       const tabs =
         existingIndex === -1
           ? [...current.tabs, nextTab]
@@ -437,15 +459,21 @@ export const useWorkbenchAiSessionTabs = (desktopApi: LyraDesktopApi | null) => 
       }
       const status = statusFromRuntimeEvent(event);
       if (status !== null) {
-        setState((current) => normalizeTabs(
-          current.tabs.map((tab) =>
+        setState((current) => {
+          const target = current.tabs.find((tab) => tab.sessionId === sessionId);
+          if (target?.lastKnownStatus === status) {
+            return current;
+          }
+          return normalizeTabs(
+            current.tabs.map((tab) =>
             tab.sessionId === sessionId
               ? { ...tab, lastKnownStatus: status }
               : tab
-          ),
-          current.activeTabId,
-          current.activeSessionId
-        ));
+            ),
+            current.activeTabId,
+            current.activeSessionId
+          );
+        });
       }
       if (
         event.kind === "turnFinished" ||

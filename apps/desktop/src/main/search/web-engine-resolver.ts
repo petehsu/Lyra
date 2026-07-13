@@ -15,6 +15,24 @@ const clampTimeout = (value: number | undefined): number => {
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, value));
 };
 
+const toAcceptLanguage = (locale: string): string => {
+  let normalized = "en-US";
+  try {
+    normalized = Intl.getCanonicalLocales(locale.trim())[0] ?? normalized;
+  } catch {
+    // IPC input is untrusted at this boundary. A valid default keeps the
+    // request usable without allowing malformed header values through.
+  }
+  const language = normalized.split("-")[0] ?? "en";
+  const fallbacks = [`${language};q=0.9`];
+  if (normalized.toLowerCase() !== "en-us" && language.toLowerCase() !== "en") {
+    fallbacks.push("en-US;q=0.8", "en;q=0.7");
+  } else if (normalized.toLowerCase() !== "en-us") {
+    fallbacks.push("en-US;q=0.8");
+  }
+  return [normalized, ...fallbacks].join(",");
+};
+
 export const resolveSearchUrl = (
   engine: SearchWebEngineDefinition,
   query: string,
@@ -45,6 +63,7 @@ const isUsableEngine = (
 const probeEngine = async (
   engine: SearchWebEngineDefinition,
   query: string,
+  locale: string,
   signal: AbortSignal
 ): Promise<{ readonly engine: SearchWebEngineDefinition; readonly latencyMs: number }> => {
   const startedAt = Date.now();
@@ -55,7 +74,7 @@ const probeEngine = async (
     signal,
     headers: {
       accept: "text/html,*/*;q=0.8",
-      "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+      "accept-language": toAcceptLanguage(locale),
       "user-agent":
         "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36 Lyra/0.1"
     }
@@ -90,7 +109,7 @@ export const resolveWebSearchEngine = async (
 
   try {
     const winner = await Promise.any(
-      engines.map((engine) => probeEngine(engine, query, controller.signal))
+      engines.map((engine) => probeEngine(engine, query, request.locale, controller.signal))
     );
     controller.abort();
     return {

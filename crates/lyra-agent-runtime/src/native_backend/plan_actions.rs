@@ -150,11 +150,33 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
         .or_else(|| string_opt(&payload, "resolution"))
         .ok_or_else(|| AgentRuntimeError::Core("action is required".to_string()))?;
     let feedback = string_opt(&payload, "feedback");
+    let oma_channel_id = string_opt(&payload, "omaChannelId");
+    let oma_source_session_agent_id = string_opt(&payload, "omaSourceSessionAgentId");
     let should_continue = payload
         .get("continue")
         .or_else(|| payload.get("resume"))
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    if !matches!(
+        action.as_str(),
+        "approve"
+            | "approved"
+            | "reject"
+            | "rejected"
+            | "set_aside"
+            | "set-aside"
+            | "defer"
+            | "resume"
+            | "reopen"
+            | "reactivate"
+            | "request_revision"
+            | "revise"
+            | "revision"
+    ) {
+        return Err(AgentRuntimeError::Core(format!(
+            "unsupported plan review action: {action}"
+        )));
+    }
     let (callback, snapshot, plan, resolution, continuation) = {
         let mut state = state()
             .lock()
@@ -164,6 +186,51 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        let restore_oma_channel_id = if let Some(oma_channel_id) = oma_channel_id.as_deref() {
+            if session.snapshot.get("agentMode").and_then(Value::as_str) != Some("oma") {
+                return Err(AgentRuntimeError::Core(
+                    "omaChannelId is only valid for an Oma session".to_string(),
+                ));
+            }
+            ensure_oma_channel_message_contexts(&mut session.snapshot);
+            let exists = session
+                .snapshot
+                .pointer("/oma/channels")
+                .and_then(Value::as_array)
+                .is_some_and(|channels| {
+                    channels.iter().any(|channel| {
+                        channel.get("id").and_then(Value::as_str) == Some(oma_channel_id)
+                            && channel.get("archived").and_then(Value::as_bool) != Some(true)
+                    })
+                });
+            if !exists {
+                return Err(AgentRuntimeError::Core(format!(
+                    "Oma channel not found: {oma_channel_id}"
+                )));
+            }
+            let active_channel_id = session
+                .snapshot
+                .pointer("/oma/activeChannelId")
+                .and_then(Value::as_str)
+                .unwrap_or(OMA_DEFAULT_CHANNEL_ID)
+                .to_string();
+            let plan = if active_channel_id == oma_channel_id {
+                session.snapshot.get("plan")
+            } else {
+                session
+                    .snapshot
+                    .pointer(&format!("/oma/channelContexts/{oma_channel_id}/plan"))
+            };
+            if !plan.is_some_and(Value::is_object) {
+                return Err(AgentRuntimeError::Core("no active plan to review".to_string()));
+            }
+            if active_channel_id != oma_channel_id {
+                activate_oma_channel(&mut session.snapshot, oma_channel_id)?;
+            }
+            Some(active_channel_id)
+        } else {
+            None
+        };
         let mut plan = session
             .snapshot
             .get("plan")
@@ -207,16 +274,15 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
                     }),
                 )
             }
-            other => {
-                return Err(AgentRuntimeError::Core(format!(
-                    "unsupported plan review action: {other}"
-                )));
-            }
+            _ => unreachable!("validated plan review action"),
         };
         let scope = plan_scope_from_session(session);
         session.snapshot["plan"] = plan.clone();
         touch_session(session);
         persist_plan_snapshot(&root, &session_id, &scope, &plan)?;
+        if let Some(restore_oma_channel_id) = restore_oma_channel_id {
+            activate_oma_channel(&mut session.snapshot, &restore_oma_channel_id)?;
+        }
         let snapshot = session.snapshot.clone();
         let callback = state.event_callback.clone();
         state.save_state()?;
@@ -234,6 +300,10 @@ pub(crate) fn plan_review_respond(payload: Value) -> AgentRuntimeResult<Value> {
             "kind": "planUpdated",
             "sessionId": session_id,
             "plan": plan,
+            "omaSource": oma_channel_id.as_ref().zip(oma_source_session_agent_id.as_ref()).map(|(channel_id, session_agent_id)| json!({
+                "sessionAgentId": session_agent_id,
+                "channelId": channel_id,
+            })),
         }),
     );
     emit_with_callback(
@@ -271,6 +341,15 @@ fn resume_plan_review_continuation(
     snapshot: &Value,
     continuation: PlanReviewContinuation,
 ) -> AgentRuntimeResult<Value> {
+    if matches!(continuation, PlanReviewContinuation::Approved { .. })
+        && start_oma_team_work(session_id)?
+    {
+        return send_turn(json!({
+            "sessionId": session_id,
+            "text": "Runtime continuation: the user approved the Oma Team Plan. Announce that work packages are running, keep group updates concise, and synthesize only public completion summaries. Do not rewrite the Team Plan or run implementation work yourself unless a work package is assigned to Lead.",
+            "uiHidden": true
+        }));
+    }
     let plan = snapshot
         .get("plan")
         .filter(|value| value.is_object())

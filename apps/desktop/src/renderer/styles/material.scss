@@ -200,26 +200,54 @@
 }
 
 :root[data-lyra-window-material="native"] {
-  --material-shell-background: transparent;
-  --material-sidebar-background: color-mix(in srgb, var(--lyra-app-sidebar-bg) 66%, transparent);
-  --material-toolbar-background: color-mix(in srgb, var(--lyra-app-sidebar-bg) 58%, transparent);
-  --material-panel-background: color-mix(in srgb, var(--lyra-app-panel-bg) 82%, transparent);
-  --material-popover-background: color-mix(in srgb, var(--lyra-app-popover-bg) 96%, transparent);
-  --material-border: color-mix(in srgb, var(--lyra-app-border) 76%, transparent);
-  --material-highlight: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 36%, transparent);
+  // macOS already supplies the blur through BrowserWindow vibrancy. Keep the
+  // renderer tint light so the desktop remains visible through every surface.
+  --material-shell-background: color-mix(in srgb, var(--lyra-material-solid-bg, var(--lyra-app-bg)) 28%, transparent);
+  --material-sidebar-background: color-mix(in srgb, var(--lyra-material-solid-sidebar-bg, var(--lyra-app-sidebar-bg)) 34%, transparent);
+  --material-toolbar-background: color-mix(in srgb, var(--lyra-material-solid-sidebar-bg, var(--lyra-app-sidebar-bg)) 26%, transparent);
+  --material-panel-background: color-mix(in srgb, var(--lyra-material-solid-panel-bg, var(--lyra-app-panel-bg)) 30%, transparent);
+  --material-popover-background: color-mix(in srgb, var(--lyra-material-solid-popover-bg, var(--lyra-app-popover-bg)) 92%, transparent);
+  --material-border: color-mix(in srgb, var(--lyra-material-solid-border, var(--lyra-app-border)) 64%, transparent);
+  --material-highlight: color-mix(in srgb, var(--lyra-material-solid-surface-strong-bg, var(--lyra-app-surface-strong-bg)) 36%, transparent);
   --material-panel-shadow: 0 var(--lyra-unit-14) var(--lyra-unit-36) color-mix(in srgb, var(--lyra-text-primary) 10%, transparent);
+  --material-blur-sm: none;
+  --material-blur-md: none;
+  --material-blur-lg: none;
+  --material-saturate: none;
 }
 
 :root[data-lyra-window-material="native"][data-lyra-theme-tone="dark"] {
-  --material-sidebar-background: color-mix(in srgb, var(--lyra-app-sidebar-bg) 74%, transparent);
-  --material-toolbar-background: color-mix(in srgb, var(--lyra-app-surface-bg) 68%, transparent);
-  --material-panel-background: color-mix(in srgb, var(--lyra-app-panel-bg) 76%, transparent);
-  --material-popover-background: color-mix(in srgb, var(--lyra-app-popover-bg) 94%, transparent);
-  --material-border: color-mix(in srgb, var(--lyra-app-border) 86%, transparent);
-  --material-highlight: color-mix(in srgb, var(--lyra-app-surface-strong-bg) 42%, transparent);
+  --material-sidebar-background: color-mix(in srgb, var(--lyra-material-solid-sidebar-bg, var(--lyra-app-sidebar-bg)) 40%, transparent);
+  --material-toolbar-background: color-mix(in srgb, var(--lyra-material-solid-surface-bg, var(--lyra-app-surface-bg)) 32%, transparent);
+  --material-panel-background: color-mix(in srgb, var(--lyra-material-solid-panel-bg, var(--lyra-app-panel-bg)) 36%, transparent);
+  --material-popover-background: color-mix(in srgb, var(--lyra-material-solid-popover-bg, var(--lyra-app-popover-bg)) 90%, transparent);
+  --material-border: color-mix(in srgb, var(--lyra-material-solid-border, var(--lyra-app-border)) 72%, transparent);
+  --material-highlight: color-mix(in srgb, var(--lyra-material-solid-surface-strong-bg, var(--lyra-app-surface-strong-bg)) 42%, transparent);
+}
+
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"][data-lyra-theme-tone="light"] {
+  --material-shell-background: transparent;
+  --material-sidebar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #f6f5f6) 10%, transparent);
+  --material-toolbar-background: color-mix(in srgb, var(--lyra-material-solid-bg, #f6f5f6) 12%, transparent);
+  --material-panel-background: transparent;
+  --material-border: color-mix(in srgb, var(--lyra-material-solid-border, #dedddd) 34%, transparent);
+  --material-highlight: color-mix(in srgb, var(--lyra-material-solid-bg, #f6f5f6) 20%, transparent);
 }
 
 :root[data-lyra-window-material="opaque"] {
+  --material-shell-background: var(--lyra-app-bg);
+  --material-sidebar-background: var(--lyra-app-sidebar-bg);
+  --material-toolbar-background: var(--lyra-app-sidebar-bg);
+  --material-panel-background: var(--lyra-app-panel-bg);
+  --material-popover-background: var(--lyra-app-popover-bg);
+  --material-blur-sm: none;
+  --material-blur-md: none;
+  --material-blur-lg: none;
+  --material-saturate: none;
+  --material-opacity: 1;
+}
+
+:root[data-lyra-material-enabled="false"] {
   --material-shell-background: var(--lyra-app-bg);
   --material-sidebar-background: var(--lyra-app-sidebar-bg);
   --material-toolbar-background: var(--lyra-app-sidebar-bg);
@@ -240,9 +268,137 @@ body {
   background: var(--material-shell-background);
 }
 
-:root[data-lyra-window-material="native"],
-:root[data-lyra-window-material="native"] body,
-:root[data-lyra-window-material="native"] #app,
-:root[data-lyra-window-material="native"] .lyra-root {
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"],
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] body,
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] #app,
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] .lyra-root {
   background: transparent;
+}
+
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"] {
+  .lyra-ai-panel-shell,
+  .lyra-ai-panel-shell.lyra-app-panel,
+  .lyra-file-manager-surface,
+  .lyra-file-editor-surface,
+  .lyra-panel-bottom,
+  .lyra-terminal-dock,
+  .lyra-terminal-stage,
+  .lyra-terminal-workspace-surface,
+  .lyra-terminal-pane,
+  .lyra-terminal-pane-active,
+  .lyra-terminal-pane-body,
+  .lyra-terminal-host {
+    background: transparent;
+  }
+
+  --lyra-terminal-bg: transparent;
+  --lyra-terminal-cursor-accent: transparent;
+
+  .lyra-terminal-host .xterm,
+  .lyra-terminal-host .xterm-viewport,
+  .lyra-terminal-host .xterm-rows {
+    background-color: transparent !important;
+  }
+
+  .lyra-agents-composer {
+    background: var(
+      --lyra-material-solid-surface-strong-bg,
+      var(--lyra-app-surface-strong-bg)
+    );
+  }
+
+  .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input,
+  .lyra-agents-composer > .lyra-agents-citation-composer-input.lyra-agents-composer-input,
+  .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:hover:not(:disabled),
+  .lyra-agents-composer > .lyra-ui-textarea.lyra-agents-composer-input:focus-visible,
+  .lyra-agents-composer > .lyra-agents-citation-composer-input.lyra-agents-composer-input:focus-visible {
+    background: var(
+      --lyra-material-solid-panel-bg,
+      var(--lyra-app-panel-bg)
+    );
+  }
+}
+
+:root[data-lyra-window-material="native"][data-lyra-material-enabled="true"][data-lyra-theme-tone="light"] {
+  .lyra-root::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, #f4f5f6 72%, transparent);
+  }
+
+  .lyra-root > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .lyra-agents-app,
+  .lyra-settings-main {
+    background: transparent;
+  }
+}
+
+:root,
+body,
+#app,
+.lyra-root,
+.lyra-root::before,
+.lyra-root::after,
+.lyra-root .lyra-ui-app-shell-main,
+.lyra-root .lyra-workspace,
+.lyra-root .lyra-app-panel,
+.lyra-root .lyra-app-group,
+.lyra-root .lyra-ui-card {
+  transition:
+    background-color 420ms ease,
+    border-color 420ms ease,
+    box-shadow 420ms ease,
+    color 420ms ease,
+    fill 420ms ease,
+    stroke 420ms ease;
+}
+
+.lyra-root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  background: var(--lyra-theme-transition-from-bg, transparent);
+  opacity: 0;
+}
+
+.lyra-root.lyra-theme-transition::after {
+  animation: lyra-theme-crossfade 420ms ease-out both;
+}
+
+@keyframes lyra-theme-crossfade {
+  from {
+    opacity: 0.92;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  body,
+  #app,
+  .lyra-root,
+  .lyra-root::before,
+  .lyra-root::after,
+  .lyra-root .lyra-ui-app-shell-main,
+  .lyra-root .lyra-workspace,
+  .lyra-root .lyra-app-panel,
+  .lyra-root .lyra-app-group,
+  .lyra-root .lyra-ui-card {
+    transition: none;
+  }
+
+  .lyra-root.lyra-theme-transition::after {
+    animation: none;
+  }
 }

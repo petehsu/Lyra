@@ -1,6 +1,7 @@
 import type {
   LyraDesktopApi,
 } from "../../../shared/desktop-bridge";
+import { getWorkbenchLocale } from "../i18n";
 
 import type {
   AggregatedSearchPayload,
@@ -66,6 +67,7 @@ export const resolveWebSearchTarget = async (options: {
   const response = await options.desktopApi.search.resolveWebSearchEngine({
     query,
     engines,
+    locale: getWorkbenchLocale(),
     timeoutMs: options.timeoutMs ?? DEFAULT_WEB_SEARCH_RESOLVE_TIMEOUT_MS
   });
   return {

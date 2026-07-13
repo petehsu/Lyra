@@ -31,8 +31,9 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint:ui-style": "node --import tsx ../../tools/verify-workbench-style.ts",
-    "lint:i18n": "node --import tsx ../../tools/verify-i18n.ts",
+    "lint:i18n": "node --import tsx ../../tools/verify-i18n.ts --check-unexternalized",
     "i18n:extract": "node --import tsx ../../tools/verify-i18n.ts --report-unused",
+    "i18n:language-pack-manifest": "node --import tsx ../../tools/generate-language-pack-source-manifest.ts",
     "i18n:export": "python3 ../../tools/i18n-export.py",
     "i18n:import": "python3 ../../tools/i18n-import.py",
     "test": "vitest run",
@@ -91,6 +92,14 @@
       "category": "Development",
       "icon": "resources/icons/linux"
     },
+    "protocols": [
+      {
+        "name": "Lyra",
+        "schemes": [
+          "lyra"
+        ]
+      }
+    ],
     "afterPack": "../../scripts/desktop/after-pack-linux.cjs",
     "afterSign": "../../scripts/desktop/notarize-mac.cjs",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
@@ -165,6 +174,7 @@
     "@fontsource-variable/noto-sans-sc": "^5.2.10",
     "@fontsource/geist-mono": "^5.2.8",
     "@fontsource/geist-sans": "^5.2.5",
+    "@fontsource/zen-dots": "^5.2.8",
     "@lobehub/icons": "1.80.0",
     "@lyra/markdown-render": "file:../../packages/markdown-render",
     "@novnc/novnc": "^1.7.0",
@@ -181,6 +191,7 @@
     "@radix-ui/react-tooltip": "^1.2.9",
     "@react-three/fiber": "^8.18.0",
     "@streamdown/cjk": "^1.0.3",
+    "@supabase/supabase-js": "^2.110.2",
     "@xterm/addon-fit": "^0.11.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

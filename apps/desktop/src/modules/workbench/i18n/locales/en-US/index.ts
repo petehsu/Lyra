@@ -12,6 +12,7 @@ import { softwareStore } from "./software-store";
 import { notifications } from "./notifications";
 import { aiPanel } from "./ai-panel";
 import { location } from "./location";
+import { startup } from "./startup";
 
 // ponytail: spread 合并保持 typeof 推导链 — I18nKey = keyof typeof EN_US_DICTIONARY
 export const EN_US_DICTIONARY = {
@@ -29,4 +30,5 @@ export const EN_US_DICTIONARY = {
   ...notifications,
   ...aiPanel,
   ...location,
+  ...startup,
 } as const;

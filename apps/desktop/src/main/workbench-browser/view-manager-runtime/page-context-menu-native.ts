@@ -1,8 +1,8 @@
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
 
 import {
-  browserContextMenuLabels,
   normalizeBrowserContextMenuLocale,
+  type BrowserContextMenuLabels,
   type BrowserContextMenuLocale
 } from "../../../shared/browser-context-menu-labels";
 import type {
@@ -25,7 +25,7 @@ type ShowNativePageContextMenuParams = {
   readonly entry: BrowserPageEntry;
   readonly menu: WorkbenchBrowserPageContextMenuPayload;
   readonly tabTitle: string;
-  readonly locale: BrowserContextMenuLocale;
+  readonly labels: BrowserContextMenuLabels;
   readonly host: PageContextActionHost;
 };
 
@@ -47,13 +47,13 @@ export const readBrowserContextMenuLocaleFromPreferences = (
   rawPreferences: string | null | undefined
 ): BrowserContextMenuLocale => {
   if (rawPreferences === null || rawPreferences === undefined || rawPreferences.trim().length === 0) {
-    return "zh-CN";
+    return "en-US";
   }
   try {
     const parsed = JSON.parse(rawPreferences) as { readonly locale?: unknown };
     return normalizeBrowserContextMenuLocale(parsed.locale);
   } catch {
-    return "zh-CN";
+    return "en-US";
   }
 };
 
@@ -62,10 +62,9 @@ export const showNativePageContextMenu = ({
   entry,
   menu,
   tabTitle,
-  locale,
+  labels,
   host
 }: ShowNativePageContextMenuParams): void => {
-  const labels = browserContextMenuLabels(locale);
   const template: MenuItemConstructorOptions[] = [];
 
   template.push({

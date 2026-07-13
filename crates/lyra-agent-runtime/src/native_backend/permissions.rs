@@ -417,14 +417,25 @@ fn wait_for_permission_internal_with_timeout(
     cancellation: Option<&Arc<AtomicBool>>,
     timeout: Duration,
 ) -> AgentRuntimeResult<bool> {
+    let mut request = request;
     let request_id = request.id.clone();
-    let session_id = request.session_id.clone();
     let turn_id = request.turn_id.clone();
-    let (callback, events) = {
+    let (callback, events, session_id) = {
         let mut state = state()
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let callback = state.event_callback.clone();
+        let oma_source = state
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| oma_interaction_source(&session.snapshot));
+        let session_id = state
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| oma_parent_session_id(&session.snapshot))
+            .filter(|parent_session_id| state.sessions.contains_key(parent_session_id))
+            .unwrap_or_else(|| request.session_id.clone());
+        request.session_id = session_id.clone();
         if let Some(session) = state.sessions.get_mut(&session_id) {
             set_runtime_turn_state(
                 session,
@@ -459,6 +470,7 @@ fn wait_for_permission_internal_with_timeout(
                 "why": request.why,
                 "toolCallId": request.tool_call_id,
                 "turnId": turn_id,
+                "omaSource": oma_source,
             }),
             json!({
                 "kind": "turnStateChanged",
@@ -471,7 +483,7 @@ fn wait_for_permission_internal_with_timeout(
         if let Some(snapshot) = snapshot {
             events.push(json!({ "kind": "sessionSnapshot", "snapshot": snapshot }));
         }
-        (callback, events)
+        (callback, events, session_id)
     };
     for event in events {
         emit_with_callback(&callback, event);

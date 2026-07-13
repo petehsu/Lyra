@@ -2,7 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useState } from "react";
 
-import type { ChatMessage, SessionMeta } from "../../core/types";
+import type { ChatMessage, OmaControls, SessionMeta } from "../../core/types";
+import type { AgentSessionSnapshot } from "../../../../../../shared/agent";
+import { normalizeAgentSessionSnapshot } from "../../../../agent-session-view-model";
 import { createDataProviderValue } from "../../data/createDataProviderValue";
 import { DataContextProvider } from "../../data/DataProvider";
 import { APP_CONFIG } from "../../core/config";
@@ -34,6 +36,8 @@ const makeMessage = (index: number): ChatMessage => ({
 });
 
 const allMessages = Array.from({ length: 30 }, (_, index) => makeMessage(index + 1));
+const longThreadMessages = Array.from({ length: 200 }, (_, index) => makeMessage(index + 1));
+let resizeObserverInstanceCount = 0;
 
 function RenderBudgetChatHarness({
   initialBudget = 12,
@@ -118,13 +122,30 @@ const primeScroll = (
   fireEvent.scroll(scroll);
 };
 
+const waitForMessageMeasurements = (): Promise<void> =>
+  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
 describe("ChatView render-budget message window", () => {
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", class {
-      observe(): void {}
+      private readonly callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverInstanceCount += 1;
+        this.callback = callback;
+      }
+
+      observe(target: Element): void {
+        this.callback([{
+          target,
+          contentRect: { height: SLOT_HEIGHT_PX },
+          borderBoxSize: [{ blockSize: SLOT_HEIGHT_PX }]
+        } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
       unobserve(): void {}
       disconnect(): void {}
     });
+    resizeObserverInstanceCount = 0;
   });
 
   afterEach(() => {
@@ -139,6 +160,122 @@ describe("ChatView render-budget message window", () => {
       expect(screen.getByText("Message 19")).toBeInTheDocument();
       expect(screen.queryByText("Message 18")).not.toBeInTheDocument();
     });
+  });
+
+  test("renders a legacy Oma snapshot after omitted collections are normalized", () => {
+    const legacySnapshot = normalizeAgentSessionSnapshot({
+      id: "legacy-oma-session",
+      title: "Legacy Oma",
+      sessionKind: "normal",
+      agentMode: "oma",
+      oma: {
+        enabled: true,
+        activeChannelId: "group:default",
+        agents: [],
+        channels: []
+      },
+      workingDir: "/Users/petehsu/Documents/Lyra",
+      projectBound: true,
+      messages: [],
+      tools: [],
+      todos: [],
+      turnStatus: "idle",
+      activeTurnId: null,
+      follow: { running: false, activity: null },
+      updatedAt: "2026-07-10T00:00:00.000Z"
+    } as unknown as AgentSessionSnapshot);
+    expect(legacySnapshot.oma).not.toBeNull();
+    if (legacySnapshot.oma === null) return;
+
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      omaControls: {
+        state: legacySnapshot.oma,
+        agentMode: "oma",
+        activeChannelId: legacySnapshot.oma.activeChannelId,
+        setMode: async () => undefined,
+        addAgent: async () => undefined,
+        removeAgent: async () => undefined,
+        setActiveChannel: async () => undefined
+      }
+    });
+
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    expect(container.querySelector(".lyra-agents-oma")).toBeInTheDocument();
+  });
+
+  test("manages Oma Agents with switches and closes the panel on an outside press", () => {
+    const addAgent = vi.fn(async () => undefined);
+    const removeAgent = vi.fn(async () => undefined);
+    const lead = {
+      id: "agent-lead",
+      agentId: "did:lyra:agent:builtin:lead",
+      name: "Lead",
+      shortName: "Lead",
+      role: "Coordinates the team",
+      avatar: { kind: "text" as const, value: "L" },
+      prompt: "Lead prompt",
+      status: "idle" as const
+    };
+    const builder = {
+      id: "agent-builder",
+      agentId: "did:lyra:agent:builtin:builder",
+      name: "Builder",
+      shortName: "Builder",
+      role: "Builds the implementation",
+      avatar: { kind: "text" as const, value: "B" },
+      prompt: "Builder prompt",
+      status: "idle" as const
+    };
+    const omaControls: OmaControls = {
+      state: {
+        enabled: true,
+        activeChannelId: "group:default",
+        agents: [lead],
+        availableAgents: [lead, builder],
+        channels: [{
+          id: "group:default",
+          kind: "group",
+          name: "Group",
+          memberAgentIds: [lead.id],
+          createdBy: "system",
+          archived: false
+        }]
+      },
+      agentMode: "oma",
+      activeChannelId: "group:default",
+      setMode: async () => undefined,
+      addAgent,
+      removeAgent,
+      setActiveChannel: async () => undefined
+    };
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      omaControls
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    fireEvent.click(container.querySelector("button.lyra-agents-oma-add")!);
+    expect(container.querySelector(".lyra-agents-oma-panel")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Add Builder" })).not.toBeChecked();
+    expect(container.querySelector(".lyra-agents-oma-panel-subtitle")).toBeNull();
+
+    fireEvent.click(screen.getByRole("switch", { name: "Add Builder" }));
+    expect(addAgent).toHaveBeenCalledWith(builder.agentId);
+
+    fireEvent.pointerDown(document.body);
+    expect(container.querySelector(".lyra-agents-oma-panel")).toBeNull();
   });
 
   test("shows Show earlier button when earlier messages exist", () => {
@@ -196,11 +333,31 @@ describe("ChatView render-budget message window", () => {
     expect(mountedSlots).toBe(12);
   });
 
+  test("bounds long-thread DOM and shares one resize observer", async () => {
+    const data = createDataProviderValue({
+      session,
+      messages: longThreadMessages
+    });
+    const { container } = render(
+      <DataContextProvider value={data}>
+        <ChatView showDecisions={false} showPermission={false} />
+      </DataContextProvider>
+    );
+
+    await waitFor(() => {
+      const mountedSlots = container.querySelectorAll("[data-chat-message-id]").length;
+      expect(mountedSlots).toBeGreaterThan(0);
+      expect(mountedSlots).toBeLessThanOrEqual(30);
+    });
+    expect(resizeObserverInstanceCount).toBe(1);
+  });
+
   test("shows sticky anchor for the last user message above the anchor line", async () => {
     const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
     layoutMessageSlots(container);
+    await waitForMessageMeasurements();
     primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
     await waitFor(() => {
       // scrollTop=50, anchorLine=50+18=68.
@@ -220,6 +377,7 @@ describe("ChatView render-budget message window", () => {
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
     layoutMessageSlots(container);
+    await waitForMessageMeasurements();
     primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toBeInTheDocument();
@@ -235,6 +393,7 @@ describe("ChatView render-budget message window", () => {
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
     layoutMessageSlots(container);
+    await waitForMessageMeasurements();
     primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent(

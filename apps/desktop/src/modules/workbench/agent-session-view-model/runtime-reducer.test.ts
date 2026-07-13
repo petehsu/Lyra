@@ -3,7 +3,8 @@ import { describe, expect, test } from "vitest";
 import type { AgentSessionSnapshot } from "../../../shared/agent";
 import {
   applyAgentRuntimeEventToSnapshot,
-  mergeRunningSessionSnapshot
+  mergeRunningSessionSnapshot,
+  normalizeAgentSessionSnapshot
 } from "./runtime-reducer";
 
 const session = (
@@ -28,6 +29,28 @@ const session = (
 });
 
 describe("applyAgentRuntimeEventToSnapshot", () => {
+  test("normalizes legacy Oma collections omitted from persisted session snapshots", () => {
+    const normalized = normalizeAgentSessionSnapshot({
+      ...session({
+        agentMode: "oma"
+      }),
+      oma: {
+        enabled: true,
+        activeChannelId: "group:default",
+        agents: [],
+        channels: []
+      }
+    } as unknown as AgentSessionSnapshot);
+
+    expect(normalized.oma).toMatchObject({
+      activeChannelId: "group:default",
+      agents: [],
+      availableAgents: [],
+      channels: [],
+      team: null
+    });
+  });
+
   test("ignores events for another session", () => {
     const current = session();
     const next = applyAgentRuntimeEventToSnapshot(current, {

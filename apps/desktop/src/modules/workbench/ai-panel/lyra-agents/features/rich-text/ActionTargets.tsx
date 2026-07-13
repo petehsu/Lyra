@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import type { AgentImageAttachment, ToolActionTarget } from "../../core/types";
 import { useData } from "../../data/DataProvider";
 import { AppButton } from "@renderer/ui/components";
+import { t } from "@workbench/i18n";
 
 export type ActionTarget = ToolActionTarget;
 
@@ -554,10 +555,12 @@ export function ClickableImage({
         className={["lyra-agents-action-image-button", "lyra-agents-action-image-placeholder", className]
           .filter(Boolean)
           .join(" ")}
-        title="Open image in Workbench"
+        title={t("tool.openImageInWorkbench")}
         onClick={open}
       >
-        <span className="lyra-agents-action-image-placeholder-label">{alt ?? "Image attachment"}</span>
+        <span className="lyra-agents-action-image-placeholder-label">
+          {alt ?? t("tool.imageAttachment")}
+        </span>
       </AppButton>
     );
   }
@@ -577,11 +580,11 @@ export function ClickableImage({
     <AppButton variant="ghost" size="sm"
       type="button"
       className={["lyra-agents-action-image-button", className].filter(Boolean).join(" ")}
-      title="Open image in Workbench"
+      title={t("tool.openImageInWorkbench")}
       onClick={open}
     >
       <img src={displaySrc} alt={alt ?? ""} />
-      <span className="lyra-agents-action-image-overlay">Open in Workbench</span>
+      <span className="lyra-agents-action-image-overlay">{t("tool.openInWorkbench")}</span>
     </AppButton>
   );
 }

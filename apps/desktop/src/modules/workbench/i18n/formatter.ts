@@ -1,11 +1,11 @@
-import i18n from "./i18n-instance";
+import { getWorkbenchLocale } from "./locale-state";
 
-// ponytail: 所有格式化函数通过 i18n.language 获取当前 locale，确保与用户选择一致
-// ponytail: 迁移路径 — 各 view 中的局部 formatBytes/formatDateTime 逐步替换为此模块导出
+// Formatters read the locale store rather than i18next.language, which makes
+// formatting follow the same source of truth as React and preferences.
 
 /** Format timestamp as time-only (HH:mm, 24h) */
 export function formatTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(i18n.language, {
+  return new Intl.DateTimeFormat(getWorkbenchLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -14,7 +14,7 @@ export function formatTime(timestamp: number): string {
 
 /** Format timestamp as short date+time (MM-dd HH:mm) */
 export function formatShortDateTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(i18n.language, {
+  return new Intl.DateTimeFormat(getWorkbenchLocale(), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -24,7 +24,7 @@ export function formatShortDateTime(timestamp: number): string {
 
 /** Format timestamp as medium date+time (MMM dd, HH:mm) */
 export function formatMediumDateTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(i18n.language, {
+  return new Intl.DateTimeFormat(getWorkbenchLocale(), {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -47,5 +47,5 @@ export function formatBytes(bytes: number): string {
 
 /** Format number with locale-aware digit grouping */
 export function formatNumber(n: number): string {
-  return n.toLocaleString(i18n.language);
+  return n.toLocaleString(getWorkbenchLocale());
 }

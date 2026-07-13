@@ -1,0 +1,4984 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "0.1.0",
+  "keysetHash": "517332798aa8fcf913fee9915aa16ad21b92b4245670b2432472e17227929cc2",
+  "contentHash": "106991777c0422d0f1a7e750c161753ae10391560c629682f8a1a85413e0c2eb",
+  "entries": [
+    {
+      "key": "agentGit.binaryDiff",
+      "source": "This is a binary file, so Lyra cannot show a text diff."
+    },
+    {
+      "key": "agentGit.changes",
+      "source": "changes"
+    },
+    {
+      "key": "agentGit.conflicts",
+      "source": "conflicts"
+    },
+    {
+      "key": "agentGit.discard",
+      "source": "Discard changes"
+    },
+    {
+      "key": "agentGit.discardConfirm",
+      "source": "Discard local changes in {path}? This cannot be undone."
+    },
+    {
+      "key": "agentGit.emptyDescription",
+      "source": "The working tree and index are clean."
+    },
+    {
+      "key": "agentGit.emptyTitle",
+      "source": "No changes"
+    },
+    {
+      "key": "agentGit.loading",
+      "source": "Reading Git status..."
+    },
+    {
+      "key": "agentGit.noDiff",
+      "source": "There is no diff to display for this file."
+    },
+    {
+      "key": "agentGit.notRepositoryDescription",
+      "source": "The bound project dir does not contain a Git repo."
+    },
+    {
+      "key": "agentGit.notRepositoryTitle",
+      "source": "Not a Git repo"
+    },
+    {
+      "key": "agentGit.open",
+      "source": "Open SCM"
+    },
+    {
+      "key": "agentGit.refresh",
+      "source": "Refresh Git status"
+    },
+    {
+      "key": "agentGit.selectFileDescription",
+      "source": "Choose a file on the left to preview its real Git diff."
+    },
+    {
+      "key": "agentGit.selectFileTitle",
+      "source": "No file selected"
+    },
+    {
+      "key": "agentGit.stage",
+      "source": "Stage"
+    },
+    {
+      "key": "agentGit.staged",
+      "source": "staged"
+    },
+    {
+      "key": "agentGit.title",
+      "source": "SCM"
+    },
+    {
+      "key": "agentGit.unavailable",
+      "source": "Agent Git API unavailable."
+    },
+    {
+      "key": "agentGit.unstage",
+      "source": "Unstage"
+    },
+    {
+      "key": "agentGit.unstaged",
+      "source": "unstaged"
+    },
+    {
+      "key": "agentGit.untracked",
+      "source": "untracked"
+    },
+    {
+      "key": "agentHistory.archive",
+      "source": "Archive"
+    },
+    {
+      "key": "agentHistory.browserHistoryEmptyDescription",
+      "source": "Visited pages will appear here after you browse the web."
+    },
+    {
+      "key": "agentHistory.browserHistoryEmptyTitle",
+      "source": "No web history yet"
+    },
+    {
+      "key": "agentHistory.cancelAction",
+      "source": "Cancel"
+    },
+    {
+      "key": "agentHistory.categoryArchivedSessions",
+      "source": "Archived"
+    },
+    {
+      "key": "agentHistory.categoryBrowserHistory",
+      "source": "Web history"
+    },
+    {
+      "key": "agentHistory.categoryFilter",
+      "source": "History categories"
+    },
+    {
+      "key": "agentHistory.categoryProjectSessions",
+      "source": "Project"
+    },
+    {
+      "key": "agentHistory.categorySessions",
+      "source": "Sessions"
+    },
+    {
+      "key": "agentHistory.clearRename",
+      "source": "Clear name"
+    },
+    {
+      "key": "agentHistory.delete",
+      "source": "Delete"
+    },
+    {
+      "key": "agentHistory.deleteConfirmAction",
+      "source": "Delete"
+    },
+    {
+      "key": "agentHistory.deleteConfirmDescription",
+      "source": "This physically deletes the Lyra Agent session snapshot and journal. Lyra cannot restore it."
+    },
+    {
+      "key": "agentHistory.deleteConfirmTitle",
+      "source": "Delete session permanently?"
+    },
+    {
+      "key": "agentHistory.emptyDescription",
+      "source": "Matching sessions for the current category and search will appear here."
+    },
+    {
+      "key": "agentHistory.emptyTitle",
+      "source": "No history yet"
+    },
+    {
+      "key": "agentHistory.errorTitle",
+      "source": "History failed to load"
+    },
+    {
+      "key": "agentHistory.groupArchived",
+      "source": "Archived"
+    },
+    {
+      "key": "agentHistory.groupRecent",
+      "source": "Recent"
+    },
+    {
+      "key": "agentHistory.groupSaved",
+      "source": "Saved"
+    },
+    {
+      "key": "agentHistory.loading",
+      "source": "Loading history..."
+    },
+    {
+      "key": "agentHistory.messages",
+      "source": "messages"
+    },
+    {
+      "key": "agentHistory.modelFallback",
+      "source": "Default model"
+    },
+    {
+      "key": "agentHistory.open",
+      "source": "Open History"
+    },
+    {
+      "key": "agentHistory.openBrowserHistoryEntry",
+      "source": "Open web entry"
+    },
+    {
+      "key": "agentHistory.openInAiPanel",
+      "source": "Open in AI"
+    },
+    {
+      "key": "agentHistory.openSession",
+      "source": "Open session"
+    },
+    {
+      "key": "agentHistory.previewEmptyDescription",
+      "source": "Click a session on the left to preview it here. Use the open icon to switch the AI panel."
+    },
+    {
+      "key": "agentHistory.previewEmptyTitle",
+      "source": "Select a session"
+    },
+    {
+      "key": "agentHistory.previewTitle",
+      "source": "Session preview"
+    },
+    {
+      "key": "agentHistory.refresh",
+      "source": "Refresh"
+    },
+    {
+      "key": "agentHistory.rename",
+      "source": "Rename"
+    },
+    {
+      "key": "agentHistory.renamePlaceholder",
+      "source": "Enter a session name"
+    },
+    {
+      "key": "agentHistory.renameTitle",
+      "source": "Rename session"
+    },
+    {
+      "key": "agentHistory.runtimeUnavailable",
+      "source": "Agent runtime bridge is unavailable."
+    },
+    {
+      "key": "agentHistory.saved",
+      "source": "Saved"
+    },
+    {
+      "key": "agentHistory.saveRename",
+      "source": "Save name"
+    },
+    {
+      "key": "agentHistory.searchPlaceholder",
+      "source": "Search history"
+    },
+    {
+      "key": "agentHistory.statusFallback",
+      "source": "Default provider"
+    },
+    {
+      "key": "agentHistory.tabTitle",
+      "source": "History"
+    },
+    {
+      "key": "agentHistory.title",
+      "source": "History"
+    },
+    {
+      "key": "agentHistory.unarchive",
+      "source": "Unarchive"
+    },
+    {
+      "key": "agentHistory.unsaved",
+      "source": "Unsaved"
+    },
+    {
+      "key": "agentHistory.updated",
+      "source": "Updated"
+    },
+    {
+      "key": "agentHistory.visited",
+      "source": "Visited"
+    },
+    {
+      "key": "agentHistory.visits",
+      "source": "visits"
+    },
+    {
+      "key": "agentHistory.workingDir",
+      "source": "Working dir"
+    },
+    {
+      "key": "agentPlanBoard.cancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "agentPlanBoard.commentLine",
+      "source": "Comment"
+    },
+    {
+      "key": "agentPlanBoard.commentPlaceholder",
+      "source": "Add note"
+    },
+    {
+      "key": "agentPlanBoard.currentStep",
+      "source": "Step"
+    },
+    {
+      "key": "agentPlanBoard.deleteConfirmAction",
+      "source": "Delete"
+    },
+    {
+      "key": "agentPlanBoard.deleteConfirmDescription",
+      "source": "This cannot be undone — the plan and its todos are removed permanently. If you only want to pause it, set it aside instead."
+    },
+    {
+      "key": "agentPlanBoard.deleteConfirmTitle",
+      "source": "Delete this plan?"
+    },
+    {
+      "key": "agentPlanBoard.deletePlan",
+      "source": "Delete plan"
+    },
+    {
+      "key": "agentPlanBoard.editLine",
+      "source": "Edit"
+    },
+    {
+      "key": "agentPlanBoard.editPlaceholder",
+      "source": "Edit this line"
+    },
+    {
+      "key": "agentPlanBoard.loading",
+      "source": "Loading..."
+    },
+    {
+      "key": "agentPlanBoard.manager",
+      "source": "Plans"
+    },
+    {
+      "key": "agentPlanBoard.noPlans",
+      "source": "No saved plans for this project yet."
+    },
+    {
+      "key": "agentPlanBoard.noTodo",
+      "source": "After approval, Agent will write the complete todo list first."
+    },
+    {
+      "key": "agentPlanBoard.openPlan",
+      "source": "Open plan"
+    },
+    {
+      "key": "agentPlanBoard.phase",
+      "source": "Phase"
+    },
+    {
+      "key": "agentPlanBoard.plan",
+      "source": "Plan"
+    },
+    {
+      "key": "agentPlanBoard.refresh",
+      "source": "Refresh"
+    },
+    {
+      "key": "agentPlanBoard.resumePlan",
+      "source": "Resume plan"
+    },
+    {
+      "key": "agentPlanBoard.save",
+      "source": "Save"
+    },
+    {
+      "key": "agentPlanBoard.setAsideBadge",
+      "source": "Set aside"
+    },
+    {
+      "key": "agentPlanBoard.status",
+      "source": "Status"
+    },
+    {
+      "key": "agentPlanBoard.tempChatApplied",
+      "source": "Applied to plan — review panel now offers \"Revise from feedback\""
+    },
+    {
+      "key": "agentPlanBoard.tempChatApplyToPlan",
+      "source": "Apply to plan"
+    },
+    {
+      "key": "agentPlanBoard.tempChatBusy",
+      "source": "Thinking..."
+    },
+    {
+      "key": "agentPlanBoard.tempChatClose",
+      "source": "Close"
+    },
+    {
+      "key": "agentPlanBoard.tempChatExplainOnly",
+      "source": "Discuss changes here — proposed plan revisions apply automatically"
+    },
+    {
+      "key": "agentPlanBoard.tempChatOpen",
+      "source": "Ask"
+    },
+    {
+      "key": "agentPlanBoard.tempChatPlaceholder",
+      "source": "Ask or request a change"
+    },
+    {
+      "key": "agentPlanBoard.tempChatSend",
+      "source": "Send"
+    },
+    {
+      "key": "agentPlanBoard.tempChatTitle",
+      "source": "Plan chat"
+    },
+    {
+      "key": "agentPlanBoard.title",
+      "source": "Plans & Todos"
+    },
+    {
+      "key": "agentPlanBoard.todo",
+      "source": "Todo"
+    },
+    {
+      "key": "agentPlanBoard.updated",
+      "source": "Updated"
+    },
+    {
+      "key": "agentPlanBoard.version",
+      "source": "Version"
+    },
+    {
+      "key": "agentProjectTree.emptyDirectory",
+      "source": "Empty directory"
+    },
+    {
+      "key": "agentProjectTree.loading",
+      "source": "Loading..."
+    },
+    {
+      "key": "agentProjectTree.open",
+      "source": "Open project"
+    },
+    {
+      "key": "agentProjectTree.openSourceControl",
+      "source": "Open SCM"
+    },
+    {
+      "key": "agentProjectTree.refresh",
+      "source": "Refresh tree"
+    },
+    {
+      "key": "agentProjectTree.selectFileDescription",
+      "source": "Choose a file from the project tree. Lyra will open it in the editor on the right."
+    },
+    {
+      "key": "agentProjectTree.selectFileTitle",
+      "source": "No file selected"
+    },
+    {
+      "key": "agentProjectTree.title",
+      "source": "Project Tree"
+    },
+    {
+      "key": "agentProjectTree.unavailable",
+      "source": "FS API unavailable"
+    },
+    {
+      "key": "ai.addFileAttachment",
+      "source": "Add file"
+    },
+    {
+      "key": "ai.attachFileConfirm",
+      "source": "Attach file"
+    },
+    {
+      "key": "ai.attachFileLabel",
+      "source": "Choose file"
+    },
+    {
+      "key": "ai.attachFileSelectPlaceholder",
+      "source": "Select a file"
+    },
+    {
+      "key": "ai.attachImageConfirm",
+      "source": "Attach image"
+    },
+    {
+      "key": "ai.attachImageLabel",
+      "source": "Choose image"
+    },
+    {
+      "key": "ai.attachImageSelectPlaceholder",
+      "source": "Select an image file"
+    },
+    {
+      "key": "ai.bindProjectConfirm",
+      "source": "Confirm Project"
+    },
+    {
+      "key": "ai.bindProjectLabel",
+      "source": "Bind Project"
+    },
+    {
+      "key": "ai.composerMenuLabel",
+      "source": "Composer menu"
+    },
+    {
+      "key": "ai.dropHintDescription",
+      "source": "Drop anywhere in this AI panel and Lyra will insert the file into the composer."
+    },
+    {
+      "key": "ai.dropHintTitle",
+      "source": "Release to attach file"
+    },
+    {
+      "key": "ai.editorWorkAccept",
+      "source": "Accept changes"
+    },
+    {
+      "key": "ai.editorWorkAcceptAll",
+      "source": "Accept all changes"
+    },
+    {
+      "key": "ai.editorWorkCopied",
+      "source": "Coding status copied"
+    },
+    {
+      "key": "ai.editorWorkCopy",
+      "source": "Copy coding status"
+    },
+    {
+      "key": "ai.editorWorkNext",
+      "source": "Next change"
+    },
+    {
+      "key": "ai.editorWorkOpen",
+      "source": "Open AI coding file"
+    },
+    {
+      "key": "ai.editorWorkPrevious",
+      "source": "Previous change"
+    },
+    {
+      "key": "ai.editorWorkReject",
+      "source": "Reject changes"
+    },
+    {
+      "key": "ai.editorWorkUndo",
+      "source": "Undo acceptance"
+    },
+    {
+      "key": "ai.emptyGreetingDay",
+      "source": "{name}, hand it to me.||{name}, I am here."
+    },
+    {
+      "key": "ai.emptyGreetingEvening",
+      "source": "Evening, {name}. Want me to wrap the loose ends?||{name}, I can help close out the day cleanly."
+    },
+    {
+      "key": "ai.emptyGreetingFallbackName",
+      "source": "there"
+    },
+    {
+      "key": "ai.emptyGreetingFile",
+      "source": "{name}, want me to look through {file}?||Where should I start in {file}?"
+    },
+    {
+      "key": "ai.emptyGreetingGeneral",
+      "source": "Diverge, then sharpen.||Steady progress compounds.||Leave it with me.||Depth before speed.||I can untangle the thread first.||Want me to gather the clues?||I can start with a full pass.||We can begin from state, risk, or next action.||{name}, what should we solve first today?||{name}, I can make the complicated part legible."
+    },
+    {
+      "key": "ai.emptyGreetingHost",
+      "source": "Need me to summarize {host}, {name}?||{name}, want the important parts from {host} pulled out?"
+    },
+    {
+      "key": "ai.emptyGreetingLate",
+      "source": "{name}, still awake this late?||{name}, it is late. I can take the next pass."
+    },
+    {
+      "key": "ai.emptyGreetingMorning",
+      "source": "Morning, {name}. Where should we start?||{name}, what should we make clear first?"
+    },
+    {
+      "key": "ai.emptyGreetingPlace",
+      "source": "{name}, how is {place} treating you?||{name}, {place} is a good place to slow the thread down."
+    },
+    {
+      "key": "ai.emptyGreetingProject",
+      "source": "Any trouble in {project}?||{name}, want me to inspect {project} first?||{project} can start with structure, changes, or tests."
+    },
+    {
+      "key": "ai.emptyGreetingTab",
+      "source": "{name}, the active tab is \"{tabTitle}\". I can pick up there."
+    },
+    {
+      "key": "ai.environmentLabel",
+      "source": "Environment"
+    },
+    {
+      "key": "ai.executionTargetHost",
+      "source": "Host"
+    },
+    {
+      "key": "ai.executionTargetLabel",
+      "source": "Target"
+    },
+    {
+      "key": "ai.fileMentionNoMatches",
+      "source": "No matches"
+    },
+    {
+      "key": "ai.followMode",
+      "source": "Follow Agent"
+    },
+    {
+      "key": "ai.launchPrefix",
+      "source": "Lyra"
+    },
+    {
+      "key": "ai.launchVerbBuild",
+      "source": "Build"
+    },
+    {
+      "key": "ai.launchVerbChat",
+      "source": "Chat"
+    },
+    {
+      "key": "ai.launchVerbCode",
+      "source": "Code"
+    },
+    {
+      "key": "ai.launchVerbCollaborate",
+      "source": "Collaborate"
+    },
+    {
+      "key": "ai.launchVerbDebug",
+      "source": "Debug"
+    },
+    {
+      "key": "ai.launchVerbDiscuss",
+      "source": "Discuss"
+    },
+    {
+      "key": "ai.launchVerbExplore",
+      "source": "Explore"
+    },
+    {
+      "key": "ai.launchVerbThink",
+      "source": "Think"
+    },
+    {
+      "key": "ai.modelControlAuto",
+      "source": "Auto"
+    },
+    {
+      "key": "ai.modelControlNoMetadata",
+      "source": "No model metadata"
+    },
+    {
+      "key": "ai.modelControlUnsupported",
+      "source": "Not supported by this model"
+    },
+    {
+      "key": "ai.modelLabel",
+      "source": "Model"
+    },
+    {
+      "key": "ai.moreActions",
+      "source": "More actions"
+    },
+    {
+      "key": "ai.movePanelToLeft",
+      "source": "Move panel to left"
+    },
+    {
+      "key": "ai.movePanelToRight",
+      "source": "Move panel to right"
+    },
+    {
+      "key": "ai.openInWorkspace",
+      "source": "Open AI in Workspace"
+    },
+    {
+      "key": "ai.panelTitle",
+      "source": "AI Panel"
+    },
+    {
+      "key": "ai.permissionFullAccess",
+      "source": "Full Access"
+    },
+    {
+      "key": "ai.permissionLabel",
+      "source": "Permission"
+    },
+    {
+      "key": "ai.permissionSandbox",
+      "source": "Sandbox"
+    },
+    {
+      "key": "ai.questionClose",
+      "source": "Close AI question panel"
+    },
+    {
+      "key": "ai.questionCustomPlaceholder",
+      "source": "Enter your own answer"
+    },
+    {
+      "key": "ai.questionNavigateDown",
+      "source": "Next AI question"
+    },
+    {
+      "key": "ai.questionNavigateUp",
+      "source": "Previous AI question"
+    },
+    {
+      "key": "ai.questionSubmitCustom",
+      "source": "Submit custom answer"
+    },
+    {
+      "key": "ai.reasoningEffortHigh",
+      "source": "High"
+    },
+    {
+      "key": "ai.reasoningEffortLabel",
+      "source": "Reasoning"
+    },
+    {
+      "key": "ai.reasoningEffortLow",
+      "source": "Low"
+    },
+    {
+      "key": "ai.reasoningEffortMedium",
+      "source": "Medium"
+    },
+    {
+      "key": "ai.reasoningEffortMinimal",
+      "source": "Minimal"
+    },
+    {
+      "key": "ai.reasoningEffortNone",
+      "source": "None"
+    },
+    {
+      "key": "ai.reasoningEffortXHigh",
+      "source": "Extra high"
+    },
+    {
+      "key": "ai.removeFileAttachment",
+      "source": "Remove"
+    },
+    {
+      "key": "ai.sessionDefaultTitle",
+      "source": "New Session"
+    },
+    {
+      "key": "ai.startBySending",
+      "source": "Start by sending a message."
+    },
+    {
+      "key": "ai.steerTurn",
+      "source": "Steer"
+    },
+    {
+      "key": "ai.tabTitle",
+      "source": "AI Panel"
+    },
+    {
+      "key": "ai.upperPanelTabChange",
+      "source": "Changes"
+    },
+    {
+      "key": "ai.upperPanelTabQuestion",
+      "source": "Question"
+    },
+    {
+      "key": "ai.verbosityHigh",
+      "source": "High"
+    },
+    {
+      "key": "ai.verbosityLabel",
+      "source": "Verbosity"
+    },
+    {
+      "key": "ai.verbosityLow",
+      "source": "Low"
+    },
+    {
+      "key": "ai.verbosityMedium",
+      "source": "Medium"
+    },
+    {
+      "key": "aiPanel.closeSessionTabAriaLabel",
+      "source": "Close session tab: {title}"
+    },
+    {
+      "key": "aiPanel.defaultSessionTitle",
+      "source": "New session"
+    },
+    {
+      "key": "aiPanel.sessionTabsAriaLabel",
+      "source": "AI sessions"
+    },
+    {
+      "key": "appStatus.clearSiteDataFailed",
+      "source": "Could not clear site data"
+    },
+    {
+      "key": "appStatus.openEditorFailed",
+      "source": "Could not open editor"
+    },
+    {
+      "key": "appStatus.openFileFailed",
+      "source": "Could not open file"
+    },
+    {
+      "key": "appStatus.openUrlFailed",
+      "source": "Could not open page"
+    },
+    {
+      "key": "appStatus.operationFailed",
+      "source": "Operation failed"
+    },
+    {
+      "key": "appStatus.revealPathFailed",
+      "source": "Could not reveal location"
+    },
+    {
+      "key": "appStatus.unexpectedErrorDescription",
+      "source": "Lyra kept the window open. Reopen this area to continue."
+    },
+    {
+      "key": "appStatus.unexpectedErrorTitle",
+      "source": "Interface error"
+    },
+    {
+      "key": "browser.channelError",
+      "source": "Error"
+    },
+    {
+      "key": "browser.channelIdle",
+      "source": "Idle"
+    },
+    {
+      "key": "browser.channelLoading",
+      "source": "Loading"
+    },
+    {
+      "key": "browser.channelReady",
+      "source": "Ready"
+    },
+    {
+      "key": "browser.closeTab",
+      "source": "Close tab"
+    },
+    {
+      "key": "browser.goBack",
+      "source": "Back"
+    },
+    {
+      "key": "browser.goForward",
+      "source": "Forward"
+    },
+    {
+      "key": "browser.homeTabTitle",
+      "source": "Home"
+    },
+    {
+      "key": "browser.openNewTab",
+      "source": "New tab"
+    },
+    {
+      "key": "browser.resultsAllTab",
+      "source": "All"
+    },
+    {
+      "key": "browser.resultsAutoTab",
+      "source": "Auto"
+    },
+    {
+      "key": "browser.resultsEngineError",
+      "source": "Engine unavailable"
+    },
+    {
+      "key": "browser.resultsHeading",
+      "source": "Results"
+    },
+    {
+      "key": "browser.resultsNoResults",
+      "source": "No results found. Try another query."
+    },
+    {
+      "key": "browser.resultsOfficial",
+      "source": "Official"
+    },
+    {
+      "key": "browser.resultsOfficialDocs",
+      "source": "Official docs"
+    },
+    {
+      "key": "browser.resultsOfficialDownload",
+      "source": "Official download"
+    },
+    {
+      "key": "browser.resultsOfficialHomepage",
+      "source": "Official homepage"
+    },
+    {
+      "key": "browser.resultsOfficialLogin",
+      "source": "Official login"
+    },
+    {
+      "key": "browser.resultsOfficialSubsite",
+      "source": "Official subsite"
+    },
+    {
+      "key": "browser.resultsOfficialSupport",
+      "source": "Official support"
+    },
+    {
+      "key": "browser.resultsSourceFilter",
+      "source": "Result Sources"
+    },
+    {
+      "key": "browser.resultsWebTab",
+      "source": "Web"
+    },
+    {
+      "key": "browser.searchAction",
+      "source": "Search"
+    },
+    {
+      "key": "browser.searchPlaceholder",
+      "source": "Search or enter address"
+    },
+    {
+      "key": "browser.toggleTabStack",
+      "source": "Toggle tab stack"
+    },
+    {
+      "key": "debug.decisions",
+      "source": "Decisions panel"
+    },
+    {
+      "key": "debug.permission",
+      "source": "Permissions panel"
+    },
+    {
+      "key": "debug.title",
+      "source": "Debug"
+    },
+    {
+      "key": "decision.custom",
+      "source": "Custom"
+    },
+    {
+      "key": "decision.customPlaceholder",
+      "source": "Type your answer"
+    },
+    {
+      "key": "decision.next",
+      "source": "Next"
+    },
+    {
+      "key": "decision.nextQuestion",
+      "source": "Next question"
+    },
+    {
+      "key": "decision.prev",
+      "source": "Previous"
+    },
+    {
+      "key": "decision.prevQuestion",
+      "source": "Previous question"
+    },
+    {
+      "key": "decision.sharedControl.cancelTask",
+      "source": "Cancel Task"
+    },
+    {
+      "key": "decision.sharedControl.cancelTask.description",
+      "source": "Cancel this browser task."
+    },
+    {
+      "key": "decision.sharedControl.continueAgent",
+      "source": "Continue Agent"
+    },
+    {
+      "key": "decision.sharedControl.continueAgent.description",
+      "source": "Resume Lyra Agent control from the latest browser recovery anchor."
+    },
+    {
+      "key": "decision.sharedControl.detail",
+      "source": "Live browser input paused Agent control."
+    },
+    {
+      "key": "decision.sharedControl.question",
+      "source": "The user interrupted Lyra Agent control of the live browser tab. Who should control it now?"
+    },
+    {
+      "key": "decision.sharedControl.takeOver",
+      "source": "Take Over"
+    },
+    {
+      "key": "decision.sharedControl.takeOver.description",
+      "source": "Leave the visible tab under user control until the user explicitly authorizes Agent again."
+    },
+    {
+      "key": "decision.sharedControl.useIsolated",
+      "source": "Use Isolated"
+    },
+    {
+      "key": "decision.sharedControl.useIsolated.description",
+      "source": "Stop using the live tab and continue with isolated background browser state."
+    },
+    {
+      "key": "decision.submit",
+      "source": "Submit"
+    },
+    {
+      "key": "dialog.cancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "dialog.copiedAction",
+      "source": "Copied"
+    },
+    {
+      "key": "dialog.copyAction",
+      "source": "Copy"
+    },
+    {
+      "key": "dialog.savingAction",
+      "source": "Saving..."
+    },
+    {
+      "key": "docs.open",
+      "source": "Open docs"
+    },
+    {
+      "key": "docs.tabTitle",
+      "source": "Docs"
+    },
+    {
+      "key": "downloads.completedPreview",
+      "source": "Saved to downloads"
+    },
+    {
+      "key": "downloads.completedTitle",
+      "source": "Download complete"
+    },
+    {
+      "key": "downloads.failedPreview",
+      "source": "An error occurred during download"
+    },
+    {
+      "key": "downloads.failedTitle",
+      "source": "Download failed"
+    },
+    {
+      "key": "downloads.notificationSource",
+      "source": "Downloads"
+    },
+    {
+      "key": "downloads.startedPreview",
+      "source": "Downloading"
+    },
+    {
+      "key": "downloads.startedTitle",
+      "source": "Download started"
+    },
+    {
+      "key": "editor.closeDiff",
+      "source": "Close diff view"
+    },
+    {
+      "key": "editor.conflict",
+      "source": "External change conflict"
+    },
+    {
+      "key": "editor.loading",
+      "source": "Loading file"
+    },
+    {
+      "key": "editor.openDiff",
+      "source": "Open diff view"
+    },
+    {
+      "key": "editor.readOnly",
+      "source": "Read-only"
+    },
+    {
+      "key": "editor.retry",
+      "source": "Retry"
+    },
+    {
+      "key": "editor.save",
+      "source": "Save"
+    },
+    {
+      "key": "editor.unavailable",
+      "source": "File editor backend unavailable."
+    },
+    {
+      "key": "editor.unsupported",
+      "source": "This file cannot be edited in Lyra yet."
+    },
+    {
+      "key": "fileEditor.nativeCapabilityUnavailable",
+      "source": "File editor native capability is unavailable."
+    },
+    {
+      "key": "fileEditor.unsupportedDefault",
+      "source": "The current file type is not supported for editing."
+    },
+    {
+      "key": "fileEditor.unsupportedEncodingNotSupported",
+      "source": "The current file encoding is not supported for editing."
+    },
+    {
+      "key": "fileEditor.unsupportedFileTooLarge",
+      "source": "The file is too large and has been downgraded to read-only or non-editable."
+    },
+    {
+      "key": "fileEditor.unsupportedNotFile",
+      "source": "The current path is not an editable file."
+    },
+    {
+      "key": "fileEditor.unsupportedNotFound",
+      "source": "The file does not exist or has not been created yet."
+    },
+    {
+      "key": "fileEditor.unsupportedVirtualToolPath",
+      "source": "This is a Lyra runtime tool path, not a local file."
+    },
+    {
+      "key": "files.addFavorite",
+      "source": "Add Favorite"
+    },
+    {
+      "key": "files.chooserBindProjectLabel",
+      "source": "Bind current dir"
+    },
+    {
+      "key": "files.chooserSelectDirectoryPlaceholder",
+      "source": "Open dir to bind project"
+    },
+    {
+      "key": "files.contextEjectDevice",
+      "source": "Eject"
+    },
+    {
+      "key": "files.contextEmptyTrash",
+      "source": "Empty Trash"
+    },
+    {
+      "key": "files.contextMountDevice",
+      "source": "Mount"
+    },
+    {
+      "key": "files.contextMoveToTrash",
+      "source": "Move to Trash"
+    },
+    {
+      "key": "files.contextOpen",
+      "source": "Open"
+    },
+    {
+      "key": "files.contextRestore",
+      "source": "Restore"
+    },
+    {
+      "key": "files.createCancel",
+      "source": "Cancel create"
+    },
+    {
+      "key": "files.createConfirm",
+      "source": "Create"
+    },
+    {
+      "key": "files.createPlaceholderDirectory",
+      "source": "Enter folder name"
+    },
+    {
+      "key": "files.createPlaceholderFile",
+      "source": "Enter file name"
+    },
+    {
+      "key": "files.delete",
+      "source": "Move to Trash"
+    },
+    {
+      "key": "files.deviceUnmounted",
+      "source": "Unmounted"
+    },
+    {
+      "key": "files.diskAvailable",
+      "source": "Available"
+    },
+    {
+      "key": "files.diskKindExternal",
+      "source": "External disk"
+    },
+    {
+      "key": "files.diskKindLocal",
+      "source": "Local disk"
+    },
+    {
+      "key": "files.diskKindRemovable",
+      "source": "Removable disk"
+    },
+    {
+      "key": "files.diskKindSystem",
+      "source": "System disk"
+    },
+    {
+      "key": "files.downloadAddUrl",
+      "source": "Add download"
+    },
+    {
+      "key": "files.downloadAdvancedBtSelectedFiles",
+      "source": "BT file indexes"
+    },
+    {
+      "key": "files.downloadAdvancedBtTrackers",
+      "source": "BT trackers"
+    },
+    {
+      "key": "files.downloadAdvancedChecksumAlgorithm",
+      "source": "Checksum"
+    },
+    {
+      "key": "files.downloadAdvancedChecksumExpected",
+      "source": "Checksum value"
+    },
+    {
+      "key": "files.downloadAdvancedChecksumNone",
+      "source": "None"
+    },
+    {
+      "key": "files.downloadAdvancedCookie",
+      "source": "Cookie"
+    },
+    {
+      "key": "files.downloadAdvancedHeaders",
+      "source": "Request headers"
+    },
+    {
+      "key": "files.downloadAdvancedMaxRetries",
+      "source": "Max retries"
+    },
+    {
+      "key": "files.downloadAdvancedMirrors",
+      "source": "Mirror URLs"
+    },
+    {
+      "key": "files.downloadAdvancedOptions",
+      "source": "Advanced"
+    },
+    {
+      "key": "files.downloadAdvancedPartialFile",
+      "source": "Existing partial file"
+    },
+    {
+      "key": "files.downloadAdvancedProxyMode",
+      "source": "Proxy mode"
+    },
+    {
+      "key": "files.downloadAdvancedProxyUrl",
+      "source": "Proxy URL"
+    },
+    {
+      "key": "files.downloadAdvancedRetryDelay",
+      "source": "Retry delay (seconds)"
+    },
+    {
+      "key": "files.downloadCancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "files.downloadCancelAll",
+      "source": "Cancel all"
+    },
+    {
+      "key": "files.downloadChecksumFailed",
+      "source": "{algorithm} mismatch"
+    },
+    {
+      "key": "files.downloadChecksumPending",
+      "source": "{algorithm} pending"
+    },
+    {
+      "key": "files.downloadChecksumVerified",
+      "source": "{algorithm} verified"
+    },
+    {
+      "key": "files.downloadConnections",
+      "source": "{count} connections"
+    },
+    {
+      "key": "files.downloadDurationHours",
+      "source": "{hours}h {minutes}m"
+    },
+    {
+      "key": "files.downloadDurationMinutes",
+      "source": "{minutes}m {seconds}s"
+    },
+    {
+      "key": "files.downloadDurationSeconds",
+      "source": "{seconds}s"
+    },
+    {
+      "key": "files.downloadEta",
+      "source": "{duration} left"
+    },
+    {
+      "key": "files.downloadImportClipboard",
+      "source": "Import clipboard"
+    },
+    {
+      "key": "files.downloadImportExternalBrowser",
+      "source": "Import browser"
+    },
+    {
+      "key": "files.downloadManagerTitle",
+      "source": "Downloads"
+    },
+    {
+      "key": "files.downloadOpenFile",
+      "source": "Open File"
+    },
+    {
+      "key": "files.downloadPause",
+      "source": "Pause"
+    },
+    {
+      "key": "files.downloadPauseAll",
+      "source": "Pause all"
+    },
+    {
+      "key": "files.downloadPriority",
+      "source": "Priority"
+    },
+    {
+      "key": "files.downloadPriorityHigh",
+      "source": "High"
+    },
+    {
+      "key": "files.downloadPriorityLow",
+      "source": "Low"
+    },
+    {
+      "key": "files.downloadPriorityNormal",
+      "source": "Normal"
+    },
+    {
+      "key": "files.downloadRemoteApi",
+      "source": "Remote API"
+    },
+    {
+      "key": "files.downloadRemoteApiAllowLan",
+      "source": "Allow LAN"
+    },
+    {
+      "key": "files.downloadRemoteApiHost",
+      "source": "Host"
+    },
+    {
+      "key": "files.downloadRemoteApiPort",
+      "source": "Port"
+    },
+    {
+      "key": "files.downloadRemoteApiRunning",
+      "source": "Running"
+    },
+    {
+      "key": "files.downloadRemoteApiStart",
+      "source": "Start API"
+    },
+    {
+      "key": "files.downloadRemoteApiStop",
+      "source": "Stop API"
+    },
+    {
+      "key": "files.downloadRemoteApiStopped",
+      "source": "Stopped"
+    },
+    {
+      "key": "files.downloadRemoteApiToken",
+      "source": "Token available"
+    },
+    {
+      "key": "files.downloadRemove",
+      "source": "Remove"
+    },
+    {
+      "key": "files.downloadResume",
+      "source": "Resume"
+    },
+    {
+      "key": "files.downloadResumeAll",
+      "source": "Resume all"
+    },
+    {
+      "key": "files.downloadRetry",
+      "source": "Retry"
+    },
+    {
+      "key": "files.downloadRevealFile",
+      "source": "Reveal"
+    },
+    {
+      "key": "files.downloadSettings",
+      "source": "Download settings"
+    },
+    {
+      "key": "files.downloadSettingsAddSaveRule",
+      "source": "Add save rule"
+    },
+    {
+      "key": "files.downloadSettingsAutoExtract",
+      "source": "Auto extract"
+    },
+    {
+      "key": "files.downloadSettingsBt",
+      "source": "BT"
+    },
+    {
+      "key": "files.downloadSettingsBtDht",
+      "source": "DHT"
+    },
+    {
+      "key": "files.downloadSettingsBtLocalPeerDiscovery",
+      "source": "Local peer discovery"
+    },
+    {
+      "key": "files.downloadSettingsBtPeerExchange",
+      "source": "PEX"
+    },
+    {
+      "key": "files.downloadSettingsBtSeedTime",
+      "source": "Seed time (minutes)"
+    },
+    {
+      "key": "files.downloadSettingsBtTrackers",
+      "source": "Trackers"
+    },
+    {
+      "key": "files.downloadSettingsBtUploadLimit",
+      "source": "BT upload limit"
+    },
+    {
+      "key": "files.downloadSettingsCookie",
+      "source": "Cookie"
+    },
+    {
+      "key": "files.downloadSettingsDeleteArchive",
+      "source": "Delete archive"
+    },
+    {
+      "key": "files.downloadSettingsDetectSplitArchives",
+      "source": "Detect split archives"
+    },
+    {
+      "key": "files.downloadSettingsExtractDirectory",
+      "source": "Extract directory"
+    },
+    {
+      "key": "files.downloadSettingsHeaders",
+      "source": "Headers"
+    },
+    {
+      "key": "files.downloadSettingsNoLimit",
+      "source": "No limit"
+    },
+    {
+      "key": "files.downloadSettingsPostProcessing",
+      "source": "Post-processing"
+    },
+    {
+      "key": "files.downloadSettingsProxyDirect",
+      "source": "Direct"
+    },
+    {
+      "key": "files.downloadSettingsProxyHttp",
+      "source": "HTTP"
+    },
+    {
+      "key": "files.downloadSettingsProxyMode",
+      "source": "Proxy mode"
+    },
+    {
+      "key": "files.downloadSettingsProxySocks5",
+      "source": "SOCKS5"
+    },
+    {
+      "key": "files.downloadSettingsProxySystem",
+      "source": "System"
+    },
+    {
+      "key": "files.downloadSettingsProxyUrl",
+      "source": "Proxy URL"
+    },
+    {
+      "key": "files.downloadSettingsRemoveSaveRule",
+      "source": "Remove save rule"
+    },
+    {
+      "key": "files.downloadSettingsRuleDirectory",
+      "source": "Save directory"
+    },
+    {
+      "key": "files.downloadSettingsRuleEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "files.downloadSettingsRuleExtensions",
+      "source": "Extensions"
+    },
+    {
+      "key": "files.downloadSettingsRuleHosts",
+      "source": "Host contains"
+    },
+    {
+      "key": "files.downloadSettingsRuleName",
+      "source": "Rule name"
+    },
+    {
+      "key": "files.downloadSettingsRuleProtocols",
+      "source": "Protocols"
+    },
+    {
+      "key": "files.downloadSettingsRuleTags",
+      "source": "Tags"
+    },
+    {
+      "key": "files.downloadSettingsSave",
+      "source": "Save settings"
+    },
+    {
+      "key": "files.downloadSettingsSaveRules",
+      "source": "Save rules"
+    },
+    {
+      "key": "files.downloadSettingsSchedule",
+      "source": "Schedule"
+    },
+    {
+      "key": "files.downloadSettingsScheduleEnabled",
+      "source": "Enable schedule"
+    },
+    {
+      "key": "files.downloadSettingsScheduleEnd",
+      "source": "End"
+    },
+    {
+      "key": "files.downloadSettingsScheduleLimit",
+      "source": "Outside speed limit"
+    },
+    {
+      "key": "files.downloadSettingsScheduleOutsideAction",
+      "source": "Outside window"
+    },
+    {
+      "key": "files.downloadSettingsSchedulePause",
+      "source": "Pause"
+    },
+    {
+      "key": "files.downloadSettingsScheduleSpeedLimit",
+      "source": "Limit speed"
+    },
+    {
+      "key": "files.downloadSettingsScheduleStart",
+      "source": "Start"
+    },
+    {
+      "key": "files.downloadSettingsSpeedLimit",
+      "source": "Speed limit"
+    },
+    {
+      "key": "files.downloadSourceBrowser",
+      "source": "Browser"
+    },
+    {
+      "key": "files.downloadSourceManual",
+      "source": "Manual"
+    },
+    {
+      "key": "files.downloadSpeedIdle",
+      "source": "Idle"
+    },
+    {
+      "key": "files.downloadStateCanceled",
+      "source": "Canceled"
+    },
+    {
+      "key": "files.downloadStateCompleted",
+      "source": "Completed"
+    },
+    {
+      "key": "files.downloadStateDownloading",
+      "source": "Downloading"
+    },
+    {
+      "key": "files.downloadStateFailed",
+      "source": "Failed"
+    },
+    {
+      "key": "files.downloadStatePaused",
+      "source": "Paused"
+    },
+    {
+      "key": "files.downloadStateQueued",
+      "source": "Queued"
+    },
+    {
+      "key": "files.downloadUnknownSize",
+      "source": "Unknown"
+    },
+    {
+      "key": "files.downloadUrlPlaceholder",
+      "source": "Paste URL or batch URLs"
+    },
+    {
+      "key": "files.emptyDirectory",
+      "source": "This directory is empty."
+    },
+    {
+      "key": "files.emptyDownloads",
+      "source": "No download tasks yet."
+    },
+    {
+      "key": "files.emptyTrash",
+      "source": "Empty Trash"
+    },
+    {
+      "key": "files.emptyTrashState",
+      "source": "Trash is empty."
+    },
+    {
+      "key": "files.homeSectionDevices",
+      "source": "Devices"
+    },
+    {
+      "key": "files.homeSectionFavorites",
+      "source": "Favorites"
+    },
+    {
+      "key": "files.homeSectionLocations",
+      "source": "Locations"
+    },
+    {
+      "key": "files.homeSectionRecent",
+      "source": "Recent"
+    },
+    {
+      "key": "files.loading",
+      "source": "Loading files"
+    },
+    {
+      "key": "files.locationColumn",
+      "source": "Location"
+    },
+    {
+      "key": "files.locationDesktop",
+      "source": "Desktop"
+    },
+    {
+      "key": "files.locationDocuments",
+      "source": "Documents"
+    },
+    {
+      "key": "files.locationDownloads",
+      "source": "Downloads"
+    },
+    {
+      "key": "files.locationHome",
+      "source": "Home"
+    },
+    {
+      "key": "files.locationTrash",
+      "source": "Trash"
+    },
+    {
+      "key": "files.nameColumn",
+      "source": "Name"
+    },
+    {
+      "key": "files.navigationBack",
+      "source": "Back"
+    },
+    {
+      "key": "files.navigationForward",
+      "source": "Forward"
+    },
+    {
+      "key": "files.navigationUp",
+      "source": "Up"
+    },
+    {
+      "key": "files.newFile",
+      "source": "New File"
+    },
+    {
+      "key": "files.newFolder",
+      "source": "New Folder"
+    },
+    {
+      "key": "files.noFavorites",
+      "source": "No favorites yet."
+    },
+    {
+      "key": "files.noRecentLocations",
+      "source": "No recent locations yet."
+    },
+    {
+      "key": "files.open",
+      "source": "Open Files"
+    },
+    {
+      "key": "files.originalLocationColumn",
+      "source": "Original path"
+    },
+    {
+      "key": "files.refresh",
+      "source": "Refresh"
+    },
+    {
+      "key": "files.removeFavorite",
+      "source": "Remove Favorite"
+    },
+    {
+      "key": "files.restore",
+      "source": "Restore"
+    },
+    {
+      "key": "files.title",
+      "source": "Files"
+    },
+    {
+      "key": "files.unavailable",
+      "source": "File manager native backend unavailable. Build the Rust native module first."
+    },
+    {
+      "key": "files.viewLarge",
+      "source": "Large"
+    },
+    {
+      "key": "files.viewList",
+      "source": "List"
+    },
+    {
+      "key": "gateway.summaryCommand",
+      "source": "Prepared terminal command for execution: {value}"
+    },
+    {
+      "key": "gateway.summaryFile",
+      "source": "Located file and synced to editor: {value}"
+    },
+    {
+      "key": "gateway.summaryTask",
+      "source": "Task entered Agent orchestration: {value}"
+    },
+    {
+      "key": "gateway.summaryUrl",
+      "source": "Opened target address and prepared DOM context: {value}"
+    },
+    {
+      "key": "header.archive",
+      "source": "Archive"
+    },
+    {
+      "key": "header.cancelAction",
+      "source": "Cancel"
+    },
+    {
+      "key": "header.cancelTurn",
+      "source": "Cancel turn"
+    },
+    {
+      "key": "header.clearRename",
+      "source": "Clear custom name"
+    },
+    {
+      "key": "header.codegraphFailed",
+      "source": "Code index failed"
+    },
+    {
+      "key": "header.codegraphIdle",
+      "source": "Code graph: not indexed"
+    },
+    {
+      "key": "header.codegraphIndexing",
+      "source": "Indexing code... {progress}%"
+    },
+    {
+      "key": "header.codegraphReady",
+      "source": "Code indexed ({fileCount} files)"
+    },
+    {
+      "key": "header.delete",
+      "source": "Delete"
+    },
+    {
+      "key": "header.deleteConfirmAction",
+      "source": "Delete permanently"
+    },
+    {
+      "key": "header.deleteConfirmDescription",
+      "source": "This cannot be restored."
+    },
+    {
+      "key": "header.deleteConfirmTitle",
+      "source": "Delete session permanently?"
+    },
+    {
+      "key": "header.followAgent",
+      "source": "Follow Agent"
+    },
+    {
+      "key": "header.improve",
+      "source": "Improve"
+    },
+    {
+      "key": "header.judge",
+      "source": "Acceptance check"
+    },
+    {
+      "key": "header.more",
+      "source": "More"
+    },
+    {
+      "key": "header.moreDisabled",
+      "source": "No actions for an empty session"
+    },
+    {
+      "key": "header.newSession",
+      "source": "New session"
+    },
+    {
+      "key": "header.openInEditor",
+      "source": "Open in {editor}"
+    },
+    {
+      "key": "header.openInFileManager",
+      "source": "Lyra Files"
+    },
+    {
+      "key": "header.openProjectPlanManager",
+      "source": "Plans & Todos"
+    },
+    {
+      "key": "header.openProjectTree",
+      "source": "Project Tree"
+    },
+    {
+      "key": "header.refactor",
+      "source": "Refactor"
+    },
+    {
+      "key": "header.rename",
+      "source": "Rename"
+    },
+    {
+      "key": "header.renamePlaceholder",
+      "source": "Enter a session name"
+    },
+    {
+      "key": "header.renameTitle",
+      "source": "Rename session"
+    },
+    {
+      "key": "header.revealInFileManager",
+      "source": "System Files"
+    },
+    {
+      "key": "header.review",
+      "source": "Code review"
+    },
+    {
+      "key": "header.saveRename",
+      "source": "Save"
+    },
+    {
+      "key": "header.stopFollowingAgent",
+      "source": "Unfollow Agent"
+    },
+    {
+      "key": "imageViewer.actualSize",
+      "source": "100%"
+    },
+    {
+      "key": "imageViewer.background",
+      "source": "Background"
+    },
+    {
+      "key": "imageViewer.fit",
+      "source": "Fit"
+    },
+    {
+      "key": "imageViewer.loading",
+      "source": "Loading image"
+    },
+    {
+      "key": "imageViewer.metadata",
+      "source": "Metadata"
+    },
+    {
+      "key": "imageViewer.nativeTiles",
+      "source": "Native tiles"
+    },
+    {
+      "key": "imageViewer.next",
+      "source": "Next image"
+    },
+    {
+      "key": "imageViewer.previous",
+      "source": "Previous image"
+    },
+    {
+      "key": "imageViewer.reset",
+      "source": "Reset"
+    },
+    {
+      "key": "imageViewer.retry",
+      "source": "Retry"
+    },
+    {
+      "key": "imageViewer.rotateLeft",
+      "source": "Rotate left"
+    },
+    {
+      "key": "imageViewer.rotateRight",
+      "source": "Rotate right"
+    },
+    {
+      "key": "imageViewer.sourceOnly",
+      "source": "Original source"
+    },
+    {
+      "key": "imageViewer.unavailable",
+      "source": "Image viewer unavailable"
+    },
+    {
+      "key": "imageViewer.unsupported",
+      "source": "This image format is not supported by native tiling."
+    },
+    {
+      "key": "imageViewer.zoomIn",
+      "source": "Zoom in"
+    },
+    {
+      "key": "imageViewer.zoomOut",
+      "source": "Zoom out"
+    },
+    {
+      "key": "location.authDialogAllow",
+      "source": "Allow"
+    },
+    {
+      "key": "location.authDialogDeny",
+      "source": "Not now"
+    },
+    {
+      "key": "location.authDialogDescription",
+      "source": "Lyra will try browser and system physical location, then show a readable place name. Location is shown in the UI only and is not sent to the Agent."
+    },
+    {
+      "key": "location.authDialogSourceSubtitle",
+      "source": "You can revoke this anytime from the AI panel"
+    },
+    {
+      "key": "location.authDialogSourceTitle",
+      "source": "Lyra location permission"
+    },
+    {
+      "key": "location.authDialogTitle",
+      "source": "Allow Lyra to use your location?"
+    },
+    {
+      "key": "location.authorize",
+      "source": "Locate"
+    },
+    {
+      "key": "location.chipTitleAuthorize",
+      "source": "Allow Lyra to access your location"
+    },
+    {
+      "key": "location.chipTitleLocated",
+      "source": "{label}. Click to revoke location access"
+    },
+    {
+      "key": "location.chipTitleRetry",
+      "source": "Refresh location"
+    },
+    {
+      "key": "location.chipTitleUnavailable",
+      "source": "Not located. Allow Lyra under System Settings → Privacy & Security → Location Services, then retry"
+    },
+    {
+      "key": "location.currentPosition",
+      "source": "Current loc"
+    },
+    {
+      "key": "location.located",
+      "source": "Located"
+    },
+    {
+      "key": "location.locating",
+      "source": "Locating…"
+    },
+    {
+      "key": "location.revokeDialogConfirm",
+      "source": "Revoke"
+    },
+    {
+      "key": "location.revokeDialogDescription",
+      "source": "Lyra will clear the cached place name and coordinates. You can re-enable location later from the AI panel."
+    },
+    {
+      "key": "location.revokeDialogKeep",
+      "source": "Keep"
+    },
+    {
+      "key": "location.revokeDialogSubtitle",
+      "source": "Location is not sent to the Agent"
+    },
+    {
+      "key": "location.revokeDialogTitle",
+      "source": "Revoke location access?"
+    },
+    {
+      "key": "location.unlocated",
+      "source": "Not located"
+    },
+    {
+      "key": "loginManager.accountLabel",
+      "source": "Account"
+    },
+    {
+      "key": "loginManager.authMethodLabel",
+      "source": "Login method"
+    },
+    {
+      "key": "loginManager.cancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "loginManager.cookiesLabel",
+      "source": "Cookies"
+    },
+    {
+      "key": "loginManager.copied",
+      "source": "Copied"
+    },
+    {
+      "key": "loginManager.copy",
+      "source": "Copy"
+    },
+    {
+      "key": "loginManager.credentialsTab",
+      "source": "Passwords"
+    },
+    {
+      "key": "loginManager.deleteCredential",
+      "source": "Delete password"
+    },
+    {
+      "key": "loginManager.edit",
+      "source": "Edit"
+    },
+    {
+      "key": "loginManager.emptyCredentialsTitle",
+      "source": "No saved passwords"
+    },
+    {
+      "key": "loginManager.emptySessionsTitle",
+      "source": "No site sessions yet"
+    },
+    {
+      "key": "loginManager.fill",
+      "source": "Fill"
+    },
+    {
+      "key": "loginManager.lastUsedLabel",
+      "source": "Last used"
+    },
+    {
+      "key": "loginManager.logoutSite",
+      "source": "Log out site"
+    },
+    {
+      "key": "loginManager.methodMagicLink",
+      "source": "Magic link"
+    },
+    {
+      "key": "loginManager.methodOauth",
+      "source": "OAuth"
+    },
+    {
+      "key": "loginManager.methodPasskey",
+      "source": "Passkey"
+    },
+    {
+      "key": "loginManager.methodPassword",
+      "source": "Password"
+    },
+    {
+      "key": "loginManager.methodSiteSession",
+      "source": "Site session"
+    },
+    {
+      "key": "loginManager.methodSso",
+      "source": "SSO"
+    },
+    {
+      "key": "loginManager.methodUnknown",
+      "source": "Unknown"
+    },
+    {
+      "key": "loginManager.no",
+      "source": "No"
+    },
+    {
+      "key": "loginManager.notesLabel",
+      "source": "Notes"
+    },
+    {
+      "key": "loginManager.open",
+      "source": "Open Logins"
+    },
+    {
+      "key": "loginManager.openSite",
+      "source": "Open site"
+    },
+    {
+      "key": "loginManager.passwordLabel",
+      "source": "Password"
+    },
+    {
+      "key": "loginManager.passwordsUnavailable",
+      "source": "Password saving is disabled because Electron safeStorage is unavailable. Site sessions still work."
+    },
+    {
+      "key": "loginManager.refresh",
+      "source": "Refresh logins"
+    },
+    {
+      "key": "loginManager.reveal",
+      "source": "Reveal"
+    },
+    {
+      "key": "loginManager.reviewTab",
+      "source": "Review"
+    },
+    {
+      "key": "loginManager.save",
+      "source": "Save"
+    },
+    {
+      "key": "loginManager.searchPlaceholder",
+      "source": "Search sites, accounts, methods, or notes"
+    },
+    {
+      "key": "loginManager.sessionsTab",
+      "source": "Sessions"
+    },
+    {
+      "key": "loginManager.sourceInferred",
+      "source": "Inferred"
+    },
+    {
+      "key": "loginManager.sourceManual",
+      "source": "Manual"
+    },
+    {
+      "key": "loginManager.sourceObserved",
+      "source": "Observed"
+    },
+    {
+      "key": "loginManager.sourceUnknown",
+      "source": "Unknown"
+    },
+    {
+      "key": "loginManager.statusObserved",
+      "source": "Observed"
+    },
+    {
+      "key": "loginManager.statusPossible",
+      "source": "Possible"
+    },
+    {
+      "key": "loginManager.storageLabel",
+      "source": "Storage"
+    },
+    {
+      "key": "loginManager.tabTitle",
+      "source": "Logins"
+    },
+    {
+      "key": "loginManager.title",
+      "source": "Logins"
+    },
+    {
+      "key": "loginManager.updatedLabel",
+      "source": "Updated"
+    },
+    {
+      "key": "loginManager.yes",
+      "source": "Yes"
+    },
+    {
+      "key": "lyra-agents-app.tagline",
+      "source": "Lyra agent workspace"
+    },
+    {
+      "key": "lyra-agents-app.title",
+      "source": "Lyra Agents"
+    },
+    {
+      "key": "lyra-agents-citation.chipLabel",
+      "source": "{role}: {preview}"
+    },
+    {
+      "key": "lyra-agents-citation.jumpToSource",
+      "source": "Jump to citation source"
+    },
+    {
+      "key": "lyra-agents-citation.roleAgent",
+      "source": "Agent"
+    },
+    {
+      "key": "lyra-agents-citation.roleUser",
+      "source": "User"
+    },
+    {
+      "key": "lyra-agents-composer.addToConversation",
+      "source": "Add to chat"
+    },
+    {
+      "key": "lyra-agents-composer.answerClarificationFirst",
+      "source": "Answer the question above first"
+    },
+    {
+      "key": "lyra-agents-composer.attach",
+      "source": "Attach"
+    },
+    {
+      "key": "lyra-agents-composer.attachFile",
+      "source": "Add file"
+    },
+    {
+      "key": "lyra-agents-composer.attachImage",
+      "source": "Add image"
+    },
+    {
+      "key": "lyra-agents-composer.attachTerminalTab",
+      "source": "Add terminal"
+    },
+    {
+      "key": "lyra-agents-composer.attachWindowScreenshot",
+      "source": "Window shot"
+    },
+    {
+      "key": "lyra-agents-composer.attachWorkspaceScreenshot",
+      "source": "Workspace shot"
+    },
+    {
+      "key": "lyra-agents-composer.attachWorkspaceTab",
+      "source": "Add workspace"
+    },
+    {
+      "key": "lyra-agents-composer.backgroundTerminals",
+      "source": "BG terminals"
+    },
+    {
+      "key": "lyra-agents-composer.backgroundTerminalsEmpty",
+      "source": "No BG terminals"
+    },
+    {
+      "key": "lyra-agents-composer.configureModel",
+      "source": "Configure model"
+    },
+    {
+      "key": "lyra-agents-composer.dragAttachRelease",
+      "source": "Release to attach"
+    },
+    {
+      "key": "lyra-agents-composer.endTerminal",
+      "source": "End terminal"
+    },
+    {
+      "key": "lyra-agents-composer.fastMode",
+      "source": "Fast mode"
+    },
+    {
+      "key": "lyra-agents-composer.fileChip",
+      "source": "File: {preview}"
+    },
+    {
+      "key": "lyra-agents-composer.followAgent",
+      "source": "Follow Agent"
+    },
+    {
+      "key": "lyra-agents-composer.imageChipFile",
+      "source": "Image attachment: {preview}"
+    },
+    {
+      "key": "lyra-agents-composer.imageChipWindow",
+      "source": "Window shot: {preview}"
+    },
+    {
+      "key": "lyra-agents-composer.imageChipWorkspace",
+      "source": "Workspace shot: {preview}"
+    },
+    {
+      "key": "lyra-agents-composer.modelControls",
+      "source": "Models"
+    },
+    {
+      "key": "lyra-agents-composer.modelList",
+      "source": "Model list"
+    },
+    {
+      "key": "lyra-agents-composer.openInTerminalPanel",
+      "source": "Open in terminal"
+    },
+    {
+      "key": "lyra-agents-composer.openInWorkspace",
+      "source": "Open in workspace"
+    },
+    {
+      "key": "lyra-agents-composer.openPlan",
+      "source": "Plan"
+    },
+    {
+      "key": "lyra-agents-composer.openTodo",
+      "source": "Todos"
+    },
+    {
+      "key": "lyra-agents-composer.openTodoBoard",
+      "source": "Open the todo board"
+    },
+    {
+      "key": "lyra-agents-composer.pause",
+      "source": "Pause"
+    },
+    {
+      "key": "lyra-agents-composer.permissionMode",
+      "source": "Perm mode"
+    },
+    {
+      "key": "lyra-agents-composer.permissionModeApproval",
+      "source": "Approval"
+    },
+    {
+      "key": "lyra-agents-composer.permissionModeCustom",
+      "source": "Custom"
+    },
+    {
+      "key": "lyra-agents-composer.permissionModeFullAuto",
+      "source": "Full auto"
+    },
+    {
+      "key": "lyra-agents-composer.permissionModeList",
+      "source": "Perm modes"
+    },
+    {
+      "key": "lyra-agents-composer.placeholder",
+      "source": "Send a message to Lyra"
+    },
+    {
+      "key": "lyra-agents-composer.poke",
+      "source": "Continue unfinished todos"
+    },
+    {
+      "key": "lyra-agents-composer.reasoningEffort",
+      "source": "Reasoning"
+    },
+    {
+      "key": "lyra-agents-composer.removeAttachment",
+      "source": "Remove attachment"
+    },
+    {
+      "key": "lyra-agents-composer.reviewPlanFirst",
+      "source": "Review the plan above first"
+    },
+    {
+      "key": "lyra-agents-composer.send",
+      "source": "Send"
+    },
+    {
+      "key": "lyra-agents-composer.serviceTierStandard",
+      "source": "standard"
+    },
+    {
+      "key": "lyra-agents-composer.stopFollowingAgent",
+      "source": "Unfollow Agent"
+    },
+    {
+      "key": "lyra-agents-composer.verbosity",
+      "source": "Verbosity"
+    },
+    {
+      "key": "lyra-agents-composer.workingDirHome",
+      "source": "Home"
+    },
+    {
+      "key": "lyra-agents-empty.logoAction",
+      "source": "Animate Lyra logo"
+    },
+    {
+      "key": "lyra-agents-empty.questionPrefix",
+      "source": "What would you like to do in "
+    },
+    {
+      "key": "lyra-agents-empty.questionSuffix",
+      "source": "?"
+    },
+    {
+      "key": "lyra-agents-inline-reference.citation",
+      "source": "Reference"
+    },
+    {
+      "key": "lyra-agents-inline-reference.file",
+      "source": "File"
+    },
+    {
+      "key": "lyra-agents-inline-reference.image",
+      "source": "Image"
+    },
+    {
+      "key": "lyra-agents-inline-reference.page",
+      "source": "Page"
+    },
+    {
+      "key": "lyra-agents-inline-reference.reference",
+      "source": "Reference"
+    },
+    {
+      "key": "lyra-agents-message.agentResponding",
+      "source": "Agent is responding"
+    },
+    {
+      "key": "lyra-agents-message.cite",
+      "source": "Cite"
+    },
+    {
+      "key": "lyra-agents-message.citeMessage",
+      "source": "Cite entire message"
+    },
+    {
+      "key": "lyra-agents-message.citeSelection",
+      "source": "Cite selection"
+    },
+    {
+      "key": "lyra-agents-message.collapse",
+      "source": "Collapse"
+    },
+    {
+      "key": "lyra-agents-message.copy",
+      "source": "Copy message"
+    },
+    {
+      "key": "lyra-agents-message.durationDays",
+      "source": "{count}d"
+    },
+    {
+      "key": "lyra-agents-message.durationHours",
+      "source": "{count}h"
+    },
+    {
+      "key": "lyra-agents-message.durationMinutes",
+      "source": "{count}m"
+    },
+    {
+      "key": "lyra-agents-message.durationSeconds",
+      "source": "{count}s"
+    },
+    {
+      "key": "lyra-agents-message.expand",
+      "source": "Expand"
+    },
+    {
+      "key": "lyra-agents-message.imageAttachment",
+      "source": "Image attachment"
+    },
+    {
+      "key": "lyra-agents-message.processFold",
+      "source": "Process"
+    },
+    {
+      "key": "lyra-agents-message.processWorked",
+      "source": "Worked {duration}"
+    },
+    {
+      "key": "lyra-agents-message.rollbackAction",
+      "source": "Undo"
+    },
+    {
+      "key": "lyra-agents-message.rollbackBody",
+      "source": "Return to before this message, removing {messages} messages and restoring {files} files."
+    },
+    {
+      "key": "lyra-agents-message.rollbackBusy",
+      "source": "Undoing..."
+    },
+    {
+      "key": "lyra-agents-message.rollbackCancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "lyra-agents-message.rollbackCancelRunning",
+      "source": "Cancel the running turn before rolling back."
+    },
+    {
+      "key": "lyra-agents-message.rollbackClose",
+      "source": "Close"
+    },
+    {
+      "key": "lyra-agents-message.rollbackConfirm",
+      "source": "Confirm rollback"
+    },
+    {
+      "key": "lyra-agents-message.rollbackErrorTitle",
+      "source": "Cannot undo"
+    },
+    {
+      "key": "lyra-agents-message.rollbackMoreFiles",
+      "source": "+{count} more"
+    },
+    {
+      "key": "lyra-agents-message.rollbackTitle",
+      "source": "Undo files and conversation"
+    },
+    {
+      "key": "lyra-agents-message.rollbackUnavailable",
+      "source": "Rollback is unavailable for this message."
+    },
+    {
+      "key": "lyra-agents-message.thinkingInProgress",
+      "source": "Thinking..."
+    },
+    {
+      "key": "lyra-agents-message.thinkingLabel",
+      "source": "Thinking"
+    },
+    {
+      "key": "lyra-agents-message.undo",
+      "source": "Undo"
+    },
+    {
+      "key": "lyra-agents-message.undoMessage",
+      "source": "Undo message"
+    },
+    {
+      "key": "lyra-agents-message.windowScreenshot",
+      "source": "Window shot"
+    },
+    {
+      "key": "lyra-agents-message.workspaceScreenshot",
+      "source": "Workspace shot"
+    },
+    {
+      "key": "lyra-agents-oma.addAgent",
+      "source": "Add Agent"
+    },
+    {
+      "key": "lyra-agents-oma.agentQueued",
+      "source": "Waiting for provider capacity"
+    },
+    {
+      "key": "lyra-agents-oma.agentRetrying",
+      "source": "Retrying after provider rate limiting"
+    },
+    {
+      "key": "lyra-agents-oma.agentRunning",
+      "source": "Agent is running"
+    },
+    {
+      "key": "lyra-agents-oma.beta",
+      "source": "Beta"
+    },
+    {
+      "key": "lyra-agents-oma.channels",
+      "source": "Oma channels"
+    },
+    {
+      "key": "lyra-agents-oma.group",
+      "source": "Group"
+    },
+    {
+      "key": "lyra-agents-oma.manage",
+      "source": "Manage Agents"
+    },
+    {
+      "key": "lyra-agents-oma.manageMembers",
+      "source": "Agents"
+    },
+    {
+      "key": "lyra-agents-oma.mode",
+      "source": "Agent mode"
+    },
+    {
+      "key": "lyra-agents-oma.oma",
+      "source": "Oma"
+    },
+    {
+      "key": "lyra-agents-oma.omaMode",
+      "source": "Oma mode"
+    },
+    {
+      "key": "lyra-agents-oma.solo",
+      "source": "Solo"
+    },
+    {
+      "key": "lyra-agents-oma.soloMode",
+      "source": "Solo mode"
+    },
+    {
+      "key": "lyra-agents-oma.tagline",
+      "source": "Oh My Agents"
+    },
+    {
+      "key": "lyra-agents-oma.teamPlan",
+      "source": "Oma Team Plan"
+    },
+    {
+      "key": "lyra-agents-page-citation.chipLabel",
+      "source": "{tab}: {preview}"
+    },
+    {
+      "key": "menu.close",
+      "source": "Close"
+    },
+    {
+      "key": "menu.openInTerminalArea",
+      "source": "Open in Terminal"
+    },
+    {
+      "key": "menu.openInWorkspace",
+      "source": "Open in Workspace"
+    },
+    {
+      "key": "nativeMenu.back",
+      "source": "Back"
+    },
+    {
+      "key": "nativeMenu.citeLink",
+      "source": "Cite link to AI"
+    },
+    {
+      "key": "nativeMenu.citePage",
+      "source": "Cite page to AI"
+    },
+    {
+      "key": "nativeMenu.citeSelection",
+      "source": "Cite selection to AI"
+    },
+    {
+      "key": "nativeMenu.copy",
+      "source": "Copy"
+    },
+    {
+      "key": "nativeMenu.copyLink",
+      "source": "Copy link"
+    },
+    {
+      "key": "nativeMenu.cut",
+      "source": "Cut"
+    },
+    {
+      "key": "nativeMenu.forward",
+      "source": "Forward"
+    },
+    {
+      "key": "nativeMenu.openLinkInNewTab",
+      "source": "Open link in new tab"
+    },
+    {
+      "key": "nativeMenu.paste",
+      "source": "Paste"
+    },
+    {
+      "key": "nativeMenu.reload",
+      "source": "Reload"
+    },
+    {
+      "key": "navigation.addressSuggestionAriaLabel",
+      "source": "Address suggestions"
+    },
+    {
+      "key": "navigation.clearAddressAriaLabel",
+      "source": "Clear {label}"
+    },
+    {
+      "key": "navigation.elementPickerActive",
+      "source": "Element picker active"
+    },
+    {
+      "key": "navigation.elementPickerDisable",
+      "source": "Disable element picker"
+    },
+    {
+      "key": "navigation.elementPickerEnable",
+      "source": "Enable element picker"
+    },
+    {
+      "key": "navigation.elementPickerInspect",
+      "source": "Inspect"
+    },
+    {
+      "key": "navigation.elementPickerLayout",
+      "source": "Layout"
+    },
+    {
+      "key": "navigation.nextPageResult",
+      "source": "Next page result"
+    },
+    {
+      "key": "navigation.pageFindEmptyNoMatch",
+      "source": "No matches found"
+    },
+    {
+      "key": "navigation.pageFindEmptyStart",
+      "source": "Type to search page content"
+    },
+    {
+      "key": "navigation.pageFindResultCurrent",
+      "source": "Current"
+    },
+    {
+      "key": "navigation.pageFindResultLabel",
+      "source": "Result"
+    },
+    {
+      "key": "navigation.pageFindResultsAriaLabel",
+      "source": "Page content search results"
+    },
+    {
+      "key": "navigation.pageFindTruncationNotice",
+      "source": "Showing only the first {count} results."
+    },
+    {
+      "key": "navigation.pageFindTruncationNotice_one",
+      "source": "Showing only the first {count} result."
+    },
+    {
+      "key": "navigation.pageFindTruncationNotice_other",
+      "source": "Showing only the first {count} results."
+    },
+    {
+      "key": "navigation.previousPageResult",
+      "source": "Previous page result"
+    },
+    {
+      "key": "navigation.reloadAction",
+      "source": "Reload page"
+    },
+    {
+      "key": "navigation.securityAddressLabel",
+      "source": "Address"
+    },
+    {
+      "key": "navigation.securityAriaLabel",
+      "source": "Connection security information"
+    },
+    {
+      "key": "navigation.securityCertificateFingerprintLabel",
+      "source": "SHA-256 fingerprint"
+    },
+    {
+      "key": "navigation.securityCertificateIssuerLabel",
+      "source": "Certificate issuer"
+    },
+    {
+      "key": "navigation.securityCertificateNotApplicableLabel",
+      "source": "Not applicable"
+    },
+    {
+      "key": "navigation.securityCertificateSerialLabel",
+      "source": "Serial number"
+    },
+    {
+      "key": "navigation.securityCertificateSubjectAltNameLabel",
+      "source": "Subject alternative names"
+    },
+    {
+      "key": "navigation.securityCertificateSubjectLabel",
+      "source": "Certificate subject"
+    },
+    {
+      "key": "navigation.securityCertificateUnavailableLabel",
+      "source": "Certificate details"
+    },
+    {
+      "key": "navigation.securityCertificateValidFromLabel",
+      "source": "Valid from"
+    },
+    {
+      "key": "navigation.securityCertificateValidToLabel",
+      "source": "Valid until"
+    },
+    {
+      "key": "navigation.securityConnectionLabel",
+      "source": "Connection"
+    },
+    {
+      "key": "navigation.securityHostLabel",
+      "source": "Host"
+    },
+    {
+      "key": "navigation.securityInsecureBody",
+      "source": "This page did not load over HTTPS. Content on this connection may be read or changed by others on the network."
+    },
+    {
+      "key": "navigation.securityInsecureConnection",
+      "source": "Unencrypted HTTP"
+    },
+    {
+      "key": "navigation.securityInsecureTitle",
+      "source": "Connection is not secure"
+    },
+    {
+      "key": "navigation.securityLocalConnection",
+      "source": "Local/system page"
+    },
+    {
+      "key": "navigation.securityOriginLabel",
+      "source": "Origin"
+    },
+    {
+      "key": "navigation.securitySchemeLabel",
+      "source": "Scheme"
+    },
+    {
+      "key": "navigation.securitySecureBody",
+      "source": "This page loaded over HTTPS. Lyra only shows connection and certificate information it actually read from the current page."
+    },
+    {
+      "key": "navigation.securitySecureConnection",
+      "source": "HTTPS"
+    },
+    {
+      "key": "navigation.securitySecureTitle",
+      "source": "Connection is secure"
+    },
+    {
+      "key": "navigation.securitySystemBody",
+      "source": "This is not a remote HTTPS website. Lyra is showing only the local or system origin details it can confirm."
+    },
+    {
+      "key": "navigation.securitySystemTitle",
+      "source": "Local or system page"
+    },
+    {
+      "key": "navigation.securityTitle",
+      "source": "View connection security information"
+    },
+    {
+      "key": "navigation.securityUnavailableNoCertificate",
+      "source": "Chromium did not return a parsable certificate chain."
+    },
+    {
+      "key": "navigation.securityUnavailableNotHttps",
+      "source": "The current page is not an HTTPS connection."
+    },
+    {
+      "key": "navigation.securityUnavailableReason",
+      "source": "Certificate details unavailable: {reason}"
+    },
+    {
+      "key": "navigation.submitAction",
+      "source": "Go"
+    },
+    {
+      "key": "navigation.suggestionTypeHistory",
+      "source": "History"
+    },
+    {
+      "key": "navigation.suggestionTypeSearch",
+      "source": "Search suggestion"
+    },
+    {
+      "key": "navigation.titlebarAriaLabel",
+      "source": "Titlebar navigation"
+    },
+    {
+      "key": "navigation.titlebarPlaceholder",
+      "source": "Search, enter a URL, or enter a file path"
+    },
+    {
+      "key": "notification.centerClearAll",
+      "source": "Clear all"
+    },
+    {
+      "key": "notification.centerClearConfirmAction",
+      "source": "Clear all"
+    },
+    {
+      "key": "notification.centerClearConfirmCancel",
+      "source": "Keep"
+    },
+    {
+      "key": "notification.centerClearConfirmDescription",
+      "source": "This action removes all notifications from the center."
+    },
+    {
+      "key": "notification.centerClearConfirmTitle",
+      "source": "Clear all notifications?"
+    },
+    {
+      "key": "notification.centerEmptyTitle",
+      "source": "No notifications"
+    },
+    {
+      "key": "notification.centerListTitle",
+      "source": "List"
+    },
+    {
+      "key": "notification.centerMarkAllRead",
+      "source": "Mark all as read"
+    },
+    {
+      "key": "notification.centerOpenSource",
+      "source": "Open source"
+    },
+    {
+      "key": "notification.centerSourceFallback",
+      "source": "No jump target available"
+    },
+    {
+      "key": "notification.centerTabTitle",
+      "source": "Notifications"
+    },
+    {
+      "key": "notification.centerTitle",
+      "source": "Notifications"
+    },
+    {
+      "key": "notification.centerUnread",
+      "source": "Unread"
+    },
+    {
+      "key": "notification.mimoFault400Body",
+      "source": "Check JSON format, required fields, multimodal file limits, and full reasoning_content replay in thinking mode."
+    },
+    {
+      "key": "notification.mimoFault400Title",
+      "source": "MiMo request format error"
+    },
+    {
+      "key": "notification.mimoFault401Body",
+      "source": "The API key is missing or invalid, the Authorization header is malformed, or Token Plan and pay-as-you-go keys were mixed. Verify the key and Token Plan base URL."
+    },
+    {
+      "key": "notification.mimoFault401Title",
+      "source": "MiMo authentication failed"
+    },
+    {
+      "key": "notification.mimoFault402Body",
+      "source": "The MiMo account balance is insufficient. Recharge the account or switch to another provider before retrying."
+    },
+    {
+      "key": "notification.mimoFault402Title",
+      "source": "MiMo balance insufficient"
+    },
+    {
+      "key": "notification.mimoFault403Body",
+      "source": "The service may be unavailable in this region or the API key may be risk-controlled. Create a new API key and review input safety."
+    },
+    {
+      "key": "notification.mimoFault403Title",
+      "source": "MiMo access denied"
+    },
+    {
+      "key": "notification.mimoFault421Body",
+      "source": "MiMo blocked this request during content review. Avoid unsafe or sensitive input and retry with a safer prompt."
+    },
+    {
+      "key": "notification.mimoFault421Title",
+      "source": "MiMo content blocked"
+    },
+    {
+      "key": "notification.mimoFault429Body",
+      "source": "Requests are too frequent or the Token Plan quota is exhausted. Lyra retried automatically; reduce frequency, upgrade the plan, or switch APIs."
+    },
+    {
+      "key": "notification.mimoFault429Title",
+      "source": "MiMo rate limit exceeded"
+    },
+    {
+      "key": "notification.mimoFault500Body",
+      "source": "MiMo returned a server-side error. Lyra retried automatically; try again later."
+    },
+    {
+      "key": "notification.mimoFault500Title",
+      "source": "MiMo service unavailable"
+    },
+    {
+      "key": "notification.mimoFaultGenericBody",
+      "source": "MiMo returned an uncategorized error. Check the session details or retry later."
+    },
+    {
+      "key": "notification.mimoFaultGenericTitle",
+      "source": "MiMo request failed"
+    },
+    {
+      "key": "notification.topbarOpenCenter",
+      "source": "Open notifications"
+    },
+    {
+      "key": "notification.topbarOpenPreview",
+      "source": "Open latest notification"
+    },
+    {
+      "key": "oma.channelsAriaLabel",
+      "source": "Oma channels"
+    },
+    {
+      "key": "oma.mentionAgentAriaLabel",
+      "source": "Mention an Oma Agent"
+    },
+    {
+      "key": "panel.moveTerminalToBottom",
+      "source": "Move terminal bottom"
+    },
+    {
+      "key": "panel.moveTerminalToTop",
+      "source": "Move terminal top"
+    },
+    {
+      "key": "panel.toggleBottom",
+      "source": "Toggle terminal"
+    },
+    {
+      "key": "panel.toggleLeft",
+      "source": "Toggle left panel"
+    },
+    {
+      "key": "permission.allowAlways",
+      "source": "Always allow"
+    },
+    {
+      "key": "permission.allowOnce",
+      "source": "Allow once"
+    },
+    {
+      "key": "permission.approve",
+      "source": "Allow"
+    },
+    {
+      "key": "permission.ask",
+      "source": "Ask"
+    },
+    {
+      "key": "permission.command",
+      "source": "Command"
+    },
+    {
+      "key": "permission.decision.allow_always",
+      "source": "Always allowed"
+    },
+    {
+      "key": "permission.decision.allow_once",
+      "source": "Allowed once"
+    },
+    {
+      "key": "permission.decision.deny",
+      "source": "Denied"
+    },
+    {
+      "key": "permission.deny",
+      "source": "Deny"
+    },
+    {
+      "key": "permission.hideDetails",
+      "source": "Hide"
+    },
+    {
+      "key": "permission.interactiveCategory",
+      "source": "Interactive"
+    },
+    {
+      "key": "permission.mode",
+      "source": "Mode"
+    },
+    {
+      "key": "permission.next",
+      "source": "Next permission request"
+    },
+    {
+      "key": "permission.prev",
+      "source": "Previous permission request"
+    },
+    {
+      "key": "permission.previousDecision",
+      "source": "Previous decision"
+    },
+    {
+      "key": "permission.repeatCommand",
+      "source": "repeat"
+    },
+    {
+      "key": "permission.riskAssessment",
+      "source": "Risk"
+    },
+    {
+      "key": "permission.riskLevel.critical",
+      "source": "Critical"
+    },
+    {
+      "key": "permission.riskLevel.high",
+      "source": "High risk"
+    },
+    {
+      "key": "permission.riskLevel.low",
+      "source": "Low risk"
+    },
+    {
+      "key": "permission.riskLevel.medium",
+      "source": "Medium risk"
+    },
+    {
+      "key": "permission.riskLevel.safe",
+      "source": "Safe"
+    },
+    {
+      "key": "permission.showDetails",
+      "source": "Details"
+    },
+    {
+      "key": "permission.tool",
+      "source": "Tool"
+    },
+    {
+      "key": "permission.workingDir",
+      "source": "Working dir"
+    },
+    {
+      "key": "permissionPolicy.adminCredentialDescription",
+      "source": "To confirm operator identity and provide credentials for protected local operations when needed, enter the local administrator password. The password is saved as an encrypted Lyra sensitive value reference; the model can only see an unreadable reference and cannot read the plaintext."
+    },
+    {
+      "key": "permissionPolicy.adminCredentialLabel",
+      "source": "Lyra Agent administrator credential"
+    },
+    {
+      "key": "permissionPolicy.adminCredentialStorageDescription",
+      "source": "Persistent administrator credential for Lyra Agent full auto mode."
+    },
+    {
+      "key": "permissionPolicy.adminCredentialTitle",
+      "source": "Save administrator credential"
+    },
+    {
+      "key": "permissionPolicy.adminPasswordLabel",
+      "source": "Administrator password"
+    },
+    {
+      "key": "permissionPolicy.cancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "permissionPolicy.continue",
+      "source": "Continue"
+    },
+    {
+      "key": "permissionPolicy.deleteAndDisable",
+      "source": "Delete and disable auto"
+    },
+    {
+      "key": "permissionPolicy.deleteCredentialDescription",
+      "source": "You have a saved administrator credential. Delete it when switching back to approval mode, or keep it for future use."
+    },
+    {
+      "key": "permissionPolicy.deleteCredentialTitle",
+      "source": "Delete saved sudo password?"
+    },
+    {
+      "key": "permissionPolicy.dialogSourceSubtitle",
+      "source": "Perm mode"
+    },
+    {
+      "key": "permissionPolicy.fullAutoWarningDescription",
+      "source": "Full auto mode lets Lyra Agent skip per-action approvals in this local session and directly run the operations it decides are needed. Lyra can read and write project files, run commands, operate browser pages, use authorized accounts, and may coordinate system capabilities, project code, and external devices. That is part of its power, and it also makes misuse genuinely risky. If you do not understand this mode, do not enable it. Continue only when you trust the current task, workspace, and model output."
+    },
+    {
+      "key": "permissionPolicy.fullAutoWarningTitle",
+      "source": "Enable full auto mode"
+    },
+    {
+      "key": "permissionPolicy.keepAndDisable",
+      "source": "Keep and disable auto"
+    },
+    {
+      "key": "permissionPolicy.passwordInvalidAck",
+      "source": "Got it"
+    },
+    {
+      "key": "permissionPolicy.passwordInvalidDescription",
+      "source": "The password you entered is incorrect. Please verify and try again."
+    },
+    {
+      "key": "permissionPolicy.passwordInvalidTitle",
+      "source": "Password validation failed"
+    },
+    {
+      "key": "permissionPolicy.saveAndEnable",
+      "source": "Save and enable"
+    },
+    {
+      "key": "permissionPolicy.sensitiveValueSubtitle",
+      "source": "Local sensitive value"
+    },
+    {
+      "key": "planReview.approve",
+      "source": "Approve plan"
+    },
+    {
+      "key": "planReview.ready",
+      "source": "The plan is ready for review."
+    },
+    {
+      "key": "planReview.resume",
+      "source": "Resume plan"
+    },
+    {
+      "key": "planReview.review",
+      "source": "Review"
+    },
+    {
+      "key": "planReview.revise",
+      "source": "Revise from feedback"
+    },
+    {
+      "key": "planReview.setAside",
+      "source": "Set aside"
+    },
+    {
+      "key": "runtime.desktopBridgeUnavailable",
+      "source": "Lyra desktop bridge is unavailable."
+    },
+    {
+      "key": "scroll.jumpToPreviousMessage",
+      "source": "Jump to previous message"
+    },
+    {
+      "key": "scroll.previousMessage",
+      "source": "Previous"
+    },
+    {
+      "key": "scroll.showEarlier",
+      "source": "Show earlier"
+    },
+    {
+      "key": "scroll.toBottom",
+      "source": "Scroll to bottom"
+    },
+    {
+      "key": "settings.actCacheDescription",
+      "source": "Cache successful browser_ax.act results keyed by intent + page snapshot. Repeats skip AX-tree resolution for 60s."
+    },
+    {
+      "key": "settings.actCacheDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.actCacheEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.actCacheLabel",
+      "source": "ActCache Replay"
+    },
+    {
+      "key": "settings.aiAccountConfigured",
+      "source": "configured"
+    },
+    {
+      "key": "settings.aiAccountDefault",
+      "source": "default"
+    },
+    {
+      "key": "settings.aiAccountNotConfigured",
+      "source": "not configured"
+    },
+    {
+      "key": "settings.aiAccountsAriaLabel",
+      "source": "Lyra Agent accounts"
+    },
+    {
+      "key": "settings.aiAccountsEmptyDescription",
+      "source": "Use the provider profile editor below to add an API key."
+    },
+    {
+      "key": "settings.aiAccountsEmptyTitle",
+      "source": "No Lyra Agent accounts configured"
+    },
+    {
+      "key": "settings.aiAccountsTitle",
+      "source": "Agent accounts"
+    },
+    {
+      "key": "settings.aiAdditionalFieldsTitle",
+      "source": "Extra fields"
+    },
+    {
+      "key": "settings.aiAddProfile",
+      "source": "New profile"
+    },
+    {
+      "key": "settings.aiAdvancedSettingsLabel",
+      "source": "Advanced"
+    },
+    {
+      "key": "settings.aiAgentConfigAriaLabel",
+      "source": "Lyra Agent config"
+    },
+    {
+      "key": "settings.aiAllSection",
+      "source": "Local"
+    },
+    {
+      "key": "settings.aiApiKeyConfigured",
+      "source": "An API key is already stored securely."
+    },
+    {
+      "key": "settings.aiApiKeyLabel",
+      "source": "API Key"
+    },
+    {
+      "key": "settings.aiApiKeyMissing",
+      "source": "No API key stored yet."
+    },
+    {
+      "key": "settings.aiApiKeyPlaceholder",
+      "source": "sk-..."
+    },
+    {
+      "key": "settings.aiApiKeyProviderDescription",
+      "source": "Save an API key provider profile into Lyra Agent config and optionally make it the default."
+    },
+    {
+      "key": "settings.aiApiKeyProviderTitle",
+      "source": "Add API key"
+    },
+    {
+      "key": "settings.aiAuthHeaderLabel",
+      "source": "Auth Header"
+    },
+    {
+      "key": "settings.aiBaseUrlLabel",
+      "source": "URL"
+    },
+    {
+      "key": "settings.aiBaseUrlPlaceholder",
+      "source": "https://api.openai.com/v1"
+    },
+    {
+      "key": "settings.aiCallbackInputLabel",
+      "source": "Callback URL or code"
+    },
+    {
+      "key": "settings.aiCallbackInputPlaceholder",
+      "source": "Paste the callback URL, query string, or authorization code"
+    },
+    {
+      "key": "settings.aiCancel",
+      "source": "Cancel"
+    },
+    {
+      "key": "settings.aiCategoryLabel",
+      "source": "Lyra Agents"
+    },
+    {
+      "key": "settings.aiCompleteLogin",
+      "source": "Complete login"
+    },
+    {
+      "key": "settings.aiConfigFileDescription",
+      "source": "Open the real Lyra Agent config in the workspace editor."
+    },
+    {
+      "key": "settings.aiConfigFileTitle",
+      "source": "Lyra Agent config file"
+    },
+    {
+      "key": "settings.aiConfigPathUnavailable",
+      "source": "Lyra Agent config path is unavailable."
+    },
+    {
+      "key": "settings.aiConnectionTitle",
+      "source": "Connection"
+    },
+    {
+      "key": "settings.aiCustomModelsLabel",
+      "source": "Model aliases"
+    },
+    {
+      "key": "settings.aiCustomModelsPlaceholder",
+      "source": "model-id | Display Name | Optional note"
+    },
+    {
+      "key": "settings.aiCustomProviderFallback",
+      "source": "custom provider"
+    },
+    {
+      "key": "settings.aiCustomSection",
+      "source": "Custom"
+    },
+    {
+      "key": "settings.aiDefaultBadge",
+      "source": "Default"
+    },
+    {
+      "key": "settings.aiDefaultModelFallback",
+      "source": "Lyra Agent default model"
+    },
+    {
+      "key": "settings.aiDefaultProfileLabel",
+      "source": "Default profile"
+    },
+    {
+      "key": "settings.aiDeleteProfile",
+      "source": "Delete profile"
+    },
+    {
+      "key": "settings.aiDeleteProfileConfirmDescription",
+      "source": "This removes the saved profile and stored secret."
+    },
+    {
+      "key": "settings.aiDeleteProfileConfirmTitle",
+      "source": "Delete profile?"
+    },
+    {
+      "key": "settings.aiEditProfile",
+      "source": "Edit profile"
+    },
+    {
+      "key": "settings.aiEmptyDescription",
+      "source": "Pick a provider preset, enter your API key, and save."
+    },
+    {
+      "key": "settings.aiEmptyTitle",
+      "source": "No AI profile yet"
+    },
+    {
+      "key": "settings.aiFeatureDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.aiFeatureEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.aiFileEditorUnavailable",
+      "source": "Workbench file editor is unavailable."
+    },
+    {
+      "key": "settings.aiHeadersLabel",
+      "source": "Request headers"
+    },
+    {
+      "key": "settings.aiHeadersPlaceholder",
+      "source": "HTTP-Referer: https://example.com\nX-Title: Lyra"
+    },
+    {
+      "key": "settings.aiLeanPromptDeliveryLabel",
+      "source": "Lean prompts"
+    },
+    {
+      "key": "settings.aiLocalCapabilitiesTitle",
+      "source": "Default capabilities"
+    },
+    {
+      "key": "settings.aiLocalModelsLabel",
+      "source": "Model IDs"
+    },
+    {
+      "key": "settings.aiLocalModelsPlaceholder",
+      "source": "llama3.2:latest\nqwen3:8b\nlocal-model-id"
+    },
+    {
+      "key": "settings.aiLocalProviderDescription",
+      "source": "Connect to an already-running local model server, save it as a Lyra Agent profile, and discover available models."
+    },
+    {
+      "key": "settings.aiLocalProviderTitle",
+      "source": "Local models"
+    },
+    {
+      "key": "settings.aiLocalSupportsImageInput",
+      "source": "Image input"
+    },
+    {
+      "key": "settings.aiLocalSupportsStreaming",
+      "source": "Streaming"
+    },
+    {
+      "key": "settings.aiLocalSupportsToolCalling",
+      "source": "Tool calling"
+    },
+    {
+      "key": "settings.aiLoginCallbackDescription",
+      "source": "Lyra Agent verifies the login flow before saving tokens under the Agent data directory."
+    },
+    {
+      "key": "settings.aiLoginProvidersDescription",
+      "source": "Sign in to model providers through Lyra Agent. OAuth opens in your browser and completes here with a pasted callback."
+    },
+    {
+      "key": "settings.aiLoginProvidersTitle",
+      "source": "Provider login"
+    },
+    {
+      "key": "settings.aiMainModelLabel",
+      "source": "Primary model"
+    },
+    {
+      "key": "settings.aiMcpAddServer",
+      "source": "Add"
+    },
+    {
+      "key": "settings.aiMcpArgsLabel",
+      "source": "Arguments"
+    },
+    {
+      "key": "settings.aiMcpCommandLabel",
+      "source": "Command"
+    },
+    {
+      "key": "settings.aiMcpConnected",
+      "source": "Connected"
+    },
+    {
+      "key": "settings.aiMcpDisconnected",
+      "source": "Disconnected"
+    },
+    {
+      "key": "settings.aiMcpEdit",
+      "source": "Edit"
+    },
+    {
+      "key": "settings.aiMcpEmptyDescription",
+      "source": "Paste an MCP config, command, or URL to add a server."
+    },
+    {
+      "key": "settings.aiMcpEmptyTitle",
+      "source": "No MCP servers"
+    },
+    {
+      "key": "settings.aiMcpEnvLabel",
+      "source": "Environment"
+    },
+    {
+      "key": "settings.aiMcpFailed",
+      "source": "Failed"
+    },
+    {
+      "key": "settings.aiMcpHeadersLabel",
+      "source": "Headers"
+    },
+    {
+      "key": "settings.aiMcpNameLabel",
+      "source": "Name"
+    },
+    {
+      "key": "settings.aiMcpRemove",
+      "source": "Remove"
+    },
+    {
+      "key": "settings.aiMcpSave",
+      "source": "Save"
+    },
+    {
+      "key": "settings.aiMcpSearchPlaceholder",
+      "source": "Paste mcpServers JSON, a command, URL, or search servers"
+    },
+    {
+      "key": "settings.aiMcpTitle",
+      "source": "MCP"
+    },
+    {
+      "key": "settings.aiMcpToolsLabel",
+      "source": "Tools: "
+    },
+    {
+      "key": "settings.aiMcpTransportLabel",
+      "source": "Transport"
+    },
+    {
+      "key": "settings.aiMcpUrlLabel",
+      "source": "URL"
+    },
+    {
+      "key": "settings.aiMemoryConfigDescription",
+      "source": "Structured Agent memory is owned by the runtime."
+    },
+    {
+      "key": "settings.aiMemoryConfigLoad",
+      "source": "Refresh memory"
+    },
+    {
+      "key": "settings.aiMemoryConfigPlaceholder",
+      "source": "Runtime managed"
+    },
+    {
+      "key": "settings.aiMemoryConfigSave",
+      "source": "Apply memory"
+    },
+    {
+      "key": "settings.aiMemoryConfigStatusIdle",
+      "source": "Memory runtime is managed automatically."
+    },
+    {
+      "key": "settings.aiMemoryConfigStatusInvalidJson",
+      "source": "Memory schema is runtime-owned."
+    },
+    {
+      "key": "settings.aiMemoryConfigStatusLoaded",
+      "source": "Memory status refreshed."
+    },
+    {
+      "key": "settings.aiMemoryConfigStatusSaved",
+      "source": "Memory settings applied."
+    },
+    {
+      "key": "settings.aiMemoryConfigTitle",
+      "source": "Agent Memory"
+    },
+    {
+      "key": "settings.aiModelLabel",
+      "source": "Model IDs"
+    },
+    {
+      "key": "settings.aiModelModeAllLabel",
+      "source": "All"
+    },
+    {
+      "key": "settings.aiModelModeCustomLabel",
+      "source": "Custom"
+    },
+    {
+      "key": "settings.aiModelPlaceholder",
+      "source": "gpt-5.4\ngpt-5.4-mini\ncustom-model-id"
+    },
+    {
+      "key": "settings.aiModelsAddCustomModel",
+      "source": "Add"
+    },
+    {
+      "key": "settings.aiModelsAddModel",
+      "source": "Add model"
+    },
+    {
+      "key": "settings.aiModelsCurrentLabel",
+      "source": "Current model"
+    },
+    {
+      "key": "settings.aiModelsCustomModel",
+      "source": "Custom model"
+    },
+    {
+      "key": "settings.aiModelsCustomModelPlaceholder",
+      "source": "model-id"
+    },
+    {
+      "key": "settings.aiModelsDeleteConfirmAction",
+      "source": "Delete model"
+    },
+    {
+      "key": "settings.aiModelsDeleteConfirmDescription",
+      "source": "Remove {model} from this provider. This does not delete the provider or revoke credentials."
+    },
+    {
+      "key": "settings.aiModelsDeleteConfirmTitle",
+      "source": "Delete model?"
+    },
+    {
+      "key": "settings.aiModelsDeleteLabel",
+      "source": "Delete model"
+    },
+    {
+      "key": "settings.aiModelsDisableAll",
+      "source": "Disable all"
+    },
+    {
+      "key": "settings.aiModelsDiscoverEmptyDescription",
+      "source": "No models were discovered. Check the provider credentials, then try again."
+    },
+    {
+      "key": "settings.aiModelsDiscoverModels",
+      "source": "Discover models"
+    },
+    {
+      "key": "settings.aiModelsEmptyDescription",
+      "source": "Connect a provider or discover local models first."
+    },
+    {
+      "key": "settings.aiModelsEmptyTitle",
+      "source": "No models available"
+    },
+    {
+      "key": "settings.aiModelsEnableAll",
+      "source": "Enable all"
+    },
+    {
+      "key": "settings.aiModelsHelp",
+      "source": "Support one or many model ids. Separate with commas, Chinese commas, semicolons, new lines, or use `id | display name | note`."
+    },
+    {
+      "key": "settings.aiModelsManualEntryDescription",
+      "source": "Use this only when the provider cannot discover models automatically."
+    },
+    {
+      "key": "settings.aiModelsManualEntryTitle",
+      "source": "Manual IDs"
+    },
+    {
+      "key": "settings.aiModelsProviderTitle",
+      "source": "Choose provider"
+    },
+    {
+      "key": "settings.aiModelsSearchPlaceholder",
+      "source": "Add or search models"
+    },
+    {
+      "key": "settings.aiModelsTitle",
+      "source": "Models"
+    },
+    {
+      "key": "settings.aiModelsViewAll",
+      "source": "View all"
+    },
+    {
+      "key": "settings.aiNoDefaultModel",
+      "source": "No default model"
+    },
+    {
+      "key": "settings.aiNoDefaultProvider",
+      "source": "No default provider"
+    },
+    {
+      "key": "settings.aiNoDiscoveredModels",
+      "source": "No discovered models yet. You can still type a model id manually."
+    },
+    {
+      "key": "settings.aiOpenConfigFile",
+      "source": "Open Config"
+    },
+    {
+      "key": "settings.aiPlanningReflectionDescription",
+      "source": "Enable Lyra internal planning/reflection before final responses."
+    },
+    {
+      "key": "settings.aiPlanningReflectionLabel",
+      "source": "Planning + Reflection"
+    },
+    {
+      "key": "settings.aiProfileNameLabel",
+      "source": "Profile name"
+    },
+    {
+      "key": "settings.aiProfileNamePlaceholder",
+      "source": "Production API"
+    },
+    {
+      "key": "settings.aiProfilesTitle",
+      "source": "Provider Profiles"
+    },
+    {
+      "key": "settings.aiPromptExperimentsDescription",
+      "source": "Experimental prompt token controls. Full prompt remains the safe default."
+    },
+    {
+      "key": "settings.aiPromptExperimentsTitle",
+      "source": "Prompt delivery"
+    },
+    {
+      "key": "settings.aiProviderAutoFallback",
+      "source": "auto"
+    },
+    {
+      "key": "settings.aiProviderLabel",
+      "source": "Provider"
+    },
+    {
+      "key": "settings.aiProviderOpenAiCompatible",
+      "source": "OpenAI-Compatible"
+    },
+    {
+      "key": "settings.aiProviderProfileTitle",
+      "source": "Provider profile"
+    },
+    {
+      "key": "settings.aiProviderTitle",
+      "source": "Provider"
+    },
+    {
+      "key": "settings.aiRecommendedSection",
+      "source": "Mainstream"
+    },
+    {
+      "key": "settings.aiRefreshAgent",
+      "source": "Refresh"
+    },
+    {
+      "key": "settings.aiRemoveAccount",
+      "source": "Remove account"
+    },
+    {
+      "key": "settings.aiRichRenderDescription",
+      "source": "Render completed AI replies with Markdown and Mermaid."
+    },
+    {
+      "key": "settings.aiRichRenderDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.aiRichRenderEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.aiRichRenderLabel",
+      "source": "Rich Message Rendering"
+    },
+    {
+      "key": "settings.aiRuntimeUnavailable",
+      "source": "Lyra Agent runtime bridge is unavailable."
+    },
+    {
+      "key": "settings.aiSaveAndDiscoverModels",
+      "source": "Save & discover"
+    },
+    {
+      "key": "settings.aiSaveProfile",
+      "source": "Save profile"
+    },
+    {
+      "key": "settings.aiSecretConfigured",
+      "source": "A secret is already stored securely for this field."
+    },
+    {
+      "key": "settings.aiSecretMissing",
+      "source": "No secret stored for this field yet."
+    },
+    {
+      "key": "settings.aiSectionAgent",
+      "source": "Lyra Agent"
+    },
+    {
+      "key": "settings.aiSectionSessions",
+      "source": "Sessions"
+    },
+    {
+      "key": "settings.aiSelectProviderLabel",
+      "source": "Choose provider"
+    },
+    {
+      "key": "settings.aiSkillsActive",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.aiSkillsAddSkill",
+      "source": "Add"
+    },
+    {
+      "key": "settings.aiSkillsEmptyDescription",
+      "source": "Paste a GitHub URL or local folder, or install a Lyra Store skill when available."
+    },
+    {
+      "key": "settings.aiSkillsEmptyTitle",
+      "source": "No skills available"
+    },
+    {
+      "key": "settings.aiSkillsInactive",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.aiSkillsLoadingMore",
+      "source": "Loading more skills..."
+    },
+    {
+      "key": "settings.aiSkillsPermissionsLabel",
+      "source": "Permissions: "
+    },
+    {
+      "key": "settings.aiSkillsPromptLabel",
+      "source": "Prompt: "
+    },
+    {
+      "key": "settings.aiSkillsResourceRootLabel",
+      "source": "Resources: "
+    },
+    {
+      "key": "settings.aiSkillsSearching",
+      "source": "Searching skills..."
+    },
+    {
+      "key": "settings.aiSkillsSearchPlaceholder",
+      "source": "Paste a GitHub URL or local path, or search skills"
+    },
+    {
+      "key": "settings.aiSkillsTitle",
+      "source": "Skills"
+    },
+    {
+      "key": "settings.aiSkillsToolsLabel",
+      "source": "Tools: "
+    },
+    {
+      "key": "settings.aiSkillsUninstall",
+      "source": "Uninstall"
+    },
+    {
+      "key": "settings.aiStartLogin",
+      "source": "Start login"
+    },
+    {
+      "key": "settings.aiStatefulPromptContractLabel",
+      "source": "Responses stateful prompts"
+    },
+    {
+      "key": "settings.aiStopBehaviorDescription",
+      "source": "Controls what happens when the stop icon is clicked while an Agent turn is running."
+    },
+    {
+      "key": "settings.aiStopBehaviorLabel",
+      "source": "Stop button behavior"
+    },
+    {
+      "key": "settings.aiStopBehaviorTurnAndBackgroundDescription",
+      "source": "Interrupt the Agent turn and clean this conversation's background terminal activity."
+    },
+    {
+      "key": "settings.aiStopBehaviorTurnAndBackgroundLabel",
+      "source": "AI + terminals"
+    },
+    {
+      "key": "settings.aiStopBehaviorTurnOnlyDescription",
+      "source": "Interrupt the current Agent turn, but leave background terminals untouched."
+    },
+    {
+      "key": "settings.aiStopBehaviorTurnOnlyLabel",
+      "source": "Reply only"
+    },
+    {
+      "key": "settings.appearanceCategoryLabel",
+      "source": "Appearance"
+    },
+    {
+      "key": "settings.codeGraphEmbeddingDescription",
+      "source": "Load a local ONNX embedding model (BGE-Small) for semantic symbol search. Increases memory usage. Takes effect on next project index."
+    },
+    {
+      "key": "settings.codeGraphEmbeddingDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.codeGraphEmbeddingEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.codeGraphEmbeddingLabel",
+      "source": "CodeGraph Semantic Search"
+    },
+    {
+      "key": "settings.docsNavLabel",
+      "source": "Docs"
+    },
+    {
+      "key": "settings.experimentalCategoryLabel",
+      "source": "Experimental"
+    },
+    {
+      "key": "settings.generalCategoryLabel",
+      "source": "General"
+    },
+    {
+      "key": "settings.jsReplDescription",
+      "source": "Allow Agent turns to use the bundled Lyra desktop runtime for persistent JavaScript execution."
+    },
+    {
+      "key": "settings.jsReplDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.jsReplEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.jsReplLabel",
+      "source": "JavaScript REPL"
+    },
+    {
+      "key": "settings.languageDownload",
+      "source": "Download"
+    },
+    {
+      "key": "settings.languageLabel",
+      "source": "Language"
+    },
+    {
+      "key": "settings.languageNoResults",
+      "source": "No languages found"
+    },
+    {
+      "key": "settings.languageRemove",
+      "source": "Remove"
+    },
+    {
+      "key": "settings.languageRemoving",
+      "source": "Removing"
+    },
+    {
+      "key": "settings.languageSearchPlaceholder",
+      "source": "Search languages"
+    },
+    {
+      "key": "settings.languageStatusAvailable",
+      "source": "Install"
+    },
+    {
+      "key": "settings.languageStatusCurrent",
+      "source": "Current"
+    },
+    {
+      "key": "settings.languageStatusFailed",
+      "source": "Failed"
+    },
+    {
+      "key": "settings.languageStatusInstalled",
+      "source": "Installed"
+    },
+    {
+      "key": "settings.languageStatusInstalling",
+      "source": "Installing"
+    },
+    {
+      "key": "settings.languageStatusUpdating",
+      "source": "Updating"
+    },
+    {
+      "key": "settings.legalCategoryLabel",
+      "source": "Legal"
+    },
+    {
+      "key": "settings.legalGeneratedAtLabel",
+      "source": "Generated"
+    },
+    {
+      "key": "settings.legalHomepageLabel",
+      "source": "Homepage"
+    },
+    {
+      "key": "settings.legalLastUpdatedPrefix",
+      "source": "Last updated"
+    },
+    {
+      "key": "settings.legalLicenseLabel",
+      "source": "License"
+    },
+    {
+      "key": "settings.legalLicenseTextLabel",
+      "source": "License text"
+    },
+    {
+      "key": "settings.legalNoticesEmptyLabel",
+      "source": "No notices generated"
+    },
+    {
+      "key": "settings.legalNoticesErrorLabel",
+      "source": "Open source notices are unavailable."
+    },
+    {
+      "key": "settings.legalNoticesIntro",
+      "source": "The following lists the open source software components used by Lyra and their applicable license information."
+    },
+    {
+      "key": "settings.legalNoticesLabel",
+      "source": "OSS license notices"
+    },
+    {
+      "key": "settings.legalNoticesLoadingLabel",
+      "source": "Loading notices"
+    },
+    {
+      "key": "settings.legalNoticeTextLabel",
+      "source": "Notice"
+    },
+    {
+      "key": "settings.legalPackageCountLabel",
+      "source": "Packages"
+    },
+    {
+      "key": "settings.legalRepositoryLabel",
+      "source": "Repository"
+    },
+    {
+      "key": "settings.legalSourceLabel",
+      "source": "Source"
+    },
+    {
+      "key": "settings.linuxCategoryLabel",
+      "source": "Linux"
+    },
+    {
+      "key": "settings.linuxCompatCurrentStatusLabel",
+      "source": "Current launch"
+    },
+    {
+      "key": "settings.linuxCompatDesktopLabel",
+      "source": "Desktop"
+    },
+    {
+      "key": "settings.linuxCompatGpuLabel",
+      "source": "GPU"
+    },
+    {
+      "key": "settings.linuxCompatProfileDescription",
+      "source": "Controls the real Electron/Linux launch strategy used on the next restart."
+    },
+    {
+      "key": "settings.linuxCompatProfileLabel",
+      "source": "Linux startup profile"
+    },
+    {
+      "key": "settings.linuxCompatProfileNativeDescription",
+      "source": "Prefer the current desktop session, including Wayland when available."
+    },
+    {
+      "key": "settings.linuxCompatProfileNativeLabel",
+      "source": "Native experience"
+    },
+    {
+      "key": "settings.linuxCompatProfilePerformanceDescription",
+      "source": "Prefer hardware acceleration and the modern graphics backend."
+    },
+    {
+      "key": "settings.linuxCompatProfilePerformanceLabel",
+      "source": "Performance"
+    },
+    {
+      "key": "settings.linuxCompatProfileReliableDescription",
+      "source": "Prefer the safest backend and software rendering when the environment looks risky."
+    },
+    {
+      "key": "settings.linuxCompatProfileReliableLabel",
+      "source": "Reliable startup"
+    },
+    {
+      "key": "settings.linuxCompatRecoveryDescription",
+      "source": "Lyra detected a Linux startup problem and switched to a safer launch strategy."
+    },
+    {
+      "key": "settings.linuxCompatRecoveryTitle",
+      "source": "Linux startup recovered"
+    },
+    {
+      "key": "settings.linuxCompatRequestFailed",
+      "source": "Linux compatibility request failed."
+    },
+    {
+      "key": "settings.linuxCompatRestartDescription",
+      "source": "Linux startup changes take effect after restarting Lyra."
+    },
+    {
+      "key": "settings.linuxCompatRestartDialogCancel",
+      "source": "Later"
+    },
+    {
+      "key": "settings.linuxCompatRestartDialogDescription",
+      "source": "Lyra needs to restart before the Linux launch strategy can take effect."
+    },
+    {
+      "key": "settings.linuxCompatRestartDialogTitle",
+      "source": "Restart Lyra?"
+    },
+    {
+      "key": "settings.linuxCompatRestartLabel",
+      "source": "Restart Lyra"
+    },
+    {
+      "key": "settings.linuxCompatRestartNowLabel",
+      "source": "Restart Now"
+    },
+    {
+      "key": "settings.linuxCompatStatusLabel",
+      "source": "Linux compatibility status"
+    },
+    {
+      "key": "settings.linuxCompatSwitchesLabel",
+      "source": "Switches"
+    },
+    {
+      "key": "settings.linuxCompatSystemLabel",
+      "source": "System"
+    },
+    {
+      "key": "settings.linuxCompatWarningsLabel",
+      "source": "Warnings"
+    },
+    {
+      "key": "settings.locale.en-US",
+      "source": "English (US)"
+    },
+    {
+      "key": "settings.locale.zh-CN",
+      "source": "Simplified Chinese"
+    },
+    {
+      "key": "settings.mcpCategoryLabel",
+      "source": "MCP"
+    },
+    {
+      "key": "settings.modelsCategoryLabel",
+      "source": "Models"
+    },
+    {
+      "key": "settings.notificationsCategoryLabel",
+      "source": "Notifications"
+    },
+    {
+      "key": "settings.omniboxNonBrowserSubmitTargetLabel",
+      "source": "When submitting from non-browser tabs"
+    },
+    {
+      "key": "settings.omniboxNonBrowserSubmitTargetNewTabLabel",
+      "source": "Open in new tab"
+    },
+    {
+      "key": "settings.omniboxNonBrowserSubmitTargetReplaceActiveLabel",
+      "source": "Replace active tab"
+    },
+    {
+      "key": "settings.open",
+      "source": "Open settings"
+    },
+    {
+      "key": "settings.pageTitle",
+      "source": "Settings"
+    },
+    {
+      "key": "settings.preventSleepDescription",
+      "source": "When enabled, Lyra keeps the system awake while the app is running."
+    },
+    {
+      "key": "settings.preventSleepDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.preventSleepEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.preventSleepLabel",
+      "source": "Keep Awake"
+    },
+    {
+      "key": "settings.searchCategoryLabel",
+      "source": "Search"
+    },
+    {
+      "key": "settings.searchSearxngEndpointLabel",
+      "source": "SearXNG Endpoint"
+    },
+    {
+      "key": "settings.searchWebEngineBing",
+      "source": "Bing"
+    },
+    {
+      "key": "settings.searchWebEngineBrave",
+      "source": "Brave Search"
+    },
+    {
+      "key": "settings.searchWebEngineDuckDuckGo",
+      "source": "DuckDuckGo"
+    },
+    {
+      "key": "settings.searchWebEngineGoogle",
+      "source": "Google"
+    },
+    {
+      "key": "settings.searchWebEngineMojeek",
+      "source": "Mojeek"
+    },
+    {
+      "key": "settings.searchWebEngineNaver",
+      "source": "Naver"
+    },
+    {
+      "key": "settings.searchWebEngineQwant",
+      "source": "Qwant"
+    },
+    {
+      "key": "settings.searchWebEngineSearxng",
+      "source": "SearXNG"
+    },
+    {
+      "key": "settings.searchWebEnginesLabel",
+      "source": "Pinned Search Sources"
+    },
+    {
+      "key": "settings.searchWebEngineStartpage",
+      "source": "Startpage"
+    },
+    {
+      "key": "settings.searchWebEngineYahoo",
+      "source": "Yahoo Search"
+    },
+    {
+      "key": "settings.skillsCategoryLabel",
+      "source": "Skills"
+    },
+    {
+      "key": "settings.splitOverflowPolicy.block_with_notice",
+      "source": "Block with notice"
+    },
+    {
+      "key": "settings.splitOverflowPolicy.replace_oldest",
+      "source": "Replace oldest pane"
+    },
+    {
+      "key": "settings.splitOverflowPolicy.replace_target",
+      "source": "Replace drop target"
+    },
+    {
+      "key": "settings.splitOverflowPolicyLabel",
+      "source": ">4 panes"
+    },
+    {
+      "key": "settings.splitThreePaneLayout.adaptive",
+      "source": "Adaptive"
+    },
+    {
+      "key": "settings.splitThreePaneLayout.left_one_right_two",
+      "source": "Left 1 / Right 2"
+    },
+    {
+      "key": "settings.splitThreePaneLayout.left_two_right_one",
+      "source": "Left 2 / Right 1"
+    },
+    {
+      "key": "settings.splitThreePaneLayout.top_one_bottom_two",
+      "source": "Top 1 / Bottom 2"
+    },
+    {
+      "key": "settings.splitThreePaneLayout.top_two_bottom_one",
+      "source": "Top 2 / Bottom 1"
+    },
+    {
+      "key": "settings.splitThreePaneLayoutLabel",
+      "source": "3-pane Layout"
+    },
+    {
+      "key": "settings.splitTriggerMode.ctrl_left_drag",
+      "source": "Ctrl + left drag"
+    },
+    {
+      "key": "settings.splitTriggerMode.right_drag",
+      "source": "Right drag"
+    },
+    {
+      "key": "settings.splitTriggerModeLabel",
+      "source": "Split Trigger"
+    },
+    {
+      "key": "settings.systemNotificationActionMarkRead",
+      "source": "Mark read"
+    },
+    {
+      "key": "settings.systemNotificationActionOpenCenter",
+      "source": "Open center"
+    },
+    {
+      "key": "settings.systemNotificationActionOpenSource",
+      "source": "Open origin"
+    },
+    {
+      "key": "settings.systemNotificationActionsDescription",
+      "source": "Show supported OS action buttons. Linux environments that do not expose buttons fall back to click-only notifications."
+    },
+    {
+      "key": "settings.systemNotificationActionsDisabled",
+      "source": "Disabled"
+    },
+    {
+      "key": "settings.systemNotificationActionsEnabled",
+      "source": "Enabled"
+    },
+    {
+      "key": "settings.systemNotificationActionsLabel",
+      "source": "Notification actions"
+    },
+    {
+      "key": "settings.systemNotificationClickBehaviorLabel",
+      "source": "Notification click"
+    },
+    {
+      "key": "settings.systemNotificationClickOpenCenterLabel",
+      "source": "Open center"
+    },
+    {
+      "key": "settings.systemNotificationClickOpenSourceLabel",
+      "source": "Open origin"
+    },
+    {
+      "key": "settings.systemNotificationModeAllLabel",
+      "source": "All notifications"
+    },
+    {
+      "key": "settings.systemNotificationModeBackgroundLabel",
+      "source": "In background"
+    },
+    {
+      "key": "settings.systemNotificationModeLabel",
+      "source": "System notifications"
+    },
+    {
+      "key": "settings.systemNotificationModeOffLabel",
+      "source": "Off"
+    },
+    {
+      "key": "settings.tabTitle",
+      "source": "Settings"
+    },
+    {
+      "key": "settings.theme.lyra-dark",
+      "source": "Lyra Dark"
+    },
+    {
+      "key": "settings.theme.lyra-light",
+      "source": "Lyra Light"
+    },
+    {
+      "key": "settings.theme.lyra-system",
+      "source": "Lyra System"
+    },
+    {
+      "key": "settings.themeLabel",
+      "source": "Theme"
+    },
+    {
+      "key": "settings.uiStyle.classic",
+      "source": "Classic"
+    },
+    {
+      "key": "settings.uiStyleDescription.classic",
+      "source": "Current Lyra desktop layout and visual language."
+    },
+    {
+      "key": "settings.uiStyleExternalReloadRequired",
+      "source": "External UIUX packs take effect after reloading the Workbench."
+    },
+    {
+      "key": "settings.uiStyleExternalUntrusted",
+      "source": "Installed but not trusted. Trust it before enabling."
+    },
+    {
+      "key": "settings.uiStyleLabel",
+      "source": "UI Style"
+    },
+    {
+      "key": "settings.workspaceCategoryLabel",
+      "source": "Workspace"
+    },
+    {
+      "key": "softwareStore.actionsLabel",
+      "source": "Actions"
+    },
+    {
+      "key": "softwareStore.activate",
+      "source": "Activate"
+    },
+    {
+      "key": "softwareStore.activating",
+      "source": "Working..."
+    },
+    {
+      "key": "softwareStore.activeBadge",
+      "source": "Active"
+    },
+    {
+      "key": "softwareStore.agentAccessControllable",
+      "source": "Controllable"
+    },
+    {
+      "key": "softwareStore.agentAccessLabel",
+      "source": "Agent access"
+    },
+    {
+      "key": "softwareStore.agentAccessNotConnected",
+      "source": "Not connected"
+    },
+    {
+      "key": "softwareStore.agentAccessReadOnly",
+      "source": "Read-only"
+    },
+    {
+      "key": "softwareStore.agentGitDescription",
+      "source": "Session-bound Git status, diff preview, and file actions."
+    },
+    {
+      "key": "softwareStore.agentGitTitle",
+      "source": "SCM"
+    },
+    {
+      "key": "softwareStore.agentHistoryDescription",
+      "source": "View sessions, project sessions, archived sessions, and web browsing history."
+    },
+    {
+      "key": "softwareStore.agentHistoryTitle",
+      "source": "History"
+    },
+    {
+      "key": "softwareStore.agentProjectTreeDescription",
+      "source": "Session-bound project file tree and editor entry."
+    },
+    {
+      "key": "softwareStore.agentProjectTreeTitle",
+      "source": "Project Tree"
+    },
+    {
+      "key": "softwareStore.allTab",
+      "source": "All"
+    },
+    {
+      "key": "softwareStore.browserSearchDescription",
+      "source": "Workspace browsing, web search, and local/deep search surfaces."
+    },
+    {
+      "key": "softwareStore.browserSearchTitle",
+      "source": "Browser + Search"
+    },
+    {
+      "key": "softwareStore.builtinBadge",
+      "source": "Built-in"
+    },
+    {
+      "key": "softwareStore.builtinSource",
+      "source": "Bundled with Lyra"
+    },
+    {
+      "key": "softwareStore.builtinTab",
+      "source": "Built-in"
+    },
+    {
+      "key": "softwareStore.builtinType",
+      "source": "Lyra software"
+    },
+    {
+      "key": "softwareStore.categoryAgent",
+      "source": "Agent"
+    },
+    {
+      "key": "softwareStore.categoryCore",
+      "source": "Core"
+    },
+    {
+      "key": "softwareStore.categoryLabel",
+      "source": "Category"
+    },
+    {
+      "key": "softwareStore.categoryMedia",
+      "source": "Media"
+    },
+    {
+      "key": "softwareStore.categorySystem",
+      "source": "System"
+    },
+    {
+      "key": "softwareStore.chooseLocal",
+      "source": "Install local pack"
+    },
+    {
+      "key": "softwareStore.contextRequired",
+      "source": "Open from a file, session, or runtime context."
+    },
+    {
+      "key": "softwareStore.detailsTitle",
+      "source": "Software details"
+    },
+    {
+      "key": "softwareStore.downloadsDescription",
+      "source": "Download tasks, rules, mirrors, and post-processing controls."
+    },
+    {
+      "key": "softwareStore.downloadsTitle",
+      "source": "Downloads"
+    },
+    {
+      "key": "softwareStore.emptyTitle",
+      "source": "No matching software"
+    },
+    {
+      "key": "softwareStore.fileManagerDescription",
+      "source": "Native file browsing, downloads, trash, and project picking."
+    },
+    {
+      "key": "softwareStore.fileManagerTitle",
+      "source": "Files"
+    },
+    {
+      "key": "softwareStore.gitRefLabel",
+      "source": "Ref"
+    },
+    {
+      "key": "softwareStore.gitSource",
+      "source": "Git"
+    },
+    {
+      "key": "softwareStore.gitSubdirLabel",
+      "source": "Subdirectory"
+    },
+    {
+      "key": "softwareStore.gitUrlLabel",
+      "source": "Git URL"
+    },
+    {
+      "key": "softwareStore.imageViewerDescription",
+      "source": "Native image inspection with zoom, rotation, and metadata."
+    },
+    {
+      "key": "softwareStore.imageViewerTitle",
+      "source": "Images"
+    },
+    {
+      "key": "softwareStore.installedAtLabel",
+      "source": "Installed"
+    },
+    {
+      "key": "softwareStore.installGit",
+      "source": "Install from Git"
+    },
+    {
+      "key": "softwareStore.installLocal",
+      "source": "Install local"
+    },
+    {
+      "key": "softwareStore.installNpm",
+      "source": "Install from NPM"
+    },
+    {
+      "key": "softwareStore.loading",
+      "source": "Loading software..."
+    },
+    {
+      "key": "softwareStore.localSource",
+      "source": "Local"
+    },
+    {
+      "key": "softwareStore.loginManagerDescription",
+      "source": "Website sessions, saved credentials, and site logout control for Lyra Browser."
+    },
+    {
+      "key": "softwareStore.loginManagerTitle",
+      "source": "Logins"
+    },
+    {
+      "key": "softwareStore.noActions",
+      "source": "No actions"
+    },
+    {
+      "key": "softwareStore.noPermissions",
+      "source": "No declared permissions"
+    },
+    {
+      "key": "softwareStore.notificationsDescription",
+      "source": "Workbench notifications and source navigation."
+    },
+    {
+      "key": "softwareStore.notificationsTitle",
+      "source": "Notifications"
+    },
+    {
+      "key": "softwareStore.npmPackageLabel",
+      "source": "Package"
+    },
+    {
+      "key": "softwareStore.npmSource",
+      "source": "NPM"
+    },
+    {
+      "key": "softwareStore.npmSubdirLabel",
+      "source": "Subdirectory"
+    },
+    {
+      "key": "softwareStore.npmVersionLabel",
+      "source": "Version"
+    },
+    {
+      "key": "softwareStore.open",
+      "source": "Open Software"
+    },
+    {
+      "key": "softwareStore.openBuiltin",
+      "source": "Open"
+    },
+    {
+      "key": "softwareStore.openUnavailable",
+      "source": "Unavailable"
+    },
+    {
+      "key": "softwareStore.operationFailed",
+      "source": "Operation failed"
+    },
+    {
+      "key": "softwareStore.operationSucceeded",
+      "source": "Operation completed."
+    },
+    {
+      "key": "softwareStore.pendingBadge",
+      "source": "Pending reload"
+    },
+    {
+      "key": "softwareStore.permissionsLabel",
+      "source": "Permissions"
+    },
+    {
+      "key": "softwareStore.refresh",
+      "source": "Refresh software"
+    },
+    {
+      "key": "softwareStore.reloadRequired",
+      "source": "Activation will apply after reloading the Workbench."
+    },
+    {
+      "key": "softwareStore.revokedBadge",
+      "source": "Revoked"
+    },
+    {
+      "key": "softwareStore.revokeTrust",
+      "source": "Revoke trust"
+    },
+    {
+      "key": "softwareStore.riskLabel",
+      "source": "Risk"
+    },
+    {
+      "key": "softwareStore.searchPlaceholder",
+      "source": "Search Lyra software or UIUX packs"
+    },
+    {
+      "key": "softwareStore.selectItemDescription",
+      "source": "Manage built-in Lyra surfaces, UIUX packs, trust, and activation."
+    },
+    {
+      "key": "softwareStore.selectItemTitle",
+      "source": "Select software"
+    },
+    {
+      "key": "softwareStore.selfDescription",
+      "source": "Lyra software registry, UIUX pack installation, trust, and activation."
+    },
+    {
+      "key": "softwareStore.selfTitle",
+      "source": "Lyra Software"
+    },
+    {
+      "key": "softwareStore.settingsDescription",
+      "source": "Workbench, search, notifications, Linux compatibility, and AI settings."
+    },
+    {
+      "key": "softwareStore.settingsTitle",
+      "source": "Settings"
+    },
+    {
+      "key": "softwareStore.sourceLabel",
+      "source": "Source"
+    },
+    {
+      "key": "softwareStore.statusLabel",
+      "source": "Status"
+    },
+    {
+      "key": "softwareStore.tabTitle",
+      "source": "Lyra Software"
+    },
+    {
+      "key": "softwareStore.terminalDescription",
+      "source": "Docked and workspace shell sessions."
+    },
+    {
+      "key": "softwareStore.terminalTitle",
+      "source": "Terminal"
+    },
+    {
+      "key": "softwareStore.title",
+      "source": "Lyra Software"
+    },
+    {
+      "key": "softwareStore.trust",
+      "source": "Trust"
+    },
+    {
+      "key": "softwareStore.trustedBadge",
+      "source": "Trusted"
+    },
+    {
+      "key": "softwareStore.typeLabel",
+      "source": "Type"
+    },
+    {
+      "key": "softwareStore.uiuxBadge",
+      "source": "UIUX"
+    },
+    {
+      "key": "softwareStore.uiuxTab",
+      "source": "UIUX packs"
+    },
+    {
+      "key": "softwareStore.uiuxType",
+      "source": "Workbench UIUX pack"
+    },
+    {
+      "key": "softwareStore.unavailable",
+      "source": "Software registry is unavailable."
+    },
+    {
+      "key": "softwareStore.untrustedBadge",
+      "source": "Untrusted"
+    },
+    {
+      "key": "softwareStore.updatedAtLabel",
+      "source": "Updated"
+    },
+    {
+      "key": "softwareStore.versionLabel",
+      "source": "Version"
+    },
+    {
+      "key": "terminal.closePane",
+      "source": "Close pane"
+    },
+    {
+      "key": "terminal.closeTab",
+      "source": "Close tab"
+    },
+    {
+      "key": "terminal.emptyDock",
+      "source": "Terminal moved to workspace"
+    },
+    {
+      "key": "terminal.exited",
+      "source": "Exited"
+    },
+    {
+      "key": "terminal.favoriteTab",
+      "source": "Favorite"
+    },
+    {
+      "key": "terminal.newTab",
+      "source": "New terminal"
+    },
+    {
+      "key": "terminal.newTabWithProfile",
+      "source": "New terminal"
+    },
+    {
+      "key": "terminal.pinTab",
+      "source": "Pin"
+    },
+    {
+      "key": "terminal.presetChipLabel",
+      "source": "Preset"
+    },
+    {
+      "key": "terminal.profile",
+      "source": "Profile"
+    },
+    {
+      "key": "terminal.promptReloadDeferred",
+      "source": "Prompt changes will apply in newly created terminal sessions."
+    },
+    {
+      "key": "terminal.renameTab",
+      "source": "Rename"
+    },
+    {
+      "key": "terminal.splitHorizontal",
+      "source": "Split horizontal"
+    },
+    {
+      "key": "terminal.splitVertical",
+      "source": "Split vertical"
+    },
+    {
+      "key": "terminal.title",
+      "source": "Terminal"
+    },
+    {
+      "key": "terminal.unavailable",
+      "source": "Terminal native backend unavailable. Build Rust native module first."
+    },
+    {
+      "key": "terminal.unfavoriteTab",
+      "source": "Remove Favorite"
+    },
+    {
+      "key": "terminal.unpinTab",
+      "source": "Unpin"
+    },
+    {
+      "key": "todo.fallback",
+      "source": "Todo {index}"
+    },
+    {
+      "key": "todo.plan",
+      "source": "Plan"
+    },
+    {
+      "key": "tool.agentActivity",
+      "source": "Agent activity"
+    },
+    {
+      "key": "tool.browserScreenshotAlt",
+      "source": "Browser screenshot"
+    },
+    {
+      "key": "tool.collapseCall",
+      "source": "Collapse tool call"
+    },
+    {
+      "key": "tool.collapseEditDetails",
+      "source": "Collapse edit details"
+    },
+    {
+      "key": "tool.collapseGroup",
+      "source": "Collapse tool group"
+    },
+    {
+      "key": "tool.events",
+      "source": "{count} tool events"
+    },
+    {
+      "key": "tool.events_one",
+      "source": "{count} tool event"
+    },
+    {
+      "key": "tool.events_other",
+      "source": "{count} tool events"
+    },
+    {
+      "key": "tool.executionPlan",
+      "source": "Execution plan"
+    },
+    {
+      "key": "tool.imageAttachment",
+      "source": "Image attachment"
+    },
+    {
+      "key": "tool.lumenSnapshotAlt",
+      "source": "Lyra Lumen snapshot"
+    },
+    {
+      "key": "tool.openImageInWorkbench",
+      "source": "Open image in Workbench"
+    },
+    {
+      "key": "tool.openInWorkbench",
+      "source": "Open in Workbench"
+    },
+    {
+      "key": "tool.running",
+      "source": "Running..."
+    },
+    {
+      "key": "tool.searchQueryLabel",
+      "source": "Query"
+    },
+    {
+      "key": "tool.streamingDiff",
+      "source": "Streaming changes..."
+    },
+    {
+      "key": "tool.webUrlLabel",
+      "source": "URL"
+    },
+    {
+      "key": "window.close",
+      "source": "Close"
+    },
+    {
+      "key": "window.minimize",
+      "source": "Minimize"
+    },
+    {
+      "key": "window.toggleMaximize",
+      "source": "Toggle Maximize"
+    }
+  ]
+}
